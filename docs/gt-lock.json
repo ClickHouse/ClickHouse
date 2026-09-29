@@ -7,42 +7,42 @@
       "versionId": "d32db41de0afcd9c73f863b43acae05eb332f8a5d948c665a343043032ed5f0d",
       "translations": {
         "ko": {
-          "updatedAt": "2026-09-29T10:41:55.905Z",
+          "updatedAt": "2026-09-29T10:52:42.230Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ja": {
-          "updatedAt": "2026-09-29T10:41:55.720Z",
+          "updatedAt": "2026-09-29T10:52:42.043Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ru": {
-          "updatedAt": "2026-09-29T10:41:56.274Z",
+          "updatedAt": "2026-09-29T10:52:42.606Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "es": {
-          "updatedAt": "2026-09-29T10:41:55.488Z",
+          "updatedAt": "2026-09-29T10:52:41.838Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-29T10:41:56.093Z",
+          "updatedAt": "2026-09-29T10:52:42.417Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "zh": {
-          "updatedAt": "2026-09-29T10:41:56.455Z",
+          "updatedAt": "2026-09-29T10:52:42.789Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "fr": {
-          "updatedAt": "2026-09-29T10:41:56.829Z",
+          "updatedAt": "2026-09-29T10:52:43.167Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ar": {
-          "updatedAt": "2026-09-29T10:41:56.649Z",
+          "updatedAt": "2026-09-29T10:52:42.983Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         }
@@ -103650,47 +103650,47 @@
     },
     {
       "fileId": "e536e51f7e5aadb126992d225f15e7f36a16ed8aa019f77dfb32b06f084c3ed8",
-      "versionId": "0d408942d4e8c0fc515a7ea5990351411e8b1c6a16f2ae108b3870494b2a6373",
+      "versionId": "33b55d81fbcb7bc31bc065a5712d4b20d709d6a474d4342617e2ba92e76e3620",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-24T10:24:08.040Z",
-          "fileName": "snippets/es/components/IntegrationGrid/IntegrationGrid.jsx",
-          "postProcessHash": "fc3bdd666bd2e8a60d2b4396d72780af776626d7bfe2ecae18f4cab7de240734"
-        },
-        "ja": {
-          "updatedAt": "2026-09-24T10:24:08.041Z",
-          "fileName": "snippets/ja/components/IntegrationGrid/IntegrationGrid.jsx",
-          "postProcessHash": "fa8168a07547ae5aca54d97579261e6e3c1b1609398b17240fa58d1d96529519"
-        },
-        "ko": {
-          "updatedAt": "2026-09-24T10:24:08.041Z",
-          "fileName": "snippets/ko/components/IntegrationGrid/IntegrationGrid.jsx",
-          "postProcessHash": "5e377470c16a24bf3e6aaaf19350bde8bdff6d13cbb0a69155191abd5084706c"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-24T10:24:08.042Z",
-          "fileName": "snippets/pt-BR/components/IntegrationGrid/IntegrationGrid.jsx",
-          "postProcessHash": "65c1618803689e4d4b1e29ed43c5f0b8467e0df270cb6a66656b26abf6c67d50"
-        },
-        "ru": {
-          "updatedAt": "2026-09-24T10:24:08.042Z",
-          "fileName": "snippets/ru/components/IntegrationGrid/IntegrationGrid.jsx",
-          "postProcessHash": "3bef5ae589d97e5ed03ab8d88400b1ce262d9f8c7c8bfc88c8f9fc9ede93ca93"
-        },
         "zh": {
-          "updatedAt": "2026-09-24T10:24:08.042Z",
+          "updatedAt": "2026-09-29T10:52:46.667Z",
           "fileName": "snippets/zh/components/IntegrationGrid/IntegrationGrid.jsx",
-          "postProcessHash": "d9b0fd009857dcb531683392d624e4f70ab21246f8d56e2b8603c88eb0ee4e8c"
-        },
-        "ar": {
-          "updatedAt": "2026-09-24T10:24:08.043Z",
-          "fileName": "snippets/ar/components/IntegrationGrid/IntegrationGrid.jsx",
-          "postProcessHash": "5227c1fd5d417eec06aee66fb6572fd7a50e71222f47672c0fbb1f4dca994f2f"
+          "postProcessHash": "611204025086c6f603725532269d8f373c2b2fb503733bedc49cbec865f6f46c"
         },
         "fr": {
-          "updatedAt": "2026-09-24T10:24:08.043Z",
+          "updatedAt": "2026-09-29T10:52:46.667Z",
           "fileName": "snippets/fr/components/IntegrationGrid/IntegrationGrid.jsx",
-          "postProcessHash": "24754dbdd4ed84670fa88f5aa0c37f3f3afd4e42796257ac9a1b6e13be596aa1"
+          "postProcessHash": "1597f33702bea4abf2b5732232b57d9630479a78290d16f5cd95d906cbe71e84"
+        },
+        "es": {
+          "updatedAt": "2026-09-29T10:52:46.668Z",
+          "fileName": "snippets/es/components/IntegrationGrid/IntegrationGrid.jsx",
+          "postProcessHash": "44448505e6708dff624c76168508cf7761ea070b3d969920939f6e27d72b6ee1"
+        },
+        "ar": {
+          "updatedAt": "2026-09-29T10:52:46.668Z",
+          "fileName": "snippets/ar/components/IntegrationGrid/IntegrationGrid.jsx",
+          "postProcessHash": "9f6e715c33d9e644f1770be72d2c9faa6213f2d86ef37730285aa78375f36db1"
+        },
+        "ja": {
+          "updatedAt": "2026-09-29T10:52:46.668Z",
+          "fileName": "snippets/ja/components/IntegrationGrid/IntegrationGrid.jsx",
+          "postProcessHash": "25eb46e49fcef9dbd1ce596d918ac9bab2bdccc0ce4c2c00c9300ec617015219"
+        },
+        "ru": {
+          "updatedAt": "2026-09-29T10:52:46.669Z",
+          "fileName": "snippets/ru/components/IntegrationGrid/IntegrationGrid.jsx",
+          "postProcessHash": "f6c3cd80280f03f32591fa72d6741bd044b8c228bae4b84b96924128e66f37cd"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-29T10:52:46.669Z",
+          "fileName": "snippets/pt-BR/components/IntegrationGrid/IntegrationGrid.jsx",
+          "postProcessHash": "a7dd51e53e9f688ce49926a2a0cac8b10b7934a86ca92b3776851f0ce1b88190"
+        },
+        "ko": {
+          "updatedAt": "2026-09-29T10:52:46.670Z",
+          "fileName": "snippets/ko/components/IntegrationGrid/IntegrationGrid.jsx",
+          "postProcessHash": "bba15df82278c1e29e93fd5f8f01444f2eee45c13956bc647e41f4e346131f72"
         }
       },
       "fileName": "snippets/components/IntegrationGrid/IntegrationGrid.jsx"
