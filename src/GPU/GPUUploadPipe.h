@@ -114,6 +114,9 @@ protected:
 };
 
 
+/// Uploads plain data, nothing is decompressed here: `stage` takes `IColumn`s that ClickHouse has already
+/// decompressed on the CPU while reading, and `reserveRaw`/`commitRaw` take bytes that are written into the
+/// staging area as they are.
 class ColumnUploadPipe final : public IUploadPipe
 {
 public:
@@ -176,6 +179,9 @@ private:
 };
 
 
+/// Uploads compressed blocks as they are stored in a part and decompresses them on the device: when the staging
+/// area fills up and on `flush`, the staged blocks are sent and expanded with nvcomp through a `SyncDecompressor`,
+/// blocking until done. The CPU never decompresses these blocks.
 class CompressedUploadPipe final : public IUploadPipe
 {
 public:
