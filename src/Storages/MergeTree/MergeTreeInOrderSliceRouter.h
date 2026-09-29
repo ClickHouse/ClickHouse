@@ -22,7 +22,8 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 /// part is read before the router asks for it. Slices are issued only while the merge waits for data,
 /// by two rules:
 /// - the lane the merge waits for gets its next slice whenever it has none issued, so the merge is never
-///   blocked on a lane nobody reads;
+///   blocked on a lane nobody reads; with it, every lane whose next key comes before that slice's end
+///   gets its next slice too, since the merge reaches those lanes before it is done with the slice;
 /// - the lanes the merge needs next, in the order of the pool's queue, get slices while the marks issued
 ///   so far stay under the read-ahead budget. The budget is zero at first and doubles with every slice
 ///   that came back with most of its rows filtered out: reading, not merging, is the bottleneck then, and

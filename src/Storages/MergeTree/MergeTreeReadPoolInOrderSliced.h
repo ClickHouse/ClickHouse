@@ -21,7 +21,10 @@ namespace DB
 /// lanes are read and how far ahead of the merge, and calls assignSlice for an idle source; getTask then
 /// hands the slice to that source, and the router reassembles the slices of a lane in mark order. Readers
 /// follow the lane, not the source: a source that switches lanes leaves its readers parked in the lane
-/// for whichever source reads it next.
+/// for whichever source reads it next. Readers are created for the marks of one slice, like the readers
+/// of the other pools are created for one task: their read buffers are sized from those marks, so the
+/// first granule of a lane does not fetch whole buffers of every column from remote storage. When the
+/// slices of a lane have grown well past the size its readers were made for, new readers replace them.
 class MergeTreeReadPoolInOrderSliced : public MergeTreeReadPoolBase
 {
 public:
@@ -69,6 +72,10 @@ public:
     /// the lanes that still have unread marks.
     std::optional<size_t> nextLane() const;
 
+    /// The lane at the head of the queue if its next key is strictly smaller than the next key of the given
+    /// lane, i.e. a lane the merge needs before it gets to the given lane's next slice.
+    std::optional<size_t> nextLaneBefore(size_t lane) const;
+
     /// Marks of the lane not yet cut into a slice.
     bool laneHasUnreadMarks(size_t lane) const;
 
@@ -91,13 +98,20 @@ public:
     bool isFinished() const;
 
 private:
+    /// Readers and the number of marks of the slice they were created for, which sized their buffers.
+    struct SizedReaders
+    {
+        MergeTreeReadTask::Readers readers;
+        size_t marks;
+    };
+
     struct Lane
     {
         MarkRanges unread;
         /// Slices of a lane start small and grow, so the first rows of a part arrive quickly.
         size_t slices_cut = 0;
-        /// Readers of sources that moved on to other lanes; their extent reaches the end of the lane.
-        std::vector<MergeTreeReadTask::Readers> parked_readers = {};
+        /// Readers of sources that moved on to other lanes.
+        std::vector<SizedReaders> parked_readers = {};
     };
 
     struct PendingSlice
@@ -122,9 +136,8 @@ private:
 
     /// Primary key values at the mark of the lane, one row; empty if the index has no value there.
     Block keyAtMark(size_t lane, size_t mark) const;
-    /// Marks of the lane from first_mark to its end: the extent of readers created for a slice, so that
-    /// the same readers can continue with the following slices of the lane.
-    MarkRanges readerExtent(size_t lane, size_t first_mark) const;
+    /// Marks of the next slice of the lane, if it were cut now.
+    size_t nextSliceMarks(size_t lane) const TSA_REQUIRES(mutex);
     void enqueueLane(size_t lane) TSA_REQUIRES(mutex);
     void dequeueLane(size_t lane) TSA_REQUIRES(mutex);
 
@@ -141,8 +154,10 @@ private:
     LaneQueue queue TSA_GUARDED_BY(mutex);
     /// Where each lane with unread marks sits in the queue.
     std::vector<std::optional<LaneQueue::iterator>> queue_position TSA_GUARDED_BY(mutex);
-    /// The lane of the last task each source got, i.e. the lane its current readers belong to.
+    /// The lane of the last task each source got, i.e. the lane its current readers belong to, and the
+    /// marks those readers were created for.
     std::vector<std::optional<size_t>> last_task_lane TSA_GUARDED_BY(mutex);
+    std::vector<size_t> last_readers_marks TSA_GUARDED_BY(mutex);
     std::vector<std::optional<PendingSlice>> pending TSA_GUARDED_BY(mutex);
     bool finished TSA_GUARDED_BY(mutex) = false;
 };

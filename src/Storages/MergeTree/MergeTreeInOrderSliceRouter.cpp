@@ -294,6 +294,16 @@ void MergeTreeInOrderSliceRouter::scheduleSlices()
         if (!source)
             return;
         assignSlice(*source, lane);
+
+        /// Lanes whose next key lies within the slice just issued are consumed before that slice is done:
+        /// reading them now costs no more rows than waiting for the merge to ask for each of them in turn.
+        while (auto before = pool->nextLaneBefore(lane))
+        {
+            source = pickIdleSource(*before);
+            if (!source)
+                return;
+            assignSlice(*source, *before);
+        }
     }
 
     if (!merge_waits)

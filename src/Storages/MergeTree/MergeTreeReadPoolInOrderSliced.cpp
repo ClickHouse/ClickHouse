@@ -34,6 +34,13 @@ MarkRanges cutMarks(MarkRanges & from, size_t max_marks)
 /// columns, so only a few are kept.
 constexpr size_t max_parked_readers_per_lane = 2;
 
+/// Readers created for a slice of this many marks read a slice of the given size well enough: their
+/// buffers are at most half too small for it. Smaller ones are replaced.
+bool readersFit(size_t readers_marks, size_t slice_marks)
+{
+    return slice_marks <= 2 * readers_marks;
+}
+
 /// Keys that are not known (empty blocks) go last.
 int compareKeys(const Block & lhs, const Block & rhs)
 {
@@ -93,6 +100,7 @@ MergeTreeReadPoolInOrderSliced::MergeTreeReadPoolInOrderSliced(
     , max_slice_marks(std::max<size_t>(1, pool_settings.min_marks_for_concurrent_read))
     , primary_key_header(primary_key_header_)
     , last_task_lane(num_sources_)
+    , last_readers_marks(num_sources_)
     , pending(num_sources_)
 {
     std::lock_guard lock(mutex);
@@ -129,13 +137,11 @@ Block MergeTreeReadPoolInOrderSliced::keyAtMark(size_t lane, size_t mark) const
     return primary_key_header.cloneWithColumns(std::move(columns));
 }
 
-MarkRanges MergeTreeReadPoolInOrderSliced::readerExtent(size_t lane, size_t first_mark) const
+size_t MergeTreeReadPoolInOrderSliced::nextSliceMarks(size_t lane) const
 {
-    MarkRanges extent;
-    for (const auto & range : parts_ranges[lane].ranges)
-        if (range.end > first_mark)
-            extent.emplace_back(std::max(range.begin, first_mark), range.end);
-    return extent;
+    const auto & lane_state = lanes[lane];
+    const size_t ramp_marks = size_t(1) << std::min<size_t>(lane_state.slices_cut, 16);
+    return std::min({max_slice_marks, ramp_marks, lane_state.unread.getNumberOfMarks()});
 }
 
 void MergeTreeReadPoolInOrderSliced::enqueueLane(size_t lane)
@@ -165,6 +171,19 @@ std::optional<size_t> MergeTreeReadPoolInOrderSliced::nextLane() const
     if (queue.empty())
         return std::nullopt;
     return queue.begin()->lane;
+}
+
+std::optional<size_t> MergeTreeReadPoolInOrderSliced::nextLaneBefore(size_t lane) const
+{
+    std::lock_guard lock(mutex);
+    const auto & position = queue_position[lane];
+    if (!position || queue.empty())
+        return std::nullopt;
+
+    const auto & head = *queue.begin();
+    if (head.lane == lane || compareKeys(head.key, (*position)->key) >= 0)
+        return std::nullopt;
+    return head.lane;
 }
 
 bool MergeTreeReadPoolInOrderSliced::laneHasUnreadMarks(size_t lane) const
@@ -264,20 +283,25 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrderSliced::getTask(size_t task_idx, Me
 
     /// Readers follow the lane, not the source: a source that switches lanes leaves its readers in the
     /// lane it read before and takes the readers another source left in the new lane, if there are any.
-    /// The size hints are taken before the readers may be given away.
+    /// Readers made for a much smaller slice are not reused: their buffers would read the slice in many
+    /// small pieces. The size hints are taken before the readers may be given away.
     auto extras = getExtras();
     if (previous_task)
         extras.value_size_map = previous_task->getMainReader().getAvgValueSizeHints();
 
+    const size_t slice_marks = ranges.getNumberOfMarks();
     MergeTreeReadTask::Readers readers;
+    size_t readers_marks = 0;
     bool has_readers = false;
     {
         std::lock_guard lock(mutex);
 
         auto & last_lane = last_task_lane[task_idx];
-        if (previous_task && last_lane == lane)
+        auto & last_marks = last_readers_marks[task_idx];
+        if (previous_task && last_lane == lane && readersFit(last_marks, slice_marks))
         {
             readers = previous_task->releaseReaders();
+            readers_marks = last_marks;
             has_readers = true;
         }
         else
@@ -285,27 +309,29 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrderSliced::getTask(size_t task_idx, Me
             if (previous_task && last_lane)
             {
                 auto & previous = lanes[*last_lane];
-                if (!previous.unread.empty() && previous.parked_readers.size() < max_parked_readers_per_lane)
-                    previous.parked_readers.push_back(previous_task->releaseReaders());
+                if (!previous.unread.empty() && previous.parked_readers.size() < max_parked_readers_per_lane
+                    && readersFit(last_marks, nextSliceMarks(*last_lane)))
+                    previous.parked_readers.push_back(SizedReaders{.readers = previous_task->releaseReaders(), .marks = last_marks});
             }
 
             auto & parked = lanes[lane].parked_readers;
-            if (!parked.empty())
+            auto fitting = std::find_if(parked.begin(), parked.end(), [&](const SizedReaders & set) { return readersFit(set.marks, slice_marks); });
+            if (fitting != parked.end())
             {
-                readers = std::move(parked.back());
-                parked.pop_back();
+                readers = std::move(fitting->readers);
+                readers_marks = fitting->marks;
                 has_readers = true;
+                parked.erase(fitting);
             }
         }
         last_lane = lane;
+        last_marks = has_readers ? readers_marks : slice_marks;
     }
 
-    if (!has_readers)
-    {
-        MarkRanges extent = readerExtent(lane, ranges.front().begin);
-        auto extent_patches_ranges = ranges_in_patch_parts.getRanges(data_part, info->patch_parts, extent);
-        readers = MergeTreeReadTask::createReaders(info, extras, extent, extent_patches_ranges);
-    }
+    if (has_readers)
+        readers.updateAllMarkRanges(ranges, patches_ranges);
+    else
+        readers = MergeTreeReadTask::createReaders(info, extras, ranges, patches_ranges);
 
     return createTask(info, std::move(readers), std::move(ranges), std::move(patches_ranges), updater);
 }
