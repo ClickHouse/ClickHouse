@@ -1,5 +1,5 @@
 -- A table TTL is analyzed with the server settings, as at CREATE TABLE: a session setting that changes the
--- types of the TTL expression neither breaks an INSERT nor lets an ALTER store a TTL that CREATE TABLE rejects.
+-- types of the TTL expression neither breaks an INSERT nor changes which TTL an ALTER accepts.
 
 SET session_timezone = 'UTC';
 SET async_insert = 0;
@@ -12,6 +12,8 @@ DROP TABLE IF EXISTS t_in;
 DROP TABLE IF EXISTS t_in_create;
 DROP TABLE IF EXISTS t_ext;
 DROP TABLE IF EXISTS t_trunc;
+DROP TABLE IF EXISTS t_where;
+DROP TABLE IF EXISTS t_gb;
 
 -- `cast_keep_nullable` makes `CAST` of a `Nullable` value `Nullable`.
 CREATE TABLE t_cast (d DateTime('UTC'), x Nullable(UInt8)) ENGINE = MergeTree ORDER BY tuple()
@@ -68,6 +70,17 @@ TTL tumbleStart(toStartOfHour(ts), toIntervalHour(1)) + INTERVAL 1 DAY;
 INSERT INTO t_ext SETTINGS enable_extended_results_for_datetime_functions = 1 VALUES ('2100-01-01 00:00:00');
 SELECT count() FROM t_ext;
 
+-- The `DELETE WHERE` condition and a `GROUP BY ... SET` aggregation are analyzed the same way.
+CREATE TABLE t_where (ts DateTime64(0, 'UTC')) ENGINE = MergeTree ORDER BY tuple()
+TTL ts + INTERVAL 1 DAY DELETE WHERE tumbleStart(toStartOfHour(ts), toIntervalHour(1)) > toDateTime('2000-01-01 00:00:00', 'UTC');
+INSERT INTO t_where SETTINGS enable_extended_results_for_datetime_functions = 1 VALUES ('2100-01-01 00:00:00');
+SELECT count() FROM t_where;
+CREATE TABLE t_gb (k UInt64, ts DateTime64(0, 'UTC'), v DateTime('UTC')) ENGINE = MergeTree ORDER BY k TTL ts + INTERVAL 1 DAY;
+SET enable_extended_results_for_datetime_functions = 1, materialize_ttl_after_modify = 0;
+ALTER TABLE t_where MODIFY TTL ts + INTERVAL 2 DAY DELETE WHERE tumbleStart(toStartOfHour(ts), toIntervalHour(1)) > toDateTime('2000-01-01 00:00:00', 'UTC');
+ALTER TABLE t_gb MODIFY TTL ts + INTERVAL 1 DAY GROUP BY k SET v = max(tumbleStart(toStartOfHour(ts), toIntervalHour(1)));
+SET enable_extended_results_for_datetime_functions = 0, materialize_ttl_after_modify = 1;
+
 -- `function_date_trunc_return_type_behavior = 1` makes `dateTrunc` of a `DateTime64` a `DateTime`.
 CREATE TABLE t_trunc (ts DateTime64(0, 'UTC')) ENGINE = MergeTree ORDER BY tuple() TTL ts + INTERVAL 1 DAY;
 SET function_date_trunc_return_type_behavior = 1;
@@ -80,3 +93,5 @@ DROP TABLE t_json;
 DROP TABLE t_in;
 DROP TABLE t_ext;
 DROP TABLE t_trunc;
+DROP TABLE t_where;
+DROP TABLE t_gb;
