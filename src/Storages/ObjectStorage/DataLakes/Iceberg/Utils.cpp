@@ -360,21 +360,14 @@ void writeMessageToFile(
     }
 }
 
-/// Number of read-back attempts used to resolve an ambiguous commit outcome, and the pause between
-/// them. A failed conditional write may still be in flight: nothing cancels it server-side and there
-/// is no ordering fence, so a read issued right after a client-side timeout can legitimately precede
-/// the write becoming visible. Retrying bounds that window instead of concluding from one probe.
+/// A failed conditional write may still become visible after the error, since nothing cancels it
+/// server-side, so a single read-back cannot conclude that it did not land.
 static constexpr size_t COMMIT_RECONCILIATION_ATTEMPTS = 4;
 static constexpr uint64_t COMMIT_RECONCILIATION_DELAY_MS = 200;
 
-/// Number of attempts used to converge `version-hint.text` onto the committed version. Only a
-/// failure that a later attempt could survive is retried, so this bound covers a lost hint-write
-/// race and a transient read, both of which resolve within a few tries.
 static constexpr size_t VERSION_HINT_CONVERGENCE_ATTEMPTS = 4;
 
-/// What the object store holds at the commit's target path, relative to what this writer tried to
-/// put there. Only `LostRace` licenses a cleanup: it is the sole outcome that proves the commit did
-/// not happen.
+/// Only `LostRace` proves that the commit did not happen, so only it licenses deleting the staged files.
 enum class MetadataCommitOutcome : uint8_t
 {
     Committed,
@@ -382,9 +375,6 @@ enum class MetadataCommitOutcome : uint8_t
     Unknown,
 };
 
-/// Reads the commit's target object back verbatim. All caches are bypassed: the question is what the
-/// store holds right now, which a cached copy cannot answer. Reads to EOF rather than stopping at
-/// the first balanced JSON object, so trailing bytes cannot hide behind a well-formed prefix.
 static std::string readMetadataFileContentUncached(
     const std::string & storage_metadata_path,
     CompressionMethod compression_method,
@@ -422,10 +412,7 @@ static std::string readMetadataFileContentUncached(
     return content;
 }
 
-/// Decides what actually happened to a conditional metadata write whose outcome the error does not
-/// reveal, by comparing the stored bytes against what was written. A conditional PUT whose response
-/// is lost after the store accepted it is indistinguishable, at the error, from a lost race, so the
-/// outcome is measured rather than inferred.
+/// Establishes the outcome of a failed conditional metadata write by comparing the stored bytes with the written ones.
 static MetadataCommitOutcome reconcileMetadataCommit(
     const std::string & storage_metadata_path,
     const std::string & metadata_file_content,
@@ -464,16 +451,12 @@ static MetadataCommitOutcome reconcileMetadataCommit(
         }
     }
 
-    /// The target is absent, or every read-back failed. Absence is not proof that the write did not
-    /// land, so this outcome stays unknown and the caller must not delete anything.
     return MetadataCommitOutcome::Unknown;
 }
 
-/// Best-effort convergence of `version-hint.text` after the metadata commit has landed. Once any
-/// writer has created the hint, every subsequent writer must keep it in sync, otherwise readers with
-/// `iceberg_use_version_hint = 1` observe stale data when a writer without the setting advances the
-/// table. Every failure here is logged and swallowed: the commit is already durable, so escalating
-/// would send a committed snapshot into the callers' cleanup handlers.
+/// Once any writer has created `version-hint.text`, every later writer must keep it in sync, or readers with
+/// `iceberg_use_version_hint = 1` observe stale data. Runs after the commit is durable, so failures are logged,
+/// never thrown: a throw would reach the callers' cleanup of a committed snapshot.
 static void convergeVersionHint(
     const std::string & storage_version_hint_path,
     Int32 committed_version,
@@ -522,8 +505,7 @@ static void convergeVersionHint(
                 }
                 catch (...)
                 {
-                    /// Whether the stored bytes name a version is a property of those bytes, so
-                    /// every further attempt reaches the same verdict.
+                    /// Deterministic for these bytes, so a retry cannot help.
                     LOG_WARNING(
                         log,
                         "Version hint {} holds '{}', which names no metadata version, so it cannot be advanced to {}. "
@@ -577,9 +559,7 @@ bool writeMetadataFileAndVersionHint(
     auto storage_version_hint_path = resolver.resolve(version_hint_path);
 
     auto outcome = MetadataCommitOutcome::Committed;
-    /// Separates a failure before the conditional write from a failure of the write itself. Only the
-    /// latter can have committed, so only it is reconciled; for the former the target was never
-    /// touched, which makes a lost race the correct report.
+    /// Only a failure after the write was issued can have committed, so only such a failure is reconciled.
     bool put_started = false;
     try
     {

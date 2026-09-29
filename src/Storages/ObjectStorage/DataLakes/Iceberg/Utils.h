@@ -52,15 +52,13 @@ void writeMessageToFile(
     const std::string & write_if_match = "",
     DB::CompressionMethod compression_method = DB::CompressionMethod::None);
 
-/// True for the exception `writeMetadataFileAndVersionHint` throws when it cannot establish whether
-/// the commit took effect. A caller that deletes its staged files on the way out must let this one
-/// pass through untouched: those files may belong to the snapshot the table now points at.
+/// True for the exception thrown when the commit's outcome cannot be established. A caller must not delete
+/// its staged files on it: they may belong to the snapshot the table now points at.
 bool isCommitStateUnknown(const DB::Exception & e);
 
 /// Tries to write metadata file and version hint file. Uses If-None-Match header to avoid overwriting existing files.
-/// Returns false only when the commit is known not to have taken effect, which is what licenses the
-/// caller to delete the files it staged. An outcome that cannot be established either way throws
-/// `UNKNOWN_STATUS_OF_TRANSACTION` (see `isCommitStateUnknown`).
+/// Returns false only when the commit is known not to have taken effect; an outcome that cannot be established
+/// throws `UNKNOWN_STATUS_OF_TRANSACTION`.
 /// Will try to write hint multiple times, but will not report failure to write hint.
 bool writeMetadataFileAndVersionHint(
     const IcebergPathResolver & resolver,

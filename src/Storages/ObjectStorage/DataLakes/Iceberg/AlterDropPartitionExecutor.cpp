@@ -650,8 +650,6 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
     }
     catch (const Exception & e)
     {
-        /// An unestablished commit may have taken effect, which makes this manifest list the one the
-        /// current snapshot references.
         if (isCommitStateUnknown(e))
             files_for_cleanup.clear();
         throw;

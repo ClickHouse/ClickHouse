@@ -1613,8 +1613,6 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (const Exception & e)
     {
-        /// An unestablished commit may have taken effect, which makes these manifests, manifest list
-        /// and data files the ones the current snapshot references.
         if (!Iceberg::isCommitStateUnknown(e))
             cleanup(false);
         throw;
