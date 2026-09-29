@@ -1235,8 +1235,9 @@ void AlterCommand::apply(
                 "Use DROP PROJECTION and ADD PROJECTION to change the query",
                 projection_name);
 
-        /// Intentionally not a mutation because the new settings apply lazily
-        /// to parts written by future inserts and merges; `MATERIALIZE PROJECTION` forces a rebuild.
+        /// Intentionally not a mutation: the new settings apply lazily, to projection parts written
+        /// by future inserts and merges. `MATERIALIZE PROJECTION` does not rebuild a projection that
+        /// a part already has, so existing data picks up the new settings only when its parts are merged.
         metadata.projections.replace(std::move(new_projection));
     }
     else if (type == DROP_PROJECTION)
