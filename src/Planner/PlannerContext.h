@@ -94,6 +94,9 @@ private:
     std::unordered_set<ColumnIdentifier> column_identifiers;
     size_t next_unique_id = 0;
 
+    /// Planner contexts that own the data `shared_table_expression_data` points to.
+    std::vector<PlannerContextPtr> shared_table_expression_data_owners;
+
     /// Table expression node to data map for correlated columns sources
     RawTableExpressionDataMap shared_table_expression_data;
 };

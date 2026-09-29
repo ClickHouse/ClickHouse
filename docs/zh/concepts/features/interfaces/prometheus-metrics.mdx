@@ -1,0 +1,85 @@
+---
+description: 'ClickHouse 中的 Prometheus 指标端点：在专用端口上暴露服务器指标，供 Prometheus 抓取。'
+sidebarTitle: 'Prometheus 指标端点'
+slug: /interfaces/prometheus-metrics
+title: 'Prometheus 指标端点'
+doc_type: 'reference'
+---
+
+ClickHouse 会在专用端口上以 Prometheus 文本格式暴露自身的指标，以便 Prometheus 服务器抓取。
+
+若要将 Prometheus 指标存储到 ClickHouse 并使用 PromQL 查询，请改为参阅 [Prometheus HTTP API 与 PromQL](/zh/interfaces/prometheus)。
+
+<Note>
+  如果你使用的是 ClickHouse Cloud，可以通过 [Prometheus 集成](/zh/products/cloud/features/monitoring/prometheus)将指标暴露给 Prometheus。
+</Note>
+
+## 配置指标端口 {#configure-the-metrics-port}
+
+当 Prometheus 服务器需要抓取 ClickHouse 自身的指标时，请配置一个专用端口：
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <endpoint>/metrics</endpoint>
+    <metrics>true</metrics>
+    <asynchronous_metrics>true</asynchronous_metrics>
+    <events>true</events>
+    <errors>true</errors>
+    <histograms>true</histograms>
+    <dimensional_metrics>true</dimensional_metrics>
+</prometheus>
+```
+
+## 配置扩展 handler {#configure-extended-handlers}
+
+`<prometheus.handlers>` 部分可用于在同一端口上配置更多扩展 handler。
+该部分与 [`<http_handlers>`](/zh/concepts/features/interfaces/http) 类似，但适用于 prometheus protocols：
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+                <labels>
+                    <environment>production</environment>
+                    <shard from_env="SHARD_NAME"></shard>
+                </labels>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+```
+
+## Settings {#settings}
+
+有关这些设置的完整行为，请参阅服务器设置参考中的 [Prometheus 章节](/zh/reference/settings/server-settings/settings/other#prometheus)。
+
+| 名称                           | 默认值        | 描述                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`                       | 无          | 提供 ClickHouse 指标的端口。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `endpoint`                   | `/metrics` | 用于抓取指标的 HTTP 端点，以 `/` 开头。不应与 `<handlers>` 部分同时使用。                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `url` / `headers` / `method` | 无          | 用于为请求匹配相应 handler 的过滤器，与 [`<http_handlers>`](/zh/concepts/features/interfaces/http) 部分中的同名字段类似。                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `info`                       | true       | 暴露 `ClickHouse_Info` gauge，其中带有服务器身份标记 (`name`、`version`、`version_describe`、`version_major`、`version_minor`、`version_patch`) 。                                                                                                                                                                                                                                                                                                                                                                                             |
+| `metrics`                    | true       | 暴露 [`system.metrics`](/zh/reference/system-tables/metrics) 中的指标。                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `asynchronous_metrics`       | true       | 暴露 [`system.asynchronous_metrics`](/zh/reference/system-tables/asynchronous_metrics) 中的指标。                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `events`                     | true       | 暴露 [`system.events`](/zh/reference/system-tables/events) 中的指标。                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `errors`                     | true       | 暴露 [`system.errors`](/zh/reference/system-tables/errors) 中的错误计数。                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `histograms`                 | true       | 暴露 [`system.histogram_metrics`](/zh/reference/system-tables/histogram_metrics) 中的指标。                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `dimensional_metrics`        | true       | 暴露 [`system.dimensional_metrics`](/zh/reference/system-tables/dimensional_metrics) 中的指标。                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `labels`                     | 无          | 添加到每个暴露指标上的常量标记。每个子元素定义一个标记：元素名称即标记名称 (必须匹配 `[a-zA-Z_][a-zA-Z0-9_]*`) ，元素值即标记值。标记值支持标准配置替换，例如 `from_env` 属性。若标记名称以 `__` 开头 (由 Prometheus 保留) ，或与该端点已为某个启用部分写入的标记冲突，则该名称会被拒绝。因此，保留名称集合取决于该端点实际的导出范围：启用 `histograms` 时包含 `le`；启用 `info` 时包含 `ClickHouse_Info` 的各标记 (`name`、`version`、`version_describe`、`version_major`、`version_minor`、`version_patch`) ；启用 `histograms` 或 `dimensional_metrics` 时，还包含所暴露的 histogram 或维度指标族使用的任何标记 (例如 `group`、`direction` 或 `operation_type`) 。由于这取决于端点实际暴露的内容，同一名称可能在一个端点上有效，而在另一个端点上被拒绝。 |
+
+## 检查端点 {#check-the-endpoint}
+
+```bash
+curl http://127.0.0.1:9363/metrics
+```

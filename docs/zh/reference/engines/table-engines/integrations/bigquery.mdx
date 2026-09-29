@@ -14,9 +14,7 @@ doc_type: 'reference'
 
 写入并非原子操作：大型 `INSERT` 会分批发送 (每个 request 最多 500 行，并会进一步拆分以确保不超过 BigQuery&#39;s 10 MB request-size limit) ，单个 request 本身也可能仅部分成功 (BigQuery 可以提交 request 中的部分行，同时通过 `insertErrors` 拒绝其余行) ；此外，在较早批次已被接受后，后续批次也可能被拒绝——这两种情况下，已提交的行都会保留在 BigQuery 中，而查询将报告 error。每一行都带有稳定的 `insertId` (根据 query id 和该行的序号生成) ，使 BigQuery 能够尽力对重试的行进行去重；由于 `insertId` 取决于序号，只有以相同顺序提供行时，重新运行相同的 `INSERT` 才会进行去重 (例如，采用单线程，并设置 `max_threads = 1` 和 `max_insert_threads = 1`) 。有关详情，请参阅 [`bigquery` 表函数的限制](/zh/reference/functions/table-functions/bigquery#limitations)。
 
-<div id="creating-a-table">
-  ## 创建表
-</div>
+## 创建表 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -28,7 +26,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 ENGINE = BigQuery(project, dataset, table[, access_token][, key = value, ...])
 ```
 
-列列表为可选项：省略时，将根据 BigQuery 表 schema 推断结构。指定时，列可以是 BigQuery 列的子集，且每列都必须声明为 BigQuery schema 映射到的准确类型 (请参阅[数据类型映射](/zh/reference/functions/table-functions/bigquery#data-type-mapping)) 。如果表定义省略了没有默认值表达式的 `REQUIRED` BigQuery 字段，则该表可读但不可写：BigQuery 流式插入会拒绝缺少此类字段的行，因此此类 `INSERT` 会被直接拒绝。如果省略的 `REQUIRED` 字段声明了 `defaultValueExpression`，BigQuery 会填入默认值，表仍可写入。`NULLABLE` `RECORD` 会映射为 `Nullable(Tuple(...))`，以确保 `NULL` 记录可无损往返；创建此类表 (无论结构是推断还是显式声明) 均需启用 `enable_nullable_tuple_type` 设置，这与任何 `Nullable(Tuple)` 列相同。显式声明列时，`RECORD` 字段也可声明为普通的 `Tuple(...)` 以避免使用该设置，但代价是整个记录的 `NULL` 会被强制转换为默认元组；与推断类型相比，唯一允许的差异是移除包裹 `RECORD` 的 `Tuple` 的 `Nullable`，且只能在该记录本身移除——不能将可空性移至其他 (内部或外部) 记录。
+列列表为可选项：省略时，将根据 BigQuery 表 schema 推断结构。指定时，列可以是 BigQuery 列的子集，且每列都必须声明为 BigQuery schema 映射到的准确类型 (请参阅[数据类型映射](/zh/reference/functions/table-functions/bigquery#data-type-mapping)) 。如果表定义省略了没有默认值表达式的 `REQUIRED` BigQuery 字段，则该表可读但不可写：BigQuery 流式插入会拒绝缺少此类字段的行，因此此类 `INSERT` 会被直接拒绝。如果省略的 `REQUIRED` 字段声明了 `defaultValueExpression`，BigQuery 会填入默认值，表仍可写入。`NULLABLE` `RECORD` 会映射为 `Nullable(Tuple(...))`，以确保 `NULL` 记录可无损往返。显式声明列时，`RECORD` 字段也可声明为普通的 `Tuple(...)`，但代价是整个记录的 `NULL` 会被强制转换为默认元组；与推断类型相比，唯一允许的差异是移除包裹 `RECORD` 的 `Tuple` 的 `Nullable`，且只能在该记录本身移除——不能将可空性移至其他 (内部或外部) 记录。
 
 **引擎参数**
 
@@ -39,9 +37,7 @@ ENGINE = BigQuery(project, dataset, table[, access_token][, key = value, ...])
 
 这些参数也可通过[命名集合](/zh/concepts/features/configuration/server-config/named-collections)传递，并使用 `key = value` 覆盖。有关完整的键列表及[身份验证方法](/zh/reference/functions/table-functions/bigquery#authentication)的说明，请参阅 [`bigquery` 表函数](/zh/reference/functions/table-functions/bigquery#arguments)。必须且只能提供一种身份验证方法；对于永久表，建议使用 `service_account_key` 或 `refresh_token`，而非 `access_token`，因为访问令牌会在一小时内过期。
 
-<div id="usage-example">
-  ## 使用示例
-</div>
+## 使用示例 {#usage-example}
 
 ```sql
 CREATE TABLE shakespeare
@@ -57,9 +53,7 @@ ENGINE = BigQuery('my-project', 'my_dataset', 'events',
 INSERT INTO events VALUES (1, 'started');
 ```
 
-<div id="related">
-  ## 相关内容
-</div>
+## 相关内容 {#related}
 
 * [`bigquery` 表函数](/zh/reference/functions/table-functions/bigquery)
 

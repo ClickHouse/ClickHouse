@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源文件](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="s3_base">
-  ## s3_base
-</div>
+## s3_base {#s3_base}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，用于指定在 s3 表函数和 S3 表引擎中解析相对 URL 时使用的基准 URL。"}]}]} />
 
@@ -27,17 +25,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 基准 URL 可以采用 `s3` 表函数接受的任何形式，例如 `s3://bucket/`、`https://bucket.s3.amazonaws.com/` 或 `https://endpoint/bucket/`。
 
-<div id="s3_check_objects_after_upload">
-  ## s3_check_objects_after_upload
-</div>
+## s3_check_objects_after_upload {#s3_check_objects_after_upload}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 通过 head 请求检查每个上传到 S3 的对象，确保上传成功
 
-<div id="s3_connect_timeout_ms">
-  ## s3_connect_timeout_ms
-</div>
+## s3_connect_timeout_ms {#s3_connect_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -45,9 +39,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 S3 磁盘中主机的连接超时时间。
 
-<div id="s3_create_new_file_on_insert">
-  ## s3_create_new_file_on_insert
-</div>
+## s3_create_new_file_on_insert {#s3_create_new_file_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -62,17 +54,7 @@ initial: `data.Parquet.gz` -&gt; `data.1.Parquet.gz` -&gt; `data.2.Parquet.gz`�
 
 更多详情请参见[此处](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data)。
 
-<div id="s3_disable_checksum">
-  ## s3_disable_checksum
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-向 S3 发送文件时不计算校验和。这样可以避免对文件进行过多处理，从而加快写入操作。总体而言，这样做基本是安全的，因为 MergeTree 表的数据本身就会由 ClickHouse 计算校验和；而且当通过 HTTPS 访问 S3 时，TLS 层在网络传输过程中已经提供了完整性保护。不过，在 S3 上额外计算校验和仍能提供纵深防御。
-
-<div id="s3_ignore_file_doesnt_exist">
-  ## s3_ignore_file_doesnt_exist
-</div>
+## s3_ignore_file_doesnt_exist {#s3_ignore_file_doesnt_exist}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -85,25 +67,19 @@ initial: `data.Parquet.gz` -&gt; `data.1.Parquet.gz` -&gt; `data.2.Parquet.gz`�
 * 1 — `SELECT` 返回空结果。
 * 0 — `SELECT` 抛出异常。
 
-<div id="s3_list_object_keys_size">
-  ## s3_list_object_keys_size
-</div>
+## s3_list_object_keys_size {#s3_list_object_keys_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 ListObject 请求一次批次中可返回的最大文件数
 
-<div id="s3_min_upload_part_size">
-  ## s3_min_upload_part_size
-</div>
+## s3_min_upload_part_size {#s3_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
 
 向 S3 执行分段上传时，单个上传分段的最小大小。
 
-<div id="s3_path_filter_limit">
-  ## s3_path_filter_limit
-</div>
+## s3_path_filter_limit {#s3_path_filter_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -112,17 +88,13 @@ ListObject 请求一次批次中可返回的最大文件数
 可从查询过滤器中提取并用于文件迭代的 `_path` 值的最大数量，而不是通过 glob 列举文件。
 0 表示禁用。
 
-<div id="s3_request_timeout_ms">
-  ## s3_request_timeout_ms
-</div>
+## s3_request_timeout_ms {#s3_request_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />
 
 向 S3 发送和从 S3 接收数据时的空闲超时时间。如果单次 TCP 读取或写入调用阻塞超过该时长，则会失败。
 
-<div id="s3_skip_empty_files">
-  ## s3_skip_empty_files
-</div>
+## s3_skip_empty_files {#s3_skip_empty_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -135,9 +107,7 @@ ListObject 请求一次批次中可返回的最大文件数
 * 0 — 如果空文件与请求的格式不兼容，`SELECT` 会抛出异常。
 * 1 — 对于空文件，`SELECT` 返回空结果。
 
-<div id="s3_slow_all_threads_after_network_error">
-  ## s3_slow_all_threads_after_network_error
-</div>
+## s3_slow_all_threads_after_network_error {#s3_slow_all_threads_after_network_error}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -146,25 +116,19 @@ ListObject 请求一次批次中可返回的最大文件数
 当设置为 `true` 时，如果某个 `s3` 请求遇到可重试的网络错误 (例如套接字超时) ，则所有向同一 Backup 端点发起 S3 请求的线程都会被放慢。
 当设置为 `false` 时，每个线程都会独立处理 S3 请求的退避，不受其他线程影响。
 
-<div id="s3_strict_upload_part_size">
-  ## s3_strict_upload_part_size
-</div>
+## s3_strict_upload_part_size {#s3_strict_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 向 S3 进行分段上传时，每个分段的精确大小 (某些实现不支持可变大小的分段) 。
 
-<div id="s3_throw_on_zero_files_match">
-  ## s3_throw_on_zero_files_match
-</div>
+## s3_throw_on_zero_files_match {#s3_throw_on_zero_files_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 当 ListObjects 请求未匹配到任何文件时，抛出错误
 
-<div id="s3_truncate_on_insert">
-  ## s3_truncate_on_insert
-</div>
+## s3_truncate_on_insert {#s3_truncate_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -177,9 +141,7 @@ ListObject 请求一次批次中可返回的最大文件数
 
 更多详情请参见[这里](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data)。
 
-<div id="s3_uri_style">
-  ## s3_uri_style
-</div>
+## s3_uri_style {#s3_uri_style}
 
 <SettingsInfoBlock type="S3UriStyle" default_value="auto" />
 
@@ -187,9 +149,7 @@ ListObject 请求一次批次中可返回的最大文件数
 
 强制设置 S3 端点样式。可能的值：auto、virtual&#95;hosted、path。
 
-<div id="s3_use_adaptive_timeouts">
-  ## s3_use_adaptive_timeouts
-</div>
+## s3_use_adaptive_timeouts {#s3_use_adaptive_timeouts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

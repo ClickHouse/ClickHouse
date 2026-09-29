@@ -1,7 +1,7 @@
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer=1;
 SET rewrite_in_to_join=1;
-SET allow_experimental_correlated_subqueries=1;
+SET allow_correlated_subqueries=1;
 SET correlated_subqueries_default_join_kind = 'left';
 SET enable_add_distinct_to_in_subqueries = 0; -- prevents DISTINCT addition changing IN→JOIN rewrite plan shape
 

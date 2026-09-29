@@ -158,10 +158,14 @@ The following virtual columns are supported for Kafka compatible streaming data 
 | `_header_keys`   | Parallel array of keys in the record Headers    | `Array(String)`        |
 | `_header_values` | Parallel array of headers in the record Headers | `Array(String)`        |
 | `_raw_message`   | Full Kafka Message                              | `String`               |
+| `_is_deleted`    | Whether the record is a soft-delete tombstone   | `Bool`                 |
 
 Note that the `_raw_message` column is only recommended for JSON data. 
 For use cases where only the JSON string is required (such as using ClickHouse [`JsonExtract*`](/reference/functions/regular-functions/json-functions#jsonextract-functions) functions to
 populate a downstream materialized view), it may improve ClickPipes performance to delete all the "non-virtual" columns.
+
+The `_is_deleted` column is available when tombstone handling is set to soft delete.
+It is `true` for Kafka tombstones and `false` for regular messages.
 
 ### Structured message keys {#structured-message-keys}
 

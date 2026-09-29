@@ -4,7 +4,7 @@
 -- aggregated independently, which a Nullable Tuple cannot represent) and plain Tuple columns in
 -- the sorting key (flattening renames the ordering column's leaves).
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS t_alter_nullable_tuple;
 

@@ -1,181 +1,194 @@
 ---
 title: 'オンボーディング'
 sidebarTitle: 'オンボーディング'
-description: 'ClickHouse Connector をインストールし、Kubernetes または Linux VM に登録する'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'onboarding']
+description: 'ClickHouse Connector を managed モードでインストールし、Kubernetes または Linux VM に登録する'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'onboarding', 'managed mode']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-このページでは、登録トークンの取得から正常に稼働し検証済みのコネクタの準備までの手順を説明します。コネクタは、Kubernetes クラスター (Helm) または Linux VM (systemd) のいずれかにインストールできます。標準的な手順はトークン登録です。環境から ClickHouse のエンドポイントに直接アクセスできない場合は、[エアギャップ環境およびミラーインストール](#air-gapped-and-mirrored-installs)を参照してください。
+<PrivatePreviewBadge />
 
-<div id="prerequisites">
-  ## 前提条件
-</div>
+このページでは、登録トークンの取得から、ClickHouse Cloud が駆動するサービスライフサイクルを executor が適用する managed モードでの検証済みコネクタの準備までの手順を説明します。コネクタは、Kubernetes クラスター (Helm) または Linux VM (systemd) にインストールできます。標準的な手順はトークン登録です。環境からコネクタエンドポイントに直接アクセスできない場合は、[エアギャップ環境およびミラーインストール](#air-gapped-and-mirrored-installs)を参照してください。executor を使わずに自分で運用する ClickHouse を監視する場合は、`--no-managed` を指定してください。
 
-すべてのインストールに共通する要件:
+## 前提条件 {#prerequisites}
 
-* **コネクタのエンドポイントと登録トークン**。オンボーディング時にClickHouseから提供されます (ステップ1を参照) 。
-* インストール時に`https://<subdomain>.<connector-domain>`および`https://<subdomain>.enroll.<connector-domain>`、ならびに`releases.clicklink.clickhouse.com`とAmazon ECR Publicへの**ポート443でのアウトバウンド通信**。これらのいずれかに到達できない場合は、[エアギャップ環境およびミラーインストール](#air-gapped-and-mirrored-installs)を参照してください。
-* コネクタの実行環境から到達可能な**ClickHouseネイティブリスナー**。セキュア (9440) または平文 (9000) で、Kubernetesでは自動検出されます。
-* **プロビジョニング用のClickHouse管理者アクセス**。パスワードなしの`default`ユーザー、パスワード (プロンプトで入力するか、`--ch-admin-password-stdin`で指定) 、またはオペレーター管理のインスタンスが必要です。後者では、プロビジョニングはCRの挿入に切り替わるため、パスワードは不要です。
-* リリースアーティファクトをダウンロードするすべての場所での**cosign**。インストーラーは常にSHA-256チェックサムを検証し、cosignがインストールされている場合はcosign署名検証も行います。`CLICKLINK_REQUIRE_COSIGN=1`を設定した場合、cosignなしでは続行しません。
+### 環境を登録する {#registration}
 
-Kubernetes (Helm) インストールの場合:
+登録 (enrollment) を行う前に、アカウントチームがお客様の環境を登録し、組織に対して managed モードを有効化します。以下の情報をアカウントチームに伝えてください:
 
-* **準拠した任意のKubernetesクラスター。**
-* コネクタのネームスペースを作成・読み取りでき、Secretの適用、ClickHouseポッド内でのexec (プロビジョニングではポッド内で`clickhouse-client`を実行) 、ServiceAccount、ロール、RoleBindingの作成、およびチャートのインストールが可能な**kubeconfig**。
-* **デフォルトのStorageClass**、または`--storage-class`で指定するクラス。トラブルシューターはPersistentVolumeClaimに状態を保持します。
-* **イメージ取得アクセス**: クラスターのノードは、パブリックECRイメージまたはホストするミラーを取得できる必要があります。
+* AWS アカウント ID、リージョン、EKS クラスター名
+* コネクタを Linux VM 上で実行するか、クラスター内で実行するか
+* プラットフォームコンポーネント用の node group
+* サービス用のネームスペースプレフィックス (デフォルトは `ns-`)
+* クラスターが ClickHouse イメージを取得する方法: ClickHouse Cloud がお客様のアカウント向けに設定するレジストリアクセスを利用するか、独自のミラーを利用するか
 
-Linux VM (systemd) インストールの場合:
+その後、ClickHouse Cloud からコネクタエンドポイントと使い捨ての登録トークンが発行されます。このトークンによって環境が識別されるため、登録時に追加の ID は不要です。
 
-* amd64またはarm64の**任意のsystemd Linuxホスト**。LinuxビルドはFIPSモードで実行されます。
-* インストーラーおよび`init`用の**rootアクセス**。
-* 空いているポート8080、8082、8084 (ヘルス) と9090、9092、9094 (メトリクス) 。サポートセッションゲートウェイが有効な場合は、8443も必要です。
-* プロビジョニング用の**Kubernetes APIサーバーへの管理者アクセス**。ホスト上のkubeconfig、`--server`と`--ca-data`、またはプロンプトで指定します。アクセスバンドルは、両方のターゲットでKubernetes ServiceAccountに紐付けられます。
+### すべてのインストールで共通 {#prerequisites-every-install}
+
+* **Connector v0.17.0 以降。** それより前のリリースには Managed モード、`platform` コマンド、`instances create` がありません。インストーラーは `--version` を指定しない限り最新のリリースを提供します。
+* **[登録](#registration)時に発行されるコネクタエンドポイントと登録トークン**。
+* **ポート 443 での egress**。宛先は `https://<subdomain>.<connector-domain>` と `https://<subdomain>.enroll.<connector-domain>`、さらにインストール時には `releases.clicklink.clickhouse.com` と Amazon ECR Public です。Managed モードでは、プラットフォームの同期や作成処理が ECR から chart を取得する際に、executor が Amazon ECR と STS にも接続します。これらのいずれかに到達できない場合は、[エアギャップ and ミラーインストール](#air-gapped-and-mirrored-installs) を参照してください。
+* Managed モードには **Amazon EKS クラスター** が必要です。`init` はそれ以外のクラスターでは Managed モードを拒否し、executor なしでインストールする方法として `--no-managed` を案内します。
+* **executor の 権限 に必要な クラスター admin 権限。** この 権限 では、executor を自身の prefix 配下の ネームスペース に限定する ClusterRole、ClusterRoleBinding、ValidatingAdmissionPolicy が作成されます。Kubernetes では、`init` の実行に使う kubeconfig にこの権限が必要です。VM ではホストの kubeconfig に必要で、ホストに admin 権限がない場合、`init` は権限を持つホストで実行すべきコマンドを出力します。
+* **ClickHouse はまだ不要です。** Managed インストールは service が存在しない状態から始まり、executor が作成した service が自動的に登録されます。Managed モードの `init` は、自身で運用している ClickHouse を登録しません (Kubernetes では `--instance` と `--instance-namespace` を拒否します) 。そのようなクラスターを監視するには、`--no-managed` を指定して別の connector deployment をインストールしてください。`--ch-user-suffix` を使えば、2 つの deployment が connector の user 名を衝突させることなく同一の instance を共有できます。この deployment には到達可能な native listener が必要で、セキュア接続なら 9440、plaintext なら 9000 を使用し、Kubernetes では自動検出されます。さらに、provisioning のために ClickHouse admin アクセスも必要です。パスワードなしの `default` user、`--ch-admin-password-stdin` もしくはプロンプトで渡すパスワード、または operator 管理の instance の場合は CR injection のいずれかを利用します。
+* **リリースアーティファクトをダウンロードするすべての環境での cosign。** インストーラーは常に SHA-256 checksum を検証します。cosign がインストールされていれば release の署名も検証し、`CLICKLINK_REQUIRE_COSIGN=1` を指定した場合は cosign なしでの処理続行を拒否します。
+
+### Kubernetes (Helm) インストールの場合 {#prerequisites-kubernetes}
+
+* **kubeconfig**：現在のコンテキストが EKS クラスターを指していること。コネクタのネームスペースの作成と読み取り、Secrets の適用、ServiceAccounts、Roles、RoleBindings の作成、チャートのインストール、および executor への クラスター-wide なアクセス権の付与が行える必要があります。
+* **AWS 認証情報**：workstation 上 (環境変数または profile) に、`eks:DescribeCluster` と `ec2:DescribeVpcs` の権限を持つもの。`init` はこれらを使用して、NetworkPolicy 用に クラスターの VPC の CIDR ブロックを読み取ります。ルックアップに失敗した場合は警告を表示し、そのリストは手動で入力できるよう空のまま残します。
+* **コネクタエンドポイントの背後にある CIDR**：インストール時にチャートのデフォルト拒否 NetworkPolicy を有効化するために必要です。指定がない場合、`init` はポリシーを disabled の状態で配置し、後から有効化する方法を表示します。
+* **デフォルトの StorageClass**、または `--storage-class` で指定するクラス。troubleshooter と executor は PersistentVolumeClaims 上に state を保持します。
+* **イメージのプルアクセス**：クラスターのノードが、パブリック ECR イメージまたは自身でホストする mirror をプルできる必要があります。
+
+### Linux VM(systemd)へのインストールの場合 {#prerequisites-vm}
+
+* **systemd を使用する任意の Linux ホスト**(amd64 または arm64)。Linux 向け builds は FIPS モードで動作します。
+* インストーラーおよび `init` のための **root アクセス**。
+* **空きポート**:health と metrics 用に 8082、8084、8086、executor のローカル API 用にループバックインターフェイス上の 9999、support-session gateway を有効化する場合はさらに 8443。
+* provisioning および executor の 権限 のための **Kubernetes API server への Admin アクセス**:ホスト上の kubeconfig、`--server` と `--ca-data`、またはプロンプトのいずれか。Access bundles は両方の target で Kubernetes ServiceAccount に紐付けられます。Managed モードでは、kubeconfig の current context が管理対象の EKS クラスターを指している必要があります。それ以外の context を経由した 権限 は `init` が拒否します。
 
 <Note>
-  `--skip-provision`はKubernetes要件を回避する唯一の方法ですが、ステージング専用です。ClickHouseユーザーのプロビジョニングをスキップし、VMではユニットの有効化と検証もスキップするため、これだけでは実行中のコネクタは作成されません。
+  VM において Kubernetes API server の要件を回避する方法は `--skip-provision` のみで、これは stage 専用です。ClickHouse user の provisioning、executor の 権限、ユニットの有効化、検証をスキップするため、これだけでは動作するコネクタは生成されません。Kubernetes ではスキップされるのは ClickHouse user の provisioning のみです。チャートの executor は 権限 を付与された ServiceAccount がなければスケジュールできないため、executor の 権限 は引き続き適用されます。
 </Note>
 
-<div id="install-and-enroll">
-  ## インストールと登録
-</div>
+## インストールと登録 {#install-and-enroll}
 
 <Steps>
   <Step title="コネクタのエンドポイントと登録トークンを取得する" id="get-endpoint-and-token">
-    ClickHouse は、オンボーディング時にコネクタのエンドポイントと一度限り有効な登録トークンを提供します。エンドポイントの形式は次のとおりです。
+    どちらも、環境の登録が完了するとアカウントチームから提供されます。エンドポイントの形式は次のとおりです:
 
     ```text
     https://<subdomain>.<connector-domain>
     ```
 
-    トークンは1回しか使用できず、すぐに期限切れになるため、受け取ったら速やかに登録を実行してください。シークレットとして扱ってください。CLIはコマンドライン引数、ディスク、ログからは読み取らず、非表示のプロンプト (またはstdinの最初の行) から読み取ります。使用前にトークンの期限が切れた場合は、新しいトークンを取得するためにClickHouseのアカウントチームにお問い合わせください。
+    このトークンは一度しか使用できず、短時間で有効期限が切れるため、受け取ったら速やかに登録してください。トークンはシークレットとして扱ってください。CLI はトークンを非表示のプロンプトまたは stdin の 1 行目から読み取り、コマンドライン引数やディスク、ログから読み取ることはありません。登録前に有効期限が切れてしまった場合は、アカウントチームに新しいトークンを依頼してください。
   </Step>
 
-  <Step title="CLI をインストールして動作を確認する" id="install-and-verify-the-cli">
-    1 つのコマンドで、検証済みの `clicklink` バイナリをインストールできます。このコマンドはプラットフォームとアーキテクチャ (macOS または Linux、amd64 または arm64) を検出し、最新のリリースをダウンロードして SHA-256 チェックサムを検証します。cosign がインストールされている場合はリリース署名も検証し、バイナリを `PATH` にインストールします。Kubernetes にインストールする場合は、クラスターに kubeconfig でアクセスできる任意のワークステーションでこのコマンドを実行します。
+  <Step title="CLI のインストールと確認" id="install-and-verify-the-cli">
+    1つのコマンドで、検証済みの `clicklink` バイナリをインストールできます。プラットフォーム (macOS または Linux、amd64 または arm64) を自動検出し、最新のリリースをダウンロードして SHA-256 チェックサムを検証します。cosign がインストールされている場合は、リリース署名も検証します。`/usr/local/bin` が書き込み可能な場合はそこに、そうでない場合は `~/.local/bin` にインストールされます (必要に応じてそのディレクトリを `PATH` に追加してください。`--bin-dir` で変更できます) 。Kubernetes にインストールする場合は、対象のクラスターに kubeconfig でアクセスできる任意のマシンで実行してください:
 
     ```bash
     curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | bash
     ```
 
-    VM にインストールする場合は、ホスト上で同じスクリプトを `--host` オプション付きで実行します。ダウンロードの検証後、`clicklink` システムユーザー、`/etc/clicklink`、`/var/lib/clicklink`、`/var/log/clicklink` の各ディレクトリ、systemd ユニットが作成され、デフォルトの `/etc/clicklink/redaction-patterns.yaml` も作成されます (既存のファイルがある場合は保持されます) 。これにより、次の手順は登録から直接開始できます。
+    VM へのインストールでは、ホスト上で同じスクリプトを `--host` 付きで実行します。検証済みのダウンロードが完了すると、`clicklink` システムユーザー、`/etc/clicklink`、`/var/lib/clicklink`、`/var/log/clicklink` の各ディレクトリ、および 3 つのコンポーネントすべての systemd ユニットが作成されます。`/etc/clicklink/redaction-patterns.yaml` には初期パターン一式が書き込まれます (既存のファイルはそのまま保持されます) 。そのため、次のステップは登録になります:
 
     ```bash
     curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | sudo bash -s -- --host
     ```
 
-    どちらの方法でも `--version vX.Y.Z` を指定してリリースを固定でき、いずれも安全に再実行できます。ホストへのインストールでは、以前のバイナリがバックアップされ、現在の設定は保持されます。実行前にスクリプトを確認する場合や、リリースの tarball を自分で取得して検証する場合は、[手動ダウンロードと検証](#manual-download-and-verification)を参照してください。
+    どちらの形式でも、リリースを固定するために `--version vX.Y.Z` を指定できます。いずれも再実行しても安全で、ホストへのインストールでは以前のバイナリがバックアップされ、稼働中の設定はそのまま保持されます。実行前にスクリプトを確認したい場合や、リリースの tarball を自分でフェッチして検証したい場合は、[手動でのダウンロードと検証](#manual-download-and-verification)を参照してください。
   </Step>
 
   <Step title="コネクタを登録してインストールする" id="enroll-and-install">
-    登録は 1 つのコマンドで完了します。トークンの引き換え、ClickHouse へのアクセスのプロビジョニング、署名済みクライアント証明書の取得、コネクタのインストール、検証までをエンドツーエンドで実行します。
+    `init --enroll` はトークンを引き換え、署名済みのクライアント証明書と executor の cluster-wide grant を取得したうえで、コネクタをインストールして検証します。
 
     <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="ClickHouse Connector の登録フロー" />
 
+    端末上では、`init` が `Enable managed mode (ClickHouse manages the lifecycle of ClickHouse services in this cluster)?` と尋ね、`yes` があらかじめ選択された状態になります。このプロンプトをスキップするには `--managed` を、executor を含まない観測専用インストールを行うには `--no-managed` を渡します。どちらのフラグも指定しない無人の新規インストールでは managed モードは無効のままになります (`--force` による再実行では、置き換えられる設定の状態が引き継がれます) 。そのため、スクリプトでは必ず `--managed` を渡してください。
+
     <Tabs>
-      <Tab title="Kubernetes">
-        ワークステーションから、次を実行します。
+      <Tab title="Kubernetes" id="enroll-kubernetes">
+        kube コンテキストを EKS cluster に向けた状態で、ワークステーションから次を実行します:
 
         ```bash
-        clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm
+        clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm --managed
         ```
 
-        非表示のプロンプトで登録トークンを貼り付けます。続いて CLI から、次の入力を求められます。
+        非表示のプロンプトに enrollment token を貼り付けます。`init` は現在のコンテキストの EKS ARN から cluster の名前、region、AWS account を読み取るため、cluster に関する入力は一切不要です。続いて、以下の入力を求められます:
 
         * コネクタのネームスペース (デフォルトは `clicklink`)
-        * ClickHouse インスタンスが実行されるネームスペース
-        * 検出された ClickHouse Service に基づいて初期設定されるインスタンスの接続情報
-        * クラスターにデフォルトの StorageClass がない場合にのみ、StorageClass
-        * サポートセッションの設定方針と、有効にする場合はオペレーターのメールアドレス許可リスト
-        * SQL によるプロビジョニングで必要な場合にのみ、ClickHouse 管理者パスワード
+        * StorageClass (cluster にデフォルトが設定されていない場合のみ)
+        * コネクタのエンドポイントの背後にある CIDR (NetworkPolicy の egress allowlist 用。空のままにすると、ポリシーは無効の状態でステージングされます)
+        * support-session の運用方針、および有効にする場合は operator のメール allowlist
 
-        この 1 回の実行で、すべての処理がエンドツーエンドで行われます。トークンを引き換え (登録バンドルを作業ディレクトリの `handoff.yaml` として保存) 、Helm values オーバーレイ `clicklink-values.yaml` を準備し、ネームスペースを作成して `clicklink-hmac` および `clicklink-mtls` Secrets を適用します。さらに、各インスタンス用の読み取り専用 ClickHouse ユーザーをプロビジョニングし (operator 管理のインスタンスでは SQL 権限付与または CR 挿入を自動選択) 、秘密鍵と CSR を生成して ClickHouse にクライアント証明書へ署名させます。組み込みの Helm クライアントを使用して `clicklink-connector` Helm リリースをインストールし (`helm` バイナリは不要) 、正常性を検証します。
+        `init` はトークンを引き換え、enrollment bundle を作業ディレクトリに `handoff.yaml` として保存します。さらに、`executor` ブロックと、NetworkPolicy の API サーバー CIDR として cluster VPC のレンジを含む Helm values オーバーレイ `clicklink-values.yaml` をステージングします。ネームスペースを作成し、`clicklink-hmac` Secret を適用し、`clicklink-mtls` Secret 内に秘密鍵を生成して CSR を書き出します。executor の cluster-wide access をコネクタのネームスペースに付与し、ClickHouse Cloud にクライアント証明書を署名させます。組み込みの Helm クライアント (`helm` バイナリは不要) で `clicklink-connector` Helm リリースをインストールし、ヘルスを検証します。
 
-        無人実行では、代わりにフラグを使用してプロンプトへの応答を指定します。非端末実行では `--enroll` が stdin の先頭行から登録トークンを読み取るため、リダイレクトしたパスワードまで読み込んでしまいます。そのため、保存済みバンドルをエントリポイントとして使用してください。
+        無人実行の場合は、プロンプトに答える代わりにフラグを指定します。保存した bundle をエントリポイントとして使用するか、enrollment token を stdin の 1 行目として `--enroll` にパイプします:
 
         ```bash
-        clicklink clctl init --handoff handoff.yaml --target helm \
-          --instance name=<name>,host=<service-host>,port=9440,secure=true,database=default,namespace=<clickhouse-namespace> \
+        clicklink clctl init --handoff handoff.yaml --target helm --managed \
+          --egress-cidrs 203.0.113.0/24 \
           --operators '<operator-email-1>,<operator-email-2>' \
-          --storage-class <storage-class> \
-          --ch-admin-password-stdin < admin-password.txt
+          --storage-class <storage-class>
         ```
 
-        ClickHouse インスタンスごとに `--instance` を指定します。サポートセッションを無効にするには、`--operators` ではなく `--no-gateway` を指定します。この 2 つのフラグは同時に使用できません。
+        support session を無効にするには、`--operators` の代わりに `--no-gateway` を渡します。この 2 つのフラグは同時に指定できません。
       </Tab>
 
-      <Tab title="Linux VM">
-        前の手順の `--host` インストールにより、バイナリ、`clicklink` システムユーザーとディレクトリ、systemd ユニットはすでに配置されています。root として登録します。
+      <Tab title="Linux VM" id="enroll-vm">
+        前の手順の `--host` インストールにより、バイナリ、`clicklink` システムユーザーとディレクトリ、systemd ユニットが配置済みです。root で登録します:
 
         ```bash
-        sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain>
+        sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain> --managed
         ```
 
-        非表示のプロンプトで登録トークンを貼り付けます。このコマンドはトークンを引き換え (登録バンドルを `handoff.yaml` として保存) 、`/etc/clicklink/config.yaml` を書き込み、API 認証情報と CA チェーンをインストールします。さらに、秘密鍵と CSR を生成して ClickHouse にクライアント証明書へ署名させ、両方のデーモン用に読み取り専用 ClickHouse ユーザーをプロビジョニングし、`clicklink-scraper` および `clicklink-troubleshooter` サービスを有効化して起動します。各サービスが稼働状態を報告するまで待機し、最後に完全なプレフライトチェック一式を実行します。
+        非表示のプロンプトに enrollment token を貼り付けます。`init` はインスタンスのメタデータからクラウドを、ホストの kubeconfig から EKS cluster を検出します。cluster の region と AWS account はその cluster の ARN から取得され、取得できない場合はインスタンスのメタデータが使われます。端末上では検出した cluster 名 (`EKS cluster to manage`) の確認を求め、kubeconfig に名前がない場合にのみ名前の入力を求めます。このプロンプトをスキップするには `--cluster-name` を渡します。続いて、support-session の運用方針を尋ねます。
+
+        `init` はトークンを引き換え、enrollment bundle を `handoff.yaml` として保存します。`executor` ブロックを含む `/etc/clicklink/config.yaml` を書き出し、API 認証情報と CA チェーンをインストールします。秘密鍵と CSR を生成し、ClickHouse Cloud にクライアント証明書を署名させます。executor の cluster-wide access bundle を `/etc/clicklink/access/executor/_cluster` 配下に生成し、ホストの kubeconfig を通じて適用します。次に `clicklink-scraper`、`clicklink-troubleshooter`、`clicklink-executor` の各ユニットを有効化して起動し、それぞれが稼働を報告するまで待機したうえで、プリフライトチェック一式を実行します。
       </Tab>
     </Tabs>
+
+    インストールの検証が完了すると、`init` は `Managed mode is on` というメッセージとともに、最初の service を準備するコマンドを表示します。[service を作成する](/ja/products/bring-your-own-cloud/connector/managed-services#create-a-service)に進んでください。
   </Step>
 
-  <Step title="正常に完了したことを確認する" id="verify-success">
-    `init` は、成功を報告する前にインストールを検証します。Kubernetes では、有効な各コンポーネントの `/livez` エンドポイントを最大 5 分間ポーリングします。さらに、サポートセッションゲートウェイが有効な場合は、ゲートウェイが未認証のプローブに対して `401` を返すことも確認します。VM では、各デーモンの `/livez` を待機した後、config、ファイル、ポートの競合、ネットワーク到達性、ClickHouse への接続、systemd ユニットの状態、コンポーネントごとのアクセス、ディスク、redaction パターンを含む完全な Preflight スイートを実行します。
+  <Step title="成功を確認する" id="verify-success">
+    `init` は、成功を報告する前にインストール内容を検証します。Kubernetes では、エグゼキューターを含む有効化された各コンポーネントの `/livez` エンドポイントを最大 5 分間ポーリングします。サポートセッションゲートウェイが有効な場合は、ゲートウェイが未認証のプローブに対して `401` を返すことも必須となります。VM では、各デーモンの `/livez` を待機したうえで、プリフライトスイート一式を実行します。このスイートでは、config、ファイル、ポートの競合、ネットワーク到達性、ClickHouse への接続性、3 つのユニットすべての systemd ユニットの状態、コンポーネントごとのアクセス、ディスク、マスキングパターンをチェックします。
 
-    Kubernetes で手動確認するには:
+    Kubernetes で手動で確認するには、次を実行します。
 
     ```bash
     CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
     kubectl get pods -n "${CONNECTOR_NAMESPACE}"
     ```
 
-    すべてのコネクタポッドが `Running` 状態で、Ready になっている必要があります。
+    すべてのコネクタのポッド、すなわち scraper、トラブルシューター、executor が `Running` かつ ready の状態である必要があります。
 
-    VM で手動で確認するには：
+    VM 上で手動で確認するには、次のようにします。
 
     ```bash
     sudo clicklink clctl preflight
     ```
 
-    すべてのチェックに合格すると `0` で終了し、いずれかのチェックが失敗すると `2` で終了して、失敗したチェックを出力します。
+    すべてのチェックに合格した場合は `0`、いずれかが失敗した場合は `2` を終了コードとして返し、失敗したチェックを出力します。
   </Step>
 
   <Step title="クリーンアップ" id="clean-up">
-    登録バンドル `handoff.yaml` (作業ディレクトリにモード `0600` で書き込まれます) は、インストール中に再実行や復旧を行う際、2つ目のトークンを必要としないようにするためのものです。コネクタの API シークレットが平文で含まれているため、インストールの検証後に削除してください：
+    enrollment bundle である `handoff.yaml` (作業ディレクトリ内、mode `0600`) により、インストール中の再実行や復旧を 2 つ目のトークンなしで進められます。このファイルにはコネクタの API secret が平文で格納されているため、インストールの検証が完了したら削除してください。
 
     ```bash
     rm handoff.yaml        # workstation (Kubernetes installs)
     sudo rm handoff.yaml   # VM host (init ran as root, so the file is root-owned)
     ```
 
-    実行中のコネクタは認証情報のコピーを独自に保持するため、運用上このファイルに依存することはありません。アップグレードや設定変更でこのファイルが必要になることはなく、後で再度 `init` を実行する必要が生じた場合は、ClickHouse のアカウントチームに新しい登録トークンを依頼し、`init --enroll --force` を実行してください。
+    実行中のコネクタは認証情報のコピーを自身で保持します。アップグレードや設定変更でこのファイルが必要になることはありません。後から再度 `init` が必要になった場合は、アカウントチームに新しい登録トークンをリクエストし、`init --enroll --force` を実行してください。
   </Step>
 </Steps>
 
-<div id="air-gapped-and-mirrored-installs">
-  ## エアギャップ環境およびミラーインストール
-</div>
+## エアギャップ環境とミラーインストール {#air-gapped-and-mirrored-installs}
 
-環境からアクセスできる範囲に応じて、2 つの独立した要素を帯域外でやり取りできます。
+環境からどこに到達できるかに応じて、2 つの独立した要素を帯域外で処理できます。executor には追加で必要なものはありません。他のコンポーネントと同じクライアント証明書と API 認証情報で認証を行います。cluster-wide の grant は、ネットワーク経由ではなく kubeconfig を通じて適用します。
 
-**バンドルの配布。** トークンをオンラインで引き換えたくない場合は、オンボーディング時に ClickHouse から登録バンドルを直接受け取れます。`--enroll` の代わりに `clicklink clctl init --handoff <bundle-file>` を実行してください。`--handoff` が置き換えるのはトークンの引き換えだけです。証明書の署名は引き続き登録エンドポイント経由で行われるため、`init` の実行元からそのエンドポイントにアクセスできる場合にのみ使用してください。
+**バンドルの受け渡し。** オンラインでトークンを引き換えたくない場合は、account team がオンボーディング時に enrollment bundle を直接お渡しできます。その場合は `--enroll` の代わりに `clicklink clctl init --handoff <bundle-file>` を実行してください。`--handoff` が置き換えるのはトークンの引き換えのみです。証明書の署名は引き続き enrollment endpoint 経由で行われるため、`--handoff` を単独で使うのは、`init` を実行する場所からその endpoint に到達できる場合に限ってください。
 
-**帯域外での証明書署名。** `init` の実行元から登録エンドポイントにアクセスできない場合は、`--no-auto-sign` を追加してください。`init` は必要なものをすべてステージングし、`clicklink.csr` を書き出します。CSR をアカウントチーム経由で ClickHouse に送信し、返却された証明書とチェーンを使用してインストールを完了します。VM では `sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt` を実行します。Kubernetes では、ステージング実行時に表示される完全な完了コマンド (`--target helm` を含む) を実行してください。送信されるのは CSR のみで、秘密鍵が環境外に出ることはありません。
+**帯域外での証明書署名。** `init` を実行する場所から enrollment endpoint に到達できない場合は、`--no-auto-sign` を追加します。`init` はすべてをステージングし、`clicklink.csr` を書き出します。この CSR を account team に送り、返送された証明書とチェーンを使ってインストールを完了してください。VM では `sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt` を実行します。Kubernetes では `clicklink clctl init --signed-cert client.crt --chain ca-chain.crt --target helm --target-namespace <connector-namespace> --values clicklink-values.yaml` を実行します。ステージング実行では、同等の `kubectl patch` と `helm upgrade --install` の一連のコマンドが出力されます。外部に出るのは CSR のみで、秘密鍵が環境外に出ることはありません。
 
-Kubernetes では、`--chart` に、`--chart-repo` で解決されるチャート名、`oci://` 参照、直接 URL、ローカルのアーカイブまたはディレクトリを指定できます。`--chart-version` はデフォルトで CLI 自身のバージョンとなるため、バイナリとチャートを同じバージョンで扱えます。独自のレジストリからイメージを配信するには、コンテナーイメージをミラーリングし、values オーバーレイで `image.repository` を設定します。egress パスがコネクタにプライベート CA を提示する場合は、`--api-private-ca` を指定してください。これにより、API エンドポイントはシステムトラストストアではなく、登録バンドル内の CA チェーンに対して検証されます。
+Kubernetes では、`--chart` は `--chart-repo` 経由で解決されるチャート名、`oci://` 参照、直接の URL、ローカルのアーカイブまたはディレクトリを受け付けます。`--chart-version` はデフォルトで CLI 自身のバージョンとなるため、バイナリとチャートは常に同じバージョンで揃います。自身の registry からイメージを配信するには、コンテナーイメージをミラーし、values overlay で `image.repository` を設定してください。egress 経路がコネクタに対して private CA を提示する場合は、`--api-private-ca` を渡します。するとコネクタは、システムのルート証明書に加えて enrollment bundle に含まれる CA チェーンを用いてコネクタエンドポイントを検証します。
 
-インストーラーはミラーからも利用できます。リリースアーティファクトと `install.sh` を独自のミラーでホストし、`CLICKLINK_MIRROR_URL` で指定してください。
+インストーラーはミラーからも動作します。リリースアーティファクトと `install.sh` を自身のミラーでホストし、`CLICKLINK_MIRROR_URL` でそこを指定してください。
 
-<div id="manual-download-and-verification">
-  ### 手動でのダウンロードと検証
-</div>
+### 手動でのダウンロードと検証 {#manual-download-and-verification}
 
 インストーラーをパイプで実行したくない場合は、リリースを自分で取得して検証してください。このスクリプトはプラットフォームとアーキテクチャを検出するため、macOS または Linux、amd64 または arm64 でそのまま実行できます。
 
 ```bash
 CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
-# Or pin a specific release: CLICKLINK_VERSION='v0.9.0'
+# Or pin a specific release: CLICKLINK_VERSION='v0.17.0'
 CLICKLINK_TARBALL="clicklink-${CLICKLINK_VERSION}-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz"
 for suffix in '' .sha256 .sig .crt; do
   curl -fsSLO "https://releases.clicklink.clickhouse.com/${CLICKLINK_TARBALL}${suffix}"
@@ -207,12 +220,27 @@ sudo install -m 0755 clicklink /usr/local/bin/clicklink
 
 VM では、tarball を展開し、展開先のディレクトリで `sudo ./install.sh` を実行します。リリースアーティファクトの隣に配置すると、`--host` と同じホストインストールが実行されます。
 
-<div id="if-something-fails">
-  ## 問題が発生した場合
-</div>
+## 失敗した場合 {#if-something-fails}
 
-同じコマンドを再実行してください。`init`は冪等であり、再実行しても同じ状態に収束します。既存のconfigとステージング済みファイルは保持され、完了済みの作業はスキップされます。手順の途中で失敗した場合、CLIは状況に応じた正確な復旧コマンドを出力します。出力されたコマンドは安全に繰り返し実行できます。
+同じコマンドを再実行してください。`init` は冪等であり、再実行しても同じ状態に収束し、既存の設定とステージ済みのファイルはそのまま維持され、完了済みの作業はスキップされます。ステップが途中で失敗した場合、CLI が復旧コマンドをそのまま出力します。これらは繰り返し実行しても安全です。
 
-登録が拒否された場合、トークンはすでに使用されているか (最終クリーンアップ手順まで存在する`--handoff handoff.yaml`を指定して再実行してください) 、無効または期限切れです (新しいトークンについてはClickHouseのアカウントチームにお問い合わせください) 。トランスポートエラーにより登録に失敗した場合、トークンは消費されていません。同じコマンドを再実行してください。
+登録が拒否された場合、そのトークンはすでに使用済みであるか、無効または期限切れです。使用済みトークンの場合は、クリーンアップのステップまで残る `handoff.yaml` を使い、`--handoff handoff.yaml` を指定して再実行してください。それ以外の場合は、アカウントチーム に新しいトークンを依頼してください。登録が通信エラーで失敗した場合は、同じコマンドを再実行してください。再実行が拒否された場合は、最初の試行でトークンが消費されているため、新しいトークンをリクエストしてください。
 
-`--force`は通常の再試行ではなく、明示的なリセットです。保持されているconfigまたはvaluesオーバーレイを上書きし、クライアント秘密鍵を再生成して、有効期限内のクライアント証明書を置き換えます (署名エンドポイントからの`409`は、すでに証明書が存在することを意味します) 。コネクタのクラスターUUIDは`--force`を使用しても保持されるため、再初期化後もコネクタのidentityは維持されます。認証情報のローテーションや証明書の置き換えが必要な場合に使用してください。再実行と復旧の詳細なモデルについては、[操作](/ja/products/bring-your-own-cloud/connector/operations)を参照してください。
+クラスターが EKS ではないために managed モードが拒否された場合は、`--no-managed` を指定して再実行し、executor なしでインストールしてください。VM 上では、current context が別のクラスターを指している kubeconfig も拒否されます。その場合は `kubectl config use-context` で context を切り替えてから再実行してください。
+
+executor の 権限 を適用できない場合:
+
+* **VM 上では**、`init` は失敗しません。バンドルをステージしたうえで、cluster admin 権限を持つ kubeconfig から実行すべきコマンドを警告として出力します。検証用の preflight は executor の state をありのままに報告します。出力されたコマンドを実行し、同じ `init` コマンドを再実行して検証してください:
+
+```bash
+sudo env KUBECONFIG=<path> clicklink clctl executor access apply --cluster --config /etc/clicklink/config.yaml
+```
+
+* **Kubernetes 上では**、権限 が拒否されると chart のデプロイ前に `init` が停止します。executor は 権限を付与された ServiceAccount にバインドするため、それがないと起動できないからです。ステージングされた overlay、Secrets、CSR は保持され、`init` は cluster admin 権限を持つ host から実行すべき 2 つのコマンドを出力します。それらを実行したうえで、同じ `init` コマンドを再実行して続行してください:
+
+```bash
+clicklink clctl executor access grant --cluster --sa-namespace <connector-namespace> --server <kubernetes-api-server-url> --output-dir <dir>
+clicklink clctl executor access apply --cluster --output-dir <dir>
+```
+
+`--force` は明示的なリセットであり、日常的な再試行では必要ありません。保持されている config や values overlay を上書きし、client key を再生成し、有効期限内のクライアント証明書も差し替えます (署名エンドポイントから `409` が返る場合は、すでに証明書が存在することを意味します) 。コネクタのクラスター UUID と managed モードの設定状態は保持されます。無人での再実行ではこの状態が維持され、端末上ではプロンプトのデフォルト値にもその状態が使われます (`--managed` または `--no-managed` を指定した場合を除く) 。認証情報のローテーションや証明書の差し替えを行う場合に `--force` を使用してください。再実行と復旧のモデル全体については [operations](/ja/products/bring-your-own-cloud/connector/operations) を参照してください。

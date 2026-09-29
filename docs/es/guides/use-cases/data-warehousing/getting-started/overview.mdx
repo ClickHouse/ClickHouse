@@ -134,6 +134,12 @@ ClickHouse ofrece tres formas de leer formatos de tabla abiertos: table function
     ```
 
     La sintaxis de la consulta es idéntica; solo cambia la cláusula `FROM`. Todas las funciones de ClickHouse SQL, los JOIN y las agregaciones funcionan de la misma manera independientemente de la fuente de datos.
+
+    <Note>
+      **Añada compute a las consultas elegibles**
+
+      On-Demand Compute está en private preview para consultas `SELECT` elegibles sobre datos compatibles de Apache Iceberg y Delta Lake. Asigna temporalmente workers adicionales de ClickHouse a través de su service y endpoint existentes, sin redimensionar el service. Consulte la [documentación de On-Demand Compute](/es/products/cloud/features/infrastructure/on-demand-compute) para conocer los requisitos de elegibilidad y las limitaciones.
+    </Note>
   </Step>
 
   <Step title="Cargar un subconjunto en ClickHouse" id="load-data">
@@ -231,9 +237,7 @@ ClickHouse ofrece tres formas de leer formatos de tabla abiertos: table function
   </Step>
 </Steps>
 
-<div id="next-steps">
-  ## Siguientes pasos
-</div>
+## Siguientes pasos {#next-steps}
 
 Ahora que ya has visto el flujo de trabajo completo, profundiza en cada área:
 

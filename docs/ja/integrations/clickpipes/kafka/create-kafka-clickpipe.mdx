@@ -37,6 +37,8 @@ Kafka ClickPipes は、ClickPipes UI を使用して手動でデプロイおよ�
 
   <Step title="スキーマレジストリを設定する (任意)" id="4-configure-your-schema-registry">
     Avro および Protobuf のトピックでは、有効なスキーマが必要です。スキーマレジストリの設定方法について詳しくは、[スキーマレジストリ](/ja/integrations/clickpipes/kafka/schema-registries) を参照してください。
+
+    Protobuf の場合は、**Schema registry** を無効のままにして、[トピックを選択する際にスキーマをアップロードする](#7-select-your-topic)こともできます。
   </Step>
 
   <Step title="リバース プライベート エンドポイントを設定する (任意)" id="5-configure-reverse-private-endpoint">
@@ -64,7 +66,9 @@ Kafka ClickPipes は、ClickPipes UI を使用して手動でデプロイおよ�
   </Step>
 
   <Step title="トピックを選択" id="7-select-your-topic">
-    トピックを選択すると、UI にそのトピックのサンプルドキュメントが表示されます。
+    トピックを選択します。スキーマレジストリを使用していない場合は、**Schema format** でデータフォーマットを選択してください。`Protobuf` の場合は、`.proto` ファイルまたはシリアライズされた `FileDescriptorSet` (最大 768 KiB) をアップロードします。
+
+    その後、UI にそのトピックのサンプルドキュメントが表示されます。
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="トピックを選択" size="md" />
   </Step>

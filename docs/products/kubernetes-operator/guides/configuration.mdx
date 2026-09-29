@@ -833,7 +833,7 @@ Before a replica is removed on scale-down, the operator first unloads client tra
 
 ### Server logging {#server-logging}
 
-Configure the ClickHouse server log through `spec.settings.logger`. Every field is optional with a safe default, so a cluster you never touch already logs at `trace` to both the container console and a rotated file on disk.
+Configure the ClickHouse server log through `spec.settings.logger`. Every field is optional with a safe default, so a cluster you never touch already logs at `information` to both the container console and a rotated file on disk.
 
 ```yaml
 spec:
@@ -841,35 +841,71 @@ spec:
     logger:
       logToFile: true   # Default: true. Set false to log only to the console
       jsonLogs: false   # Default: false. Set true for structured JSON log lines
-      level: trace      # Default: trace
-      size: 1000M       # Default: 1000M. Rotate a log file once it reaches this size
-      count: 50         # Default: 50. Number of rotated files to keep
+      level: information # Default: information
+      size: 100M        # Default: 100M. Rotate a log file once it reaches this size
+      count: 10         # Default: 10. Number of rotated files to keep
 ```
 
 | Field       | Default | Description                                                                                                       |
 |-------------|---------|-------------------------------------------------------------------------------------------------------------------|
 | `logToFile` | `true`  | When `false`, the operator drops the file targets and the server logs only to the container console.              |
 | `jsonLogs`  | `false` | When `true`, the operator adds `formatting.type: json` so each line is a JSON object.                             |
-| `level`     | `trace` | Log verbosity. One of `test`, `trace`, `debug`, `information`, `notice`, `warning`, `error`, `critical`, `fatal`. |
-| `size`      | `1000M` | Maximum size of a single log file before rotation.                                                                |
-| `count`     | `50`    | Number of rotated log files the server retains.                                                                   |
+| `level`     | `information` | Log verbosity. One of `test`, `trace`, `debug`, `information`, `notice`, `warning`, `error`, `critical`, `fatal`. |
+| `size`      | `100M`  | Maximum size of a single log file before rotation.                                                                |
+| `count`     | `10`    | Number of rotated log files the server retains.                                                                   |
 
 The operator always keeps console logging on so that `kubectl logs` works, and layers file logging on top when `logToFile` is `true`. A cluster with the defaults renders this `logger` block:
 
 ```yaml
 logger:
   console: true
-  level: trace
+  level: information
   log: /var/log/clickhouse-server/clickhouse-server.log
   errorlog: /var/log/clickhouse-server/clickhouse-server.err.log
-  size: 1000M
-  count: 50
+  size: 100M
+  count: 10
 ```
 
-The same `spec.settings.logger` block applies to a `KeeperCluster`; the operator writes its files under `/var/log/clickhouse-keeper/` instead.
+The same `spec.settings.logger` block applies to a `KeeperCluster`; the operator writes its files under `/var/log/clickhouse-keeper/` instead, and sets the Raft logger (`raft_logs_level`) to the same `level`.
 
 <Note>
 Console logging stays on regardless of `logToFile`, so `kubectl logs` keeps working even when you disable file logging. Set `jsonLogs: true` when you ship logs to a structured log store that parses JSON.
+</Note>
+
+### System log tables {#system-log-tables}
+
+The operator enables the `query_log`, `part_log`, `text_log`, `metric_log` and `asynchronous_metric_log` system tables. Because they live on the same volume as your data, `spec.settings.systemLogsTTLDays` bounds them with a table TTL. The defaulting webhook sets it to `30` when you create a cluster without the field. Set `0` to disable the TTL explicitly.
+
+```yaml
+spec:
+  settings:
+    systemLogsTTLDays: 14
+```
+
+<Note>
+The default applies only to new clusters. A cluster created before `systemLogsTTLDays` existed keeps unbounded system log tables until you set the field yourself.
+</Note>
+
+The TTL takes effect on the next server restart. Override it per table, tune any other system log setting, or disable a table entirely with the `@remove` attribute — all through `extraConfig`:
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      text_log:
+        ttl: event_date + INTERVAL 90 DAY DELETE
+      metric_log:
+        collect_interval_milliseconds: 60000
+      part_log:
+        "@remove": "1"
+```
+
+<Note>
+A disabled table is not dropped: the existing data stays on disk until you drop the table yourself.
+</Note>
+
+<Note>
+ClickHouse recreates a system table whose TTL changed and keeps the old data in a renamed table such as `system.text_log_0`. Drop those tables once you no longer need the history.
 </Note>
 
 ## Custom configuration {#custom-configuration}
@@ -890,6 +926,26 @@ spec:
 #### Useful links:
 * [YAML configuration examples](/concepts/features/configuration/server-config/configuration-files#example-1)
 * [All server settings](/reference/settings/server-settings/settings)
+
+### Reloadable extra configuration {#reloadable-extra-configuration}
+
+Any change to `extraConfig` restarts the ClickHouse pods, because the operator cannot know which settings apply at runtime. For settings ClickHouse reloads on the fly — `named_collections` is the common case — use `extraReloadableConfig` instead. The operator applies its changes through a configuration reload, without restarting pods:
+
+```yaml
+spec:
+  settings:
+    extraReloadableConfig:
+      named_collections:
+        customers:
+          url: "http://my-service.my-ns.svc:5400/Customers"
+          format: "JSONEachRow"
+```
+
+Keep each top-level section in exactly one of `extraConfig` and `extraReloadableConfig`; the operator warns when both set the same section.
+
+<Note>
+By using `extraReloadableConfig` you assert its settings are reload-safe. A restart-only setting placed here takes effect only at the next restart, without any error.
+</Note>
 
 ### Embedded extra users configuration {#embedded-extra-users-configuration}
 
@@ -1005,4 +1061,16 @@ The interval is controlled by the operator's `RESYNC_PERIOD` environment variabl
 env:
 - name: RESYNC_PERIOD
   value: "1m"
+```
+
+The operator reconciles clusters concurrently; the number of parallel reconciles per controller is set by `MAX_CONCURRENT_RECONCILES` (default `4`).
+
+## Pausing reconciliation {#pausing-reconciliation}
+
+Set the `clickhouse.com/pause-reconciliation: "true"` annotation on a `ClickHouseCluster` or `KeeperCluster` to stop the operator from reconciling it. The operator reports `ReconcileSucceeded=False` with reason `ReconciliationPaused` on the paused resource and otherwise leaves it untouched — useful for manual intervention when the operator would fight your changes. While paused, the operator reports all state conditions (including `Ready` and `Healthy`) as `Unknown` with reason `ReconciliationPaused` — it does not observe the cluster. Remove the annotation to resume; the pending spec changes are applied on the next reconciliation.
+
+```bash
+kubectl annotate clickhousecluster my-cluster clickhouse.com/pause-reconciliation=true
+# ... manual surgery ...
+kubectl annotate clickhousecluster my-cluster clickhouse.com/pause-reconciliation-
 ```

@@ -185,7 +185,7 @@ SELECT count() FROM data_complex_nullable_dict_key WHERE dictGetString('dict_com
 SETTINGS optimize_inverse_dictionary_lookup = 1;
 
 CREATE TABLE data_outer_nullable_tuple (t Nullable(Tuple(Nullable(UInt64), String))) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS allow_experimental_nullable_tuple_type = 1;
+SETTINGS enable_nullable_tuple_type = 1;
 INSERT INTO data_outer_nullable_tuple VALUES ((NULL, 'x')), ((1, 'x'));
 
 SELECT 'Nullable(Tuple(Nullable(K))), no rewrite - plan';

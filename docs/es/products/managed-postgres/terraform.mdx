@@ -17,9 +17,7 @@ Los servicios de ClickHouse Managed Postgres se pueden crear y administrar media
   Este recurso está en alpha y su comportamiento puede cambiar en futuras versiones del proveedor. Se distribuye en el build habitual del proveedor. Esta página documenta la versión **v3.21.0** del proveedor y posteriores. Consulta las [releases del proveedor](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) para más detalles.
 </Note>
 
-<div id="provider-setup">
-  ## Configuración del proveedor
-</div>
+## Configuración del proveedor {#provider-setup}
 
 Añada el proveedor de ClickHouse a su configuración de Terraform:
 
@@ -42,16 +40,14 @@ provider "clickhouse" {
 
 Consulta [Gestión de claves de API](/es/products/cloud/features/admin-features/api/openapi) para ver instrucciones sobre cómo crear una clave de API para usarla con el proveedor.
 
-<div id="resource-overview">
-  ## Resumen del recurso
-</div>
+## Resumen del recurso {#resource-overview}
 
 El recurso `clickhouse_postgres_service` tiene los siguientes argumentos:
 
 | Argumento                  | Obligatorio                                                         | Descripción                                                                                                                                                                                                                                                                                        |
 | -------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `name`                     | Sí                                                                  | Nombre del servicio legible para humanos. Es inmutable: si se cambia, el servicio se destruye y se vuelve a crear.                                                                                                                                                                                 |
-| `cloud_provider`           | Para una creación estándar                                          | Proveedor de Cloud que aloja la instancia. Actualmente solo se admite `aws`. Omítalo para una réplica de lectura o una restauración a un momento dado (se hereda del origen).                                                                                                                      |
+| `cloud_provider`           | Para una creación estándar                                          | Proveedor de Cloud que aloja la instancia: `aws` o `gcp` ([Private Preview](https://clickhouse.com/cloud/postgres#gcp-waitlist)). Omítalo para una réplica de lectura o una restauración a un momento dado (se hereda del origen).                                                                 |
 | `region`                   | Para una creación estándar                                          | Región de Cloud (por ejemplo, `us-east-1`). Omítala para una réplica de lectura o una restauración a un momento dado (se hereda del origen).                                                                                                                                                       |
 | `size`                     | Para una creación estándar                                          | Tamaño de la instancia (SKU de VM), por ejemplo `m6gd.large`. Se puede redimensionar sin recrearla. Omítalo para una restauración a un momento dado (la instancia restaurada se inicia con el tamaño de la copia de seguridad).                                                                    |
 | `postgres_version`         | No                                                                  | Versión principal de Postgres (por ejemplo, `18`). Cambiar la versión principal destruye y vuelve a crear el servicio.                                                                                                                                                                             |
@@ -71,9 +67,7 @@ Los siguientes atributos son de solo lectura y ClickHouse Cloud los completa des
   El valor de `password` se almacena en texto sin formato en el estado de Terraform. Proteja su archivo de estado en consecuencia, por ejemplo, con un backend remoto que use cifrado en reposo, o use `password_wo` para mantener la contraseña completamente fuera del estado.
 </Warning>
 
-<div id="create-a-service">
-  ## Crear un servicio
-</div>
+## Crear un servicio {#create-a-service}
 
 ```hcl
 resource "clickhouse_postgres_service" "example" {
@@ -98,9 +92,7 @@ resource "clickhouse_postgres_service" "example" {
 
 Un servicio estándar debe declarar `password` o `password_wo`. El valor debe tener al menos 12 caracteres, con al menos una letra minúscula, una mayúscula y un dígito. `password_wo` (con `password_wo_version`) aplica las mismas reglas de contraseña, pero nunca se almacena en el estado; cambia `password_wo_version` para rotarla. Como la API no devuelve credenciales, Terraform debe seguir siendo el único que establezca la contraseña: una contraseña rotada fuera de Terraform (Console o API) no se detecta, y la siguiente rotación gestionada por Terraform vuelve a aplicar el valor declarado.
 
-<div id="high-availability">
-  ## Alta disponibilidad
-</div>
+## Alta disponibilidad {#high-availability}
 
 El argumento `ha_type` controla el número de réplicas standby:
 
@@ -112,9 +104,7 @@ El argumento `ha_type` controla el número de réplicas standby:
 
 `ha_type` puede modificarse tras su creación; cambiarlo desencadena una transición de HA. Consulta [Alta disponibilidad](/es/products/managed-postgres/high-availability) para obtener más información.
 
-<div id="read-replicas">
-  ## Réplicas de lectura
-</div>
+## Réplicas de lectura {#read-replicas}
 
 Establece `read_replica_of` con el `id` de un servicio primario para crear una réplica de lectura en streaming. Una réplica hereda el `cloud_provider`, la `región`, la `postgres_version` y el superusuario del primario; omítelos (y la `contraseña`):
 
@@ -128,9 +118,7 @@ resource "clickhouse_postgres_service" "replica" {
 
 Consulta [réplicas de lectura](/es/products/managed-postgres/read-replicas) para más información.
 
-<div id="point-in-time-restore">
-  ## Restauración a un momento dado
-</div>
+## Restauración a un momento dado {#point-in-time-restore}
 
 Configura `restore_to_point_in_time` para crear un servicio restaurando la copia de seguridad de otro servicio a un momento determinado. `cloud_provider`, `region` y `postgres_version` se heredan del servicio de origen (omítelos); `size` y `ha_type` también deben omitirse:
 
@@ -147,9 +135,7 @@ resource "clickhouse_postgres_service" "restored" {
 
 Todo el bloque solo se usa durante la creación: cambiar `source_id` o `restore_target`, o eliminar el bloque, destruye y vuelve a crear el servicio. Consulta [Copia de seguridad y restauración](/es/products/managed-postgres/backup-and-restore) para más detalles.
 
-<div id="data-sources">
-  ## Fuentes de datos
-</div>
+## Fuentes de datos {#data-sources}
 
 Tres fuentes de datos complementarias le permiten consultar los servicios existentes:
 
@@ -168,9 +154,7 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
 }
 ```
 
-<div id="importing-existing-services">
-  ## Importación de servicios existentes
-</div>
+## Importación de servicios existentes {#importing-existing-services}
 
 Los servicios existentes de ClickHouse Managed Postgres se pueden importar al estado de Terraform mediante el ID del servicio:
 
@@ -180,9 +164,7 @@ terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxx
 
 La contraseña no se recupera al importar (la API no la devuelve). Después de importar, el primer `apply` cambia la contraseña del servicio a la `password` o `password_wo` declarada en su configuración.
 
-<div id="unsupported-operations">
-  ## Operaciones no admitidas
-</div>
+## Operaciones no admitidas {#unsupported-operations}
 
 Los siguientes elementos se omiten intencionadamente del esquema del recurso:
 

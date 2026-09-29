@@ -9,25 +9,19 @@ keywords: ['faturamento', 'clickpipes', 'preços de cdc', 'custos', 'preços']
 
 Esta seção descreve o modelo de preços dos conectores de Captura de Dados de Alterações (CDC) no ClickPipes.
 
-<div id="cdc-oltp">
-  ## CDC OLTP
-</div>
+## CDC OLTP {#cdc-oltp}
 
-| Conector         | Ciclo de vida do recurso   | Status de cobrança                                                                                                                                                                                                              |
-| ---------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Postgres CDC** | Disponibilidade Geral (GA) | Cobrado de acordo com as [dimensões de preços](#pricing-dimensions-oltp) listadas.                                                                                                                                              |
-| **MySQL CDC**    | Beta Pública               | **Gratuito** durante a Beta Pública. A cobrança terá início quando o conector passar para Disponibilidade Geral (GA), em **1º de setembro de 2026**, de acordo com as [dimensões de preços](#pricing-dimensions-oltp) listadas. |
-| **MongoDB CDC**  | Beta Pública               | **Gratuito** durante a Beta Pública. A cobrança terá início quando o conector passar para Disponibilidade Geral (GA), de acordo com as [dimensões de preços](#pricing-dimensions-oltp) listadas.                                |
+| Conector         | Ciclo de vida do recurso   | Status de cobrança                                                                                                                                                                               |
+| ---------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Postgres CDC** | Disponibilidade Geral (GA) | Cobrado de acordo com as [dimensões de preços](#pricing-dimensions-oltp) listadas.                                                                                                               |
+| **MySQL CDC**    | Disponibilidade Geral (GA) | Cobrado de acordo com as [dimensões de preços](#pricing-dimensions-oltp) listadas a partir de 1º de setembro de 2026.                                                                            |
+| **MongoDB CDC**  | Beta Pública               | **Gratuito** durante a Beta Pública. A cobrança terá início quando o conector passar para Disponibilidade Geral (GA), de acordo com as [dimensões de preços](#pricing-dimensions-oltp) listadas. |
 
-<div id="pricing-dimensions-oltp">
-  ### Dimensões de preço
-</div>
+### Dimensões de preço {#pricing-dimensions-oltp}
 
 O preço dos conectores de CDC OLTP é calculado com base em duas dimensões: [volume de dados](#data-volume-oltp) e [computação](#compute-oltp).
 
-<div id="data-volume-oltp">
-  #### Volume de dados
-</div>
+#### Volume de dados {#data-volume-oltp}
 
 Bytes brutos e não comprimidos lidos do stream de replicação do banco de dados e ingeridos no ClickHouse. O preço depende da fase de ingestão:
 
@@ -40,9 +34,7 @@ Bytes brutos e não comprimidos lidos do stream de replicação do banco de dado
 | **Carga inicial / resincronização** | $0.10 / GB |
 | **Replicação contínua (CDC)**       | $0.20 / GB |
 
-<div id="compute-oltp">
-  #### Computação
-</div>
+#### Computação {#compute-oltp}
 
 As unidades de computação provisionadas **por serviço** para ClickPipes de CDC são **compartilhadas** entre todos os ClickPipes de CDC de um serviço. As unidades de computação provisionadas por padrão dependem do tier da sua organização.
 
@@ -53,12 +45,10 @@ As unidades de computação provisionadas **por serviço** para ClickPipes de CD
 
 Como a computação é compartilhada, esse componente de preço permanece **fixo** por serviço à medida que o uso dos ClickPipes de CDC aumenta. É possível provisionar unidades de computação adicionais [escalonando o serviço de ClickPipes de CDC](https://clickhouse.com/docs/cloud/manage/api/swagger#tag/ClickPipes/operation/clickPipeCdcScalingUpdate), com o preço aumentando linearmente.
 
-<div id="example-oltp">
-  ### Exemplo
-</div>
+### Exemplo {#example-oltp}
 
 <Note>
-  Este exemplo combina vários conectores para ilustrar o modelo de preços de capacidade computacional compartilhada dos ClickPipes de CDC. Observe que o [MySQL CDC é gratuito durante a Beta Pública](#cdc-oltp).
+  Este exemplo combina vários conectores para ilustrar o modelo de preços de capacidade de computação compartilhada dos ClickPipes de CDC.
 </Note>
 
 Considere um serviço no tier **Scale** com a seguinte configuração:
@@ -66,9 +56,7 @@ Considere um serviço no tier **Scale** com a seguinte configuração:
 * 1 ClickPipe de **Postgres CDC** replicando 8 tabelas, com uma carga inicial de 200 GB e 100 GB de alterações (CDC) por mês.
 * 1 **MySQL CDC ClickPipe** replicando 5 tabelas, com uma carga inicial de 100 GB e 50 GB de alterações (CDC) por mês.
 
-<div id="cost-breakdown-oltp">
-  #### Detalhamento do custo mensal
-</div>
+#### Detalhamento do custo mensal {#cost-breakdown-oltp}
 
 ##### Primeiro mês {#cost-breakdown-first-month-oltp}
 
@@ -96,9 +84,7 @@ Nos ClickPipes de CDC, a computação é um **custo fixo compartilhado entre tod
 
 Para evitar bottlenecks de desempenho e reaproveitar de forma eficiente a computação provisioned dentro de um service, recomendamos replicar todas as tabela da mesma instance de banco de dados upstream por meio de um único ClickPipe, até que haja um motivo válido para fazer o split do workload em múltiplos ClickPipes ou para fazer scale up.
 
-<div id="cdc-dwh">
-  ## CDC de armazenamento de dados
-</div>
+## CDC de armazenamento de dados {#cdc-dwh}
 
 Os preços dos conectores de CDC para armazenamento de dados estão em desenvolvimento.
 
@@ -106,9 +92,7 @@ Os preços dos conectores de CDC para armazenamento de dados estão em desenvolv
 | ---------------- | ------------------------ | -------------------------------------- |
 | **BigQuery CDC** | Prévia Privada           | **Gratuito** durante a Prévia Privada. |
 
-<div id="faq-cdc">
-  ## Perguntas frequentes sobre ClickPipes de CDC
-</div>
+## Perguntas frequentes sobre ClickPipes de CDC {#faq-cdc}
 
 <Accordion title="Posso usar meus créditos do ClickHouse Cloud para ClickPipes de CDC?">
   Sim. A precificação do ClickPipes faz parte da precificação unificada do ClickHouse Cloud. Quaisquer

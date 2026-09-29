@@ -6,6 +6,8 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'browser-sdk', 'javascript', '会话回放', '前端']
 ---
 
+import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack 浏览器 SDK 可让你为前端应用接入埋点，
 并将事件发送到 ClickStack。这样，你就可以在同一时间线中
 查看网络请求、异常以及后端事件。
@@ -14,22 +16,15 @@ ClickStack 浏览器 SDK 可让你为前端应用接入埋点，
 这样你就可以直观地逐步回看并调试用户在使用
 应用时所看到的内容。
 
-本指南集成了以下内容：
+<ClickStackIntegrates signals={['logs', 'traces']} />
 
-* **控制台日志**
-* **会话回放**
-* **XHR/Fetch/Websocket 请求**
-* **异常**
-
-<div id="getting-started">
-  ## 入门
-</div>
+## 入门 {#getting-started}
 
 <br />
 
 <Tabs>
   <Tab title="导入包">
-    **通过导入包安装 (推荐)&#x20;**
+    **通过导入包安装 (推荐)**
 
     使用以下命令安装[浏览器包](https://www.npmjs.com/package/@hyperdx/browser)。
 
@@ -43,8 +38,8 @@ ClickStack 浏览器 SDK 可让你为前端应用接入埋点，
     import HyperDX from '@hyperdx/browser';
 
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', //托管 ClickStack 可省略
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // 托管 ClickStack 可省略
         service: 'my-frontend-app',
         tracePropagationTargets: [/api.myapp.domain/i], // 设置后可将前端链路追踪与后端请求关联起来
         consoleCapture: true, // 捕获控制台日志（默认为 false）
@@ -54,7 +49,7 @@ ClickStack 浏览器 SDK 可让你为前端应用接入埋点，
   </Tab>
 
   <Tab title="Script 标签">
-    **通过 Script 标签安装 (备选)&#x20;**
+    **通过 Script 标签安装 (备选)**
 
     除了通过 NPM 安装外，你也可以通过 script 标签引入并安装该脚本。
     这样会暴露全局变量 `HyperDX`，使用方式与 NPM 包相同。
@@ -65,8 +60,8 @@ ClickStack 浏览器 SDK 可让你为前端应用接入埋点，
     <script src="//www.unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
     <script>
       window.HyperDX.init({
-        url: 'http://localhost:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', //托管 ClickStack 可省略
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // 托管 ClickStack 可省略
         service: 'my-frontend-app',
         tracePropagationTargets: [/api.myapp.domain/i], // 设置后可将前端链路追踪与后端请求关联起来
       });
@@ -75,9 +70,7 @@ ClickStack 浏览器 SDK 可让你为前端应用接入埋点，
   </Tab>
 </Tabs>
 
-<div id="options">
-  ### 选项
-</div>
+### 选项 {#options}
 
 * `apiKey` - 你的 ClickStack 摄取 API key。
 * `service` - 事件在 HyperDX UI 中显示的服务名称。
@@ -96,13 +89,9 @@ ClickStack 浏览器 SDK 可让你为前端应用接入埋点，
 * `disableIntercom` -  (可选) 是否禁用 Intercom 集成 (默认 `false`) 
 * `disableReplay` -  (可选) 是否禁用会话回放 (默认 `false`)
 
-<div id="additional-configuration">
-  ## 其他配置
-</div>
+## 其他配置 {#additional-configuration}
 
-<div id="attach-user-information-or-metadata">
-  ### 附加用户信息或元数据
-</div>
+### 附加用户信息或元数据 {#attach-user-information-or-metadata}
 
 附加用户信息后，您就可以在 HyperDX UI 中搜索/过滤会话和事件。
 此方法可在客户端会话期间的任何时刻调用。当前客户端会话以及调用后发送的所有事件
@@ -121,9 +110,7 @@ HyperDX.setGlobalAttributes({
 });
 ```
 
-<div id="auto-capture-react-error-boundary-errors">
-  ### 自动捕获 React 错误边界中的错误
-</div>
+### 自动捕获 React 错误边界中的错误 {#auto-capture-react-error-boundary-errors}
 
 如果你正在使用 React，可以通过将错误边界组件传入 `attachToReactErrorBoundary` 函数，自动捕获
 发生在 React 错误边界中的错误。
@@ -136,9 +123,7 @@ import { ErrorBoundary } from 'react-error-boundary';
 HyperDX.attachToReactErrorBoundary(ErrorBoundary);
 ```
 
-<div id="send-custom-actions">
-  ### 发送自定义 action
-</div>
+### 发送自定义 action {#send-custom-actions}
 
 要明确跟踪特定的应用程序事件 (例如注册、提交等) ，你可以调用 `addAction` 函数，并传入事件名称以及可选的事件元数据。
 
@@ -152,9 +137,7 @@ HyperDX.addAction('Form-Completed', {
 });
 ```
 
-<div id="enable-network-capture-dynamically">
-  ### 动态启用网络捕获
-</div>
+### 动态启用网络捕获 {#enable-network-capture-dynamically}
 
 如需动态启用或禁用网络捕获，只需按需调用 `enableAdvancedNetworkCapture` 或 `disableAdvancedNetworkCapture` 函数。
 
@@ -162,9 +145,7 @@ HyperDX.addAction('Form-Completed', {
 HyperDX.enableAdvancedNetworkCapture();
 ```
 
-<div id="enable-resource-timing-for-cors-requests">
-  ### 为 CORS 请求启用资源时序信息
-</div>
+### 为 CORS 请求启用资源时序信息 {#enable-resource-timing-for-cors-requests}
 
 如果你的前端应用会向不同域名发起 API 请求，你可以
 选择让请求携带 `Timing-Allow-Origin`[请求头](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Timing-Allow-Origin)。这样 ClickStack 就能通过 [`PerformanceResourceTiming`](https://developer.mozilla.org/en-US/docs/Web/API/PerformanceResourceTiming)

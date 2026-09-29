@@ -139,11 +139,9 @@ spec:
   ## إعدادات الكبسولة
 </div>
 
-<div id="automatic-topology-spread-and-affinity">
-  ### التوزيع الطوبولوجي والتقارب التلقائيان
-</div>
+### التوزيع الطوبولوجي والتقارب التلقائيان {#automatic-topology-spread-and-affinity}
 
-وزّع الكبسولات عبر مناطق التوافر:
+وزّع pod عبر مناطق التوافر:
 
 ```yaml
 spec:
@@ -154,6 +152,21 @@ spec:
 
 <Note>
   تأكد من أن عنقود Kubernetes لديك يضم عددًا كافيًا من العقد عبر مناطق مختلفة لاستيفاء قيود التوزيع.
+</Note>
+
+عند استخدام مُوسّع تلقائي للعقد (Karpenter أو Cluster Autoscaler)، لا يمكن لقيد التوزيع وحده
+تجهيز منطقة لا تحتوي على أي عقد بعد — إذ يكتفي المُجدول بالمناطق المرئية له.
+اضبط `topologyMinDomains` على عدد مناطق التوافر لفرض التوزيع:
+
+```yaml
+spec:
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    topologyMinDomains: 3   # number of availability zones
+```
+
+<Note>
+  يتطلب `topologyMinDomains` وجود `topologyZoneKey`. تبقى pod في حالة `Pending` ما دام عدد المناطق المتاحة أقل من المطلوب، لذا أبقِ القيمة ضمن المناطق التي يستطيع عنقودك توفيرها.
 </Note>
 
 <div id="manual-configuration">
@@ -720,10 +733,10 @@ spec:
 
 يتحكم خياران في مدير المشغّل بحلقة التحقق من الترقية على مستوى عام:
 
-| Flag                              | Default | Effect                                                                                                                            |
-| --------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `--version-update-interval`       | `24h`   | عدد المرات التي يعيد فيها المشغّل جلب قائمة الإصدارات من المصدر الأصلي                                                            |
-| `--disable-version-update-checks` | `false` | يعطّل أداة التحقق من الترقية بالكامل. ولا يتم تعيين الحالة `VersionUpgraded`، كما لا يُنشأ أي مرور HTTP صادر إلى `clickhouse.com` |
+| Flag                              | Default | Effect                                                                                                                                   |
+| --------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `--version-update-interval`       | `24h`   | عدد المرات التي يعيد فيها المشغّل جلب قائمة الإصدارات من المصدر الأصلي. يجب أن تكون أكبر من صفر عند تفعيل عمليات التحقق من تحديث الإصدار |
+| `--disable-version-update-checks` | `false` | يعطّل أداة التحقق من الترقية بالكامل. ولا يتم تعيين الحالة `VersionUpgraded`، كما لا يُنشأ أي مرور HTTP صادر إلى `clickhouse.com`        |
 
 اضبط `--disable-version-update-checks=true` في البيئات المعزولة عن الشبكة أو عندما لا يكون مسموحًا بخروج الحركة إلى `clickhouse.com`.
 
@@ -835,9 +848,7 @@ spec:
   (`passwordType: password`).
 </Note>
 
-<div id="custom-users-in-configuration">
-  ### مستخدمون مخصّصون في التهيئة
-</div>
+### مستخدمون مخصّصون في التهيئة {#custom-users-in-configuration}
 
 قم بتهيئة مستخدمين إضافيين في ملفات التهيئة.
 
@@ -1086,4 +1097,17 @@ spec:
       configMap:
         key: password
         name: default-password
+```
+
+## المزامنة الدورية {#periodic-resync}
+
+إلى جانب الاستجابة لأحداث Kubernetes، يعيد الـ مشغّل مطابقة (reconcile) كل عنقود على فترات زمنية ثابتة. ويبقي ذلك شروط الحالة محدَّثة بالنسبة للحالات التي لا يمكن لأي watch رصدها — مثل صحة الـ نسخة متماثلة في ClickHouse، و quorum الخاص بـ Keeper — كما يعيد محاولة إجراءات المعالجة مثل تنظيف الـ pod العالق.
+
+ويُتحكَّم في هذه الفترة عبر متغير البيئة `RESYNC_PERIOD` الخاص بالـ مشغّل (القيمة الافتراضية `30s`). وهو ينطبق على موارد `KeeperCluster`، حيث تُعطِّل القيمة `0` المزامنة الدورية. أما موارد `ClickHouseCluster` فتستطلع `system.warnings` في ClickHouse كل 30 ثانية، وهو ما يعيد تشغيل عملية التسوية أصلاً، لذا لا تأثير لـ `RESYNC_PERIOD` عليها حالياً.
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: RESYNC_PERIOD
+  value: "1m"
 ```

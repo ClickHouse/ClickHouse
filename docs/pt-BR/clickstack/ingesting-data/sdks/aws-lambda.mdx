@@ -6,30 +6,18 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'observabilidade', 'aws-lambda', 'lambda-layers']
 ---
 
-**Este guia integra:**
+import { ClickStackIntegrates } from '/snippets/pt-BR/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ Logs</td>
-      <td className="pe-2">✅ Métricas</td>
-      <td className="pe-2">✅ Traces</td>
-    </tr>
-  </tbody>
-</table>
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-<div id="installing-the-otel-lambda-layers">
-  ## Instalando as camadas Lambda do OpenTelemetry
-</div>
+## Instalando as camadas Lambda do OpenTelemetry {#installing-the-otel-lambda-layers}
 
 O projeto OpenTelemetry fornece camadas Lambda separadas para:
 
 1. Instrumentar automaticamente o código da sua função Lambda usando a instrumentação automática do OpenTelemetry.
 2. Encaminhar os logs, métricas e traces coletados para o ClickStack.
 
-<div id="adding-language-specific-auto-instrumentation">
-  ### Adicionando a camada de instrumentação automática específica da linguagem
-</div>
+### Adicionando a camada de instrumentação automática específica da linguagem {#adding-language-specific-auto-instrumentation}
 
 As camadas Lambda de instrumentação automática específicas da linguagem instrumentam automaticamente o código da sua função Lambda com o pacote de instrumentação automática do OpenTelemetry correspondente à linguagem usada.
 
@@ -110,9 +98,7 @@ Se sua Lambda já estiver instrumentada com um SDK do OpenTelemetry, você pode 
   </Tab>
 </Tabs>
 
-<div id="installing-the-otel-collector-layer">
-  ### Instalando a camada Lambda do OpenTelemetry Collector
-</div>
+### Instalando a camada Lambda do OpenTelemetry Collector {#installing-the-otel-collector-layer}
 
 A camada Lambda do collector permite encaminhar logs, métricas e traces da sua função Lambda para o ClickStack sem afetar os tempos de resposta devido à latência do exporter.
 
@@ -155,7 +141,7 @@ A camada Lambda do collector permite encaminhar logs, métricas e traces da sua 
 
     exporters:
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         compression: gzip
 
     service:
@@ -192,7 +178,7 @@ A camada Lambda do collector permite encaminhar logs, métricas e traces da sua 
 
     exporters:
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         headers:
           authorization: <YOUR_INGESTION_API_KEY>
         compression: gzip
@@ -221,9 +207,7 @@ A camada Lambda do collector permite encaminhar logs, métricas e traces da sua 
 OPENTELEMETRY_COLLECTOR_CONFIG_FILE=/var/task/collector.yaml
 ```
 
-<div id="checking-the-installation">
-  ## Verificando a instalação
-</div>
+## Verificando a instalação {#checking-the-installation}
 
 Após implantar as camadas, agora você deverá ver traces coletados automaticamente
 da sua função Lambda no HyperDX. Os processadores `decouple` e `batching`
@@ -231,34 +215,26 @@ podem introduzir um atraso na coleta de telemetria, então os traces podem
 demorar para aparecer. Para emitir logs ou métricas personalizados, você precisará instrumentar seu código com os SDKs do
 OpenTelemetry específicos da sua linguagem.
 
-<div id="troubleshoting">
-  ## Solução de problemas
-</div>
+## Solução de problemas {#troubleshoting}
 
-<div id="custom-instrumentation-not-sending">
-  ### Instrumentação personalizada não está enviando
-</div>
+### Instrumentação personalizada não está enviando {#custom-instrumentation-not-sending}
 
 Se você não estiver vendo seus traces definidos manualmente nem outros dados de telemetria, talvez
 esteja usando uma versão incompatível do pacote da API do OpenTelemetry. Verifique se o pacote
 da API do OpenTelemetry está, no mínimo, na mesma versão ou em uma versão inferior à
 versão incluída no AWS Lambda.
 
-<div id="enabling-sdk-debug-logs">
-  ### Habilitando logs de depuração do SDK
-</div>
+### Habilitando logs de depuração do SDK {#enabling-sdk-debug-logs}
 
 Defina a variável de ambiente `OTEL_LOG_LEVEL` como `DEBUG` para habilitar os logs de depuração do
 SDK do OpenTelemetry. Isso ajuda a garantir que a camada de instrumentação automática
 esteja instrumentando sua aplicação corretamente.
 
-<div id="enabling-collector-debug-logs">
-  ### Habilitando logs de depuração do collector
-</div>
+### Habilitando logs de depuração do collector {#enabling-collector-debug-logs}
 
 Para diagnosticar problemas no collector, você pode habilitar os logs de depuração modificando o arquivo de
 configuração do collector para adicionar o exporter `logging` e definindo o nível de log de telemetria
-como `debug`, o que habilita logs mais detalhados da Lambda layer do collector.
+como `debug`, o que habilita logs mais detalhados da camada Lambda do collector.
 
 <Tabs>
   <Tab title="Managed ClickStack">
@@ -276,7 +252,7 @@ como `debug`, o que habilita logs mais detalhados da Lambda layer do collector.
       logging:
         verbosity: detailed
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         compression: gzip
 
     service:
@@ -314,7 +290,7 @@ como `debug`, o que habilita logs mais detalhados da Lambda layer do collector.
       logging:
         verbosity: detailed
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         headers:
           authorization: <YOUR_INGESTION_API_KEY>
         compression: gzip

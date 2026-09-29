@@ -54,6 +54,9 @@ public:
         const Iceberg::IcebergPathFromMetadata & metadata_file_path,
         Int64 parent_snapshot_id);
 
+    /// Callers that retry a commit generate the id once so their manifests stay valid across attempts.
+    Int64 generateSnapshotId();
+
     void generateAddColumnMetadata(const String & column_name, DataTypePtr type);
     void generateDropColumnMetadata(const String & column_name);
     void generateModifyColumnMetadata(const String & column_name, DataTypePtr type);

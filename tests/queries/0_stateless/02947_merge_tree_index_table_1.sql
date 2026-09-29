@@ -17,6 +17,7 @@ INSERT INTO t_merge_tree_index SELECT number % 5, number, 'v' || toString(number
 INSERT INTO t_merge_tree_index SELECT number % 5, number, 'v' || toString(number * number) FROM numbers(10, 10);
 
 SET output_format_pretty_named_tuples_as_json = 0;
+SET output_format_pretty_named_tuples_as_subcolumns = 0;
 
 SELECT * FROM t_merge_tree_index ORDER BY _part, a, b;
 SELECT * FROM mergeTreeIndex(currentDatabase(), t_merge_tree_index) ORDER BY part_name, mark_number FORMAT PrettyCompactNoEscapesMonoBlock;

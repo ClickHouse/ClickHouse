@@ -29,6 +29,7 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM ts_future_version" 2>&1 | grep -o "INCOMPAT
 $CLICKHOUSE_CLIENT -q "INSERT INTO ts_future_version (metric_name) SELECT 'up'" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
 $CLICKHOUSE_CLIENT -q "ALTER TABLE ts_future_version MODIFY SETTING filter_by_min_time_and_max_time = false" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE ts_future_version" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
+$CLICKHOUSE_CLIENT -q "SYSTEM CLEAR TIME SERIES CACHES ts_future_version" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
 $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE ts_future_version" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
 
 echo '--- the error is instructive ---'

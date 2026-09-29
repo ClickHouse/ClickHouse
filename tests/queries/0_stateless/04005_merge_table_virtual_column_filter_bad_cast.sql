@@ -1,7 +1,7 @@
 -- Previously caused LOGICAL_ERROR: Bad cast from type DB::ColumnString to DB::ColumnLowCardinality
 -- when filtering _table virtual column with tuple IN in `merge` table function.
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS test_local_1;

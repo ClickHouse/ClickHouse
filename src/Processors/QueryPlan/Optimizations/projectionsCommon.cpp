@@ -394,6 +394,8 @@ bool analyzeProjectionCandidate(
     ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
     const SelectQueryInfo & projection_query_info,
     const std::optional<TopKFilterInfo> & top_k_filter_info,
+    bool allow_query_condition_cache,
+    bool allow_top_k_prewhere_query_condition_cache,
     const ContextPtr & context)
 {
     RangesInDataParts projection_parts;
@@ -430,7 +432,12 @@ bool analyzeProjectionCandidate(
         projection_query_info,
         top_k_filter_info,
         context,
-        context->getSettingsRef()[Setting::max_threads]);
+        context->getSettingsRef()[Setting::max_threads],
+        /*max_block_numbers_to_read=*/nullptr,
+        /// The candidate's marks are reused by the projection read, so it must not consult the cache
+        /// when the analyzed read has it disabled for correctness (`disableQueryConditionCache`).
+        allow_query_condition_cache,
+        allow_top_k_prewhere_query_condition_cache);
 
     /// If projection analysis exceeded limits, skip this candidate
     if (!projection_result_ptr->isUsable())
@@ -532,7 +539,10 @@ void filterPartsAndCollectProjectionCandidates(
         reading.getTopKFilterInfo(),
         context,
         context->getSettingsRef()[Setting::max_threads],
-        nullptr);
+        /*max_block_numbers_to_read=*/nullptr,
+        /// The result filters the parts of the actual read, so keep the read's own cache gate.
+        reading.isQueryConditionCacheAllowed(),
+        reading.isTopKPrewhereQueryConditionCacheAllowed());
 
     /// Projection has no filtering effect, skip it
     if (projection_result_ptr->selected_marks == projection_marks_to_read)

@@ -1,0 +1,12 @@
+1. warm two cached quota contexts of the same user, without and with a quota key
+u_05218 1000
+u_05218 1000
+2. a tightening that keeps the key type reaches the warm context
+u_05218 900
+3. switching the key type to client_key must reach both warm contexts
+QUOTA_REQUIRES_CLIENT_KEY
+kb 800
+4. a user whose context was never cached is rejected the same way
+QUOTA_REQUIRES_CLIENT_KEY
+5. reverting the key type lets the never-detached context resume
+u_05218 700

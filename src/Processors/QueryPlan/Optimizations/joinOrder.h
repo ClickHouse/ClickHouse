@@ -122,6 +122,10 @@ struct QueryGraph
     /// Stored as alias-resolved JoinActionRef-s pointing to INPUT nodes.
     EquivalenceClasses<JoinActionRef> column_equivalences;
 
+    /// Relations read through a prepared join storage (`Join` engine, key-value storage), which is
+    /// looked up by a fixed key.
+    BitSet prepared_storage_relations;
+
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();
 

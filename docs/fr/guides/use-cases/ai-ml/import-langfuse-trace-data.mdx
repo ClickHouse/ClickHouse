@@ -1,0 +1,202 @@
+---
+slug: /use-cases/AI/import-langfuse-trace-data
+sidebarTitle: 'Importer des données de traces Langfuse Cloud'
+title: 'Importer des données de traces Langfuse Cloud'
+description: 'Comment charger dans ClickHouse Cloud, à l’aide de ClickPipes, des données de traces LLM exportées depuis Langfuse Cloud.'
+keywords: ['langfuse', 'observability', 'llm', 'clickpipes', 'stockage d’objet', 'stockage de blob', 'importer']
+doc_type: 'guide'
+---
+
+Ce guide vous explique comment charger des données de traces LLM depuis [Langfuse Cloud](https://cloud.langfuse.com/) dans ClickHouse Cloud afin de les analyser en temps réel.
+
+## Exporter depuis Langfuse Cloud {#export-from-langfuse-cloud}
+
+Suivez [ce guide](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage) pour configurer une intégration de stockage de blob dans Langfuse Cloud et planifier des exportations. Vous pouvez planifier l’exportation de vos données de trace vers un stockage d’objet jusqu’à toutes les `20 minutes`, ou selon une planification `hourly`, `daily` ou `weekly`. Par défaut, chaque exportation contient vos `observations` (enrichies des attributs de trace) ainsi que vos `scores`.
+
+### Organisation des fichiers exportés {#exported-file-layout}
+
+L&#39;intégration de stockage de blob de Langfuse Cloud écrit les données dans le bucket ou le conteneur de stockage cible selon l&#39;arborescence de répertoires suivante :
+
+```text
+{prefix}{project-id}/
+├── observations_v2/   # observations enriched with trace attributes
+├── scores/            # scores
+└── manifests/         # one JSON file per completed run with export metadata
+```
+
+## Importer dans ClickHouse Cloud {#import-into-clickhouse-cloud}
+
+Une fois qu&#39;une intégration de stockage de blob est configurée dans Langfuse Cloud, les données de trace sont exportées de manière planifiée vers le bucket ou le conteneur de stockage cible. Pour importer ces données dans ClickHouse Cloud, vous pouvez utiliser [ClickPipes](/fr/integrations/clickpipes) et ses connectors managés pour le stockage d’objet :
+
+| Source de données                                                                                                                                                                                                                                                                                           | Détails                                                                                                     |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| <span style={{display: 'inline-flex', alignItems: 'flex-start'}}><img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Logo Amazon S3" className="integration-table-logo" width="24" height="24" /><span><strong>Amazon S3</strong><br /><em>et stockages d’objet compatibles S3</em></span></span> | Intégration via les [S3 ClickPipes](/fr/integrations/clickpipes/object-storage/amazon-s3/overview).            |
+| <img src="/images/integrations/logos/gcs.svg" alt="Logo Google Cloud Storage" className="integration-table-logo" width="24" height="24" /> **Google Cloud Storage**                                                                                                                                         | Intégration via les [ClickPipe GCS](/fr/integrations/clickpipes/object-storage/google-cloud-storage/overview). |
+| <img src="/images/integrations/logos/azureblobstorage.svg" alt="Logo Azure stockage de blob" className="integration-table-logo" width="24" height="24" /> **Azure stockage de blob**                                                                                                                                | Intégration via les [ABS ClickPipes](/fr/integrations/clickpipes/object-storage/azure-blob-storage/overview).  |
+
+### Créer un ClickPipe {#create-a-clickpipe}
+
+Cet exemple utilise le S3 ClickPipe pour importer des données depuis un bucket S3 qui reçoit des exports planifiés depuis Langfuse Cloud. Il peut servir de modèle pour toutes les cibles d’export vers un stockage d’objet. Pour des instructions spécifiques à chaque source de données, consultez la [documentation ClickPipes](/fr/integrations/clickpipes).
+
+<Steps>
+  <Step title="Sélectionnez la source de données" id="1-select-the-data-source">
+    **1.** Dans ClickHouse Cloud, sélectionnez **Data sources** dans le menu de navigation principal, puis cliquez sur **Create ClickPipe**.
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Create ClickPipe" />
+    </Frame>
+
+    **2.** Cliquez sur la vignette **Amazon S3**. Cette vignette permet également de vous connecter à d&#39;autres services compatibles S3 qui ne figurent pas dans l&#39;interface de ClickPipes.
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_step1.webp" alt="Sélectionner la source de données Amazon S3" />
+    </Frame>
+  </Step>
+
+  <Step title="Configurer la connexion" id="2-set-up-the-connection">
+    **1.** Renseignez les informations dont ClickPipes a besoin pour se connecter et s’authentifier auprès du bucket qui reçoit vos exports Langfuse Cloud.
+
+    * **Méthode d’authentification** : le S3 ClickPipe prend en charge les [identifiants IAM](/fr/integrations/clickpipes/object-storage/amazon-s3/overview#iam-credentials) (`Credentials`) et l’[authentification basée sur un rôle IAM](/fr/integrations/clickpipes/object-storage/amazon-s3/overview#iam-role) (`IAM role`). ClickPipes n’a besoin que d’un accès en lecture au bucket. Consultez la [documentation de référence](/fr/integrations/clickpipes/object-storage/amazon-s3/overview#access-control) pour en savoir plus sur l’authentification et les permissions.
+
+    * **Chemin du fichier S3** : faites pointer le ClickPipe vers un sous-répertoire et utilisez le caractère générique `*` pour cibler l’ensemble des fichiers exportés. Vous **devez** créer un ClickPipe par sous-répertoire, car les fichiers exportés dans chaque sous-répertoire ont des schémas différents.
+
+      | Sous-répertoire    | Chemin du fichier                                                                             |
+      | ------------------ | --------------------------------------------------------------------------------------------- |
+      | `observations_v2/` | `https://{bucket-name}.s3.{region-code}.amazonaws.com/{prefix}{project-id}/observations_v2/*` |
+      | `scores/`          | `https://{bucket-name}.s3.{region-code}.amazonaws.com/{prefix}{project-id}/scores/*`          |
+
+      Consultez la [documentation de référence](/fr/integrations/clickpipes/object-storage/amazon-s3/overview#file-pattern-matching) pour connaître les motifs pris en charge, notamment la manière de cibler des fichiers répartis sur des préfixes imbriqués.
+
+    **2.** Sélectionnez **Continuous ingestion** pour que les nouveaux fichiers soient ingérés automatiquement au fur et à mesure que Langfuse les écrit dans le bucket cible.
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_continuous_ingestion.webp" alt="Informations de connexion pour un export Langfuse, avec l’ingestion continue activée." />
+    </Frame>
+
+    **3.** Cliquez sur **Incoming data**. ClickPipes récupérera les métadonnées de votre bucket et déduira le schéma de la table cible à l’étape suivante.
+  </Step>
+
+  <Step title="Valider les données entrantes" id="3-validate-incoming-data">
+    **1.** ClickPipes se connecte à votre bucket et liste les fichiers présents dans le path spécifié, en déduisant automatiquement leur format. Dans cet exemple, nous avons utilisé le format d’export par défaut de Langfuse Cloud (Parquet).
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_incoming_data.webp" alt="Fichiers correspondant au path d’export Langfuse, avec le type de fichier défini sur Parquet" />
+    </Frame>
+
+    **2.** Cliquez sur **Parse information**. ClickPipes s’appuie sur un fichier échantillon pour déduire le schéma des données exportées et mapper automatiquement les champs source vers une target table ClickHouse.
+  </Step>
+
+  <Step title="Configurer la destination" id="4-configure-target">
+    **1.** À cette étape, vous pouvez examiner le schéma déduit et personnaliser la configuration de la target table, notamment en ajustant le mappage des types de données, en définissant la [clé de tri](/fr/best-practices/choosing-a-primary-key) et en choisissant le [table engine](/fr/reference/engines/table-engines).
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_table_settings.webp" alt="Un export de scores écrivant dans une base de données langfuse dédiée, avec la clé de tri définie sur environment, name, timestamp, trace_id, observation_id et id" />
+    </Frame>
+
+    Sous **Upload data to**, laissez **New table** sélectionné et définissez :
+
+    * **Database** et **Name** : une base de données dédiée à vos données Langfuse (par exemple, `langfuse`) et un nom explicite pour la table de destination (par exemple, `scores`). Par défaut, ClickPipes utilise `default.s3-<uuid>` afin d&#39;éviter les conflits de noms.
+
+    * **Sorting key** : la [clé de tri](/fr/best-practices/choosing-a-primary-key) de la table de destination, qui détermine la manière dont ClickHouse stocke les données sur disque. Pour des performances optimales, la clé de tri doit correspondre à vos modèles d&#39;accès aux données, afin que les requêtes puissent ignorer le plus de données possible à la lecture.
+
+      | Sous-répertoire    | Table de destination | Clé de tri suggérée                                          |
+      | ------------------ | -------------------- | ------------------------------------------------------------ |
+      | `observations_v2/` | `observations_v2`    | `environment, start_time, trace_id, id`                      |
+      | `scores/`          | `scores`             | `environment, name, timestamp, trace_id, observation_id, id` |
+
+      Cette clé sert également à la déduplication dans les tables `ReplacingMergeTree` ; l&#39;ensemble de colonnes doit donc aussi identifier un enregistrement de manière unique. Si vous chargez **plusieurs projets Langfuse** dans une même table, ajoutez `project_id` en tête de la clé de tri. Consultez la [documentation de référence](/fr/best-practices/choosing-a-primary-key) pour savoir comment choisir une clé de tri.
+
+    * **Partition by** : laissez ce champ vide, sauf si vous prévoyez de faire expirer les anciennes traces. Dans ClickHouse, le [partitionnement](/fr/best-practices/choosing-a-partitioning-key) sert à la gestion des données plutôt qu&#39;à l&#39;optimisation des requêtes ; la clé de tri suggérée élague déjà les requêtes portant sur des plages temporelles. Si vous avez besoin d&#39;une politique de rétention, partitionnez selon la colonne de temps (`toYYYYMM(start_time)`, ou `toYYYYMM(timestamp)` pour `scores`) afin que l&#39;expiration d&#39;un mois de traces se résume à une seule opération `DROP PARTITION`.
+
+    **2.** Ensuite, développez **Advanced settings** et définissez **Engine** sur [`ReplacingMergeTree`](/fr/engines/table-engines/mergetree-family/replacingmergetree) pour garantir la déduplication, en utilisant `updated_at` comme colonne **Version**.
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_advanced_settings.webp" alt="Paramètres avancés avec le moteur ReplacingMergeTree et updated_at comme colonne de version" />
+    </Frame>
+
+    Les fenêtres d&#39;export de l&#39;intégration Blob Storage de Langfuse Cloud incluent leurs deux bornes ; un même enregistrement peut donc se retrouver dans plusieurs fichiers exportés. À moins que vos modèles de requêtes analytiques ne soient idempotents (par exemple, `uniq()`, `max()`, `min()`), vous **devez** gérer la déduplication dans le modèle de données en aval, en utilisant `ReplacingMergeTree` comme moteur cible.
+
+    <Note>
+      **Dédupliquer avec ReplacingMergeTree**
+
+      Ce table engine élimine les doublons au moyen de fusions en arrière-plan. Pour une déduplication complète à la lecture (c&#39;est-à-dire une sémantique de fusion à la lecture), vous **devez** utiliser le modificateur `FINAL` (ou des agrégations de type `argMax()`) au moment de la requête.
+    </Note>
+  </Step>
+
+  <Step title="Configurer les autorisations" id="5-configure-permissions">
+    ClickPipes crée un utilisateur dédié pour écrire les données dans la table de destination. Sélectionnez un rôle pour cet utilisateur interne, soit un rôle personnalisé, soit l&#39;un des rôles prédéfinis :
+
+    * `Full access` : accès complet au cluster. Obligatoire si vous utilisez une vue matérialisée ou un dictionnaire avec la table de destination.
+    * `Only destination table` : permissions `INSERT` sur la table de destination uniquement.
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permissions" />
+    </Frame>
+
+    Cliquez sur **Complete setup** pour créer le ClickPipe.
+  </Step>
+
+  <Step title="Terminer la configuration" id="6-complete-setup">
+    Et voilà, tout est prêt ! ClickPipes commencera par un backfill historique de tous les fichiers présents dans le path spécifié, puis ingérera les nouveaux fichiers au fur et à mesure de leur arrivée dans le bucket.
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_clickpipes_running.webp" alt="Les ClickPipes des observations et des scores en cours d'exécution dans Data sources" />
+    </Frame>
+
+    Répétez les étapes de ce guide pour chaque sous-répertoire que vous souhaitez importer dans ClickHouse Cloud.
+  </Step>
+</Steps>
+
+### Interroger les données de trace {#query-trace-data}
+
+Une fois les ClickPipes opérationnels, vous pouvez interroger vos données de trace Langfuse Cloud directement dans ClickHouse Cloud. Les exemples ci-dessous illustrent quelques schémas de requêtes courants : agrégation des coûts et de la latence, reconstitution d&#39;une trace individuelle et corrélation des scores avec les modèles et les prompts.
+
+#### Agrégations de métriques par intervalles de temps {#time-bucketed-metric-rollups}
+
+<Tip>
+  Certains champs, comme `usage_details` et `cost_details`, sont exportés sous forme de colonnes `Map`. Pour lire une valeur individuelle, accédez-y par sa clé (par exemple, `sum(cost_details['total'])`).
+</Tip>
+
+```sql
+SELECT
+    toStartOfHour(start_time) AS t,
+    provided_model_name,
+    count()                        AS spans,
+    quantile(0.95)(latency)        AS p95_latency,
+    sum(total_cost)                AS cost,
+    sum(usage_details['total'])    AS tokens
+FROM observations_v2 FINAL
+WHERE start_time >= now() - INTERVAL 7 DAY
+-- AND environment = '<environment>'
+GROUP BY t, provided_model_name
+ORDER BY t;
+```
+
+#### Reconstruction des traces {#trace-reconstruction}
+
+```sql
+SELECT *
+FROM observations_v2 FINAL
+WHERE trace_id = '<trace_id>'
+ORDER BY start_time;
+```
+
+#### Analyse de la qualité {#quality-analysis}
+
+```sql
+SELECT
+    o.provided_model_name,
+    s.name,
+    avg(s.value) AS avg_score
+FROM "s3-26237f63-84dc-4a7d-a0e1-7361cf55ee0b" AS s FINAL
+JOIN "s3-80899034-ce1e-4dc9-a4e6-b059ddec4175" AS o FINAL ON s.trace_id = o.trace_id
+--WHERE s.environment = '<environment>'
+GROUP BY o.provided_model_name, s.name
+ORDER BY avg_score DESC;
+```
+
+## Voir aussi {#see-also}
+
+* [Langfuse et ClickHouse](/fr/products/cloud/features/ai-ml/langfuse)
+* [Export de Langfuse Cloud vers un stockage de blob](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage)
+* [ClickPipes pour le stockage d’objet](/fr/integrations/clickpipes/object-storage/amazon-s3/overview)

@@ -1,0 +1,14 @@
+<clickhouse>
+    <profiles>
+        <profile_zk_yaml_include_override>
+            <include from_zk="/yaml_merge_base" yaml="true" />
+        </profile_zk_yaml_include_override>
+    </profiles>
+    <users>
+        <zk_yaml_include_override>
+            <password></password>
+            <profile>profile_zk_yaml_include_override</profile>
+            <quota>default</quota>
+        </zk_yaml_include_override>
+    </users>
+</clickhouse>

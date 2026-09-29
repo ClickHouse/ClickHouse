@@ -1,0 +1,188 @@
+---
+title: 設定可能なバックアップ CLI
+---
+
+このページでは、[ClickHouse CLI](/ja/products/cloud/features/cli) (`clickhousectl`) を使用して、コマンドラインから ClickHouse Cloud サービスのバックアップスケジュールを閲覧・変更する方法を説明します。コマンドは非対話型で、`--json` を指定すると `clickhousectl` は JSON を出力します。
+
+設定可能なバックアップは、Scale および Enterprise プランで利用できます。
+
+## 前提条件 {#prerequisites}
+
+ClickHouse CLI をインストールします。
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+また、`jq` も必要です。
+
+バックアップ設定の変更は書き込み操作であるため、[API キーによる認証](/ja/products/cloud/features/admin-features/api/openapi)が必要です。OAuth ログインは読み取り専用です:
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+または、環境変数 `CLICKHOUSE_CLOUD_API_KEY` と `CLICKHOUSE_CLOUD_API_SECRET` を設定します。`clickhousectl cloud auth status` を実行し、**active** な認証情報が scope `read/write` のものであることを確認してください。以前の `auth login` で保存された認証情報は環境変数よりも優先されます。その場合、`Env vars` の行に scope `read/write` と表示されていても非アクティブ (`Configured (inactive, outranked by credentials file)`) とマークされ、以下の書き込み系コマンドは保存済みの認証情報で実行されます。環境変数を使用したい場合は、先に `clickhousectl cloud auth logout` を実行してください。
+
+## サービス ID を確認する {#find-the-service-id}
+
+Backup の設定はサービスごとに行います。サービス名から ID を検索します:
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json \
+  | jq -r '.[] | select(.name=="<service-name>") | .id')
+```
+
+複数の組織に所属している場合、組織を自動検出できないため、このコマンドは `Multiple organizations found. Specify --org-id to choose one.` というエラーで失敗します。`clickhousectl cloud org list` で所属する組織を一覧表示し、このコマンドおよび以降のすべての `backup-config` コマンドに `--org-id <org-id>` を指定してください。
+
+## 現在のバックアップ設定を確認する {#read-the-current-backup-configuration}
+
+```bash
+clickhousectl cloud service backup-config get "$CH_ID" --json
+```
+
+デフォルトのスケジュールをそのまま使用しているサービスでは、次のように報告されます:
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 24.0
+}
+```
+
+`backupStartTime` は、開始時刻が設定されている場合にのみ出力に表示されます。
+
+## 保持期間と頻度の変更 {#change-retention-and-frequency}
+
+`backup-config update` は、コンソールのフォームと同じ設定 (保持期間 (`--backup-retention-period-hours`) 、頻度 (`--backup-period-hours`) 、開始時刻 (`--backup-start-time`) ) を受け取り、適用後の構成を出力します。省略したフラグの値は現在の設定のまま維持されます:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --backup-period-hours 12 \
+  --backup-retention-period-hours 48 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+変更は即座に反映されます。設定を読み出して確認してください:
+
+```bash
+clickhousectl cloud service backup-config get "$CH_ID" --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+## バックアップ開始時刻を設定する {#set-a-backup-start-time}
+
+`--backup-start-time` は、UTC での 1 日の開始時刻を正時 (`HH:00`) で指定します。開始時刻を指定すると頻度に制約がかかり、バックアップの周期は `24` 時間または `48` 時間である必要があります。周期は同じコマンドで渡すか、あらかじめサービスに保存されていなければなりません。`clickhousectl 0.4.2` 以降では、フォーマットと周期のルールはいずれも API 呼び出しの前にクライアント側でチェックされます。正時でない時刻や、`2:00` のようにゼロ埋めされていない時刻は、引数パーサーに拒否され、終了コード `2` が返されます:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 02:30 --json
+```
+
+```text
+error: invalid value '02:30' for '--backup-start-time <BACKUP_START_TIME>': invalid backup start time '02:30': expected HH:00 with HH from 00 to 23
+```
+
+`--backup-start-time` を `24` または `48` 以外の `--backup-period-hours` と併せて指定した場合も同様に、リクエストが送信される前に拒否され、終了コード `1` が返されます。
+
+```text
+Error: --backup-period-hours must be 24 or 48 when --backup-start-time is set
+```
+
+`--backup-period-hours` は省略できます。省略した場合、サービスは現在の period をそのまま維持しますが、その保存済みの period 自体が `24` または `48` である必要があります。デフォルトの schedule のままのサービスでは period が `24` のため、開始時刻の指定だけで十分です。上記のサービスは前の step で `12` に設定しているため、period を省略すると失敗します。`clickhousectl` はまず保存されている configuration を読み取り、終了コード `1` で拒否します。この場合も API は呼び出されません:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 03:00 --json
+```
+
+```text
+Error: the stored backup period is 12 hours, but --backup-start-time requires 24 or 48. Pass --backup-period-hours 24 or --backup-period-hours 48 in the same call.
+```
+
+period を明示的に指定するのが有効な組み合わせです。
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --backup-start-time 02:00 \
+  --backup-period-hours 24 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 48.0,
+  "backupStartTime": "02:00"
+}
+```
+
+逆のケースはクライアント側では検出されません。開始時刻がすでに保存されている状態で、`--backup-period-hours` のみを `24` または `48` 以外の値に変更する更新を行うと、そのリクエストは API まで到達し、そこで失敗して終了コード `1` が返されます:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" --backup-period-hours 12 --json
+```
+
+```text
+Error: BAD_REQUEST: customBackupPeriod must be 24 or 48 hours when customBackupStartTime is set
+```
+
+次の例のように、同じコマンド内で開始時刻をクリアすれば、これを回避できます。
+
+## バックアップ開始時刻をクリアする {#clear-the-backup-start-time}
+
+`--clear-backup-start-time` は、保存されている開始時刻を削除し、期間に対する `24`/`48` 時間の制限を解除します。
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --clear-backup-start-time \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+`backupStartTime` は `null` として報告されるのではなく出力から消え、`backup-config get` でも返されなくなります。一度も設定されていない開始時刻をクリアした場合は no-op となりますが、終了コードは `0` になります。
+
+`--backup-period-hours` と組み合わせれば、開始時刻のクリアと任意の period の設定を1つのコマンドで実行できます。これが上記の API error を解消する方法です。
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --clear-backup-start-time \
+  --backup-period-hours 12 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+`--clear-backup-start-time` と `--backup-start-time` は併用できません。パーサーはこの組み合わせを終了コード `2` で拒否します:
+
+```text
+error: the argument '--clear-backup-start-time' cannot be used with '--backup-start-time <BACKUP_START_TIME>'
+```
+
+開始時刻を削除するのではなく変更したい場合は、新しい `--backup-start-time` のみを指定してください。保存されている値が上書きされます。
+
+<Note>
+  バックアップスケジュールを変更すると、一部の backups がサービスの既定の backups の対象外となる場合があり、Storage の月額料金が増加する可能性があります。[「backup コストの理解」](/ja/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost)を参照してください。
+</Note>

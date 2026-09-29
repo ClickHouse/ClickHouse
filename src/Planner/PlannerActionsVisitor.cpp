@@ -2,7 +2,7 @@
 #include <ranges>
 #include <Planner/PlannerActionsVisitor.h>
 
-#include <AggregateFunctions/WindowFunction.h>
+#include <WindowFunctions/IWindowFunction.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>

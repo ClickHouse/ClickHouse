@@ -1,0 +1,231 @@
+---
+title: 'マネージドサービス'
+sidebarTitle: 'マネージドサービス'
+slug: /products/bring-your-own-cloud/connector/managed-services
+description: 'ClickHouse Cloud がクラスター内で運用する ClickHouse サービスを、コネクタ executor 経由で作成・監視・廃止する'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'managed mode', 'executor']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+managed モードでは、コネクタは 3 つ目のコンポーネントである executor を実行します。ClickHouse Cloud はこれを介して、お使いの Kubernetes クラスター 内で ClickHouse サービス を運用します。このページでは、サービス の作成、その ステータス の確認、ClickHouse Cloud がそれに対して行う処理、そして廃止されるまでの流れについて説明します。
+
+## managed モードの動作 {#what-managed-mode-does}
+
+executor は、scraper やトラブルシューターと同じ `clicklink` バイナリに含まれるデーモンです。コネクタエンドポイントへのアウトバウンドの WebSocket チャネルを保持し、ClickHouse Cloud からライフサイクルコマンドを受信します。受信した各コマンドは、設定対象となっている単一の Kubernetes クラスターに適用され、その結果はそのチャネルを通じて報告されます。他のコンポーネントと同様に、アウトバウンド接続のみを行います。すなわち、ClickHouse Cloud からクラスターへ接続されることはなく、executor のローカル API はループバックにバインドされます。
+
+managed モードは、プライベートプレビュー期間中、S3 storage を使用する Amazon EKS で利用できます。環境を登録する際に、アカウントチームが有効化します。`init` は、EKS クラスターを指していない kube context を拒否します。
+
+各サービスには、ユーザー自身が所有する 3 つのクラウドリソースが必要です。データ用 バケット、バックアップ用 バケット、そして ClickHouse Pod がそれらにアクセスするために assume する IAM role です。これらはサービスの作成前にユーザー自身の認証情報で作成し、サービスの削除後に取り除きます。executor は バケット や IAM に対する認証情報を一切保持せず、データを削除することもありません。executor が行うクラウド呼び出しは Amazon ECR と STS に対するもののみです。プラットフォーム同期や作成でチャートを取得する際に レジストリ にログインし、プラットフォーム更新中は読み取り専用の pull role でイメージを確認します。S3 や IAM への呼び出しは行いません。各サービスに対して LoadBalancer タイプの Kubernetes `Service` を作成し、クラスターの load-balancer controller がこれをユーザーの account 内の内部 NLB として実体化します。
+
+VM 上では、executor は他の 2 つのコンポーネントと並んで `clicklink-executor` systemd unit として動作します。Kubernetes 上では、コネクタのネームスペース内で単一レプリカのデプロイメントとして動作します。ヘルスと metrics をポート 8086 で、ローカル API を `127.0.0.1:9999` で提供します。
+
+## Managed モードを有効化する {#enable-managed-mode}
+
+Managed モードは enroll 時に選択します。`clicklink clctl init` に `--managed` を渡すか、端末上でプロンプトに回答してください。VM 上では、`init` はこのホストの kubeconfig からクラスターを取得し (複数の EKS クラスター が含まれる場合は `--cluster-name` を指定) 、executor の クラスター全体への access を Inline で付与します。Kubernetes 上では、コネクタエンドポイント の CIDR を `--egress-cidrs` に渡すことで、チャート がデフォルト拒否の NetworkPolicy を有効な状態で配置します。
+
+インストール自体に変更はありません。全体の流れは [オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding#install-and-enroll) を、flags は [CLI reference](/ja/products/bring-your-own-cloud/connector/reference/cli#init) を参照してください。
+
+## サービスを作成する {#create-a-service}
+
+コネクタエンドポイント を通じたサービス作成は環境ごとに有効化されます。開始する前に アカウントチーム に確認してください。
+
+サービスの作成には 2 つのコマンドを使用します。`prepare` はユーザー側に必要なものをすべて作成し、`instances create` は コネクタエンドポイント を通じて ClickHouse Cloud に作成要求を送信します。ClickHouse Cloud はサービス定義を生成し、アウトバウンド チャネル経由で executor に作成要求を送ります。executor はそれをお客様のクラスターに適用し、結果を報告します。
+
+AWS 認証情報 が必要なのは `prepare` のみで、S3 バケットと IAM role を作成します。`instances create` は コネクタ の設定と認証情報を必要とし、executor のローカル API にアクセスするのは `--wait` を指定した場合のみです。VM では、いずれも コネクタ ホスト上で root として実行します。Kubernetes では、managed クラスターの kube context を持つ workstation から両方を実行します。
+
+* `prepare` には、コネクタ 設定のコピー (`--config`) 、executor のローカル API への `kubectl port-forward`、および書き込み可能な `--output-dir` が必要です。executor に対して service name を照合し、到達できない場合は実行を拒否します。
+* このホストに設定で指定された認証情報ファイルが存在しない場合、`instances create` はそれらを `clicklink-hmac` および `clicklink-mtls` Secret から読み取り、読み取るたびにその旨を通知します。コネクタ のネームスペースが `clicklink` でない場合は `--connector-namespace` を追加してください。このフォールバックがあるのは `instances create` のみです。
+
+<Image img="/images/cloud/reference/byoc-connector-service-lifecycle.svg" size="lg" alt="ClickHouse Connector service lifecycle in managed mode" />
+
+<Steps>
+  <Step title="サービスを準備する" id="prepare">
+    <Tabs>
+      <Tab title="Kubernetes" id="prepare-kubernetes">
+        ```bash
+        CONNECTOR_NAMESPACE='clicklink'   # init 時に選択したコネクタのネームスペース
+        kubectl -n "${CONNECTOR_NAMESPACE}" get configmap clicklink-connector-executor \
+          -o jsonpath='{.data.config\.yaml}' > clicklink-config.yaml
+        kubectl -n "${CONNECTOR_NAMESPACE}" port-forward deployment/clicklink-connector-executor 9999:9999 &
+        clicklink clctl executor prepare --config clicklink-config.yaml --output-dir ./clicklink-access
+        ```
+
+        出力ディレクトリは削除せずに保持してください。`instances create` や再試行時に読み取られる create ボディと name レコードが格納されています。
+      </Tab>
+
+      <Tab title="Linux VM" id="prepare-vm">
+        ```bash
+        sudo clicklink clctl executor prepare --config /etc/clicklink/config.yaml
+        ```
+      </Tab>
+    </Tabs>
+
+    このコマンドは 4 つのステップを順に実行し、最初に失敗した時点で停止します。
+
+    1. **Name.** service name を選択するか、`--instance <name>` で渡された名前を検証します。生成された名前は `<output-dir>/_prepare/<eks-cluster-name>.name` に記録され、次回の実行で引き継がれるため、再試行しても初回実行時の buckets と role がそのまま再利用されます。別の名前を選択させるには `--new-name` を指定します。executor がまだ保持している名前や、ネームスペースにすでに ClickHouse cluster が存在する名前は受け付けられません。
+    2. **Storage.** data と backup の buckets、および IAM role `CH-S3-<name>-<region>-00-Role` を作成します。デフォルトの bucket 名は `<cluster>-clickhouse-data-<rand>` と `<cluster>-clickhouse-backup-<rand>` で、`--data-bucket` と `--backup-bucket` で上書きできます。`--role-arn` を指定した場合は、持ち込んだ role を検証するだけで IAM への書き込みは行いません。
+    3. **Grant and apply.** VM 上では、service のネームスペース (`ns-<name>`) 向けに executor の access bundle をレンダリングし、その RBAC を適用したうえで、executor の registry に service を登録します。Kubernetes ではこのステップはスキップされます。executor は自身の Pod の ServiceAccount として動作し、create を受け取った時点で自ら service を登録するためです。
+    4. **Summary.** `default` USER の password を生成し、create ボディを `<output-dir>/_prepare/<name>.create.json` に書き込みます (mode `0600`。含まれるのは password の hashes のみです) 。続けて実行すべきコマンドは `Next:` 行に出力されます。
+
+    <Warning>
+      `prepare` は `default` USER の password を stderr に一度だけ出力します。create ボディにも `--output json` にも含まれず、ClickHouse Cloud が受け取るのは hashes のみです。次に進む前に必ず保存してください。create ボディが存在する状態で再実行した場合は、すでに書き込まれた hashes がそのまま維持され、その旨が表示されます。
+    </Warning>
+
+    kubeconfig に複数の context がある場合は `--context <name>` を指定してください。context は config の `executor.cluster` に指定した EKS cluster を指している必要があります。`--dry-run` を指定すると、何も作成・書き込みせずにすべてのステップを実行します。hashing のステップは SHA-1 を使用しますが、Go は `GODEBUG=fips140=only` 環境下ではこれを拒否します。この設定が有効でないホストで `prepare` を実行してください。
+  </Step>
+
+  <Step title="作成する" id="create">
+    <Tabs>
+      <Tab title="Kubernetes" id="create-kubernetes">
+        ```bash
+        clicklink clctl instances create \
+          --from-prepare ./clicklink-access/_prepare/<name>.create.json \
+          --config clicklink-config.yaml \
+          --wait
+        ```
+
+        `prepare` で開いたポートフォワードは開いたままにしてください。`--wait` はこれを経由して executor をポーリングします。
+      </Tab>
+
+      <Tab title="Linux VM" id="create-vm">
+        ```bash
+        sudo clicklink clctl instances create \
+          --from-prepare /etc/clicklink/access/executor/_prepare/<name>.create.json \
+          --config /etc/clicklink/config.yaml \
+          --wait
+        ```
+      </Tab>
+    </Tabs>
+
+    このコマンドは、準備済みのボディをコネクタ自身の認証情報を用いてコネクタエンドポイントへ送信します。実行すると `created <spoken-name> (state provisioning)` と `watch:` ヒントが出力されます。`<spoken-name>` は ClickHouse Cloud が割り当てた名前 (例: `amberaws-kq-42`) であり、準備時に指定した service name ではありません。`watch:` ヒントおよびすべての `clctl` コマンドでは、指定した service name を使用します。
+
+    同じ入力での再試行は安全です。冪等キーはデフォルトで環境と service name から導出されるため、再送信しても最初の作成結果が返されます。
+
+    `--wait` は、service が `running` になるまで executor のローカル API を 10 秒ごとにポーリングし、最大で `--wait-timeout` (デフォルト `30m`) まで待機します。executor がその名前に対する作成の失敗を記録した場合、または service が `terminating`、`terminated`、`stale` に変化した場合は、記録された error とともに即座に失敗します。
+  </Step>
+
+  <Step title="確認" id="verify">
+    ```bash
+    clicklink clctl instances get --name <name> --cluster <eks-cluster-name>
+    ```
+
+    `status` が `running` になれば、そのサービスは利用可能です。`default` ユーザーには、`prepare` で出力されたパスワードが設定されます。`--cluster` は `CLCTL_CLUSTER` 環境変数から指定することもできます。
+  </Step>
+</Steps>
+
+## Status {#status}
+
+executor は、ローカル API 経由でステータスに関する問い合わせに応答します。この API は `127.0.0.1:9999` にバインドされ、API 自体には認証機構はありません。VM の場合は、ホスト上でコマンドを実行してください。Kubernetes の場合は、まずポートフォワードを開き、そこに向けてコマンドを実行します。
+
+```bash
+kubectl -n <connector-namespace> port-forward deployment/clicklink-connector-executor 9999:9999
+clicklink clctl instances list --endpoint http://127.0.0.1:9999
+```
+
+`clicklink clctl instances list` は、executorが把握しているすべてのサービスをJSON形式で出力します。`clicklink clctl instances get --name <name> --cluster <eks-cluster-name>` は、特定のサービスを、作成時に指定されたstorageとあわせて出力します。executorはサービスの `ClickHouseCluster` resourceからstatusを導出し (ready状態のserverレプリカ数と期待されるレプリカ数の比較) 、`sync_interval` (デフォルトは30秒) ごとに更新します。
+
+* `provisioning`: ready状態のserverレプリカがまだ1つもない、または `ClickHouseCluster` がまだ存在しない
+* `running`: 期待されるserverレプリカがすべてready状態である
+* `degraded`: 一部のserverレプリカのみがready状態である
+* `terminating`: executorがサービスをアンインストール中である
+* `terminated`: サービスのネームスペースが削除済みである
+* `stale`: deleteを経ずにexecutorのレジストリからサービスが削除された状態。`--wait` と `teardown` はこれを `terminated` と同様に扱う
+
+terminated状態のサービスは、[teardown](#delete-a-service) によってクラウドリソースが削除されるまで、storageとともに一覧に残り続けます。
+
+executorは、ClickHouse Cloudから送信されたすべてのコマンドを記録します。`clicklink clctl commands list` でそれらを出力でき、`--status` (`pending`、`running`、`completed`、`failed`) 、`--action` (例: `create_instance`) 、`--cluster` によるフィルタが可能です。`clicklink clctl commands get <id>` は、特定のコマンドをそのstageおよび結果とともに出力します。失敗したコマンドの `result` にはエラー内容が格納されます。たとえば、createが収束しなかった理由や、どの[プラットフォーム更新](/ja/products/bring-your-own-cloud/connector/platform-updates)が承認待ちであるかといった情報です。
+
+## サービスのライフサイクル {#service-lifecycle}
+
+サービスが作成されると、ClickHouse Cloud は executor を通じてそのサービスを運用します。送信されるコマンドは次のとおりです。
+
+* **スケール。** ClickHouse Cloud が固定のレプリカ数を設定し、ClickHouse Cloud 側の設定 (デフォルト設定では 20) が上限となります。オートスケーリングはありません。
+* **停止と開始。** 停止するとサーバーはゼロにスケールされ、Keeper は維持されます。開始するとレプリカ数が元に戻ります。その間もデータはお客様のバケットに保持されます。
+* **再起動。** サービス全体、その Keeper、または単一のポッドが対象です。
+* **バックアップ。** ClickHouse Cloud がトリガーし、お客様のバックアップバケットに保存されます。バックアップを削除すると、そこから取り除かれます。
+* **バージョンアップグレードと設定変更。** ClickHouse Cloud は、新しいバージョンまたは設定でサービス定義を再生成します。これは `create_instance` コマンドとして届くため、`commands list --action create_instance` にはアップグレードも表示されます。executor はこれを適用し、レプリカが再び準備完了になるまで待機します。
+* **削除。** [サービスの削除](#delete-a-service)で説明します。
+
+<Warning>
+  バージョンアップグレードと設定変更に、お客様による承認のステップはありません。ClickHouse Cloud は、スケールや再起動と同じ方法でこれらをマネージドサービスに適用します。つまり、定義を再送信し、executor がクラスターをその定義に収束させます。
+</Warning>
+
+作成、スケール、開始は非同期に完了します。executor は定義を適用した時点でコマンドを実行中として報告し、その後 2 分ごとに進捗レポートを送信します。サーバーレプリカが準備完了になった時点で最終結果を報告します。2 時間以内に準備完了にならない場合は、コマンドを失敗として報告します。その後レプリカが立ち上がった場合は、サービスを `running` に戻します。
+
+`instances scale`、`instances patch`、`instances delete` の各サブコマンドは、ClickHouse Cloud を介さず、executor のローカル API に直接コマンドを送信します。これらはアカウントチームから依頼された場合にのみ実行してください。それぞれの動作については [CLI リファレンス](/ja/products/bring-your-own-cloud/connector/reference/cli#instances-scale)を参照してください。
+
+## マネージドサービス向けのサポートセッション {#support-sessions}
+
+executor は、作成する各 サービス に scraper を組み込みます。一方、トラブルシューターはプロビジョニングしないため、手動でプロビジョニングするまでは [サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions) でマネージドサービスの診断を実行できません。自分で登録したインスタンスの場合と同様に、サービス のネームスペース `ns-<name>` を指定して、サービス ごとに一度プロビジョニングしてください:
+
+<Tabs>
+  <Tab title="Kubernetes" id="troubleshooter-kubernetes">
+    ```bash
+    printf '%s\n' "$CH_DEFAULT_PASSWORD" | clicklink clctl troubleshoot access provision --target helm \
+      --target-namespace "${CONNECTOR_NAMESPACE}" \
+      --instance <name> --instance-namespace ns-<name> \
+      --server <kubernetes-api-server-url> --ch-admin-password-stdin \
+      --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace ns-<name>
+    ```
+
+    `$CH_DEFAULT_PASSWORD` は、`prepare` が出力した `default` ユーザーのパスワードです。このコマンドはこれを用いて認証し SQL の権限を適用しますが、入力を求めるプロンプトは表示しません。続いて、[ClickHouse インスタンスの追加](/ja/products/bring-your-own-cloud/connector/configuration#clickhouse-instances) に示すとおり、Secret と ServiceAccount のペアを `troubleshooter.accessBundles` に追加し、`helm upgrade` を実行します。
+  </Tab>
+
+  <Tab title="Linux VM" id="troubleshooter-vm">
+    ```bash
+    printf '%s\n' "$CH_DEFAULT_PASSWORD" | sudo clicklink clctl troubleshoot access provision --provider local \
+      --instance <name> --instance-namespace ns-<name> \
+      --server <kubernetes-api-server-url> --ch-admin-password-stdin
+    ```
+
+    `$CH_DEFAULT_PASSWORD` は、`prepare` が出力した `default` ユーザーのパスワードです。
+  </Tab>
+</Tabs>
+
+ClickHouse ユーザーへの権限付与は、上記のとおり SQL で行ってください。`--ch-user-via cr` で追加したユーザーは残りません。サービス の定義は ClickHouse Cloud が管理して再適用するためです。サービス を削除すると、executor は VM 上のトラブルシューターの bundle も削除します。Kubernetes の場合は、[アンインストール](/ja/products/bring-your-own-cloud/connector/operations#uninstall-kubernetes) に記載のとおり、bundle の Secret と ServiceAccount は手動で削除するまで残ります。
+
+## サービスの削除 {#delete-a-service}
+
+コネクタエンドポイント経由で顧客が実行できる削除コマンドはありません。サービスの削除はアカウントチームに依頼してください。ClickHouse Cloud がサービスを終了し、executor がワークロードとそのネームスペースを削除します (`terminating`、その後 `terminated`) 。AWS 側には一切手が加えられません。バケット、そのデータ、および IAM role は、自分で削除するまで残り続けます。
+
+サービスが `terminated` を報告したら、`prepare` が作成したリソースを撤去します。`teardown` は `prepare` を実行したのと同じ場所で、同じ AWS 認証情報 を使って実行してください。Kubernetes の場合は、同じワークステーション、同じ設定のコピーと出力ディレクトリ、そして executor へのポートフォワードが開いていることが前提となります。
+
+<Tabs>
+  <Tab title="Kubernetes" id="teardown-kubernetes">
+    ```bash
+    kubectl -n "${CONNECTOR_NAMESPACE}" port-forward deployment/clicklink-connector-executor 9999:9999 &
+    clicklink clctl executor teardown --instance <name> --config clicklink-config.yaml --output-dir ./clicklink-access
+    ```
+  </Tab>
+
+  <Tab title="Linux VM" id="teardown-vm">
+    ```bash
+    sudo clicklink clctl executor teardown --instance <name>
+    ```
+  </Tab>
+</Tabs>
+
+このコマンドは、サービスに関する executor の記録、すなわちデータの所在と割り当てられていたロールを読み取ります。そのうえで `prepare` が作成した IAM role を削除し、executor にそのサービスを忘れさせることで名前を解放します。VM の場合は、サービスのクラスター全体にまたがる RBAC オブジェクト、ローカルのアクセスバンドル、レジストリのエントリも削除します。
+
+デフォルトでは、サービスのデータと バックアップ は保持されます。保持されるバケットのタグは `clicklink:deployed-name` から `clicklink:retained-from=<name>` に付け替えられるため、同じ名前で再作成されたサービスがそれを引き継ぐことはありません。データの所在はサマリーに表示されます。これらを削除するには、同じコマンドに `--delete-data --delete-backups --yes` を追加してください。
+
+<Warning>
+  `--delete-data` と `--delete-backups` は、指定されたバケットを空にして削除します。その後に復旧する手段はありません。`--yes` を追加する前に、record ステップでバケット名を確認してください。
+</Warning>
+
+`--yes` を指定しない場合、実行は record ステップで停止し、空にする対象となるバケット名を表示します。`--dry-run` はすべてを読み取りますが、何も書き込みません。`--role-arn` で持ち込んだロールや、`prepare` が作成していないバケットは、保持対象として報告され、一切変更されません。サービスのネームスペースにまだ ClickHouse クラスターが存在する場合、実行は拒否されます。削除を行う前にすべてを読み取るため、拒否された実行では何も変更されません。
+
+## コネクタがオフラインの場合 {#when-the-connector-is-offline}
+
+稼働中の サービス は executor に依存しません。クラスター内の ClickHouse operator がそれらを稼働させ続けるため、コネクタが切断されても、すでにクエリを処理しているものが中断されることはありません。
+
+executor が接続されていない間、ClickHouse Cloud は新しい作業を割り当てられません。すでに受理済みの作成、削除、プラットフォーム同期は保持され、再試行されます。作成は最後の進捗報告から 30 分間、削除は 2 時間、プラットフォーム同期は最大 10 回まで再試行されます。この上限を超えると、コネクタエンドポイントはそのコマンドを失敗としてマークします。その他のライフサイクルコマンド (スケール、停止、開始、再起動、バックアップ、バックアップ の削除) は、キューに入れられることなく拒否されます。executor が接続されていない間に送信した作成や削除も同様に拒否され、再試行されるのはすでに受理済みのコマンドのみです。
+
+executor がすでに受理したコマンドは完了まで実行され、報告できなかった結果は次回の接続時に送信されます。
+
+`instances create` は、実行元のホストからコネクタエンドポイントに到達できる必要があります。`--wait`、`instances list`、`instances get`、`commands list` は executor のローカル API を利用するため、executor が稼働している必要があります。プラットフォーム承認のトークンは、接続状態に関係なく独自のタイマーで有効期限を迎えます。[承認ウィンドウ](/ja/products/bring-your-own-cloud/connector/platform-updates#the-approval-window)を参照してください。

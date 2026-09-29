@@ -121,6 +121,8 @@ start_seaweedfs() {
     -master.port=11112 -volume.port=11113 -filer.port=11114 \
     -s3 -s3.port=11111 -s3.config=./seaweedfs_s3.json \
     -master.volumeSizeLimitMB=1024 -volume.max=0 &
+  WEED_PID=$!
+  echo "weed server started with PID ${WEED_PID}"
   wait_for_it
   lsof -i :11111
 }
@@ -134,6 +136,10 @@ setup_seaweedfs() {
   echo ready > ./.write_probe
   until curl --silent --show-error --fail --upload-file ./.write_probe "$FILER_ENDPOINT/buckets/test/.write_probe"
   do
+    if [ -n "${WEED_PID:-}" ] && ! kill -0 "${WEED_PID}" 2>/dev/null; then
+      echo "weed server ${WEED_PID} exited during startup"
+      exit 1
+    fi
     if [[ ${counter} == "${max_counter}" ]]; then
       echo "failed to wait for seaweedfs write readiness"
       exit 1
@@ -176,6 +182,11 @@ wait_for_it() {
   # and AccessDenied when there is none (stateful)
   while ! curl "${params[@]}" "${url}" 2>&1 | grep -E "ListAllMyBucketsResult|AccessDenied"
   do
+    # weed exits on any startup error, so a readiness poll must check liveness
+    if [ -n "${WEED_PID:-}" ] && ! kill -0 "${WEED_PID}" 2>/dev/null; then
+      echo "weed server ${WEED_PID} exited during startup"
+      exit 1
+    fi
     if [[ ${counter} == "${max_counter}" ]]; then
       echo "failed to setup seaweedfs"
       exit 1

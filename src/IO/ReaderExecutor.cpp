@@ -44,6 +44,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -480,7 +481,9 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
     /// `fetch_range` is the whole source-read extent `runAt` decided; read it once, fill the tiers it
     /// spans, serve one block from `pos`.
     if (fetch_range.size == 0)
-        return {};
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "ReaderExecutor: the read plan sized an empty fetch at {} for {}; a fetch must cover at least the byte it serves",
+            pos, getFileName());
 
     const auto writers = read_plan.writersFor(fetch_range);
 

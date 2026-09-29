@@ -37,9 +37,7 @@ ClickHouse 访问实体包括：
 
 要查看所有用户、角色、profile 等及其所有授权，请使用 [`SHOW ACCESS`](/zh/reference/statements/show#show-access) 语句。
 
-<div id="access-control-usage">
-  ## 概述
-</div>
+## 概述 {#access-control-usage}
 
 默认情况下，ClickHouse server 提供 `default` 用户账户。该账户不能使用基于 SQL 的访问控制与账户管理，但拥有全部权利和权限。凡是未指定用户名的情况，都会使用 `default` 用户账户，例如从客户端登录时或在分布式查询中。如果 server 或 cluster 的配置中未指定 [user and password](/zh/reference/engines/table-engines/special/distributed) 属性，则在分布式查询处理过程中会使用默认用户账户。
 
@@ -49,17 +47,13 @@ ClickHouse 访问实体包括：
 2. 登录 `default` 用户账户并创建所有必需的用户。别忘了创建管理员账户 (`GRANT ALL ON *.* TO admin_user_account WITH GRANT OPTION`) 。
 3. 为 `default` 用户[限制权限](/zh/concepts/features/configuration/settings/permissions-for-queries)，并为其禁用基于 SQL 的访问控制与账户管理。
 
-<div id="access-control-properties">
-  ### 当前解决方案的特性
-</div>
+### 当前解决方案的特性 {#access-control-properties}
 
 * 即使数据库和表不存在，你也可以授予相应权限。
 * 如果某个表被删除，与该表对应的所有特权都不会被撤销。这意味着，即使你之后又创建了一个同名的新表，这些特权仍然有效。要撤销与已删除表对应的特权，你需要执行例如 `REVOKE ALL PRIVILEGES ON db.table FROM ALL` 的查询。
 * 特权没有有效期设置。
 
-<div id="user-account-management">
-  ### 用户账户
-</div>
+### 用户账户 {#user-account-management}
 
 用户账户是一种访问实体，用于在 ClickHouse 中识别并授权用户。用户账户包含：
 
@@ -80,9 +74,7 @@ ClickHouse 访问实体包括：
 * [SHOW CREATE USER](/zh/reference/statements/show#show-create-user)
 * [SHOW USERS](/zh/reference/statements/show#show-users)
 
-<div id="access-control-settings-applying">
-  ### 设置的应用方式
-</div>
+### 设置的应用方式 {#access-control-settings-applying}
 
 设置可以在不同位置配置：用户账户、授予该用户的角色以及 SETTINGS PROFILE。用户登录时，如果某项设置在不同的访问控制实体中都有配置，则该设置的值和约束将按以下方式生效 (优先级从高到低) ：
 
@@ -91,9 +83,7 @@ ClickHouse 访问实体包括：
 3. 分配给用户或其默认角色的 SETTINGS PROFILE 中的设置。如果某项设置在多个 profile 中都进行了配置，则其生效顺序未定义。
 4. 默认应用于整个服务器的设置，或来自[默认 profile](/zh/reference/settings/server-settings/settings/default#default_profile)的设置。
 
-<div id="role-management">
-  ### 角色
-</div>
+### 角色 {#role-management}
 
 角色是访问实体的容器，可授予给用户账户。
 
@@ -115,9 +105,7 @@ ClickHouse 访问实体包括：
 
 可通过 [GRANT](/zh/reference/statements/grant) 语句向角色授予特权。要从角色撤销特权，ClickHouse 提供了 [REVOKE](/zh/reference/statements/revoke) 语句。
 
-<div id="row-policy-management">
-  #### 行策略
-</div>
+#### 行策略 {#row-policy-management}
 
 行策略是一种过滤器，用于定义用户或角色可以访问哪些行。行策略包含针对特定表的过滤条件，以及应应用此行策略的角色和/或用户列表。
 
@@ -135,9 +123,7 @@ ClickHouse 访问实体包括：
 * [SHOW CREATE ROW POLICY](/zh/reference/statements/show#show-create-row-policy)
 * [SHOW POLICIES](/zh/reference/statements/show#show-policies)
 
-<div id="settings-profiles-management">
-  ### SETTINGS PROFILE
-</div>
+### SETTINGS PROFILE {#settings-profiles-management}
 
 SETTINGS PROFILE 是由一组[设置](/zh/reference/settings/index)构成的。SETTINGS PROFILE 包含设置和约束，以及应用了此 profile 的角色和/或用户列表。
 
@@ -149,9 +135,7 @@ SETTINGS PROFILE 是由一组[设置](/zh/reference/settings/index)构成的。S
 * [SHOW CREATE SETTINGS PROFILE](/zh/reference/statements/show#show-create-settings-profile)
 * [SHOW PROFILES](/zh/reference/statements/show#show-profiles)
 
-<div id="quotas-management">
-  ### 配额
-</div>
+### 配额 {#quotas-management}
 
 配额用于限制资源使用。请参见 [配额](/zh/concepts/features/configuration/server-config/quotas)。
 
@@ -166,9 +150,7 @@ SETTINGS PROFILE 是由一组[设置](/zh/reference/settings/index)构成的。S
 * [SHOW QUOTA](/zh/reference/statements/show#show-quota)
 * [SHOW QUOTAS](/zh/reference/statements/show#show-quotas)
 
-<div id="enabling-access-control">
-  ### 启用 基于 SQL 的访问控制与账户管理
-</div>
+### 启用 基于 SQL 的访问控制与账户管理 {#enabling-access-control}
 
 * 设置用于存储配置的目录。
 
@@ -176,11 +158,18 @@ SETTINGS PROFILE 是由一组[设置](/zh/reference/settings/index)构成的。S
 
 * 为至少一个用户账户启用 基于 SQL 的访问控制与账户管理。
 
-  默认情况下，所有用户的 基于 SQL 的访问控制与账户管理均处于禁用状态。你需要在 `users.xml` 配置文件中至少配置一个用户，并将 [`access_management`](/zh/concepts/features/configuration/settings/settings-users#access_management-user-setting)、`named_collection_control`、`show_named_collections` 和 `show_named_collections_secrets` 这些设置的值设为 1。
+  ClickHouse 自带的 `users.xml` 配置文件通过将 [`access_management`](/zh/concepts/features/configuration/settings/settings-users#access_management-user-setting) 和 [`named_collection_control`](/zh/concepts/features/configuration/settings/settings-users#named_collection_control-user-setting) 设为 1，为 `default` 用户启用了 基于 SQL 的访问控制与账户管理。对于其他所有用户，这两项设置的默认值均为 0，因此你需要显式设置它们。
 
-<div id="defining-sql-users-and-roles">
-  ## 定义 SQL 用户和角色
-</div>
+  即便是 `default` 用户，[`show_named_collections_secrets`](/zh/concepts/features/configuration/settings/settings-users#show_named_collections_secrets-user-setting) 的默认值也是 0，因为能够管理命名集合并不意味着能够读取其中已存储的凭据。用户只能授予自己拥有的特权，因此只要该设置为 0，该用户就不具备完整的特权集合，诸如 `GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION` 之类的查询会被拒绝：
+
+  ```text
+  Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
+  (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
+  ```
+
+  将这三项设置全部设为 1，即可让该用户成为完整的管理员。
+
+## 定义 SQL 用户和角色 {#defining-sql-users-and-roles}
 
 <Tip>
   如果你使用的是 ClickHouse Cloud，请参阅[云访问管理](/zh/products/cloud/reference/security/console-roles)。
@@ -188,17 +177,19 @@ SETTINGS PROFILE 是由一组[设置](/zh/reference/settings/index)构成的。S
 
 本文介绍定义 SQL 用户和角色的基础知识，以及如何将相应的特权和权限应用到数据库、表、行和列。
 
-<div id="enabling-sql-user-mode">
-  ### 启用 SQL 用户模式
-</div>
+### 启用 SQL 用户模式 {#enabling-sql-user-mode}
 
 1. 在 `users.xml` 文件中，为 `<default>` 用户启用 SQL 用户模式：
+
    ```xml
    <access_management>1</access_management>
    <named_collection_control>1</named_collection_control>
-   <show_named_collections>1</show_named_collections>
+   <!-- 使该用户成为完整的管理员所必需，
+        否则下面的 `GRANT ALL ... WITH GRANT OPTION` 会被拒绝。 -->
    <show_named_collections_secrets>1</show_named_collections_secrets>
    ```
+
+   在 ClickHouse 自带的 `users.xml` 文件中，前两项设置已为 `default` 用户启用；`show_named_collections_secrets` 在其中被注释掉了，需要取消注释。
 
 <Note>
   `default` 用户是全新安装后唯一会创建的用户，默认情况下也作为节点间通信使用的账户。
@@ -213,9 +204,7 @@ SETTINGS PROFILE 是由一组[设置](/zh/reference/settings/index)构成的。S
    clickhouse-client --user default --password <password>
    ```
 
-<div id="defining-users">
-  ### 定义用户
-</div>
+### 定义用户 {#defining-users}
 
 1. 创建一个 SQL 管理员账户：
    ```sql
@@ -226,9 +215,7 @@ SETTINGS PROFILE 是由一组[设置](/zh/reference/settings/index)构成的。S
    GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION;
    ```
 
-<div id="alter-permissions">
-  ## ALTER 权限
-</div>
+## ALTER 权限 {#alter-permissions}
 
 本文旨在帮助您更好地理解如何定义权限，以及高权限用户在使用 `ALTER` 语句时，这些权限如何生效。
 

@@ -1,0 +1,3 @@
+concurrent partition merges within background_pool_size: yes
+OPTIMIZE FINAL helper jobs within background_pool_size: yes
+1

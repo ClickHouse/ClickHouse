@@ -10,33 +10,21 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-
 import { Image } from "/snippets/ar/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.mdx';
 import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.mdx';
-
-<BetaBadge />
-
-<Info>
-  إدخال البيانات من MySQL إلى ClickHouse Cloud عبر ClickPipes متاح حاليًا في الإصدار التجريبي العام.
-</Info>
 
 يوفّر MySQL ClickPipe طريقة مُدارة بالكامل وموثوقة لإدخال البيانات من قواعد بيانات MySQL وMariaDB إلى ClickHouse Cloud. وهو يدعم كلاً من **التحميل المجمّع** للإدخال لمرة واحدة و**التقاط تغيّر البيانات (CDC)** للإدخال المستمر.
 
 يمكن نشر MySQL ClickPipes وإدارتها يدويًا باستخدام واجهة ClickPipes، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
 
-<div id="prerequisites">
-  ## المتطلبات الأساسية
-</div>
+## المتطلبات الأساسية {#prerequisites}
 
 [//]: # "TODO لا يلزم إعداد النسخ المتماثل لـ binlog لمسارات الإدخال لمرة واحدة. وقد كان هذا سببًا للالتباس في السابق، لذا ينبغي أيضًا توفير الحد الأدنى من المتطلبات اللازمة لعمليات التحميل المجمّع لتجنب تنفير المستخدمين."
 
 للبدء، عليك أولًا التأكد من أن قاعدة بيانات MySQL لديك مُعدّة بشكل صحيح للنسخ المتماثل لـ binlog. وتعتمد خطوات الإعداد على طريقة نشر MySQL، لذا يُرجى اتباع الدليل المناسب أدناه:
 
-<div id="supported-data-sources">
-  ### مصادر البيانات المدعومة
-</div>
+### مصادر البيانات المدعومة {#supported-data-sources}
 
 | الاسم                                                         | الشعار | التفاصيل                                                                                                              |
 | ------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------- |
@@ -50,9 +38,7 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
 بمجرد إعداد قاعدة بيانات MySQL المصدر، يمكنك متابعة إنشاء ClickPipe.
 
-<div id="create-your-clickpipe">
-  ## أنشئ ClickPipe الخاص بك
-</div>
+## أنشئ ClickPipe الخاص بك {#create-your-clickpipe}
 
 تأكد من أنك مسجّل الدخول إلى حساب ClickHouse Cloud الخاص بك. إذا لم يكن لديك حساب بعد، يمكنك التسجيل [هنا](https://cloud.clickhouse.com/).
 
@@ -70,9 +56,7 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp" alt="تحديد MySQL" size="lg" border />
 
-<div id="add-your-source-mysql-database-connection">
-  ### أضِف اتصال قاعدة بيانات MySQL المصدر
-</div>
+### أضِف اتصال قاعدة بيانات MySQL المصدر {#add-your-source-mysql-database-connection}
 
 4. املأ تفاصيل الاتصال لقاعدة بيانات MySQL المصدر التي أعددتها في خطوة المتطلبات الأساسية.
 
@@ -83,15 +67,11 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="املأ تفاصيل الاتصال" size="lg" border />
 
-<div id="optional-changing-tls-settings">
-  #### (اختياري) تغيير إعدادات TLS
-</div>
+#### (اختياري) تغيير إعدادات TLS {#optional-changing-tls-settings}
 
 <ChangingTLSSettings />
 
-<div id="optional-set-up-ssh-tunneling">
-  #### (اختياري) إعداد نفق SSH
-</div>
+#### (اختياري) إعداد نفق SSH {#optional-set-up-ssh-tunneling}
 
 يمكنك تحديد تفاصيل نفق SSH إذا كانت قاعدة بيانات MySQL المصدر غير متاحة للعامة.
 
@@ -111,9 +91,7 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
 بعد إدخال تفاصيل الاتصال، انقر على `Next`.
 
-<div id="advanced-settings">
-  #### ضبط الإعدادات المتقدمة
-</div>
+#### ضبط الإعدادات المتقدمة {#advanced-settings}
 
 يمكنك ضبط الإعدادات المتقدمة عند الحاجة. يرد أدناه وصف موجز لكل إعداد:
 
@@ -124,9 +102,7 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 * **عدد الجداول في اللقطة بالتوازي**: هذا هو عدد الجداول التي سيتم جلبها بالتوازي أثناء اللقطة الأولية. ويكون ذلك مفيدًا عندما يكون لديك عدد كبير من الجداول وتريد التحكم في عدد الجداول التي يتم جلبها بالتوازي.
 * **معرّف الخادم**: مَعلمة اختيارية لتعيين معرّف الخادم لنسخ MySQL المتماثل عبر binlog. إذا لم يتم تعيينه، فسينشئ ClickPipes معرّف خادم عشوائيًا قد يتغير على مدار دورة حياة ClickPipe. استخدمه لتحديد ClickPipe الخاص بك بشكل حتمي على جانب خادم MySQL المصدر.
 
-<div id="configure-the-tables">
-  ### إعداد الجداول
-</div>
+### إعداد الجداول {#configure-the-tables}
 
 5. هنا يمكنك تحديد قاعدة البيانات الوجهة لـ ClickPipe. يمكنك إما اختيار قاعدة بيانات موجودة أو إنشاء قاعدة بيانات جديدة.
 
@@ -136,9 +112,7 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
 7. <SettingPartitionBy />
 
-<div id="review-permissions-and-start-the-clickpipe">
-  ### راجع الأذونات وابدأ ClickPipe
-</div>
+### راجع الأذونات وابدأ ClickPipe {#review-permissions-and-start-the-clickpipe}
 
 8. اختر دور &quot;الوصول الكامل&quot; من قائمة الأذونات المنسدلة، ثم انقر على &quot;إكمال الإعداد&quot;.
 
@@ -146,9 +120,7 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
 أخيرًا، يُرجى الرجوع إلى صفحة [&quot;الأسئلة الشائعة حول ClickPipes for MySQL&quot;](/ar/integrations/clickpipes/mysql/faq) لمزيد من المعلومات عن المشكلات الشائعة وكيفية حلّها.
 
-<div id="whats-next">
-  ## ما التالي؟
-</div>
+## ما التالي؟ {#whats-next}
 
 [//]: # "TODO Write a MySQL-specific migration guide and best practices similar to the existing one for PostgreSQL. The current migration guide points to the MySQL table engine, which isn't ideal."
 

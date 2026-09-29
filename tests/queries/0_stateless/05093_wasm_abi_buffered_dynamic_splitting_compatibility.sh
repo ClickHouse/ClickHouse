@@ -5,10 +5,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `SettingsChangesHistory` promises that `compatibility` below 26.9 restores the previous
-# behaviour, where `webassembly_udf_max_input_block_size = 0` meant one call per pipeline block.
-# The guest sees the batch size as `num_rows`, so the rollback path is user-visible, and a wrong
-# version block or wrong previous value in the history entry would break it silently.
+# The history record of `webassembly_udf_input_split_memory_ratio` promises that `compatibility`
+# below 26.9 restores the previous behaviour, where `webassembly_udf_max_input_block_size = 0` meant
+# one call per pipeline block. The guest sees the batch size as `num_rows`, so the rollback path is
+# user-visible, and a wrong version or wrong previous value in the history record would break it silently.
 
 MODULE="splitting_compat_${CLICKHOUSE_DATABASE}"
 FUNC="wasm_splitting_compat_${CLICKHOUSE_DATABASE}"

@@ -1,6 +1,6 @@
 -- { echo }
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS test_flatten_nullable_tuple;
 CREATE TABLE test_flatten_nullable_tuple (id UInt32, data Nullable(Tuple(a UInt32, b Tuple(c String, d UInt32)))) ENGINE = Memory;

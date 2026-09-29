@@ -27,9 +27,10 @@ reason: Projection stores `_block_number`, so it is built only when a part is me
 verdict: too close to call
 --- an array join decides by where it sits relative to the read ---
 in the filter above the read:
-status: not_applicable
-reason: The filters and expressions above the read cannot be replayed on a projection (an ARRAY JOIN in one of them, for example), so the optimizer would not use a projection for this read
-real: from the base table
+status: applicable
+verdict: chosen
+reason: 1 mark would be read instead of 10 from the base table
+real: from the projection
 above the slice the chooser replays:
 status: applicable
 verdict: chosen

@@ -24,7 +24,7 @@ echo "pre-create: no _delta_log"
 
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 
 DROP TABLE IF EXISTS t_dl_initial;
@@ -46,7 +46,7 @@ CONTENT_BEFORE=$(cksum < "$INITIAL_LOG")
 # Round-trip a write through the kernel to confirm the new table is fully usable.
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 
 INSERT INTO t_dl_initial SELECT number, toString(number) FROM numbers(3);
@@ -58,7 +58,7 @@ SELECT count() FROM t_dl_initial;
 # the original commit-0 file is preserved, and IF NOT EXISTS does not error.
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 
 DROP TABLE t_dl_initial;

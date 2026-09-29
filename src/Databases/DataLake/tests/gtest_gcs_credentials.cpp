@@ -42,7 +42,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsNewline)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"Authorization", "Bearer token\nX-Injected: malicious"});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    EXPECT_THROW(filter.checkHeaders(headers), DB::Exception);
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationRejectsCarriageReturn)
@@ -50,7 +50,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsCarriageReturn)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"Authorization", "Bearer token\r\nX-Injected: malicious"});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    EXPECT_THROW(filter.checkHeaders(headers), DB::Exception);
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationAcceptsValidToken)
@@ -58,7 +58,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationAcceptsValidToken)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"Authorization", "Bearer ya29.valid-gcs-token_1234"});
-    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
+    EXPECT_NO_THROW(filter.checkHeaders(headers));
 }
 
 }

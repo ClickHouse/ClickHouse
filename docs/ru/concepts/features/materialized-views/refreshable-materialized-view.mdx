@@ -30,9 +30,7 @@ ClickHouse incremental materialized views чрезвычайно эффекти�
 
 > Refreshable materialized views могут запускать батч-процессы и выполнять такие задачи, как денормализация. Между refreshable materialized views можно задавать зависимости, чтобы одно представление зависело от результатов другого и выполнялось только после его завершения. Это может заменить запланированные рабочие процессы или простые DAG, например задачу [dbt](https://www.getdbt.com/). Подробнее о том, как задавать зависимости между refreshable materialized views, см. в разделе `Dependencies` страницы [CREATE VIEW](/ru/reference/statements/create/view#refresh-dependencies).
 
-<div id="how-do-you-refresh-a-refreshable-materialized-view">
-  ## Как обновить refreshable materialized view?
-</div>
+## Как обновить refreshable materialized view? {#how-do-you-refresh-a-refreshable-materialized-view}
 
 Refreshable materialized views автоматически обновляются с интервалом, который задаётся при создании.
 Например, materialized view ниже обновляется каждую минуту:
@@ -51,6 +49,10 @@ SYSTEM REFRESH VIEW table_name_mv;
 
 Вы также можете отменить, остановить или запустить refreshable materialized view.
 Подробнее см. в документации [по управлению refreshable materialized views](/ru/reference/statements/system#managing-refreshable-materialized-views).
+
+<Warning>
+  Refreshable materialized views, обновления которых не координируются через ClickHouse Keeper, не помнят, когда обновлялись в последний раз, поэтому после перезапуска сервера все они могут обновиться одновременно. В статье [Что происходит с refreshable materialized views при перезапуске сервера](/ru/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts) описано, какие представления это затрагивает и как снова запустить их по одному.
+</Warning>
 
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
   ## Когда в последний раз обновлялась refreshable materialized view?

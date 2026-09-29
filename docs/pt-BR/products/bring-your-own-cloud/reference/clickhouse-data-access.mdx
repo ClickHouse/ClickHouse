@@ -7,72 +7,61 @@ description: 'Qual acesso os funcionários da ClickHouse têm aos dados dos clie
 doc_type: 'reference'
 ---
 
-Os funcionários da ClickHouse não têm acesso aos seus dados por padrão. Seus dados do ClickHouse, incluindo todas as tabelas de usuário e os resultados de consultas, permanecem dentro da sua VPC. As únicas formas pelas quais a ClickHouse interage com a sua implantação estão descritas abaixo — nenhuma delas concede acesso aos dados das tabelas dos clientes.
+Os funcionários da ClickHouse não têm acesso aos seus dados por padrão. Seus dados do ClickHouse, incluindo todas as tabelas de usuário e os resultados de consultas, permanecem na sua própria conta de nuvem. As únicas formas pelas quais a ClickHouse interage com a sua implantação estão descritas abaixo — nenhuma delas concede acesso aos dados das tabelas dos clientes.
 
-<div id="routine-operations">
-  ## Operações de rotina
-</div>
+## Operações de rotina {#routine-operations}
 
-O plano de controle do ClickHouse Cloud opera sua implantação BYOC sem acessar dados de clientes. Os componentes que enviam dados para fora da sua VPC transportam apenas metadados operacionais:
+O control plane do ClickHouse Cloud executa sua implantação BYOC sem ler os dados do cliente. Os componentes que enviam dados para a infraestrutura da ClickHouse transportam apenas metadados operacionais:
 
-| Component       | O que sai da sua VPC                                                                                                                                    |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| State exporter  | Estado do serviço e do backup (integridade, status — eventos operacionais, não conteúdo do backup) para uma fila `SQS` pertencente ao ClickHouse Cloud. |
-| Billing scraper | Métricas de CPU e memória para um bucket de armazenamento de objetos pertencente ao ClickHouse Cloud.                                                   |
-| AlertManager    | Alertas de integridade do cluster para o ClickHouse Cloud.                                                                                              |
+| Componente      | O que chega à infraestrutura da ClickHouse                                                                                                                                                          |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| State exporter  | Estado do serviço e do backup (saúde, status — eventos operacionais, não o conteúdo dos backups) para uma fila pertencente ao ClickHouse Cloud: `SQS` na AWS, Pub/Sub no GCP, Service Bus no Azure. |
+| Billing scraper | Métricas de CPU e memória para um bucket de armazenamento de objetos pertencente ao ClickHouse Cloud.                                                                                               |
+| AlertManager    | Alertas de saúde do cluster para o ClickHouse Cloud.                                                                                                                                                |
 
-O tráfego de consultas, o conteúdo das tabelas e os esquemas nunca passam por esses canais. Logs e métricas permanecem dentro da sua VPC BYOC.
+O tráfego de consultas, o conteúdo das tabelas e os esquemas nunca trafegam por esses canais. Todo o seu conjunto de dados de monitoramento — o stack Prometheus e Thanos e seus logs — permanece na sua própria conta; a telemetria limitada descrita na tabela acima é o único dado de observabilidade exportado continuamente para sistemas da ClickHouse. Os painéis de monitoramento da ClickHouse e, mediante escalonamento aprovado, seus engenheiros também podem consultar esse stack e seus logs no próprio ambiente via Tailscale, sem que nada seja persistido do lado da ClickHouse — consulte [Acesso para solução de problemas](#troubleshooting-access). Consulte [limites de rede](/pt-BR/products/bring-your-own-cloud/reference/network-security#network-boundaries) para a referência completa dos fluxos de entrada e saída.
 
-<div id="troubleshooting-access">
-  ## Acesso para solução de problemas
-</div>
+## Acesso para solução de problemas {#troubleshooting-access}
 
 Quando engenheiros do ClickHouse precisam diagnosticar um problema na sua implantação, eles solicitam acesso just-in-time por meio de um processo interno de escalonamento e aprovação. O acesso aprovado é concedido por meio de um certificado com validade limitada e encaminhado pela [Tailscale](/pt-BR/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) — nunca pela internet pública.
 
-<div id="what-engineers-can-see">
-  ### O que os engenheiros podem ver
-</div>
+### O que os engenheiros podem ver {#what-engineers-can-see}
 
-Com acesso de troubleshooting aprovado, os engenheiros podem ler apenas as tabelas de sistema do ClickHouse. Isso inclui:
+No ClickHouse, o acesso para solução de problemas aprovado é limitado às tabelas de sistema. Isso inclui:
 
 * `system.query_log` — texto da consulta e metadados de execução das consultas executadas no seu serviço
 * `system.tables`, `system.columns` e tabelas de sistema semelhantes — esquema e metadados
 * Outras tabelas `system.*` usadas para diagnóstico (por exemplo, partes, mutações e réplicas)
 
-<div id="what-engineers-cant-see">
-  ### O que os engenheiros não podem ver
-</div>
+### O que os engenheiros não podem ver {#what-engineers-cant-see}
 
-Os engenheiros não podem ler as tabelas de usuários dos clientes. O acesso se limita apenas às tabelas de sistema.
+Os engenheiros não podem ler as tabelas de usuários dos clientes. No ClickHouse, o acesso se limita apenas às tabelas de sistema.
 
-<div id="how-access-is-enforced">
-  ### Como o acesso é controlado
-</div>
+### Diagnóstico de infraestrutura {#infrastructure-diagnostics}
+
+O mesmo processo de escalonamento sujeito a aprovação pode conceder, separadamente, acesso com validade limitada a superfícies de infraestrutura via Tailscale: o Kubernetes API server e o stack de monitoramento e os logs dentro do cluster. Trata-se de uma superfície distinta do acesso ao ClickHouse descrito acima — ela não contém dados de tabelas de clientes, e nada que seja lido por meio dela é persistido no lado do ClickHouse.
+
+### Como o acesso é controlado {#how-access-is-enforced}
 
 * **Aprovação obrigatória**: toda solicitação de acesso passa por um sistema interno de aprovação com aprovadores designados. Os engenheiros não podem conceder acesso a si próprios.
 * **Certificados com tempo de validade**: um certificado temporário com validade limitada é gerado para cada sessão aprovada. O acesso expira automaticamente.
 * **Autenticação por certificado**: os certificados substituem o acesso com senha para todo acesso humano a instâncias BYOC.
 * **Somente leitura em tabelas de sistema**: a identidade do certificado é restrita a leituras em tabelas de sistema.
-* **Nenhum dado é exportado**: logs e resultados de consultas de sessões de solução de problemas nunca são exportados de volta para a infraestrutura do ClickHouse.
+* **Nada é persistido no lado do ClickHouse**: os resultados lidos durante uma sessão de solução de problemas — sejam de tabelas de sistema, do stack de monitoramento ou dos seus logs — chegam às ferramentas do engenheiro para serem exibidos, mas não são armazenados nem exportados de volta para a infraestrutura do ClickHouse.
 
-<div id="auditing">
-  ## Auditoria
-</div>
+## Auditoria {#auditing}
 
 A atividade dos engenheiros é visível para você e auditada pelo ClickHouse:
 
-* **Visível ao cliente**: toda consulta que um engenheiro do ClickHouse executa na sua instância aparece no seu próprio `system.query_log`, incluindo o texto da consulta e a identidade do certificado. Você pode auditar isso diretamente no seu serviço do ClickHouse.
+* **Visível ao cliente (ClickHouse)**: toda consulta que um engenheiro do ClickHouse executa na sua instância aparece no seu próprio `system.query_log`, incluindo o texto da consulta e a identidade do certificado. Você pode auditar isso diretamente no seu serviço do ClickHouse.
+* **Visível ao cliente (infraestrutura)**: o `system.query_log` não consegue mostrar as superfícies de infraestrutura acima. As chamadas à Kubernetes API aparecem nos logs de auditoria do Kubernetes do seu cluster, as chamadas à Cloud API na sua trilha de auditoria da nuvem, e as próprias conexões do Tailscale nos seus flow logs, onde você os tiver habilitado. Consulte [Auditoria da fronteira](/pt-BR/products/bring-your-own-cloud/reference/network-security#auditing-the-boundary) para saber onde cada um deles fica em cada nuvem, incluindo quais estão ativados por padrão.
 * **Do lado do ClickHouse**: a equipe de segurança do ClickHouse registra e audita internamente todas as solicitações de acesso, aprovações e conexões do Tailscale.
 
-<div id="future-controls">
-  ## Controles futuros
-</div>
+## Controles futuros {#future-controls}
 
 A aprovação pelo cliente — em que você aprova cada solicitação de acesso de engenheiro antes que ela entre em vigor — está no roadmap. Hoje, a aprovação é feita por meio do processo interno de escalonamento da ClickHouse.
 
-<div id="related">
-  ## Relacionados
-</div>
+## Relacionados {#related}
 
 * [Segurança de rede do BYOC](/pt-BR/products/bring-your-own-cloud/reference/network-security) — como o Tailscale e os limites da rede funcionam
 * [Privilégio do BYOC](/pt-BR/products/bring-your-own-cloud/reference/privilege) — IAM roles criadas durante a configuração do BYOC

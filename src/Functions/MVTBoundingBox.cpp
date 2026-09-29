@@ -205,9 +205,10 @@ fraction of the tile size; set `margin` to `buffer / extent` to match the clip b
                 "Bounding box of the whole world at zoom 0",
                 "SELECT MVTBoundingBox(0, 0, 0) AS bbox",
                 R"(
-┌─bbox────────────────────────────────────────────┐
-│ (-180,-85.05112877980659,180,85.05112877980659) │
-└─────────────────────────────────────────────────┘
+┌─bbox───────────────────────────────────────────────────────┐
+├─min_lon─┬────────────min_lat─┬─max_lon─┬───────────max_lat─┤
+│    -180 │ -85.05112877980659 │     180 │ 85.05112877980659 │
+└─────────┴────────────────────┴─────────┴───────────────────┘
                 )",
             },
         };
@@ -242,9 +243,10 @@ The optional `margin` expands the box on every side by that fraction of the tile
                 "Mercator bounding box of a tile",
                 "SELECT MVTBoundingBoxMercator(1, 0, 0) AS bbox",
                 R"(
-┌─bbox────────────────────────┐
-│ (0,0,2147483648,2147483648) │
-└─────────────────────────────┘
+┌─bbox────────────────────────────────────┐
+├─min_x─┬─min_y─┬──────max_x─┬──────max_y─┤
+│     0 │     0 │ 2147483648 │ 2147483648 │
+└───────┴───────┴────────────┴────────────┘
                 )",
             },
         };

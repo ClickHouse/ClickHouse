@@ -114,7 +114,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 
   <Step title="نفِّذ استعلامًا" id="issue-query">
-    بصرف النظر عن الطريقة التي استخدمتها أعلاه — دالة الجدول أو محرك الجدول أو `DataLakeCatalog` — فإن ClickHouse SQL نفسه يعمل في جميعها. وفي بيئة الإنتاج عند استخدام كتالوج، نفِّذ الاستعلام عبر قاعدة البيانات `DataLakeCatalog`؛ وتظل الأمثلة الأخرى مفيدة للاختبارات السريعة والوصول المستند إلى path:
+    بصرف النظر عن الطريقة التي استخدمتها أعلاه — دالة الجدول أو محرك الجدول أو `DataLakeCatalog` — فإن ClickHouse SQL نفسه يعمل في جميعها. وفي بيئة الإنتاج عند استخدام كتالوج، نفِّذ الاستعلام عبر قاعدة البيانات `DataLakeCatalog`؛ وتظل الأمثلة الأخرى مفيدة للاختبارات السريعة والوصول المستند إلى path:
 
     ```sql
     -- Table function
@@ -133,13 +133,19 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     GROUP BY url ORDER BY cnt DESC LIMIT 5
     ```
 
-    صياغة الاستعلام متطابقة — والتغيير الوحيد يكون في عبارة `FROM`. تعمل جميع الدوال وعمليات JOIN وعمليات التجميع في ClickHouse SQL بالطريقة نفسها بغضّ النظر عن مصدر البيانات.
+    بناء جملة الاستعلام متطابق — والتغيير الوحيد يكون في عبارة `FROM`. تعمل جميع الدوال وعمليات JOIN وعمليات التجميع في ClickHouse SQL بالطريقة نفسها بغضّ النظر عن مصدر البيانات.
+
+    <Note>
+      **أضِف موارد حوسبة إلى الاستعلامات المؤهَّلة**
+
+      تتوفّر الحوسبة عند الطلب (On-Demand Compute) في معاينة خاصة لاستعلامات `SELECT` المؤهَّلة على بيانات Apache Iceberg وDelta Lake المدعومة. وهي تخصّص مؤقتًا عمالًا (workers) إضافيين في ClickHouse عبر الخدمة ونقطة النهاية الحاليتين لديك، من دون تغيير حجم الخدمة. راجع [توثيق الحوسبة عند الطلب](/ar/products/cloud/features/infrastructure/on-demand-compute) للاطّلاع على شروط الأهلية والقيود.
+    </Note>
   </Step>
 
   <Step title="حمّل مجموعة فرعية إلى ClickHouse" id="load-data">
     يُعد الاستعلام عن Iceberg مباشرةً أمرًا مناسبًا، لكن الأداء يظل محدودًا بمعدل نقل الشبكة وتخطيط الملفات. بالنسبة إلى أعباء العمل التحليلية، حمّل البيانات إلى جدول MergeTree أصلي.
 
-    أولًا، شغّل استعلامًا مُرشَّحًا على جدول Iceberg للحصول على خط أساس:
+    أولًا، شغّل استعلامًا مُرشَّحًا على جدول Iceberg للحصول على خط أساس:
 
     ```sql
     SELECT
@@ -198,7 +204,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 
   <Step title="الكتابة مرة أخرى إلى Iceberg" id="write-back">
-    يمكن لـ ClickHouse أيضًا كتابة البيانات مرة أخرى إلى جداول Iceberg، مما يتيح سير عمل ETL العكسي — من خلال نشر النتائج المُجمَّعة أو مجموعات فرعية لتستخدمها أدوات أخرى (Spark وTrino وDuckDB وغيرها).
+    يمكن لـ ClickHouse أيضًا كتابة البيانات مرة أخرى إلى جداول Iceberg، مما يتيح سير عمل ETL العكسي — من خلال نشر النتائج المُجمَّعة أو مجموعات فرعية لتستخدمها أدوات أخرى (Spark وTrino وDuckDB وغيرها).
 
     أنشئ جدول Iceberg للمخرجات:
 
@@ -211,7 +217,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ENGINE = IcebergS3('https://your-bucket.s3.amazonaws.com/output/', 'access_key', 'secret_key')
     ```
 
-    اكتب النتائج المجمَّعة:
+    اكتب النتائج المجمَّعة:
 
     ```sql
     SET allow_experimental_insert_into_iceberg = 1;
@@ -231,9 +237,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="next-steps">
-  ## الخطوات التالية
-</div>
+## الخطوات التالية {#next-steps}
 
 بعد أن اطّلعت الآن على سير العمل الكامل، تعمّق أكثر في كل جانب:
 

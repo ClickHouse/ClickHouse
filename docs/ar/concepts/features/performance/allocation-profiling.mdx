@@ -13,6 +13,7 @@ doc_type: 'guide'
 * اجمع العينات في `system.trace_log` تحت النوع `JemallocSample` لإجراء تحليل لكل استعلام على حدة.
 * اعرض إحصاءات الذاكرة المباشرة واسترجع ملف تعريف الكومة عبر [واجهة الويب المدمجة لـ jemalloc](#jemalloc-web-ui) (26.2+).
 * استعلم عن ملف تعريف الكومة الحالي مباشرةً من SQL باستخدام [`system.jemalloc_profile_text`](#fetching-heap-profiles-from-sql) (26.2+).
+* حلّل تجزئة الذاكرة من SQL باستخدام [`system.jemalloc_sampled_allocations`](#analyzing-fragmentation-from-sql) (26.9+).
 * نفّذ flush لملفات ملف تعريف الكومة إلى disk ثم حلّلها باستخدام [`jeprof`](#analyzing-heap-profile-files-with-jeprof).
 
 <Note>
@@ -20,9 +21,7 @@ doc_type: 'guide'
   أما الإصدارات الأقدم، فيُرجى مراجعة [تنميط التخصيص للإصدارات الأقدم من 25.9](/ar/concepts/features/performance/allocation-profiling-old).
 </Note>
 
-<div id="sampling-allocations">
-  ## أخذ عينات من تخصيصات الذاكرة
-</div>
+## أخذ عينات من تخصيصات الذاكرة {#sampling-allocations}
 
 لأخذ عينات من تخصيصات الذاكرة وتنميطها، شغّل ClickHouse/Keeper مع تفعيل إعداد `jemalloc_enable_global_profiler`:
 
@@ -42,9 +41,7 @@ doc_type: 'guide'
   نظرًا إلى أن ClickHouse تطبيق كثيف الاستخدام لعمليات تخصيص الذاكرة، فقد يفرض أخذ العينات في jemalloc عبئًا إضافيًا على الأداء.
 </Warning>
 
-<div id="storing-jemalloc-samples-in-system-trace-log">
-  ## تخزين عينات jemalloc في `system.trace_log`
-</div>
+## تخزين عينات jemalloc في `system.trace_log` {#storing-jemalloc-samples-in-system-trace-log}
 
 يمكنك تخزين عينات jemalloc في `system.trace_log` ضمن النوع `JemallocSample`.
 لتمكين ذلك على مستوى النظام بالكامل، استخدم إعداد `jemalloc_collect_global_profile_samples_in_trace_log`:
@@ -63,9 +60,7 @@ doc_type: 'guide'
 
 يمكنك أيضًا تفعيل هذا الإعداد لكل query باستخدام `jemalloc_collect_profile_samples_in_trace_log`.
 
-<div id="example-analyzing-memory-usage-trace-log">
-  ### مثال: تحليل استهلاك الذاكرة لاستعلام
-</div>
+### مثال: تحليل استهلاك الذاكرة لاستعلام {#example-analyzing-memory-usage-trace-log}
 
 أولًا، شغِّل استعلامًا مع تفعيل مُحلِّل jemalloc واجمع العيّنات في `system.trace_log`:
 
@@ -183,9 +178,7 @@ GROUP BY ALL
 ORDER BY per_trace_sum ASC
 ```
 
-<div id="jemalloc-web-ui">
-  ## واجهة مستخدم ويب لـ jemalloc
-</div>
+## واجهة ويب jemalloc {#jemalloc-web-ui}
 
 <Note>
   ينطبق هذا القسم على الإصدارات 26.2+.
@@ -201,7 +194,7 @@ ORDER BY per_trace_sum ASC
     http://localhost:8123/jemalloc
     ```
 
-    تتضمن واجهة المستخدم الخاصة بالخادم جميع علامات التبويب: Summary وAllocations وArenas وOperations وGlobal Profiler وQuery Profiler وRaw Output.
+    تتضمن واجهة المستخدم الخاصة بالخادم جميع علامات التبويب: Summary وAllocations وArenas وOperations وGlobal Profiler وQuery Profiler وFragmentation وRaw Output.
   </Tab>
 
   <Tab title="Keeper">
@@ -221,7 +214,7 @@ ORDER BY per_trace_sum ASC
     </clickhouse>
     ```
 
-    بمجرد تمكينه، توفّر الواجهة نفس التصورات التي يوفّرها الخادم — Summary وAllocations وArenas وOperations وGlobal Profiler وRaw Output — باستثناء علامة التبويب Query Profiler التي تتطلب SQL و`system.trace_log`.
+    بمجرد تمكينه، توفّر الواجهة نفس التصورات التي يوفّرها الخادم — Summary وAllocations وArenas وOperations وGlobal Profiler وRaw Output — باستثناء علامتي التبويب Query Profiler وFragmentation، اللتين تتطلبان وصول SQL إلى جداول النظام.
 
     <Warning>
       **الأمان**
@@ -235,13 +228,11 @@ ORDER BY per_trace_sum ASC
 
     * `GET /jemalloc/stats` — مخرجات `malloc_stats_print` الخام
     * `GET /jemalloc/status` — حالة profiling بصيغة JSON ‏(`prof_enabled`, `prof_active`, `thread_active_init`, `lg_sample`)
-    * `GET /jemalloc/profile?format={collapsed|raw}` — يُفرغ ملف ملف تعريف الكومة مع تحويل الرموز على جانب الخادم، ويعيد collapsed stacks المناسبة لعرض flame graph ‏(افتراضيًا) أو dump jemalloc الخام
+    * `GET /jemalloc/profile?format={collapsed|raw}` — يُفرغ ملف ملف تعريف الكومة مع تحويل الرموز على جانب الخادم، ويعيد collapsed stacks المناسبة لعرض مخطط اللهب ‏(افتراضيًا) أو dump jemalloc الخام
   </Tab>
 </Tabs>
 
-<div id="fetching-heap-profiles-from-sql">
-  ## جلب ملفات تعريف heap من SQL
-</div>
+## جلب ملفات تعريف heap من SQL {#fetching-heap-profiles-from-sql}
 
 <Note>
   ينطبق هذا القسم على الإصدارات 26.2+.
@@ -261,9 +252,7 @@ ORDER BY per_trace_sum ASC
 SELECT * FROM system.jemalloc_profile_text
 ```
 
-<div id="output-format">
-  ### تنسيق الإخراج
-</div>
+### تنسيق الإخراج {#output-format}
 
 يُتحكَّم في تنسيق الإخراج بواسطة الإعداد `jemalloc_profile_text_output_format`، الذي يدعم ثلاث قيم:
 
@@ -285,16 +274,12 @@ SELECT * FROM system.jemalloc_profile_text
 SETTINGS jemalloc_profile_text_output_format = 'symbolized'
 ```
 
-<div id="fetching-heap-profiles-settings">
-  ### إعدادات إضافية
-</div>
+### إعدادات إضافية {#fetching-heap-profiles-settings}
 
 * `jemalloc_profile_text_symbolize_with_inline` (Bool، الافتراضي: `true`) — ما إذا كان سيتم تضمين الإطارات المضمّنة عند فكّ الرموز. يؤدي تعطيل هذا الخيار إلى تسريع فكّ الرموز بشكل ملحوظ، لكنه يقلل الدقة لأن استدعاءات الدوال المضمّنة لن تظهر في المكدسات. لا يؤثر ذلك إلا في التنسيقين `symbolized` و`collapsed`.
 * `jemalloc_profile_text_collapsed_use_count` (Bool، الافتراضي: `false`) — عند استخدام التنسيق `collapsed`، يتم التجميع حسب عدد التخصيصات بدلًا من البايتات.
 
-<div id="example-flamegraph-from-sql">
-  ### مثال: إنشاء مخطط اللهب من SQL
-</div>
+### مثال: إنشاء مخطط اللهب من SQL {#example-flamegraph-from-sql}
 
 بما أن تنسيق الإخراج الافتراضي هو `collapsed`، يمكنك تمرير الإخراج مباشرةً إلى FlameGraph:
 
@@ -308,9 +293,85 @@ clickhouse-client -q "SELECT * FROM system.jemalloc_profile_text" | flamegraph.p
 clickhouse-client -q "SELECT * FROM system.jemalloc_profile_text SETTINGS jemalloc_profile_text_collapsed_use_count = 1" | flamegraph.pl --color=mem --title="Allocation Count Flame Graph" --width 2400 > result.svg
 ```
 
-<div id="flushing-heap-profiles">
-  ## تفريغ ملفات تعريف الكومة إلى القرص
-</div>
+## تحليل تجزئة الذاكرة من SQL {#analyzing-fragmentation-from-sql}
+
+<Note>
+  ينطبق هذا القسم على الإصدارات 26.9 وما بعدها.
+</Note>
+
+يخدّم jemalloc التخصيصات الصغيرة من الشرائح (slabs): كتل ذاكرة ثابتة الحجم مقسّمة إلى مناطق من صنف حجم واحد. ولا تُحرَّر الشريحة إلا عندما تصبح كل منطقة فيها حرة. فإذا تحرّرت معظم تخصيصات صنف حجم معيّن بسرعة وبقي عدد قليل منها حيًّا لمدة طويلة، تظل الشرائح مثبَّتة ومعظم مناطقها حرة، فتبقى الذاكرة مقيمة دون أن تكون مخصَّصة. وهذا هو معنى تجزئة الذاكرة هنا.
+
+يساعد جدولان من جداول النظام في تحديد مصدر ذلك:
+
+* [`system.jemalloc_arena_bins`](/ar/reference/system-tables/jemalloc_bins) يُظهر مقدار الذاكرة التي يهدرها كل صنف حجم في كل ساحة. و`waste` هو عدد البايتات المحتفظ بها في الشرائح دون أن تستخدمها تخصيصات حيّة. أما `purpose` فيشير إلى الساحات المخصّصة (`mergetree`، `jit`، `cache`)؛ وهي تحتفظ ببيانات طويلة العمر بحكم التصميم، لذا استبعدها باستخدام `purpose = ''` عند البحث عن تجزئة ذاكرة غير متوقعة. ويحتوي `system.jemalloc_bins` على البيانات نفسها مجموعةً على مستوى الساحات.
+* `system.jemalloc_sampled_allocations` يسرد التخصيصات المأخوذة كعيّنات والتي لا تزال حيّة، بصف واحد لكل عيّنة: تتبّع المكدس (`trace`)، ومدة بقائها حيّة (`age_ns`)، والحجم وصنف الحجم، والساحة. وقراءة هذا الجدول تُجري flush لملف heap profile جديد.
+
+وربط الجدولين عبر الساحة وصنف الحجم يكشف أي شيفرة خصّصت الكائنات القديمة في أصناف الأحجام المهدِرة.
+
+ضع في اعتبارك عند قراءة النتائج ما يلي:
+
+* لا تُنتج العيّنات إلا الخيوط التي يكون الـ profiler مفعّلًا فيها (`jemalloc_enable_global_profiler` في config أو الإعداد `jemalloc_enable_profiler`).
+* يمثّل كل صف نحو `weight` من التخصيصات الحقيقية، والتخصيصات الصغيرة تُؤخذ كعيّنات بمعدّل منخفض. عدّل `jemalloc_profiler_sampling_rate` إذا لم تكن هناك عيّنات لأصناف الأحجام التي تهمّك.
+* لا تُخزَّن التخصيصات المأخوذة كعيّنات في الشرائح، لذا فهي لا تزيد `waste` بذاتها، وإنما تدلّك فقط على الشيفرة التي تخصّص في صنف الحجم ذاك.
+* تستهلك كل عيّنة حيّة صفحتين إضافيتين (128 كيبي بايت في builds ذات الصفحات بحجم 64 كيبي بايت) حتى يتحرّر التخصيص. وتعطيل الـ profiler يوقف العيّنات الجديدة لكنه لا يحرّر القائمة منها.
+
+يسرد الاستعلام التالي تتبّعات المكدس للتخصيصات الأقدم من دقيقة في أصناف الأحجام التي تهدر أكثر من 1 ميبي بايت:
+
+```sql
+WITH 60e9 AS min_age_ns
+SELECT
+    b.arena,
+    b.size AS reg_size,
+    b.waste AS class_waste,
+    s.est_old_objects,
+    s.stack
+FROM system.jemalloc_arena_bins AS b
+INNER JOIN
+(
+    SELECT
+        arena,
+        size_class,
+        sum(weight) AS est_old_objects,
+        arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
+    FROM system.jemalloc_sampled_allocations
+    WHERE age_ns > min_age_ns
+    GROUP BY arena, size_class, trace
+) AS s ON s.size_class = b.index AND s.arena = b.arena
+WHERE b.large = 0 AND b.purpose = '' AND b.waste > 1048576
+ORDER BY b.waste DESC, s.est_old_objects DESC
+SETTINGS allow_introspection_functions=1
+```
+
+### مثال: توليد مخطط اللهب للتجزئة {#example-fragmentation-flamegraph}
+
+يمكن للـ query نفسه أن يوزّع الهدر في كل صنف حجم على تتبّعات المكدس الخاصة به، بالتناسب مع عدد allocations القديمة في كل منها، ثم يطبع النتيجة بتنسيق `collapsed` المخصص لـ `flamegraph.pl`. أما أصناف الحجم التي بها هدر لكن ليس لديها samples قديمة بما يكفي، فتُدرج تحت frame باسم `[unattributed]`، بحيث يكون مجموع مخطط اللهب هو إجمالي الهدر. واقرأ `system.jemalloc_sampled_allocations` مرة واحدة فقط لكل query، إذ إن كل عملية قراءة تُنفّذ flush لـ profile جديد، ومن ثمّ فإن استخدام subqueries اثنين سيؤدي إلى رؤية بيانات مختلفة.
+
+```sql
+WITH 60e9 AS min_age_ns
+SELECT format('{} {}',
+    if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))),
+    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste))))
+FROM system.jemalloc_arena_bins AS b
+LEFT JOIN
+(
+    SELECT
+        arena,
+        size_class,
+        sum(weight) AS est_old_objects,
+        arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
+    FROM system.jemalloc_sampled_allocations
+    WHERE age_ns > min_age_ns
+    GROUP BY arena, size_class, trace
+) AS s ON s.size_class = b.index AND s.arena = b.arena
+WHERE b.large = 0 AND b.purpose = '' AND b.waste > 0
+SETTINGS allow_introspection_functions=1
+```
+
+```sh
+clickhouse-client -q "..." | flamegraph.pl --color=mem --title="Fragmentation Flame Graph" --width 2400 > result.svg
+```
+
+## تفريغ ملفات تعريف الكومة إلى القرص {#flushing-heap-profiles}
 
 إذا كنت بحاجة إلى حفظ ملفات تعريف الكومة كملفات لتحليلها دون اتصال باستخدام `jeprof`، فيمكنك تفريغها إلى القرص.
 
@@ -344,9 +405,7 @@ MALLOC_CONF=prof_prefix:/data/my_current_profile
 
 سيُضاف إلى بادئة الملف المُنشأ معرّف العملية PID ورقم تسلسلي.
 
-<div id="analyzing-heap-profile-files-with-jeprof">
-  ## تحليل ملفات ملف تعريف الكومة باستخدام `jeprof`
-</div>
+## تحليل ملفات ملف تعريف الكومة باستخدام `jeprof` {#analyzing-heap-profile-files-with-jeprof}
 
 بعد تفريغ ملفات ملف تعريف الكومة إلى القرص، يمكن تحليلها باستخدام أداة `jemalloc` المسماة [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in). ويمكن تثبيتها بعدة طرق:
 
@@ -355,9 +414,7 @@ MALLOC_CONF=prof_prefix:/data/my_current_profile
 
 تتوفر العديد من تنسيقات الإخراج المختلفة. شغّل `jeprof --help` للحصول على القائمة الكاملة بالخيارات.
 
-<div id="symbolized-heap-profiles">
-  ### ملفات تعريف الكومة المُرمَّزة بالرموز
-</div>
+### ملفات تعريف الكومة المُرمَّزة بالرموز {#symbolized-heap-profiles}
 
 اعتبارًا من الإصدار 26.1+، ينشئ ClickHouse تلقائيًا ملفات تعريف كومة مُرمَّزة بالرموز عند تنفيذ عملية `flush` باستخدام `SYSTEM JEMALLOC FLUSH PROFILE`.
 ويحتوي ملف التعريف المُرمَّز بالرموز (ذو الامتداد `.symbolized`) على رموز الدوال المضمّنة، ويمكن تحليله باستخدام `jeprof` دون الحاجة إلى الملف التنفيذي لـ ClickHouse.
@@ -408,9 +465,7 @@ jeprof path/to/clickhouse path/to/heap/profile --output_format [ > output_file]
 jeprof --base /path/to/first.heap.symbolized /path/to/second.heap.symbolized --output_format [ > output_file]
 ```
 
-<div id="examples">
-  ### أمثلة
-</div>
+### أمثلة {#examples}
 
 استخدام ملفات التعريف مُرمَّزة بالرموز (مُستحسن):
 
@@ -440,9 +495,7 @@ jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --text > result
 jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --pdf > result.pdf
 ```
 
-<div id="generating-flame-graph">
-  ### إنشاء مخطط اللهب
-</div>
+### إنشاء مخطط اللهب {#generating-flame-graph}
 
 يتيح لك `jeprof` إنشاء مكدس مطوي لاستخدامها في إنشاء مخططات اللهب.
 
@@ -468,9 +521,7 @@ cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Al
 
 هناك أداة أخرى مفيدة للاهتمام، وهي [speedscope](https://www.speedscope.app/)، تتيح لك تحليل المكدسات التي جُمعت بطريقة أكثر تفاعلية.
 
-<div id="additional-options-for-profiler">
-  ## خيارات إضافية لـ Profiler
-</div>
+## خيارات إضافية لـ Profiler {#additional-options-for-profiler}
 
 يوفّر `jemalloc` العديد من الخيارات المرتبطة بـ Profiler، ويمكن التحكم فيها عبر تعديل متغير البيئة `MALLOC_CONF`.
 على سبيل المثال، يمكن التحكم في الفاصل الزمني بين عينات التخصيص باستخدام `lg_prof_sample`.
@@ -478,9 +529,7 @@ cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Al
 
 يُنصح بالرجوع إلى [الصفحة المرجعية](https://jemalloc.net/jemalloc.3.html) الخاصة بـ `jemalloc` للحصول على قائمة كاملة بالخيارات.
 
-<div id="other-resources">
-  ## موارد أخرى
-</div>
+## موارد أخرى {#other-resources}
 
 يعرض ClickHouse/Keeper مقاييس مرتبطة بـ `jemalloc` بطرق عديدة ومختلفة.
 
@@ -490,9 +539,7 @@ cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Al
   من المهم الانتباه إلى أن أياً من هذه المقاييس غير متزامن مع الآخر، وقد تختلف القيم بمرور الوقت.
 </Warning>
 
-<div id="system-table-asynchronous_metrics">
-  ### جدول النظام `asynchronous_metrics`
-</div>
+### جدول النظام `asynchronous_metrics` {#system-table-asynchronous_metrics}
 
 ```sql
 SELECT *
@@ -503,17 +550,13 @@ FORMAT Vertical
 
 [المرجع](/ar/reference/system-tables/asynchronous_metrics)
 
-<div id="system-table-jemalloc_bins">
-  ### جدول النظام `jemalloc_bins`
-</div>
+### جدول النظام `jemalloc_bins` {#system-table-jemalloc_bins}
 
 يحتوي على معلومات عن تخصيصات الذاكرة التي يجريها مُخصِّص jemalloc عبر فئات الأحجام المختلفة (bins)، والمجمّعة من جميع الساحات.
 
 [مرجع](/ar/reference/system-tables/jemalloc_bins)
 
-<div id="system-table-jemalloc_stats">
-  ### جدول النظام `jemalloc_stats` (26.2+)
-</div>
+### جدول النظام `jemalloc_stats` (26.2+) {#system-table-jemalloc_stats}
 
 يعرض الناتج الكامل للدالة `malloc_stats_print()` كسلسلة نصية واحدة. وهو مكافئ للأمر `SYSTEM JEMALLOC STATS`.
 
@@ -521,17 +564,13 @@ FORMAT Vertical
 SELECT * FROM system.jemalloc_stats
 ```
 
-<div id="prometheus">
-  ### Prometheus
-</div>
+### Prometheus {#prometheus}
 
 تُعرَض أيضًا جميع المقاييس المتعلقة بـ `jemalloc` من `asynchronous_metrics` عبر نقطة نهاية Prometheus في كلٍّ من ClickHouse وKeeper.
 
 [مرجع](/ar/reference/settings/server-settings/settings/other#prometheus)
 
-<div id="jmst-4lw-command-in-keeper">
-  ### أمر `jmst` 4LW في Keeper
-</div>
+### أمر `jmst` 4LW في Keeper {#jmst-4lw-command-in-keeper}
 
 يدعم Keeper الأمر `jmst` ‏4LW الذي يعرض [إحصاءات أساسية للمخصِّص](https://github.com/jemalloc/jemalloc/wiki/Use-Case%3A-Basic-Allocator-Statistics):
 

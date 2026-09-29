@@ -1,0 +1,30 @@
+without setting
+1	['a','a.b']	1	1	null
+2	['a']	1	1	1
+3	['a']	1	1	null
+with setting
+1	{"a":{"b":42}}	['a.b']	1	1	{"b":42}
+2	{"a":1}	['a']	1	1	1
+3	{}	[]	0	0	
+shared data with setting
+1	{"a":{"b":42}}	['a.b']	1	1	{"b":42}
+2	{"a":1}	['a']	1	1	1
+3	{}	[]	0	0	
+non-nullable with setting
+{"a":0}	1	0
+{"a":0}	1	0
+both typed JSONHas with setting
+1	0
+1	1
+0	0
+0	0
+both typed JSONExtractRaw with setting
+1	
+{"b":42}	42
+	
+	
+both typed has with setting
+1	0
+1	1
+0	0
+0	0

@@ -1,0 +1,59 @@
+---
+title: 'O que acontece com as views materializadas atualizáveis quando o servidor é reiniciado'
+sidebarTitle: 'Views materializadas atualizáveis na reinicialização do servidor'
+slug: /resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts
+description: 'Por que todas as views materializadas atualizáveis podem ser atualizadas de uma só vez quando um servidor é reiniciado e como reiniciá-las uma de cada vez.'
+doc_type: 'guide'
+date: 2026-09-22
+tags: ['Server Admin']
+keywords: ['refreshable materialized view', 'restart', 'refresh', 'stop_refreshable_materialized_views_on_startup']
+---
+
+<Warning>
+  Uma view materializada atualizável cujas atualizações não são coordenadas pelo ClickHouse Keeper perde o registro de quando foi atualizada pela última vez e, por isso, pode ser atualizada novamente assim que o servidor estiver pronto. Um servidor com muitas views desse tipo, ou com views sobre grandes conjuntos de dados, pode acabar executando simultaneamente várias atualizações completas justamente no momento em que está menos preparado para absorvê-las.
+</Warning>
+
+## Quais views mantêm seu agendamento? {#which-views-keep-their-schedule}
+
+Em uma view dentro de um banco de dados [`Replicated`](/pt-BR/reference/engines/database-engines/replicated), as atualizações são coordenadas pelo ClickHouse Keeper. No ClickHouse Cloud, o mesmo vale para um banco de dados [`Shared`](/pt-BR/cloud/reference/shared-catalog). Uma view da família `APPEND` em qualquer um desses bancos de dados do Cloud pode dispensar a coordenação com `SETTINGS all_replicas = 1`; em um servidor ClickHouse de código aberto, apenas bancos de dados `Replicated` contam com essa coordenação. Uma view sem coordenação guarda o horário da última atualização apenas em memória. Por isso, após uma reinicialização, ela fica atrasada em qualquer agendamento comum. `RANDOMIZE FOR` não distribui essas atualizações ao longo do tempo.
+
+## As atualizações extras também podem duplicar dados {#the-extra-refreshes-can-also-duplicate-data}
+
+Uma view `APPEND` anexa mais um resultado completo. Uma view `APPEND INCREMENTAL` sem coordenação perde o cursor em memória ao reiniciar, a menos que o destino transacional tenha confirmado esse cursor; por isso, ela reprocessa linhas que já havia anexado.
+
+Escalonar a inicialização, conforme descrito abaixo, limita quantas atualizações são executadas ao mesmo tempo, mas não impede que elas sejam executadas. Uma view `APPEND` evita o anexo extra se você iniciá-la somente quando a próxima atualização já estiver prevista de qualquer forma. Para uma view `APPEND INCREMENTAL` que perdeu o cursor, escolher o momento certo não adianta nada: sempre que for executada novamente, ela reprocessará toda a tabela de origem e anexará esse resultado. Portanto, mantenha-a parada até que você possa absorver ou remover as linhas duplicadas.
+
+## Manter todas as views paradas quando o servidor iniciar {#keep-every-view-stopped-when-the-server-comes-up}
+
+Defina [`stop_refreshable_materialized_views_on_startup`](/pt-BR/reference/settings/session-settings/other#stop_refreshable_materialized_views_on_startup) no próprio perfil de configurações do servidor, ou seja, o perfil indicado por `system_profile`, com fallback para `default_profile` e, depois, para `default`. Esta configuração é experimental:
+
+```xml title="/etc/clickhouse-server/users.d/refreshable_materialized_views.xml"
+<clickhouse>
+    <profiles>
+        <default>
+            <stop_refreshable_materialized_views_on_startup>1</stop_refreshable_materialized_views_on_startup>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+O exemplo usa o perfil padrão `default`. Substitua-o pelo seu `system_profile` personalizado, caso utilize um.
+
+[`SYSTEM STOP VIEWS`](/pt-BR/reference/statements/system#stop-view-stop-views) não é uma alternativa, pois o estado de parada definido por essa instrução não persiste após uma reinicialização.
+
+## Inicie as views uma de cada vez {#start-the-views-one-at-a-time}
+
+[`SYSTEM START VIEWS`](/pt-BR/reference/statements/system#start-view-start-views) inicia todas as views de uma só vez, o que gera o mesmo pico de carga. Por isso, inicie cada view pelo nome e aguarde a conclusão da atualização antes de iniciar a próxima. A tabela [`system.view_refreshes`](/pt-BR/reference/system-tables/view_refreshes) lista essas views. No ClickHouse Cloud, essa tabela de sistema é local a cada nó, então inspecione cada um deles:
+
+```sql
+SYSTEM START VIEW my_database.my_view;
+SYSTEM WAIT VIEW my_database.my_view;
+```
+
+Iniciar uma view apenas retoma o seu agendamento e, ao contrário de [`SYSTEM REFRESH VIEW`](/pt-BR/reference/statements/system#refresh-view), não dispara nenhuma atualização própria. Uma view cujo horário de atualização passou enquanto ela estava parada já está atrasada em relação a esse agendamento, portanto é atualizada assim que é iniciada, e [`SYSTEM WAIT VIEW`](/pt-BR/reference/statements/system#wait-view) fica bloqueado enquanto essa atualização é executada.
+
+Uma view que está aguardando um pré-requisito de [`REFRESH ... DEPENDS ON`](/pt-BR/reference/statements/create/view#refresh-dependencies) ainda não está sendo atualizada, portanto inicie essas views depois daquelas das quais elas dependem. Uma dependência circular não tem essa ordem, e uma reinicialização quebra o ciclo sempre que suas views não são coordenadas: inicie todos os membros, depois execute o mesmo `SYSTEM REFRESH VIEW` que você executou para iniciar o ciclo quando o criou e aguarde a conclusão dessa atualização. Um grafo que precisou de mais de uma atualização desse tipo para iniciar precisa do mesmo conjunto novamente. Disparar um membro diferente pode deixar o ciclo ocioso, pois uma view só é retomada depois que todos os seus pré-requisitos tiverem sido atualizados. Depois de disparado, o ciclo passa a ser atualizado por conta própria, portanto a cadência de uma view por vez termina no disparo.
+
+## O que isso significa para sua automação {#what-this-means-for-your-automation}
+
+Enquanto essa configuração estiver ativa, uma reinicialização não planejada deixa todas as views materializadas atualizáveis paradas, e uma view recém-criada também só começa a ser atualizada depois de ser iniciada. `RESTORE` é a exceção no caso de views cujas atualizações não são coordenadas: ele inicia todas as views desse tipo incluídas na restauração, e cada uma delas pode ficar imediatamente atrasada e reprocessar sua fonte de dados. Uma view coordenada não é iniciada pela restauração e, portanto, permanece parada até que você a inicie. Garanta que a automação responsável por reiniciar seus servidores e criar suas views também seja responsável por iniciá-las.

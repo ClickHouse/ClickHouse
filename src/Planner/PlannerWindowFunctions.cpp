@@ -1,7 +1,7 @@
 #include <optional>
 #include <Planner/PlannerWindowFunctions.h>
 
-#include <AggregateFunctions/WindowFunction.h>
+#include <WindowFunctions/IWindowFunction.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/WindowNode.h>

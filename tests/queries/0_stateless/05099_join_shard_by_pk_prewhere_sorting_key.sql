@@ -20,7 +20,7 @@ SET enable_parallel_replicas = 0;
 -- The correlated EXISTS cell needs the analyzer; the old analyzer rewrites EXISTS into a subquery
 -- with no outer scope, and `compatibility` randomization can revert both settings.
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 -- A null-rejecting filter on the non-preserved side otherwise rewrites the outer join kinds, so the
 -- labelled kind would not be the executed one (LEFT becomes INNER, FULL becomes RIGHT).
 SET query_plan_convert_outer_join_to_inner_join = 0;

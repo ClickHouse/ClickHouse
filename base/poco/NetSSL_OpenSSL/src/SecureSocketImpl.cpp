@@ -219,6 +219,7 @@ void SecureSocketImpl::acceptSSL()
 	ScopedLock lock(*_mutex);
 	poco_assert (!_pSSL);
 	_fatalError = false;
+	_pendingWrite = false;
 
 	BIO* pBIO = BIO_new(getBioMethod());
 	if (!pBIO) throw SSLException("Cannot create BIO object");
@@ -289,6 +290,7 @@ void SecureSocketImpl::connectSSL(bool performHandshake)
 	poco_assert (!_pSSL);
 	poco_assert (_pSocket->initialized());
 	_fatalError = false;
+	_pendingWrite = false;
 
 	BIO* pBIO = BIO_new(getBioMethod());
 	if (!pBIO) throw SSLException("Cannot create SSL BIO object");
@@ -395,7 +397,10 @@ void SecureSocketImpl::shutdown()
 					return SSL_shutdown(_pSSL);
 				}, false);
 			}
-			while (result.rc < 0 && mustRetry(result.rc, result.sslError, result.socketError, remaining_time));
+			/// OpenSSL does not dispatch the `close_notify` alert while a record write from an
+			/// earlier `SSL_write` is still pending, so retrying cannot make progress then.
+			while (!_pendingWrite && result.rc < 0
+				&& mustRetry(result.rc, result.sslError, result.socketError, remaining_time));
 			if (result.rc < 0)
 				handleError(result.rc, result.sslError, result.socketError, result.errorCode);
 			if (_pSocket->getBlocking())
@@ -448,6 +453,7 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 		{
 			return SSL_write(_pSSL, buffer, length);
 		});
+		_pendingWrite = result.sslError == SSL_ERROR_WANT_WRITE;
 	}
 	while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time));
 	rc = result.rc;

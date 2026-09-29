@@ -1,5 +1,6 @@
 import pytest
 import socket
+from contextlib import contextmanager
 import uuid
 import threading
 import time
@@ -196,7 +197,7 @@ class StatementStallingProxy:
     constructor, before `onStart` has published `tx`. Stalling the `COPY` pins it one step
     later, inside `pqxx::stream_from`'s constructor, with `tx` published and still no
     statement running on the connection. Those are the two startup windows in which a cancel
-    finds nothing to interrupt.
+    request to the server finds no statement to interrupt.
 
     `skip` exists because the source's transaction is not the only one on the wire. Reading
     through `postgresql()` without an explicit column list first fetches the table structure,
@@ -314,6 +315,61 @@ class StatementStallingProxy:
             t.join(timeout=5)
 
 
+class ResponseStallingProxy(StatementStallingProxy):
+    """Forwards the `CopyOutResponse` and withholds every row after it, keeping both sockets open.
+    The source is then blocked in `read_row()` with nothing buffered to drain.
+    """
+
+    def __init__(self):
+        super().__init__(marker=StatementStallingProxy.COPY)
+        self._copy_sent = threading.Event()
+
+    def _pump(self, source, destination, is_client_to_server):
+        carry = b""
+        buf = bytearray()
+        stalled_once = False
+        while not self._stop:
+            try:
+                data = source.recv(4096)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            if not data:
+                break
+
+            try:
+                if is_client_to_server:
+                    if not self._copy_sent.is_set() and self._marker in carry + data:
+                        self._copy_sent.set()
+                    carry = (carry + data)[-(len(self._marker) - 1) :]
+                    destination.sendall(data)
+                    continue
+
+                if stalled_once or not self._copy_sent.is_set():
+                    destination.sendall(data)
+                    continue
+
+                # The response starts at a message boundary. Forward its first message only.
+                buf += data
+                if len(buf) < 5 or len(buf) < 1 + int.from_bytes(buf[1:5], "big"):
+                    continue
+                first = 1 + int.from_bytes(buf[1:5], "big")
+                destination.sendall(bytes(buf[:first]))
+                stalled_once = True
+                self._stalled.set()
+                self._release.wait(timeout=60)
+                destination.sendall(bytes(buf[first:]))
+            except OSError:
+                break
+
+        for s in (source, destination):
+            try:
+                s.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+
 def test_kill_query_while_transaction_is_starting(started_cluster, setup_infinite_query):
     """A cancel arriving while the transaction is still being constructed must not be lost.
 
@@ -411,12 +467,9 @@ def test_kill_query_while_copy_is_starting(started_cluster, setup_streaming_view
     """A cancel arriving after the transaction is published but before the COPY starts must
     not be lost either.
 
-    This is one step later than `test_kill_query_while_transaction_is_starting`. Here `tx` is
-    already published, so `onCancel` does call `cancel_query()` -- but no statement is running
-    on that connection yet, so PostgreSQL has nothing to interrupt and the cancel is dropped.
-    `onStart` opens the COPY straight afterwards, so the destructor has to be the one that
-    cancels it. If a cancel could take the teardown away from it, nothing would, and the
-    rollback would sit waiting for the COPY.
+    This is one step later than `test_kill_query_while_transaction_is_starting`: `tx` is
+    published but no statement runs yet, so a cancel request to the server would be dropped.
+    The failed `COPY` start must still surface as a cancellation, not a transport error.
 
     Stalling the COPY request rather than the `BEGIN` is what places the cancel in this
     window; `test_kill_query_while_transaction_is_starting` cannot reach it, because there
@@ -468,22 +521,13 @@ ENGINE = PostgreSQL(
                 sleep_time=0.5,
             )
 
+            # Delivered while the COPY is still withheld, so the connection has no statement in
+            # progress. The query ends at once, so there is no cancelled state to observe.
             node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
-            # Deliver the cancel while the COPY is still withheld, so that `onCancel` runs
-            # against a connection with no statement in progress.
-            assert_eq_with_retry(
-                node1,
-                f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
-                "1",
-                retry_count=60,
-                sleep_time=0.5,
-            )
         finally:
             proxy.release()
 
-        # Once the COPY reaches the server the read has to be abandoned. Without the fix the
-        # dropped cancel leaves the source streaming the view to its end, so this join times
-        # out.
+        # Without the fix the dropped cancel leaves the source streaming to the end of the view.
         query_thread.join(timeout=60)
         assert (
             not query_thread.is_alive()
@@ -503,6 +547,131 @@ ENGINE = PostgreSQL(
         query_thread.join(timeout=60)
         node1.query("DROP TABLE IF EXISTS copy_stalled_counter")
         assert not query_thread.is_alive(), "query thread outlived the test"
+
+
+@contextmanager
+def stalled_postgres_table(started_cluster, table):
+    """An engine table read through a `ResponseStallingProxy`. Released and dropped on exit."""
+    proxy = ResponseStallingProxy()
+    port = proxy.start((started_cluster.postgres_ip, started_cluster.postgres_port))
+    proxy_host = socket.gethostbyname(socket.gethostname())
+    node1.query(f"DROP TABLE IF EXISTS {table}")
+    node1.query(
+        f"""CREATE TABLE {table} (counter Nullable(Int32))
+ENGINE = PostgreSQL(
+    '{proxy_host}:{port}',
+    'postgres_database',
+    'streaming_counter',
+    'postgres',
+    'ClickHouse_PostgreSQL_P@ssw0rd')"""
+    )
+    try:
+        yield proxy
+    finally:
+        proxy.stop()
+        node1.query(f"DROP TABLE IF EXISTS {table}")
+
+
+def wait_until_blocked_in_read(proxy, query_id):
+    proxy.wait_until_stalled()
+    # Nothing is buffered after `CopyOutResponse`, so from here the source blocks in the read.
+    node1.wait_for_log_line(f"{query_id}.*Generate a chunk from stream")
+
+
+def test_kill_query_while_the_read_is_stalled(started_cluster, setup_streaming_view):
+    """A cancel arriving while the COPY is streaming must not wait for the server.
+    The proxy stays stalled across the kill, so only the transport itself can end the read.
+    """
+    query_id = str(uuid.uuid4())
+    query_errors = []
+
+    with stalled_postgres_table(started_cluster, "read_stalled_counter") as proxy:
+
+        def execute_query():
+            _, error = node1.query_and_get_answer_with_error(
+                "SELECT * FROM read_stalled_counter", query_id=query_id, timeout=120
+            )
+            query_errors.append(error)
+
+        query_thread = threading.Thread(target=execute_query)
+        query_thread.start()
+        try:
+            wait_until_blocked_in_read(proxy, query_id)
+            node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
+
+            # Still stalled: without the fix the read waits for as long as the peer stays silent.
+            query_thread.join(timeout=30)
+            assert (
+                not query_thread.is_alive()
+            ), "cancelled query kept waiting on a silent connection"
+            assert query_errors and "QUERY_WAS_CANCELLED" in query_errors[0], query_errors
+        finally:
+            node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC", ignore_error=True)
+            query_thread.join(timeout=60)
+            assert not query_thread.is_alive(), "query thread outlived the test"
+
+
+def test_max_execution_time_while_the_read_is_stalled(started_cluster, setup_streaming_view):
+    """The deadline is enforced by a background thread and has to end a read the query itself
+    cannot leave.
+    """
+    query_id = str(uuid.uuid4())
+    query_errors = []
+
+    with stalled_postgres_table(started_cluster, "read_stalled_counter") as proxy:
+
+        def execute_query():
+            _, error = node1.query_and_get_answer_with_error(
+                "SELECT * FROM read_stalled_counter SETTINGS max_execution_time = 5",
+                query_id=query_id,
+                timeout=120,
+            )
+            query_errors.append(error)
+
+        query_thread = threading.Thread(target=execute_query)
+        query_thread.start()
+        try:
+            proxy.wait_until_stalled()
+
+            # Still stalled: without the fix the deadline fires, but nothing wakes the read.
+            query_thread.join(timeout=30)
+            assert (
+                not query_thread.is_alive()
+            ), "timed-out query kept waiting on a silent connection"
+            assert query_errors and "TIMEOUT_EXCEEDED" in query_errors[0], query_errors
+        finally:
+            node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC", ignore_error=True)
+            query_thread.join(timeout=60)
+            assert not query_thread.is_alive(), "query thread outlived the test"
+
+
+def test_drop_refreshable_view_while_the_read_is_stalled(started_cluster, setup_streaming_view):
+    """Dropping a refreshable view waits for its refresh to stop, so the cancel it sends has to
+    end a stalled read as well.
+    """
+    with stalled_postgres_table(started_cluster, "read_stalled_counter") as proxy:
+        node1.query("DROP TABLE IF EXISTS stalled_refresh")
+        node1.query(
+            """CREATE MATERIALIZED VIEW stalled_refresh REFRESH EVERY 1 HOUR
+ENGINE = MergeTree ORDER BY tuple() EMPTY AS SELECT * FROM read_stalled_counter"""
+        )
+        try:
+            node1.query("SYSTEM REFRESH VIEW stalled_refresh")
+
+            # The refresh is the only query reading the table.
+            refresh_query = (
+                "SELECT query_id FROM system.processes "
+                "WHERE query LIKE '%read_stalled_counter%' AND query NOT LIKE '%system.processes%'"
+            )
+            assert_eq_with_retry(
+                node1, f"SELECT count() FROM ({refresh_query})", "1", retry_count=60, sleep_time=0.5
+            )
+            wait_until_blocked_in_read(proxy, node1.query(refresh_query).strip())
+
+            # Still stalled: without the fix the drop waits for the refresh, which waits for the peer.
+            node1.query("DROP TABLE stalled_refresh", timeout=30)
+        finally:
+            node1.query("DROP TABLE IF EXISTS stalled_refresh")
 
 
 def test_kill_query_when_postgresql_cancel_connection_fails(
@@ -546,14 +715,21 @@ def test_kill_query_when_postgresql_cancel_connection_fails(
         )
         wait_for_port_forward_connection(port_forward)
 
-        # Keep the active `postgresql` data connection open, but refuse the separate
-        # `pqxx::connection::cancel_query` connection opened by `KILL QUERY`.
+        # Keep the data connection open but refuse new ones: the cancel request fails, and the
+        # kill has to get by without it.
         port_forward.stop()
         wait_for_proxy_listener_closed(proxy_host, port)
 
         node1.query(f"KILL QUERY WHERE query_id='{query_id}'")
         node1.wait_for_log_line("PQcancel\\(\\) -- connect\\(\\) failed", timeout=30)
 
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+            "0",
+            retry_count=60,
+            sleep_time=0.5,
+        )
         assert node1.query("SELECT 1").strip() == "1"
     finally:
         port_forward.stop(force=True)
@@ -561,7 +737,7 @@ def test_kill_query_when_postgresql_cancel_connection_fails(
     query_thread.join(timeout=30)
     assert not query_thread.is_alive()
     assert not query_exceptions
-    assert query_errors
+    assert query_errors and "QUERY_WAS_CANCELLED" in query_errors[0], query_errors
 
 
 def test_kill_infinite_query(setup_infinite_query):

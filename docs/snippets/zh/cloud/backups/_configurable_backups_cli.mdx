@@ -1,0 +1,188 @@
+---
+title: 可配置 Backup 命令行客户端
+---
+
+本页介绍如何通过 [ClickHouse 命令行客户端](/zh/products/cloud/features/cli) (`clickhousectl`) 在命令行中查看和修改 ClickHouse Cloud 服务的 Backup 计划。相关命令均为非交互式；指定 `--json` 时，`clickhousectl` 会以 JSON 格式输出。
+
+可配置 Backup 适用于 Scale 和 Enterprise 计划。
+
+## 前置条件 {#prerequisites}
+
+安装 ClickHouse 命令行客户端：
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+你还需要 `jq`。
+
+更改 Backup 配置属于写操作，需要使用 [API key 身份验证](/zh/products/cloud/features/admin-features/api/openapi)；OAuth 登录仅具有只读权限：
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+或者，设置 `CLICKHOUSE_CLOUD_API_KEY` 和 `CLICKHOUSE_CLOUD_API_SECRET` 环境变量。使用 `clickhousectl cloud auth status` 进行验证：确认**当前生效**的凭据是权限范围为 `read/write` 的那一个。此前通过 `auth login` 保存的凭据优先级高于环境变量；此时 `Env vars` 行虽然仍会显示权限范围为 `read/write`，但会被标记为未生效 (`Configured (inactive, outranked by credentials file)`) ，下文的写入命令实际会使用已保存的凭据运行。如果希望使用环境变量，请先运行 `clickhousectl cloud auth logout`。
+
+## 查找服务 ID {#find-the-service-id}
+
+备份配置按服务分别设置。请通过名称查找该服务的 ID：
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json \
+  | jq -r '.[] | select(.name=="<service-name>") | .id')
+```
+
+如果您隶属于多个组织，则无法自动识别所属组织，此命令将失败并报错 `Multiple organizations found. Specify --org-id to choose one.`。可使用 `clickhousectl cloud org list` 列出您的组织，并在此命令以及下文的每个 `backup-config` 命令中传入 `--org-id <org-id>`。
+
+## 查看当前的 备份配置 {#read-the-current-backup-configuration}
+
+```bash
+clickhousectl cloud service backup-config get "$CH_ID" --json
+```
+
+仍使用默认调度计划的服务会报告：
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 24.0
+}
+```
+
+只有在设置了开始时间之后，`backupStartTime` 才会出现在输出中。
+
+## 更改保留期与频率 {#change-retention-and-frequency}
+
+`backup-config update` 接受与控制台表单相同的设置——保留期 (`--backup-retention-period-hours`) 、频率 (`--backup-period-hours`) 和开始时间 (`--backup-start-time`) ——并打印出最终的配置。省略的参数将沿用其当前值：
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --backup-period-hours 12 \
+  --backup-retention-period-hours 48 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+更改会立即生效；可回读配置进行确认：
+
+```bash
+clickhousectl cloud service backup-config get "$CH_ID" --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+## 设置 Backup 开始时间 {#set-a-backup-start-time}
+
+`--backup-start-time` 接受一个以 UTC 表示的每日开始时间，且必须为整点 (`HH:00`) 。开始时间会对频率施加约束：Backup 周期必须为 `24` 或 `48` 小时，可在同一条命令中一并传入，也可以是该服务上已保存的值。自 `clickhousectl 0.4.2` 起，格式与周期规则都会在客户端校验，且在任何 API 调用之前完成。非整点的时间——或未补零的时间，例如 `2:00`——会被 argument parser 拒绝，并以退出码 `2` 退出：
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 02:30 --json
+```
+
+```text
+error: invalid value '02:30' for '--backup-start-time <BACKUP_START_TIME>': invalid backup start time '02:30': expected HH:00 with HH from 00 to 23
+```
+
+同样，若在传入 `--backup-start-time` 的同时将 `--backup-period-hours` 设置为 `24` 或 `48` 以外的值，请求在发送前就会被拒绝，退出码为 `1`：
+
+```text
+Error: --backup-period-hours must be 24 or 48 when --backup-start-time is set
+```
+
+`--backup-period-hours` 可以省略，此时该服务会沿用其现有周期——但已存储的周期本身必须为 `24` 或 `48`。若服务仍使用默认 schedule，其周期即为 `24`，因此只需指定开始时间即可。上面的服务在上一步中已被设置为 `12`，因此省略周期会失败：`clickhousectl` 会先读取已存储的 configuration，然后以退出码 `1` 拒绝执行，同样不会调用 API：
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 03:00 --json
+```
+
+```text
+Error: the stored backup period is 12 hours, but --backup-start-time requires 24 or 48. Pass --backup-period-hours 24 or --backup-period-hours 48 in the same call.
+```
+
+显式传入 period 才是有效的组合：
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --backup-start-time 02:00 \
+  --backup-period-hours 24 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 48.0,
+  "backupStartTime": "02:00"
+}
+```
+
+反过来的情况则不会在客户端被拦截：当已设置了开始时间时，若更新中仅将 `--backup-period-hours` 改为 `24` 或 `48` 以外的值，该请求会被发送到 API，并在 API 端失败，退出码为 `1`：
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" --backup-period-hours 12 --json
+```
+
+```text
+Error: BAD_REQUEST: customBackupPeriod must be 24 or 48 hours when customBackupStartTime is set
+```
+
+在同一条命令中清除开始时间即可避免该问题，如下所示。
+
+## 清除 Backup 开始时间 {#clear-the-backup-start-time}
+
+`--clear-backup-start-time` 会移除已存储的开始时间，并解除该周期上 `24`/`48` 小时的限制：
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --clear-backup-start-time \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+`backupStartTime` 会从输出中消失，而不是显示为 `null`，`backup-config get` 也不再返回该字段。清除一个从未设置过的开始时间属于空操作，命令仍会以 `0` 退出。
+
+将其与 `--backup-period-hours` 搭配使用，即可在一条命令中同时清除开始时间并设置任意 period —— 这正是解决上述 API error 的方法：
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --clear-backup-start-time \
+  --backup-period-hours 12 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+`--clear-backup-start-time` 与 `--backup-start-time` 不能同时使用；parser 会拒绝该组合并以退出码 `2` 退出：
+
+```text
+error: the argument '--clear-backup-start-time' cannot be used with '--backup-start-time <BACKUP_START_TIME>'
+```
+
+若要修改 Backup 开始时间而非将其清除，只需单独传入新的 `--backup-start-time`，它会覆盖已存储的值。
+
+<Note>
+  修改 Backup 计划可能会导致每月存储费用上升，因为部分 Backup 可能不在该服务的默认 Backup 范围内。参见[“了解 Backup 成本”](/zh/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost)。
+</Note>

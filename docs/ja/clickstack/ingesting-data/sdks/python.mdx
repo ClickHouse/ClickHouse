@@ -6,23 +6,17 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'ログ', 'インテグレーション', 'アプリケーション監視']
 ---
 
+import { ClickStackIntegrates } from '/snippets/ja/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack は、テレメトリーデータ (ログと
 トレース) の収集に OpenTelemetry 標準を使用します。トレースは自動インストルメンテーションによって生成されるため、トレーシングの価値を得るのに手動の
 インストルメンテーションは必要ありません。
 
-このガイドでは、以下を統合します:
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-* **ログ**
-* **メトリクス**
-* **トレース**
+## はじめに {#getting-started}
 
-<div id="getting-started">
-  ## はじめに
-</div>
-
-<div id="install-clickstack-otel-instrumentation-package">
-  ### ClickStack OpenTelemetry インストルメンテーション パッケージをインストールする
-</div>
+### ClickStack OpenTelemetry インストルメンテーション パッケージをインストールする {#install-clickstack-otel-instrumentation-package}
 
 次のコマンドで、[ClickStack OpenTelemetry パッケージ](https://pypi.org/project/hyperdx-opentelemetry/)をインストールします。
 
@@ -37,34 +31,30 @@ Python アプリケーションで使用しているパッケージ向けの Ope
 opentelemetry-bootstrap -a install
 ```
 
-<div id="configure-environment-variables">
-  ### 環境変数を設定する
-</div>
+### 環境変数を設定する {#configure-environment-variables}
 
 次に、OpenTelemetry Collector 経由でテレメトリーを ClickStack に送信するため、シェルで以下の環境変数を設定する必要があります。
 
 <Tabs>
   <Tab title="Managed ClickStack">
     ```shell
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> 
     ```
   </Tab>
 
   <Tab title="ClickStack Open Source">
     ```shell
     export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> 
     ```
   </Tab>
 </Tabs>
 
 *`OTEL_SERVICE_NAME` 環境変数は、HyperDX アプリ内でサービスを識別するために使用されます。値には任意の名前を指定できます。*
 
-<div id="run-the-application-with-otel-python-agent">
-  ### OpenTelemetry Pythonエージェントを使用してアプリケーションを実行する
-</div>
+### OpenTelemetry Pythonエージェントを使用してアプリケーションを実行する {#run-the-application-with-otel-python-agent}
 
 これで、OpenTelemetry Pythonエージェント (`opentelemetry-instrument`) を使用してアプリケーションを実行できます。
 
@@ -72,9 +62,7 @@ opentelemetry-bootstrap -a install
 opentelemetry-instrument python app.py
 ```
 
-<div id="using-uvicorn-gunicorn-uwsgi">
-  #### `Gunicorn`、`uWSGI`、`uvicorn` を使用している場合
-</div>
+#### `Gunicorn`、`uWSGI`、`uvicorn` を使用している場合 {#using-uvicorn-gunicorn-uwsgi}
 
 この場合、OpenTelemetry Pythonエージェントを動作させるには追加の設定変更が必要です。
 
@@ -107,13 +95,9 @@ pre-fork Webサーバーモードを使用するアプリケーションサー�
   </Tab>
 </Tabs>
 
-<div id="advanced-configuration">
-  ## 高度な設定
-</div>
+## 高度な設定 {#advanced-configuration}
 
-<div id="network-capture">
-  #### ネットワークキャプチャ
-</div>
+#### ネットワークキャプチャ {#network-capture}
 
 ネットワークキャプチャ機能を有効にすると、開発者は
 HTTPリクエストのヘッダーやボディ内のペイロードを効果的にデバッグできるようになります。これは
@@ -124,13 +108,9 @@ HTTPリクエストのヘッダーやボディ内のペイロードを効果的�
 export HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE=1
 ```
 
-<div id="troubleshooting">
-  ## トラブルシューティング
-</div>
+## トラブルシューティング {#troubleshooting}
 
-<div id="logs-not-appearing-due-to-log-level">
-  ### ログレベルが原因でログが表示されない
-</div>
+### ログレベルが原因でログが表示されない {#logs-not-appearing-due-to-log-level}
 
 デフォルトでは、OpenTelemetry のログ用ハンドラーは `logging.NOTSET` レベルを使用しており、実際には WARNING レベルとして扱われます。ロガーの作成時にログレベルを指定できます:
 
@@ -141,9 +121,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 ```
 
-<div id="exporting-to-the-console">
-  ### コンソールへのエクスポート
-</div>
+### コンソールへのエクスポート {#exporting-to-the-console}
 
 OpenTelemetry Python SDK は通常、エラーが発生するとその内容をコンソールに表示します。
 ただし、エラーは発生していないのに、データが想定どおり HyperDX に表示されない場合は、

@@ -64,7 +64,7 @@ namespace Setting
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
-    extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsDoubleAuto promql_evaluation_time;
 }
 
 namespace ErrorCodes

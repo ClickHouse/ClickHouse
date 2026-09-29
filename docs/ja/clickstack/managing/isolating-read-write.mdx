@@ -1,0 +1,287 @@
+---
+slug: /use-cases/observability/clickstack/isolating-read-write
+title: '読み取りワークロードと書き込みワークロードの分離'
+sidebarTitle: '読み取りと書き込みの分離'
+description: 'ClickHouse Cloud の warehouse を使って ClickStack のインジェストワークロードとクエリワークロードを分離する'
+doc_type: 'guide'
+keywords: ['clickstack', 'warehouses', 'compute-compute separation', 'read-only', 'isolation', 'ingestion', 'scaling']
+---
+
+import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+オブザーバビリティのワークロードは、同じデータに対して性質のまったく異なる2つの要求を課します。インジェストは継続的かつ書き込み中心であり、insertが完了したあとも長時間にわたってバックグラウンドのマージがCPUとメモリを消費し続けます。一方、クエリ負荷は不均一で、ダッシュボードや検索はインシデント発生時、つまり応答の遅さが最も許容されないタイミングでピークを迎えます。
+
+ClickHouse Cloudの[warehouses](/ja/products/cloud/features/infrastructure/warehouses)を使えば、どちらのワークロードも同じデータを対象としながら別々のコンピュートで処理できるため、CPUとメモリを互いに奪い合うことがなくなります。
+
+<ScalePlanFeatureBadge feature="Compute-compute separation" />
+
+warehousesはClickHouse Cloudの機能であるため、ここで説明するセットアップは、ClickHouse Cloud上で動作するClickStackに適用されます。分割した各側は、単一のデータコピーを共有しながら、それぞれ独立してサイジング、スケール、アイドル化できます。
+
+<Note>
+  **分離が有効なケース**
+
+  分離は、継続的インジェストを伴う大規模なデプロイメントを対象としています。保存データが月あたりおよそ100 TBを下回る規模であれば、通常は単一のread-writeサービスで両方のワークロードを処理でき、2つ目のサービスはおそらく不要です。月あたりのcompressedボリュームを見積もるには、[sizing model](/ja/clickstack/managing/estimating-resources)を利用してください。
+</Note>
+
+## 読み取りと書き込みを分離する理由 {#why-isolate}
+
+* **書き込みが読み取りの性能を落とさなくなる。** 継続的な OpenTelemetry インジェスト (insert そのものと、それに続くバックグラウンドマージ) は、ダッシュボードや検索のクエリと CPU およびメモリを奪い合います。インジェスト実行中は読み取りレイテンシが目に見えて悪化し、停止すると回復します。
+* **読み取りが書き込みを妨げなくなる。** この競合は双方向に発生します。重いアドホッククエリや高コストなダッシュボードの描画がサービスのメモリを使い切り、insert が遅くなるどころか完全に失敗することもあります。
+* **読み取り専用コンピュートをクエリに専念させられる。** 読み取り専用サービスは、システムテーブル以外でバックグラウンドマージを実行しません。また、マージによって起動状態が維持されうる読み書きサービスと異なり、遅延なくアイドル状態に入ります。
+* **それぞれを個別にサイジングできる。** [sizing model](/ja/clickstack/managing/estimating-resources) は ingest compute と query compute を別々に見積もり、warehouse では両者をそれぞれ独立したサービスとしてプロビジョニングできます。モデルのベースラインである 1 QPS を超えると query compute が支配的になり、5 QPS の[計算例](/ja/clickstack/managing/estimating-resources#worked-example)ではインジェストに 58 vCPU、クエリに 290 vCPU という結果になります。つまり、小規模な書き込みサービスで、はるかに大規模な読み取りサービスにデータを供給できます。
+* **アイドル化とオートスケーリングはサービス単位で設定できる。** 各サービスがそれぞれのレプリカ数、オートスケーリング、自動アイドル化の設定を持つため、書き込みサービスは継続的インジェストのために常時稼働させたまま、読み取りサービスは業務時間外にアイドル化させるといった構成が可能です。
+* **ストレージは重複しない。** warehouse 内のサービスは同じオブジェクトストレージのフォルダーと同じテーブルを共有し、[ストレージの課金は一度だけ](/ja/products/cloud/features/infrastructure/warehouses#pricing)です。
+* **エンドポイントごとにアクセスを制限できる。** IP access list はサービスごとに適用されるため、書き込みエンドポイントは collector からのみ、読み取りエンドポイントは ClickStack デプロイメントからのみ到達可能にできます。[ネットワークアクセス制御](/ja/products/cloud/features/infrastructure/warehouses#network-access-control)のガイドを参照してください。
+
+## アーキテクチャ {#architecture}
+
+推奨されるトポロジは、インジェスト用の読み書きサービス 1 つと、ClickStack 用の読み取り専用サービス 1 つを含む warehouse です。
+
+| サービス  | Type   | 役割                                                           | クライアント                                                            |
+| ----- | ------ | ------------------------------------------------------------ | ----------------------------------------------------------------- |
+| プライマリ | 読み書き   | インジェスト、background merges、DDL (テーブル作成、TTL、materialized view)  | OpenTelemetry collector、ClickPipes、Vector、管理用の SQL コンソール / クライアント |
+| セカンダリ | 読み取り専用 | 検索、ダッシュボード、ノートブック、アラート評価                                     | ClickStack UI (HyperDX)                                           |
+
+トポロジを計画する際は、次の点に留意してください。
+
+* warehouse の最初のサービスは常に読み書きであり、サービスの種別は**作成時に固定**されます。読み取り専用と読み書きを切り替えるには、warehouse 内に新しいサービスを作成してください。
+* warehouse 内のすべてのサービスは、同じクラウドプロバイダー、リージョン、ClickHouse バージョン、Keeper、およびプライマリサービスのアップグレードスケジュールを共有します。
+* インジェストに使用する読み書きサービスは**1 つ**にしてください。マージはストレージを共有するすべての読み書きサービスに割り当てられるため、あるサービスでの挿入に対するマージが別のサービスで実行されることがあります。その別のサービスが重いクエリも処理している場合、それらのクエリはマージを実行しているサービス上で CPU とメモリを奪い合います。その結果、最初のサービスの挿入に対するマージが遅くなり、挿入パフォーマンスも低下します。クエリワークロードは読み取り専用サービスに集約し、[マージをインジェストから分離](#separating-merges)する必要がある場合にのみ 2 つ目の読み書きサービスを追加してください。
+
+## 分離されたデプロイメントのセットアップ {#setup}
+
+<Steps>
+  <Step title="読み書きサービスを準備する" id="prepare-read-write-service">
+    インジェストには、既存のサービス、または新しい warehouse の primary service を使用します。サイズは、[sizing model](/ja/clickstack/managing/estimating-resources) で算出した ingest compute に合わせて設定してください。
+
+    このサービス上に、データベースとインジェスト専用ユーザーを作成します。warehouse 内のすべてのサービスはアクセス制御を共有するため、ここで作成したユーザーは warehouse 内のどのサービスからでも利用できます:
+
+    ```sql
+    CREATE DATABASE otel;
+    CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY '<strong-password>';
+    GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+    ```
+
+    パスワードは `openssl rand -base64 24` などのツールで生成し、manifest やシェルの履歴ではなくシークレットマネージャーに保管してください。詳細は [インジェスト用ユーザーの作成](/ja/clickstack/ingesting-data/collector#creating-an-ingestion-user) のガイドを参照してください。
+
+    この service がすでに warehouse に属している場合、同じ warehouse 内の別の service が idled 状態になっていると、database レベルの DDL がハングすることがある点に注意してください。詳細は [管理と DDL](#administration) を参照してください。
+  </Step>
+
+  <Step title="warehouse に読み取り専用サービスを追加する" id="add-read-only-service">
+    ClickHouse Cloud コンソールで、先ほど準備した service のプラス記号をクリックし、そのデータを共有する 2 つ目の service を作成します。サービス種別として **read-only** を選択し、サイジングモデルで算出したクエリ用コンピュートに合わせてサイズを設定します。
+
+    詳しい手順については、ガイド [warehouse のセットアップ方法](/ja/products/cloud/features/infrastructure/warehouses#setup-warehouses) を参照してください。
+  </Step>
+
+  <Step title="読み書き可能なサービスをインジェスト先に指定する" id="point-ingestion">
+    インジェスト用ユーザーとして認証し、**read-write** の service endpoint にエクスポートするよう collector を設定します:
+
+    ```shell
+    CLICKHOUSE_ENDPOINT=https://<read-write-service>.clickhouse.cloud:8443
+    CLICKHOUSE_USER=hyperdx_ingest
+    CLICKHOUSE_PASSWORD=<strong-password>
+    HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=otel
+    ```
+
+    詳細については [collector の設定オプション](/ja/clickstack/managing/config#otel-collector) を、[Vector](/ja/clickstack/ingesting-data/vector) やその他のインジェストパスについては同等の設定を参照してください。
+
+    read-only エンドポイントへの書き込みは拒否されるため、collector は常に read-write の service を指す必要があります。
+  </Step>
+
+  <Step title="ClickStack を読み取り専用サービスに接続する" id="point-clickstack">
+    ClickStack UI は、ClickHouse Cloud console で起動元となった ClickHouse service に常に接続します。読み取り専用コンピュート上で実行するには、次の手順を実行します。
+
+    1. ClickHouse Cloud console で読み取り専用サービスを選択します。
+    2. 左側のナビゲーションメニューから **ClickStack** を選択します。
+
+    これにより、UI が発行するすべてのクエリがその読み取り専用コンピュート上で実行されます。ClickStack 側での設定は不要です。[読み取り専用コンピュートでの ClickStack の利用](/ja/clickstack/deployment/managed#clickstack-read-only-compute)に関するガイドを参照してください。
+
+    <Warning>
+      **ClickStack の状態はサービス単位で管理されます**
+
+      ダッシュボード、保存済み検索、アラート、ログソースは、ClickStack を起動したサービスに属しており、同じ warehouse 内の別のサービスには引き継がれません。これは、両方のサービスが同じデータを共有している場合でも同様です。[デフォルトの OpenTelemetry スキーマ](/ja/clickstack/deployment/managed#adding-data-sources)を使用しているログソースは新しいサービス上で自動検出されるため、そのデータに対する検索はすぐに利用できますが、カスタムのログソースや手動で構成したログソース、およびその他の保存内容はすべて作り直す必要があります。
+
+      ダッシュボードを構築する前に、ClickStack を実行するサービスを決めておいてください。すでに運用中のデプロイメントを切り替える場合、以前のサービスで作成したアラートは、削除するまでそのサービス上 (そのサービスのコンピュート) で評価され続ける点にご注意ください。
+    </Warning>
+  </Step>
+
+  <Step title="分割を確認する" id="verify">
+    ClickStack で検索を実行するか、ダッシュボードを開き、クエリがどのノードで実行されたかを確認します。`system` テーブルはクエリを実行したノード上に書き込まれるため、レプリカが複数あるサービスでは、そのすべてを対象とするために `default` というクラスター名を指定した [`clusterAllReplicas`](/ja/reference/system-tables/overview#querying-across-nodes) を使用する必要があります。**読み取り専用**のサービスでは、次のように ClickStack のクエリが確認できるはずです:
+
+    ```sql
+    SELECT 
+        user, 
+        query_kind, 
+        http_user_agent,
+        count()
+    FROM clusterAllReplicas('default', system.query_log)
+    WHERE event_time > now() - toIntervalMinute(10) 
+      AND type = 'QueryFinish'
+      AND is_initial_query = 1
+    GROUP BY ALL
+    ORDER BY count() DESC;
+    ```
+
+    ここで結果が空であっても、それだけでクエリが別の場所に送られたことを意味するわけではありません。`system.query_log` は定期的に (デフォルトでは 7.5 秒ごとに) フラッシュされるため、検索直後に実行したクエリはまだ記録に現れていない場合があります。少し待ってから再実行するか、権限 (grant) があれば [`SYSTEM FLUSH LOGS`](/ja/reference/statements/system#flush-logs) で強制的にフラッシュしてください。
+
+    トラフィックの発生元を特定しているのは、`user` と `http_user_agent` によるグルーピングです。これにより、ログソースがどのテーブルを指していても、UI と SQL Console、さらにそのエンドポイントに接続するその他のクライアントを区別できます。`is_initial_query = 1` でフィルタすると、送信された時点のクエリ 1 件につき 1 行だけが残ります。分散実行による二次的なクエリや、[materialized view](/ja/reference/system-tables/query_views_log) を評価する内部クエリは、`is_initial_query = 0` として別途記録されます。
+
+    **read-write** サービスでは、同じクエリでインジェスト用ユーザーからの insert が表示され、ClickStack によるクエリトラフィックは表示されないはずです。
+
+    `default` クラスターには接続先サービスのレプリカのみが含まれるため、各サービスで順番にこのクエリを実行するのが確実な確認方法です。warehouse 全体を横断した集約ビューを得たい場合は、代わりにクラスター名 `all_groups.default` を使用してください。
+
+    ```sql
+    SELECT 
+        hostName() AS host, 
+        query_kind, 
+        count()
+    FROM clusterAllReplicas('all_groups.default', system.query_log)
+    WHERE event_time > now() - toIntervalMinute(10) 
+      AND type = 'QueryFinish'
+      AND is_initial_query = 1
+    GROUP BY ALL;
+    ```
+
+    このクエリでは2点に注意してください。アイドル状態になったサービスは行を返せないため、完全な結果が必要な場合は事前に起動しておいてください。また、`hostName()` が識別するのはサービスではなくレプリカであるため、特定のサービスにアクティビティを紐付けたい場合は、そのサービスに対して直接クエリを実行してください。
+  </Step>
+</Steps>
+
+## マージをインジェストから分離する {#separating-merges}
+
+非常に高いインジェストレートが持続する場合、インジェストサービスにおける主なコストはインサートそのものではなくマージになります。マージはストレージを共有するすべての読み書きサービスに割り当てられるため、本来別の用途を想定していたサービスにマージ処理が回ってくることもあります。
+
+このようなデプロイメントでは、マージをインジェストサービスから完全に切り離し、3 サービス構成のトポロジーにできます。
+
+| サービス   | タイプ        | 責務                                     |
+| ------ | ---------- | -------------------------------------- |
+| インジェスト | 読み書き、マージ無効 | インサートのみを受け付ける                          |
+| マージ    | 読み書き       | ウェアハウスのすべてのバックグラウンドマージおよびミューテーションを実行する |
+| クエリ    | 読み取り専用     | ClickStack に提供する                       |
+
+<Info>
+  **サポートへのリクエストが必要です**
+
+  読み書きサービスでのマージの無効化は、Cloud コンソールからは設定できません。サービスに適用するには[サポートにお問い合わせください](https://clickhouse.com/support/program)。
+</Info>
+
+このトポロジーは、インジェストだけでサービスが飽和する場合や、両方が書き込みを行う必要があるために読み書きサービスが 2 つ必要な場合に検討する価値があります。クエリのワークロードをすべて ClickStack (読み取りのみを行う) が処理するのであれば、よりシンプルな[読み書きと読み取り専用の分割](#architecture)で要件を満たせますし、サポート面でもそちらの方が有利です。
+
+このトポロジーを運用する際は、以下の点に注意してください。
+
+* **どちらの読み書きサービスについても、自動アイドル化に依存しないでください。** マージを無効化したサービスであっても、ウェアハウス内の他のサービスでのインサートによって生成されるパーツのダウンロードおよび削除イベントは処理します。また、マージされていないパーツが多数存在すること自体がアイドル化を妨げる要因になります。どちらの読み書きサービスも常時稼働している前提で計画してください。
+* **どちらの読み書きサービスにもクエリを向けないでください。** 読み書きサービス上で重い `SELECT` クエリを実行すると、CPU とメモリをめぐってマージ処理と競合します。これはまさに、このトポロジーが回避しようとしている障害モードです。[前述](#point-clickstack)のとおり、ClickStack は読み取り専用サービスに向けてください。
+* **ミューテーションが存在する場合、それを実行したサービス上で追跡されます。** オブザーバビリティにおいてミューテーションはまれです。ClickStack のスキーマは [`ttl_only_drop_parts = 1`](/ja/clickstack/managing/ttl) を設定しているため、通常の保持期間管理では行をミューテーションで削除するのではなく、TTL マージの際に期限切れのパーツ全体を削除します。ミューテーションを生成する `ALTER` をインジェストサービスに送信した場合、それはマージサービスによって実行され、その進捗はインジェストサービスではなくマージサービス側の [`system.mutations`](/ja/reference/system-tables/mutations) に現れます。
+
+## 管理と DDL {#administration}
+
+スキーマ変更は、以下を含めてすべて **read-write** サービスに対して実行する必要があります。
+
+* テーブル作成 - 初回のインジェスト時に ClickStack collector が自動的に実行します
+* 保持期間を変更するための [有効期限 (TTL) の変更](/ja/clickstack/managing/ttl#modifying-ttl)
+* クエリ高速化のための [materialized view](/ja/clickstack/managing/materialized-views) の作成
+* [スキップ索引、projections、その他のパフォーマンス最適化](/ja/clickstack/managing/performance-tuning) の追加
+
+ユーザー、ロール、grants はスキーマ変更ではありません。これらは warehouse 内のすべてのサービスで共有されるため、どのサービスからでも一度作成すれば十分です。上記の [セットアップ手順](#prepare-read-write-service) でインジェスト用ユーザーが作成されます。読み取り専用サービスに接続するその他のクライアントは、上記のインジェスト用 grants ではなく、[ClickStack UI が必要とする permissions](/ja/clickstack/managing/production#user-permissions) を持つ別の読み取り専用クエリユーザーとして認証してください。
+
+read-write サービスへの接続には [SQL console または clickhouse client](/ja/clickstack/managing/admin) を使用します。warehouse はストレージと access controls を共有しているため、変更は読み取り専用サービスからも即座に参照できます。[マージをインジェストから分離](#separating-merges)している場合、文はどちらの read-write サービスに対しても実行できますが、mutations はマージサービス上で実行・追跡される点に注意してください。
+
+<Warning>
+  **他のサービスが idled 状態のときにデータベース DDL がハングすることがあります**
+
+  `CREATE`、`RENAME`、`DROP DATABASE` 文は、warehouse 内の idled または停止中のサービスによってブロックされ、ハングする可能性があります。読み取り専用サービスは遅延なく idle 状態になるため、このトポロジーでは特に起こりやすい問題です。データベースレベルの文は、クエリ単位または session 単位で [`distributed_ddl_task_timeout=0`](/ja/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout) を設定して実行してください。
+
+  ```sql
+  CREATE DATABASE otel
+  SETTINGS distributed_ddl_task_timeout=0
+  ```
+
+  手動で停止したサービスは、クエリを実行する前に再度起動する必要があります。
+</Warning>
+
+materialized view は挿入を契機に triggered されるため、read-write サービスで実行されます。読み取り専用サービスは、クエリ高速化のために [ClickStack ソースに登録された](/ja/clickstack/managing/config#materialized-views-settings) views も含め、それらのターゲットテーブルを他のテーブルと同様にクエリします。
+
+## エージェント型ワークロードの分離 {#agentic-workloads}
+
+[ClickStack MCPサーバー](/ja/clickstack/mcp)経由で接続されたAIアシスタントは、ダッシュボードと同様に読み取りトラフィックですが、その負荷パターンは異なります。インシデントを調査するエージェントは、事前に誰も指定していない期間範囲に対して、探索的なクエリを短時間に大量に発行します。エージェントとUIで1つの読み取り専用サービスを共有すると、同じインシデント対応中にエンジニアが見ているダッシュボードの前に、そのバースト負荷が割り込むことになります。
+
+ここでも同じwarehouseのパターンが有効です。つまり、エージェント専用の読み取り専用コンピュートを用意します。
+
+<Steps>
+  <Step title="2つ目の読み取り専用サービスを追加する" id="agentic-add-service">
+    [上記のセットアップ](#add-read-only-service)とまったく同じ手順で、warehouse内にもう1つ読み取り専用サービスを作成します。このサービスはUIを提供するサービスと同じテーブルを読み取るため、データをコピーする必要はありません。
+
+    次に、[ClickStackを読み取り専用サービスに向ける](#point-clickstack)と同様に、Cloud consoleからそのサービス上でClickStackを一度起動します。Cloud MCPを利用するには、MCP自体だけでなく、ClickStackが有効化されたサービスも必要です。[MCPの前提条件](/ja/clickstack/mcp#managed-prerequisites)を参照してください。
+
+    サイジングは、sizing modelのダッシュボードQPSではなく、エージェントから想定されるクエリ負荷に基づいて行い、自動アイドル化は有効のままにしておきます。エージェント型の利用は通常断続的であるため、調査の合間はサービスをアイドル状態にできます。
+  </Step>
+
+  <Step title="そのサービスでMCPを有効化する" id="agentic-enable-mcp">
+    ClickHouse Cloud consoleで該当の読み取り専用サービスを開き、**Connect**をクリックし、**Connect with MCP**を選択してトグルをオンにします。[リモートMCPサーバーの有効化](/ja/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server)を参照してください。
+  </Step>
+
+  <Step title="MCPクライアントをそのサービスに向ける" id="agentic-point-clients">
+    Cloud MCP endpointはすべてのサービスで共通です。リクエストは`x-service-id`ヘッダーに従って振り分けられ、このヘッダーがない場合は、アカウントで最初に使用されたClickStack serviceに送られます。既存のMCP設定をコピーし、新しい読み取り専用サービスのIDを指定したヘッダーを追加します。
+
+    ```shell
+    claude mcp add --transport http clickstack https://mcp.clickhouse.cloud/clickstack \
+      --header "x-service-id: <read-only-agent-service-id>"
+    ```
+
+    このヘッダーはどのMCP clientでも付与できます。Cursor、VS Codeなどでの同等の設定については、[特定のサービスを対象にする](/ja/clickstack/mcp#managed-service-override)を参照してください。
+  </Step>
+</Steps>
+
+<Warning>
+  **MCPは対象としたサービスにstateを書き込みます**
+
+  MCPサーバーはクエリの実行だけでなく、ダッシュボード、アラート、保存済み検索の作成も行えます。そしてそのstateは、すべての[ClickStackのstate](#point-clickstack)と同様に、リクエストが振り分けられたサービスのスコープに属します。エージェントがエージェント用サービス上で作成したダッシュボードは、エンジニア向けのサービスから起動したClickStack UIには表示されません。また、そこで作成されたアラートはそのサービスのコンピュート上で評価されるため、[以下](#isolating-alerts)で述べるように、アイドル状態のエージェント用サービスでは評価が遅延したり実行されなかったりします。永続的なアーティファクトを作成することが想定されるエージェントは、チームが使用しているサービスと同じサービスに振り分けてください。
+</Warning>
+
+## アラート {#alerts}
+
+ClickStack はアラートが作成されたサービス上でそのアラートを評価するため、アラートは UI と同じコンピュート、すなわちこのトポロジーでは読み取り専用サービス上で実行されます。
+
+<Note>
+  **Managed ClickStack**
+
+  アラートを有効にするには、**Service admin** 権限を持つユーザーが少なくとも 1 人、少なくとも 1 回 ClickStack にサインインする必要があります。これにより、アラートのクエリを実行する専用のデータベースユーザーがプロビジョニングされ、このユーザーは warehouse 内のすべてのサービスで共有されます。詳細は[Managed ClickStack へのアクセス権の付与](/ja/clickstack/deployment/managed#configure-access)のガイドを参照してください。
+</Note>
+
+アラートの評価は、定期的に繰り返されるクエリワークロードです。読み取り専用サービスのサイジングで想定する QPS にこれを含めてください。[サイジングモデル](/ja/clickstack/managing/estimating-resources#refining-sizing-assumptions)では、検索、ダッシュボード、アラートのクエリをまとめて 1 つの合計値として扱います。
+
+### alert 評価の分離 {#isolating-alerts}
+
+alert の負荷を中央で振り分けることはできません。alert はユーザーが作成するものであり、ClickStack で alert を追加すると、その人が作業しているサービスに追加され、そのサービスのコンピュートで評価されるためです。あるサービスの alerts を別の場所へ移すような設定はありません。
+
+分離できるのは、中央で管理している alerts です。つまり、プラットフォームチームが組織全体のために保守しているもので、通常は最も評価頻度が高いものでもあります。これらには warehouse 内に専用の読み取り専用サービスを用意し、そこで起動した ClickStack から作成してください:
+
+| サービス     | Type       | 用途                                    |
+| -------- | ---------- | ------------------------------------- |
+| 取り込み     | Read-write | OpenTelemetry collector               |
+| クエリ      | Read-only  | ClickStack UI、およびユーザーが自分用に作成する alerts |
+| alert 評価 | Read-only  | プラットフォームチームが保守する共通の alerts            |
+
+<Warning>
+  **alert 評価用サービスでは自動アイドル化を無効にする**
+
+  サービスに alerts が設定されていても、そのサービスが起動状態に保たれるわけではありません。アイドル化されたサービスで実行される alert 評価は、復帰処理によって遅延するか、そのまま失敗します。そのため、自動アイドル化を有効にしたままの alert 評価用サービスでは、評価が実行されないことがあります。そのサービスでは自動アイドル化をオフにし、常時稼働させる前提で計画してください。これは alerts が評価される場所すべてに当てはまります。UI を提供しているサービス上で評価される場合は、そのサービスもアイドル化させたままにはできません。
+</Warning>
+
+残るトレードオフは、state がサービスごとに保持されることに起因するものです:
+
+* 共通の alerts と、それに付随する dashboards は alert 評価用サービス上にのみ存在し、クエリ用サービスで作業しているユーザーからは見えません。通知はいずれの場合も同じ[宛先](/ja/clickstack/features/alerts)に配信されるため、ユーザーが失うのは定義の可視性であって、alert 機能そのものではありません。
+* alert 評価用サービス上の SOURCES は別個の object です。[デフォルトの OpenTelemetry スキーマ](/ja/clickstack/deployment/managed#adding-data-sources)を使用しているものは自動検出されますが、カスタムのログソースは、alert から参照できるようにするために、そちらでも設定する必要があります。
+
+alerts のセットが 1 つで十分に小さく、その評価負荷が dashboard のトラフィックに比べて誤差程度であれば、すべてを 1 つの読み取り専用サービスにまとめておいてください。2 箇所で定義を保守する運用コストのほうが、2 つのコストのうちでは大きくなります。
+
+## その他の考慮事項 {#considerations}
+
+**自動アイドル化。** アイドル状態になった読み取り専用サービスへの最初のクエリはサービスの起動を待つため、断続的な利用ではわずかなレイテンシーと引き換えにコストを抑えられます。アイドル化の防止をアラートに頼らないでください。アラートの評価に利用するサービスでは、[上記](#isolating-alerts)で説明したとおり自動アイドル化を無効にしてください。継続的インジェストが行われていれば読み書きサービスは稼働状態に保たれますが、インジェストが断続的またはスケジュール実行の場合、アイドル期間後の最初のバッチでは同様に待機が発生し、テレメトリーの遅延として現れます。
+
+**バックアップ。** バックアップはプライマリサービスでのみ取得され、ウェアハウス全体のデータが対象となります。バックアップを復元すると、既存のウェアハウスには接続されない、まったく新しいサービスが作成されます。
+
+**レプリカの上限。** ウェアハウス内の全サービスを合計したレプリカ数には、デフォルトで上限が設定されています。[使用制限](/ja/products/cloud/guides/best-practices/usagelimits)を参照してください。
+
+**ClickStack を他のワークロードから分離する。** リアルタイムのアプリケーション分析など、すでに他のワークロードを実行しているサービスに ClickStack を追加する場合は、同じウェアハウス機能を使ってオブザーバビリティに専用のコンピュートを割り当てます。[オブザーバビリティワークロードの分離](/ja/clickstack/managing/estimating-resources#isolating-workloads)のガイドを参照してください。
+
+ウェアハウスの動作と制限の全体像については、[ウェアハウス](/ja/products/cloud/features/infrastructure/warehouses)のガイドを参照してください。
