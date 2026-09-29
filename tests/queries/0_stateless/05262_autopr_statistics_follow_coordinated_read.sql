@@ -1,0 +1,87 @@
+-- The cost model divides the instrumented read's `input_bytes` by the replica count, so the read it
+-- measures has to be the read parallel replicas actually coordinates. Those were chosen by two unrelated
+-- rules: the statistics by descending the query *plan* to a join's probe side
+-- (`children[isRight(kind) ? 1 : 0]`), the coordinated read by the left-most table expression of the
+-- query *tree* (`findTableForParallelReplicas`). A join that swaps its sides moves the first without
+-- moving the second, and the model then priced a table nobody splits - at sf=100 that adopted a plan 11%
+-- slower on TPC-H q07 and declined one 62% faster on SSB q2.x.
+--
+-- `query_plan_join_swap_table` is the knob that moves the plan side without touching the query text, so
+-- the same query is run with the swap off and forced on. The bytes recorded must be the same either way:
+-- the coordinated table does not change, so neither should the statistics. Before the fix the forced-swap
+-- run measured the other table instead, and the two disagreed.
+
+DROP TABLE IF EXISTS t_coord_big;
+DROP TABLE IF EXISTS t_coord_small;
+
+-- Pinned layout: the cost model works off estimated bytes, and leaving granularity or part format to
+-- randomization changes whether the optimization runs at all.
+CREATE TABLE t_coord_big   (key UInt64, v UInt64) ENGINE = MergeTree ORDER BY key
+    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
+CREATE TABLE t_coord_small (key UInt64, v UInt64) ENGINE = MergeTree ORDER BY key
+    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
+
+-- The two tables differ by two orders of magnitude so that which one is "big" is never in doubt.
+INSERT INTO t_coord_big   SELECT number, number FROM numbers(300000);
+INSERT INTO t_coord_small SELECT number, number FROM numbers(3000);
+
+OPTIMIZE TABLE t_coord_big FINAL;
+OPTIMIZE TABLE t_coord_small FINAL;
+
+SET enable_analyzer = 1;
+-- The read has to be pruned by its own key condition only: a filter built from the other side at runtime
+-- would change how many bytes are read and make the comparison below about something else.
+SET enable_join_runtime_filters = 0;
+SET query_plan_optimize_join_order_randomize = 0;
+-- The swap below is applied as part of join-order optimization, so it needs that optimization enabled:
+-- randomization sets the limit to 0 and the two runs then no longer differ in the way this test relies on.
+-- Diagnosed with `clickhouse-test --diagnose-random-settings`, minimized to
+-- `query_plan_optimize_join_order_limit 0`.
+SET query_plan_optimize_join_order_limit = 10;
+-- Randomization turns these off, and without statistics the cost model does not favour replicas for this
+-- data at all: the optimization is then never applied and the test measures nothing. Diagnosed with
+-- `clickhouse-test --diagnose-random-settings`, which minimized the failure to `use_statistics False`.
+SET use_statistics = 1;
+SET use_statistics_cache = 1;
+SET max_threads = 1;
+SET merge_tree_min_bytes_per_task_for_remote_reading = 1024;
+SET automatic_parallel_replicas_min_bytes_per_replica = 0;
+
+SET enable_parallel_replicas = 1;
+SET automatic_parallel_replicas_mode = 1;
+SET parallel_replicas_local_plan = 1;
+SET parallel_replicas_for_non_replicated_merge_tree = 1;
+SET parallel_replicas_min_number_of_rows_per_replica = 0;
+SET max_parallel_replicas = 3;
+SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+
+-- The small table is written first, so it is the one parallel replicas coordinates in both runs.
+-- Each run is the first of its plan shape, which is when the statistics are collected.
+SELECT sum(b.v) FROM t_coord_small AS s, t_coord_big AS b WHERE s.key = b.key AND b.key < 200000
+FORMAT Null SETTINGS query_plan_join_swap_table = 'false', log_comment = 'coord_read_no_swap';
+
+SELECT sum(b.v) FROM t_coord_small AS s, t_coord_big AS b WHERE s.key = b.key AND b.key < 200000
+FORMAT Null SETTINGS query_plan_join_swap_table = 'true', log_comment = 'coord_read_forced_swap';
+
+SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- `both_collected_statistics` is what keeps this honest: without it two zeroes would compare equal and the
+-- test would pass while measuring nothing.
+SELECT
+    countIf(input_bytes > 0) = 2 AS both_collected_statistics,
+    uniqExact(input_bytes) = 1 AS same_read_measured_either_way
+FROM
+(
+    SELECT ProfileEvents['RuntimeDataflowStatisticsInputBytes'] AS input_bytes
+    FROM system.query_log
+    WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
+      AND event_date >= yesterday()
+      AND log_comment IN ('coord_read_no_swap', 'coord_read_forced_swap')
+)
+FORMAT TSVWithNames;
+
+DROP TABLE t_coord_big;
+DROP TABLE t_coord_small;
