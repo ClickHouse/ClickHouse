@@ -6546,6 +6546,7 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
         analyzed_result_ptr->column_names_to_read = all_column_names;
 
     required_source_columns = all_column_names;
+
     return {true, {}, std::move(kept_output_positions)};
 }
 
