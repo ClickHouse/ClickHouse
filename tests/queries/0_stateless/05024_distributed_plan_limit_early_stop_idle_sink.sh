@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: long, no-fasttest
+# long: flaky-check runs reach the 180s limit for non-`long` tests (185-191s under `amd_tsan`).
 # no-fasttest: the remote distributed plan needs the stateless worker configuration.
 # A satisfied `LIMIT` must stop the upstream stages even when nothing flows through them
 # anymore. Probe rows match the first join only in the first block, so after that block every
