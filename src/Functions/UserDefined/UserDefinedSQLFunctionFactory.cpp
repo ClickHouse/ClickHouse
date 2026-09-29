@@ -165,6 +165,14 @@ static void validateSQLFunctionShape(const IAST & function)
     if (!lambda_arguments || !lambda_arguments->arguments
         || !std::ranges::all_of(lambda_arguments->arguments->children, [](const ASTPtr & argument) { return argument->as<ASTIdentifier>() != nullptr; }))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid SQL user defined function: {}", function.formatForErrorMessage());
+
+    UnorderedSetWithMemoryTracking<String> argument_names;
+    for (const auto & argument : lambda_arguments->arguments->children)
+    {
+        const auto & argument_name = argument->as<ASTIdentifier &>().name();
+        if (!argument_names.insert(argument_name).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identifier {} already used as function parameter", argument_name);
+    }
 }
 
 /// Checks that a specified function can be registered, throws an exception if not.

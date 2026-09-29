@@ -32,8 +32,11 @@ FUNCTIONS = {
     "udf_nested_dotted_argument": "x -> arrayMap(y.z -> (y.z + x), [1, 2])",
     "udf_lambda": "(x, y) -> (x + y)",
 }
-# No version created this one: RESTORE refuses it.
-INVALID_FUNCTION = "udf_not_identifiers"
+# No version created these: RESTORE refuses them.
+INVALID_FUNCTIONS = {
+    "udf_not_identifiers": "f(g(1), 2)",
+    "udf_duplicate_arguments": "(x, x) -> x",
+}
 
 LIST_FUNCTIONS = "SELECT name, create_query FROM system.functions WHERE origin = 'SQLUserDefined' ORDER BY name"
 
@@ -55,7 +58,7 @@ def cleanup():
 
 
 def drop_functions():
-    for name in [*FUNCTIONS, INVALID_FUNCTION]:
+    for name in [*FUNCTIONS, *INVALID_FUNCTIONS]:
         node.query(f"DROP FUNCTION IF EXISTS {name}")
 
 
@@ -109,12 +112,13 @@ def test_restore_functions_created_by_older_version(start_cluster):
             f"CREATE FUNCTION {name}_new AS {definition}"
         )
 
-    store_function(INVALID_FUNCTION, "f(g(1), 2)")
-    node.restart_clickhouse()
-    invalid_backup = new_backup("invalid")
-    node.query(f"BACKUP TABLE system.functions TO {invalid_backup}")
-    drop_functions()
-    assert "BAD_ARGUMENTS" in node.query_and_get_error(
-        f"RESTORE TABLE system.functions FROM {invalid_backup}"
-    )
-    assert INVALID_FUNCTION not in node.query(LIST_FUNCTIONS)
+    for name, definition in INVALID_FUNCTIONS.items():
+        store_function(name, definition)
+        node.restart_clickhouse()
+        invalid_backup = new_backup("invalid")
+        node.query(f"BACKUP TABLE system.functions TO {invalid_backup}")
+        drop_functions()
+        assert "BAD_ARGUMENTS" in node.query_and_get_error(
+            f"RESTORE TABLE system.functions FROM {invalid_backup}"
+        )
+        assert name not in node.query(LIST_FUNCTIONS)
