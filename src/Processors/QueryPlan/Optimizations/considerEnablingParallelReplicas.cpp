@@ -319,6 +319,21 @@ void collectLazyReads(const QueryPlan::Node & branch_root, CoordinatedReads & re
 }
 
 
+/// Which child of `node` stands in canonical position `index`. The hash the two plans were matched on
+/// folds `A RIGHT JOIN B` and `B LEFT JOIN A` together - `calculateHashTableCacheKeys` swaps a `RIGHT`
+/// join's children and remaps the kind to `LEFT` - so a hash match does not mean the two plans put the
+/// same relation in the same plan child. Pair them in that same canonical order, or the walk below would
+/// pair the two plans' relations the wrong way round on exactly the shapes the matcher accepts on
+/// purpose. It matters most where the table cannot catch it: on a self-join both children read the same
+/// table, so a wrongly paired child is instrumented rather than refused.
+size_t canonicalChild(const QueryPlan::Node & node, size_t index)
+{
+    if (const auto * join_step = typeid_cast<const JoinStep *>(node.step.get());
+        join_step && node.children.size() == 2 && isRight(join_step->getJoin()->getTableJoin().kind()))
+        return 1 - index;
+    return index;
+}
+
 /// Walk the two plans together and fill `reads`, returning whether the coordinated read is at or below
 /// this pair of nodes. They can be walked together because they are identical below the node whose output
 /// the replicas ship, which is what `findCorrespondingNodeInSingleNodePlan` establishes by comparing hashes
@@ -361,7 +376,9 @@ bool collectCoordinatedReads(const QueryPlan::Node & replicas_node, const QueryP
     bool found = false;
     for (size_t i = 0; i < replicas_node.children.size(); ++i)
     {
-        if (!collectCoordinatedReads(*replicas_node.children[i], *single_node.children[i], reads))
+        const auto & replicas_child = *replicas_node.children[canonicalChild(replicas_node, i)];
+        const auto & single_child = *single_node.children[canonicalChild(single_node, i)];
+        if (!collectCoordinatedReads(replicas_child, single_child, reads))
             continue;
         if (found)
         {
