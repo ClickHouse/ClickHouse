@@ -4,14 +4,18 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 
 
 namespace DB
@@ -23,6 +27,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -145,6 +150,52 @@ static String getExplicitTimeZoneOfDateTimeArgument(const DataTypePtr & source)
     return {};
 }
 
+static Float64 inferExponentialTimeDecayingDecayLength(const ColumnWithTypeAndName & source)
+{
+    const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(source.type.get());
+    if (!tuple_type || tuple_type->getElements().size() != 3)
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "CAST AS ExponentialTimeDecaying without a type parameter requires raw Tuple(value, timestamp, decay_length)");
+
+    if (!source.column)
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "CAST AS ExponentialTimeDecaying without a type parameter requires a constant decay length");
+
+    Field decay_length_field;
+    if (const auto * const_column = typeid_cast<const ColumnConst *>(source.column.get()))
+    {
+        const auto tuple = const_column->getField().safeGet<Tuple>();
+        decay_length_field = tuple[2];
+    }
+    else if (const auto * tuple_column = typeid_cast<const ColumnTuple *>(source.column.get()))
+    {
+        const auto & decay_column = tuple_column->getColumn(2);
+        const auto * const_decay_column = typeid_cast<const ColumnConst *>(&decay_column);
+        if (!const_decay_column)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "CAST AS ExponentialTimeDecaying without a type parameter requires a constant decay length");
+        decay_length_field = const_decay_column->getField();
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "CAST AS ExponentialTimeDecaying without a type parameter requires a constant decay length");
+    }
+
+    const Float64 decay_length
+        = applyVisitor(FieldVisitorConvertToNumber<Float64>(), decay_length_field);
+    if (!std::isfinite(decay_length) || decay_length <= 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Decay length of ExponentialTimeDecaying must be finite and positive");
+
+    return decay_length;
+}
+
 /** CastInternal does not preserve nullability of the data type,
   * i.e. CastInternal(toNullable(toInt8(1)) as Int32) will be Int32(1).
   *
@@ -242,7 +293,21 @@ protected:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant string describing type. "
                 "Instead there is a column with the following structure: {}", getName(), column->dumpStructure());
 
-        DataTypePtr type = DataTypeFactory::instance().get(type_col->getValue<String>());
+        const String type_name = type_col->getValue<String>();
+        DataTypePtr type;
+        if (type_name == "ExponentialTimeDecaying")
+        {
+            if (arguments.empty())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "CAST AS ExponentialTimeDecaying without a type parameter requires a source tuple");
+            type = createDataTypeExponentialTimeDecayingFloat64(
+                inferExponentialTimeDecayingDecayLength(arguments.front()));
+        }
+        else
+        {
+            type = DataTypeFactory::instance().get(type_name);
+        }
         validateDataType(type, data_type_validation_settings);
 
         /// CAST to `DateTime` or `DateTime64` without an explicit time zone should preserve
