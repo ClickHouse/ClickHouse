@@ -1016,7 +1016,6 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
 std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 {
     {TypeIndex::Map, "arrayElement"},
-    {TypeIndex::Map, "mapContainsKey"},
 };
 
 /// Transformers that should mark their identifier for filter-only optimization
