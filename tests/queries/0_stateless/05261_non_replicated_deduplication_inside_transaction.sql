@@ -15,10 +15,23 @@ DROP TABLE IF EXISTS t_no_dedup_txn;
 CREATE TABLE t_dedup_txn (x UInt64) ENGINE = MergeTree ORDER BY x
     SETTINGS non_replicated_deduplication_window = 100;
 
+-- `INSERT SELECT` is used inside the explicit transaction, because the client keeps the connection after its error,
+-- so the failed transaction stays attached to the session until `ROLLBACK`. After a failed `INSERT ... VALUES` the
+-- client disconnects when it sent the data itself, and the transaction is lost with the session, but it keeps the
+-- connection when the server parsed the data (`send_table_structure_on_insert_with_inline_data = 0`, randomized in
+-- the tests). The token makes the deduplication of `INSERT SELECT` independent of whether the `SELECT` is sorted.
 BEGIN TRANSACTION;
--- When an `INSERT` fails, the client reconnects, so the transaction ends with the old session and needs no `ROLLBACK`.
-INSERT INTO t_dedup_txn VALUES (1), (2); -- { serverError NOT_IMPLEMENTED }
+INSERT INTO t_dedup_txn SETTINGS deduplicate_insert_select = 'force_enable', insert_deduplication_token = 'rejected'
+    SELECT number + 1 FROM numbers(2); -- { serverError NOT_IMPLEMENTED }
+ROLLBACK;
 
+-- The rejection does not depend on `throw_on_unsupported_query_inside_transaction`: running the insert would lose rows.
+BEGIN TRANSACTION;
+INSERT INTO t_dedup_txn SETTINGS deduplicate_insert_select = 'force_enable', insert_deduplication_token = 'rejected',
+    throw_on_unsupported_query_inside_transaction = 0 SELECT number + 1 FROM numbers(2); -- { serverError NOT_IMPLEMENTED }
+ROLLBACK;
+
+-- The implicit transaction is rolled back by the server with its query, whether or not the client reconnects.
 INSERT INTO t_dedup_txn SETTINGS implicit_transaction = 1 VALUES (1), (2); -- { serverError NOT_IMPLEMENTED }
 
 SELECT 'after the rejected inserts', count() FROM t_dedup_txn;
