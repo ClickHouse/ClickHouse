@@ -8,6 +8,8 @@ SET use_skip_indexes_if_final_exact_mode = 1;
 SET query_plan_optimize_lazy_final = 0;
 SET enable_parallel_replicas = 0;
 SET use_query_condition_cache = 0;
+-- Keep the rows with equal keys of an insert, otherwise `ReplacingMergeTree` merges them and the parts change.
+SET optimize_on_insert = 0;
 
 DROP TABLE IF EXISTS t_scattered;
 
