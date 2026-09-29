@@ -15,7 +15,6 @@ SELECT hasPhrase('a', 'b', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hasPhrase('a', 'b', 'unsupported_tokenizer'); -- { serverError BAD_ARGUMENTS }
 -- sparseGrams is not supported because gram ordering depends on context
 SELECT hasPhrase('a', 'b', 'sparseGrams'); -- { serverError BAD_ARGUMENTS }
-SELECT hasPhrase('a', 'b', 'array'); -- { serverError BAD_ARGUMENTS }
 -- NULL arguments
 SELECT hasPhrase(NULL); -- { serverError BAD_ARGUMENTS }
 SELECT hasPhrase(NULL, NULL); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
@@ -71,7 +70,7 @@ SELECT '-- Nullable(FixedString) input';
 SELECT hasPhrase(toNullable(toFixedString('the quick brown fox', 19)), 'quick brown');
 SELECT hasPhrase(CAST(NULL AS Nullable(FixedString(19))), 'quick brown');
 
-SELECT '-- Array input: elements are tokens';
+SELECT '-- Array input: elements are tokenized';
 SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], 'quick brown');
 SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], 'quick fox');
 SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], 'the quick brown fox');
@@ -80,6 +79,9 @@ SELECT hasPhrase(['a', 'a', 'b'], 'a b');
 SELECT hasPhrase(['a', 'b'], 'b a');
 SELECT hasPhrase(['a', 'b'], '');
 SELECT hasPhrase(CAST([], 'Array(String)'), 'a');
+SELECT hasPhrase([], 'a');
+SELECT '-- the tokens of one row are one sequence, so a phrase spans elements';
+SELECT hasPhrase(['a b', 'c'], ['b', 'c']);
 SELECT '-- empty or NULL element is not a token';
 SELECT hasPhrase(['a', '', 'b'], 'a b');
 SELECT hasPhrase(['a', NULL, 'b'], 'a b');
@@ -87,9 +89,10 @@ SELECT '-- Array(FixedString) input';
 SELECT hasPhrase([toFixedString('aa', 2), toFixedString('bb', 2)], ['aa', 'bb']);
 SELECT '-- Array phrase: elements are tokens';
 SELECT hasPhrase(['a b', 'c'], ['a b', 'c']);
-SELECT hasPhrase(['a b', 'c'], ['b', 'c']);
 SELECT hasPhrase('the quick brown fox jumps', ['quick', 'brown']);
-SELECT '-- tokenizer applies to a String phrase only';
+SELECT '-- the array tokenizer is what the postprocessor rewrite passes';
+SELECT hasPhrase(['a b', 'c'], ['a b'], 'array');
+SELECT '-- tokenizer applies to input elements and a String phrase';
 SELECT hasPhrase(['a', 'b'], 'a()b', 'splitByString([\'()\'])');
 SELECT hasPhrase(['a()b', 'c'], 'a()b', 'splitByString([\'()\'])');
 

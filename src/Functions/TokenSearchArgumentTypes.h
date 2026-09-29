@@ -28,7 +28,8 @@ inline bool isStringOrFixedStringOrArrayOfStringOrFixedString(const IDataType & 
         if (const auto * nullable_elem = typeid_cast<const DataTypeNullable *>(element_type))
             element_type = nullable_elem->getNestedType().get();
 
-        return isStringOrFixedString(*element_type);
+        /// `Array(Nothing)` is the type of `[]`: an input without tokens, not an error.
+        return isStringOrFixedString(*element_type) || isNothing(*element_type);
     }
 
     return false;

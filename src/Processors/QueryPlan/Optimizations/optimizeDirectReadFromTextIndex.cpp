@@ -42,7 +42,6 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
-#include <Storages/MergeTree/MergeTreeIndexTextPrePostProcessorUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <base/defines.h>
@@ -432,26 +431,6 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
         default:
             return nullptr;
     }
-}
-
-/// arrayFlatten(arrayMap(x -> tokens(x, '<tokenizer>'), <col>)) - the tokens a text index stores for an array column.
-ActionsDAG buildArrayElementTokensDAG(const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description)
-{
-    const String element_arg = "__text_index_element";
-    ASTPtr expr = makeASTFunction(
-        "arrayFlatten",
-        makeASTFunction(
-            "arrayMap",
-            makeASTLambda(
-                {element_arg},
-                makeASTFunction(
-                    "tokens",
-                    make_intrusive<ASTIdentifier>(element_arg),
-                    make_intrusive<ASTLiteral>(Field(tokenizer_description)))),
-            make_intrusive<ASTIdentifier>(col_name)));
-
-    NamesAndTypesList source_columns{{col_name, col_type}};
-    return buildActionsDAGFromAST(std::move(expr), source_columns);
 }
 
 }
@@ -866,7 +845,7 @@ private:
 
             /// new_children[0] is now an Array(String) of postprocessed tokens. Switch the tokenizer argument
             /// to 'array' to match them verbatim, instead of re-splitting tokens the index stores whole.
-            if (function_name == "hasAnyTokens" || function_name == "hasAllTokens")
+            if (function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase")
             {
                 chassert(new_children.size() == 3);
                 DataTypePtr arg_type = std::make_shared<DataTypeString>();
@@ -927,18 +906,6 @@ private:
                 needles_field = Array(tokens.begin(), tokens.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
             }
-        }
-
-        /// An Array haystack holds the index's tokens verbatim, so tokenize its elements the way the index does.
-        /// With a postprocessor, getOriginalActionsDAG above already produced the flattened tokens.
-        if (function_name == "hasPhrase" && !apply_postprocessor && isArray(*new_children[0]->result_type))
-        {
-            ActionsDAG::NodeRawConstPtrs merged_outputs;
-            actions_dag.mergeNodes(
-                buildArrayElementTokensDAG(new_children[0]->result_name, new_children[0]->result_type, tokenizer->getDescription()),
-                &merged_outputs);
-            chassert(merged_outputs.size() == 1);
-            new_children[0] = merged_outputs.front();
         }
 
         /// Recreate an argument with needles.

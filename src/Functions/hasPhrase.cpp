@@ -165,7 +165,8 @@ void executeMatchPhrase(
     }
 }
 
-/// The elements of an array input are the tokens themselves and are never tokenized.
+/// The elements of an array input are tokenized as the index tokenizes them, and their tokens form one
+/// sequence per row, so a phrase may span two elements.
 template <typename StringColumn>
 requires std::same_as<StringColumn, ColumnString> || std::same_as<StringColumn, ColumnFixedString>
 void executeMatchPhraseOnArray(
@@ -174,6 +175,7 @@ void executeMatchPhraseOnArray(
     const ColumnNullable * elements_nullable,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
+    const ITokenizer * tokenizer,
     const VectorWithMemoryTracking<String> & phrase_tokens,
     const VectorWithMemoryTracking<size_t> & failure_table)
 {
@@ -189,19 +191,14 @@ void executeMatchPhraseOnArray(
         col_result[i] = 0;
         matcher.reset();
 
-        for (ColumnArray::Offset j = 0; j < array_size; ++j)
+        for (ColumnArray::Offset j = 0; j < array_size && !col_result[i]; ++j)
         {
             const size_t element_index = current_offset + j;
             if (elements_nullable && elements_nullable->isNullAt(element_index))
                 continue;
 
-            /// An empty element is not a token; the index has no position for one.
             std::string_view element = col_elements.getDataAt(element_index);
-            if (element.empty())
-                continue;
-
-            if (matcher([&] { col_result[i] = 1; })(element.data(), element.size()))
-                break;
+            forEachToken(*tokenizer, element.data(), element.size(), matcher([&] { col_result[i] = 1; }));
         }
 
         current_offset = offsets[i];
@@ -264,6 +261,7 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
         ITokenizer::Type::SplitByNonAlpha,
         ITokenizer::Type::SplitByString,
         ITokenizer::Type::SplitByRegexp,
+        ITokenizer::Type::Array,
         ITokenizer::Type::AsciiCJK,
 #if USE_ICU
         ITokenizer::Type::Icu,
@@ -316,6 +314,7 @@ ExecutableFunctionHasPhrase::executeImpl(const ColumnsWithTypeAndName & argument
                 elements_nullable,
                 col_result->getData(),
                 input_rows_count,
+                tokenizer.get(),
                 phrase_tokens,
                 failure_table);
         else if (const auto * col_elements_fixedstring = checkAndGetColumn<ColumnFixedString>(elements))
@@ -325,8 +324,12 @@ ExecutableFunctionHasPhrase::executeImpl(const ColumnsWithTypeAndName & argument
                 elements_nullable,
                 col_result->getData(),
                 input_rows_count,
+                tokenizer.get(),
                 phrase_tokens,
                 failure_table);
+        else
+            /// `Array(Nothing)`, the type of `[]`: rows without tokens.
+            col_result->getData().assign(input_rows_count, UInt8(0));
     }
 
     return col_result;
@@ -344,12 +347,13 @@ If no text index is defined, the function performs a brute-force column scan whi
 
 Prior to searching, the function tokenizes both the `input` and the `phrase` arguments using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
-The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, or `icu`.
+The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `array`, `ngrams`, `asciiCJK`, or `icu`.
 
-If `input` is an [Array(String)](/reference/data-types/array), its elements are the tokens themselves and are not tokenized,
-so `hasPhrase(['quick', 'brown'], 'quick brown')` matches. A `String` `phrase` is still tokenized; if `phrase` is an
-[Array(String)](/reference/data-types/array), its elements are the tokens to search for, in order and including duplicates.
-Empty elements are ignored on both sides, because no tokenizer produces an empty token.
+If `input` is an [Array(String)](/reference/data-types/array), its elements are tokenized like any other input and
+their tokens form a single sequence per row, so a phrase may span two elements.
+If `phrase` is an [Array(String)](/reference/data-types/array), its elements are the tokens to search for, in order and
+including duplicates; a `String` `phrase` is tokenized. Empty phrase elements are ignored, because no tokenizer produces
+an empty token.
 
 <Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
@@ -399,6 +403,13 @@ because "brown" appears between "quick" and "fox".
 ┌─hasPhrase(['a', 'b', 'c'], ['a', 'b'])─┐
 │                                      1 │
 └────────────────────────────────────────┘
+        )"},
+           {"Phrase spanning two elements",
+            "SELECT hasPhrase(['a b', 'c'], ['b', 'c'])",
+            R"(
+┌─hasPhrase(['a b', 'c'], ['b', 'c'])─┐
+│                                   1 │
+└─────────────────────────────────────┘
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;

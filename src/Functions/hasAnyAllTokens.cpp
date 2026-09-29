@@ -350,6 +350,9 @@ void executeStringOrArray(
             executeArray<HasTokensTraits>(col_input_array, *input_string, null_map, col_result, tokenizer, tokens);
         else if (const auto * input_fixedstring = checkAndGetColumn<ColumnFixedString>(actual_data))
             executeArray<HasTokensTraits>(col_input_array, *input_fixedstring, null_map, col_result, tokenizer, tokens);
+        else
+            /// `Array(Nothing)`, the type of `[]`: rows without tokens.
+            col_result.assign(input_rows_count, UInt8(0));
     }
 }
 
