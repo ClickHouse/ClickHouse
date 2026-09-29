@@ -1,0 +1,4 @@
+abc
+0
+1
+CREATE VIEW AS SELECT number AS {name:Identifier} FROM numbers(3) WHERE number < {lim:UInt8}
