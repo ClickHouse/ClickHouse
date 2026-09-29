@@ -196,6 +196,7 @@ ClusterPtr SQLClusterFactory::materializeCluster(
         settings,
         "cluster",
         query.cluster_name,
+        false,
         Cluster::SourceId::SQL,
         std::move(create_statement));
 }

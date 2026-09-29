@@ -83,9 +83,9 @@ public:
             const Settings & settings,
             const String & config_prefix_,
             const String & cluster_name,
+            bool treat_local_port_as_remote = false,
             SourceId source_id_ = SourceId::CONFIG,
-            String create_query_ = {},
-            bool treat_local_port_as_remote = false);
+            String create_query_ = {});
 
     /// Construct a cluster by the names of shards and replicas.
     /// Local are treated as well as remote ones if treat_local_as_remote is true.

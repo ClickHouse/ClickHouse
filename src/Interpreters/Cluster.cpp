@@ -475,9 +475,9 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     const Settings & settings,
     const String & config_prefix_,
     const String & cluster_name,
+    bool treat_local_port_as_remote,
     SourceId source_id_,
-    String create_query_,
-    bool treat_local_port_as_remote)
+    String create_query_)
     : name(cluster_name)
     , source_id(source_id_)
     , create_query(std::move(create_query_))

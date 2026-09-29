@@ -6967,14 +6967,7 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, b
         const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
         const String config_prefix = "remote_servers." + cluster_name;
         if (config.has(config_prefix))
-            return std::make_shared<Cluster>(
-                config,
-                *settings,
-                "remote_servers",
-                cluster_name,
-                Cluster::SourceId::CONFIG,
-                {},
-                treat_local_port_as_remote);
+            return std::make_shared<Cluster>(config, *settings, "remote_servers", cluster_name, treat_local_port_as_remote);
 
         if (auto res = getClustersImpl(lock)->getCluster(cluster_name))
             return res;
