@@ -1,0 +1,117 @@
+-- RENAME COLUMN and DROP COLUMN on a Memory table: the rows inserted before the ALTER are read under the new
+-- names, and a column added later with an old name gets default values, not the old column's data.
+
+DROP TABLE IF EXISTS mem_nullable;
+CREATE TABLE mem_nullable (c0 Nullable(UInt8)) ENGINE = Memory;
+INSERT INTO mem_nullable VALUES (5), (NULL);
+ALTER TABLE mem_nullable RENAME COLUMN c0 TO c1;
+SELECT 'rename nullable', c1, c1.null, isNull(c1) FROM mem_nullable ORDER BY c1;
+ALTER TABLE mem_nullable ADD COLUMN c0 UInt64;
+SELECT 'add old name', c1, c0 FROM mem_nullable ORDER BY c1;
+DROP TABLE mem_nullable;
+
+DROP TABLE IF EXISTS mem_string;
+CREATE TABLE mem_string (k UInt64, s String, a Array(UInt32)) ENGINE = Memory;
+INSERT INTO mem_string VALUES (1, 'hello', [1, 2]), (2, 'world', [3]);
+ALTER TABLE mem_string RENAME COLUMN s TO s2;
+SELECT 'rename string', k, s2, a FROM mem_string ORDER BY k;
+SELECT 'where', count() FROM mem_string WHERE s2 = 'hello';
+SELECT 'prewhere', count() FROM mem_string PREWHERE s2 = 'hello';
+INSERT INTO mem_string VALUES (3, 'after', [9]);
+SELECT 'old and new rows', k, s2 FROM mem_string ORDER BY k;
+ALTER TABLE mem_string ADD COLUMN s String;
+SELECT 'add old name', k, s2, s FROM mem_string ORDER BY k;
+DROP TABLE mem_string;
+
+DROP TABLE IF EXISTS mem_drop;
+CREATE TABLE mem_drop (k UInt64, s String) ENGINE = Memory;
+INSERT INTO mem_drop VALUES (1, 'hello'), (2, 'world');
+ALTER TABLE mem_drop DROP COLUMN s;
+ALTER TABLE mem_drop ADD COLUMN s String;
+SELECT 'drop then add', k, s FROM mem_drop ORDER BY k;
+DROP TABLE mem_drop;
+
+-- The commands of one ALTER are applied in order.
+DROP TABLE IF EXISTS mem_multi;
+CREATE TABLE mem_multi (a UInt8, b UInt8) ENGINE = Memory;
+INSERT INTO mem_multi VALUES (1, 2);
+ALTER TABLE mem_multi DROP COLUMN b, RENAME COLUMN a TO b;
+SELECT 'drop b, rename a to b', b FROM mem_multi;
+DROP TABLE mem_multi;
+
+DROP TABLE IF EXISTS mem_multi;
+CREATE TABLE mem_multi (a UInt8, b UInt8) ENGINE = Memory;
+INSERT INTO mem_multi VALUES (1, 2);
+ALTER TABLE mem_multi RENAME COLUMN b TO c, RENAME COLUMN a TO b;
+SELECT 'rename b to c, a to b', b, c FROM mem_multi;
+DROP TABLE mem_multi;
+
+DROP TABLE IF EXISTS mem_multi;
+CREATE TABLE mem_multi (a UInt8) ENGINE = Memory;
+INSERT INTO mem_multi VALUES (1);
+ALTER TABLE mem_multi RENAME COLUMN a TO b, ADD COLUMN a UInt8;
+SELECT 'rename a to b, add a', b, a FROM mem_multi;
+DROP TABLE mem_multi;
+
+DROP TABLE IF EXISTS mem_nested;
+CREATE TABLE mem_nested (k UInt8, n Nested(x UInt8, y String)) ENGINE = Memory;
+INSERT INTO mem_nested VALUES (1, [1, 2], ['p', 'q']);
+ALTER TABLE mem_nested RENAME COLUMN n.x TO n.z;
+SELECT 'rename nested member', k, n.z, n.y FROM mem_nested;
+-- There is no column `n`, only `n.z` and `n.y`, so nothing is dropped.
+ALTER TABLE mem_nested DROP COLUMN IF EXISTS n;
+SELECT 'drop if exists nested', k, n.z, n.y FROM mem_nested;
+ALTER TABLE mem_nested DROP COLUMN n;
+ALTER TABLE mem_nested ADD COLUMN n Nested(z UInt8, y String);
+SELECT 'drop then add nested', k, n.z, n.y FROM mem_nested;
+DROP TABLE mem_nested;
+
+DROP TABLE IF EXISTS mem_update;
+CREATE TABLE mem_update (k UInt8, x UInt8) ENGINE = Memory;
+INSERT INTO mem_update VALUES (1, 5), (2, 6);
+ALTER TABLE mem_update RENAME COLUMN x TO y;
+ALTER TABLE mem_update UPDATE y = 9 WHERE k = 1;
+SELECT 'rename then update', k, y FROM mem_update ORDER BY k;
+DROP TABLE mem_update;
+
+DROP TABLE IF EXISTS mem_compress;
+CREATE TABLE mem_compress (k UInt64, s String) ENGINE = Memory SETTINGS compress = 1;
+INSERT INTO mem_compress VALUES (1, 'hello'), (2, 'world');
+ALTER TABLE mem_compress RENAME COLUMN s TO s2;
+SELECT 'compress', k, s2 FROM mem_compress ORDER BY k;
+DROP TABLE mem_compress;
+
+CREATE TEMPORARY TABLE tmp_rename (k UInt64, s String) ENGINE = Memory;
+INSERT INTO tmp_rename VALUES (1, 'hello');
+ALTER TABLE tmp_rename RENAME COLUMN s TO s2;
+SELECT 'temporary table', k, s2 FROM tmp_rename;
+DROP TEMPORARY TABLE tmp_rename;
+
+-- The rows inserted before `b` was added have no stored column left after `a` is dropped, and keep their count.
+DROP TABLE IF EXISTS mem_fill;
+CREATE TABLE mem_fill (a UInt8) ENGINE = Memory;
+INSERT INTO mem_fill VALUES (1), (2), (3);
+ALTER TABLE mem_fill ADD COLUMN b Nullable(UInt8);
+ALTER TABLE mem_fill DROP COLUMN a;
+SELECT 'all stored columns dropped', count(), countIf(b IS NULL), groupArray(b) FROM mem_fill;
+SELECT 'total_rows', total_rows FROM system.tables WHERE database = currentDatabase() AND name = 'mem_fill';
+INSERT INTO mem_fill (b) VALUES (5);
+SELECT 'insert after drop', count(), countIf(b IS NULL), sum(b) FROM mem_fill;
+ALTER TABLE mem_fill ADD COLUMN a UInt8;
+SELECT 'add dropped name', a, b FROM mem_fill ORDER BY b NULLS FIRST;
+DROP TABLE mem_fill;
+
+CREATE TEMPORARY TABLE tmp_last (a UInt8, e UInt8 ALIAS 7) ENGINE = Memory;
+INSERT INTO tmp_last VALUES (1), (2);
+ALTER TABLE tmp_last DROP COLUMN a; -- { serverError EMPTY_LIST_OF_COLUMNS_PASSED }
+SELECT 'rejected drop of the last physical column', a, e FROM tmp_last ORDER BY a;
+DROP TEMPORARY TABLE tmp_last;
+
+-- The data of a dropped column is released.
+DROP TABLE IF EXISTS mem_bytes;
+CREATE TABLE mem_bytes (k UInt8, s String) ENGINE = Memory;
+INSERT INTO mem_bytes SELECT toUInt8(number), repeat('x', 100) FROM numbers(10000) SETTINGS max_block_size = 65536;
+SELECT 'bytes before drop', total_bytes > 900000 FROM system.tables WHERE database = currentDatabase() AND name = 'mem_bytes';
+ALTER TABLE mem_bytes DROP COLUMN s;
+SELECT 'bytes after drop', total_bytes < 200000 FROM system.tables WHERE database = currentDatabase() AND name = 'mem_bytes';
+DROP TABLE mem_bytes;

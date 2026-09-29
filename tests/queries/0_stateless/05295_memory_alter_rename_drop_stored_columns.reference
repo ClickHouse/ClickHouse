@@ -1,0 +1,38 @@
+rename nullable	5	0	0
+rename nullable	\N	1	1
+add old name	5	0
+add old name	\N	0
+rename string	1	hello	[1,2]
+rename string	2	world	[3]
+where	1
+prewhere	1
+old and new rows	1	hello
+old and new rows	2	world
+old and new rows	3	after
+add old name	1	hello	
+add old name	2	world	
+add old name	3	after	
+drop then add	1	
+drop then add	2	
+drop b, rename a to b	1
+rename b to c, a to b	1	2
+rename a to b, add a	1	0
+rename nested member	1	[1,2]	['p','q']
+drop if exists nested	1	[1,2]	['p','q']
+drop then add nested	1	[]	[]
+rename then update	1	9
+rename then update	2	6
+compress	1	hello
+compress	2	world
+temporary table	1	hello
+all stored columns dropped	3	3	[]
+total_rows	3
+insert after drop	4	3	5
+add dropped name	0	\N
+add dropped name	0	\N
+add dropped name	0	\N
+add dropped name	0	5
+rejected drop of the last physical column	1	7
+rejected drop of the last physical column	2	7
+bytes before drop	1
+bytes after drop	1

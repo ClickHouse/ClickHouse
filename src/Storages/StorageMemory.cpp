@@ -1,7 +1,9 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
 #include <Core/Settings.h>
 
+#include <Columns/ColumnConst.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <boost/noncopyable.hpp>
@@ -20,6 +22,7 @@
 #include <Storages/MemorySettings.h>
 #include <Storages/VirtualColumnsDescription.h>
 
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -75,6 +78,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int UNFINISHED;
 }
 
 namespace FailPoints
@@ -92,6 +96,7 @@ public:
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage(storage_)
         , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context))
+        , metadata_version(metadata_snapshot_->getMetadataVersion())
     {
     }
 
@@ -116,6 +121,16 @@ public:
 
     void onFinish() override
     {
+        std::lock_guard lock(storage.mutex);
+
+        /// The blocks have the column names of `metadata_version`.
+        for (const auto & entry : storage.column_changes)
+        {
+            if (entry.metadata_version > metadata_version)
+                for (auto & block : new_blocks)
+                    StorageMemory::applyColumnChanges(block, entry);
+        }
+
         size_t inserted_bytes = 0;
         size_t inserted_rows = 0;
 
@@ -124,8 +139,6 @@ public:
             inserted_bytes += block.allocatedBytes();
             inserted_rows += block.rows();
         }
-
-        std::lock_guard lock(storage.mutex);
 
         auto new_data = std::make_unique<StorageMemory::BlocksWithCounts>(*(storage.data.get()));
         new_data->rows += inserted_rows;
@@ -160,6 +173,7 @@ private:
     Blocks new_blocks;
     StorageMemory & storage;
     StorageSnapshotPtr storage_snapshot;
+    const Int32 metadata_version;
 };
 
 
@@ -215,6 +229,7 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     /// The blocks and the row count come from the same version of `data`, so they are consistent.
     snapshot_data->blocks = std::shared_ptr<const Blocks>(current_data, &current_data->blocks);
     snapshot_data->rows = current_data->rows;
+    snapshot_data->columns_version = current_data->columns_version;
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
@@ -235,6 +250,13 @@ void StorageMemory::readImpl(
     size_t /*max_block_size*/,
     size_t num_streams)
 {
+    const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
+    if (storage_snapshot->metadata->getMetadataVersion() < snapshot_data.columns_version)
+        throw Exception(
+            ErrorCodes::UNFINISHED,
+            "Columns of table {} were renamed or dropped by a concurrent ALTER, retry the query",
+            getStorageID().getNameForLogs());
+
     query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(
         column_names, query_info, storage_snapshot, context, shared_from_this(), num_streams, delay_read_for_global_subqueries));
 }
@@ -405,6 +427,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         chassert(out_it == out.end());
     }
 
+    new_data->columns_version = data.get()->columns_version;
     for (const auto & buffer : new_data->blocks)
     {
         new_data->rows += buffer.rows();
@@ -417,7 +440,64 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
 void StorageMemory::truncate(
     const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
-    data.set(std::make_unique<BlocksWithCounts>());
+    auto new_data = std::make_unique<BlocksWithCounts>();
+    new_data->columns_version = data.get()->columns_version;
+    data.set(std::move(new_data));
+}
+
+std::vector<StorageMemory::ColumnChange> StorageMemory::getColumnChanges(
+    const AlterCommands & commands, const StorageInMemoryMetadata & old_metadata, ContextPtr context)
+{
+    /// Replays the commands as `AlterCommands::apply` does and records the columns each rename or drop removes,
+    /// so the stored blocks follow the metadata exactly (`DROP COLUMN IF EXISTS n` of a `Nested` is a no-op there).
+    std::vector<ColumnChange> changes;
+    StorageInMemoryMetadata metadata = old_metadata;
+    for (const auto & command : commands)
+    {
+        if (command.ignore)
+            continue;
+
+        const bool is_rename = command.type == AlterCommand::Type::RENAME_COLUMN;
+        Names names_before;
+        if (is_rename || command.type == AlterCommand::Type::DROP_COLUMN)
+            for (const auto & column : metadata.columns)
+                names_before.push_back(column.name);
+
+        command.apply(metadata, context, /*share_nested_offsets=*/ true, &old_metadata.columns);
+
+        for (const auto & name : names_before)
+            if (!metadata.columns.has(name))
+                changes.push_back({name, is_rename ? command.rename_to : ""});
+    }
+    return changes;
+}
+
+void StorageMemory::applyColumnChanges(Block & block, const ColumnChangesEntry & entry)
+{
+    const size_t rows = block.rows();
+    for (const auto & change : entry.changes)
+    {
+        const auto * column = block.findByName(change.name);
+        if (!column)
+            continue;
+
+        ColumnWithTypeAndName renamed = *column;
+        block.erase(change.name);
+        if (change.new_name.empty())
+            continue;
+
+        /// Only a block restored from a backup of an older version can have a column with the new name.
+        if (block.has(change.new_name))
+            block.erase(change.new_name);
+        renamed.name = change.new_name;
+        block.insert(std::move(renamed));
+    }
+
+    if (block.columns() == 0)
+    {
+        const auto & type = entry.fill_column.type;
+        block.insert({type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst(), type, entry.fill_column.name});
+    }
 }
 
 void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr context, DB::IStorage::AlterLockHolder & /*alter_lock_holder*/, DB::DDLGuardPtr & /*ddl_guard*/)
@@ -426,9 +506,14 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
+    new_metadata.setMetadataVersion(metadata_snapshot->getMetadataVersion() + 1);
+    auto column_changes_of_alter = getColumnChanges(params, *metadata_snapshot, context);
 
     /// Check that the resulting metadata does not exceed max_query_size before mutating any in-memory state.
     checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, context);
+
+    /// Inserts commit under the same lock, so their blocks are either converted here or know about this `ALTER`.
+    std::lock_guard lock(mutex);
 
     if (params.isSettingsAlter())
     {
@@ -442,8 +527,6 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
         if (!(*memory_settings)[MemorySetting::max_bytes_to_keep] || (*memory_settings)[MemorySetting::max_bytes_to_keep] > changed_settings[MemorySetting::max_bytes_to_keep]
             || !(*memory_settings)[MemorySetting::max_rows_to_keep] || (*memory_settings)[MemorySetting::max_rows_to_keep] > changed_settings[MemorySetting::max_rows_to_keep])
         {
-            std::lock_guard lock(mutex);
-
             auto new_data = std::make_unique<BlocksWithCounts>(*(data.get()));
             while (!new_data->blocks.empty()
                    && ((changed_settings[MemorySetting::max_bytes_to_keep] && new_data->bytes > changed_settings[MemorySetting::max_bytes_to_keep])
@@ -469,7 +552,39 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
         *memory_settings = std::move(changed_settings);
     }
 
+    /// The blocks are converted before `alterTable` commits the new definition, so that only the
+    /// publication remains after it. Without physical columns the `ALTER` is rejected by `alterTable`.
+    std::unique_ptr<BlocksWithCounts> converted_data;
+    ColumnChangesEntry column_changes_entry;
+    const auto physical_columns = new_metadata.getColumns().getAllPhysical();
+    if (!column_changes_of_alter.empty() && !physical_columns.empty())
+    {
+        const auto columns_without_default_expressions = new_metadata.getColumnsWithoutDefaultExpressions({});
+        auto fill_column = std::find_if(physical_columns.begin(), physical_columns.end(),
+            [&](const auto & column) { return columns_without_default_expressions.contains(column.name); });
+        column_changes_entry.fill_column = fill_column != physical_columns.end() ? *fill_column : physical_columns.front();
+        column_changes_entry.metadata_version = new_metadata.getMetadataVersion();
+        column_changes_entry.changes = column_changes_of_alter;
+
+        converted_data = std::make_unique<BlocksWithCounts>(*(data.get()));
+        converted_data->bytes = 0;
+        for (auto & block : converted_data->blocks)
+        {
+            applyColumnChanges(block, column_changes_entry);
+            converted_data->bytes += block.allocatedBytes();
+        }
+        converted_data->columns_version = column_changes_entry.metadata_version;
+        column_changes.reserve(column_changes.size() + 1);
+    }
+
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
+
+    chassert(converted_data || column_changes_of_alter.empty());
+    if (converted_data)
+    {
+        data.set(std::move(converted_data));
+        column_changes.push_back(std::move(column_changes_entry));
+    }
     setInMemoryMetadata(new_metadata);
 }
 
@@ -603,8 +718,15 @@ void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector
     auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
     const auto & read_settings = backup_entries_collector.getReadSettings();
 
-    const auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    auto current_data = data.get();
+    /// `columns.txt` is written from the metadata, `data.bin` from the blocks: they must have the same column names.
+    StorageMetadataPtr metadata_snapshot;
+    MultiVersion<BlocksWithCounts>::Version current_data;
+    {
+        std::lock_guard lock(mutex);
+        auto metadata_handle = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        metadata_snapshot = metadata_handle;
+        current_data = data.get();
+    }
     backup_entries_collector.addBackupEntries(std::make_shared<MemoryBackup>(
         backup_entries_collector.getContext(),
         metadata_snapshot,
@@ -623,12 +745,39 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!restorer.isNonEmptyTableAllowed() && data.get()->bytes)
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
+    /// The blocks in the backup have the column names of its `columns.txt`. When they are the names of this
+    /// metadata, the columns renamed or dropped by later `ALTER`s can be converted in `restoreDataImpl`.
+    auto metadata_snapshot = getInMemoryMetadataPtr(restorer.getContext(), false);
+    bool names_verified = false;
+    String columns_file_path = fs::path(data_path_in_backup) / "columns.txt";
+    if (!restorer.getRestoreSettings().allow_different_table_def && backup->fileExists(columns_file_path))
+    {
+        String columns_text;
+        auto in = backup->readFile(columns_file_path);
+        readStringUntilEOF(columns_text, *in);
+
+        NameSet backup_names;
+        for (const auto & column : NamesAndTypesList::parse(columns_text))
+            backup_names.insert(column.name);
+        NameSet table_names;
+        for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
+            table_names.insert(column.name);
+
+        if (backup_names != table_names)
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "The column names of table {} in the backup do not match the table, it was altered during the backup or the restore",
+                getStorageID().getNameForLogs());
+        names_verified = true;
+    }
+
     restorer.addDataRestoreTask(
-        [storage = std::static_pointer_cast<StorageMemory>(shared_from_this()), backup, data_path_in_backup]
-        { storage->restoreDataImpl(backup, data_path_in_backup); });
+        [storage = std::static_pointer_cast<StorageMemory>(shared_from_this()), backup, data_path_in_backup,
+         metadata_version = metadata_snapshot->getMetadataVersion(), names_verified]
+        { storage->restoreDataImpl(backup, data_path_in_backup, metadata_version, names_verified); });
 }
 
-void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup)
+void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, Int32 metadata_version, bool names_verified)
 {
     /// Our data are in the StripeLog format.
 
@@ -666,8 +815,6 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
 
     /// Reading data.bin
     Blocks new_blocks;
-    size_t new_bytes = 0;
-    size_t new_rows = 0;
     {
         String data_file_path = data_path_in_backup_fs / "data.bin";
         if (!backup->fileExists(data_file_path))
@@ -692,10 +839,31 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
             {
                 new_blocks.push_back(std::move(block));
             }
-
-            new_bytes += new_blocks.back().allocatedBytes();
-            new_rows += new_blocks.back().rows();
         }
+    }
+
+    std::lock_guard lock(mutex);
+
+    for (const auto & entry : column_changes)
+    {
+        if (entry.metadata_version <= metadata_version)
+            continue;
+        if (!names_verified)
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "Columns of table {} were renamed or dropped by an ALTER during the restore, "
+                "and the column names in the backup are not verified",
+                getStorageID().getNameForLogs());
+        for (auto & block : new_blocks)
+            applyColumnChanges(block, entry);
+    }
+
+    size_t new_bytes = 0;
+    size_t new_rows = 0;
+    for (const auto & block : new_blocks)
+    {
+        new_bytes += block.allocatedBytes();
+        new_rows += block.rows();
     }
 
     /// Append old blocks with the new ones.

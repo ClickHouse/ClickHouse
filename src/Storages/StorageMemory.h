@@ -47,6 +47,8 @@ public:
         std::shared_ptr<const Blocks> blocks;
         /// The exact number of rows in `blocks`.
         size_t rows = 0;
+        /// See `BlocksWithCounts::columns_version`.
+        Int32 columns_version = 0;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -162,8 +164,29 @@ public:
 private:
     static VirtualColumnsDescription createVirtuals();
 
-    /// Restores the data of this table from backup.
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
+    /// Restores the data of this table from backup. `metadata_version` is the version of the table's metadata when
+    /// the restore was scheduled, `names_verified` means that the column names in the backup are its names.
+    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, Int32 metadata_version, bool names_verified);
+
+    /// Renames (`new_name` is set) and drops (`new_name` is empty) of stored columns.
+    struct ColumnChange
+    {
+        String name;
+        String new_name;
+    };
+
+    /// The column changes of one `ALTER`, in order. `fill_column` is inserted, filled with default
+    /// values, into a block left without columns, so that the block keeps its number of rows.
+    struct ColumnChangesEntry
+    {
+        Int32 metadata_version = 0;
+        std::vector<ColumnChange> changes;
+        NameAndTypePair fill_column;
+    };
+
+    static std::vector<ColumnChange> getColumnChanges(
+        const AlterCommands & commands, const StorageInMemoryMetadata & old_metadata, ContextPtr context);
+    static void applyColumnChanges(Block & block, const ColumnChangesEntry & entry);
 
     /// The blocks of the table together with the exact number of rows and bytes in them.
     /// The counters are a part of the same object, so they are published atomically with the
@@ -175,6 +198,8 @@ private:
         Blocks blocks;
         size_t rows = 0;
         size_t bytes = 0;
+        /// The metadata version of the last `ALTER` whose column renames and drops are applied to `blocks`.
+        Int32 columns_version = 0;
     };
 
     /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
@@ -182,6 +207,9 @@ private:
     MultiVersion<BlocksWithCounts> data;
 
     mutable std::mutex mutex;
+
+    /// Every `ALTER` that renamed or dropped columns, for the writers whose blocks predate it. Protected by `mutex`.
+    std::vector<ColumnChangesEntry> column_changes;
 
     bool delay_read_for_global_subqueries = false;
     MaterializedCTEWeakPtr materialized_cte;

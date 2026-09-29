@@ -1,0 +1,4 @@
+insert across rename	50010	0	1250525055
+insert across drop	50010	0	0
+restore RESTORED
+restore across rename	10	55
