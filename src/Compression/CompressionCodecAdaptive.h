@@ -42,7 +42,6 @@ public:
 
     /// Compresses the block with whichever candidate produces the smallest output. Decompression cannot tell adaptive was involved.
     /// A candidate must beat the raw block, and ties go to the earliest pool entry, so a codec beats its own chain.
-    /// Candidates reporting their size via `tryGetCompressedSize` are compressed only if they win, unless a chain needs their block.
     /// Selection cost scales with the block size, so there is no small-block skip.
     UInt32 compress(const char * source, UInt32 source_size, char * dest, CompressionState * state) const override;
 

@@ -57,7 +57,7 @@ constexpr std::array<SpecializedCodec, 3> SPECIALIZED_CODECS = {{
 }};
 
 /// Build the codec described by `expr` for `type` so type-aware codecs get the type they need.
-/// E.g. T64 derives its type_idx from it, to compress and to calculate its size.
+/// E.g. `T64` derives its `type_idx` from it to compress.
 CompressionCodecPtr buildCodecForType(std::string_view expr, const IDataType & type)
 {
     ParserCodec parser;
@@ -157,55 +157,38 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
     chassert(dest != nullptr);
     CompressionDestinationMultiplexer multiplexer(dest, getMaxCompressedDataSize(source_size));
     /// The raw block is the baseline
-    const ICompressionCodec * best_codec = &getNoneCodec();
     UInt32 best_size = getHeaderSize() + source_size;
 
-    /// `block` is nullptr for a measured-only size.
-    auto update_best = [&](const ICompressionCodec & codec, UInt32 size, char * block)
+    auto update_best = [&](UInt32 size, char * block)
     {
         if (size >= best_size)
             return;
         best_size = size;
-        best_codec = &codec;
         multiplexer.setBestDestination(block);
     };
 
     /// Try every candidate in the pool and choose best.
     for (const auto & [codec, chain] : pool)
     {
-        /// A candidate without a chain that reports its size cheaply is measured rather than compressed.
-        if (auto calculated = chain ? std::nullopt : codec->tryGetCompressedSize(source, source_size))
-        {
-            update_best(*codec, getHeaderSize() + *calculated, nullptr);
-            continue;
-        }
-
         char * block = multiplexer.takeWriteDestination();
         const UInt32 size = codec->compress(source, source_size, block);
-        update_best(*codec, size, block);
+        update_best(size, block);
 
         /// A chain applies only its second codec, to the block its first one (also a candidate) just produced.
         if (chain)
         {
             char * chained = multiplexer.takeWriteDestination(/*in_use=*/block);
-            update_best(*chain, chain->compressRemainingStages(/*completed_stages=*/1, block, size, source_size, chained), chained);
+            update_best(chain->compressRemainingStages(/*completed_stages=*/1, block, size, source_size, chained), chained);
         }
     }
 
-    /// The winner reaches `dest` in one of three ways: a measured-only winner is compressed into it,
-    /// a winner already there needs nothing, and a winner in scratch is copied over.
+    /// Nothing beat the raw block: `NONE` writes it. Else the winner is already in `dest` or is copied over from scratch.
     char * best_compressed = multiplexer.getBestDestination();
-
     if (!best_compressed)
-    {
-        const UInt32 size = best_codec->compress(source, source_size, dest);
-        chassert(size == best_size);
-        return size;
-    }
+        return getNoneCodec().compress(source, source_size, dest);
 
     if (best_compressed != dest)
         memcpy(dest, best_compressed, best_size);
-
     return best_size;
 }
 

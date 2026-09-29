@@ -266,24 +266,3 @@ TEST(CompressionCodecAdaptive, ConcurrentCompressIsThreadSafe)
         th.join();
     EXPECT_TRUE(ok);
 }
-
-TEST(TryGetCompressedSize, MatchesCompressForT64)
-{
-    std::vector<UInt32> values(50000);
-    for (size_t i = 0; i < values.size(); ++i)
-        values[i] = static_cast<UInt32>(i);
-    auto bytes = bytesOf(values);
-    const UInt32 size = static_cast<UInt32>(bytes.size());
-
-    auto pool = AdaptiveCodec::poolForType(type("UInt32"), defaultCodec());
-    const auto & t64 = pool.back().codec;
-    ASSERT_EQ(t64->getMethodByte(), T64);
-
-    const auto calculated = t64->tryGetCompressedSize(bytes.data(), size);
-    ASSERT_TRUE(calculated.has_value());
-
-    /// Re-derive size from a real compress.
-    PODArray<char> encoded(t64->getCompressedReserveSize(size));
-    const UInt32 actual = t64->compress(bytes.data(), size, encoded.data());
-    EXPECT_EQ(ICompressionCodec::getHeaderSize() + *calculated, actual);
-}
