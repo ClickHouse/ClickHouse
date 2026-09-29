@@ -1772,8 +1772,7 @@ void StorageObjectStorageQueue::alter(
             changed_settings.push_back(setting);
         }
 
-        /// The new definition is written below and must load on `ATTACH`, so its settings are loaded and validated
-        /// the same way before anything is changed. The changed values then have the types of their settings.
+        /// Before any state change: reject what `ATTACH` would reject, and give the changed values the types of their settings.
         auto new_storage_def = make_intrusive<ASTStorage>();
         new_storage_def->set(new_storage_def->engine, makeASTFunction(getName()));
         new_storage_def->set(new_storage_def->settings, new_metadata.settings_changes->clone());
