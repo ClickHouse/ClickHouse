@@ -76,7 +76,8 @@ feature_tier_1_path = "/etc/clickhouse-server/config.d/allow_feature_tier_1.xml"
 EXPERIMENTAL_SETTING = (
     "enable_funnel_functions"  # also in configs/users.d/users.xml
 )
-BETA_SETTING = "allow_experimental_lightweight_update"
+# `compatibility` must not change this one: a value it gives would make `SETTINGS {BETA_SETTING} = 1` a no-op.
+BETA_SETTING = "allow_database_iceberg"
 PRIVATE_PREVIEW_SETTING = "distributed_plan_workers_num"
 
 # A `MergeTree` setting is written by its bare name in a table's own `SETTINGS` or `ALTER ... MODIFY
@@ -203,32 +204,33 @@ def test_allow_feature_tier_in_general_settings(start_cluster):
     assert error == ""
     assert "1" == output.strip()
 
-    # Disable experimental settings
-    set_feature_tier(instance, "0", "1")
-    assert_experimental_change_is_blocked(instance, query_with_experimental_setting)
+    try:
+        # Disable experimental settings
+        set_feature_tier(instance, "0", "1")
+        assert_experimental_change_is_blocked(instance, query_with_experimental_setting)
 
-    output, error = instance.query_and_get_answer_with_error(query_with_beta_setting)
-    assert error == ""
-    assert "1" == output.strip()
+        output, error = instance.query_and_get_answer_with_error(query_with_beta_setting)
+        assert error == ""
+        assert "1" == output.strip()
 
-    # Disable experimental and private preview settings. Beta settings are still allowed.
-    set_feature_tier(instance, "1", "2")
-    assert_experimental_change_is_blocked(instance, query_with_experimental_setting)
+        # Disable experimental and private preview settings. Beta settings are still allowed.
+        set_feature_tier(instance, "1", "2")
+        assert_experimental_change_is_blocked(instance, query_with_experimental_setting)
 
-    output, error = instance.query_and_get_answer_with_error(query_with_beta_setting)
-    assert error == ""
-    assert "1" == output.strip()
+        output, error = instance.query_and_get_answer_with_error(query_with_beta_setting)
+        assert error == ""
+        assert "1" == output.strip()
 
-    # Disable experimental, private preview and beta settings
-    set_feature_tier(instance, "2", "3")
-    assert_experimental_change_is_blocked(instance, query_with_experimental_setting)
+        # Disable experimental, private preview and beta settings
+        set_feature_tier(instance, "2", "3")
+        assert_experimental_change_is_blocked(instance, query_with_experimental_setting)
 
-    output, error = instance.query_and_get_answer_with_error(query_with_beta_setting)
-    assert output == ""
-    assert BETA_BLOCKED in error
-
-    # Leave the server as it was
-    set_feature_tier(instance, "3", "0")
+        output, error = instance.query_and_get_answer_with_error(query_with_beta_setting)
+        assert output == ""
+        assert BETA_BLOCKED in error
+    finally:
+        # Leave the server as it was
+        set_feature_tier(instance, get_current_tier_value(instance), "0")
 
 
 def test_allow_feature_tier_in_private_preview_settings(start_cluster):
@@ -1897,22 +1899,22 @@ def test_compatibility_skips_settings_of_a_disabled_tier(start_cluster):
     with entities(instance, users=users):
         query = (
             f"SELECT getSetting('{COMPATIBILITY_EXPERIMENTAL_SETTING}'), "
-        f"getSetting('{COMPATIBILITY_PRODUCTION_SETTING}')"
+            f"getSetting('{COMPATIBILITY_PRODUCTION_SETTING}')"
         )
         old_compatibility = " SETTINGS compatibility = '23.6'"
-        assert instance.query(query + old_compatibility) == "1\t0\n"
+        assert instance.query(query + old_compatibility) == "true\t0\n"
 
         with feature_tier(instance, "1"):
             # The EXPERIMENTAL setting keeps its value, while the PRODUCTION one still follows `compatibility`.
-            assert instance.query(query + old_compatibility) == "0\t0\n"
+            assert instance.query(query + old_compatibility) == "false\t0\n"
 
             # A user that carries `compatibility` changes no setting of a disabled tier, so it can be created.
             instance.query(
                 f"CREATE USER {users[0]} IDENTIFIED WITH no_password SETTINGS compatibility = '23.6'"
             )
-            assert instance.query(query, user=users[0]) == "0\t0\n"
+            assert instance.query(query, user=users[0]) == "false\t0\n"
 
-        assert instance.query(query, user=users[0]) == "1\t0\n"
+        assert instance.query(query, user=users[0]) == "true\t0\n"
 
 
 def test_compatibility_skips_merge_tree_settings_refused_by_default_profile(start_cluster):
