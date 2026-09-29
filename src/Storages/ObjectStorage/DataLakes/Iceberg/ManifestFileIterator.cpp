@@ -156,6 +156,88 @@ namespace
     }
 }
 
+std::unordered_map<Int32, DB::Range> getDataFileHyperrectangles(
+    const ProcessedManifestFileEntry & entry,
+    const std::unordered_map<Int32, DB::DataTypePtr> & column_types,
+    const IcebergPathFromMetadata & path_to_manifest_file)
+{
+    std::unordered_map<Int32, DB::Range> hyperrectangles;
+    const auto & parsed_entry = entry.parsed_entry;
+    if (parsed_entry->content_type != FileContentType::DATA)
+        return hyperrectangles;
+
+    for (const auto & [column_id, column_type] : column_types)
+    {
+        auto bounds_it = parsed_entry->value_bounds.find(column_id);
+        if (bounds_it == parsed_entry->value_bounds.end())
+            continue;
+        const auto & bounds = bounds_it->second;
+
+        String left_str;
+        String right_str;
+        /// lower_bound and upper_bound may be NULL.
+        if (!bounds.first.tryGet(left_str) || !bounds.second.tryGet(right_str))
+            continue;
+
+        if (const auto type_id = column_type->getTypeId();
+            type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array
+            || type_id == DB::TypeIndex::Variant)
+            continue;
+
+        auto left = deserializeFieldFromBinaryRepr(left_str, column_type, true);
+        auto right = deserializeFieldFromBinaryRepr(right_str, column_type, false);
+        if (!left || !right)
+        {
+            /// A bound that does not decode is wider than the storage of its type, a decimal
+            /// bound beyond the precision of its type on the inner side of the range, or
+            /// narrower than the column is now, which is what Iceberg leaves behind for a
+            /// promoted column. The last is well formed, so this stays out of the warning
+            /// log.
+            LOG_DEBUG(
+                getLogger("ManifestFileIterator"),
+                "Manifest file '{}' declares a bound that cannot be read as a usable range border "
+                "for column id {} of data file '{}'; skipping min/max pruning for this column",
+                path_to_manifest_file,
+                column_id,
+                parsed_entry->file_path_key.serialize());
+            continue;
+        }
+
+        /// At a non-zero scale the outward shift moves each decimal bound one integral unit, so it
+        /// un-inverts any declared pair no more than `2 * 10^scale` apart. Only the values as
+        /// declared expose that inversion, which is why they are read again here.
+        std::optional<DB::Field> declared_left = left;
+        std::optional<DB::Field> declared_right = right;
+        if (DB::WhichDataType(DB::removeNullable(column_type)).isDecimal())
+        {
+            declared_left = deserializeFieldFromBinaryRepr(
+                left_str, column_type, true, /*compensate_rounding=*/false);
+            declared_right = deserializeFieldFromBinaryRepr(
+                right_str, column_type, false, /*compensate_rounding=*/false);
+        }
+
+        /// A pair inverted as declared means the manifest's statistics are untrustworthy, so no
+        /// range derived from them is safe to prune on. Dropping the column's bounds is therefore
+        /// right where swapping or clamping them would prune on a value nothing vouches for.
+        if (accurateLess(*declared_right, *declared_left))
+        {
+            LOG_WARNING(
+                getLogger("ManifestFileIterator"),
+                "Manifest file '{}' declares a lower bound above the upper bound for column id "
+                "{} of data file '{}'; skipping min/max pruning for this column",
+                path_to_manifest_file,
+                column_id,
+                parsed_entry->file_path_key.serialize());
+            continue;
+        }
+
+        hyperrectangles.emplace(column_id, DB::Range(*left, true, *right, true));
+    }
+
+    addRowLineageHyperrectangles(hyperrectangles, entry, path_to_manifest_file);
+    return hyperrectangles;
+}
+
 const std::vector<ProcessedManifestFileEntryPtr> &
 ManifestFileIterator::ManifestFileEntriesHandle::getFilesWithoutDeleted(FileContentType content_type) const
 {
@@ -260,7 +342,8 @@ ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWi
     {
         data_files_without_deleted,
         position_deletes_files_without_deleted,
-        equality_deletes_files_without_deleted
+        equality_deletes_files_without_deleted,
+        partition_key_description
     };
 }
 
@@ -406,7 +489,8 @@ ManifestFileIterator::ManifestFileIterator(
     , context(context_)
     , manifest_schema_id(manifest_schema_id_)
     , common_partition_specification(std::move(common_partition_specification_))
-    , partition_key_description(std::move(partition_key_description_))
+    , partition_key_description(
+          partition_key_description_ ? std::make_shared<const DB::KeyDescription>(std::move(*partition_key_description_)) : nullptr)
     , partition_spec_fields_count(partition_spec_fields_count_)
     , table_snapshot_schema_id(table_snapshot_schema_id_)
     , total_rows(total_rows_)
@@ -551,82 +635,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     if (filter_dag)
     {
         const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->resolved_schema_id);
-
-        /// Compute per-column hyperrectangles for DATA files
-        std::unordered_map<Int32, DB::Range> hyperrectangles;
-        if (parsed_entry->content_type == FileContentType::DATA)
-        {
-            for (const auto & [column_id, column_type] : current_pruner->getMinMaxColumnTypes())
-            {
-                auto bounds_it = parsed_entry->value_bounds.find(column_id);
-                if (bounds_it == parsed_entry->value_bounds.end())
-                    continue;
-                const auto & bounds = bounds_it->second;
-
-                String left_str;
-                String right_str;
-                /// lower_bound and upper_bound may be NULL.
-                if (!bounds.first.tryGet(left_str) || !bounds.second.tryGet(right_str))
-                    continue;
-
-                if (const auto type_id = column_type->getTypeId();
-                    type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array
-                    || type_id == DB::TypeIndex::Variant)
-                    continue;
-
-                auto left = deserializeFieldFromBinaryRepr(left_str, column_type, true);
-                auto right = deserializeFieldFromBinaryRepr(right_str, column_type, false);
-                if (!left || !right)
-                {
-                    /// A bound that does not decode is wider than the storage of its type, a decimal
-                    /// bound beyond the precision of its type on the inner side of the range, or
-                    /// narrower than the column is now, which is what Iceberg leaves behind for a
-                    /// promoted column. The last is well formed, so this stays out of the warning
-                    /// log.
-                    LOG_DEBUG(
-                        getLogger("ManifestFileIterator"),
-                        "Manifest file '{}' declares a bound that cannot be read as a usable range border "
-                        "for column id {} of data file '{}'; skipping min/max pruning for this column",
-                        path_to_manifest_file,
-                        column_id,
-                        parsed_entry->file_path_key.serialize());
-                    continue;
-                }
-
-                /// At a non-zero scale the outward shift moves each decimal bound one integral unit, so it
-                /// un-inverts any declared pair no more than `2 * 10^scale` apart. Only the values as
-                /// declared expose that inversion, which is why they are read again here.
-                std::optional<DB::Field> declared_left = left;
-                std::optional<DB::Field> declared_right = right;
-                if (DB::WhichDataType(DB::removeNullable(column_type)).isDecimal())
-                {
-                    declared_left = deserializeFieldFromBinaryRepr(
-                        left_str, column_type, true, /*compensate_rounding=*/false);
-                    declared_right = deserializeFieldFromBinaryRepr(
-                        right_str, column_type, false, /*compensate_rounding=*/false);
-                }
-
-                /// A pair inverted as declared means the manifest's statistics are untrustworthy, so no
-                /// range derived from them is safe to prune on. Dropping the column's bounds is therefore
-                /// right where swapping or clamping them would prune on a value nothing vouches for.
-                if (accurateLess(*declared_right, *declared_left))
-                {
-                    LOG_WARNING(
-                        getLogger("ManifestFileIterator"),
-                        "Manifest file '{}' declares a lower bound above the upper bound for column id "
-                        "{} of data file '{}'; skipping min/max pruning for this column",
-                        path_to_manifest_file,
-                        column_id,
-                        parsed_entry->file_path_key.serialize());
-                    continue;
-                }
-
-                hyperrectangles.emplace(column_id, DB::Range(*left, true, *right, true));
-            }
-
-            addRowLineageHyperrectangles(hyperrectangles, *entry, path_to_manifest_file);
-        }
-
+        const auto hyperrectangles = getDataFileHyperrectangles(*entry, current_pruner->getMinMaxColumnTypes(), path_to_manifest_file);
         pruning_status = current_pruner->canBePruned(entry, hyperrectangles);
     }
     insertRowToLogTable(
@@ -678,7 +687,7 @@ const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema
         return it->second.get();
 
     auto pruner = std::make_unique<ManifestFilesPruner>(
-        *schema_processor_ptr, table_snapshot_schema_id, schema_id, filter_dag.get(), *this, context);
+        *schema_processor_ptr, table_snapshot_schema_id, schema_id, filter_dag.get(), partition_key_description.get(), context);
     return pruners_by_schema_id.emplace(schema_id, std::move(pruner)).first->second.get();
 }
 
@@ -711,18 +720,6 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::next()
         if (entry)
             return entry;
     }
-}
-
-bool ManifestFileIterator::hasPartitionKey() const
-{
-    return partition_key_description.has_value();
-}
-
-const DB::KeyDescription & ManifestFileIterator::getPartitionKeyDescription() const
-{
-    if (!hasPartitionKey())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table has no partition key, but it was requested");
-    return *(partition_key_description);
 }
 
 bool ManifestFileIterator::areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const
