@@ -406,7 +406,14 @@ size_t canonicalChild(const QueryPlan::Node & node, size_t index)
 {
     if (const auto * join_step = typeid_cast<const JoinStep *>(node.step.get());
         join_step && node.children.size() == 2 && isRight(join_step->getJoin()->getTableJoin().kind()))
-        return 1 - index;
+    {
+        /// Only ever the two children of this join: the caller walks indices of one plan and declines
+        /// before that when the two plans' child counts differ, so a node with two children is asked
+        /// about 0 and 1 only. Written so that a caller who breaks that stays in bounds - `1 - index`
+        /// would wrap around, `size_t` being unsigned, and index far outside `children`.
+        chassert(index < 2);
+        return index == 0 ? 1 : 0;
+    }
     return index;
 }
 
