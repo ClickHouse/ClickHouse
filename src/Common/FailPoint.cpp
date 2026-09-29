@@ -323,8 +323,13 @@ static struct InitFiu
     ONCE(mt_alter_readonly_throw_in_start_background_workers) \
     ONCE(mt_background_jobs_assignee_throw_after_task_created) \
     ONCE(mt_alter_throw_after_mutation_registered) \
+    ONCE(mt_throw_after_mutation_entry_inserted) \
     ONCE(mt_throw_after_mutation_commit) \
     ONCE(mt_alter_throw_in_durable_rollback) \
+    PAUSEABLE_ONCE(mt_alter_pause_before_durable_rollback) \
+    PAUSEABLE_ONCE(mt_optimize_pause_after_reservation_snapshot) \
+    PAUSEABLE_ONCE(mt_optimize_pause_before_reading_patches) \
+    PAUSEABLE_ONCE(mt_mutation_pause_before_block_allocation) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
     REGULAR(merge_tree_load_statistics_throw) \

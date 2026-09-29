@@ -6,6 +6,7 @@
 #include <base/defines.h>
 
 #include <algorithm>
+#include <iterator>
 
 namespace DB
 {
@@ -80,11 +81,11 @@ static MergeTreeDataPartsVector getPartsVisibleForMerge(const StorageMergeTree &
 }
 
 MergeTreeMergePredicate::MergeTreeMergePredicate(
-    const StorageMergeTree & storage_, const MergeTreeTransactionPtr & tx_, std::unique_lock<std::mutex> & merge_mutate_lock_)
+    const StorageMergeTree & storage_, const MergeTreeTransactionPtr & tx_, std::unique_lock<std::mutex> & merge_mutate_lock_,
+    CommittingBlocksSnapshot reservations_)
     : storage(storage_)
     , merge_mutate_lock(merge_mutate_lock_)
-    , committing_blocks(storage.getCommittingBlocks())
-    , min_update_block(getMinUpdateBlockNumber(committing_blocks))
+    , reservations(std::move(reservations_))
 {
     /// The wider set is used only to find the data versions that a merge of patch parts must not span.
     /// A version that only a rollbackable outdated part has still has to be seen here, otherwise the
@@ -98,7 +99,7 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(
 
     /// The patch parts that a merge applies must be visible to that merge itself, and nothing here
     /// checks their visibility later, so they are taken from the active parts that the transaction sees.
-    patches_by_partition = getPatchPartsByPartition(getPatchPartInfos(storage, tx_), min_update_block.value_or(std::numeric_limits<Int64>::max()));
+    patches_by_partition = getPatchPartsByPartition(getPatchPartInfos(storage, tx_), reservations.minUpdateBlock().value_or(std::numeric_limits<Int64>::max()));
 }
 
 std::expected<void, PreformattedMessage>
@@ -133,6 +134,13 @@ MergeTreeMergePredicate::canMergeParts(const PartProperties & left, const PartPr
         if (left_mutation_version != right_mutation_version)
             return std::unexpected(PreformattedMessage::create("Parts {} and {} have different mutation version", left.name, right.name));
     }
+
+    /// An allocated version that is not visible yet (mutation before registration, update before its
+    /// patch commit) is a boundary: merging across it records a version its effect never reached.
+    auto [lo, hi] = std::minmax({left.info.getDataVersion(), right.info.getDataVersion()});
+    if (auto reservation = reservations.firstReservationAfter(lo); reservation && reservation->number <= hi)
+        return std::unexpected(PreformattedMessage::create(
+            "Parts {} and {} have an allocated version {} between them that is not visible yet", left.name, right.name, reservation->number));
 
     if (left.info.isPatch())
     {
@@ -187,7 +195,7 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canUsePartInMe
     if (storage.currently_merging_mutating_parts.contains(part->info))
         return std::unexpected(PreformattedMessage::create("Part {} currently in a merging or mutating process", part->name));
 
-    if (min_update_block && part->info.getDataVersion() >= *min_update_block)
+    if (auto min_update_block = reservations.minUpdateBlock(); min_update_block && part->info.getDataVersion() >= *min_update_block)
     {
         return std::unexpected(
             PreformattedMessage::create(
@@ -215,8 +223,24 @@ PartsRange MergeTreeMergePredicate::getPatchesToApplyOnMerge(const PartsRange & 
     if (it == patches_by_partition.end() || it->second.empty())
         return {};
 
+    /// Only an attached patch part reaches the two bounds below: `updateLightweight` waits for lower mutations
+    /// and takes this mutex to plan its read, `ATTACH PART` does neither. Such a patch is left for read time.
     Int64 next_version = storage.getNextMutationVersion(first_part.getDataVersion(), merge_mutate_lock);
-    return DB::getPatchesToApplyOnMerge(it->second, range, next_version);
+    if (auto reservation = reservations.firstReservationAfter(first_part.getDataVersion()))
+        next_version = next_version == 0 ? reservation->number : std::min(next_version, reservation->number);
+
+    std::vector<MergeTreePartInfo> patches_at_or_below_watermark;
+    std::ranges::copy_if(it->second, std::back_inserter(patches_at_or_below_watermark),
+        [&](const auto & patch) { return patch.getDataVersion() <= reservations.watermark(); });
+
+    return DB::getPatchesToApplyOnMerge(patches_at_or_below_watermark, range, next_version);
+}
+
+bool MergeTreeMergePredicate::isPartAfterSnapshot(const MergeTreeDataPartPtr & part) const
+{
+    /// `min_block` alone identifies a late candidate. A restored or attached part may carry a foreign
+    /// mutation version above this table's counter; it is not a late allocation and stays a candidate.
+    return part->info.min_block > reservations.watermark();
 }
 
 }

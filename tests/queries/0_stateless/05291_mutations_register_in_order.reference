@@ -1,0 +1,8 @@
+--- while the first mutation is paused before registration
+0
+TIMEOUT_EXCEEDED
+0
+--- after the first mutation is released
+0
+2	2
+1	1

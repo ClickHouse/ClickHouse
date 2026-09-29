@@ -1,0 +1,22 @@
+arm: mt_alter_throw_in_start_mutation
+FAULT_INJECTED
+Injected failure
+mutations after rollback: 0
+mutations after reload: 0
+1	a
+2	b
+1	a
+2	b
+active parts	1
+unfinished mutations	0
+arm: mt_throw_after_mutation_entry_inserted
+FAULT_INJECTED
+Injected failure
+mutations after rollback: 0
+mutations after reload: 0
+1	a
+2	b
+1	a
+2	b
+active parts	1
+unfinished mutations	0

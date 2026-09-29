@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Helpers shared by the MergeTree reservation tests. Source after shell_config.sh.
+
+# Poll until the query returns the expected text; fail the test after WAIT_TIMEOUT_SECONDS (default 60).
+function wait_for_query_result()
+{
+    local query=$1
+    local expected=$2
+    local deadline=$((SECONDS + ${WAIT_TIMEOUT_SECONDS:-60}))
+    local result=""
+    while true; do
+        result=$($CLICKHOUSE_CLIENT --query "$query")
+        if [[ "$result" == "$expected" ]]; then
+            return 0
+        fi
+        if (( SECONDS >= deadline )); then
+            echo "Timed out waiting for '$expected' from: $query (last result: '$result')"
+            exit 1
+        fi
+        sleep 0.1
+    done
+}
+
+# Block until a query is parked in the failpoint; fail the test if it is not reached within 60 s.
+function wait_failpoint()
+{
+    # shellcheck disable=SC2086
+    if ! timeout 60 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $1 PAUSE"; then
+        echo "failpoint $1 was not reached"
+        exit 1
+    fi
+}
+
+# Read a client's combined output on stdin; print the error code, then the refusal reason fragment.
+# A missing part prints a message instead, so the reference diff shows which one is absent.
+function expect_error()
+{
+    local output
+    output=$(cat)
+    grep -m1 -o "$1" <<< "$output" || echo "the error code $1 is missing"
+    grep -m1 -o "$2" <<< "$output" || echo "the reason '$2' is missing"
+}

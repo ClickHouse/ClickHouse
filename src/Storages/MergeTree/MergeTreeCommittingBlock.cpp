@@ -1,7 +1,10 @@
 #include <Storages/MergeTree/MergeTreeCommittingBlock.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/StorageMergeTree.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -19,6 +22,25 @@ PlainCommittingBlockHolder::PlainCommittingBlockHolder(CommittingBlock block_, S
 PlainCommittingBlockHolder::~PlainCommittingBlockHolder()
 {
     storage.removeCommittingBlock(block);
+}
+
+CommittingBlocksSnapshot::CommittingBlocksSnapshot(const CommittingBlocksSet & blocks, Int64 watermark_)
+    : min_update_block(getMinUpdateBlockNumber(blocks))
+    , watermark_value(watermark_)
+{
+    for (const auto & block : blocks)
+    {
+        if (block.op == CommittingBlock::Op::Update || block.op == CommittingBlock::Op::Mutation)
+            reservations.push_back(block);
+    }
+}
+
+std::optional<CommittingBlock> CommittingBlocksSnapshot::firstReservationAfter(Int64 data_version) const
+{
+    auto it = std::ranges::upper_bound(reservations, data_version, std::less{}, &CommittingBlock::number);
+    if (it == reservations.end())
+        return std::nullopt;
+    return *it;
 }
 
 template <class Enum>

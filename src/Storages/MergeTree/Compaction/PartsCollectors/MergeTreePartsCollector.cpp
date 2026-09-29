@@ -11,14 +11,22 @@ namespace DB
 namespace
 {
 
-MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeTreeTransactionPtr & tx)
+MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeTreeTransactionPtr & tx, const MergeTreeMergePredicatePtr & merge_pred)
 {
     MergeTreeData::DataPartsKinds affordable_kinds{MergeTreeData::DataPartKind::Regular, MergeTreeData::DataPartKind::Patch};
+
+    /// Parts created after the snapshot are the newest, so dropping them leaves no gap; refusing them would
+    /// fail 'OPTIMIZE FINAL' whenever an insert lands between the snapshot and this collection.
+    auto drop_parts_after_snapshot = [&](MergeTreeDataPartsVector parts)
+    {
+        std::erase_if(parts, [&](const auto & part) { return merge_pred->isPartAfterSnapshot(part); });
+        return parts;
+    };
 
     if (!tx)
     {
         /// Simply get all active parts
-        return data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, affordable_kinds);
+        return drop_parts_after_snapshot(data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, affordable_kinds));
     }
 
     /// Merge predicate (for simple MergeTree) allows to merge two parts only if both parts are visible for merge transaction.
@@ -74,7 +82,7 @@ MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeT
         std::back_inserter(data_parts),
         MergeTreeData::LessDataPart());
 
-    return data_parts;
+    return drop_parts_after_snapshot(std::move(data_parts));
 }
 
 auto constructPreconditionsPredicate(const StoragePolicyPtr & storage_policy, const MergeTreeTransactionPtr & tx, const MergeTreeMergePredicatePtr & merge_pred)
@@ -130,7 +138,7 @@ CollectedPartsRanges MergeTreePartsCollector::grabAllPossibleRanges(
     const std::optional<PartitionIdsHint> & partitions_hint,
     LogSeriesLimiter & series_log) const
 {
-    auto parts = filterByPartitions(collectInitial(storage, tx), partitions_hint);
+    auto parts = filterByPartitions(collectInitial(storage, tx, merge_pred), partitions_hint);
     auto partitions_stats = calculateStatisticsForParts(parts, current_time);
     auto ranges = splitPartsByPreconditions(std::move(parts), storage_policy, tx, merge_pred, series_log);
     return {constructPartsRanges(std::move(ranges), metadata_snapshot, storage_policy, current_time), std::move(partitions_stats)};
@@ -142,7 +150,7 @@ std::expected<PartsRange, PreformattedMessage> MergeTreePartsCollector::grabAllP
     const time_t & current_time,
     const std::string & partition_id) const
 {
-    auto parts = filterByPartitions(collectInitial(storage, tx), PartitionIdsHint{partition_id});
+    auto parts = filterByPartitions(collectInitial(storage, tx, merge_pred), PartitionIdsHint{partition_id});
     if (auto result = checkAllParts(parts, storage_policy, tx, merge_pred); !result)
         return std::unexpected(std::move(result.error()));
 
