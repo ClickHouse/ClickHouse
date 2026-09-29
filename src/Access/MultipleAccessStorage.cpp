@@ -258,27 +258,14 @@ void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, co
     auto destination_storage = getStorageByName(destination_storage_name);
 
     auto to_move = source_storage->read(ids);
-    VectorWithMemoryTracking<size_t> removal_order;
-    removal_order.reserve(ids.size());
-    for (size_t i = 0; i != ids.size(); ++i)
-    {
-        if (!source_storage->isReadOnly(ids[i]))
-            removal_order.push_back(i);
-    }
-    for (size_t i = 0; i != ids.size(); ++i)
-    {
-        if (source_storage->isReadOnly(ids[i]))
-            removal_order.push_back(i);
-    }
 
+    /// `removeImpl` rather than `remove`: the entities keep their ids, so nothing may cascade to the
+    /// entities which reference them.
     VectorWithMemoryTracking<size_t> removed;
     VectorWithMemoryTracking<size_t> inserted;
-    removed.reserve(ids.size());
-    inserted.reserve(ids.size());
-
     try
     {
-        for (size_t i : removal_order)
+        for (size_t i = 0; i != ids.size(); ++i)
         {
             if (source_storage->removeImpl(ids[i], /* throw_if_not_exists= */ true))
                 removed.push_back(i);
