@@ -29,6 +29,13 @@ node = cluster.add_instance(
     "node",
     main_configs=["configs/allowed_hosts.xml"],
 )
+# The <kafka> section of the server configuration (and named collections, loaded by the same code)
+# can override the broker list librdkafka receives, behind the back of the validated
+# `kafka_broker_list` setting. This instance carries such an override to a forbidden host.
+node_kafka_override = cluster.add_instance(
+    "node_kafka_override",
+    main_configs=["configs/allowed_hosts.xml", "configs/kafka_bootstrap_override.xml"],
+)
 
 
 @pytest.fixture(scope="module")
@@ -139,6 +146,35 @@ def test_kafka(started_cluster, broker_list, expected_error, message_part):
         expected_error,
         message_part,
     )
+
+
+def test_kafka_config_override_is_validated(started_cluster):
+    """A broker list supplied by the server configuration must be validated too.
+
+    `getConsumerConfiguration` seeds `metadata.broker.list` from the validated
+    `kafka_broker_list`, but the `<kafka>` section of the server configuration (or a named
+    collection) is merged afterwards and can override it - here through the
+    `bootstrap.servers` alias. The merged value is validated again when the consumer is
+    created, so the `CREATE` (which sees only the allowed setting) succeeds and the read
+    fails on the forbidden override.
+    """
+    node_kafka_override.query(
+        """
+        CREATE TABLE kafka_override (key UInt64, value UInt64)
+        ENGINE = Kafka
+        SETTINGS kafka_broker_list = 'localhost:19092',
+                 kafka_topic_list = 'topic',
+                 kafka_group_name = 'group',
+                 kafka_format = 'JSONEachRow'
+        """
+    )
+    error = node_kafka_override.query_and_get_error(
+        "SELECT * FROM kafka_override LIMIT 1"
+        " SETTINGS stream_like_engine_allow_direct_select = 1"
+    )
+    assert "UNACCEPTABLE_URL" in error, error
+    assert "localhost:9999" in error, error
+    node_kafka_override.query("DROP TABLE kafka_override SYNC")
 
 
 @pytest.mark.parametrize("settings, expected_error, message_part", NATS_CASES)
