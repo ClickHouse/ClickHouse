@@ -725,7 +725,7 @@ void PartitionAggregateTransform::SingleRowStates::aggregate(const Columns & col
     auto arguments = transform.getArguments(columns, is_single, num_rows, {}, argument_holders);
     for (size_t i = 0; i < transform.functions.size(); ++i)
         transform.functions[i].aggregate_function->addBatch(
-            0, num_rows, places_of_rows.data(), transform.state_offsets[i], arguments[i].data(), &transform.arena);
+            0, num_rows, places_of_rows.data(), transform.state_offsets[i], arguments[i].data(), &arena);
 }
 
 Chunk PartitionAggregateTransform::generate()

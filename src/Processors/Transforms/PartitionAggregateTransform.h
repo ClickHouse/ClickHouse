@@ -128,6 +128,9 @@ private:
 
     private:
         PartitionAggregateTransform & transform;
+        /// For the states only, so that their memory is freed with them, and not kept in `transform.arena` until the
+        /// end of the query.
+        Arena arena;
         AggregateDataPtr states = nullptr;
         size_t num_created = 0;
     };
