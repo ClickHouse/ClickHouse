@@ -28,11 +28,6 @@ namespace Setting
     extern const SettingsBool vector_search_with_rescoring;
 }
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace QueryPlanOptimizations
 {
 
