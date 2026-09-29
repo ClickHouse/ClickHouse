@@ -1,15 +1,11 @@
 #include <Storages/MergeTree/MergeTreeVerticalMergeTupleSubcolumns.h>
 
-#include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
-#include <Formats/MarkInCompressedFile.h>
-#include <IO/NullWriteBuffer.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -451,46 +447,46 @@ void setTupleNodesInexact(SerializationInfo & info, const DataTypePtr & type, si
         setTupleNodesInexact(*tuple_info->getElementInfo(i), element_types[i], gathered_rows);
 }
 
-ColumnsSubstreams synthesizeParentColumnsSubstreams(
-    const NameAndTypePair & parent,
-    const SerializationPtr & serialization,
-    const MergeTreeSettings & settings)
+/// The leaf writers already enumerated the streams they opened, including data-dependent ones
+/// such as `SerializationMap` buckets. Re-running the parent serialization over an empty tuple
+/// would see a single-bucket `Map` and record that stale list in `columns_substreams.txt`, which
+/// Wide readers prefer over enumerating again. The leaf file names are already the parent stream
+/// names: a subcolumn serialization carries the `TupleElement` path, and `getFileNameForStream`
+/// keys off the name in storage.
+ColumnsSubstreams parentSubstreamsFromLeafWriters(
+    const String & parent_name,
+    const std::vector<std::vector<String>> & leaf_substreams)
 {
+    if (leaf_substreams.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot record columns_substreams for flattened Tuple {}: no leaf writers",
+            parent_name);
+
     ColumnsSubstreams result;
-    result.addColumn(parent.name);
-
-    NullWriteBuffer buf;
-    ISerialization::SerializeBinaryBulkSettings serialize_settings;
-    serialize_settings.getter = [&](const ISerialization::SubstreamPath & path)
+    result.addColumn(parent_name);
+    for (const auto & substreams : leaf_substreams)
     {
-        result.addSubstreamToLastColumn(
-            ISerialization::getFileNameForStream(parent, path, ISerialization::StreamFileNameSettings(settings)));
-        return static_cast<WriteBuffer *>(&buf);
-    };
-    serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath &)
-    {
-        return MarkInCompressedFile();
-    };
-
-    auto empty_column = parent.type->createColumn();
-    ISerialization::SerializeBinaryBulkStatePtr state;
-    serialization->serializeBinaryBulkStatePrefix(*empty_column, serialize_settings, state);
-    serialization->serializeBinaryBulkWithMultipleStreams(*empty_column, 0, 0, serialize_settings, state);
-    serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
+        if (substreams.empty())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot record columns_substreams for flattened Tuple {}: a leaf writer recorded no substreams",
+                parent_name);
+        result.addSubstreamsToLastColumn(substreams);
+    }
     return result;
 }
 
 void commitFlattenedTupleGroupMetadata(
     const NameAndTypePair & parent,
-    const SerializationPtr & parent_serialization,
     const SerializationInfoByName & leaf_infos,
     size_t gathered_rows,
-    const MergeTreeSettings & settings,
+    const std::vector<std::vector<String>> & leaf_substreams,
     ColumnsSubstreams & gathered_columns_substreams,
     SerializationInfoByName & part_serialization_infos,
     const Names & storage_column_names)
 {
-    auto parent_substreams = synthesizeParentColumnsSubstreams(parent, parent_serialization, settings);
+    auto parent_substreams = parentSubstreamsFromLeafWriters(parent.name, leaf_substreams);
     gathered_columns_substreams = ColumnsSubstreams::merge(gathered_columns_substreams, parent_substreams, storage_column_names);
 
     auto parent_info = part_serialization_infos.tryGet(parent.name);
@@ -514,7 +510,8 @@ void commitFlattenedTupleGroupMetadata(
 
 void VerticalMergeTupleSubcolumnsState::addLeaf(
     const NameAndTypePair & leaf,
-    const SerializationInfoByName & leaf_infos)
+    const SerializationInfoByName & leaf_infos,
+    const ColumnsSubstreams & leaf_substreams)
 {
     const String parent_name = leaf.getNameInStorage();
     if (pending_parent.empty())
@@ -528,6 +525,14 @@ void VerticalMergeTupleSubcolumnsState::addLeaf(
 
     for (const auto & [name, info] : leaf_infos)
         pending_leaf_infos[name] = info->clone();
+
+    const auto * recorded = leaf_substreams.tryGetColumnSubstreams(leaf.name);
+    if (!recorded || recorded->empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Flattened Tuple leaf {} recorded no columns_substreams",
+            leaf.name);
+    pending_leaf_substreams.push_back(*recorded);
 }
 
 bool VerticalMergeTupleSubcolumnsState::commitIfComplete(
@@ -535,7 +540,6 @@ bool VerticalMergeTupleSubcolumnsState::commitIfComplete(
     const NamesAndTypesList & storage_columns,
     const MergeTreeMutableDataPartPtr & new_data_part,
     size_t gathered_rows,
-    const MergeTreeSettings & settings,
     ColumnsSubstreams & gathered_columns_substreams,
     Int32 metadata_version)
 {
@@ -556,10 +560,9 @@ bool VerticalMergeTupleSubcolumnsState::commitIfComplete(
     auto serialization_infos = new_data_part->getSerializationInfos();
     commitFlattenedTupleGroupMetadata(
         *parent,
-        new_data_part->getSerialization(pending_parent),
         pending_leaf_infos,
         gathered_rows,
-        settings,
+        pending_leaf_substreams,
         gathered_columns_substreams,
         serialization_infos,
         new_data_part->getColumns().getNames());
@@ -567,6 +570,7 @@ bool VerticalMergeTupleSubcolumnsState::commitIfComplete(
     new_data_part->setColumns(new_data_part->getColumns(), serialization_infos, metadata_version);
 
     pending_leaf_infos = SerializationInfoByName{{}};
+    pending_leaf_substreams.clear();
     pending_parent.clear();
     return true;
 }

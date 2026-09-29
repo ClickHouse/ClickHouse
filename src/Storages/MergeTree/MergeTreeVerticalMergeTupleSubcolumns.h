@@ -9,11 +9,10 @@
 
 #include <map>
 #include <unordered_map>
+#include <vector>
 
 namespace DB
 {
-
-struct MergeTreeSettings;
 
 /// Before choosing the merge algorithm, replace flattenable gathering parents
 /// with leaf pairs and re-key skip indexes that were stored under the parent
@@ -37,21 +36,22 @@ void addVerticalMergeTupleSubcolumnSizes(
     const MergeTreeDataPartsVector & parts,
     std::map<String, UInt64> & column_sizes);
 
-/// Accumulates per-leaf serialization data and commits it to the parent once all
-/// consecutive gathering leaves of that parent have been written.
+/// Accumulates per-leaf serialization data and the substreams each leaf writer
+/// actually emitted, then commits both to the parent once all consecutive
+/// gathering leaves of that parent have been written.
 class VerticalMergeTupleSubcolumnsState
 {
 public:
     void addLeaf(
         const NameAndTypePair & leaf,
-        const SerializationInfoByName & leaf_infos);
+        const SerializationInfoByName & leaf_infos,
+        const ColumnsSubstreams & leaf_substreams);
 
     bool commitIfComplete(
         const NameAndTypePair * next_column,
         const NamesAndTypesList & storage_columns,
         const MergeTreeMutableDataPartPtr & new_data_part,
         size_t gathered_rows,
-        const MergeTreeSettings & settings,
         ColumnsSubstreams & gathered_columns_substreams,
         Int32 metadata_version);
 
@@ -59,6 +59,8 @@ public:
 
 private:
     SerializationInfoByName pending_leaf_infos{{}};
+    /// Substream file names recorded by each leaf writer, in gathering order.
+    std::vector<std::vector<String>> pending_leaf_substreams;
     String pending_parent;
 };
 

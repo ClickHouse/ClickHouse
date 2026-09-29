@@ -2374,7 +2374,9 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
         if (!ctx->tuple_subcolumns_state)
             ctx->tuple_subcolumns_state = std::make_shared<VerticalMergeTupleSubcolumnsState>();
         ctx->tuple_subcolumns_state->addLeaf(
-            *ctx->it_name_and_type, ctx->column_to->getNewSerializationInfos());
+            *ctx->it_name_and_type,
+            ctx->column_to->getNewSerializationInfos(),
+            ctx->column_to->getColumnsSubstreams());
     }
     else
     {
@@ -2427,7 +2429,6 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
                 global_ctx->storage_columns,
                 global_ctx->new_data_part,
                 global_ctx->rows_written,
-                *global_ctx->data_settings,
                 global_ctx->gathered_data.columns_substreams,
                 global_ctx->metadata_snapshot->getMetadataVersion()))
             global_ctx->merge_list_element_ptr->columns_written += 1;

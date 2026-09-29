@@ -1,0 +1,9 @@
+rows
+1	keep	64	2016
+2	keep	64	2016
+check
+1
+merge_algorithm
+Vertical
+bucket_indexes
+present
