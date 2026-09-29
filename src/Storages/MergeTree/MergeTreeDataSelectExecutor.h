@@ -292,7 +292,6 @@ public:
         const ContextPtr & context,
         LoggerPtr log);
 
-    /// Whether `filterPartsByQueryConditionCache` can narrow anything for this read.
     static bool canFilterPartsByQueryConditionCache(
         const SelectQueryInfo & select_query_info,
         const std::optional<VectorSearchParameters> & vector_search_parameters,

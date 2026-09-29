@@ -4126,12 +4126,10 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
     SelectQueryInfo probe_query_info = query_info;
     probe_query_info.filter_actions_dag = nullptr;
 
-    /// The cache key (table, part, condition) cannot express the rows a unique key hides, the values a masking
-    /// policy rewrites for this user, nor the value of a non-deterministic virtual column, which can change while
-    /// the key stays the same.
+    /// The cache key (table, part, condition) cannot express the rows a unique key hides, the values a masking policy rewrites
+    /// for this user, or a non-deterministic virtual column's value. A TopK read keys its PREWHERE entries on the dropped filter too.
     if (analyzed_result_ptr && indexes.has_value() && allow_query_condition_cache
         && !(is_parallel_reading_from_replicas && context->getClientInfo().collaborate_with_initiator)
-        /// A TopK read keys its PREWHERE entries on the whole filter too, which this probe does not carry.
         && !top_k_filter_info
         && !storage_snapshot->metadata->hasUniqueKey()
         && !data.hasEnabledMaskingPolicies(context)
