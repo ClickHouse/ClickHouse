@@ -615,6 +615,35 @@ TEST_F(DiskEncryptedTest, ConfigurationRejectsSymlinkEscapingDelegateRoot)
     EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted1", *config, disks), DB::Exception);
 }
 
+TEST_F(DiskEncryptedTest, ConfigurationRejectsSymlinkEscapingObjectStorageDelegateRoot)
+{
+    /// The path of an object storage disk with local metadata is the local metadata directory.
+    const fs::path metadata_root = fs::path(getDirectory()) / "metadata";
+    const fs::path outside_root = fs::path(getDirectory()) / "outside";
+    fs::create_directories(metadata_root);
+    fs::create_directories(outside_root);
+    fs::create_directory_symlink(outside_root, metadata_root / "link");
+
+    ObjectStoragePtr object_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("test", fs::path{getDirectory()} / "local_blobs", false));
+    DiskPtr metadata_disk = std::make_shared<DiskLocal>("metadata_disk", metadata_root);
+    MetadataStoragePtr metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/", object_storage->createKeyGenerator(), /*persist_removal_queue_=*/true, /*removal_log_compaction_threshold_=*/1000);
+
+    std::unordered_map<Location, LocationInfo> cluster_registry = {{"main", {true, true, ""}}};
+    std::unordered_map<Location, ObjectStoragePtr> object_storage_registry = {{"main", object_storage}};
+
+    ClusterConfigurationPtr cluster = std::make_shared<ClusterConfiguration>("local_blobs", std::move(cluster_registry));
+    ObjectStorageRouterPtr object_storages = std::make_shared<ObjectStorageRouter>(std::move(object_storage_registry));
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    auto delegate_disk = std::make_shared<DiskObjectStorage>("delegate_disk", std::move(cluster), std::move(metadata_storage), std::move(object_storages), nullptr, *config, "");
+    ASSERT_TRUE(delegate_disk->getDataSourceDescription().isPathLocal());
+
+    configureEncryptedDisk(*config, "encrypted1", "delegate_disk", "link/encrypted/");
+
+    DisksMap disks{{"delegate_disk", delegate_disk}};
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted1", *config, disks), DB::Exception);
+}
+
 TEST_F(DiskEncryptedTest, ConfigurationAllowsDifferentPathsOrDelegates)
 {
     auto other_local_disk = std::make_shared<DiskLocal>("other_local_disk", getDirectory() + "other/");

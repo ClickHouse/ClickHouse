@@ -240,12 +240,13 @@ namespace
                 "Disk path must be relative to the wrapped disk, but '{}' is absolute.",
                 quoteString(out_path));
 
-        /// Normalize the effective path before checking that it stays under the delegate's root. For local disks,
-        /// canonicalize the paths to resolve existing symlink components too. `weakly_canonical` also works when
-        /// the encrypted disk's trailing directories do not exist yet.
+        /// Normalize the effective path before checking that it stays under the delegate's root. When the delegate's
+        /// path is a local directory, including object storage with local metadata or local objects, canonicalize the
+        /// paths to resolve existing symlink components too. `weakly_canonical` also works when the encrypted disk's
+        /// trailing directories do not exist yet.
         fs::path delegate_root = fs::path(out_disk->getPath()).lexically_normal();
         fs::path effective_path = fs::path(out_disk->getPath() + out_path).lexically_normal();
-        if (out_disk->getDataSourceDescription().type == DataSourceType::Local)
+        if (out_disk->getDataSourceDescription().isPathLocal())
         {
             delegate_root = fs::weakly_canonical(delegate_root);
             effective_path = fs::weakly_canonical(effective_path);

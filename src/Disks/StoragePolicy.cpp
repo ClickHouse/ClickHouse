@@ -501,12 +501,9 @@ void StoragePolicy::validateDisksHaveDistinctStorageNamespaces() const
             if (data_source.type == DataSourceType::RAM)
                 continue;
 
-            /// The path is a local directory for `local` disks, for object storage disks with local metadata,
-            /// and for local object storage with plain metadata. Resolve symlinks so that aliases of one directory match.
+            /// Resolve symlinks of a local directory so that aliases of one directory match.
             auto path = std::filesystem::path(disk->getPath()).lexically_normal();
-            if (data_source.type == DataSourceType::Local
-                || data_source.metadata_type == MetadataStorageType::Local
-                || data_source.object_storage_type == ObjectStorageType::Local)
+            if (data_source.isPathLocal())
                 path = std::filesystem::weakly_canonical(path);
 
             /// `DiskBackup` reports `ObjectStorage` with `ObjectStorageType::None` and has no object storage behind it,
