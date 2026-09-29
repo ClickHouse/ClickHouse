@@ -58,7 +58,6 @@ public:
     }
 
     /// Helper for introspection metrics. `still_active` is whether the node is still active after dequeueing.
-    /// The counters are written only by the scheduler thread, so a relaxed load and store is enough to update them.
     void incrementDequeued(ResourceCost cost, bool still_active)
     {
         chassert(event_queue.isInSchedulerOrStopped());
@@ -72,20 +71,12 @@ public:
             flushThroughput(clock_gettime_ns());
     }
 
-    /// Helper for introspection metrics. Should be called when the node becomes inactive without dequeueing a request:
-    /// when `dequeueRequest` finds it inactive (e.g. its remaining requests were canceled), when `removeChild` leaves it
-    /// without active children, or when a constraint whose limits were lowered deactivates itself.
+    /// Helper for introspection metrics. Should be called when the node becomes inactive without dequeueing a request.
     void flushThroughputOnDeactivation()
     {
         if (pending_throughput_requests > 0)
             flushThroughput(clock_gettime_ns());
         throughput_batch_requests = 1; /// The dequeue rate after reactivation is unknown
-    }
-
-    /// Number of dequeued requests not yet added to `throughput` (for tests)
-    UInt64 getPendingThroughputRequests() const
-    {
-        return pending_throughput_requests;
     }
 
     /// Average dequeued_cost per second
@@ -113,14 +104,11 @@ public:
     std::atomic<UInt64> busy_periods{0};
 
 private:
-    /// Dequeued requests are added to `throughput` in batches to keep clock reads and EWMA updates off the per-dequeue path.
-    /// A batch is flushed when it is full, when the node deactivates and on introspection. The batch size spans about
-    /// `throughput_batch_duration_ns` at the dequeue rate measured by the previous batch and restarts from one request
-    /// after deactivation, so a slowly served node is still updated on every dequeue. A node that stays active but is not
-    /// dequeued for a while (e.g. starved by a sibling, or refilled after cancellations before its next dequeue) carries
-    /// its pending batch over that interval, so `throughput` is approximate within one batch.
+    /// Adds the pending batch to `throughput` and chooses the size of the next batch
     void flushThroughput(UInt64 now_ns)
     {
+        static constexpr UInt64 max_throughput_batch_requests = 64;
+        static constexpr UInt64 throughput_batch_duration_ns = 10'000'000;
         if (pending_throughput_requests == 0)
             return;
         throughput.add(static_cast<double>(now_ns) / 1e9, static_cast<double>(pending_throughput_cost));
@@ -131,9 +119,6 @@ private:
         pending_throughput_cost = 0;
         pending_throughput_requests = 0;
     }
-
-    static constexpr UInt64 max_throughput_batch_requests = 64;
-    static constexpr UInt64 throughput_batch_duration_ns = 10'000'000;
 
     /// WARNING: Should only be accessed from the scheduler thread, so that locking is not required
     EventRateMeter throughput{static_cast<double>(clock_gettime_ns())/1e9, 2, 1};
