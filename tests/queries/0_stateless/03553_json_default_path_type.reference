@@ -1,0 +1,117 @@
+JSON(DEFAULT PATH TYPE Int64)
+JSON(max_dynamic_paths=0, DEFAULT PATH TYPE String, d UInt32)
+{}
+{}
+{"z":60}
+{"b":20,"c":30}
+{"b":50}
+{"a":1,"b":10}
+{"a":2,"c":40}
+{"a":3}
+{"a":1}	1
+{"a":2.5}	2.5
+{}	0
+{"a":1}
+{"a":2.5}
+{}
+{"a":"x","b":"y"}	x	y
+{"a":"z"}	z	
+{}		
+{"c":"w"}		
+{"a":"x","b":"y"}
+{"a":"z"}
+{}
+{"c":"w"}
+Int64
+Int64
+1	1
+0	0
+3	3
+Nullable(Int64)
+1
+\N
+3
+{"a":1}	Float64	Float64
+{"b":2.5}	Float64	Float64
+{}	Float64	Float64
+{"a":1}	Float64	Float64
+{"b":2.5}	Float64	Float64
+{}	Float64	Float64
+{"a":{"b":1}}	{"b":1}
+{"a":{"b":2,"c":3}}	{"b":2,"c":3}
+{}	{}
+{"a":{"b":1}}
+{"a":{"b":2,"c":3}}
+{}
+before merge
+{"b":2}|{}|{}
+after merge
+{"b":2}|{}|{}
+JSON(max_dynamic_paths=0, DEFAULT PATH TYPE Int64)
+JSON
+{"a":5,"s":"text"}	text	5	String
+{"a":1}	Int64	Int64
+{"b":2}	Int64	Int64
+{"a":[1,2,3]}	[1,2,3]	[]
+{"b":[]}	[]	[]
+{}	[]	[]
+3
+3	0
+0	0
+0	0
+2	1
+0	0
+{"a":1,"b":2}	1	0	0	Int64
+{"a":3,"c":4}	3	4	0	Int64
+{"d":5,"e":6,"f":7}	0	0	7	Int64
+{}	0	0	0	Int64
+{"a":1,"b":2}	1	0	0
+{"a":3,"c":4}	3	4	0
+{"d":5,"e":6,"f":7}	0	0	7
+{}	0	0	0
+{"a":{"b":1,"c":2}}	{"b":1,"c":2}	0
+{"a":{"b":3}}	{"b":3}	0
+{}	{}	0
+{"b":1,"c":2}	0
+{"b":3}	0
+{}	0
+5	Dynamic
+0	Dynamic
+0	Dynamic
+5
+0
+0
+{}		String
+{"a":"5"}	5	String
+{"a":"hello"}	hello	String
+{}	
+{"a":"5"}	5
+{"a":"hello"}	hello
+JSON(max_dynamic_paths=1, DEFAULT PATH TYPE Int64), Object(size = 1, Variant(size = 1, UInt8(size = 1), UInt64(size = 1), Int64(size = 1)), Array(size = 1, UInt64(size = 1), Tuple(size = 1, String(size = 1), Int64(size = 1))))
+JSON(max_dynamic_paths=1, DEFAULT PATH TYPE String), Object(size = 1, Variant(size = 1, UInt8(size = 1), UInt64(size = 1), String(size = 1)), Array(size = 1, UInt64(size = 1), Tuple(size = 1, String(size = 1), String(size = 1))))
+{"a":0,"b":1}	0	['a','b']	{'a':'Int64','b':'Int64'}	['0','1']	0
+{"a":"","b":"x"}		['a','b']	{'a':'String','b':'String'}	['','x']	0
+['a','b']	{'a':['Int64'],'b':['Int64']}	{"a":0,"b":0}
+['a','b']	{'a':['String'],'b':['String']}	{"a":"","b":""}
+['{"a":0,"b":1}','{"a":"0","b":"1"}']
+{"a":0}	1	0
+{}	0	0
+{"a":0}	1	0
+{}	0	0
+1207134042873729554
+2202906307356721367
+{}	1
+{"a":0}	1
+{}	2
+{"a":0}	2
+{"a":""}	1	
+{}	0	
+{"a":""}	1	
+{}	0	
+{"a":0,"a":{"b":1}}	0
+{"a":{"b":2}}	0
+{"a":0,"a":{"b":1}}	0
+{"a":{"b":2}}	0
+{"a":0}	1	0	0	0
+{}	0	0	0	0
+{"b":5}	0	1	0	5

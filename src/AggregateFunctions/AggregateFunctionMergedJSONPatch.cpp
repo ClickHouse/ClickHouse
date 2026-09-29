@@ -6,10 +6,12 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -309,6 +311,8 @@ struct AggregateFunctionMergedJSONPatchData
 
         size_t current_size = result_column.size();
         auto [shared_data_paths, shared_data_values] = result_column.getSharedDataPathsAndValues();
+        const auto & default_path_type = result_column.getDefaultPathType();
+        const auto serialization = default_path_type ? default_path_type->getDefaultSerialization() : DataTypeDynamic().getDefaultSerialization();
         for (const auto & entry : entries)
         {
             std::string_view path = entry.pathView();
@@ -323,24 +327,49 @@ struct AggregateFunctionMergedJSONPatchData
             else
             {
                 ReadBufferFromString val_buf(entry.value_blob);
-                if (auto dynamic_it = result_column.getDynamicPathsPtrs().find(path);
-                    dynamic_it != result_column.getDynamicPathsPtrs().end())
+                bool value_stored = false;
                 {
-                    DataTypeDynamic().getDefaultSerialization()->deserializeBinary(*dynamic_it->second, val_buf, {});
+                    auto insert_into_dynamic_path = [&](IColumn & dynamic_path_column)
+                    {
+                        if (default_path_type)
+                        {
+                            /// DPT runtime paths are Variant(T): deserialize through the nested T variant.
+                            auto & variant = assert_cast<ColumnVariant &>(dynamic_path_column);
+                            auto & nested = variant.getVariantByGlobalDiscriminator(0);
+                            serialization->deserializeBinary(nested, val_buf, {});
+                            variant.getOffsets().push_back(nested.size() - 1);
+                            variant.getLocalDiscriminators().push_back(variant.localDiscriminatorByGlobal(0));
+                        }
+                        else
+                            serialization->deserializeBinary(dynamic_path_column, val_buf, {});
+                        value_stored = true;
+                    };
+                    if (auto dynamic_it = result_column.getDynamicPathsPtrs().find(path);
+                        dynamic_it != result_column.getDynamicPathsPtrs().end())
+                    {
+                        insert_into_dynamic_path(*dynamic_it->second);
+                    }
+                    else if (auto * dynamic_path_column = result_column.tryToAddNewDynamicPath(path))
+                    {
+                        insert_into_dynamic_path(*dynamic_path_column);
+                    }
                 }
-                else if (auto * dynamic_path_column = result_column.tryToAddNewDynamicPath(path))
+                if (!value_stored)
                 {
-                    DataTypeDynamic().getDefaultSerialization()->deserializeBinary(*dynamic_path_column, val_buf, {});
-                }
-                else
-                {
+                    if (default_path_type)
+                    {
+                        serialization->deserializeBinary(*shared_data_values, val_buf, {});
+                        if (shared_data_values->isNullAt(shared_data_values->size() - 1))
+                            shared_data_values->popBack(1);
+                        else
+                            shared_data_paths->insertData(path.data(), path.size());
+                        continue;
+                    }
                     auto type = decodeDataType(val_buf);
                     if (!isNothing(type))
                     {
                         shared_data_paths->insertData(path.data(), path.size());
-                        auto & chars = shared_data_values->getChars();
-                        chars.insert(chars.end(), entry.value_blob.begin(), entry.value_blob.end());
-                        shared_data_values->getOffsets().push_back(chars.size());
+                        shared_data_values->insertData(entry.value_blob.data(), entry.value_blob.size());
                     }
                 }
             }

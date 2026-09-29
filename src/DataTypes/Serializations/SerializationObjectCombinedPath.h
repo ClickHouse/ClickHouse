@@ -19,20 +19,23 @@ private:
         const SerializationPtr & literal_serialization_,
         const SerializationPtr & sub_object_serialization_,
         const DataTypePtr & dynamic_type_,
-        const DataTypePtr & sub_object_type_);
+        const DataTypePtr & sub_object_type_,
+        const DataTypePtr & default_path_type_ = nullptr);
 
 public:
     static UInt128 getHash(
         const SerializationPtr & literal_serialization_,
         const SerializationPtr & sub_object_serialization_,
         const DataTypePtr & dynamic_type_,
-        const DataTypePtr & sub_object_type_);
+        const DataTypePtr & sub_object_type_,
+        const DataTypePtr & default_path_type_ = nullptr);
 
     static SerializationPtr create(
         const SerializationPtr & literal_serialization_,
         const SerializationPtr & sub_object_serialization_,
         const DataTypePtr & dynamic_type_,
-        const DataTypePtr & sub_object_type_);
+        const DataTypePtr & sub_object_type_,
+        const DataTypePtr & default_path_type_ = nullptr);
 
     /// True when the substreams path identifies a combined `@` subcolumn of a JSON column,
     /// i.e. the subcolumn that `json['key']` is rewritten to.
@@ -89,6 +92,7 @@ private:
     SerializationPtr sub_object_serialization;
     DataTypePtr dynamic_type;
     DataTypePtr sub_object_type;
+    DataTypePtr default_path_type;
 };
 
 }
