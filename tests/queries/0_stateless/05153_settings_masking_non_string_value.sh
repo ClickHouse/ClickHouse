@@ -51,3 +51,16 @@ for setting in nats_url rabbitmq_address after_processing_move_connection_string
     echo "$LOGGED" | grep -oE "in query: [^)]*" | head -1
     echo "$LOGGED" | grep -o "$MAP_CANARY" | wc -l
 done
+
+# 5. An Array or a Tuple reaches a setting only as a typed query parameter, and so can a Map. Each is
+# hidden the same way, and the error that rejects it names only the type of the value.
+check_param() {
+    LOGGED=$($CLICKHOUSE_CLIENT --send_logs_level=error --param_p="$2" -q "SET url_base = {p:$1}" 2>&1 |
+        grep -F '<Error> executeQuery')
+    echo "$LOGGED" | grep -oE "in query: [^)]*" | head -1
+    echo "$LOGGED" | grep -oE "to value of type [A-Za-z]+" | head -1
+    echo "$LOGGED" | grep -o "$MAP_CANARY" | wc -l
+}
+check_param "Map(String, String)" "{'u':'u:$MAP_CANARY@h'}"
+check_param "Array(String)" "['u:$MAP_CANARY@h']"
+check_param "Tuple(String, String)" "('u', 'u:$MAP_CANARY@h')"

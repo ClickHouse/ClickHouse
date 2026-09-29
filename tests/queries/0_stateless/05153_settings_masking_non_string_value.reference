@@ -15,3 +15,12 @@ in query: SET url_base = '[HIDDEN]'
 0
 in query: SET s3_base = '[HIDDEN]'
 0
+in query: SET url_base = '[HIDDEN]'
+to value of type Map
+0
+in query: SET url_base = '[HIDDEN]'
+to value of type Array
+0
+in query: SET url_base = '[HIDDEN]'
+to value of type Tuple
+0
