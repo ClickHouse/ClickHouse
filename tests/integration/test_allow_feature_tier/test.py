@@ -1678,6 +1678,14 @@ def test_named_storage_collision_is_checked_before_batch_insert(start_cluster):
         == "0"
     )
 
+    # A name another storage holds is refused regardless of `IF NOT EXISTS` and `OR REPLACE`.
+    for create in ["CREATE USER IF NOT EXISTS", "CREATE USER OR REPLACE"]:
+        output, error = instance.query_and_get_answer_with_error(
+            f"{create} tier_config_user IN memory IDENTIFIED WITH no_password"
+        )
+        assert output == ""
+        assert "already exists" in error, error
+
 
 def test_const_constraint_is_sticky_when_previous_constraints_are_kept(start_cluster):
     node = instance_with_legacy_constraints
