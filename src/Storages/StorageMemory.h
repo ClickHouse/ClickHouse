@@ -186,7 +186,8 @@ private:
 
     static std::vector<ColumnChange> getColumnChanges(
         const AlterCommands & commands, const StorageInMemoryMetadata & old_metadata, ContextPtr context);
-    static void applyColumnChanges(Block & block, const ColumnChangesEntry & entry);
+    static void applyColumnChanges(Block & block, const ColumnChangesEntry & entry, bool compress);
+    static NameAndTypePair chooseFillColumn(const StorageInMemoryMetadata & metadata);
 
     /// The blocks of the table together with the exact number of rows and bytes in them.
     /// The counters are a part of the same object, so they are published atomically with the

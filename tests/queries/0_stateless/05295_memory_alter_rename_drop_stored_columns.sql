@@ -115,3 +115,27 @@ SELECT 'bytes before drop', total_bytes > 900000 FROM system.tables WHERE databa
 ALTER TABLE mem_bytes DROP COLUMN s;
 SELECT 'bytes after drop', total_bytes < 200000 FROM system.tables WHERE database = currentDatabase() AND name = 'mem_bytes';
 DROP TABLE mem_bytes;
+
+-- With `compress = 1` the column that keeps the row count of a block without stored columns is compressed as well.
+DROP TABLE IF EXISTS mem_compress_fill;
+CREATE TABLE mem_compress_fill (a UInt64) ENGINE = Memory SETTINGS compress = 1;
+INSERT INTO mem_compress_fill SELECT number FROM numbers(100000) SETTINGS max_block_size = 100000;
+ALTER TABLE mem_compress_fill ADD COLUMN b UInt64;
+ALTER TABLE mem_compress_fill DROP COLUMN a;
+SELECT 'compressed fill', count(), sum(b) FROM mem_compress_fill;
+SELECT 'compressed fill bytes', total_bytes < 100000 FROM system.tables WHERE database = currentDatabase() AND name = 'mem_compress_fill';
+DROP TABLE mem_compress_fill;
+
+-- A restored column that the table does not have is not kept: the restored rows keep their count, and a column added
+-- later with its name gets default values.
+DROP TABLE IF EXISTS mem_backup_src;
+DROP TABLE IF EXISTS mem_restored;
+CREATE TABLE mem_backup_src (a UInt64) ENGINE = Memory;
+INSERT INTO mem_backup_src VALUES (7), (9);
+BACKUP TABLE mem_backup_src TO Memory('05295_mem_backup') FORMAT Null;
+CREATE TABLE mem_restored (k UInt64) ENGINE = Memory;
+RESTORE TABLE mem_backup_src AS mem_restored FROM Memory('05295_mem_backup') SETTINGS allow_different_table_def = 1 FORMAT Null;
+ALTER TABLE mem_restored ADD COLUMN a UInt64;
+SELECT 'restored column the table lacks', count(), sum(k), sum(a) FROM mem_restored;
+DROP TABLE mem_backup_src;
+DROP TABLE mem_restored;

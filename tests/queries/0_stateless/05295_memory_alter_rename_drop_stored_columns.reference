@@ -36,3 +36,6 @@ rejected drop of the last physical column	1	7
 rejected drop of the last physical column	2	7
 bytes before drop	1
 bytes after drop	1
+compressed fill	100000	0
+compressed fill bytes	1
+restored column the table lacks	2	0	0

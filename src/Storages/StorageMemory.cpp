@@ -128,7 +128,7 @@ public:
         {
             if (entry.metadata_version > metadata_version)
                 for (auto & block : new_blocks)
-                    StorageMemory::applyColumnChanges(block, entry);
+                    StorageMemory::applyColumnChanges(block, entry, storage.getMemorySettingsRef()[MemorySetting::compress]);
         }
 
         size_t inserted_bytes = 0;
@@ -472,7 +472,7 @@ std::vector<StorageMemory::ColumnChange> StorageMemory::getColumnChanges(
     return changes;
 }
 
-void StorageMemory::applyColumnChanges(Block & block, const ColumnChangesEntry & entry)
+void StorageMemory::applyColumnChanges(Block & block, const ColumnChangesEntry & entry, bool compress)
 {
     const size_t rows = block.rows();
     for (const auto & change : entry.changes)
@@ -486,7 +486,7 @@ void StorageMemory::applyColumnChanges(Block & block, const ColumnChangesEntry &
         if (change.new_name.empty())
             continue;
 
-        /// Only a block restored from a backup of an older version can have a column with the new name.
+        /// A restored block can already hold a column under the new name.
         if (block.has(change.new_name))
             block.erase(change.new_name);
         renamed.name = change.new_name;
@@ -496,8 +496,20 @@ void StorageMemory::applyColumnChanges(Block & block, const ColumnChangesEntry &
     if (block.columns() == 0)
     {
         const auto & type = entry.fill_column.type;
-        block.insert({type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst(), type, entry.fill_column.name});
+        ColumnPtr fill = type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst();
+        if (compress)
+            fill = fill->compress(/*force_compression=*/true);
+        block.insert({fill, type, entry.fill_column.name});
     }
+}
+
+NameAndTypePair StorageMemory::chooseFillColumn(const StorageInMemoryMetadata & metadata)
+{
+    const auto physical_columns = metadata.getColumns().getAllPhysical();
+    const auto columns_without_default_expressions = metadata.getColumnsWithoutDefaultExpressions({});
+    auto fill_column = std::find_if(physical_columns.begin(), physical_columns.end(),
+        [&](const auto & column) { return columns_without_default_expressions.contains(column.name); });
+    return fill_column != physical_columns.end() ? *fill_column : physical_columns.front();
 }
 
 void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr context, DB::IStorage::AlterLockHolder & /*alter_lock_holder*/, DB::DDLGuardPtr & /*ddl_guard*/)
@@ -559,10 +571,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
     const auto physical_columns = new_metadata.getColumns().getAllPhysical();
     if (!column_changes_of_alter.empty() && !physical_columns.empty())
     {
-        const auto columns_without_default_expressions = new_metadata.getColumnsWithoutDefaultExpressions({});
-        auto fill_column = std::find_if(physical_columns.begin(), physical_columns.end(),
-            [&](const auto & column) { return columns_without_default_expressions.contains(column.name); });
-        column_changes_entry.fill_column = fill_column != physical_columns.end() ? *fill_column : physical_columns.front();
+        column_changes_entry.fill_column = chooseFillColumn(new_metadata);
         column_changes_entry.metadata_version = new_metadata.getMetadataVersion();
         column_changes_entry.changes = column_changes_of_alter;
 
@@ -570,7 +579,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
         converted_data->bytes = 0;
         for (auto & block : converted_data->blocks)
         {
-            applyColumnChanges(block, column_changes_entry);
+            applyColumnChanges(block, column_changes_entry, (*memory_settings)[MemorySetting::compress]);
             converted_data->bytes += block.allocatedBytes();
         }
         converted_data->columns_version = column_changes_entry.metadata_version;
@@ -855,7 +864,24 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
                 "and the column names in the backup are not verified",
                 getStorageID().getNameForLogs());
         for (auto & block : new_blocks)
-            applyColumnChanges(block, entry);
+            applyColumnChanges(block, entry, (*memory_settings)[MemorySetting::compress]);
+    }
+
+    /// A stored column that the table does not have would be read by a later `ADD COLUMN` with its name.
+    const auto metadata = getInMemoryMetadataPtr(nullptr, false);
+    NameSet table_columns;
+    for (const auto & column : metadata->getColumns().getAllPhysical())
+        table_columns.insert(column.name);
+    ColumnChangesEntry unknown_columns;
+    unknown_columns.fill_column = chooseFillColumn(*metadata);
+    for (auto & block : new_blocks)
+    {
+        unknown_columns.changes.clear();
+        for (const auto & column : block)
+            if (!table_columns.contains(column.name))
+                unknown_columns.changes.push_back({column.name, ""});
+        if (!unknown_columns.changes.empty())
+            applyColumnChanges(block, unknown_columns, (*memory_settings)[MemorySetting::compress]);
     }
 
     size_t new_bytes = 0;
