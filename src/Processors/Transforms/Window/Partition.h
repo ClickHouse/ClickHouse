@@ -20,7 +20,7 @@ public:
 
     void beginAt(RowNumber first_row);
     void advance(const SlidingBlock & block);
-    void finish();
+    void finish(RowNumber data_end);
 
     const PartitionBounds & bounds() const;
 

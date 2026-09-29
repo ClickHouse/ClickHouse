@@ -39,8 +39,9 @@ void Partition::advance(const SlidingBlock & block)
     found.fully_visible = found.end.block == block.block_number;
 }
 
-void Partition::finish()
+void Partition::finish(RowNumber data_end)
 {
+    found.end = data_end;
     found.fully_visible = true;
 }
 

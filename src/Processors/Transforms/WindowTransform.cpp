@@ -1082,7 +1082,7 @@ void WindowTransform::work()
     }
     else
     {
-        partition.finish();
+        partition.finish(blocks.end());
     }
 
     computeReadyRows();
