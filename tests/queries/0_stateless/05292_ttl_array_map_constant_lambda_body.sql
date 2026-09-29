@@ -1,5 +1,8 @@
 -- A TTL expression that reads the result of `arrayMap` whose lambda returns a constant `Dynamic` value.
 
+-- With `cast_keep_nullable`, `toUInt8` of a `Dynamic` value is `Nullable`, and a TTL expression cannot be `Nullable`.
+SET cast_keep_nullable = 0;
+
 CREATE TABLE t_ttl_array_map_length (d DateTime, arr Array(UInt32)) ENGINE = MergeTree ORDER BY tuple()
 TTL d + toIntervalDay(length(arrayMap(x -> CAST(1, 'Dynamic'), arr)));
 INSERT INTO t_ttl_array_map_length VALUES ('2100-01-01 00:00:00', [1]);
