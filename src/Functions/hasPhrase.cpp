@@ -349,14 +349,13 @@ Column `input` should have a [text index](/reference/engines/table-engines/merge
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
 </Note>
 
-Prior to searching, the function tokenizes both the `input` and the `phrase` arguments using the tokenizer specified for the text index.
+Prior to searching, the function tokenizes the `input` and, when it is a `String`, the `phrase` using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
 The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `array`, `ngrams`, `asciiCJK`, or `icu`.
 
 If `input` is an [Array(String)](/reference/data-types/array), its elements are tokenized like any other input and their tokens form a single sequence per row, so a phrase may span two elements. With the `array` tokenizer each element is one token, which is how a column of already tokenized values is searched.
 If `phrase` is an [Array(String)](/reference/data-types/array), its elements are the tokens to search for, in order and
-including duplicates; a `String` `phrase` is tokenized. Empty phrase elements are ignored, because no tokenizer produces
-an empty token.
+including duplicates. Empty phrase elements are ignored, because no tokenizer produces an empty token.
 
 <Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
@@ -401,18 +400,18 @@ because "brown" appears between "quick" and "fox".
 └─────────────────────────────────────────────────────┘
         )"},
            {"Token sequence given as arrays",
-            "SELECT hasPhrase(['a', 'b', 'c'], ['a', 'b'])",
+            "SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])",
             R"(
-┌─hasPhrase(['a', 'b', 'c'], ['a', 'b'])─┐
-│                                      1 │
-└────────────────────────────────────────┘
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
+│                                                               1 │
+└─────────────────────────────────────────────────────────────────┘
         )"},
            {"Phrase spanning two elements",
-            "SELECT hasPhrase(['a b', 'c'], ['b', 'c'])",
+            "SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])",
             R"(
-┌─hasPhrase(['a b', 'c'], ['b', 'c'])─┐
-│                                   1 │
-└─────────────────────────────────────┘
+┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
+│                                                         1 │
+└───────────────────────────────────────────────────────────┘
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
