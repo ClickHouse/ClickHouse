@@ -1752,7 +1752,8 @@ static void finalizeMutatedPart(
                 metadata_snapshot,
                 new_data_part->getDataPartStorage(),
                 new_data_part->checksums,
-                new_data_part->storage.getSettings());
+                new_data_part->storage.getSettings(),
+                context->getWriteSettings());
 
             for (auto & file : files)
             {

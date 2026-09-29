@@ -1,0 +1,5 @@
+insert, throttled	1	0
+insert, unthrottled	1	0
+transaction, throttled	1	0
+transaction, unthrottled	1	0
+1	0

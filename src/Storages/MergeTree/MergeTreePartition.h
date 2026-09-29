@@ -48,7 +48,8 @@ struct MergeTreePartition
         StorageMetadataPtr metadata_snapshot,
         ContextPtr storage_context,
         IDataPartStorage & data_part_storage,
-        MergeTreeDataPartChecksums & checksums) const;
+        MergeTreeDataPartChecksums & checksums,
+        const WriteSettings & settings) const;
 
     [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> store(
         const Block & partition_key_sample,
