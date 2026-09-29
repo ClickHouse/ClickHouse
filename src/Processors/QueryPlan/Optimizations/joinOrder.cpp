@@ -842,9 +842,10 @@ const std::vector<JoinActionRef *> & JoinOrderOptimizer::collectJoinEdgesMask(UI
         if (dpsub_data.edge_pinned[i] && (dpsub_data.edge_pin_mask[i] & ~joined))
             continue;
 
-        /// Relations that must all be present before the predicate is applicable: the relations it
-        /// references (`sources`) plus any relations it is pinned to. For a plain equi-predicate the
-        /// pin is empty, so this is just `sources`. For a single-table conjunct of an outer join's ON
+        /// Works much like Extended Eligibility List (EEL) in case of outerjoins:
+        /// encoding relations that must be present for the predicate to be applicable (in `pin` mask)
+        /// For innerjoins its just the sources of the predicate, i.e., NEL, here pin is empty.
+        /// For a single-table conjunct of an outer join's ON
         /// clause (e.g. `t2.value = 'x'` in `... LEFT JOIN t3 ON t2.id = t3.id AND t2.value = 'x'`),
         /// `sources` is only `{t2}` but the pin is `{t3}`: the predicate belongs to the ON condition of
         /// the join that brings in `t3`, not to `t2` as a base-table filter. Placing it by `sources`
@@ -856,17 +857,17 @@ const std::vector<JoinActionRef *> & JoinOrderOptimizer::collectJoinEdgesMask(UI
 
         if (std::popcount(applicable) <= 1)
         {
-            /// Base-relation filter or constant predicate: it becomes applicable as soon as its single
-            /// relation is present, so attach it at the earliest (two-relation) join to filter as low
-            /// as possible.
-            if (two_relations && (edge.fromLeft() || edge.fromRight() || edge.fromNone()))
+            /// Base-relation filter or constant predicate (the edge references at most one relation).
+            const bool relation_introduced = applicable != 0 && (left_mask == applicable || right_mask == applicable);
+            const bool constant_at_earliest_join = applicable == 0 && two_relations;
+            if (relation_introduced || constant_at_earliest_join)
                 out.push_back(&edge);
         }
         else if ((applicable & ~left_mask) && (applicable & ~right_mask))
         {
             /// The predicate spans the split (a connecting equi-predicate, or a single-table ON-clause
             /// conjunct pinned to the opposite side): neither side alone contains all the relations it
-            /// needs. This join is the lowest one that makes it applicable, so attach it here — into the
+            /// needs. This join is the lowest one that makes it applicable, so attach it here: into the
             /// correct join's ON condition.
             out.push_back(&edge);
         }
