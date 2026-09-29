@@ -56,11 +56,11 @@ static std::array<const EngineSettingsToHide *, 6> engineSettingsToHide()
 /// Renders a change whose value is a secret as the SQL text that hides it, and returns `nullopt` for
 /// a change that carries none. `formatImpl` and `hasSecretParts` both go through this, so they cannot
 /// disagree on what is secret.
+///
+/// An engine rule is asked before the Core one: the Core renderer masks a `disk(...)` value of any
+/// setting but keeps its `type` argument, while every engine rule hides a value that is not a String whole.
 static std::optional<String> renderSecretChangeValue(const SettingChange & change)
 {
-    if (auto masked = CoreSettings::renderSecretSettingValue(change.name, change.value))
-        return masked;
-
     for (const auto * settings_to_hide : engineSettingsToHide())
     {
         auto it = settings_to_hide->find(change.name);
@@ -68,7 +68,7 @@ static std::optional<String> renderSecretChangeValue(const SettingChange & chang
             return it->second(change.value);
     }
 
-    return {};
+    return CoreSettings::renderSecretSettingValue(change.name, change.value);
 }
 
 

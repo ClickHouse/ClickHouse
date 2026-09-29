@@ -54,7 +54,8 @@ done
 
 # 5. A value of any other type reaches a setting too: an Array or a Tuple only as a typed query
 # parameter, a `disk(...)` AST in SQL, and the raw text of a number literal in the AST JSON dialect.
-# Each is hidden the same way, and the error that rejects it names only the type of the value.
+# Each is hidden the same way, and the error that rejects it names only the type of the value. The
+# masking of a `disk(...)` keeps its `type` argument, so the canary goes there.
 check() {
     LOGGED=$($CLICKHOUSE_CLIENT --send_logs_level=error "$@" 2>&1 | grep -F '<Error> executeQuery')
     echo "$LOGGED" | grep -oE "in query: [^)]*" | head -1
@@ -64,6 +65,7 @@ check() {
 check --param_p="{'u':'u:$MAP_CANARY@h'}" -q "SET url_base = {p:Map(String, String)}"
 check --param_p="['u:$MAP_CANARY@h']" -q "SET url_base = {p:Array(String)}"
 check --param_p="('u', 'u:$MAP_CANARY@h')" -q "SET url_base = {p:Tuple(String, String)}"
-check -q "SET url_base = disk(type = 'local', path = '/$MAP_CANARY/')"
+check -q "SET url_base = disk(type = 'u:$MAP_CANARY@h', path = '/$MAP_CANARY/')"
+check -q "SET nats_url = disk(type = 'u:$MAP_CANARY@h', path = '/$MAP_CANARY/')"
 check --dialect clickhouse_json --enable_json_ast_dialect 1 -q \
     "{\"type\":\"SetQuery\",\"is_standalone\":true,\"changes\":[{\"name\":\"url_base\",\"value\":{\"field_type\":\"Number\",\"value\":\"Number_u:$MAP_CANARY@h\"}}]}"
