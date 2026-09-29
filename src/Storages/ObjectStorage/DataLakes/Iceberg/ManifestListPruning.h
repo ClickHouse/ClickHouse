@@ -16,13 +16,15 @@ namespace DB::Iceberg
 class ManifestListPruner
 {
 public:
+    /// `require_ready_sets` makes `IN` conditions whose sets are not built yet unknown instead of building them.
     ManifestListPruner(
         const IcebergSchemaProcessor & schema_processor_,
         Int32 current_schema_id_,
         Int32 partition_schema_id_,
         const Poco::JSON::Array::Ptr & partition_specs,
         const DB::ActionsDAG * filter_dag,
-        DB::ContextPtr context);
+        DB::ContextPtr context,
+        bool require_ready_sets = false);
 
     bool canBePruned(Int32 partition_spec_id, const PartitionFieldSummaries & partition_summaries) const;
 
