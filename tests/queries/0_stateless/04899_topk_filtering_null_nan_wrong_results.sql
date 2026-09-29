@@ -459,12 +459,28 @@ SELECT 'pres off master', count() FROM (EXPLAIN actions = 1 SELECT v FROM d_f64 
 -- still does. Without this the results above could be explained by the comparison change alone.
 SELECT 'skipidx f64', count() FROM (EXPLAIN indexes = 1 SELECT v FROM i_f64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1) WHERE explain ILIKE '%topk%';
 SELECT 'skipidx u64', count() > 0 FROM (EXPLAIN indexes = 1 SELECT v FROM i_u64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1) WHERE explain ILIKE '%topk%';
--- The two arms above pin the plan-level refusal in tryOptimizeTopK. buildIndexes decides index
--- selection independently and is reached at the defaults, where dynamic filtering publishes the
--- TopKFilterInfo that tryOptimizeTopK refused a skip index for; the integer arm shows this shape
--- still selects the index when the type is eligible, so the float arm is not passing vacuously.
+-- buildIndexes decides index selection independently and is reached at the defaults, where dynamic
+-- filtering publishes the TopKFilterInfo that tryOptimizeTopK refused a skip index for; the integer
+-- arm shows this shape still selects the index when the type is eligible, so the float arm is not
+-- passing vacuously.
 SELECT 'skipidx f64 dflt', count() FROM (EXPLAIN indexes = 1 SELECT v FROM i_f64 ORDER BY v ASC NULLS FIRST LIMIT 1) WHERE explain ILIKE '%topk granules%';
 SELECT 'skipidx u64 dflt', count() > 0 FROM (EXPLAIN indexes = 1 SELECT v FROM i_u64 ORDER BY v ASC NULLS FIRST LIMIT 1) WHERE explain ILIKE '%topk granules%';
+-- No answer depends on the planning-time float refusal, because index selection refuses the type
+-- again, but a read chosen for TopK is kept out of plan-based parallel replicas. So the float read
+-- must still be distributed, while the integer one, which keeps its index, shows that a chosen read
+-- stays local.
+SELECT 'prdist f64', count() > 0 FROM (EXPLAIN SELECT v FROM i_f64 ORDER BY v ASC NULLS FIRST LIMIT 1
+    SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1, enable_parallel_replicas = 1,
+             parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
+             cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+             parallel_replicas_local_plan = 1, parallel_replicas_plan_based = 1,
+             automatic_parallel_replicas_mode = 0) WHERE explain LIKE '%ReadFromParallelReplicas%';
+SELECT 'prdist u64', count() FROM (EXPLAIN SELECT v FROM i_u64 ORDER BY v ASC NULLS FIRST LIMIT 1
+    SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1, enable_parallel_replicas = 1,
+             parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
+             cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+             parallel_replicas_local_plan = 1, parallel_replicas_plan_based = 1,
+             automatic_parallel_replicas_mode = 0) WHERE explain LIKE '%ReadFromParallelReplicas%';
 -- A nullable or float dictionary is rejected while the same wrapper over a plain integer one is not,
 -- so each rejection is attributable to the dictionary and not to LowCardinality. These two are the
 -- only carriers here whose disqualifying property is out of reach of a root-only test.

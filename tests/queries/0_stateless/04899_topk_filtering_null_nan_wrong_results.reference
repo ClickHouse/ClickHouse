@@ -191,6 +191,8 @@ skipidx f64	0
 skipidx u64	1
 skipidx f64 dflt	0
 skipidx u64 dflt	1
+prdist f64	1
+prdist u64	0
 skipidx lcn	0
 skipidx lcfd	0
 skipidx lcw	1
