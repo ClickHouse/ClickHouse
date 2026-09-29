@@ -32,6 +32,9 @@ DELETE FROM t_05291 WHERE id IN
 ALTER TABLE t_05291_replicated DELETE WHERE id IN
     (SELECT c1::UInt64 FROM s3('http://127.0.0.1:1/nope.csv', 'AKIAFAKEKEYID', 'SECRET05291REPLICATED', 'CSV', 'c1 String'));
 
+-- The replica loads the mutations from ZooKeeper asynchronously; `PULL` fetches them synchronously.
+SYSTEM SYNC REPLICA t_05291_replicated PULL;
+
 SELECT table, command FROM system.mutations WHERE database = currentDatabase() ORDER BY table, mutation_id;
 
 -- A secret cannot be probed with a filter on the column either.
