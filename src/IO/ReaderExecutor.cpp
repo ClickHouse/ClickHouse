@@ -798,9 +798,7 @@ void ReaderExecutor::setRequestMap(ByteRangeSet ranges)
         LOG_TEST(log, "Request map of {}: the whole file", log_file_path);
         return;
     }
-    const auto & intervals = request_map.ranges();
-    LOG_TEST(log, "Request map of {}: {} bytes in [{}, {}), range count {}",
-        log_file_path, request_map.totalBytes(), intervals.front().offset, intervals.back().end(), intervals.size());
+    LOG_TEST(log, "Request map of {}: {} bytes in {}", log_file_path, request_map.totalBytes(), request_map.describe());
 }
 
 }

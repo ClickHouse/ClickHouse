@@ -64,6 +64,27 @@ TEST(ByteRangeSet, IntersectClipsAndShiftMoves)
     EXPECT_TRUE(s.intersect({20, 50}).empty());
 }
 
+TEST(ByteRangeSet, DescribeShowsAllRangesOrBothEndsOfLongSets)
+{
+    ByteRangeSet s;
+    EXPECT_EQ(s.describe(), "0 ranges");
+
+    s.add({0, 10});
+    s.add({20, 5});
+    EXPECT_EQ(s.describe(), "2 ranges: [0, 10), [20, 25)");
+
+    ByteRangeSet many;
+    for (size_t i = 0; i < 12; ++i)
+        many.add({i * 10, 5});
+    EXPECT_EQ(many.describe(),
+        "12 ranges: [0, 5), [10, 15), [20, 25), [30, 35), ..., [80, 85), [90, 95), [100, 105), [110, 115)");
+
+    ByteRangeSet nine;
+    for (size_t i = 0; i < 9; ++i)
+        nine.add({i * 10, 5});
+    EXPECT_EQ(nine.describe().find("..."), String::npos);
+}
+
 TEST(ByteRangeSet, AddIgnoresEmptyRange)
 {
     ByteRangeSet s;

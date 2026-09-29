@@ -2,6 +2,7 @@
 
 #include <IO/ByteRange.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -33,6 +34,9 @@ public:
     size_t totalBytes() const;
 
     bool empty() const { return intervals.empty(); }
+
+    /// For logs: `N ranges: [a, b), [c, d), ...`, all ranges when there are fewer than 10, otherwise the first 4 and the last 4.
+    String describe() const;
 
     /// The disjoint intervals in increasing-offset order (read-only view).
     const VectorWithMemoryTracking<ByteRange> & ranges() const { return intervals; }

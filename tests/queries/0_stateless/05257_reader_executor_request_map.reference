@@ -1,13 +1,13 @@
 t_wide: two key ranges
-range count 2
+2 ranges
 t_wide: full scan
-range count 1
+1 ranges
 t_compact: two key ranges
-range count 2
+2 ranges
 t_compact: full scan
-range count 1
+1 ranges
 t_packed: two key ranges
-range count 1
-range count 2
+1 ranges
+2 ranges
 t_packed: full scan
-range count 1
+1 ranges

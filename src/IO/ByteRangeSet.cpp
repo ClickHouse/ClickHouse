@@ -1,6 +1,8 @@
 #include <IO/ByteRangeSet.h>
 
 #include <algorithm>
+#include <iterator>
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -101,6 +103,32 @@ size_t ByteRangeSet::totalBytes() const
     for (const auto & i : intervals)
         total += i.size;
     return total;
+}
+
+String ByteRangeSet::describe() const
+{
+    static constexpr size_t max_ranges_in_full = 9;
+    static constexpr size_t ranges_at_each_end = 4;
+
+    String result = fmt::format("{} ranges", intervals.size());
+    auto append = [&](size_t i)
+    {
+        fmt::format_to(std::back_inserter(result), "{}[{}, {})", i == 0 ? ": " : ", ", intervals[i].offset, intervals[i].end());
+    };
+
+    if (intervals.size() <= max_ranges_in_full)
+    {
+        for (size_t i = 0; i < intervals.size(); ++i)
+            append(i);
+        return result;
+    }
+
+    for (size_t i = 0; i < ranges_at_each_end; ++i)
+        append(i);
+    result += ", ...";
+    for (size_t i = intervals.size() - ranges_at_each_end; i < intervals.size(); ++i)
+        append(i);
+    return result;
 }
 
 }

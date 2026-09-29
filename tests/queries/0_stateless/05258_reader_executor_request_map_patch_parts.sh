@@ -13,15 +13,16 @@ function patch_range_counts()
 {
     $CLICKHOUSE_CLIENT --send_logs_level=test --use_reader_executor=1 --max_threads=1 --apply_patch_parts=1 \
         --remote_filesystem_read_method=read --local_filesystem_read_method=pread --enable_filesystem_cache=0 \
-        -q "$1" 2>&1 >/dev/null | grep -o 'Request map of [^ ]*/patch-[^ ]* .*, range count [0-9]*' | grep -o 'range count [0-9]*' | sort -u
+        --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0 \
+        -q "$1" 2>&1 >/dev/null | grep -o 'Request map of [^ ]*/patch-[^ ]*: [0-9]* bytes in [0-9]* ranges' | grep -o '[0-9]* ranges$' | sort -u
 }
 
 # Small compressed blocks, so that the byte ranges of separate mark ranges of the small patch part do not merge.
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_patched (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 1024, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0,
+    SETTINGS index_granularity = 1024, index_granularity_bytes = '10Mi', ratio_of_defaults_for_sparse_serialization = 1, min_bytes_for_wide_part = 0,
         min_bytes_for_full_part_storage = 0, min_compress_block_size = 1024, max_compress_block_size = 1024,
-        enable_block_number_column = 1, enable_block_offset_column = 1;
+        enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v2';
     INSERT INTO t_patched SELECT number, number FROM numbers(100000);
     OPTIMIZE TABLE t_patched FINAL;
 "
