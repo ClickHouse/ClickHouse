@@ -530,8 +530,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
     /// Inserts commit under the same lock, so their blocks are either converted here or know about this `ALTER`.
     std::lock_guard lock(mutex);
 
-    /// The new settings and blocks are prepared before `alterTable` commits the new definition, so that only the
-    /// publication remains after it. Without physical columns the `ALTER` is rejected by `alterTable`.
+    /// Only the publication remains after `alterTable`, which rejects an `ALTER` that leaves no physical columns.
     std::optional<MemorySettings> changed_settings;
     if (std::any_of(params.begin(), params.end(), [](const AlterCommand & command) { return command.isSettingsAlter(); }))
     {
@@ -762,7 +761,6 @@ void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector
             for (const auto & column : data_columns)
             {
                 const auto it = definition_columns.find(column.name);
-                /// A type that cannot be built from the definition is compared by the column name only.
                 same_columns = same_columns && it != definition_columns.end() && (!it->second || it->second->equals(*column.type));
             }
             if (!same_columns)
@@ -790,10 +788,8 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!restorer.isNonEmptyTableAllowed() && data.get()->rows)
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
-    /// The blocks in the backup have the column names of its `columns.txt`. When they are the names of this
-    /// metadata, the columns renamed or dropped by later `ALTER`s can be converted in `restoreDataImpl`.
-    /// Otherwise the blocks are restored by their names, which is right unless a column of this table was renamed or
-    /// dropped: the inner table of a materialized view is created with the columns of the view, not of the backup.
+    /// The blocks in the backup have the column names of its `columns.txt`, which can differ from this table's without
+    /// a rename or drop: the inner table of a materialized view is created with the columns of the view.
     auto metadata_snapshot = getInMemoryMetadataPtr(restorer.getContext(), false);
     bool names_verified = false;
     String columns_file_path = fs::path(data_path_in_backup) / "columns.txt";
