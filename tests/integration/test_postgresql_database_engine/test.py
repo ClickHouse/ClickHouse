@@ -930,11 +930,11 @@ def test_merge_over_postgresql_database_reads_only_matching_tables(started_clust
         started_cluster.postgres_ip, started_cluster.postgres_port, database=True
     )
     cursor = conn.cursor()
-    create_postgres_table(cursor, "merge_matching")
-    create_postgres_table(cursor, "merge_other")
-    cursor.execute("INSERT INTO merge_matching VALUES (1, 1)")
-    cursor.execute("INSERT INTO merge_other VALUES (2, 2), (3, 3)")
     try:
+        create_postgres_table(cursor, "merge_matching")
+        create_postgres_table(cursor, "merge_other")
+        cursor.execute("INSERT INTO merge_matching VALUES (1, 1)")
+        cursor.execute("INSERT INTO merge_other VALUES (2, 2), (3, 3)")
         node1.query("DROP DATABASE IF EXISTS postgres_database")
         node1.query(
             f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', "
