@@ -1,2 +1,3 @@
-right_kind_plan_collected_statistics
-1
+apply_kind_left	1
+right_kind_plan_collected_statistics	kind_left_reused_them	kind_left_used_replicas
+1	1	1

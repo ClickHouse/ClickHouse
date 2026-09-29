@@ -18,6 +18,7 @@
 
 DROP TABLE IF EXISTS t_right_small;
 DROP TABLE IF EXISTS t_right_big;
+DROP TABLE IF EXISTS t_right_baseline;
 
 -- Pinned layout: the cost model works off estimated bytes, and leaving granularity or part format to
 -- randomization changes whether the optimization runs at all.
@@ -32,6 +33,8 @@ INSERT INTO t_right_big   SELECT number, number FROM numbers(400000);
 OPTIMIZE TABLE t_right_small FINAL;
 OPTIMIZE TABLE t_right_big FINAL;
 
+CREATE TABLE t_right_baseline (c UInt64) ENGINE = Memory;
+
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_randomize = 0;
@@ -41,6 +44,11 @@ SET use_statistics_cache = 1;
 SET max_threads = 1;
 SET merge_tree_min_bytes_per_task_for_remote_reading = 1024;
 SET automatic_parallel_replicas_min_bytes_per_replica = 0;
+
+-- What the query answers without parallel replicas, so the adopted plan can be checked against it.
+INSERT INTO t_right_baseline
+SELECT sum(b.v) FROM t_right_small AS s RIGHT JOIN t_right_big AS b ON s.key = b.key
+SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 1;
@@ -57,9 +65,11 @@ SELECT sum(b.v) FROM t_right_small AS s RIGHT JOIN t_right_big AS b ON s.key = b
 FORMAT Null SETTINGS query_plan_join_swap_table = 'false', log_comment = 'right_join_kind_right';
 
 -- The same query the planner's own way, which is the `LEFT` spelling of it. It folds to the hash the run
--- above wrote, so it costs the plan on those statistics instead of collecting its own.
-SELECT sum(b.v) FROM t_right_small AS s RIGHT JOIN t_right_big AS b ON s.key = b.key
-FORMAT Null SETTINGS query_plan_join_swap_table = 'auto', log_comment = 'right_join_kind_left';
+-- above wrote, so it costs the plan on those statistics instead of collecting its own, and it answers the
+-- query so that a plan built around the wrong read shows up as a wrong result.
+SELECT 'apply_kind_left', sum(b.v) = (SELECT c FROM t_right_baseline)
+FROM t_right_small AS s RIGHT JOIN t_right_big AS b ON s.key = b.key
+SETTINGS query_plan_join_swap_table = 'auto', log_comment = 'right_join_kind_left';
 
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
@@ -67,17 +77,35 @@ SET automatic_parallel_replicas_mode = 0;
 SYSTEM FLUSH LOGS query_log;
 
 -- One row per `log_comment`, the newest, so a retry into the same database cannot answer for an older run.
+--
+-- `kind_left_reused_them` is what says the two spellings fold to one hash: the second run finds the entry
+-- the first one wrote instead of collecting its own. That fold is the reason the walk has to pair a join's
+-- children canonically, so if it ever stops holding this is the test that should notice.
+--
+-- `kind_left_used_replicas` is what makes the second run count for something. Without it a walk that
+-- refused to pair the cached `LEFT` spelling would skip the optimization silently, and the first run's
+-- statistics would still be there to keep the assertion above green.
 SELECT
-    input_bytes > 0 AS right_kind_plan_collected_statistics
+    argMaxIf(input_bytes, event_time_microseconds, log_comment = 'right_join_kind_right') > 0
+        AS right_kind_plan_collected_statistics,
+    argMaxIf(input_bytes, event_time_microseconds, log_comment = 'right_join_kind_left') = 0
+        AS kind_left_reused_them,
+    argMaxIf(replicas_used, event_time_microseconds, log_comment = 'right_join_kind_left') > 0
+        AS kind_left_used_replicas
 FROM
 (
-    SELECT argMax(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], event_time_microseconds) AS input_bytes
+    SELECT
+        log_comment,
+        event_time_microseconds,
+        ProfileEvents['RuntimeDataflowStatisticsInputBytes'] AS input_bytes,
+        ProfileEvents['ParallelReplicasUsedCount'] AS replicas_used
     FROM system.query_log
     WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
       AND event_date >= yesterday() AND event_time > now() - INTERVAL 10 MINUTE
-      AND log_comment = 'right_join_kind_right'
+      AND log_comment IN ('right_join_kind_right', 'right_join_kind_left')
 )
 FORMAT TSVWithNames;
 
 DROP TABLE t_right_small;
 DROP TABLE t_right_big;
+DROP TABLE t_right_baseline;
