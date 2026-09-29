@@ -2517,3 +2517,59 @@ TEST_F(MetadataPlainRewritableDiskTest, ReplaceFromFileWithoutBlobKeepsTarget)
     EXPECT_TRUE(metadata->existsFile("/A/target"));
     EXPECT_FALSE(metadata->existsFile("/A/source"));
 }
+
+/// Throws its own exception type from `copyObject`, as the Azure SDK does.
+class LocalObjectStorageWithForeignErrors final : public LocalObjectStorage
+{
+public:
+    using LocalObjectStorage::LocalObjectStorage;
+
+    void copyObject( /// NOLINT
+        const StoredObject & object_from,
+        const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        std::optional<ObjectAttributes> object_to_attributes) override
+    {
+        if (!exists(object_from))
+            throw std::runtime_error("The source object does not exist");
+        LocalObjectStorage::copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
+    }
+};
+
+TEST_F(MetadataPlainRewritableDiskTest, UnlinkOfFileWithoutBlobOnForeignErrors)
+{
+    thread_local_rng.seed(42);
+
+    const std::string key_prefix = "UnlinkWithoutBlobForeignErrors";
+    fs::remove_all("./" + key_prefix);
+    SCOPE_EXIT(fs::remove_all("./" + key_prefix));
+
+    auto object_storage = std::make_shared<LocalObjectStorageWithForeignErrors>(
+        LocalObjectStorageSettings("test", "./" + key_prefix, /*read_only_=*/false));
+    auto metadata = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
+    SCOPE_EXIT(object_storage->shutdown());
+    SCOPE_EXIT(metadata->shutdown());
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto a_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/a").serialize(), "file a");
+        tx->createMetadataFile("/A/a", {StoredObject("/A/a", "a", a_size)});
+        auto b_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/b").serialize(), "file b");
+        tx->createMetadataFile("/A/b", {StoredObject("/A/b", "b", b_size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto b_blob = metadata->getStorageObjects("/A/b").front().remote_path;
+    object_storage->removeObjectIfExists(StoredObject(b_blob));
+    const auto objects_before = allObjects(object_storage, key_prefix);
+
+    /// The rollback must restore the first unlink.
+    auto tx = metadata->createTransaction();
+    tx->unlinkFile("/A/a", /*if_exists=*/false, /*should_remove_objects=*/true);
+    tx->unlinkFile("/A/b", /*if_exists=*/false, /*should_remove_objects=*/true);
+    expectCommitReportsDivergence(tx, b_blob);
+
+    EXPECT_EQ(allObjects(object_storage, key_prefix), objects_before);
+}

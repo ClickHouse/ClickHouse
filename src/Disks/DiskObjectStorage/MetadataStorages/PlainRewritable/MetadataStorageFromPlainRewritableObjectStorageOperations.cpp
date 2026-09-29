@@ -62,8 +62,9 @@ void copyBlobOfListedFile(
     {
         object_storage.copyObject(StoredObject(remote_path), StoredObject(tmp_remote_path), read_settings, write_settings);
     }
-    catch (Exception & e)
+    catch (...)
     {
+        /// Some object storages (Azure) throw their own exception types.
         if (!object_storage.exists(StoredObject(remote_path)))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -72,9 +73,10 @@ void copyBlobOfListedFile(
                 path,
                 remote_path,
                 tmp_remote_path,
-                e.message());
+                getCurrentExceptionMessage(/*with_stacktrace=*/ false));
 
-        e.addMessage(fmt::format("While copying the blob '{}' of the file '{}' to the temporary key '{}'", remote_path, path, tmp_remote_path));
+        if (auto * e = current_exception_cast<Exception *>())
+            e->addMessage(fmt::format("While copying the blob '{}' of the file '{}' to the temporary key '{}'", remote_path, path, tmp_remote_path));
         throw;
     }
 }
