@@ -72,8 +72,6 @@ struct UnlinkFileOperation final : public IMetadataOperation
 {
     UnlinkFileOperation(std::string path_, bool if_exists_, bool should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_);
 
-    void tryUnlinkMetadataFile();
-
     void execute() override;
     void undo() override;
     void finalize() override;

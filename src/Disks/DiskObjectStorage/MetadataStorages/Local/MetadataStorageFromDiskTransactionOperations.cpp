@@ -149,24 +149,6 @@ UnlinkFileOperation::UnlinkFileOperation(std::string path_, bool if_exists_, boo
 {
 }
 
-void UnlinkFileOperation::tryUnlinkMetadataFile()
-{
-    auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk);
-    if (!object_metadata.has_value())
-        return;
-
-    uint32_t ref_count = object_metadata->ref_count;
-    if (ref_count > 0)
-    {
-        object_metadata->ref_count -= 1;
-        write_operation = std::make_unique<WriteFileOperation>(path, object_metadata->serializeToString(), disk);
-        write_operation->execute();
-    }
-
-    if (ref_count == 0 && should_remove_objects)
-        removed_objects.append_range(object_metadata->objects);
-}
-
 void UnlinkFileOperation::execute()
 {
     if (!disk.existsFile(path))
@@ -177,22 +159,36 @@ void UnlinkFileOperation::execute()
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can't unlink file {}", path);
     }
 
-    /// Let's update hardlink count written in serialized DiskObjectStorageMetadata before the move
-    tryUnlinkMetadataFile();
+    auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk);
 
     /// We need to move file to the random name for the possible undo and to save the fs hardlink count
     auto tmp_path = getRandomASCIIString(32);
     disk.moveFile(path, tmp_path);
     tmp_file_path = tmp_path;
+
+    if (!object_metadata.has_value())
+        return;
+
+    /// Decrement only after the move, so a failure in between leaves the count too high rather than too low.
+    uint32_t ref_count = object_metadata->ref_count;
+    if (ref_count > 0)
+    {
+        object_metadata->ref_count -= 1;
+        write_operation = std::make_unique<WriteFileOperation>(*tmp_file_path, object_metadata->serializeToString(), disk);
+        write_operation->execute();
+    }
+
+    if (ref_count == 0 && should_remove_objects)
+        removed_objects.append_range(object_metadata->objects);
 }
 
 void UnlinkFileOperation::undo()
 {
-    if (tmp_file_path.has_value())
-        disk.moveFile(tmp_file_path.value(), path);
-
     if (write_operation)
         write_operation->undo();
+
+    if (tmp_file_path.has_value())
+        disk.moveFile(tmp_file_path.value(), path);
 }
 
 void UnlinkFileOperation::finalize()
@@ -289,8 +285,16 @@ void RemoveRecursiveOperation::traverseFile(const std::string & leaf)
     }
 
     if (ref_count == 0)
-        if (!should_remove_objects || should_remove_objects(fs::relative(leaf, path)))
-            removed_objects.append_range(object_metadata->objects);
+    {
+        const auto relative_path = fs::relative(leaf, temp_file_path ? *temp_file_path : *temp_directory_path);
+        if (!should_remove_objects || should_remove_objects(relative_path))
+        {
+            const std::string original_path = temp_file_path ? path : (fs::path(path) / relative_path).string();
+            for (auto & object : object_metadata->objects)
+                object.local_path = original_path;
+            removed_objects.append_range(std::move(object_metadata->objects));
+        }
+    }
 }
 
 void RemoveRecursiveOperation::traverseDirectory(const std::string & mid_path)
@@ -314,33 +318,34 @@ void RemoveRecursiveOperation::traverseDirectory(const std::string & mid_path)
 
 void RemoveRecursiveOperation::execute()
 {
+    /// Move aside before decrementing, so a failure in between leaves the counts too high rather than too low.
     if (disk.existsFile(path))
     {
-        traverseFile(path);
-
         auto path_to = getRandomASCIIString(32);
         disk.moveFile(path, path_to);
         temp_file_path = std::move(path_to);
+
+        traverseFile(*temp_file_path);
     }
     else if (disk.existsDirectory(path))
     {
-        traverseDirectory(path);
-
         auto path_to = getRandomASCIIString(32);
         disk.moveDirectory(path, path_to);
         temp_directory_path = std::move(path_to);
+
+        traverseDirectory(*temp_directory_path);
     }
 }
 
 void RemoveRecursiveOperation::undo()
 {
+    for (auto & write_op : write_operations | std::views::reverse)
+        write_op->undo();
+
     if (temp_file_path.has_value())
         disk.moveFile(temp_file_path.value(), path);
     else if (temp_directory_path.has_value())
         disk.moveDirectory(temp_directory_path.value(), path);
-
-    for (auto & write_op : write_operations)
-        write_op->undo();
 }
 
 void RemoveRecursiveOperation::finalize()
@@ -376,10 +381,11 @@ void CreateHardlinkOperation::execute()
 
 void CreateHardlinkOperation::undo()
 {
+    /// Remove the link before restoring the count, so a failure in between leaves the count too high rather than too low.
+    disk.removeFileIfExists(path_to);
+
     if (write_operation)
         write_operation->undo();
-
-    disk.removeFileIfExists(path_to);
 }
 
 MoveFileOperation::MoveFileOperation(std::string path_from_, std::string path_to_, IDisk & disk_)

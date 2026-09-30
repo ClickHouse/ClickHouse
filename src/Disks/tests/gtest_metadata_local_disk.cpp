@@ -23,6 +23,66 @@
 
 namespace fs = std::filesystem;
 
+namespace DB::ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+}
+
+/// Throws on the chosen calls of `writeFile`, `moveFile` and `removeFileIfExists`, numbered from 1 since the last `arm`.
+class FaultInjectingDiskLocal : public DB::DiskLocal
+{
+public:
+    struct Faults
+    {
+        std::set<size_t> write_file = {};
+        std::set<size_t> move_file = {};
+        std::set<size_t> remove_file_if_exists = {};
+    };
+
+    using DB::DiskLocal::DiskLocal;
+
+    void arm(Faults faults_)
+    {
+        faults = std::move(faults_);
+        write_file_calls = 0;
+        move_file_calls = 0;
+        remove_file_if_exists_calls = 0;
+    }
+
+    void disarm() { arm({}); }
+
+    std::unique_ptr<DB::WriteBufferFromFileBase> writeFile(
+        const std::string & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
+    {
+        injectFault(faults.write_file, write_file_calls, "writeFile", path);
+        return DB::DiskLocal::writeFile(path, buf_size, mode, settings);
+    }
+
+    void moveFile(const std::string & from_path, const std::string & to_path) override
+    {
+        injectFault(faults.move_file, move_file_calls, "moveFile", from_path);
+        DB::DiskLocal::moveFile(from_path, to_path);
+    }
+
+    void removeFileIfExists(const std::string & path) override
+    {
+        injectFault(faults.remove_file_if_exists, remove_file_if_exists_calls, "removeFileIfExists", path);
+        DB::DiskLocal::removeFileIfExists(path);
+    }
+
+private:
+    static void injectFault(const std::set<size_t> & armed, size_t & calls, std::string_view method, const std::string & path)
+    {
+        if (armed.contains(++calls))
+            throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injected fault in {} #{} of {}", method, calls, path);
+    }
+
+    Faults faults;
+    size_t write_file_calls = 0;
+    size_t move_file_calls = 0;
+    size_t remove_file_if_exists_calls = 0;
+};
+
 class MetadataLocalDiskTest : public testing::Test
 {
 public:
@@ -31,11 +91,12 @@ public:
         DB::ServerUUID::setRandomForUnitTests();
     }
 
+    template <typename Disk = DB::DiskLocal>
     std::shared_ptr<DB::IMetadataStorage> getMetadataStorage(const std::string & path)
     {
         std::unique_lock<std::mutex> lock(active_metadatas_mutex);
         if (!active_metadatas[path])
-            active_metadatas[path] = createMetadataStorage(path);
+            active_metadatas[path] = createMetadataStorage<Disk>(path);
         return active_metadatas[path];
     }
 
@@ -44,6 +105,14 @@ public:
         std::unique_lock<std::mutex> lock(active_metadatas_mutex);
         chassert(active_disks.contains(path));
         return active_disks[path];
+    }
+
+    std::pair<std::shared_ptr<DB::IMetadataStorage>, std::shared_ptr<FaultInjectingDiskLocal>> getFaultInjectingMetadataStorage(const std::string & path)
+    {
+        auto metadata = getMetadataStorage<FaultInjectingDiskLocal>(path);
+        auto disk = std::dynamic_pointer_cast<FaultInjectingDiskLocal>(getMetadataDisk(path));
+        chassert(disk);
+        return {metadata, disk};
     }
 
     void TearDown() override
@@ -56,12 +125,13 @@ public:
     }
 
 private:
+    template <typename Disk>
     std::shared_ptr<DB::IMetadataStorage> createMetadataStorage(const std::string & path)
     {
         const auto local_disk_metadata_dir = "./test-metadata-dir." + DB::getRandomASCIIString(6);
         fs::create_directories(local_disk_metadata_dir);
 
-        auto disk = active_disks[path] = std::make_shared<DB::DiskLocal>("test-metadata", local_disk_metadata_dir);
+        auto disk = active_disks[path] = std::make_shared<Disk>("test-metadata", local_disk_metadata_dir);
         auto key_generator = DB::createObjectStorageKeyGeneratorByTemplate("[a-z]{32}");
         auto metadata = active_metadatas[path] = std::make_shared<DB::MetadataStorageFromDisk>(disk, path, key_generator, /*persist_removal_queue_=*/true, /*removal_log_compaction_threshold_=*/1000);
 
@@ -73,14 +143,17 @@ private:
     std::unordered_map<std::string, std::shared_ptr<DB::IDisk>> active_disks;
 };
 
-static void verifyBlobsToRemove(const DB::MetadataStoragePtr & metadata, std::set<std::string> expected_blobs)
+static DB::IMetadataStorage::BlobsToRemove getBlobsToRemove(const DB::MetadataStoragePtr & metadata)
 {
     std::unordered_map<DB::Location, DB::LocationInfo> cluster_registry = {{"main", {true, true, ""}}};
     DB::ClusterConfigurationPtr cluster = std::make_shared<DB::ClusterConfiguration>("disk", std::move(cluster_registry));
-    auto blobs_to_remove = metadata->getBlobsToRemove(cluster, 10000);
+    return metadata->getBlobsToRemove(cluster, 10000);
+}
 
+static void verifyBlobsToRemove(const DB::MetadataStoragePtr & metadata, std::set<std::string> expected_blobs)
+{
     std::set<std::string> remote_paths;
-    for (const auto & [blob, locations] : blobs_to_remove)
+    for (const auto & [blob, locations] : getBlobsToRemove(metadata))
     {
         EXPECT_EQ(locations, DB::LocationSet{"main"});
         remote_paths.insert(blob.remote_path);
@@ -1156,6 +1229,254 @@ TEST_F(MetadataLocalDiskTest, TestUnlinkRollbackHardlinks)
     EXPECT_EQ(metadata->getHardlinkCount("file"), 2);
     EXPECT_EQ(metadata->getHardlinkCount("file-link-1"), 2);
     EXPECT_EQ(metadata->getHardlinkCount("file-link-2"), 2);
+}
+
+/// Creates `part/<name>` holding the blob `key`, hard-linked to `detached/<name>`, like a part and its detached copy.
+static void createPartWithDetachedCopy(const DB::MetadataStoragePtr & metadata, const std::vector<std::pair<std::string, std::string>> & files)
+{
+    auto tx = metadata->createTransaction();
+    tx->createDirectory("part");
+    tx->createDirectory("detached");
+    for (const auto & [name, key] : files)
+    {
+        tx->createMetadataFile("part/" + name, {DB::StoredObject(key, "part/" + name, 1)});
+        tx->createHardLink("part/" + name, "detached/" + name);
+    }
+    tx->commit(DB::NoCommitOptions{});
+}
+
+/// A failed transaction whose rollback fails as well must leave every hard link counted,
+/// or removing one link deletes a blob that another link still references.
+TEST_F(MetadataLocalDiskTest, TestUnlinkRollbackFailureDoesNotUndercountHardlinks)
+{
+    auto [metadata, disk] = getFaultInjectingMetadataStorage("/TestUnlinkRollbackFailureDoesNotUndercountHardlinks");
+    createPartWithDetachedCopy(metadata, {{"a", "ka"}, {"b", "kb"}});
+
+    /// Writes #1 and #2 decrement the counts, #3 fails the transaction, #4 restores the count of "part/b" in the rollback.
+    disk->arm({.write_file = {4}});
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("part/a", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->unlinkFile("part/b", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->createMetadataFile("non-existing/fail-tx", /*objects=*/{});
+        EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
+    }
+    disk->disarm();
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("part", /*should_remove_objects=*/nullptr);
+        tx->commit(DB::NoCommitOptions{});
+        verifyBlobsToRemove(metadata, {});
+    }
+
+    EXPECT_EQ(metadata->getStorageObjects("detached/a").front().remote_path, "ka");
+    EXPECT_EQ(metadata->getStorageObjects("detached/b").front().remote_path, "kb");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("detached", /*should_remove_objects=*/nullptr);
+        tx->commit(DB::NoCommitOptions{});
+        verifyBlobsToRemove(metadata, {"ka", "kb"});
+    }
+}
+
+/// When moving the unlinked file aside fails and the rollback fails too, the file stays counted.
+TEST_F(MetadataLocalDiskTest, TestUnlinkMoveFailureDoesNotUndercountHardlinks)
+{
+    auto [metadata, disk] = getFaultInjectingMetadataStorage("/TestUnlinkMoveFailureDoesNotUndercountHardlinks");
+    createPartWithDetachedCopy(metadata, {{"a", "ka"}});
+
+    /// The move of "part/a" fails, and so does restoring its count if it was decremented before the move.
+    disk->arm({.write_file = {2}, .move_file = {1}});
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("part/a", /*if_exists=*/false, /*should_remove_objects=*/true);
+        EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
+    }
+    disk->disarm();
+
+    EXPECT_EQ(metadata->getHardlinkCount("part/a"), 1);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("part/a", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+        verifyBlobsToRemove(metadata, {});
+    }
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("detached/a", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+        verifyBlobsToRemove(metadata, {"ka"});
+    }
+}
+
+/// A failed recursive removal whose rollback fails as well must leave the removed files counted.
+TEST_F(MetadataLocalDiskTest, TestRemoveRecursiveRollbackFailureDoesNotUndercountHardlinks)
+{
+    auto [metadata, disk] = getFaultInjectingMetadataStorage("/TestRemoveRecursiveRollbackFailureDoesNotUndercountHardlinks");
+    createPartWithDetachedCopy(metadata, {{"f", "kf"}});
+
+    /// Write #1 decrements the count, #2 fails the transaction, #3 restores the count in the rollback.
+    disk->arm({.write_file = {3}});
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("part", /*should_remove_objects=*/nullptr);
+        tx->createMetadataFile("non-existing/fail-tx", /*objects=*/{});
+        EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
+    }
+    disk->disarm();
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("part", /*should_remove_objects=*/nullptr);
+        tx->commit(DB::NoCommitOptions{});
+        verifyBlobsToRemove(metadata, {});
+    }
+
+    EXPECT_EQ(metadata->getStorageObjects("detached/f").front().remote_path, "kf");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("detached", /*should_remove_objects=*/nullptr);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// A blob queued for removal names the metadata file by its path inside the removed directory.
+    auto blobs = getBlobsToRemove(metadata);
+    ASSERT_EQ(blobs.size(), 1);
+    EXPECT_EQ(blobs.begin()->first.remote_path, "kf");
+    EXPECT_EQ(blobs.begin()->first.local_path, "detached/f");
+}
+
+/// Removing a single file recursively asks the predicate about "." and queues the blob under the file's own path.
+TEST_F(MetadataLocalDiskTest, TestRemoveRecursiveOfFile)
+{
+    auto metadata = getMetadataStorage("/TestRemoveRecursiveOfFile");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("dir");
+        tx->createMetadataFile("dir/f", {DB::StoredObject("kf", "dir/f", 1)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    std::vector<std::string> asked;
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("dir/f", [&](const std::string & relative_path) { asked.push_back(relative_path); return true; });
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_EQ(asked, std::vector<std::string>{"."});
+    EXPECT_FALSE(metadata->existsFile("dir/f"));
+
+    auto blobs = getBlobsToRemove(metadata);
+    ASSERT_EQ(blobs.size(), 1);
+    EXPECT_EQ(blobs.begin()->first.remote_path, "kf");
+    EXPECT_EQ(blobs.begin()->first.local_path, "dir/f");
+}
+
+/// When a recursive removal fails while decrementing the counts and its rollback fails too, no file is left undercounted.
+TEST_F(MetadataLocalDiskTest, TestRemoveRecursiveTraverseFailureDoesNotUndercountHardlinks)
+{
+    auto [metadata, disk] = getFaultInjectingMetadataStorage("/TestRemoveRecursiveTraverseFailureDoesNotUndercountHardlinks");
+    createPartWithDetachedCopy(metadata, {{"f1", "k1"}, {"f2", "k2"}});
+
+    /// Write #1 decrements the count of one file, #2 (the other file) fails, and so does #3, a restore in the rollback.
+    disk->arm({.write_file = {2, 3}});
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("part", /*should_remove_objects=*/nullptr);
+        EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
+    }
+    disk->disarm();
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("part", /*should_remove_objects=*/nullptr);
+        tx->commit(DB::NoCommitOptions{});
+        verifyBlobsToRemove(metadata, {});
+    }
+
+    EXPECT_EQ(metadata->getStorageObjects("detached/f1").front().remote_path, "k1");
+    EXPECT_EQ(metadata->getStorageObjects("detached/f2").front().remote_path, "k2");
+}
+
+/// Rolling back a recursive removal restores the count of a file that has two links inside the removed directory.
+TEST_F(MetadataLocalDiskTest, TestRemoveRecursiveRollbackRestoresSharedInodeCount)
+{
+    auto metadata = getMetadataStorage("/TestRemoveRecursiveRollbackRestoresSharedInodeCount");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("root");
+        tx->createDirectory("outside");
+        tx->createMetadataFile("root/A", {DB::StoredObject("k", "root/A", 1)});
+        tx->createHardLink("root/A", "root/B");
+        tx->createHardLink("root/A", "outside/C");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("root", /*should_remove_objects=*/nullptr);
+        tx->createMetadataFile("non-existing/fail-tx", /*objects=*/{});
+        EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
+    }
+
+    EXPECT_EQ(metadata->getHardlinkCount("outside/C"), 2);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("root", /*should_remove_objects=*/nullptr);
+        tx->commit(DB::NoCommitOptions{});
+        verifyBlobsToRemove(metadata, {});
+    }
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("outside/C", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+        verifyBlobsToRemove(metadata, {"k"});
+    }
+}
+
+/// When a hard link is created in a failed transaction and the rollback fails to remove it, the new link stays counted.
+TEST_F(MetadataLocalDiskTest, TestHardlinkRollbackFailureDoesNotUndercount)
+{
+    auto [metadata, disk] = getFaultInjectingMetadataStorage("/TestHardlinkRollbackFailureDoesNotUndercount");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createMetadataFile("a", {DB::StoredObject("ka", "a", 1)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// Removal #1 undoes "fail-tx", #2 removes the new link "b" in the rollback.
+    disk->arm({.remove_file_if_exists = {2}});
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("a", "b");
+        tx->createMetadataFile("non-existing/fail-tx", /*objects=*/{});
+        EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
+    }
+    disk->disarm();
+
+    EXPECT_EQ(metadata->getHardlinkCount("a"), 1);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("b", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+        verifyBlobsToRemove(metadata, {});
+    }
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("a", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+        verifyBlobsToRemove(metadata, {"ka"});
+    }
 }
 
 TEST_F(MetadataLocalDiskTest, TestFoldedRemoveRecursiveRollback)
