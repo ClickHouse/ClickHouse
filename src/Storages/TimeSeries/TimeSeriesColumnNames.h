@@ -53,6 +53,10 @@ struct TimeSeriesColumnNames
     static constexpr const char * SortedGroups = "sorted_groups";
     static constexpr const char * SortGroup = "sort_group";
     static constexpr const char * SortRank = "sort_rank";
+    static constexpr const char * SortSource = "sort_source";
+    static constexpr const char * SortFromRight = "sort_from_right";
+    static constexpr const char * SortLeftRank = "sort_left_rank";
+    static constexpr const char * SortRightRank = "sort_right_rank";
 
     /// Old names kept for compatibility:
 

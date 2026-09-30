@@ -62,6 +62,22 @@ namespace
         return key;
     }
 
+    /// Materializes `query` and makes `query_piece` continue from its `group` and `values` columns.
+    /// Returns the name of the materialized subquery.
+    String materializeVectorGrid(SQLQueryPiece & query_piece, ASTPtr && query, ConverterContext & context)
+    {
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(query), SQLSubqueryType::MATERIALIZED_TABLE});
+        String table = context.subqueries.back().name;
+
+        SelectQueryBuilder builder;
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+        builder.from_table = table;
+        query_piece.select_query = builder.getSelectQuery();
+
+        return table;
+    }
+
     /// Orders the vector at the sort*() call site: builds a subquery mapping each series (`sort_group`)
     /// to its position (`sort_rank`) in the required order, later applied by finalizeSQL().
     void materializeSortRank(SQLQueryPiece & query_piece, ASTPtr && sort_key, bool descending, ConverterContext & context)
@@ -72,9 +88,7 @@ namespace
 
         /// The vector grid is read twice (by the rank map and by the rest of the evaluation),
         /// so it must be materialized.
-        context.subqueries.emplace_back(
-            SQLSubquery{context.subqueries.size(), std::move(query_piece.select_query), SQLSubqueryType::MATERIALIZED_TABLE});
-        String vector_grid = context.subqueries.back().name;
+        String vector_grid = materializeVectorGrid(query_piece, std::move(query_piece.select_query), context);
 
         /// Step 1:
         /// SELECT arrayMap(t -> t.2, arraySort(t -> t.1, groupArray((<sort_key>, group)))) AS sorted_groups
@@ -106,7 +120,7 @@ namespace
 
         /// Step 2: unfold `sorted_groups` into one row per series with its position:
         /// SELECT (arrayJoin(arrayZip(sorted_groups, arrayEnumerate(sorted_groups))) AS p).1 AS sort_group,
-        ///        p.2 AS sort_rank
+        ///        [p.2] AS sort_rank
         /// FROM step1
         {
             SelectQueryBuilder builder;
@@ -123,22 +137,34 @@ namespace
             builder.select_list.push_back(makeASTFunction("tupleElement", array_join_expr, make_intrusive<ASTLiteral>(1u)));
             builder.select_list.back()->setAlias(ColumnNames::SortGroup);
 
-            builder.select_list.push_back(
-                makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("p"), make_intrusive<ASTLiteral>(2u)));
+            /// The rank is an array so that `or` can prefix it with the side a row comes from.
+            builder.select_list.push_back(makeASTFunction("array",
+                makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("p"), make_intrusive<ASTLiteral>(2u))));
             builder.select_list.back()->setAlias(ColumnNames::SortRank);
 
             context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), builder.getSelectQuery(), SQLSubqueryType::TABLE});
             query_piece.sort_rank_subquery = context.subqueries.back().name;
         }
+    }
 
-        /// The rest of the evaluation continues from the materialized vector grid.
-        {
-            SelectQueryBuilder builder;
-            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
-            builder.from_table = vector_grid;
-            query_piece.select_query = builder.getSelectQuery();
-        }
+    /// Makes `query` (which has a column `new_group`) the rank map of `query_piece`:
+    /// SELECT new_group AS sort_group, <rank> AS sort_rank FROM <query>
+    void setSortRankSubquery(SQLQueryPiece & query_piece, ASTPtr && query, ASTPtr && rank, ConverterContext & context)
+    {
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(query), SQLSubqueryType::TABLE});
+
+        SelectQueryBuilder builder;
+
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+        builder.select_list.back()->setAlias(ColumnNames::SortGroup);
+
+        builder.select_list.push_back(std::move(rank));
+        builder.select_list.back()->setAlias(ColumnNames::SortRank);
+
+        builder.from_table = context.subqueries.back().name;
+
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), builder.getSelectQuery(), SQLSubqueryType::TABLE});
+        query_piece.sort_rank_subquery = context.subqueries.back().name;
     }
 }
 
@@ -248,20 +274,111 @@ void rekeySortRankSubquery(
     /// Step 2:
     /// SELECT new_group AS sort_group, sort_rank
     /// FROM step1
+    setSortRankSubquery(query_piece, std::move(rekeying_query), make_intrusive<ASTIdentifier>(ColumnNames::SortRank), context);
+}
+
+void setVectorGridRankedBySource(
+    SQLQueryPiece & query_piece, ASTPtr && query, const String & source_rank_subquery, ConverterContext & context)
+{
+    String table = materializeVectorGrid(query_piece, std::move(query), context);
+
+    /// SELECT group AS new_group, sort_rank
+    /// FROM <result> ANY INNER JOIN <source_rank_subquery> ON sort_source = sort_group
+    SelectQueryBuilder builder;
+
+    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+    builder.select_list.back()->setAlias(ColumnNames::NewGroup);
+
+    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortRank));
+
+    builder.from_table = table;
+    builder.join_table = source_rank_subquery;
+    builder.join_kind = JoinKind::Inner;
+    builder.join_strictness = JoinStrictness::Any;
+    builder.join_on = makeASTFunction("equals",
+        make_intrusive<ASTIdentifier>(ColumnNames::SortSource),
+        make_intrusive<ASTIdentifier>(ColumnNames::SortGroup));
+
+    setSortRankSubquery(query_piece, builder.getSelectQuery(), make_intrusive<ASTIdentifier>(ColumnNames::SortRank), context);
+}
+
+void setOrResultWithSortRank(
+    SQLQueryPiece & query_piece,
+    ASTPtr && query,
+    const String & left_rank_subquery,
+    const String & right_rank_subquery,
+    ConverterContext & context)
+{
+    String table = materializeVectorGrid(query_piece, std::move(query), context);
+
+    /// Adds the rank of `key` in `rank_subquery` as column `alias`, or an empty rank if there is no rank map.
+    auto add_rank = [](SelectQueryBuilder & builder, const char * key, const String & rank_subquery, const char * alias)
+    {
+        if (rank_subquery.empty())
+        {
+            builder.select_list.push_back(make_intrusive<ASTLiteral>(Array{}));
+        }
+        else
+        {
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortRank));
+            builder.join_table = rank_subquery;
+            builder.join_kind = JoinKind::Left;
+            builder.join_strictness = JoinStrictness::Any;
+            builder.join_on = makeASTFunction("equals",
+                make_intrusive<ASTIdentifier>(key),
+                make_intrusive<ASTIdentifier>(ColumnNames::SortGroup));
+        }
+        builder.select_list.back()->setAlias(alias);
+    };
+
+    /// Step 1: add the left rank of each row.
+    ASTPtr step1_query;
+    {
+        SelectQueryBuilder builder;
+
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.select_list.back()->setAlias(ColumnNames::NewGroup);
+
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortFromRight));
+
+        builder.from_table = table;
+        add_rank(builder, ColumnNames::Group, left_rank_subquery, ColumnNames::SortLeftRank);
+
+        step1_query = builder.getSelectQuery();
+    }
+
+    /// Step 2: add the right rank of each row.
+    ASTPtr step2_query;
     {
         SelectQueryBuilder builder;
 
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-        builder.select_list.back()->setAlias(ColumnNames::SortGroup);
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortFromRight));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortLeftRank));
 
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortRank));
-
-        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(rekeying_query), SQLSubqueryType::TABLE});
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step1_query), SQLSubqueryType::TABLE});
         builder.from_table = context.subqueries.back().name;
+        add_rank(builder, ColumnNames::NewGroup, right_rank_subquery, ColumnNames::SortRightRank);
 
-        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), builder.getSelectQuery(), SQLSubqueryType::TABLE});
-        query_piece.sort_rank_subquery = context.subqueries.back().name;
+        step2_query = builder.getSelectQuery();
     }
+
+    /// Step 3: a left row ranks as [0, left rank...] and a right row as [1, right rank...], so right rows come last.
+    auto side_rank = [](UInt64 side, const char * rank)
+    {
+        return makeASTFunction("arrayConcat",
+            makeASTFunction("array", make_intrusive<ASTLiteral>(side)),
+            make_intrusive<ASTIdentifier>(rank));
+    };
+
+    setSortRankSubquery(
+        query_piece,
+        std::move(step2_query),
+        makeASTFunction("if",
+            make_intrusive<ASTIdentifier>(ColumnNames::SortFromRight),
+            side_rank(1, ColumnNames::SortRightRank),
+            side_rank(0, ColumnNames::SortLeftRank)),
+        context);
 }
 
 }

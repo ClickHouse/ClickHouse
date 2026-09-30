@@ -6,6 +6,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorSet.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applySortFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
 
@@ -35,6 +36,9 @@ SQLQueryPiece applyBinaryOperatorOr(
         res.node = operator_node;
         return res;
     }
+
+    /// Prometheus outputs the left rows in their order, then the right rows in theirs.
+    bool keep_sort_rank = !left_argument.sort_rank_subquery.empty() || !right_argument.sort_rank_subquery.empty();
 
     left_argument = toVectorGrid(std::move(left_argument), context);
     /// The left grid is read twice - by the per-group presence step (Step 1) and by the final merge join (Step 3) -
@@ -179,6 +183,16 @@ SQLQueryPiece applyBinaryOperatorOr(
             make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::Values})));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
+        /// A row comes from the right side if the left side has no value at the (only) step of an instant query.
+        if (keep_sort_rank)
+        {
+            builder.select_list.push_back(makeASTFunction(
+                "isNull",
+                makeASTFunction(
+                    "arrayElement", make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values}), make_intrusive<ASTLiteral>(1u))));
+            builder.select_list.back()->setAlias(ColumnNames::SortFromRight);
+        }
+
         /// If the left grid is not materialized (the setting `enable_materialized_cte` is disabled), it's evaluated
         /// here a second time, which is still correct because group ids are the same within one query.
         builder.from_table = left;
@@ -194,10 +208,11 @@ SQLQueryPiece applyBinaryOperatorOr(
         step3 = builder.getSelectQuery();
     }
 
-    /// `sort_rank_subquery` isn't carried over: the rank map of the left side has no ranks for the series
-    /// added from the right side, so an order fixed by an inner sort*() call is dropped.
     SQLQueryPiece res{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::VECTOR_GRID};
-    res.select_query = std::move(step3);
+    if (keep_sort_rank)
+        setOrResultWithSortRank(res, std::move(step3), left_argument.sort_rank_subquery, right_argument.sort_rank_subquery, context);
+    else
+        res.select_query = std::move(step3);
     res.metric_name_dropped = left_argument.metric_name_dropped && right_argument.metric_name_dropped;
 
     res.start_time = left_argument.start_time;

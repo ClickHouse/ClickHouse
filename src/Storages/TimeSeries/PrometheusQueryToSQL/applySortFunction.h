@@ -23,4 +23,18 @@ SQLQueryPiece applySortFunction(
 /// `transform_group` must build the same group-changing expression the transform applied to the data.
 void rekeySortRankSubquery(
     SQLQueryPiece & query_piece, const std::function<ASTPtr(ASTPtr)> & transform_group, ConverterContext & context);
+
+/// Makes `query` (a vector grid with a column `sort_source`) the value of `query_piece`,
+/// ordering each row as its `sort_source` series is ordered in `source_rank_subquery`.
+void setVectorGridRankedBySource(
+    SQLQueryPiece & query_piece, ASTPtr && query, const String & source_rank_subquery, ConverterContext & context);
+
+/// Makes `query` (an `or` result with a column `sort_from_right`) the value of `query_piece`,
+/// keeping the order of the left rows and putting the right rows after them in their own order.
+void setOrResultWithSortRank(
+    SQLQueryPiece & query_piece,
+    ASTPtr && query,
+    const String & left_rank_subquery,
+    const String & right_rank_subquery,
+    ConverterContext & context);
 }

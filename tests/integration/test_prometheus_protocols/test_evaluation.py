@@ -3572,6 +3572,98 @@ def test_sort_functions():
         ],
     )
 
+    # Binary operators between vectors keep the order of the left side (of the right side for group_right),
+    # and `or` puts the series added from the right side after the left ones, as Prometheus does.
+    do_query_test(
+        "sort_desc(http_errors) == http_errors",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}, {"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+        ],
+    )
+
+    do_query_test(
+        "sort(http_errors) + http_errors",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"http_code": "401"}, "value": [200, "8"]}, {"metric": {"http_code": "404"}, "value": [200, "10"]}]}',
+        [
+            ["[('http_code','401')]", "1970-01-01 00:03:20.000", 8],
+            ["[('http_code','404')]", "1970-01-01 00:03:20.000", 10],
+        ],
+    )
+
+    do_query_test(
+        "sort_desc(http_errors) * on(http_code) group_left http_errors",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"http_code": "404"}, "value": [200, "25"]}, {"metric": {"http_code": "401"}, "value": [200, "16"]}]}',
+        [
+            ["[('http_code','404')]", "1970-01-01 00:03:20.000", 25],
+            ["[('http_code','401')]", "1970-01-01 00:03:20.000", 16],
+        ],
+    )
+
+    do_query_test(
+        "http_errors * on(http_code) group_right sort(http_errors)",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"http_code": "401"}, "value": [200, "16"]}, {"metric": {"http_code": "404"}, "value": [200, "25"]}]}',
+        [
+            ["[('http_code','401')]", "1970-01-01 00:03:20.000", 16],
+            ["[('http_code','404')]", "1970-01-01 00:03:20.000", 25],
+        ],
+    )
+
+    do_query_test(
+        "sort_desc(http_errors) and http_errors",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}, {"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+        ],
+    )
+
+    do_query_test(
+        "sort(http_errors) or http_errors",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}, {"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+        ],
+    )
+
+    do_query_test(
+        "sort(http_errors) > 4 or http_errors",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}, {"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+        ],
+    )
+
+    do_query_test(
+        "sort_desc(http_errors) < 5 or http_errors",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}, {"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+        ],
+    )
+
+    do_query_test(
+        'http_errors{http_code="404"} or sort(http_errors)',
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}, {"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+        ],
+    )
+
     # Functions making new series drop the order fixed by an inner sort call instead of losing the series.
     do_query_test(
         'count_values("value", sort(http_errors{http_code="401"}))',

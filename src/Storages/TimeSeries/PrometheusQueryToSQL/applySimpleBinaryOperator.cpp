@@ -7,6 +7,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applySortFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
@@ -93,6 +94,9 @@ namespace
         bool group_left = operator_node->group_left;
         bool group_right = operator_node->group_right;
         const auto & extra_labels = operator_node->extra_labels;
+
+        /// Prometheus keeps the order of the left side, or of the right side for group_right.
+        String sort_rank_subquery = group_right ? right_argument.sort_rank_subquery : left_argument.sort_rank_subquery;
 
         /// Step 1:
         /// new_left:
@@ -350,6 +354,15 @@ namespace
             builder.select_list.push_back(std::move(values));
             builder.select_list.back()->setAlias(ColumnNames::Values);
 
+            if (!sort_rank_subquery.empty())
+            {
+                ASTPtr sort_source = make_intrusive<ASTIdentifier>(Strings{group_right ? right : left, ColumnNames::OriginalGroup});
+                if (check_no_duplicate_groups)
+                    sort_source = makeASTFunction("any", std::move(sort_source));
+                builder.select_list.push_back(std::move(sort_source));
+                builder.select_list.back()->setAlias(ColumnNames::SortSource);
+            }
+
             builder.from_table = left;
 
             builder.join_kind = join_kind;
@@ -377,11 +390,12 @@ namespace
             result_ast = builder.getSelectQuery();
         }
 
-        /// `sort_rank_subquery` isn't carried over: vector matching changes the series ids (`on`, `ignoring`,
-        /// `group_left`, `group_right`, dropping the metric name), so an order fixed by an inner sort*() call is dropped.
         SQLQueryPiece res{operator_node, operator_node->result_type, StoreMethod::VECTOR_GRID};
 
-        res.select_query = std::move(result_ast);
+        if (sort_rank_subquery.empty())
+            res.select_query = std::move(result_ast);
+        else
+            setVectorGridRankedBySource(res, std::move(result_ast), sort_rank_subquery, context);
         res.start_time = left_argument.start_time;
         res.end_time = left_argument.end_time;
         res.step = left_argument.step;
