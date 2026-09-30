@@ -80,6 +80,16 @@ value	String
 SELECT * FROM dictionary('d')
 1	a
 LOADED
+NOT_LOADED
+SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id ORDER BY n.number SETTINGS join_algorithm = 'direct', enable_analyzer = 1
+0	
+1	a
+LOADED
+NOT_LOADED
+SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id ORDER BY n.number SETTINGS join_algorithm = 'direct', enable_analyzer = 0
+0	
+1	a
+LOADED
 --- dictGet
 NOT_LOADED
 SELECT dictGet('d', 'value', toUInt64(1))

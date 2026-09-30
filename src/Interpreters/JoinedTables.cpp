@@ -3,13 +3,14 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getTableExpressions.h>
-#include <Functions/FunctionsExternalDictionaries.h>
+#include <Dictionaries/IDictionary.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -281,26 +282,12 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
             }
 
             auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage);
-            /// This runs even if the right table is not read, e.g. for `CREATE VIEW`, so the access must be checked here.
-            if (storage_dict && try_use_direct_join && storage_dict->getDictionary(context)->getSpecialKeyType() != DictionarySpecialKeyType::Range)
+            if (storage_dict && try_use_direct_join)
             {
-                FunctionDictHelper dictionary_helper(context);
-
-                auto dictionary_name = storage_dict->getDictionaryName();
-                auto dictionary = dictionary_helper.getDictionary(dictionary_name);
-                if (!dictionary)
-                {
-                    LOG_TRACE(getLogger("JoinedTables"), "Can't use dictionary join: dictionary '{}' was not found", dictionary_name);
-                    return nullptr;
-                }
-                if (dictionary->getSpecialKeyType() == DictionarySpecialKeyType::Range)
-                {
-                    LOG_TRACE(getLogger("JoinedTables"), "Can't use dictionary join: dictionary '{}' is a range dictionary", dictionary_name);
-                    return nullptr;
-                }
-
-                auto dictionary_kv = std::dynamic_pointer_cast<const IKeyValueEntity>(dictionary);
-                table_join->setStorageJoin(dictionary_kv);
+                /// This runs even if the right table is not read, e.g. for `CREATE VIEW`, so the access must be checked here.
+                auto dictionary = storage_dict->getDictionary(context);
+                if (dictionary->getSpecialKeyType() != DictionarySpecialKeyType::Range)
+                    table_join->setStorageJoin(std::dynamic_pointer_cast<const IKeyValueEntity>(dictionary));
             }
 
             if (auto storage_kv = std::dynamic_pointer_cast<IKeyValueEntity>(storage); storage_kv && try_use_direct_join)

@@ -117,6 +117,13 @@ status
 as_user "DESCRIBE TABLE dictionary('d')"
 as_user "SELECT * FROM dictionary('d')"
 status
+# The same rule applies to a direct join against a Dictionary table, with both analyzers.
+for analyzer in 1 0
+do
+    unload
+    as_user "SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id ORDER BY n.number SETTINGS join_algorithm = 'direct', enable_analyzer = ${analyzer}"
+    status
+done
 
 echo "--- dictGet"
 ${CLICKHOUSE_CLIENT} -m --query "
