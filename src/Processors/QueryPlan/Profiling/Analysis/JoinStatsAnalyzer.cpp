@@ -1,7 +1,7 @@
-#include <Processors/QueryPlan/JoinStatsAnalyzer.h>
+#include <Processors/QueryPlan/Profiling/Analysis/JoinStatsAnalyzer.h>
 #include <Processors/QueryPlan/JoinEstimation.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
-#include <Processors/QueryPlan/StepStatsAnalyzer.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Analysis/StepStatsAnalyzer.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/IJoin.h>

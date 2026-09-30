@@ -1,8 +1,8 @@
 #pragma once
 
 #include <vector>
-#include <Processors/Executors/WorkInterval.h>
-#include <Processors/QueryPlan/TimeIntervals.h>
+#include <Processors/QueryPlan/Profiling/Execution/WorkInterval.h>
+#include <Processors/QueryPlan/Profiling/Time/TimeIntervals.h>
 #include <base/types.h>
 
 namespace DB
