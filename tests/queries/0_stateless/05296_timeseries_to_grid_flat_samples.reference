@@ -12,6 +12,8 @@ duplicate timestamps (1 1 1):
 1	1	1
 merge of states (1 1 1 1):
 1	1	1	1
+many merged states (1 1 1):
+1	1	1
 many series in one state (1 1):
 1	1
 serialized unsorted state (1):

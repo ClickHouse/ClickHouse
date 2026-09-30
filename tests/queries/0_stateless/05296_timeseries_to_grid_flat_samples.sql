@@ -54,7 +54,7 @@ FROM
 )
 SETTINGS max_threads = 1;
 
--- Interleaved partial states need a real merge; halves in reverse order take the prepend path.
+-- Interleaved partial states need a real merge; halves in reverse order arrive out of order.
 SELECT 'merge of states (1 1 1 1):';
 SELECT
     (SELECT timeSeriesRateToGridMerge(100, 400, 20, 60)(s) FROM (SELECT timeSeriesRateToGridState(100, 400, 20, 60)(ts, v) AS s FROM ts_flat GROUP BY k % 3))
@@ -65,6 +65,15 @@ SELECT
         = (SELECT timeSeriesDeltaToGrid(100, 400, 20, 10)(ts, v) FROM ts_flat),
     (SELECT timeSeriesRateToGridMerge(100, 400, 20, 60)(s) FROM (SELECT timeSeriesRateToGridState(100, 400, 20, 60)(ts, v) AS s FROM ts_flat GROUP BY k < 20 ORDER BY k < 20))
         = (SELECT timeSeriesRateToGrid(100, 400, 20, 60)(ts, v) FROM ts_flat)
+SETTINGS max_threads = 1;
+
+-- 2000 partial states merged newest first, in a shuffled order and interleaved must match one pass over the samples.
+SELECT 'many merged states (1 1 1):';
+WITH (SELECT timeSeriesRateToGrid(0, 20000, 100, 300)(toDateTime64(number, 3, 'UTC'), (number % 1000)::Float64) FROM numbers(20000)) AS expected
+SELECT
+    (SELECT timeSeriesRateToGridMerge(0, 20000, 100, 300)(s) FROM (SELECT intDiv(number, 10) AS c, timeSeriesRateToGridState(0, 20000, 100, 300)(toDateTime64(number, 3, 'UTC'), (number % 1000)::Float64) AS s FROM numbers(20000) GROUP BY c ORDER BY c DESC)) = expected,
+    (SELECT timeSeriesRateToGridMerge(0, 20000, 100, 300)(s) FROM (SELECT intDiv(number, 10) AS c, timeSeriesRateToGridState(0, 20000, 100, 300)(toDateTime64(number, 3, 'UTC'), (number % 1000)::Float64) AS s FROM numbers(20000) GROUP BY c ORDER BY cityHash64(c))) = expected,
+    (SELECT timeSeriesRateToGridMerge(0, 20000, 100, 300)(s) FROM (SELECT number % 2000 AS c, timeSeriesRateToGridState(0, 20000, 100, 300)(toDateTime64(number, 3, 'UTC'), (number % 1000)::Float64) AS s FROM numbers(20000) GROUP BY c ORDER BY c DESC)) = expected
 SETTINGS max_threads = 1;
 
 -- One state over 300 series with the same 310 timestamps: every timestamp arrives 300 times and the largest value must win.

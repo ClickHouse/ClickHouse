@@ -519,7 +519,7 @@ protected:
     }
 
     /// Walks the sorted samples of a flat state once and passes each bucket's run of them to the sliding aggregator.
-    void doInsertResultInto(AggregateDataPtr __restrict place, ResultWriter & writer) const requires (flat_samples)
+    void doInsertResultInto(AggregateDataPtr __restrict place, ResultWriter & writer) const requires flat_samples
     {
         writer.addRow();
 

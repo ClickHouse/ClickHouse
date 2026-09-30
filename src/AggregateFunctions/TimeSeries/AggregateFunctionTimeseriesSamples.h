@@ -100,6 +100,18 @@ public:
             return;
         }
 
+        if constexpr (compacting)
+        {
+            /// A whole state appends the samples and sorts them later, so a merge does not copy the whole buffer every time.
+            compactIfFull(other.buffer.size());
+            const size_t old_size = buffer.size();
+            const bool in_order = other.isSorted() && buffer.back().first < other.buffer.front().first;
+            buffer.insert(buffer.end(), other.buffer.begin(), other.buffer.end());
+            if (isSorted() && !in_order)
+                unsorted_begin = old_size;
+            return;
+        }
+
         sort();
 
         /// A rare unsorted argument is sorted into a copy: `other` belongs to another state and is kept intact.
