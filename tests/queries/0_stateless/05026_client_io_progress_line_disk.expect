@@ -48,7 +48,8 @@ expect ":) "
 
 # A direct-IO read bypasses the page cache, so OSReadBytes increments regardless of cache warmth,
 # and the local read throttle paces it so the meter has several ProfileEvents packets to warm up on.
-send -- "SELECT * FROM client_io_progress_disk FORMAT Null SETTINGS local_filesystem_read_method = 'pread_threadpool', min_bytes_to_use_direct_io = 1, use_uncompressed_cache = 0, max_local_read_bandwidth = 10000000\r"
+# The range-splitting injection may read the parts one by one, which reports the row total too late for the bar.
+send -- "SELECT * FROM client_io_progress_disk FORMAT Null SETTINGS local_filesystem_read_method = 'pread_threadpool', min_bytes_to_use_direct_io = 1, use_uncompressed_cache = 0, max_local_read_bandwidth = 10000000, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0\r"
 expect -re {[0-9.]+ [MGT]B/s IO}
 expect "rows in set."
 expect ":) "
