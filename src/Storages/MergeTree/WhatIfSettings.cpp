@@ -44,7 +44,7 @@ WhatIfSettings WhatIfSettings::fromAST(const ASTPtr & settings_ast)
 
             result.empirical = value != 0;
         }
-        else if (change.name == "max_rows_to_scan")
+        else if (change.name == "projection_scan_budget_rows")
         {
             if (change.value.getType() != Field::Types::UInt64)
                 throw Exception(
@@ -52,13 +52,13 @@ WhatIfSettings WhatIfSettings::fromAST(const ASTPtr & settings_ast)
                     "Invalid type {} for setting '{}' in EXPLAIN WHATIF, expected a non-negative integer",
                     change.value.getTypeName(),
                     change.name);
-            result.max_rows_to_scan = change.value.safeGet<UInt64>();
+            result.projection_scan_budget_rows = change.value.safeGet<UInt64>();
         }
         else
         {
             throw Exception(
                 ErrorCodes::UNKNOWN_SETTING,
-                "Unknown setting \"{}\" for EXPLAIN WHATIF query. Supported settings: empirical, max_rows_to_scan",
+                "Unknown setting \"{}\" for EXPLAIN WHATIF query. Supported settings: empirical, projection_scan_budget_rows",
                 change.name);
         }
     }

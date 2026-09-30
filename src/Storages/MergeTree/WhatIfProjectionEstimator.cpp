@@ -606,7 +606,7 @@ bool tryEstimateProjection(
     ReadFromMergeTree * read_step,
     const RangesInDataParts & baseline_parts,
     UInt64 baseline_marks,
-    UInt64 max_rows_to_scan,
+    UInt64 projection_scan_budget_rows,
     const ContextPtr & context)
 {
     const auto & data = read_step->getMergeTreeData();
@@ -628,7 +628,7 @@ bool tryEstimateProjection(
         rows_to_scan += part_with_ranges.data_part->rows_count;
         marks_to_scan += part_with_ranges.data_part->index_granularity->getMarksCountWithoutFinal();
     }
-    UInt64 budget = max_rows_to_scan;
+    UInt64 budget = projection_scan_budget_rows;
     if (const UInt64 read_limit = query_settings[Setting::max_rows_to_read]; read_limit != 0)
         budget = budget == 0 ? read_limit : std::min(budget, read_limit);
     size_t sample_step = budget != 0 && rows_to_scan > budget ? (rows_to_scan + budget - 1) / budget : 1;
@@ -642,7 +642,8 @@ bool tryEstimateProjection(
     if (sample_step > 1 && (part_offset_condition || total_offset_condition))
     {
         result.empirical_unsupported_reason
-            = "The query filters on part offsets, which an estimate from a sample of granules cannot follow (see max_rows_to_scan)";
+            = "The query filters on part offsets, which an estimate from a sample of granules cannot follow "
+              "(see projection_scan_budget_rows)";
         return false;
     }
 
@@ -1023,7 +1024,7 @@ WhatIfCandidateResult evaluateProjection(
     {
         if (tryEstimateProjection(
                 result, *projection, key_condition ? &*key_condition : nullptr, part_offset_condition, total_offset_condition,
-                sort_help, read_step, baseline_parts, analysis.selected_marks, settings.max_rows_to_scan, context))
+                sort_help, read_step, baseline_parts, analysis.selected_marks, settings.projection_scan_budget_rows, context))
             return result;
         result.empirical_status = WhatIfCandidateResult::Unsupported;
     }

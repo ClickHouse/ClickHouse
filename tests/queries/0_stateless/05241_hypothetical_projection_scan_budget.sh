@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# past max_rows_to_scan the estimate reads a sample of granules and models each part from it; the twin
+# past projection_scan_budget_rows the estimate reads a sample of granules and models each part from it; the twin
 # table with the projections materialized is the ground truth the sampled span has to contain
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -45,18 +45,18 @@ check()
 }
 
 echo "--- the whole part is read when it fits the budget, and the estimate is exact ---"
-check p_b b "b < 100" "max_rows_to_scan = 0"
+check p_b b "b < 100" "projection_scan_budget_rows = 0"
 
 echo "--- a key spread over the parent order, sampled ---"
-check p_b b "b < 100" "max_rows_to_scan = 5000"
-check p_b b "b = 7" "max_rows_to_scan = 5000"
+check p_b b "b < 100" "projection_scan_budget_rows = 5000"
+check p_b b "b = 7" "projection_scan_budget_rows = 5000"
 
 echo "--- a key that follows the parent order, sampled ---"
-check p_c c "c >= 100 AND c < 110" "max_rows_to_scan = 5000"
-check p_c c "c = 42" "max_rows_to_scan = 5000"
+check p_c c "c >= 100 AND c < 110" "projection_scan_budget_rows = 5000"
+check p_c c "c = 42" "projection_scan_budget_rows = 5000"
 
 echo "--- a key that repeats along the parent order, sampled ---"
-check p_d d "d < 300" "max_rows_to_scan = 5000"
+check p_d d "d < 300" "projection_scan_budget_rows = 5000"
 
 # the query is pruned under the limit while the estimate needs the whole part: a read limit used to end
 # the estimate there, now it only lowers the budget
@@ -80,12 +80,12 @@ $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_scan_59 AS t_scan;
     INSERT INTO t_scan_59 SELECT number, cityHash64(number) % 1000, intDiv(number, 100), number % 1000 FROM numbers(5900);
     CREATE HYPOTHETICAL PROJECTION p_b ON t_scan_59 (SELECT a, b, c, d ORDER BY b);
-    EXPLAIN WHATIF max_rows_to_scan = 1000 SELECT count() FROM t_scan_59 WHERE a < 1000 AND b < 100 SETTINGS ${PIN}, max_rows_to_read = 3000;
+    EXPLAIN WHATIF projection_scan_budget_rows = 1000 SELECT count() FROM t_scan_59 WHERE a < 1000 AND b < 100 SETTINGS ${PIN}, max_rows_to_read = 3000;
 " | grep -E '^\s+(empirical_status|sampled_marks):' | awk '{$1=$1; print}'
 
 # a sample's row offsets are not the part's, so an offset filter leaves the estimate unsupported
 echo "--- an offset filter on a sampled estimate ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_b ON t_scan (SELECT a, b, c, d ORDER BY b);
-    EXPLAIN WHATIF max_rows_to_scan = 5000 SELECT count() FROM t_scan WHERE b < 100 AND _part_offset < 10000 SETTINGS ${PIN};
+    EXPLAIN WHATIF projection_scan_budget_rows = 5000 SELECT count() FROM t_scan WHERE b < 100 AND _part_offset < 10000 SETTINGS ${PIN};
 " | grep -E '^\s+(status|empirical_status):' | awk '{$1=$1; print}'
