@@ -1229,9 +1229,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 /// set serving requests to avoid elections on timeout
                 raft_instance->setServingRequest(true);
                 SCOPE_EXIT(raft_instance->setServingRequest(false));
-                /// Everything on disk is committed (snapshot install, or a divergent tail rolled back), so
-                /// only a request carrying entries can end the replay -- hence the pause condition excludes
-                /// this state. A running commit is excluded: it preprocesses what it commits and finishes here.
+                /// maybe we got snapshot installed
                 if (state_machine->last_commit_index() >= last_log_idx_on_disk && !raft_instance->isCommitInProgress())
                 {
                     LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: preprocessing logs");
