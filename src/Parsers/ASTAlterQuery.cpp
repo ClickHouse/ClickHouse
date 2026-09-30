@@ -1,4 +1,5 @@
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTBackupQuery.h>
 
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <IO/Operators.h>
@@ -890,7 +891,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         if (snapshot_desc != nullptr)
         {
             ostr << " FROM ";
-            snapshot_desc->format(ostr, settings, state, frame);
+            formatBackupOrSnapshotLocator(*snapshot_desc, ostr, settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::ADD_CONSTRAINT)

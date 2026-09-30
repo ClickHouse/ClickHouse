@@ -527,7 +527,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 {
     frame.expression_list_prepend_whitespace = false;
     auto kind = getKind();
-    if (kind == Kind::CODEC || kind == Kind::STATISTICS || kind == Kind::BACKUP_NAME)
+    if (kind == Kind::CODEC || kind == Kind::STATISTICS)
         frame.allow_operators = false;
     FormatStateStacked nested_need_parens = frame;
     FormatStateStacked nested_dont_need_parens = frame;

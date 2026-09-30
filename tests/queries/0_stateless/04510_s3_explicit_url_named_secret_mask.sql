@@ -170,7 +170,7 @@ SELECT * FROM s3('https://user:SEKRIT_PW@localhost:11111/x/o''clock?X-Amz-Signat
 SELECT * FROM s3(concat('https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=', 'SEKRIT_SIG'),
                  'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
--- Same for BACKUP and the Backup database reconstructor.
+-- Same for `BACKUP` and the `Backup` database engine.
 BACKUP TABLE nonexistent_04510 TO S3('https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=SEKRIT_SIG',
                  'ak', 'SEKRIT_SAK'); -- { serverError BAD_ARGUMENTS }
 CREATE DATABASE db_04510_authurl ENGINE = Backup('', S3('https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=SEKRIT_SIG',
@@ -366,41 +366,40 @@ CREATE TABLE t_04510_azte7 (x UInt8) ENGINE = AzureBlobStorage('http://localhost
 CREATE TABLE t_04510_azte8 (x UInt8) ENGINE = AzureQueue('http://localhost:11111/visible_04510_teq/cont/*',
                  'SEKRIT_AZTESAS2') SETTINGS mode = 'unordered'; -- { serverError UNKNOWN_FORMAT }
 
--- Backup database engine reconstructs the nested S3 destination; extra_credentials must be masked.
+-- The `Backup` database engine's nested `S3` destination must mask `extra_credentials`.
 CREATE DATABASE db_04510_ec ENGINE = Backup('', S3('url_dbec', 'ak', 'SEKRIT_SAK',
                  extra_credentials(external_id = 'SEKRIT_EID'))); -- { serverError BAD_ARGUMENTS }
 
--- The reconstructor must fail closed on an invalid extra positional argument (a session token).
+-- The locator rule must fail closed on an invalid extra positional argument (a session token).
 CREATE DATABASE db_04510_postok ENGINE = Backup('', S3('url_dbpostok', 'ak', 'SEKRIT_SAK',
                  'SEKRIT_DBTOK')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
--- Named-collection locator in the reconstructor: the filename stays visible, but a second positional
+-- In a named-collection locator, the filename stays visible, but a second positional
 -- is invalid and must be masked.
 CREATE DATABASE db_04510_ncpos ENGINE = Backup('', S3(nc_dbnc_missing, 'visible_dbnc_dir',
                  'SEKRIT_DBNCPOS')); -- { serverError BAD_ARGUMENTS }
 
--- The reconstructor also keeps the filename visible when it follows a named override.
+-- The locator formatter also keeps the filename visible when it follows a named override.
 CREATE DATABASE db_04510_ncorder ENGINE = Backup('', S3(nc_dbord_missing,
                  secret_access_key = 'SEKRIT_DBORD', 'visible_dbnc_dir2')); -- { serverError BAD_ARGUMENTS }
 
--- Non-string scalar overrides are valid and non-secret; the reconstructor keeps them visible.
+-- Non-string scalar overrides are valid and non-secret; the locator formatter keeps them visible.
 CREATE DATABASE db_04510_ncenv ENGINE = Backup('', S3(nc_dbenv_missing,
                  secret_access_key = 'SEKRIT_DBENVKEY', use_environment_credentials = 1)); -- { serverError BAD_ARGUMENTS }
 
--- A non-secret named value that is an expression (a computed filename, or a nested headers() /
--- extra_credentials() map) is accepted by the backup named-collection path, which the parser evaluates
--- as a constant. The reconstructor cannot classify it and its formatted text would carry any nested
--- secret verbatim, so it fails closed to [HIDDEN] rather than leak.
+-- A non-secret named value that is an expression (a computed filename, or a nested `headers` /
+-- `extra_credentials` map) is accepted by the backup named-collection path, which the parser evaluates
+-- as a constant. The masking rule cannot classify its formatted text, so it hides the value.
 CREATE DATABASE db_04510_ncexpr ENGINE = Backup('', S3(nc_dbexpr_missing,
                  secret_access_key = 'SEKRIT_DBEXPRKEY',
                  filename = headers('Authorization' = 'SEKRIT_NESTEDHDR'))); -- { serverError BAD_ARGUMENTS }
 
--- The reconstructor masks everything after the url on an invalid positional count too.
+-- The locator rule masks everything after the url on an invalid positional count too.
 CREATE DATABASE db_04510_mixed ENGINE = Backup('', S3('url_dbmixed',
                  access_key_id = 'ak', 'SEKRIT_DBMIX')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
--- A url override built from an expression can embed credentials in its pieces; the reconstructor
--- must hide it even when it is the only secret-bearing argument.
+-- A `url` override built from an expression can embed credentials in its pieces; the locator rule
+-- hides it even when it is the only secret-bearing argument.
 CREATE DATABASE db_04510_ncurl ENGINE = Backup('', S3(nc_dburl_missing,
                  url = concat('https://user:SEKRIT_PW@', 'localhost/x?X-Amz-Signature=SEKRIT_SIG'))); -- { serverError BAD_ARGUMENTS }
 
@@ -410,7 +409,8 @@ CREATE DATABASE db_04510_ncurl ENGINE = Backup('', S3(nc_dburl_missing,
 CREATE DATABASE db_04510_hdr ENGINE = Backup('', S3('url_dbhdr', 'ak', 'SEKRIT_SAK',
                  headers('X-Auth' = 'SEKRIT_DBHDR'))); -- { serverError BAD_ARGUMENTS }
 
--- The reconstructor must also fail closed on a constant-expression extra_credentials key.
+-- A computed key in `extra_credentials` would be printed by the ordinary formatter, so the
+-- backup locator hides that map while keeping the safe positional arguments visible.
 CREATE DATABASE db_04510_expr ENGINE = Backup('', S3('url_dbexpr', 'ak', 'SEKRIT_SAK',
                  extra_credentials(concat('extern', 'al_id') = 'SEKRIT_EXPR'))); -- { serverError BAD_ARGUMENTS }
 
@@ -466,15 +466,15 @@ CREATE DATABASE db_04510_dvalid ENGINE = Backup('src_04510', Disk('backups', 'no
 CREATE DATABASE db_04510_eval ENGINE = Backup('', S3('http://localhost:11111/test/04510eval', 'ak', 'SEKRIT_SAK',
                  extra_credentials(external_id = toUInt64('SEKRIT_DBEVAL')))); -- { serverError BAD_ARGUMENTS }
 
--- A non-tail argument that is neither a literal nor `key = value` cannot be reconstructed either. It
+-- A non-tail argument that is neither a literal nor `key = value` cannot be shown safely. It
 -- is rejected by a different message than the quoted locator above, and that message used to echo the
 -- offending argument verbatim, so it needs its own tag.
 CREATE DATABASE db_04510_nonlit ENGINE = Backup('', S3(concat('SEKRIT_NONLIT', 'x'),
                  'url_dbnonlit')); -- { serverError BAD_ARGUMENTS }
 
--- S3 is not the only backup engine whose locator carries credentials: AzureBlobStorage takes an
--- account_key and accepts connection strings and named-collection overrides that carry one too.
--- Only S3 is reconstructed above, so an Azure locator keeps its engine name and argument count
+-- `S3` is not the only backup engine whose locator carries credentials: `AzureBlobStorage` takes an
+-- `account_key` and accepts connection strings and named-collection overrides that carry one too.
+-- Only `S3` has a locator-specific rule above, so an Azure locator keeps its engine name and argument count
 -- (neither is a secret) and every argument is hidden. The url carries a query string, which the
 -- engine rejects before it reaches the network.
 CREATE DATABASE db_04510_azure ENGINE = Backup('', AzureBlobStorage('http://localhost:11111/acct?sig=x',
@@ -538,7 +538,7 @@ ORDER BY event_time_microseconds;
 -- logs each DDL from the replay worker, which re-masks a rewritten AST independently, so assert
 -- the masking property over every row this test produced, replay rows included. count() > 0 keeps
 -- an empty row set from passing vacuously.
--- The third column covers the recorded exception messages of the seven unreconstructible-locator
+-- The third column covers the recorded exception messages of the seven unsafe-locator
 -- statements above, whose rejections used to echo the locator verbatim - one tag per message, since
 -- they are thrown at different sites. It is scoped to those tags because widening it to every
 -- deliberately-failing statement here would report unrelated pre-existing echoes.

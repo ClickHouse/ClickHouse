@@ -17,6 +17,20 @@
 
 namespace DB
 {
+void formatBackupOrSnapshotLocator(
+    const IAST & locator, WriteBuffer & ostr, const IAST::FormatSettings & settings,
+    IAST::FormatState & state, IAST::FormatStateStacked frame)
+{
+    frame.allow_operators = false;
+    locator.format(ostr, settings, state, frame);
+}
+
+void formatBackupOrSnapshotLocator(const IAST & locator, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+{
+    IAST::FormatState state;
+    formatBackupOrSnapshotLocator(locator, ostr, settings, state, {});
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -210,7 +224,7 @@ namespace
         if (base_backup_name)
         {
             ostr << "base_backup = ";
-            base_backup_name->format(ostr, format);
+            formatBackupOrSnapshotLocator(*base_backup_name, ostr, format);
             empty = false;
         }
 
@@ -436,7 +450,7 @@ void ASTBackupQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     {
         /// BACKUP FROM SNAPSHOT <snapshot_name> [ON CLUSTER ...] TO <backup_name>
         ostr << "FROM SNAPSHOT ";
-        base_snapshot_name->format(ostr, fs);
+        formatBackupOrSnapshotLocator(*base_snapshot_name, ostr, fs);
     }
     else
     {
@@ -446,7 +460,7 @@ void ASTBackupQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     formatOnCluster(ostr, fs);
 
     ostr << ((kind == Kind::BACKUP) ? " TO " : " FROM ");
-    backup_name->format(ostr, fs);
+    formatBackupOrSnapshotLocator(*backup_name, ostr, fs);
 
     if (settings || base_backup_name || cluster_host_ids)
         formatSettings(settings, base_backup_name, cluster_host_ids, ostr, fs);

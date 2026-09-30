@@ -27,7 +27,7 @@ public:
         virtual bool isIdentifier() const = 0;
         virtual bool tryGetString(String * res, bool allow_identifier) const = 0;
         /// The exact literal text of any scalar literal (`1`, `true`, `1.5`), with strings quoted.
-        /// Lets a reconstructor keep non-string values like `use_environment_credentials = 1` visible.
+        /// Lets the masking rule keep non-string values like `use_environment_credentials = 1` visible.
         virtual bool tryGetLiteralText(String * res) const = 0;
     };
     class Arguments
@@ -194,6 +194,8 @@ protected:
     /// accepts, and therefore holds no credential. An engine that takes fewer rejects the rest only
     /// after the statement has been formatted for logging, so the count has to be checked here too.
     static bool isCredentialFreeBackupLocator(const AbstractFunction & function);
+    static bool isBinaryEquals(const AbstractFunction & argument);
+    static bool backupS3MapHasUnsafeVisibleArgument(const AbstractFunction & map);
 
     /// Hides every argument, for a shape whose valid slots cannot be established.
     void maskEveryArgument();
@@ -227,6 +229,7 @@ protected:
     void findDataLakeCatalogSecretArguments();
     void findBackupDatabaseSecretArguments();
     void findBackupNameSecretArguments();
+    void maskBackupS3VisibleArguments(const std::vector<size_t> & positional);
 
     /// A backup destination reads a different signature than the table engine of the same name, so the
     /// table-engine rule leaves an argument it does not model visible.

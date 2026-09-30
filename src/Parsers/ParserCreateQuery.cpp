@@ -741,8 +741,19 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 break;
 
             case EngineKind::DATABASE_ENGINE:
-                engine->as<ASTFunction &>().setKind(ASTFunction::Kind::DATABASE_ENGINE);
+            {
+                auto & database_engine = engine->as<ASTFunction &>();
+                database_engine.setKind(ASTFunction::Kind::DATABASE_ENGINE);
+                /// The finder rechecks this shape because a JSON AST can supply its own function kinds.
+                if (database_engine.name == "Backup" && database_engine.arguments && database_engine.arguments->children.size() == 2
+                    && database_engine.arguments->children[0]->as<ASTLiteral>())
+                {
+                    auto * locator = database_engine.arguments->children[1]->as<ASTFunction>();
+                    if (locator && locator->name == "S3")
+                        locator->setKind(ASTFunction::Kind::BACKUP_NAME);
+                }
                 break;
+            }
         }
     }
 

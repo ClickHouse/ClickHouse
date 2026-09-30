@@ -109,12 +109,30 @@ public:
             case ASTFunction::Kind::CODEC: break;
             case ASTFunction::Kind::STATISTICS: break;
             case ASTFunction::Kind::TABLE_ENGINE: findTableEngineSecretArguments(); break;
-            case ASTFunction::Kind::DATABASE_ENGINE: findDatabaseEngineSecretArguments(); break;
+            case ASTFunction::Kind::DATABASE_ENGINE:
+            {
+                if (!backupS3LocatorMasksItself(function_))
+                    findDatabaseEngineSecretArguments();
+                break;
+            }
             case ASTFunction::Kind::BACKUP_NAME: findBackupNameSecretArguments(); break;
         }
     }
 
     FunctionSecretArgumentsFinder::Result getResult() const { return result; }
+
+private:
+    static bool backupS3LocatorMasksItself(const ASTFunction & database_engine)
+    {
+        if (database_engine.name != "Backup" || database_engine.arguments->children.size() != 2
+            || !database_engine.arguments->children[0]->as<ASTLiteral>())
+            return false;
+
+        const auto * locator = database_engine.arguments->children[1]->as<ASTFunction>();
+        return locator && locator->name == "S3" && locator->getKind() == ASTFunction::Kind::BACKUP_NAME
+            && !locator->parameters && locator->tryGetAlias().empty() && !locator->isWindowFunction()
+            && locator->getNullsAction() == NullsAction::EMPTY;
+    }
 };
 
 

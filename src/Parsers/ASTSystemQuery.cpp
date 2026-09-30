@@ -5,6 +5,7 @@
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Poco/String.h>
@@ -398,7 +399,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             if (backup_source)
             {
                 print_keyword(" FROM ");
-                backup_source->format(ostr, settings);
+                formatBackupOrSnapshotLocator(*backup_source, ostr, settings);
             }
             break;
         }
