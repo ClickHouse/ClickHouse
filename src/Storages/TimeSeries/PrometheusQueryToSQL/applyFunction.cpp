@@ -35,7 +35,7 @@ namespace
     constexpr std::string_view not_implemented_functions[] = {
         "double_exponential_smoothing", "histogram_avg", "histogram_count", "histogram_fraction", "histogram_quantiles",
         "histogram_stddev", "histogram_stdvar", "histogram_sum", "info", "integral", "limit_ratio", "range", "sort",
-        "sort_by_label", "sort_by_label_desc", "sort_desc", "start_timestamp", "step", "timestamp"};
+        "sort_by_label", "sort_by_label_desc", "sort_desc", "start_timestamp", "step"};
 }
 
 SQLQueryPiece applyFunction(
