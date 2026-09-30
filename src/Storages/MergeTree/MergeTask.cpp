@@ -61,6 +61,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
+#include <Common/ThreadStatus.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
@@ -1318,6 +1319,20 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         return false;
     };
+
+    /// Lets the worker threads of long single-block steps (e.g. vector similarity index build) stop on cancellation.
+    /// Captures the blocker, not `merge_list_element_ptr`: the thread group it owns would otherwise hold a reference cycle.
+    auto merge_cancelled = [merges_blocker = global_ctx->merges_blocker, partition_id = global_ctx->future_part->part_info.getPartitionId()]
+    {
+        return merges_blocker->isCancelledForPartition(partition_id);
+    };
+    global_ctx->merge_list_element_ptr->thread_group->setQueryCancellationPredicates(
+        merge_cancelled,
+        [merge_cancelled]
+        {
+            if (merge_cancelled())
+                throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+        });
 
     /// This is the end of preparation. Execution will be per block.
     return false;
