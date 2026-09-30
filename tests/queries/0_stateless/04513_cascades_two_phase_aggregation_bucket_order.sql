@@ -1,6 +1,3 @@
--- Tags: no-darwin, no-old-analyzer
--- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
--- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 
 -- The memory-efficient distributed merge expects every input to deliver two-level buckets in
 -- ascending order, so the two-phase split makes the partial step emit them that way.  Without

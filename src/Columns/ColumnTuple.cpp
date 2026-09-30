@@ -1072,4 +1072,14 @@ bool ColumnTuple::isFinalized() const
     return std::all_of(columns.begin(), columns.end(), [](const auto & column) { return column->isFinalized(); });
 }
 
+ColumnPlanes ColumnTuple::getPlanes() const
+{
+    /// An element-less tuple keeps only a row count, so its rows have no planes.
+    if (columns.empty())
+        return ColumnPlanes(ColumnPlanes::Shape::Rows, this);
+    ColumnPlanes planes(ColumnPlanes::Shape::Tuple);
+    for (const auto & column : columns)
+        planes.children.push_back(column.get());
+    return planes;
+}
 }

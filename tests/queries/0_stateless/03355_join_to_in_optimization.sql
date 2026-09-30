@@ -100,3 +100,43 @@ ON (a.query_id = b.query_id) AND (a.query_id = b.query_id)
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 FORMAT Null
 SETTINGS query_plan_convert_join_to_in = true;
+
+-- Coverage for convertJoinToIn.cpp: five guard conditions that block join-to-IN conversion
+-- (lines 152-154 non-hash algo, 159-160 semi strictness, 163-164 non-inner kind,
+-- 175-176 null-safe equality, 190-191 right-table output column).
+
+-- Baseline: inner hash + equality + left-only output -> optimization fires (CreatingSets node present).
+SELECT countIf(explain LIKE '%CreatingSets%') >= 1 AS baseline_converts
+FROM (EXPLAIN description = 0
+    SELECT t1.a FROM (SELECT 1::UInt64 AS a) t1 INNER JOIN (SELECT 1::UInt64 AS a) t2 ON t1.a = t2.a
+    SETTINGS serialize_query_plan = 0, query_plan_convert_join_to_in = 1);
+
+-- Guard 152-154: partial_merge is not a hash algorithm -> optimization blocked.
+SELECT countIf(explain LIKE '%CreatingSets%') = 0 AS guard_non_hash_algo
+FROM (EXPLAIN description = 0
+    SELECT t1.a FROM (SELECT 1::UInt64 AS a) t1 INNER JOIN (SELECT 1::UInt64 AS a) t2 ON t1.a = t2.a
+    SETTINGS join_algorithm = 'partial_merge', serialize_query_plan = 0, query_plan_convert_join_to_in = 1);
+
+-- Guard 159-160: LEFT SEMI JOIN strictness=semi -> blocked.
+SELECT countIf(explain LIKE '%CreatingSets%') = 0 AS guard_semi_strictness
+FROM (EXPLAIN description = 0
+    SELECT t1.a FROM (SELECT 1::UInt64 AS a) t1 LEFT SEMI JOIN (SELECT 1::UInt64 AS a) t2 ON t1.a = t2.a
+    SETTINGS serialize_query_plan = 0, query_plan_convert_join_to_in = 1);
+
+-- Guard 163-164: LEFT JOIN kind=left -> blocked.
+SELECT countIf(explain LIKE '%CreatingSets%') = 0 AS guard_left_kind
+FROM (EXPLAIN description = 0
+    SELECT t1.a FROM (SELECT 1::UInt64 AS a) t1 LEFT JOIN (SELECT 1::UInt64 AS a) t2 ON t1.a = t2.a
+    SETTINGS serialize_query_plan = 0, query_plan_convert_join_to_in = 1);
+
+-- Guard 175-176: IS NOT DISTINCT FROM produces NullSafeEquals -> blocked.
+SELECT countIf(explain LIKE '%CreatingSets%') = 0 AS guard_null_safe_eq
+FROM (EXPLAIN description = 0
+    SELECT t1.a FROM (SELECT 1::UInt64 AS a) t1 INNER JOIN (SELECT 1::UInt64 AS a) t2 ON t1.a IS NOT DISTINCT FROM t2.a
+    SETTINGS serialize_query_plan = 0, query_plan_convert_join_to_in = 1);
+
+-- Guard 190-191: output includes right-side column -> blocked.
+SELECT countIf(explain LIKE '%CreatingSets%') = 0 AS guard_right_output
+FROM (EXPLAIN description = 0
+    SELECT t1.a, t2.b FROM (SELECT 1::UInt64 AS a) t1 INNER JOIN (SELECT 1::UInt64 AS a, 2::UInt64 AS b) t2 ON t1.a = t2.a
+    SETTINGS serialize_query_plan = 0, query_plan_convert_join_to_in = 1);

@@ -6,6 +6,7 @@
 #include <memory>
 
 #include <IO/BufferBase.h>
+#include <base/defines.h>
 
 
 namespace DB
@@ -149,6 +150,12 @@ private:
     {
         return exception_level < std::uncaught_exceptions();
     }
+
+    /// Out of line, like `ReadBuffer::throwReadAfterEOF`: an inlined `throw` would put a
+    /// `-fstack-protector-strong` canary on `write`, which runs per byte. `NO_INLINE` because they sit
+    /// in the same translation unit as `write`.
+    [[noreturn]] NO_INLINE static void throwWriteToFinalizedBuffer();
+    [[noreturn]] NO_INLINE static void throwWriteToCanceledBuffer(int code);
 
     int exception_level = std::uncaught_exceptions();
 
