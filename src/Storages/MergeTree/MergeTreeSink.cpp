@@ -8,6 +8,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/logger_useful.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/FailPoint.h>
@@ -482,6 +483,8 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
             std::vector<MergeTreeDeduplicationLog::AddPartResult> duplicates;
             try
             {
+                /// The part is already committed, so a memory limit must not leave it without its block IDs.
+                LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
                 duplicates = deduplication_log->addPart(block_ids, part->info);
             }
             catch (...)
