@@ -137,11 +137,17 @@ Block MergeTreeReadPoolInOrderSliced::keyAtMark(size_t lane, size_t mark) const
     return primary_key_header.cloneWithColumns(std::move(columns));
 }
 
-size_t MergeTreeReadPoolInOrderSliced::nextSliceMarks(size_t lane) const
+size_t MergeTreeReadPoolInOrderSliced::nextSliceMarksUnlocked(size_t lane) const
 {
     const auto & lane_state = lanes[lane];
     const size_t ramp_marks = size_t(1) << std::min<size_t>(lane_state.slices_cut, 16);
     return std::min({max_slice_marks, ramp_marks, lane_state.unread.getNumberOfMarks()});
+}
+
+size_t MergeTreeReadPoolInOrderSliced::nextSliceMarks(size_t lane) const
+{
+    std::lock_guard lock(mutex);
+    return nextSliceMarksUnlocked(lane);
 }
 
 void MergeTreeReadPoolInOrderSliced::enqueueLane(size_t lane)
@@ -310,7 +316,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrderSliced::getTask(size_t task_idx, Me
             {
                 auto & previous = lanes[*last_lane];
                 if (!previous.unread.empty() && previous.parked_readers.size() < max_parked_readers_per_lane
-                    && readersFit(last_marks, nextSliceMarks(*last_lane)))
+                    && readersFit(last_marks, nextSliceMarksUnlocked(*last_lane)))
                     previous.parked_readers.push_back(SizedReaders{.readers = previous_task->releaseReaders(), .marks = last_marks});
             }
 

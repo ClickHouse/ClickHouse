@@ -65,6 +65,9 @@ public:
     /// Marks in a slice of a lane that has been read for a while; the first slices of a lane are smaller.
     size_t maxSliceMarks() const { return max_slice_marks; }
 
+    /// Marks of the next slice of the lane, if it were cut now.
+    size_t nextSliceMarks(size_t lane) const;
+
     /// Primary key values at the first mark of the lane, one row; empty if the index has no value there.
     const Block & laneBoundary(size_t lane) const { return boundaries[lane]; }
 
@@ -136,8 +139,7 @@ private:
 
     /// Primary key values at the mark of the lane, one row; empty if the index has no value there.
     Block keyAtMark(size_t lane, size_t mark) const;
-    /// Marks of the next slice of the lane, if it were cut now.
-    size_t nextSliceMarks(size_t lane) const TSA_REQUIRES(mutex);
+    size_t nextSliceMarksUnlocked(size_t lane) const TSA_REQUIRES(mutex);
     void enqueueLane(size_t lane) TSA_REQUIRES(mutex);
     void dequeueLane(size_t lane) TSA_REQUIRES(mutex);
 

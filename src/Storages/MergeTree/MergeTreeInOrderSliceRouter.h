@@ -25,9 +25,10 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 ///   blocked on a lane nobody reads; with it, every lane whose next key comes before that slice's end
 ///   gets its next slice too, since the merge reaches those lanes before it is done with the slice;
 /// - the lanes the merge needs next, in the order of the pool's queue, get slices while the marks issued
-///   so far stay under the read-ahead budget. The budget is zero at first and doubles with every slice
-///   that came back with most of its rows filtered out: reading, not merging, is the bottleneck then, and
-///   the longer the granules keep coming back empty, the further ahead the reading runs.
+///   so far stay within the read-ahead budget. The budget is zero until a slice comes back with most of
+///   its rows filtered out. Then it covers the rest of the ramp of slice sizes, so the ramp is read in one
+///   round instead of one slice after another, and once as many slices have missed as the ramp has steps,
+///   reading and not merging is the bottleneck for sure and every source gets a slice.
 /// A slice counts as issued until the merge has taken its last row, so the budget bounds the rows held in
 /// the router as well as the sources reading on behalf of the merge.
 class MergeTreeInOrderSliceRouter final : public IProcessor
@@ -94,6 +95,9 @@ private:
     size_t issued_marks = 0;
     /// Slices that ended with most of their rows filtered out.
     size_t misses = 0;
+    /// Slices a lane reads before its slices reach full size (1, 2, 4, ... marks), and their marks in total.
+    size_t ramp_slices = 0;
+    size_t ramp_marks = 0;
     bool initialized = false;
 };
 

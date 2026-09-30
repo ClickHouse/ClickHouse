@@ -26,6 +26,10 @@ MergeTreeInOrderSliceRouter::MergeTreeInOrderSliceRouter(
         source_inputs.push_back(&input);
     for (auto & output : outputs)
         lane_outputs.push_back(&output);
+
+    while ((size_t(1) << ramp_slices) < pool->maxSliceMarks())
+        ++ramp_slices;
+    ramp_marks = (size_t(1) << ramp_slices) - 1;
 }
 
 void MergeTreeInOrderSliceRouter::initialize()
@@ -239,12 +243,13 @@ void MergeTreeInOrderSliceRouter::pushToLane(size_t lane_idx)
 
 size_t MergeTreeInOrderSliceRouter::readAheadMarks() const
 {
-    /// Marks, not slices: the slices of a lane grow with every miss as well, so a query answered by the
-    /// first granules of a lane never reads past the slice the merge waits for, whatever the thread count.
+    /// On remote storage every round of slices is a round trip, so the ramp is read in one round rather than
+    /// slice by slice, and the step to every source is taken as soon as the ramp has missed throughout.
     if (misses == 0)
         return 0;
-    const size_t all_sources_busy = assignments.size() * pool->maxSliceMarks();
-    return std::min(all_sources_busy, size_t(1) << std::min<size_t>(misses, 40));
+    if (misses < ramp_slices)
+        return ramp_marks;
+    return assignments.size() * pool->maxSliceMarks();
 }
 
 std::optional<size_t> MergeTreeInOrderSliceRouter::pickIdleSource(size_t lane) const
@@ -309,12 +314,11 @@ void MergeTreeInOrderSliceRouter::scheduleSlices()
     if (!merge_waits)
         return;
 
-    /// Read ahead in the order the merge is going to need the data.
+    /// Read ahead in the order the merge is going to need the data, never past the budget.
     const size_t budget = readAheadMarks();
-    while (issued_marks < budget)
+    while (auto lane = pool->nextLane())
     {
-        auto lane = pool->nextLane();
-        if (!lane)
+        if (issued_marks + pool->nextSliceMarks(*lane) > budget)
             return;
 
         auto source = pickIdleSource(*lane);
