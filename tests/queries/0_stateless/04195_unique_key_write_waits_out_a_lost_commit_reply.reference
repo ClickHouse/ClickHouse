@@ -4,3 +4,12 @@
 4	b
 5	b
 6	b
+first_committed 1
+next_committed 1
+next_writer	0	a
+next_writer	1	c
+next_writer	2	a
+next_committed 1
+given_up	0	a
+given_up	1	c
+given_up	2	a
