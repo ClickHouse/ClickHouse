@@ -1878,9 +1878,8 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     return false;
                 }
 
-                /// A TTLDrop merge deletes every row only when it drops every source part unread
-                /// (see `MergeTask`). Otherwise rows survive and the merge rewrites them, so it
-                /// does need room for what its source parts hold.
+                /// A TTLDrop merge that drops every source part unread writes an empty part. Any other
+                /// merge may rewrite rows, so it needs room for what its source parts hold.
                 if (entry.merge_type == MergeType::TTLDrop && source_parts.size() == entry.source_parts.size())
                 {
                     const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
