@@ -1,0 +1,16 @@
+--- tags commit failure ---
+0
+0
+0
+--- samples commit failure ---
+1
+0
+0
+--- tags commit failure when the block commits inside consume ---
+0
+0
+0
+--- samples commit failure when the block commits inside consume ---
+1
+0
+0

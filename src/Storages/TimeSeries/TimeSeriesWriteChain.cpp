@@ -16,6 +16,8 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Storages/MergeTree/MergeTreeSink.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 
 #include <atomic>
 #include <functional>
@@ -154,7 +156,31 @@ struct TimeSeriesCommitBarrier
 
     bool isFailed() const { return failed.load(); }
 
+    bool isCommitFailed() const { return commit_failed.load(); }
+
     bool isLeaderFinished() const { return leader_done.load(); }
+
+    bool commitAllowed(size_t rank, size_t epoch) const
+    {
+        return commit_steps.load() >= expected * epoch + rank;
+    }
+
+    bool commitEpochDone(size_t epoch) const
+    {
+        return commit_steps.load() >= expected * epoch;
+    }
+
+    void commitStepDone()
+    {
+        commit_steps.fetch_add(1);
+        wake();
+    }
+
+    void failCommit()
+    {
+        commit_failed.store(true);
+        wake();
+    }
 
     bool readyFor(size_t epoch) const { return arrived.load() >= expected * (epoch + 1); }
 
@@ -171,7 +197,9 @@ private:
 
     size_t expected = 0;
     std::atomic<size_t> arrived{0};
+    std::atomic<size_t> commit_steps{0};
     std::atomic<bool> failed{false};
+    std::atomic<bool> commit_failed{false};
     std::atomic<bool> leader_done{false};
     std::vector<EventFD *> waiters;
 };
@@ -322,7 +350,40 @@ private:
 };
 
 
-void insertCommitGateBeforeStorageSink(Chain & chain, const std::shared_ptr<TimeSeriesCommitBarrier> & barrier, bool is_leader)
+void attachCommitOrder(IProcessor & processor, const std::shared_ptr<TimeSeriesCommitBarrier> & barrier, size_t rank)
+{
+    auto * sink = dynamic_cast<SinkToStorage *>(&processor);
+    if (!sink)
+        return;
+    if (!dynamic_cast<MergeTreeSink *>(&processor) && !dynamic_cast<ReplicatedMergeTreeSink *>(&processor))
+        return;
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    auto wake = std::make_shared<EventFD>();
+    barrier->addWaiter(wake.get());
+    sink->setCommitOrder(
+        [barrier, rank](size_t epoch) { return barrier->commitAllowed(rank, epoch); },
+        [barrier] { return barrier->isCommitFailed(); },
+        [barrier] { barrier->commitStepDone(); },
+        [barrier] { barrier->failCommit(); },
+        [barrier](size_t epoch) { return barrier->commitEpochDone(epoch); },
+        [wake] { return wake->fd; },
+        [wake] { wake->read(); });
+#else
+    (void)rank;
+    sink->setCommitOrder(
+        [](size_t) { return true; },
+        [] { return false; },
+        [] {},
+        [] {},
+        [](size_t) { return true; },
+        [] { return -1; },
+        [] {});
+#endif
+}
+
+void insertCommitGateBeforeStorageSink(
+    Chain & chain, const std::shared_ptr<TimeSeriesCommitBarrier> & barrier, bool is_leader, size_t commit_rank)
 {
     IProcessor * processor = &chain.getInputPort().getProcessor();
     while (!dynamic_cast<SinkToStorage *>(processor))
@@ -331,6 +392,9 @@ void insertCommitGateBeforeStorageSink(Chain & chain, const std::shared_ptr<Time
             throw Exception(ErrorCodes::LOGICAL_ERROR, "TimeSeries target chain has no storage sink");
         processor = &processor->getOutputs().front().getInputPort().getProcessor();
     }
+
+    /// Commit tags, then samples, then later targets.
+    attachCommitOrder(*processor, barrier, commit_rank);
 
     InputPort & sink_input = processor->getInputs().front();
     auto gate = std::make_shared<TimeSeriesCommitGate>(sink_input.getSharedHeader(), barrier, is_leader);
@@ -421,7 +485,7 @@ Chain buildTimeSeriesWriteChain(
         else if (target.is_metric_families)
             on_finish = [sink] { sink->markMetricFamiliesWritten(); };
 
-        insertCommitGateBeforeStorageSink(target.chain, barrier, i == leader_index);
+        insertCommitGateBeforeStorageSink(target.chain, barrier, i == leader_index, i);
         auto branch_sink = std::make_shared<TimeSeriesBranchSink>(target.chain.getOutputSharedHeader(), std::move(on_finish));
         connect(*split_output, target.chain.getInputPort());
         connect(target.chain.getOutputPort(), branch_sink->getPort());

@@ -84,7 +84,7 @@ SELECT count() FROM ext_recent WHERE value IN (30, 40);
 SELECT count() FROM ext_samples_dest WHERE value IN (30, 40);
 
 -- A block that already committed stays. A block that fails the check does not.
--- Only a table that commits inside consume keeps the earlier block.
+-- A target that commits inside consume still waits until earlier targets have committed.
 -- The view runs after that commit, so a cancelled insert can leave the view empty.
 SELECT '--- a failed later block keeps the earlier committed block ---';
 

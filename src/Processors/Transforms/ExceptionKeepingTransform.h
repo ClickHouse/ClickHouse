@@ -35,7 +35,9 @@ protected:
         Start,
         Consume,
         Generate,
+        WaitCommit,
         Finish,
+        WaitFinish,
         Exception,
     };
 
@@ -57,6 +59,10 @@ protected:
     virtual void onException(std::exception_ptr /* exception */) { }
 
     virtual bool canGenerate() { return true; }
+    virtual bool readyForCommit() const { return true; }
+    virtual bool readyForNextChunk() const { return true; }
+    virtual int commitWaitFD() const { return -1; }
+    virtual void drainCommitWait() {}
     virtual GenerateResult getRemaining() { return {};}
 
 public:
@@ -64,6 +70,7 @@ public:
 
     Status prepare() override;
     void work() override;
+    int schedule() override;
 
     InputPort & getInputPort() { return input; }
     OutputPort & getOutputPort() { return output; }

@@ -17,6 +17,7 @@
 
 #include <exception>
 #include <memory>
+#include <string_view>
 
 namespace ProfileEvents
 {
@@ -32,6 +33,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int FAULT_INJECTED;
     extern const int INSERT_WAS_DEDUPLICATED;
 }
 
@@ -51,21 +53,47 @@ namespace FailPoints
 {
     extern const char merge_tree_sink_on_start_random_sleep[];
     extern const char time_series_inner_table_flush_sleep[];
+    extern const char time_series_sink_commit_throw_tags[];
+    extern const char time_series_sink_commit_throw_samples[];
+}
+
+static bool timeSeriesCommitTargetIs(const String & table_name, std::string_view kind)
+{
+    String marker;
+    marker.push_back('.');
+    marker.append(kind);
+    marker.push_back('.');
+    if (table_name.contains(marker))
+        return true;
+
+    if (!table_name.ends_with(kind))
+        return false;
+    if (table_name.size() == kind.size())
+        return true;
+
+    const char before = table_name[table_name.size() - kind.size() - 1];
+    return before == '.' || before == '_';
+}
+
+void throwIfTimeSeriesSinkCommitFailpoint(const String & table_name)
+{
+    fiu_do_on(FailPoints::time_series_sink_commit_throw_tags, {
+        if (timeSeriesCommitTargetIs(table_name, "tags"))
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Time series tags sink commit failed");
+    });
+    fiu_do_on(FailPoints::time_series_sink_commit_throw_samples, {
+        if (timeSeriesCommitTargetIs(table_name, "samples"))
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Time series samples sink commit failed");
+    });
 }
 
 MergeTreeSink::~MergeTreeSink()
 {
-    if (!delayed_chunk)
+    if (!delayed_chunk && !pending_chunk)
         return;
 
     chassert(isCancelled() || std::uncaught_exceptions());
-
-    for (auto & partition : delayed_chunk->partitions)
-    {
-        partition.temp_part->cancel();
-    }
-
-    delayed_chunk.reset();
+    MergeTreeSink::abandonDeferredChunk();
 }
 
 MergeTreeSink::MergeTreeSink(
@@ -130,7 +158,80 @@ void MergeTreeSink::onFinish()
     if (isCancelled())
         return;
 
+    if (commit_order && commit_order->failed())
+    {
+        abandonDeferredChunk();
+        return;
+    }
+
+    try
+    {
+        finishDelayedChunk();
+        if (commit_order && !inline_commit)
+            finishCommitStep();
+    }
+    catch (...)
+    {
+        failCommitOrder();
+        abandonDeferredChunk();
+        throw;
+    }
+}
+
+bool MergeTreeSink::orderedCommitPending() const
+{
+    if (!commit_order)
+        return false;
+    if (defer_commit)
+        return inline_commit || num_blocks_processed > 1;
+    return !inline_commit;
+}
+
+void MergeTreeSink::commitDeferredChunk()
+{
+    if (!defer_commit)
+        return;
+
+    defer_commit = false;
+    const bool commit_previous = !inline_commit && num_blocks_processed > 1;
+    const bool commit_current = inline_commit;
+
     finishDelayedChunk();
+    if (commit_previous)
+        finishCommitStep();
+
+    delayed_chunk = std::move(pending_chunk);
+    if (commit_current)
+    {
+        finishDelayedChunk();
+        finishCommitStep();
+        holdNextChunk();
+    }
+}
+
+void MergeTreeSink::abandonDeferredChunk()
+{
+    auto cancel_chunk = [](MergeTreeDelayedChunk & chunk)
+    {
+        for (auto & partition : chunk.partitions)
+        {
+            if (partition.temp_part)
+                partition.temp_part->cancel();
+        }
+        chunk.partitions.clear();
+    };
+
+    if (pending_chunk)
+    {
+        cancel_chunk(*pending_chunk);
+        pending_chunk.reset();
+    }
+    if (delayed_chunk)
+    {
+        cancel_chunk(*delayed_chunk);
+        delayed_chunk.reset();
+    }
+    defer_commit = false;
 }
 
 void MergeTreeSink::consume(Chunk & chunk)
@@ -274,18 +375,29 @@ void MergeTreeSink::consume(Chunk & chunk)
         total_streams += current_streams;
     }
 
-    finishDelayedChunk();
-
-    delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
-    delayed_chunk->partitions = std::move(partitions);
-    /// Streaming `INSERT` flushes partial blocks on a timeout, so commit the just-written
-    /// part immediately to make its rows visible without waiting for the next consume()
-    /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
-    if (settings[Setting::input_format_max_block_wait_ms] != 0)
+    if (commit_order)
+    {
+        inline_commit = settings[Setting::input_format_max_block_wait_ms] != 0
+            || synchronously_commit_part_for_dependent_views;
+        pending_chunk = std::make_unique<MergeTreeDelayedChunk>();
+        pending_chunk->partitions = std::move(partitions);
+        defer_commit = true;
+    }
+    else
+    {
         finishDelayedChunk();
 
-    if (synchronously_commit_part_for_dependent_views)
-        finishDelayedChunk();
+        delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
+        delayed_chunk->partitions = std::move(partitions);
+        /// Streaming `INSERT` flushes partial blocks on a timeout, so commit the just-written
+        /// part immediately to make its rows visible without waiting for the next consume()
+        /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
+        if (settings[Setting::input_format_max_block_wait_ms] != 0)
+            finishDelayedChunk();
+
+        if (synchronously_commit_part_for_dependent_views)
+            finishDelayedChunk();
+    }
 
     ++num_blocks_processed;
 }
@@ -294,6 +406,9 @@ void MergeTreeSink::finishDelayedChunk()
 {
     if (!delayed_chunk)
         return;
+
+    if (!delayed_chunk->partitions.empty())
+        throwIfTimeSeriesSinkCommitFailpoint(storage.getStorageID().getTableName());
 
     auto process_list_element = context->getProcessListElement();
 
