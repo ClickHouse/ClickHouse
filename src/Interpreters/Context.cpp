@@ -394,11 +394,11 @@ namespace Setting
     extern const SettingsBool use_page_cache_with_distributed_cache;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
-    extern const SettingsFloat weight;
-    extern const SettingsFloat weight_lowering_factor;
-    extern const SettingsFloat weight_lowering_age_seconds;
-    extern const SettingsFloat weight_lowering_cpu_seconds;
-    extern const SettingsFloat weight_lowering_io_bytes;
+    extern const SettingsDouble weight;
+    extern const SettingsDouble weight_lowering_factor;
+    extern const SettingsDouble weight_lowering_age_seconds;
+    extern const SettingsDouble weight_lowering_cpu_seconds;
+    extern const SettingsDouble weight_lowering_io_bytes;
     extern const SettingsInt64 workload_priority;
     extern const SettingsString compatibility;
     extern const SettingsBool allow_experimental_analyzer;

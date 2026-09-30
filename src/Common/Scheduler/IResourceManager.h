@@ -23,11 +23,11 @@ struct ClassifierSettings
 
     /// Per-query scheduling parameters the classifier builds its `ResourceSchedulingContext` from
     /// (defaults describe a query that set nothing).
-    float weight = 1.0f;
-    float weight_lowering_factor = 1.0f;
-    float weight_lowering_age_seconds = 0.0f;
-    float weight_lowering_cpu_seconds = 0.0f;
-    float weight_lowering_io_bytes = 0.0f;
+    Float64 weight = 1.0;
+    Float64 weight_lowering_factor = 1.0;
+    Float64 weight_lowering_age_seconds = 0.0;
+    Float64 weight_lowering_cpu_seconds = 0.0;
+    Float64 weight_lowering_io_bytes = 0.0;
     Priority priority;
 };
 
