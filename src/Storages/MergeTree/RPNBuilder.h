@@ -52,6 +52,7 @@ public:
 
     /** Try get constant from node. If node is constant returns true, and constant value and constant type output parameters are set.
       * Otherwise false is returned.
+      * The output type is the type of the value: `LowCardinality` is removed, and `Nullable` is removed when the value is not NULL.
       */
     bool tryGetConstant(Field & output_value, DataTypePtr & output_type) const;
 

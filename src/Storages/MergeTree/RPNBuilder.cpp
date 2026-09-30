@@ -265,6 +265,16 @@ ColumnWithTypeAndName RPNBuilderTreeNode::getConstantColumn() const
     return result;
 }
 
+/// A `Field` is the plain value of a constant: `LowCardinality` is only an encoding of the column,
+/// and a value that is not NULL has no `Nullable` type.
+static DataTypePtr getTypeOfConstantValue(const Field & value, const DataTypePtr & type)
+{
+    auto value_type = removeLowCardinality(type);
+    if (!value.isNull())
+        value_type = removeNullable(value_type);
+    return value_type;
+}
+
 bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & output_type) const
 {
     const auto * node_without_alias = getNodeWithoutAlias(dag_node);
@@ -272,12 +282,7 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
         return false;
 
     output_value = node_without_alias->column->getField();
-    output_type = node_without_alias->result_type;
-
-    /// If constant is not Null, we can assume it's type is not Nullable as well.
-    if (!output_value.isNull())
-        output_type = removeNullable(output_type);
-
+    output_type = getTypeOfConstantValue(output_value, node_without_alias->result_type);
     return true;
 }
 
