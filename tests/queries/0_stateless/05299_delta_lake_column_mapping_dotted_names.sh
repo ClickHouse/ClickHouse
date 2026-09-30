@@ -140,7 +140,8 @@ write_log("plain", [
 EOF
 
 # The engine predicate is disabled in the filtered query: it does not support dotted names yet (#118775).
-# A subcolumn name that matches two fields, like s.`a.b` here, reads the first of them in schema order.
+# A subcolumn name that matches two fields, like s.`a.b` here, reads the first of them in the order of the table schema,
+# which can be declared in a different order than the Delta log.
 $CLICKHOUSE_LOCAL -q "
 SELECT 'a and a.b';
 SELECT id, a, \`a.b\` FROM deltaLakeLocal('$DIR/cols') ORDER BY id;
@@ -164,6 +165,13 @@ SELECT id, \`a.b\`, a, r FROM deltaLakeLocal('$DIR/reversed') ORDER BY id;
 SELECT 'ambiguous subcolumn';
 SELECT id, s.\`a.b\` FROM deltaLakeLocal('$DIR/cols') ORDER BY id;
 SELECT id, r.\`a.b\` FROM deltaLakeLocal('$DIR/reversed') ORDER BY id;
+SELECT 'ambiguous subcolumn in a declared schema';
+CREATE TABLE declared_reordered (id Nullable(Int32), s Tuple(\`a.b\` Nullable(Int32), a Tuple(b Nullable(Int32))),
+    \`o.s\` Tuple(\`a.b\` Nullable(Int32), a Tuple(b Nullable(Int32)))) ENGINE = DeltaLakeLocal('$DIR/cols');
+SELECT id, s.\`a.b\`, \`o.s\`.\`a.b\` FROM declared_reordered ORDER BY id;
+CREATE TABLE declared_reversed (id Nullable(Int32), r Tuple(a Tuple(b Nullable(Int32)), \`a.b\` Nullable(Int32)))
+    ENGINE = DeltaLakeLocal('$DIR/reversed');
+SELECT id, r.\`a.b\` FROM declared_reversed ORDER BY id;
 SELECT 'a backslash in a name';
 SELECT id, \`a\\\\\`, \`a.b\` FROM deltaLakeLocal('$DIR/backslash') ORDER BY id;
 SELECT 'partitioned';

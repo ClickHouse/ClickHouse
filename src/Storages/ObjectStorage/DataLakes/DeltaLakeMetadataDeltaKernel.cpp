@@ -479,7 +479,8 @@ static std::optional<String> findLogicalPath(
 }
 
 /// Returns the key of `physical_names_map` for a name in storage: a table column, or a tuple element of one named by joining
-/// element names with dots. A table column is that column even if a nested field has the same joined name.
+/// element names with dots. A table column is that column even if a nested field has the same joined name. A tuple element
+/// is looked up in the type of its table column, whose field order can differ from the Delta schema when the schema is declared.
 static String getLogicalPath(
     const String & name_in_storage,
     const ColumnsDescription & table_columns,
@@ -492,6 +493,17 @@ static String getLogicalPath(
     auto column_path = DeltaLake::appendToLogicalPath({}, name_in_storage);
     if (table_columns.has(name_in_storage) && physical_names_map.contains(column_path))
         return column_path;
+
+    if (auto column = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_storage); column && column->isSubcolumn())
+    {
+        if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(column->getTypeInStorage().get()))
+        {
+            auto parent_logical_path = getLogicalPath(column->getNameInStorage(), table_columns, delta_schema, physical_names_map);
+            if (auto found = findLogicalPath(
+                    tuple_type->getElementNames(), tuple_type->getElements(), column->getSubcolumnName(), parent_logical_path))
+                return *found;
+        }
+    }
 
     return findLogicalPath(delta_schema.getNames(), delta_schema.getTypes(), name_in_storage, {}).value_or(name_in_storage);
 }
