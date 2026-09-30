@@ -18,7 +18,7 @@ chmod ugo+r "${DB_PATH}"
 run()
 {
     echo "--- $1: external"
-    ${CLICKHOUSE_CLIENT} --query "SELECT n FROM sqlite('${DB_PATH}', 't') WHERE $2 ORDER BY n"
+    ${CLICKHOUSE_CLIENT} --query "SELECT n FROM sqlite('${DB_PATH}', 't') WHERE $2 ORDER BY n SETTINGS external_table_strict_query = 1"
     echo "--- $1: local"
     ${CLICKHOUSE_CLIENT} --query "SELECT n FROM values('n Int64', (3), (7), (42)) WHERE $2 ORDER BY n"
 }
