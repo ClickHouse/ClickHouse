@@ -182,7 +182,7 @@ SELECT description FROM system.documentation WHERE type = 'Setting' AND name = '
 
 -- An alias is introduced in a particular version and has a history of its own, distinct from the history of the
 -- setting it resolves to.
-SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'enable_analyzer';
+SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'os_thread_priority';
 
 -- A record that only registers an alias does not become the history of the setting it aliases, and in particular
 -- does not claim to introduce it: `max_insert_block_size` is older than the change history and has no recorded
@@ -210,8 +210,9 @@ SELECT description FROM system.documentation WHERE type = 'Setting' AND name = '
 SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'text_index_density_threshold';
 
 -- The record that renames a setting does not claim to introduce the old name when that name is older than it:
--- `evaluation_time` changed its default in 25.8 and became an alias of `promql_evaluation_time` in 25.9.
-SELECT position(description, '**Introduced in:**') = 0,
+-- `evaluation_time` appeared in 25.8 and became an alias of `promql_evaluation_time` in 25.9, so the version it
+-- was introduced in is the one it appeared in and not the one of the rename.
+SELECT position(description, '**Introduced in:** v25.8') > 0,
        position(description, '\n- **25.9** — the default value remained `auto`. The setting was renamed.') > 0
 FROM system.documentation WHERE type = 'Setting' AND name = 'evaluation_time';
 

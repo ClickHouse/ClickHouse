@@ -191,8 +191,8 @@ namespace
     class PrometheusQueryTreeBuilder : public antlr4_grammars::PromQLParserBaseVisitor
     {
     public:
-        explicit PrometheusQueryTreeBuilder(std::string_view promql_query_, UInt32 timestamp_scale_, ErrorListener & error_listener_)
-            : promql_query(promql_query_), timestamp_scale(timestamp_scale_), error_listener(error_listener_) {}
+        explicit PrometheusQueryTreeBuilder(std::string_view promql_query_, UInt32 time_scale_, ErrorListener & error_listener_)
+            : promql_query(promql_query_), time_scale(time_scale_), error_listener(error_listener_) {}
 
         Node * makeNode(antlr4::ParserRuleContext * expression)
         {
@@ -208,7 +208,7 @@ namespace
 
     private:
         std::string_view promql_query;
-        UInt32 timestamp_scale;
+        UInt32 time_scale;
         ErrorListener & error_listener;
         std::vector<std::unique_ptr<Node>> nodes;
 
@@ -264,7 +264,8 @@ namespace
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseTimestamp(getText(ctx), timestamp_scale, result, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseTimestamp(
+                    getText(ctx), time_scale, result, &error_message, &error_pos, /* allow_octal_literals */ true))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -276,7 +277,8 @@ namespace
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseDuration(getText(ctx), timestamp_scale, result, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseDuration(
+                    getText(ctx), time_scale, result, &error_message, &error_pos, /* allow_octal_literals */ true))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -288,7 +290,7 @@ namespace
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseSelectorRange(getText(ctx), timestamp_scale, res_range, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseSelectorRange(getText(ctx), time_scale, res_range, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -300,7 +302,7 @@ namespace
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseSubqueryRange(getText(ctx), timestamp_scale, res_range, res_step, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseSubqueryRange(getText(ctx), time_scale, res_range, res_step, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -1030,7 +1032,7 @@ namespace
 
 #endif
 
-bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view input, [[maybe_unused]] UInt32 timestamp_scale, [[maybe_unused]] PrometheusQueryTree & res_query, [[maybe_unused]] String * error_message, [[maybe_unused]] size_t * error_pos)
+bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view input, [[maybe_unused]] UInt32 time_scale, [[maybe_unused]] PrometheusQueryTree & res_query, [[maybe_unused]] String * error_message, [[maybe_unused]] size_t * error_pos)
 {
 #if USE_ANTLR4_GRAMMARS
     ErrorListener error_listener{input};
@@ -1053,7 +1055,7 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
     if (!expression)
         error_listener.setError("Couldn't get an expression after parsing promql query", 0);
 
-    PrometheusQueryTreeBuilder builder{input, timestamp_scale, error_listener};
+    PrometheusQueryTreeBuilder builder{input, time_scale, error_listener};
     std::vector<std::unique_ptr<Node>> parsed_nodes;
     Node * parsed_root = nullptr;
     if (expression && !error_listener.hasError())
@@ -1074,7 +1076,7 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
     if (!parsed_root)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsing promql query '{}' failed without setting any error message", input);
 
-    res_query = PrometheusQueryTree{std::move(parsed_nodes), parsed_root, timestamp_scale};
+    res_query = PrometheusQueryTree{std::move(parsed_nodes), parsed_root, time_scale};
     return true;
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ANTLR4 support is disabled");

@@ -248,7 +248,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     if (!delay_initialization && use_external_buffer)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Invalid setting for ReadWriteBufferFromHTTP"
+            "Invalid setting for ReadWriteBufferFromHTTP "
             "delay_initialization is false and use_external_buffer it true.");
 
     if (!delay_initialization)
@@ -546,7 +546,7 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
                 (offset != 0 || offset + n < *file_info->file_size))
             {
                 String explanation = fmt::format(
-                    "When reading with readBigAt {}."
+                    "When reading with readBigAt {}. "
                     "Cannot read with range: [{}, {}] (response status: {}, reason: {}), will retry",
                     initial_uri.toString(),
                     *range.begin, *range.end,

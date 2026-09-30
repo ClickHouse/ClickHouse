@@ -222,10 +222,22 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
+    const auto opening_bracket_pos = pos;
     ++pos;
 
     /// Lookahead for inner subquery
     const bool possible_inner_subquery = pos->type == TokenType::OpeningRoundBracket;
+
+    /// A subquery in the FROM-first form, where the SELECT clause is omitted (`(FROM t)` means
+    /// `(SELECT * FROM t)`), starts with a word that is also a valid unquoted column name: `from`.
+    /// Unlike a leading `SELECT`, `EXPLAIN` or `VALUES`, that word is therefore not evidence that the
+    /// parentheses hold a subquery at all. Where the contents read as an expression over a column
+    /// named `from`, that older reading wins and these are not a subquery.
+    const bool starts_with_from_clause
+        = pos->type == TokenType::BareWord && equalsCaseInsensitive(std::string_view(pos->begin, pos->size()), "from");
+
+    if (starts_with_from_clause && parenthesesHoldExpressionOverColumnNamedFrom(opening_bracket_pos))
+        return false;
 
     ASTPtr result_node = nullptr;
 
@@ -316,7 +328,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     /// Inner subquery should be handled separately
-    starts_with_valid_select_or_explain = !possible_inner_subquery && result_node != nullptr;
+    starts_with_valid_select_or_explain = !possible_inner_subquery && !starts_with_from_clause && result_node != nullptr;
 
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
@@ -869,50 +881,50 @@ static bool parseWindowDefinitionParts(IParser::Pos & pos,
 
 bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto result = make_intrusive<ASTWindowDefinition>();
-
     ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
     if (!parser_opening_bracket.ignore(pos, expected))
     {
         return false;
     }
 
-    // We can have a parent window name specified before all other things. No
-    // easy way to distinguish identifier from keywords, so just try to parse it
-    // both ways.
-    if (parseWindowDefinitionParts(pos, *result, expected))
-    {
-        // Successfully parsed without parent window specifier. It can be empty,
-        // so check that it is followed by the closing bracket.
-        ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
-        if (parser_closing_bracket.ignore(pos, expected))
-        {
-            node = result;
-            return true;
-        }
-    }
-
-    // Try to parse with parent window specifier.
-    ParserIdentifier parser_parent_window;
-    ASTPtr window_name_identifier;
-    if (!parser_parent_window.parse(pos, window_name_identifier, expected))
-    {
-        return false;
-    }
-    result->parent_window_name = window_name_identifier->as<const ASTIdentifier &>().name();
-
-    if (!parseWindowDefinitionParts(pos, *result, expected))
-    {
-        return false;
-    }
-
     ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
+
+    /// A parent window name comes first and is not cheaply distinguishable from the keyword that
+    /// starts the rest, so both readings are tried - each into its OWN node, since the parts parser
+    /// writes the frame before it can know the brackets close and `formatImpl` then cannot print it.
+    const auto body_begin = pos;
+
+    auto without_parent_window = make_intrusive<ASTWindowDefinition>();
+    if (parseWindowDefinitionParts(pos, *without_parent_window, expected)
+        && parser_closing_bracket.ignore(pos, expected))
+    {
+        node = without_parent_window;
+        return true;
+    }
+
+    /// The abandoned subtree's literals must leave the token map with it.
+    forgetLiteralTokens(*without_parent_window, expected);
+    pos = body_begin;
+
+    auto with_parent_window = make_intrusive<ASTWindowDefinition>();
+    ASTPtr window_name_identifier;
+    if (!ParserIdentifier().parse(pos, window_name_identifier, expected))
+    {
+        return false;
+    }
+    with_parent_window->parent_window_name = window_name_identifier->as<const ASTIdentifier &>().name();
+
+    if (!parseWindowDefinitionParts(pos, *with_parent_window, expected))
+    {
+        return false;
+    }
+
     if (!parser_closing_bracket.ignore(pos, expected))
     {
         return false;
     }
 
-    node = result;
+    node = with_parent_window;
     return true;
 }
 

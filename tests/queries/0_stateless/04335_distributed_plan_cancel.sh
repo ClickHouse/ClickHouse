@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-old-analyzer
-# no-old-analyzer: make_distributed_plan requires the analyzer.
+# Tags: no-fasttest
 # Checks that cancelling a distributed-plan query terminates it promptly and reports the cancellation,
 # for both exchange kinds and both ways of running the tasks. Streaming exercises waking tasks blocked
 # on in-memory exchanges, Persisted the stage-dependency wait under the executor mutex, and remote
 # execution the workers' cancellation, whose closed exchange sockets must not become the error.
 
 set -e
+
+# Cancelling is what this test does, and a worker task that outlives the initiator's bounded wait for a
+# terminal state is reported at Warning. The runner fails a test whose stderr is not empty, and the line
+# can arrive on any of this test's clients, so keep only Error and above for all of them.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

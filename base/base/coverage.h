@@ -41,10 +41,10 @@ void resetCoverage();
 ///                         array; 0 = entry, 1…N = branch/statement counters.  Gives
 ///                         statement-level region granularity.
 /// min_depth             — minimum call-stack depth at which the function was entered
-///                         since the last counter reset, as tracked by the
-///                         -finstrument-functions shadow stack (see coverage.cpp).
-///                         255 means "depth not tracked" (binary built without the flag).
-///                         Depth 1 = called directly by the test driver; higher = indirect.
+///                         since the last counter reset, when built with
+///                         -DCLICKHOUSE_XRAY_INSTRUMENT_COVERAGE=1 (1 = called directly
+///                         by the test driver, 255 = depth not tracked).  Otherwise it is
+///                         the function's entry call count, capped at 254.
 using CovCounter = std::tuple<uint64_t, uint64_t, uint32_t, uint8_t>;
 
 /// Return (name_hash, func_hash, counter_id) triples for every counter > 0

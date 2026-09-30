@@ -23,7 +23,8 @@ namespace ErrorCodes
 
 
 #define LIST_OF_TIME_SERIES_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(ASTFunction, id_generator, String{}, "Expression that computes the identifier (fingerprint) of a time series from its tags.", 0) \
+    DECLARE(DataType, id_type, String{}, "The type of the 'id' column of the target tables. Normally it's declared in the INNER COLUMNS clauses of the inner tables or in an external 'tags' table; the setting is set automatically when the table is created if the type isn't kept in the definition otherwise: if the 'tags' target is an external table, or if the 'id_generator' setting is set. Requires 'version' to be at least 2", 0) \
+    DECLARE(ASTFunction, id_generator, String{}, "Expression that computes the identifier (fingerprint) of a time series from its tags. If the 'tags' target is an external table and 'version' is at least 2, the setting is set automatically when the table is created: to the DEFAULT expression of the 'id' column of that table if any, otherwise to the expression chosen automatically for the 'id' type", 0) \
     DECLARE(Map, tags_to_columns, Map{}, "Map specifying which tags should be put to separate columns of the 'tags' table. Syntax: {'tag1': 'column1', 'tag2' : column2, ...}", 0) \
     DECLARE(Bool, use_all_tags_column_to_generate_id, false, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE) \
     DECLARE(Bool, store_min_time_and_max_time, true, "If set to true then the table will store 'min_time' and 'max_time' for each time series", 0) \
@@ -115,6 +116,12 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
             "A table definition with another version was written by a different version of ClickHouse",
             version, TimeSeriesVersion::MIN_SUPPORTED, TimeSeriesVersion::LATEST);
 
+    /// A table of an earlier version must be readable by a server which doesn't know the `id_type` setting.
+    if ((version < TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING) && settings[TimeSeriesSetting::id_type].value)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting `id_type` requires `version` to be at least {}, but the table has version {}",
+            TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING, version);
+
     if (!settings[TimeSeriesSetting::recent_samples_ttl_seconds])
     {
         /// Settings of the recent samples table make no sense without the table itself.
@@ -202,16 +209,6 @@ UInt64 getTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query)
         }
     }
     return TimeSeriesSettings{}[TimeSeriesSetting::recent_samples_ttl_seconds];
-}
-
-UInt64 getTimeSeriesSettingVersion(const ASTCreateQuery & query)
-{
-    if (query.storage && query.storage->settings)
-    {
-        if (const auto * value = query.storage->settings->changes.tryGet("version"))
-            return SettingFieldUInt64{*value}.value;
-    }
-    return TimeSeriesVersion::LATEST;
 }
 
 bool hasExplicitTimeSeriesSettingVersion(const ASTCreateQuery & query)

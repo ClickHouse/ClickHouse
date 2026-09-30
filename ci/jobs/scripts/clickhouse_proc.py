@@ -613,7 +613,12 @@ class ClickHouseProc:
         )
 
     def prepare_stateful_data(
-        self, with_s3_storage, is_db_replicated, build_type=None, step_timeout=None
+        self,
+        with_s3_storage,
+        is_db_replicated,
+        build_type=None,
+        step_timeout=None,
+        stop_thread_fuzzer=False,
     ):
         """`step_timeout` bounds each statement, in seconds; None means unbounded."""
         self.stateful_setup_error = None
@@ -646,6 +651,10 @@ set -o pipefail
 trap 'rc=$?; echo "prepare_stateful_data: command [$BASH_COMMAND] at line $LINENO failed with exit $rc" >&2' ERR
 
 MAX_EXECUTION_TIME=1800
+
+if [[ "$STOP_THREAD_FUZZER" == "1" ]]; then
+    $PREP_TIMEOUT clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
+fi
 
 $PREP_TIMEOUT clickhouse-client --query "SHOW DATABASES"
 $PREP_TIMEOUT clickhouse-client --query "CREATE DATABASE datasets"
@@ -684,10 +693,15 @@ $PREP_TIMEOUT clickhouse-client --query "CREATE TABLE test.hits_parquet (Title S
 $PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM test"
 $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.hits"
 $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
+
+if [[ "$STOP_THREAD_FUZZER" == "1" ]]; then
+    $PREP_TIMEOUT clickhouse-client --query "SYSTEM START THREAD FUZZER"
+fi
 """
         command = (
             f"PREP_TIMEOUT={shlex.quote(self.prep_timeout_prefix(step_timeout))}\n"
             f"MAX_INSERT_THREADS={max_insert_threads}\n"
+            f"STOP_THREAD_FUZZER={1 if stop_thread_fuzzer else 0}\n"
         ) + command
         if with_s3_storage:
             command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
@@ -1197,10 +1211,20 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
                 "caller id: None:DistribCache",
             )
         )
+        # The matches go through a file rather than a pipe into `grep -q .`: `grep -q` exits at
+        # its first line, so `tee` takes SIGPIPE and the tail is lost, and the appended
+        # lifecycle IS that tail.
+        no_such_key_matches = f"{temp_dir}/no_such_key_errors.txt"
         no_such_key_command = (
-            f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' "
+            f"cd {self.log_dir} && grep -a 'Code: 499.*The specified key does not exist' "
             f"clickhouse-server*.log | grep -v {no_such_key_ignores} "
-            "| head -n100 | tee /dev/stderr | grep -q ."
+            f"| head -n100 > {no_such_key_matches}; "
+            f"python3 {repo_dir}/ci/jobs/scripts/s3_key_lifecycle.py {no_such_key_matches} {self.log_dir} "
+            f">> {no_such_key_matches} "
+            f"|| echo '--- lifecycle collection FAILED, see the job log for the traceback ---' "
+            f">> {no_such_key_matches}; "
+            f"cat {no_such_key_matches} >&2; "
+            f"[ -f {no_such_key_matches} ] && ! [ -s {no_such_key_matches} ]"
         )
         results.append(
             Result.from_commands_run(

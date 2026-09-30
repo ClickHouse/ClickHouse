@@ -10,12 +10,6 @@ ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8;
 INSERT INTO t_merging_aggregated_threads SELECT number, number % 7 FROM numbers(2000);
 INSERT INTO t_merging_aggregated_threads SELECT number + 2000, number % 7 FROM numbers(2000);
 
--- The analyzer is load-bearing, not incidental: without it `canUseTaskBasedParallelReplicas`
--- returns false (`parallel_replicas_only_with_analyzer` defaults true), so the rewrite that
--- builds the unresolved step never runs and every assertion below would silently pass on a
--- different route. Pinned as a session `SET` so it also covers the observing queries and
--- defeats `compatibility` randomization.
-SET enable_analyzer = 1;
 SET allow_experimental_parallel_reading_from_replicas = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;

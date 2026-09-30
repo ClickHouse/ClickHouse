@@ -231,10 +231,32 @@ public:
         return total_connections_in_group >= limits.soft_limit;
     }
 
-    bool isStoreLimitReached() const
+    /// Reserve a slot for an idle connection that an endpoint pool is about to store for reuse.
+    /// Returns false when the store limit is reached; the caller then resets the connection.
+    ///
+    /// The limit bounds only the stored (idle) connections, not the connections in use. Comparing it
+    /// against the total in the group would switch the cache off entirely as soon as the concurrency
+    /// exceeds the limit: every request would then open and close its own TCP connection, and the
+    /// churn would exhaust the ephemeral port range of the host with sockets in `CLOSE-WAIT`.
+    bool tryReserveStoredConnection()
     {
         std::lock_guard lock(mutex);
-        return total_connections_in_group >= limits.store_limit;
+        if (stored_connections_in_group >= limits.store_limit)
+            return false;
+        ++stored_connections_in_group;
+        CurrentMetrics::add(metrics.stored_count);
+        return true;
+    }
+
+    /// Release the slots of stored connections that were reused, expired, or dropped with their pool.
+    void releaseStoredConnections(size_t count) noexcept
+    {
+        if (count == 0)
+            return;
+        std::lock_guard lock(mutex);
+        chassert(stored_connections_in_group >= count);
+        stored_connections_in_group -= count;
+        CurrentMetrics::sub(metrics.stored_count, count);
     }
 
     void atConnectionCreate(Poco::Net::HTTPClientSession * session, std::string host, UInt16 port)
@@ -314,6 +336,7 @@ private:
     mutable std::mutex mutex;
     HTTPConnectionPools::Limits limits TSA_GUARDED_BY(mutex) = HTTPConnectionPools::Limits();
     size_t total_connections_in_group TSA_GUARDED_BY(mutex) = 0;
+    size_t stored_connections_in_group TSA_GUARDED_BY(mutex) = 0;
     size_t mute_warning_until TSA_GUARDED_BY(mutex) = 0;
     HTTPConnectionPools::SocketBufferSizes socket_buffer_sizes TSA_GUARDED_BY(mutex);
     std::unordered_map<Poco::Net::HTTPClientSession *, uint64_t> live_connections TSA_GUARDED_BY(mutex);
@@ -709,7 +732,7 @@ public:
 
     ~EndpointConnectionPool() override
     {
-        CurrentMetrics::sub(group->getMetrics().stored_count, stored_connections.size());
+        group->releaseStoredConnections(stored_connections.size());
     }
 
     String getTarget() const
@@ -747,7 +770,7 @@ public:
         if (reused_connection)
         {
             ProfileEvents::increment(getMetrics().reused, 1);
-            CurrentMetrics::sub(getMetrics().stored_count, 1);
+            group->releaseStoredConnections(1);
 
             setTimeouts(*reused_connection, timeouts);
 
@@ -788,7 +811,7 @@ public:
     size_t wipeExpiredImpl(std::vector<ConnectionPtr> & expired_connections) TSA_REQUIRES(mutex)
     {
         SCOPE_EXIT({
-            CurrentMetrics::sub(getMetrics().stored_count, expired_connections.size());
+            group->releaseStoredConnections(expired_connections.size());
             ProfileEvents::increment(getMetrics().expired, expired_connections.size());
         });
 
@@ -1099,8 +1122,15 @@ private:
             return;
         }
 
-        if (!connection.connected() || connection.mustReconnect() || !connection.isCompleted() || connection.buffered()
-            || group->isStoreLimitReached())
+        if (!connection.connected() || connection.mustReconnect() || !connection.isCompleted() || connection.buffered())
+        {
+            ProfileEvents::increment(getMetrics().reset, 1);
+            return;
+        }
+
+        /// The slot is reserved before the connection is stored, so endpoint pools of the same group
+        /// that store connections concurrently cannot overshoot the limit together.
+        if (!group->tryReserveStoredConnection())
         {
             ProfileEvents::increment(getMetrics().reset, 1);
             return;
@@ -1118,11 +1148,11 @@ private:
                 stored_connections.push(connection_to_store);
             }
 
-            CurrentMetrics::add(getMetrics().stored_count, 1);
             ProfileEvents::increment(getMetrics().preserved, 1);
         }
         catch (...)
         {
+            group->releaseStoredConnections(1);
             ProfileEvents::increment(getMetrics().reset, 1);
             tryLogCurrentException("HTTPConnectionPool", "Failed to preserve connection for reuse");
         }

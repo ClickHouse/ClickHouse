@@ -359,17 +359,29 @@ def substitute_parameters(query_templates, other_templates=[]):
     query_results = []
     other_results = [[]] * (len(other_templates))
     for i, q in enumerate(query_templates):
-        # We need stable order of keys here, so that the order of substitutions
-        # is always the same, and the query indexes are consistent across test
-        # runs.
-        keys = sorted(set(n for _, n, _, _ in string.Formatter().parse(q) if n))
-        values = [available_parameters[k] for k in keys]
-        combos = itertools.product(*values)
-        for c in combos:
-            with_keys = dict(zip(keys, c))
-            query_results.append(q.format(**with_keys))
-            for j, t in enumerate(other_templates):
-                other_results[j].append(t[i].format(**with_keys))
+        try:
+            # We need stable order of keys here, so that the order of substitutions
+            # is always the same, and the query indexes are consistent across test
+            # runs.
+            keys = sorted(set(n for _, n, _, _ in string.Formatter().parse(q) if n))
+            values = [available_parameters[k] for k in keys]
+            combos = itertools.product(*values)
+            for c in combos:
+                with_keys = dict(zip(keys, c))
+                query_results.append(q.format(**with_keys))
+                for j, t in enumerate(other_templates):
+                    other_results[j].append(t[i].format(**with_keys))
+        except (KeyError, ValueError, IndexError) as e:
+            raise Exception(
+                f"Failed to substitute parameters ({type(e).__name__}: {e}) "
+                f"in the template:\n{q}\n"
+                f"Parameters available from <substitutions>: "
+                f"{sorted(available_parameters)}. Every {{name}} in a "
+                "performance test is expanded as a substitution placeholder; "
+                "if the braces are literal SQL syntax (e.g. a parameterized "
+                "view parameter like {ts:DateTime64(3)}), escape them by "
+                "doubling: {{...}}."
+            ) from e
     if len(other_templates):
         return query_results, other_results
     else:

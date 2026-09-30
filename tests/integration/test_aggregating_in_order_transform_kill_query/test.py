@@ -1,5 +1,3 @@
-import concurrent.futures
-import threading
 import uuid
 
 import pytest
@@ -11,7 +9,7 @@ node1 = cluster.add_instance(
     "node1",
 )
 
-FAULT_NAME = "aggregating_in_order_transform_mid_loop_pause"
+FAULT_NAME = "aggregating_in_order_transform_cancel_mid_loop"
 
 # A `MergeTree` table sorted on the GROUP BY key is required: `buildInputOrderInfo` only
 # accepts `ReadFromMergeTree` / `ReadFromMerge` / `ReadFromObjectStorageStep`, so a `numbers`
@@ -37,43 +35,30 @@ def started_cluster():
         cluster.shutdown()
 
 
+def failpoint_enabled():
+    return node1.query(
+        f"SELECT enabled FROM system.fail_points WHERE name = '{FAULT_NAME}'"
+    ).strip()
+
+
 def test_kill_query_mid_loop(started_cluster):
     query_id = str(uuid.uuid4())
 
+    # The failpoint cancels the query in place, the same way `KILL QUERY` does, so the query runs
+    # on this thread and no `SYSTEM WAIT FAILPOINT ... PAUSE` parks a pipeline worker inside
+    # `IProcessor::work()`.
     node1.query(f"SYSTEM ENABLE FAILPOINT {FAULT_NAME}")
-
-    thread_error = [None]
-
-    def execute_query():
-        try:
-            _, error = node1.query_and_get_answer_with_error(QUERY, query_id=query_id)
-            assert "DB::Exception: Query was cancelled" in error
-        except Exception as e:
-            thread_error[0] = e
-
-    query_thread = threading.Thread(target=execute_query)
-    query_thread.start()
-
     try:
-        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        wait_future = pool.submit(
-            node1.query,
-            f"SYSTEM WAIT FAILPOINT {FAULT_NAME} PAUSE",
-        )
-        done, _ = concurrent.futures.wait([wait_future], timeout=60)
-        if not done:
-            pool.shutdown(wait=False, cancel_futures=True)
-            assert False, f"Failpoint {FAULT_NAME} not triggered within 60 s"
-        pool.shutdown(wait=False)
-        wait_future.result()
+        assert failpoint_enabled() == "1"
 
-        node1.http_query(f"KILL QUERY WHERE query_id='{query_id}'")
+        _, error = node1.query_and_get_answer_with_error(QUERY, query_id=query_id)
+        assert "DB::Exception: Query was cancelled" in error
+
+        # `enabled` went 1 -> 0 with no DISABLE in between, which only a fire can do; `0` on its
+        # own is also what an un-armed failpoint reads.
+        assert failpoint_enabled() == "0"
     finally:
         node1.query(f"SYSTEM DISABLE FAILPOINT {FAULT_NAME}")
-
-    query_thread.join()
-    if thread_error[0] is not None:
-        raise thread_error[0]
 
     result = node1.query(
         f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"

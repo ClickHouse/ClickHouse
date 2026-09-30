@@ -44,7 +44,7 @@ CORE_BLOCKING_JOB_NAMES = [
 ] + [
     job.name
     for job in JobConfigs.integration_test_jobs_required
-    if "_asan_ubsan, db disk, old analyzer" in job.name
+    if "_asan_ubsan, db disk," in job.name
 ] + [
     job.name
     for job in JobConfigs.unittest_jobs
@@ -211,6 +211,7 @@ workflow = Workflow.Config(
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
         JobConfigs.parser_memory_check_job,
+        JobConfigs.storage_memory_check_job,
         # ClickBench runs on PRs only when files in its digest change
         # (see `clickbench_jobs.digest_config`), so the cost is bounded.
         *[
@@ -285,7 +286,7 @@ workflow = Workflow.Config(
     job_aliases={
         "integration": JobConfigs.integration_test_jobs_non_required[
             0
-        ].name,  # plain integration test job, no old analyzer, no dist plan
+        ].name,  # plain integration test job, no dist plan
         "fast": "Fast test",
         "functional": PLAIN_FUNCTIONAL_TEST_JOB.name,
         "build_debug": "Build (amd_debug)",

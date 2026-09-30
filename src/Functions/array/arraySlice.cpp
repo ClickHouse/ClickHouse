@@ -112,6 +112,12 @@ public:
         const auto offset_column = arguments[1].column->convertToFullColumnIfReplicated();
         const auto length_column = arguments.size() > 2 ? arguments[2].column->convertToFullColumnIfReplicated() : nullptr;
 
+        if (isColumnConst(*offset_column)
+            && !offset_column->onlyNull()
+            && offset_column->getUInt(0) == 1
+            && (!length_column || length_column->onlyNull()))
+            return arguments[0].column;
+
         std::unique_ptr<GatherUtils::IArraySource> source;
 
         size_t size = array_column->size();

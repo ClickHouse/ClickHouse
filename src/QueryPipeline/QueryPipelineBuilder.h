@@ -186,7 +186,8 @@ public:
         SharedHeader res_header,
         SetAndKeyPtr set_and_key,
         const SizeLimits & limits,
-        PreparedSetsCachePtr prepared_sets_cache);
+        PreparedSetsCachePtr prepared_sets_cache,
+        bool recoverable_build = false);
 
     void addMaterializingCTETransform(
         SharedHeader res_header,

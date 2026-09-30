@@ -44,6 +44,7 @@ QUOTA はユーザー設定で構成し、通常は &#39;users.xml&#39; に設�
             <execution_time>0</execution_time>
         </interval>
     </default>
+</quotas>
 ```
 
 デフォルトでは、QUOTA は使用量を制限せずに、1時間ごとのリソース消費量を追跡します。
@@ -153,6 +154,7 @@ QUOTA では、複数のキーのリソース使用状況をそれぞれ独立�
         <keyed_by_forwarded_ip />.
     -->
     <keyed />
+</web_global>
 ```
 
 正規化クエリハッシュをキーとしてQUOTAを設定することもできます。これにより、異なる各クエリパターンごとに独立したQUOTAバケットが割り当てられます。XML設定では、`<keyed_by_normalized_query_hash />` と記述します:

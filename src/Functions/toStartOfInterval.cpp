@@ -50,8 +50,8 @@ enum class ToStartOfIntervalOverload
 };
 
 /// Clamps a rounded timestamp into a narrowing result type instead of wrapping, so that the result stays
-/// monotonic over the whole argument range. Only DateTime64 arguments round outside Date and DateTime; the
-/// out-of-range rounding of the other argument types is defined in DateLUTImpl, so they pass saturate = false.
+/// monotonic over the whole argument range. DateTime64 arguments, and a Date floored to whole days, round
+/// outside DateTime; the out-of-range rounding of the other argument types is defined in DateLUTImpl.
 template <bool saturate, typename FieldType>
 FieldType saturatingResultCast(Int64 value)
 {
@@ -251,7 +251,7 @@ private:
         const DateLUTImpl & time_zone,
         Int64 scale_multiplier)
     {
-        std::optional<Int64> modular_divisor;
+        std::optional<DateLUTImpl::ModularDivisor> modular_divisor;
         if constexpr (unit == IntervalKind::Kind::Minute)
             modular_divisor = time_zone.minuteIntervalModularDivisor(static_cast<UInt64>(num_units));
         else if constexpr (unit == IntervalKind::Kind::Second)
@@ -263,7 +263,11 @@ private:
         }
         if (!modular_divisor)
             return false;
-        const Int64 divisor = *modular_divisor;
+        const Int64 divisor = modular_divisor->divisor;
+        /// Below the epoch the offset of some zones has a sub-divisor component, and the rounding is not
+        /// modular there; such rows take the generic path one by one, the rest of the column keeps the fast
+        /// one. `DateTime` cannot represent a negative timestamp, so it is never concerned.
+        [[maybe_unused]] const bool valid_before_epoch = modular_divisor->valid_before_epoch;
 
         const size_t size = time_data.size();
         using ResultFieldType = typename ResultContainer::value_type;
@@ -304,7 +308,7 @@ private:
                 const Int64 t = static_cast<Int64>(time_data[i]) / scale_divider;
                 /// Out of the LUT range the offset is extrapolated and can have a sub-divisor component
                 /// (e.g. `Asia/Kolkata` is +5:53:28 before 1906), so the rounding is not modular there.
-                if (unlikely(!DateLUTImpl::isTimeInLUTRange(t)))
+                if (unlikely(!DateLUTImpl::isTimeInLUTRange(t) || (t < 0 && !valid_before_epoch)))
                 {
                     result_data[i] = saturatingResultCast<saturate, ResultFieldType>(
                         ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
@@ -397,7 +401,11 @@ private:
         }
         else // Overload: Default
         {
-            constexpr bool saturate = std::is_same_v<TimeDataType, DataTypeDateTime64>;
+            /// Flooring a `Date` to whole days yields seconds, and the top of the `Date` domain is past `UInt32`
+            /// seconds, so a narrowing `DateTime` result has to clamp here too. `Date32` is excluded: clamping its
+            /// pre-epoch values into an unsigned codomain would collapse distinct buckets.
+            constexpr bool saturate = std::is_same_v<TimeDataType, DataTypeDateTime64>
+                || (std::is_same_v<TimeDataType, DataTypeDate> && unit == IntervalKind::Kind::Day);
 
             if constexpr ((unit == IntervalKind::Kind::Second || unit == IntervalKind::Kind::Minute || unit == IntervalKind::Kind::Hour)
                 && (std::is_same_v<TimeColumnType, ColumnDateTime> || std::is_same_v<TimeColumnType, ColumnDateTime64>))

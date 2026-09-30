@@ -52,7 +52,7 @@ function create_table()
                  kafka_group_name = '${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}',
                  kafka_format = 'RawBLOB',
                  kafka_keeper_path = '${ZK_PATH}',
-                 kafka_replica_name = 'r1'
+                 kafka_replica_name = '{replica}'
     "
 }
 

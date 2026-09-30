@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <optional>
+#include <numeric>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -113,7 +114,6 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -170,6 +170,12 @@ static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
     std::vector<std::optional<size_t>> mapping(primary_key.column_names.size());
     for (size_t i = 0; i < primary_key.column_names.size(); ++i)
     {
+        /// `forAnyHyperrectangle` uses these bounds as the column universe, so a bound that can hide a
+        /// NaN is not usable here: `containsRange` would be true where the NaN falsifies it. Such a
+        /// column falls back to the whole universe.
+        if (i < primary_key.data_types.size() && KeyCondition::typeMayHideNaN(primary_key.data_types[i]))
+            continue;
+
         auto it = std::find(minmax_names.begin(), minmax_names.end(), primary_key.column_names[i]);
         if (it != minmax_names.end())
             mapping[i] = static_cast<size_t>(it - minmax_names.begin());
@@ -681,6 +687,13 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     auto start_time = std::chrono::steady_clock::now();
 
     auto virtual_columns_block = data.getBlockWithVirtualsForFilter(metadata_snapshot, parts);
+
+    /// The surviving parts are identified by name, so a physical column named `_part` shadowing the
+    /// virtual one - which leaves it out of the block - makes this filtering unavailable. Keep every
+    /// part; the predicate is still applied to the rows themselves.
+    if (!virtual_columns_block.has("_part"))
+        return {};
+
     VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), virtual_columns_block);
     auto result = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 
@@ -688,6 +701,24 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     ProfileEvents::increment(ProfileEvents::FilterPartsByVirtualColumnsMicroseconds, elapsed_us);
 
     return result;
+}
+
+RangesInDataParts MergeTreeDataSelectExecutor::filterParts(
+    const RangesInDataParts & parts,
+    const ReadFromMergeTree::Indexes & indexes,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeData & data,
+    const SelectQueryInfo & query_info,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context,
+    const PartitionIdToMaxBlock * max_block_numbers_to_read,
+    LoggerPtr log,
+    ReadFromMergeTree::IndexStats & index_stats)
+{
+    auto res = filterPartsByPartition(
+        parts, indexes.partition_pruner, indexes.minmax_idx_condition, indexes.part_values,
+        metadata_snapshot, data, context, max_block_numbers_to_read, log, index_stats);
+    return filterPartsByStatistics(res, metadata_snapshot, query_info, mutations_snapshot, context, log, index_stats);
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
@@ -700,7 +731,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     const ContextPtr & context,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     LoggerPtr log,
-    ReadFromMergeTree::IndexStats & index_stats)
+    ReadFromMergeTree::IndexStats & index_stats,
+    bool check_index_usage)
 {
     RangesInDataParts res;
     const Settings & settings = context->getSettingsRef();
@@ -709,7 +741,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     if (minmax_idx_condition)
         minmax_columns_types = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data.getSettings()).getTypes();
 
-    if (metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date]
+    if (check_index_usage && metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date]
         && (!minmax_idx_condition || minmax_idx_condition->generateUnsubstituted().alwaysUnknownOrTrue())
         && (!partition_pruner || partition_pruner->isUseless()))
     {
@@ -1000,13 +1032,98 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::vector<IndexStat> useful_indices_stat(stat_size);
 
-    /// per_part_index_orders can be shorter than the parts being read when index analysis was cached
-    /// for a smaller part set; fall back to the natural order (the order only picks which index to try first).
-    auto index_order_at = [&skip_indexes](size_t part_index, size_t idx) -> size_t
+    /// Part filtering precedes this stage. Compute costs only for the surviving parts,
+    /// and only when there is an index order to choose. The result is memoized per part, so
+    /// repeated analyses of the same read step (estimation, parallel replicas, then the executed
+    /// read) walk the skip-index metadata once.
+    std::vector<SkipIndexOrder> per_part_index_orders;
+    if (skip_indexes.useful_indices.size() > 1)
     {
-        return part_index < skip_indexes.per_part_index_orders.size()
-            ? skip_indexes.per_part_index_orders[part_index][idx]
-            : idx;
+        auto & order_cache = *filter_context.indexes.skip_index_orders;
+        per_part_index_orders.reserve(parts_with_ranges.size());
+
+        std::vector<size_t> index_sizes;
+        index_sizes.reserve(skip_indexes.useful_indices.size());
+
+        for (const auto & part : parts_with_ranges)
+        {
+            const auto cache_key = SkipIndexOrderCache::makeKey(*part.data_part);
+
+            {
+                std::lock_guard lock(order_cache.mutex);
+                auto it = order_cache.orders.find(cache_key);
+                if (it != order_cache.orders.end())
+                {
+                    per_part_index_orders.emplace_back(it->second);
+                    continue;
+                }
+            }
+
+            auto index_order = std::make_shared<std::vector<size_t>>(skip_indexes.useful_indices.size());
+            std::iota(index_order->begin(), index_order->end(), 0);
+
+            index_sizes.clear();
+
+            for (const auto & idx : skip_indexes.useful_indices)
+            {
+                size_t index_size = 0;
+                auto format = idx.index->getDeserializedFormat(*part.data_part, idx.index->getFileName());
+
+                for (const auto & substream : format.substreams)
+                {
+                    String stream_name = idx.index->getFileName() + substream.suffix;
+                    /// getFileSizeOrZeroResolved resolves the on-disk name and also sizes substreams
+                    /// with no checksums entry (bundled in skp_idx.packed), so the cost-based
+                    /// reordering accounts for them instead of treating them as free.
+                    index_size += part.data_part->getFileSizeOrZeroResolved(stream_name, substream.extension);
+                }
+
+                index_sizes.emplace_back(index_size);
+            }
+
+            // Move minmax indices to first positions, so they will be applied first as cheapest ones
+            ::stableSort(index_order->begin(), index_order->end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
+            {
+                const auto l_index = useful_indices[l].index;
+                const auto r_index = useful_indices[r].index;
+
+                const bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l_index.get());
+                const bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r_index.get());
+
+                auto l_index_priority = l_is_minmax ? 1 : 2;
+                auto r_index_priority = r_is_minmax ? 1 : 2;
+
+#if USE_USEARCH
+                // A vector similarity index (if present) is the most selective, hence move it to front
+                bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l_index.get());
+                bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r_index.get());
+                if (l_is_vectorsimilarity)
+                    l_index_priority = 0;
+                if (r_is_vectorsimilarity)
+                    r_index_priority = 0;
+#endif
+                // negated since we want to prioritize coarser indexes
+                const auto neg_l_granularity = -l_index->getGranularity();
+                const auto neg_r_granularity = -r_index->getGranularity();
+
+                const auto l_size = idx_sizes[l];
+                const auto r_size = idx_sizes[r];
+
+                return std::tie(l_index_priority, neg_l_granularity, l_size) < std::tie(r_index_priority, neg_r_granularity, r_size);
+            });
+
+            {
+                std::lock_guard lock(order_cache.mutex);
+                order_cache.orders.emplace(cache_key, index_order);
+            }
+
+            per_part_index_orders.emplace_back(std::move(index_order));
+        }
+    }
+
+    auto index_order_at = [&per_part_index_orders](size_t part_index, size_t idx) -> size_t
+    {
+        return per_part_index_orders.empty() ? idx : (*per_part_index_orders[part_index])[idx];
     };
 
     std::atomic<size_t> sum_marks_pk = 0;
@@ -1562,7 +1679,6 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 {
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_query_condition_cache]
-            || !settings[Setting::allow_experimental_analyzer]
             /// `apply_deleted_mask = 0` must return deleted rows, so it cannot reuse entries written
             /// by normal reads: those may exclude a granule whose only matching rows are deleted.
             || !settings[Setting::apply_deleted_mask]
@@ -1608,11 +1724,13 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         size_t granules_dropped = 0;
     };
 
+    const UInt64 settings_salt = queryConditionCacheSettingsSalt(context->getSettingsRef());
+
     auto drop_mark_ranges = [&](const ActionsDAG::Node * dag, bool apply_top_k_salt)
     {
         /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
         /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
-        size_t condition_hash = dag->getHash();
+        size_t condition_hash = queryConditionCacheHash(dag->getHash(), settings_salt);
         size_t topk_reuse_predicate_only_hash = 0;
         bool has_topk_reuse_predicate_only_hash = false;
         if (apply_top_k_salt && top_k_filter_info && top_k_filter_info->where_clause)
@@ -1622,7 +1740,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             /// TopK entry), so probing it would just be wasted cache lookups per part.
             if (auto stripped = getTopKReusePredicateOnlyConditionHash(dag))
             {
-                topk_reuse_predicate_only_hash = *stripped;
+                topk_reuse_predicate_only_hash = queryConditionCacheHash(*stripped, settings_salt);
                 has_topk_reuse_predicate_only_hash = true;
             }
         }
@@ -2627,7 +2745,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         mark_cache,
         uncompressed_cache,
         vector_similarity_index_cache,
-        reader_settings);
+        reader_settings,
+        /*interruptible_marks_read=*/ true);
 
     MarkRanges res;
     size_t ranges_size = ranges.size();
@@ -2987,7 +3106,8 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
             mark_cache,
             uncompressed_cache,
             vector_similarity_index_cache,
-            reader_settings);
+            reader_settings,
+            /*interruptible_marks_read=*/ true);
 
     auto min_max_granules = std::make_shared<MergeTreeIndexBulkGranulesMinMax>(skip_index_minmax->index.name,
                                     skip_index_minmax->index.sample_block, skip_index_granularity, direction,

@@ -5,6 +5,8 @@
 #include <mutex>
 #include <unordered_set>
 
+#include <base/UUID.h>
+
 #include <Common/Logger_fwd.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Interpreters/Context_fwd.h>
@@ -54,6 +56,9 @@ public:
     String getWorkerThreadResourceName() override;
     String getQueryResourceName() override;
     String getMemoryReservationResourceName() override;
+
+    void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, WorkloadEntityType entity_type) const override;
+    void restore(RestorerFromBackup & restorer, const String & data_path_in_backup, WorkloadEntityType entity_type) override;
 
 protected:
     enum class OperationResult
@@ -113,6 +118,10 @@ private:
         const std::unordered_map<String, ASTPtr> & all_entities,
         std::optional<Event> change = {});
 
+    /// Creates all workload entities accumulated from a backup (see restore()) in a proper order, in a single data restore task.
+    /// throw_if_exists / replace_if_exists are derived from the create_workloads_and_resources restore setting.
+    void restoreEntitiesAccumulatedFromBackup(const ContextMutablePtr & context, const UUID & restore_id, bool throw_if_exists, bool replace_if_exists);
+
     /// Held by shared_ptr so a subscription outlives both its list node and the storage.
     /// `exec_mutex` is held for the whole invocation, so acquiring it waits for an in-flight call.
     /// `unsubscribed` stops an entry a notifier already copied out of `list` from being invoked.
@@ -138,6 +147,15 @@ private:
     std::unordered_map<String, ASTPtr> entities; /// Maps entity name into CREATE entity query (including entities from the next storage)
     std::unordered_map<String, ASTPtr> local_entities; /// Entities that are stored in this storage (excluding entities from the next storage)
     std::unordered_map<String, ASTPtr> other_entities; /// Entities that are stored in the next storage (a copy to be accessed under own mutex)
+
+    // Workload entities collected from a backup before being restored together (see restore()).
+    // Keyed by the restore operation's UUID so concurrent restores do not share or overwrite each other's accumulated entities.
+    std::unordered_map<UUID, std::unordered_map<String, ASTPtr>> entities_to_restore;
+
+    // A single consistent snapshot of local_entities taken once per backup operation (keyed by the backup UUID),
+    // so that system.workloads and system.resources -- backed up via two separate backup() calls on this shared
+    // storage -- are captured from the same view (see backup()).
+    mutable std::unordered_map<UUID, std::unordered_map<String, ASTPtr>> entities_to_backup;
 
     // Validation
     std::unordered_map<String, std::unordered_set<String>> references; /// Keep track of references between entities. Key is target. Value is set of sources

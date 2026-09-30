@@ -136,7 +136,7 @@
 	url = https://github.com/danlark1/miniselect
 [submodule "contrib/rocksdb"]
 	path = contrib/rocksdb
-	url = https://github.com/facebook/rocksdb
+	url = https://github.com/ClickHouse/rocksdb
 [submodule "contrib/xz"]
 	path = contrib/xz
 	url = https://github.com/tukaani-project/xz
@@ -326,10 +326,10 @@
 	url = https://github.com/ClickHouse/openssl.git
 [submodule "contrib/double-conversion"]
 	path = contrib/double-conversion
-	url = https://github.com/ClickHouse/double-conversion.git
+	url = https://github.com/google/double-conversion
 [submodule "contrib/mongo-cxx-driver"]
 	path = contrib/mongo-cxx-driver
-	url = https://github.com/mongodb/mongo-cxx-driver.git
+	url = https://github.com/ClickHouse/mongo-cxx-driver.git
 [submodule "contrib/mongo-c-driver"]
 	path = contrib/mongo-c-driver
 	url = https://github.com/ClickHouse/mongo-c-driver.git
@@ -441,6 +441,9 @@
 [submodule "contrib/cuCollections"]
 	path = contrib/cuCollections
 	url = https://github.com/NVIDIA/cuCollections.git
+[submodule "contrib/cucascade"]
+	path = contrib/cucascade
+	url = https://github.com/NVIDIA/cuCascade.git
 [submodule "contrib/nvtx"]
 	path = contrib/nvtx
 	url = https://github.com/NVIDIA/NVTX.git

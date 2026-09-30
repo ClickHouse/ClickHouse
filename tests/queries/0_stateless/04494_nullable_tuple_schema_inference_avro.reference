@@ -1,8 +1,6 @@
--- Schema inference must not return Nullable(Tuple) for an Avro union [null, record] unless
--- the Nullable(Tuple) type is allowed by allow_experimental_nullable_tuple_type, because otherwise
--- DESCRIBE would return a type that CREATE TABLE rejects. A null record value is read as the
--- default tuple value (input_format_null_as_default), as it worked before Nullable(Tuple)
--- was supported.
+-- With the Nullable(Tuple) type disabled, schema inference must not return Nullable(Tuple) for an
+-- Avro union [null, record], because otherwise DESCRIBE would return a type that CREATE TABLE rejects.
+-- A null record value is read as the default tuple value (input_format_null_as_default).
 
 -- { echo }
 
@@ -10,8 +8,8 @@ SET engine_file_truncate_on_insert = 1;
 -- Write a file containing a nullable record column and a nullable record with a nested record, while the type is allowed.
 SET allow_experimental_nullable_tuple_type = 1;
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04494.avro', 'Avro', 'id Int64, s Nullable(Tuple(a Int64, b String)), n Nullable(Tuple(x Int64, t Tuple(y Int64, z String)))') SELECT number, if(number = 1, NULL, (number * 10, 'x')), if(number = 2, NULL, (number * 100, (number * 1000, 'y'))) FROM numbers(3);
--- The default settings must not infer Nullable(Tuple), and CREATE TABLE from the inferred schema must work.
-SET allow_experimental_nullable_tuple_type = DEFAULT;
+-- With the type disabled, inference must not return Nullable(Tuple), and CREATE TABLE from the inferred schema must work.
+SET allow_experimental_nullable_tuple_type = 0;
 DESCRIBE file(currentDatabase() || '_04494.avro', 'Avro');
 id	Int64					
 s	Tuple(\n    a Int64,\n    b String)					

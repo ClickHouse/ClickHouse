@@ -20,7 +20,6 @@
 #include <Interpreters/GroupingSetsRewriterVisitor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
-#include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -35,6 +34,7 @@
 #include <Interpreters/replaceForPositionalArguments.h>
 #include <Interpreters/replaceMissedSubcolumnsInQuery.h>
 
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
@@ -345,19 +345,6 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED, "Empty list of columns in SELECT query");
 }
 
-bool hasArrayJoin(const ASTPtr & ast)
-{
-    if (const ASTFunction * function = ast->as<ASTFunction>())
-        if (function->name == "arrayJoin")
-            return true;
-
-    for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && hasArrayJoin(child))
-            return true;
-
-    return false;
-}
-
 /// Keep number of columns for 'GLOBAL IN (SELECT 1 AS a, a)'
 void renameDuplicatedColumns(const ASTSelectQuery * select_query)
 {
@@ -480,7 +467,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
             /// Columns required by interpolate expression are not always in the required_result_columns
             new_elements.push_back(elem);
         }
-        else if (select_query->distinct || hasArrayJoin(elem))
+        else if (select_query->distinct || expressionContainsArrayJoin(elem))
         {
             /// ARRAY JOIN cannot be optimized out since it may change number of rows,
             /// so as DISTINCT.
@@ -1545,10 +1532,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (settings[Setting::legacy_column_name_of_tuple_literal])
         markTupleLiteralsAsLegacy(query);
 
-    /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
-    result.rewrite_subqueries = PredicateExpressionsOptimizer(getContext(), tables_with_columns, settings).optimize(*select_query);
-
-     /// Only apply AST optimization for initial queries.
+    /// Only apply AST optimization for initial queries.
     const bool ast_optimizations_allowed =
         getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
         && !select_options.ignore_ast_optimizations;

@@ -63,6 +63,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/checkStackSize.h>
 #include <Common/escapeForFileName.h>
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
 #include <Common/filesystemHelpers.h>
@@ -156,6 +157,11 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int TOO_MANY_ROWS;
     extern const int FILE_CHANGED_DURING_READ;
+}
+
+namespace FailPoints
+{
+    extern const char file_read_inject_version_token_mismatch[];
 }
 
 using String = std::string;
@@ -270,7 +276,7 @@ void listFilesWithRegexpMatchingImpl(
 
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
 
-    if (!fs::exists(prefix_without_globs))
+    if (!existsOrFileNameTooLong([&] { return fs::exists(prefix_without_globs); }))
         return;
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
@@ -409,10 +415,24 @@ void checkCreationIsAllowed(
 
     if (can_be_directory)
     {
-        auto table_path_stat = fs::status(table_path);
-        if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
+        const bool is_existing_directory = existsOrFileNameTooLong([&]
+        {
+            const auto table_path_stat = fs::status(table_path);
+            return fs::exists(table_path_stat) && fs::is_directory(table_path_stat);
+        });
+        if (is_existing_directory)
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File {} must not be a directory", table_path);
     }
+}
+
+/// Every syscall a path is passed to (`stat`, `open`, `opendir`) stops at the first NUL byte, while the
+/// containment checks see the whole value. A path with an embedded NUL therefore addresses a location the
+/// checks never look at, so it is rejected before the first filesystem probe. The path is not echoed in the
+/// message: it would put the NUL byte into the logs.
+void throwIfPathContainsEmbeddedNul(const std::string & path)
+{
+    if (path.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "File path contains an embedded NUL byte");
 }
 
 /// Use this instead of checkCreationIsAllowed for a path that can still carry a `..`.
@@ -422,6 +442,9 @@ void checkCreationIsAllowedResolvingDotDot(
     const std::string & path,
     bool can_be_directory)
 {
+    /// The resolver below canonicalizes the head of the path on the filesystem.
+    throwIfPathContainsEmbeddedNul(path);
+
     std::error_code ec;
     const fs::path checked_path = resolveDotDotForContainmentCheck(path, ec);
     if (ec)
@@ -463,6 +486,10 @@ std::pair<String, String> splitToArchivePathAndPathInArchive(const String & sour
 /// Finds files matching a specified pattern with globs.
 Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
 {
+    /// The listing below stats the path and expands its globs on the filesystem before the matched paths
+    /// are checked for containment in `user_files_path`, so the path must be rejected here, not there.
+    throwIfPathContainsEmbeddedNul(path_with_globs);
+
     fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
     fs::path fs_pattern(path_with_globs);
     if (fs_pattern.is_relative())
@@ -483,7 +510,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     }
     else if (pattern.find_first_of("*?{") == std::string::npos)
     {
-        if (!fs::is_directory(pattern))
+        if (!existsOrFileNameTooLong([&] { return fs::is_directory(pattern); }))
         {
             std::error_code error;
             size_t size = fs::file_size(pattern, error);
@@ -1378,6 +1405,7 @@ StorageFile::StorageFile(FileSource file_source_, CommonArguments args)
     is_path_with_globs = file_source_.with_globs;
     path_for_partitioned_write = std::move(file_source_.path_for_partitioned_write);
     archive_info = std::move(file_source_.archive_info);
+    total_bytes_to_read = file_source_.total_bytes_to_read;
 
     is_db_table = false;
 
@@ -1730,7 +1758,7 @@ Chunk StorageFileSource::generate()
                         if (archive.empty())
                             return {};
 
-                        if (!fs::exists(archive))
+                        if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
                         {
                             if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                                 continue;
@@ -1777,7 +1805,7 @@ Chunk StorageFileSource::generate()
                                 if (archive.empty())
                                     return {};
 
-                                if (!fs::exists(archive))
+                                if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
                                 {
                                     if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                                         continue;
@@ -1839,7 +1867,7 @@ Chunk StorageFileSource::generate()
                     if (current_path.empty())
                         return {};
 
-                    if (!fs::exists(current_path))
+                    if (!existsOrFileNameTooLong([&] { return fs::exists(current_path); }))
                     {
                         if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                             continue;
@@ -2585,6 +2613,8 @@ public:
                 /// and keeps the byte size - the same residual window every single-pass read of a
                 /// concurrently rewritten local file has. (getFileStat throws if the file is gone.)
                 auto file_stat = getFileStat(path, /*use_table_fd=*/ false, -1, storage->getName());
+                /// Armed, this stands in for a replacement of the file: the inode is what a rename changes.
+                fiu_do_on(FailPoints::file_read_inject_version_token_mismatch, { file_stat.st_ino = 0; });
                 if (computeFileCacheVersionToken(file_stat) != file.file.version_token)
                     throwFileChanged(path);
 
@@ -3160,6 +3190,8 @@ void registerStorageFile(StorageFactory & factory)
         "File",
         [](const StorageFactory::Arguments & factory_args)
         {
+            checkStorageSettingNames(factory_args);
+
             auto context = factory_args.getLocalContext();
             StorageFile::CommonArguments storage_args
             {
@@ -3191,7 +3223,7 @@ void registerStorageFile(StorageFactory & factory)
             {
                 Settings settings = factory_args.getContext()->getSettingsCopy();
 
-                // Apply changes from SETTINGS clause, with validation.
+                // Applying the changes validates the values, not the names.
                 settings.applyChanges(factory_args.storage_def->settings->changes);
 
                 storage_args.format_settings = getFormatSettings(factory_args.getContext(), settings);

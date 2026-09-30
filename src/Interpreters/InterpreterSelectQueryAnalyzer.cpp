@@ -13,6 +13,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/stripQuerySettings.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
@@ -40,6 +41,9 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
+#include <array>
+#include <string_view>
+
 namespace ProfileEvents
 {
     extern const Event QueryAnalysisMicroseconds;
@@ -63,6 +67,7 @@ extern const SettingsParallelReplicasMode parallel_replicas_mode;
 extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
 extern const SettingsString cluster_for_parallel_replicas;
+extern const SettingsBool make_distributed_plan;
 }
 
 namespace
@@ -205,6 +210,19 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
     ctx->setSetting("force_primary_key", false);
+    /// Setting them on the context is not enough: the nested interpreter re-applies the query's own
+    /// `SETTINGS` clause on top of the context it is handed (`QueryTreeBuilder::buildSelectExpression`),
+    /// which would put `automatic_parallel_replicas_mode` back and make `buildContext` clear
+    /// `enable_parallel_replicas` for the nested build. The nested plan would then contain no read from
+    /// the other replicas and the optimization would give up. Settings written after `FORMAT` land on
+    /// `ASTQueryWithOutput` and are not re-applied, which is why the very same query used to be
+    /// optimized or not depending on where its `SETTINGS` clause was written. Drop the overridden
+    /// settings from the (cloned) AST so that the overrides above actually hold.
+    static constexpr std::array settings_overridden_for_this_plan{
+        std::string_view{"automatic_parallel_replicas_mode"},
+        std::string_view{"force_primary_key"},
+    };
+    removeSettingsFromQuery(ast, settings_overridden_for_this_plan);
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);
@@ -252,6 +270,9 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
+/// The plan steps captured the query tree node contexts by pointer at build time, so the
+/// distributed-to-local fallback must flip the setting in place on those same objects
+/// as some optimization steps (Second-pass index analysis) read settings directly from the context tree.
 static void tweakSettingsForStreamingQuery(const ContextMutablePtr & context, const QueryTreeNodePtr & query_tree)
 {
     for (const auto & node : extractAllTableReferences(query_tree))
@@ -420,10 +441,31 @@ QueryPlan && InterpreterSelectQueryAnalyzer::extractQueryPlan() &&
     return std::move(planner).extractQueryPlan();
 }
 
+void InterpreterSelectQueryAnalyzer::applyDistributedPlanFallbackIfNeeded()
+{
+    if (!context->getSettingsRef()[Setting::make_distributed_plan])
+        return;
+
+    planner.buildQueryPlanIfNeeded();
+    auto & query_plan = planner.getQueryPlan();
+
+    /// The interpreter context is a different object from the root query node's; later settings
+    /// snapshots are built from it, so it follows the decision too. The query-tree node contexts
+    /// were registered by the planners that built the plan (`extendQueryContextAndStoragesLifetime`).
+    query_plan.addDistributedPlanDecisionContext(context);
+
+    QueryPlanOptimizationSettings probe_settings(context);
+    query_plan.applyDistributedPlanFallbackToLocal(probe_settings);
+}
+
 QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 {
     planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
+
+    /// Decide the distributed-to-local fallback before the settings snapshots below, so they
+    /// carry the decision.
+    applyDistributedPlanFallbackIfNeeded();
 
     QueryPlanOptimizationSettings optimization_settings(context);
     optimization_settings.query_plan_with_parallel_replicas_builder = query_plan_with_parallel_replicas_builder;

@@ -158,23 +158,30 @@ std::optional<Field> deserializeDecimalBound(const String & str, UInt32 scale, b
 
 }
 
+std::optional<Field> deserializeDecimalFromBinaryRepr(
+    const String & str, const IDataType & decimal_type, bool lower_bound, bool compensate_rounding)
+{
+    if (!WhichDataType(decimal_type).isDecimal())
+        return std::nullopt;
+
+    const UInt32 scale = getDecimalScale(decimal_type);
+    if (checkDecimal<Decimal32>(decimal_type))
+        return deserializeDecimalBound<Decimal32>(str, scale, lower_bound, compensate_rounding);
+    if (checkDecimal<Decimal64>(decimal_type))
+        return deserializeDecimalBound<Decimal64>(str, scale, lower_bound, compensate_rounding);
+    if (checkDecimal<Decimal128>(decimal_type))
+        return deserializeDecimalBound<Decimal128>(str, scale, lower_bound, compensate_rounding);
+    if (checkDecimal<Decimal256>(decimal_type))
+        return deserializeDecimalBound<Decimal256>(str, scale, lower_bound, compensate_rounding);
+    return std::nullopt;
+}
+
 std::optional<Field> deserializeFieldFromBinaryRepr(
     const String & str, const DataTypePtr & expected_type, bool lower_bound, bool compensate_rounding)
 {
     auto non_nullable_type = removeNullable(expected_type);
     if (WhichDataType(non_nullable_type).isDecimal())
-    {
-        const UInt32 scale = getDecimalScale(*non_nullable_type);
-        if (checkDecimal<Decimal32>(*non_nullable_type))
-            return deserializeDecimalBound<Decimal32>(str, scale, lower_bound, compensate_rounding);
-        if (checkDecimal<Decimal64>(*non_nullable_type))
-            return deserializeDecimalBound<Decimal64>(str, scale, lower_bound, compensate_rounding);
-        if (checkDecimal<Decimal128>(*non_nullable_type))
-            return deserializeDecimalBound<Decimal128>(str, scale, lower_bound, compensate_rounding);
-        if (checkDecimal<Decimal256>(*non_nullable_type))
-            return deserializeDecimalBound<Decimal256>(str, scale, lower_bound, compensate_rounding);
-        return std::nullopt;
-    }
+        return deserializeDecimalFromBinaryRepr(str, *non_nullable_type, lower_bound, compensate_rounding);
     if (non_nullable_type->getTypeId() == TypeIndex::Variant)
         return std::nullopt;
 

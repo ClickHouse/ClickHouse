@@ -160,14 +160,16 @@ SELECT s.v FROM file(currentDatabase() || '_04401.arrow', 'Arrow', 's Nullable(T
 
 -- A struct-NULL row in an Arrow file may carry non-default child values; what an extracted subcolumn
 -- reports for such a row is decided by the subcolumn path, so assert only that the flattened read
--- agrees with the direct one there. `tupleElement` over the whole struct reports type defaults.
+-- agrees with the direct one there: a tuple element is `Nullable(Tuple)` and NULL, an array or map element
+-- is empty. `tupleElement` over the whole struct reports NULL for the tuple element and type defaults
+-- for the array and map elements.
 INSERT INTO FUNCTION file(currentDatabase() || '_04401_hidden.arrow', 'Arrow')
 SELECT id, if(id = 2, NULL, p)::Nullable(Tuple(a Tuple(x UInt32), arr Array(UInt32), m Map(String, String))) AS n
 FROM values('id UInt8, p Tuple(a Tuple(x UInt32), arr Array(UInt32), m Map(String, String))', (1, tuple(tuple(10), [1], map('k1', 'v1'))), (2, tuple(tuple(99), [3], map('k2', 'v2'))));
 SELECT id, `n.a`, `n.arr`, `n.m` FROM file(currentDatabase() || '_04401_hidden.arrow', 'Arrow', 'id UInt8, `n.a` Tuple(x UInt32), `n.arr` Array(UInt32), `n.m` Map(String, String)') WHERE id = 1;
 SELECT
     (SELECT count() FROM file(currentDatabase() || '_04401_hidden.arrow', 'Arrow', 'id UInt8, `n.a` Tuple(x UInt32), `n.arr` Array(UInt32), `n.m` Map(String, String)')),
-    (SELECT count() FROM (SELECT id, `n.a`, `n.arr`, `n.m` FROM file(currentDatabase() || '_04401_hidden.arrow', 'Arrow', 'id UInt8, `n.a` Tuple(x UInt32), `n.arr` Array(UInt32), `n.m` Map(String, String)')
+    (SELECT count() FROM (SELECT id, `n.a`, `n.arr`, `n.m` FROM file(currentDatabase() || '_04401_hidden.arrow', 'Arrow', 'id UInt8, `n.a` Nullable(Tuple(x UInt32)), `n.arr` Array(UInt32), `n.m` Map(String, String)')
                           EXCEPT
                           SELECT id, n.a, n.arr, n.m FROM file(currentDatabase() || '_04401_hidden.arrow', 'Arrow', 'id UInt8, n Nullable(Tuple(a Tuple(x UInt32), arr Array(UInt32), m Map(String, String)))')));
 SELECT id, tupleElement(materialize(n), 'a'), tupleElement(materialize(n), 'arr'), tupleElement(materialize(n), 'm') FROM file(currentDatabase() || '_04401_hidden.arrow', 'Arrow', 'id UInt8, n Nullable(Tuple(a Tuple(x UInt32), arr Array(UInt32), m Map(String, String)))') ORDER BY id;
