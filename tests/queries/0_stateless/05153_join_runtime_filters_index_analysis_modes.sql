@@ -62,6 +62,15 @@ WHERE d.tag = 'hot'
 SETTINGS log_comment = '05153_parallel_replicas', enable_parallel_replicas = 1, parallel_replicas_plan_based = 0,
     parallel_replicas_local_plan = 1;
 
+-- The same classic mode with the local plan off, so the initiator reads nothing and the counters can only
+-- come from followers that planned the query text themselves. The row above pins the initiator's side of
+-- this mode and would stay green on its own even if every follower stopped pruning.
+SELECT 'parallel_replicas_followers', count(), sum(f.v)
+FROM rf_idx_fact AS f INNER JOIN rf_idx_dim AS d ON f.id = d.id
+WHERE d.tag = 'hot'
+SETTINGS log_comment = '05153_parallel_replicas_followers', enable_parallel_replicas = 1,
+    parallel_replicas_plan_based = 0, serialize_query_plan = 0, parallel_replicas_local_plan = 0;
+
 -- Parallel replicas where the replicas receive a serialized plan instead of the query text: the
 -- descriptors are not serialized with it, but the replica's own optimization of that plan attaches them.
 -- The local plan is pinned OFF so that the initiator reads nothing: the counters below can then only come
@@ -112,8 +121,8 @@ INNER JOIN
     FROM system.query_log
     WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish'
         AND log_comment IN ('05153_local', '05153_distributed_plan', '05153_parallel_replicas',
-            '05153_parallel_replicas_serialized_plan', '05153_parallel_replicas_plan_based',
-            '05153_parallel_replicas_plan_based_local_plan')
+            '05153_parallel_replicas_followers', '05153_parallel_replicas_serialized_plan',
+            '05153_parallel_replicas_plan_based', '05153_parallel_replicas_plan_based_local_plan')
         AND event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR
 ) AS initiator ON part.initial_query_id = initiator.query_id
 WHERE part.type = 'QueryFinish' AND part.event_date >= yesterday() AND part.event_time > now() - INTERVAL 1 HOUR
