@@ -468,7 +468,7 @@ ClickHouse 重新加载配置并检查是否有新更改的频率
 
 ## handshake_timeout_milliseconds {#handshake_timeout_milliseconds}
 
-<SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />整个 TCP 握手阶段 (Hello + Addendum) 的挂钟时间超时时间，以毫秒为单位。限制未经身份验证的连接占用线程的最长时间。设为 0 可禁用。
+<SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />原生协议 (Hello 和 Addendum)、MySQL 或 PostgreSQL 连接的整个握手阶段 (包括 TLS 协商) 的挂钟时间超时时间，以毫秒为单位。限制未经身份验证的连接占用线程的最长时间：每次读取时都会检查该截止时间，且套接字接收超时不会超过该截止时间，因此即使客户端一直不发送任何数据，也无法超出该时间预算。该接收超时最低为 100 毫秒，因此设置的值较小时，实际耗时可能会略微超出时间预算，但不会导致读取超时过短。设为 0 可禁用。
 
 ## hdfs.libhdfs3_conf {#hdfs.libhdfs3_conf}
 

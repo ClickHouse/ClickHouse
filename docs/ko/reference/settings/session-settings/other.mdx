@@ -1401,11 +1401,13 @@ FORMAT Null;
 
 주요 사용 사례는 클라이언트 연결이 끊어져도 손실되어서는 안 되는 장시간 실행 `INSERT ... SELECT`입니다.
 
-## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
+## secondary_indexes_enable_bulk_filtering {#secondary_indexes_enable_bulk_filtering}
+
+**별칭**: `secondary_indices_enable_bulk_filtering`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "data skipping indices를 사용한 필터링을 위한 새로운 알고리즘"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "`secondary_indices_enable_bulk_filtering` 설정의 별칭을 추가했습니다."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "data skipping indices를 사용한 필터링을 위한 새로운 알고리즘"}]}]} />
 
 인덱스에 대한 일괄 필터링 알고리즘을 활성화합니다. 일반적으로 항상 더 나은 성능을 제공할 것으로 예상되지만, 호환성 및 제어를 위해 이 설정을 제공합니다.
 

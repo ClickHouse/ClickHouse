@@ -468,7 +468,7 @@ Define um diretório que contém arquivos proto para os tipos Protobuf.
 
 ## handshake_timeout_milliseconds {#handshake_timeout_milliseconds}
 
-<SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />Tempo limite, em milissegundos, medido pelo relógio local para toda a fase de handshake TCP (Hello + Addendum). Limita por quanto tempo uma conexão não autenticada pode manter uma thread ocupada. Defina como 0 para desabilitar.
+<SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />Tempo limite, em milissegundos, medido pelo relógio local para toda a fase de handshake de uma conexão via protocolo nativo (Hello e Addendum), MySQL ou PostgreSQL, incluindo a negociação TLS. Limita por quanto tempo uma conexão não autenticada pode manter uma thread ocupada: o prazo é verificado a cada leitura, e o tempo limite de recebimento do socket é limitado a esse prazo, de modo que um cliente que não envia nada também não consegue ultrapassar o tempo disponível. Essa limitação mantém um mínimo de 100 milissegundos, de modo que um valor pequeno ultrapassa ligeiramente o tempo disponível em vez de encurtar demais as leituras. Defina como 0 para desabilitar.
 
 ## hdfs.libhdfs3_conf {#hdfs.libhdfs3_conf}
 

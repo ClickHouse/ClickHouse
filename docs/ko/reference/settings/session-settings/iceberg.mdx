@@ -128,9 +128,9 @@ Iceberg 테이블에서 고아 파일 제거에 사용하는 기본 경과 시�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "새로운 설정: Iceberg 매니페스트 파일 헤더에 metadata.json에서 동일한 schema-id로 등록된 스키마와 충돌하는 스키마가 있으면, 다른 쿼리 엔진의 동작과 마찬가지로 쿼리를 실패시키는 대신 metadata.json의 스키마를 우선 사용하고 경고를 기록합니다. `compatibility`가 26.10 미만이면 이전의 엄격한 동작으로 돌아갑니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "새로운 설정: Iceberg 매니페스트 파일 헤더에 metadata.json에서 동일한 schema-id로 등록된 스키마와 충돌하는 스키마가 있으면, 다른 쿼리 엔진의 동작과 마찬가지로 쿼리를 실패시키는 대신 metadata.json의 스키마를 우선 사용합니다. `compatibility`가 26.10 미만이면 이전의 엄격한 동작으로 돌아갑니다."}]}]} />
 
-활성화하면 Iceberg 매니페스트 파일 헤더의 `schema` 키에 metadata.json에서 동일한 schema-id로 이미 등록된 스키마와 다른 스키마가 있을 경우 metadata.json의 스키마를 사용하고, 매니페스트 헤더의 사본은 경고와 함께 무시합니다. 비활성화하면 이러한 충돌로 인해 ICEBERG&#95;SPECIFICATION&#95;VIOLATION 오류와 함께 쿼리가 실패합니다.
+활성화하면 Iceberg 매니페스트 파일의 schema-id가 metadata.json에서 이미 등록된 경우 metadata.json의 스키마를 사용하고, 매니페스트 파일 헤더의 `schema` 키에 있는 사본은 비교하지 않고 무시합니다. 비활성화하면 매니페스트 헤더의 사본을 metadata.json의 스키마와 비교하며, 충돌이 있으면 ICEBERG&#95;SPECIFICATION&#95;VIOLATION 오류와 함께 쿼리가 실패합니다.
 
 매니페스트 헤더 스키마는 매니페스트가 기록된 시점의 테이블 스키마 사본일 뿐이며, 일부 작성기(예: AWS S3 Tables 유지 관리 작업)가 저하된 사본을 여기에 저장하는 사례가 관찰되었습니다. 다른 쿼리 엔진은 metadata.json에서 스키마를 확인하고 서로 다른 헤더 사본은 무시하므로 기본값도 이를 따릅니다. metadata.json 스키마 정의 두 개 간의 충돌은 여전히 항상 쿼리를 실패시킵니다.
 

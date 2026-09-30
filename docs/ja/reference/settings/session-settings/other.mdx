@@ -1392,11 +1392,13 @@ FORMAT Null;
 
 主なユースケースは、クライアント接続が切断されても失われてはならない、長時間実行される `INSERT ... SELECT` です。
 
-## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
+## secondary_indexes_enable_bulk_filtering {#secondary_indexes_enable_bulk_filtering}
+
+**別名**: `secondary_indices_enable_bulk_filtering`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "データスキッピングインデックスによるフィルタリングの新しいアルゴリズム"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "設定 `secondary_indices_enable_bulk_filtering` の別名を追加しました。"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "データスキッピングインデックスによるフィルタリングの新しいアルゴリズム"}]}]} />
 
 インデックスでの一括フィルタリングアルゴリズムを有効にします。通常はこちらのほうが常に優れていると想定されていますが、互換性の確保と制御のためにこの設定を用意しています。
 

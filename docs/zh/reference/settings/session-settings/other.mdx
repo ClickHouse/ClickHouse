@@ -1385,11 +1385,13 @@ FORMAT Null;
 
 主要用例是长时间运行的 `INSERT ... SELECT`，以确保客户端连接断开时查询不会丢失。
 
-## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
+## secondary_indexes_enable_bulk_filtering {#secondary_indexes_enable_bulk_filtering}
+
+**别名**：`secondary_indices_enable_bulk_filtering`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "一种按数据跳过索引进行过滤的新算法"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "为设置 `secondary_indices_enable_bulk_filtering` 添加了别名。"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "一种按数据跳过索引进行过滤的新算法"}]}]} />
 
 为索引启用批量过滤算法。通常它的效果会更好，但我们保留此设置以便进行兼容性控制。
 

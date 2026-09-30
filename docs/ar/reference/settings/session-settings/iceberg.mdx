@@ -128,9 +128,9 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد: عندما تحمل ترويسة ملف manifest في Iceberg مخططًا يتعارض مع المخطط المسجَّل لنفس schema-id المأخوذ من metadata.json، يُعتمد مخطط metadata.json ويُسجَّل تحذير بدلًا من إفشال الاستعلام، بما يطابق سلوك محركات الاستعلام الأخرى. وضبط `compatibility` على إصدار أقل من 26.10 يُعيد السلوك الصارم السابق."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد: عندما تحمل ترويسة ملف manifest في Iceberg مخططًا يتعارض مع المخطط المسجَّل لنفس schema-id المأخوذ من metadata.json، يُعتمد مخطط metadata.json بدلًا من إفشال الاستعلام، بما يطابق سلوك محركات الاستعلام الأخرى. وضبط `compatibility` على إصدار أقل من 26.10 يُعيد السلوك الصارم السابق."}]}]} />
 
-عند التفعيل، إذا كان المفتاح `schema` في ترويسة ملف manifest في Iceberg يحمل مخططًا يختلف عن المخطط المسجَّل مسبقًا لنفس schema-id المأخوذ من metadata.json، فسيُعتمد مخطط metadata.json وتُتجاهَل النسخة الموجودة في ترويسة manifest مع إصدار تحذير. أما عند التعطيل، فيؤدي مثل هذا التعارض إلى إفشال الاستعلام بخطأ ICEBERG&#95;SPECIFICATION&#95;VIOLATION.
+عند التفعيل، إذا كان schema-id الخاص بملف manifest في Iceberg مسجَّلًا مسبقًا من metadata.json، فسيُعتمد مخطط metadata.json وتُتجاهَل النسخة الموجودة في المفتاح `schema` في ترويسة ملف manifest دون مقارنتها. أما عند التعطيل، فتُقارَن النسخة الموجودة في ترويسة manifest بمخطط metadata.json، ويؤدي أي تعارض إلى إفشال الاستعلام بخطأ ICEBERG&#95;SPECIFICATION&#95;VIOLATION.
 
 ليس مخطط ترويسة manifest سوى نسخة من مخطط الجدول وقت كتابة الـ manifest، وقد لوحظ أن بعض أدوات الكتابة (مثل مهام صيانة AWS S3 Tables) تخزّن فيها نسخًا منقوصة. وتستخرج محركات الاستعلام الأخرى المخططات من metadata.json وتتجاهل نسخ الترويسة المخالفة، لذا يسير السلوك الافتراضي على نهجها. أما التعارض بين تعريفَي مخطط داخل metadata.json فيظل دائمًا يؤدي إلى إفشال الاستعلام.
 

@@ -468,7 +468,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 ## handshake_timeout_milliseconds {#handshake_timeout_milliseconds}
 
-<SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />مهلة الوقت الفعلي، بالمللي ثانية، لمرحلة مصافحة TCP بالكامل (Hello + Addendum). يحدّ هذا الإعداد من المدة التي يمكن لاتصال غير مُصادَق عليه أن يحتجز خلالها خيط تنفيذ. اضبطه على 0 للتعطيل.
+<SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />مهلة زمن الساعة الفعلي، بالمللي ثانية، لمرحلة المصافحة بأكملها في اتصالات البروتوكول الأصلي (Hello وAddendum) أو MySQL أو PostgreSQL، بما في ذلك التفاوض على TLS. يحدّ هذا الإعداد من المدة التي يمكن لاتصال غير مُصادَق عليه أن يحتجز خلالها خيط تنفيذ: إذ يُتحقَّق من الموعد النهائي عند كل عملية قراءة، وتكون مهلة الاستقبال على المقبس مقيَّدة به، فلا يستطيع حتى العميل الذي لا يرسل شيئًا أن يتجاوز الميزانية الزمنية. ويُبقي هذا التقييد على حد أدنى قدره 100 مللي ثانية، لذا فإن القيمة الصغيرة قد تتجاوز الميزانية تجاوزًا طفيفًا بدلًا من تقصير عمليات القراءة أكثر من اللازم. اضبطه على 0 للتعطيل.
 
 ## hdfs.libhdfs3_conf {#hdfs.libhdfs3_conf}
 

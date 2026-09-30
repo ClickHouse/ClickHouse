@@ -468,7 +468,7 @@ Protobuf 타입의 proto 파일이 포함된 디렉터리를 지정합니다.
 
 ## handshake_timeout_milliseconds {#handshake_timeout_milliseconds}
 
-<SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />전체 TCP handshake 단계(Hello + Addendum)에 적용되는 밀리초 단위의 wall-clock timeout입니다. 인증되지 않은 connection이 thread를 점유한 채 유지될 수 있는 시간을 제한합니다. 비활성화하려면 0으로 설정하십시오.
+<SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />native protocol(Hello 및 Addendum), MySQL 또는 PostgreSQL connection의 TLS 협상을 포함한 전체 handshake 단계에 적용되는 밀리초 단위의 wall-clock timeout입니다. 인증되지 않은 connection이 thread를 점유한 채 유지될 수 있는 시간을 제한합니다. deadline은 매 읽기마다 확인되며 socket 수신 timeout도 이 값을 넘지 않도록 제한되므로, 아무것도 보내지 않는 클라이언트도 허용된 시간을 넘겨 연결을 유지할 수 없습니다. 이 제한에는 100밀리초의 하한이 적용되므로, 작은 값을 지정하면 읽기가 지나치게 짧게 끊기지 않는 대신 허용 시간을 약간 초과할 수 있습니다. 비활성화하려면 0으로 설정하십시오.
 
 ## hdfs.libhdfs3_conf {#hdfs.libhdfs3_conf}
 

@@ -1413,11 +1413,13 @@ Aplica-se a consultas recebidas pelos protocolos TCP nativo e HTTP. Em HTTP, pas
 
 O principal caso de uso é um `INSERT ... SELECT` demorado que não pode ser perdido caso a conexão do cliente seja interrompida.
 
-## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
+## secondary_indexes_enable_bulk_filtering {#secondary_indexes_enable_bulk_filtering}
+
+**Aliases**: `secondary_indices_enable_bulk_filtering`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Um novo algoritmo de filtragem por índices de salto de dados"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Adicionado um alias para a configuração `secondary_indices_enable_bulk_filtering`."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "Um novo algoritmo de filtragem por índices de salto de dados"}]}]} />
 
 Ativa o algoritmo de filtragem em lote para índices. A expectativa é que ele seja sempre superior, mas mantemos esta configuração por compatibilidade e controle.
 

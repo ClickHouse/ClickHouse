@@ -470,7 +470,7 @@ Protobuf 型の proto ファイルが含まれるディレクトリを指定し�
 
 ## handshake_timeout_milliseconds {#handshake_timeout_milliseconds}
 
-<SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />TCP ハンドシェイク全体 (Hello + Addendum) に対する、ミリ秒単位の実時間タイムアウトです。認証前の接続がスレッドを占有できる時間を制限します。無効にするには 0 に設定します。
+<SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />ネイティブプロトコル (Hello および Addendum)、MySQL、または PostgreSQL の接続におけるハンドシェイク全体 (TLS ネゴシエーションを含む) に対する、ミリ秒単位の実時間タイムアウトです。認証前の接続がスレッドを占有できる時間を制限します。デッドラインは読み取りのたびに確認され、ソケットの受信タイムアウトもこの値を上限として制限されるため、何も送信しないクライアントであっても、許容時間を超えて接続を維持することはできません。なお、この制限には 100 ミリ秒の下限があるため、小さな値を設定した場合は、読み取りを短く打ち切りすぎるのではなく、許容時間をわずかに超過する動作となります。無効にするには 0 に設定します。
 
 ## hdfs.libhdfs3_conf {#hdfs.libhdfs3_conf}
 

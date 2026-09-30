@@ -128,9 +128,9 @@ Icebergテーブルで孤立ファイルを削除する際の、デフォルト�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新しい設定: Iceberg のマニフェストファイルヘッダーが、metadata.json から同じ schema-id に対して登録されているスキーマと競合するスキーマを持つ場合、クエリを失敗させるのではなく、metadata.json のスキーマを優先して警告をログに出力し、他のクエリエンジンの挙動に合わせます。`compatibility` を 26.10 未満に設定すると、従来の厳格な挙動に戻ります。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新しい設定: Iceberg のマニフェストファイルヘッダーが、metadata.json から同じ schema-id に対して登録されているスキーマと競合するスキーマを持つ場合、クエリを失敗させるのではなく、metadata.json のスキーマを優先し、他のクエリエンジンの挙動に合わせます。`compatibility` を 26.10 未満に設定すると、従来の厳格な挙動に戻ります。"}]}]} />
 
-有効な場合、Iceberg のマニフェストファイルヘッダーの `schema` キーが、metadata.json から同じ schema-id に対してすでに登録されているスキーマと異なるスキーマを持つとき、metadata.json のスキーマが使用され、マニフェストヘッダー側のコピーは警告とともに無視されます。無効な場合、このような競合が発生するとクエリは ICEBERG&#95;SPECIFICATION&#95;VIOLATION エラーで失敗します。
+有効な場合、Iceberg のマニフェストファイルの schema-id が metadata.json からすでに登録されていれば、metadata.json のスキーマが使用され、マニフェストファイルヘッダーの `schema` キーにあるコピーは比較されずに無視されます。無効な場合、マニフェストヘッダー側のコピーは metadata.json のスキーマと比較され、競合が発生するとクエリは ICEBERG&#95;SPECIFICATION&#95;VIOLATION エラーで失敗します。
 
 マニフェストヘッダーのスキーマは、マニフェストが書き込まれた時点のテーブルスキーマのコピーにすぎず、一部の writer (例: AWS S3 Tables のメンテナンスジョブ) がそこに劣化したコピーを保存する事例が確認されています。他のクエリエンジンは metadata.json からスキーマを解決し、内容が食い違うヘッダー側のコピーを無視するため、デフォルトの挙動もそれに倣っています。なお、2 つの metadata.json のスキーマ定義間に競合がある場合は、引き続き常にクエリが失敗します。
 

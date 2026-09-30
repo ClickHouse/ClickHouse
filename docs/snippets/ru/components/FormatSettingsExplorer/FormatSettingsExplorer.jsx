@@ -132,7 +132,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "input_format_*",
-      count: 129,
+      count: 130,
       settings: [
         { name: "input_format_allow_errors_num", path: "/input-format#input_format_allow_errors_num", default: "0" },
         { name: "input_format_allow_errors_ratio", path: "/input-format#input_format_allow_errors_ratio", default: "0" },
@@ -246,6 +246,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "input_format_parquet_enable_json_parsing", path: "/input-format#input_format_parquet_enable_json_parsing", default: "1" },
         { name: "input_format_parquet_enable_row_group_prefetch", path: "/input-format#input_format_parquet_enable_row_group_prefetch", default: "1" },
         { name: "input_format_parquet_filter_push_down", path: "/input-format#input_format_parquet_filter_push_down", default: "1" },
+        { name: "input_format_parquet_footer_read_size", path: "/input-format#input_format_parquet_footer_read_size", default: "0" },
         { name: "input_format_parquet_local_file_min_bytes_for_seek", path: "/input-format#input_format_parquet_local_file_min_bytes_for_seek", default: "8192" },
         { name: "input_format_parquet_local_time_as_utc", path: "/input-format#input_format_parquet_local_time_as_utc", default: "1" },
         { name: "input_format_parquet_max_block_size", path: "/input-format#input_format_parquet_max_block_size", default: "65409" },

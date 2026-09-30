@@ -1413,11 +1413,13 @@ S’applique aux requêtes reçues via les protocoles TCP natif et HTTP. Via HTT
 
 Le principal cas d’utilisation est un long `INSERT ... SELECT` qui ne doit pas être perdu lorsque la connexion client est interrompue.
 
-## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
+## secondary_indexes_enable_bulk_filtering {#secondary_indexes_enable_bulk_filtering}
+
+**Alias** : `secondary_indices_enable_bulk_filtering`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Un nouvel algorithme de filtrage par indices de saut de données"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Ajout d’un alias pour le paramètre `secondary_indices_enable_bulk_filtering`."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "Un nouvel algorithme de filtrage par indices de saut de données"}]}]} />
 
 Active l’algorithme de filtrage groupé pour les indices. Il devrait toujours offrir de meilleures performances, mais ce paramètre est conservé pour des raisons de compatibilité et de contrôle.
 

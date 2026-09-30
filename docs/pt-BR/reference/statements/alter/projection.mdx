@@ -10,9 +10,7 @@ doc_type: 'referência'
 
 Esta página aborda o que são projeções, como usá-las e as várias opções para manipulá-las.
 
-<div id="overview">
-  ## Visão geral das projeções
-</div>
+## Visão geral das projeções {#overview}
 
 As projeções armazenam dados em um formato que otimiza a execução de consultas. Esse recurso é útil para:
 
@@ -30,13 +28,9 @@ Você pode definir uma ou mais projeções para uma tabela e, durante a análise
 
 Você pode ver mais detalhes técnicos sobre como as projeções funcionam internamente nesta [página](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections).
 
-<div id="examples">
-  ## Usando projeções
-</div>
+## Usando projeções {#examples}
 
-<div id="example-filtering-without-using-primary-keys">
-  ### Exemplo de filtragem sem usar chaves primárias
-</div>
+### Exemplo de filtragem sem usar chaves primárias {#example-filtering-without-using-primary-keys}
 
 Criando a tabela:
 
@@ -91,9 +85,7 @@ Para verificar se uma consulta está usando a projeção, podemos consultar a ta
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
-<div id="example-pre-aggregation-query">
-  ### Exemplo de consulta com pré-agregação
-</div>
+### Exemplo de consulta com pré-agregação {#example-pre-aggregation-query}
 
 Crie a tabela com a projeção `projection_visits_by_user`:
 
@@ -173,9 +165,7 @@ Ele ficará vazio se nenhuma projeção tiver sido usada:
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
-<div id="projection-indexes">
-  ### Criando e usando índices de projeção
-</div>
+### Criando e usando índices de projeção {#projection-indexes}
 
 Criando um [índice de projeção](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#projection-index):
 
@@ -236,9 +226,7 @@ WHERE _part_starting_offset + _part_offset IN (
 SETTINGS enable_shared_storage_snapshot_in_query = 1
 ```
 
-<div id="example-projection-with-where">
-  ### Exemplo de projeção com cláusula WHERE
-</div>
+### Exemplo de projeção com cláusula WHERE {#example-projection-with-where}
 
 As projeções podem incluir uma cláusula `WHERE` para armazenar apenas um subconjunto de linhas. Isso é útil quando as consultas filtram com frequência por um predicado conhecido — a projeção materializa apenas as linhas correspondentes, reduzindo o uso de armazenamento e melhorando o desempenho das consultas.
 
@@ -287,15 +275,11 @@ SELECT time, message FROM events WHERE event_type = 'click';
 
 A verificação de implicação é conservadora — usa correspondência exata de conjunções na forma canônica da expressão. Ela pode deixar de identificar algumas oportunidades válidas de otimização (por exemplo, implicações de intervalo), mas nunca produzirá resultados incorretos.
 
-<div id="manipulating-projections">
-  ## Manipulação de projeções
-</div>
+## Manipulação de projeções {#manipulating-projections}
 
 As seguintes operações com [projeções](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#projections) estão disponíveis:
 
-<div id="add-projection">
-  ### ADD PROJECTION
-</div>
+### ADD PROJECTION {#add-projection}
 
 Use a instrução abaixo para adicionar uma descrição de projeção aos metadados de uma tabela:
 
@@ -311,9 +295,7 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name (
   Quando uma projeção define uma cláusula `WHERE`, apenas as linhas que atendem ao predicado são materializadas. O otimizador pode usar essa projeção quando o `WHERE` da consulta implica logicamente o `WHERE` da projeção e ela é vantajosa para o plano de consulta. Isso se aplica tanto a projeções normais quanto a projeções agregadas.
 </Note>
 
-<div id="with-settings">
-  #### Cláusula `WITH SETTINGS`
-</div>
+#### Cláusula `WITH SETTINGS` {#with-settings}
 
 `WITH SETTINGS` define **configurações da projeção**, que personalizam como a projeção armazena os dados (por exemplo, `index_granularity` ou `index_granularity_bytes`).
 Elas correspondem diretamente às **configurações de tabela do MergeTree**, mas se aplicam **somente a esta projeção**.
@@ -332,9 +314,7 @@ ADD PROJECTION p (
 
 As configurações da projeção prevalecem sobre as configurações efetivas da tabela nessa projeção, sujeitas às regras de validação (por exemplo, substituições inválidas ou incompatíveis serão rejeitadas).
 
-<div id="modify-projection">
-  ### MODIFY PROJECTION
-</div>
+### MODIFY PROJECTION {#modify-projection}
 
 Use a instrução abaixo para alterar a cláusula [`WITH SETTINGS`](#with-settings) de uma projeção existente sem recriar seus dados:
 
@@ -352,7 +332,8 @@ A instrução repete a definição completa da projeção, mas somente a cláusu
 A consulta da projeção em si (ou, no caso de um índice de projeção, a expressão e o tipo do índice) deve permanecer a mesma, pois as partes de projeção existentes armazenam dados gerados a partir dela. Para alterá-la, use [`DROP PROJECTION`](#drop-projection) seguido de [`ADD PROJECTION`](#add-projection).
 
 O comando altera apenas os metadados da tabela e não reescreve dados: as partes de projeção existentes mantêm as configurações com as quais foram gravadas, enquanto as partes de projeção gravadas por inserts e mesclagens futuras usam as novas configurações.
-Para recriar as partes existentes com as novas configurações, execute [`MATERIALIZE PROJECTION`](#materialize-projection).
+[`MATERIALIZE PROJECTION`](#materialize-projection) também não aplica as novas configurações às partes existentes: ele cria a projeção apenas nas partes em que ela está ausente ou corrompida e mantém inalteradas as partes de projeção que já existem.
+Para recriar as partes existentes com as novas configurações, execute [`CLEAR PROJECTION`](#clear-projection) seguido de [`MATERIALIZE PROJECTION`](#materialize-projection) ou faça a mesclagem das partes, por exemplo, com [`OPTIMIZE TABLE ... FINAL`](/pt-BR/reference/statements/optimize).
 
 Exemplo:
 
@@ -365,9 +346,7 @@ MODIFY PROJECTION p (
 );
 ```
 
-<div id="drop-projection">
-  ### DROP PROJECTION
-</div>
+### DROP PROJECTION {#drop-projection}
 
 Use a instrução abaixo para remover a descrição de uma projeção dos metadados de uma tabela e excluir os arquivos da projeção do disco.
 Isso é implementado como uma [mutação](/pt-BR/reference/statements/alter/index#mutations).
@@ -376,20 +355,17 @@ Isso é implementado como uma [mutação](/pt-BR/reference/statements/alter/inde
 ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
 ```
 
-<div id="materialize-projection">
-  ### MATERIALIZE PROJECTION
-</div>
+### MATERIALIZE PROJECTION {#materialize-projection}
 
-Use a instrução abaixo para reconstruir a projeção `name` na partição `partition_name`.
+Use a instrução abaixo para construir a projeção `name` nas partes em que ela estiver ausente ou corrompida, opcionalmente apenas na partição `partition_name`.
+As partes que já possuem a projeção permanecem inalteradas, mesmo que as configurações da projeção tenham sido alteradas com [`MODIFY PROJECTION`](#modify-projection) depois de essas partes terem sido gravadas; para reconstruí-las, execute primeiro [`CLEAR PROJECTION`](#clear-projection).
 Isso é implementado como uma [mutação](/pt-BR/reference/statements/alter/index#mutations).
 
 ```sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
 ```
 
-<div id="clear-projection">
-  ### CLEAR PROJECTION
-</div>
+### CLEAR PROJECTION {#clear-projection}
 
 Use a instrução abaixo para excluir os arquivos de projeção do disco sem remover a descrição.
 Isso é implementado por meio de uma [mutação](/pt-BR/reference/statements/alter/index#mutations).
@@ -405,9 +381,7 @@ Além disso, esses comandos são replicados e sincronizam os metadados de proje�
   A manipulação de projeções tem suporte apenas em tabelas com o motor [`*MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) (incluindo variantes [replicadas](/pt-BR/reference/engines/table-engines/mergetree-family/replication)).
 </Note>
 
-<div id="control-projections-merges">
-  ### Controlando o comportamento da mesclagem de projeções
-</div>
+### Controlando o comportamento da mesclagem de projeções {#control-projections-merges}
 
 Quando você executa uma consulta, o ClickHouse escolhe entre ler da tabela original ou de uma de suas projeções.
 A decisão de ler da tabela original ou de uma de suas projeções é tomada individualmente para cada parte da tabela.
@@ -435,9 +409,7 @@ Abaixo estão os valores possíveis para `deduplicate_merge_projection_mode` e `
 * `drop`: As partes afetadas da tabela de projeção são descartadas. As consultas recorrerão à parte da tabela original nos casos em que as partes de projeção forem afetadas.
 * `rebuild`: A parte de projeção afetada é recriada para permanecer consistente com os dados da parte da tabela original.
 
-<div id="limitations">
-  ## Limitações
-</div>
+## Limitações {#limitations}
 
 Não é possível usar uma coluna `ALIAS` na cláusula `ORDER BY` de uma projeção. Por exemplo:
 
@@ -478,9 +450,7 @@ CREATE TABLE t
 ENGINE = MergeTree ORDER BY id;
 ```
 
-<div id="see-also">
-  ## Veja também
-</div>
+## Veja também {#see-also}
 
 * [&quot;Controle de projeções durante mesclagens&quot; (post do blog)](https://clickhouse.com/blog/clickhouse-release-24-08#control-of-projections-during-merges)
 * [&quot;Projeções&quot; (guia)](/pt-BR/concepts/features/projections/projections#using-projections-to-speed-up-UK-price-paid)

@@ -1413,11 +1413,13 @@ FORMAT Null;
 
 Основной сценарий использования — длительный `INSERT ... SELECT`, который не должен быть потерян при разрыве клиентского подключения.
 
-## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
+## secondary_indexes_enable_bulk_filtering {#secondary_indexes_enable_bulk_filtering}
+
+**Псевдонимы**: `secondary_indices_enable_bulk_filtering`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Новый алгоритм фильтрации с использованием индексов пропуска данных"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Добавлен псевдоним для настройки `secondary_indices_enable_bulk_filtering`."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "Новый алгоритм фильтрации с использованием индексов пропуска данных"}]}]} />
 
 Включает алгоритм пакетной фильтрации для индексов. Предполагается, что он всегда эффективнее, но эта настройка оставлена для совместимости и дополнительного контроля.
 

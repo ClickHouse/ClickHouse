@@ -1414,11 +1414,13 @@ Se aplica a las consultas recibidas mediante los protocolos TCP nativo y HTTP. A
 
 El principal caso de uso es un `INSERT ... SELECT` de larga duración que no debe perderse cuando se interrumpe la conexión del client.
 
-## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
+## secondary_indexes_enable_bulk_filtering {#secondary_indexes_enable_bulk_filtering}
+
+**Alias**: `secondary_indices_enable_bulk_filtering`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Un nuevo algoritmo de filtrado con índices de omisión de datos"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Se añadió un alias para la configuración `secondary_indices_enable_bulk_filtering`."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "Un nuevo algoritmo de filtrado con índices de omisión de datos"}]}]} />
 
 Activa el algoritmo de filtrado masivo para los índices. Se espera que siempre ofrezca mejores resultados, pero esta configuración se mantiene por compatibilidad y control.
 

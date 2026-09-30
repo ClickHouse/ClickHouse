@@ -1412,13 +1412,15 @@ FORMAT Null;
 
 حالة الاستخدام الرئيسية هي عملية `INSERT ... SELECT` طويلة يجب ألا تضيع عند انقطاع اتصال العميل.
 
-## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
+## secondary_indexes_enable_bulk_filtering {#secondary_indexes_enable_bulk_filtering}
+
+**الأسماء البديلة**: `secondary_indices_enable_bulk_filtering`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "خوارزمية جديدة للتصفية بواسطة فهارس تخطي البيانات"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "تمت إضافة اسم بديل للإعداد `secondary_indices_enable_bulk_filtering`."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "خوارزمية جديدة للتصفية بواسطة فهارس تخطي البيانات"}]}]} />
 
-يُفعِّل خوارزمية التصفية المجمّعة للفهارس. ومن المتوقع أن تكون أفضل دائمًا، لكن هذا الإعداد متاح لأغراض التوافق والتحكم.
+يُفعِّل خوارزمية التصفية المجمّعة للفهارس. ومن المتوقع أن تكون أفضل دائمًا، لكن هذا الإعداد متاح لأغراض التوافق والتحكم.
 
 ## select {#select}
 
