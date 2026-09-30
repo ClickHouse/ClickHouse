@@ -6,5 +6,6 @@ IPv4	1.2.3.4
 Map(String, UInt64)
 ['Int64','UInt64']
 DateTime(\'Europe/Berlin\')	1698543000
+DateTime(\'Europe/Berlin\')	1698543000
 ['2020-01-02']
 ['7']

@@ -43,13 +43,17 @@ FROM remote('127.0.0.1', system.one) SETTINGS use_variant_as_common_type = 0;
 SELECT dynamicType(c), toUnixTimestamp(c::DateTime('Europe/Berlin'))
 FROM (SELECT materialize(CAST(toDateTime(1698543000, 'Europe/Berlin') AS Dynamic)) AS c FROM remote('127.0.0.1', system.one));
 
+-- The same instant held in the shared variant.
+SELECT dynamicType(c), toUnixTimestamp(c::DateTime('Europe/Berlin'))
+FROM (SELECT materialize(CAST(toDateTime(1698543000, 'Europe/Berlin') AS Dynamic(max_types = 0))) AS c FROM remote('127.0.0.1', system.one));
+
 SELECT arraySort(groupArray(d)) FROM remote('127.0.0.1', currentDatabase(), t_date)
 WHERE d IN (CAST(toDateTime('2020-01-02 05:00:00', 'UTC') AS Dynamic));
 
 -- The same constant read through parallel replicas.
 SELECT arraySort(groupArray(v)) FROM t_str
 WHERE v = CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Dynamic)
-SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0;
 
 DROP TABLE t_str;
