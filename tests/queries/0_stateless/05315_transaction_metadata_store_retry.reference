@@ -1,0 +1,21 @@
+--- A: commit, part metadata
+retried objects	1	stored after retry	1	same object	1	attempts	[2]
+creation_csn persisted: 1
+rows after commit	1
+rows after reattach	1
+--- B: commit, mutation CSN
+retried objects	1	stored after retry	1	same object	1	attempts	[2]
+csn lines in mutation file: 1
+last line is the csn: 1
+sum after commit	9
+sum after reattach	9
+mutations after reattach	1
+--- C: rollback, part metadata
+retried objects	1	stored after retry	1	same object	1	attempts	[2]
+rows after rollback	2
+rows after reattach	2
+--- D: rollback, removal lock
+retried objects	1	stored after retry	1	same object	1	attempts	[2]
+active parts after rollback	2
+rows after rollback	2
+rows after later drop	0
