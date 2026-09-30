@@ -1,12 +1,17 @@
 #pragma once
 
-#include <AggregateFunctions/WindowFunction.h>
-#include <Core/Block.h>
+#include <WindowFunctions/IWindowFunction.h>
+
 #include <Interpreters/WindowDescription.h>
+
+#include <Processors/Transforms/Window/WindowTransformParams.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 
+#include <Core/Block.h>
+
 #include <deque>
+#include <optional>
 
 /// See https://stackoverflow.com/questions/72533435/error-zero-as-null-pointer-constant-while-comparing-template-class-using-spaces
 #pragma clang diagnostic push
@@ -26,7 +31,6 @@ struct WindowTransformBlock
 {
     Columns original_input_columns;
     Columns input_columns;
-    Columns cast_columns;
     MutableColumns output_columns;
 
     size_t rows = 0;
@@ -38,6 +42,12 @@ struct RowNumber
     UInt64 row = 0;
 
     auto operator <=>(const RowNumber &) const = default;
+};
+
+struct MovedRow
+{
+    RowNumber row;
+    Int64 offset_left = 0;
 };
 
 
@@ -68,6 +78,8 @@ public:
 
     ~WindowTransform() override;
 
+    void initWorkspaces(const std::vector<WindowFunctionDescription> & functions);
+
     String getName() const override
     {
         return "WindowTransform";
@@ -75,14 +87,14 @@ public:
 
     static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
 
-    /* (former) Implementation of ISimpleTransform.
-     */
-    void appendChunk(Chunk & chunk) /*override*/;
-
     /* Implementation of IProcessor;
      */
     Status prepare() override;
     void work() override;
+    void addInputBlock(Chunk chunk);
+    void computeReadyRows();
+    void startNextPartition();
+    void releaseUnusedBlocks();
 
     /* Implementation details.
      */
@@ -199,8 +211,8 @@ public:
         return result;
     }
 
-    auto moveRowNumber(const RowNumber & original_row_number, Int64 offset) const;
-    auto moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const;
+    MovedRow moveRowNumber(const RowNumber & original_row_number, Int64 offset) const;
+    MovedRow moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const;
 
     void assertValid(const RowNumber & x) const
     {
@@ -219,38 +231,23 @@ public:
         return RowNumber{first_block_number, 0};
     }
 
-    /* Data (formerly) inherited from ISimpleTransform, needed for the
-     * implementation of the IProcessor interface.
-     */
+    /// Data for window transform itself.
+    const WindowTransformParams params;
+
+    /// Runtime data.
     InputPort & input;
     OutputPort & output;
-
-    bool has_input = false;
+    std::optional<Chunk> pending_input;
     bool input_is_finished = false;
-    Port::Data input_data;
-    bool has_output = false;
-    Port::Data output_data;
-
-    /* Data for window transform itself.
-     */
-    Block input_header;
-
-    WindowDescription window_description;
-
-    // Indices of the PARTITION BY columns in block.
-    std::vector<size_t> partition_by_indices;
-    // Indices of the ORDER BY columns in block;
-    std::vector<size_t> order_by_indices;
-
-    // Which input columns we actually read while computing the window functions: the PARTITION BY
-    // and ORDER BY keys and the function arguments.
-    std::vector<UInt8> should_materialize;
 
     // Per-window-function scratch spaces.
     std::vector<WindowFunctionWorkspace> workspaces;
 
-    // FIXME Reset it when the partition changes. We only save the temporary
-    // states in it (probably?).
+    // One arena shared by the aggregate function states of the current partition.
+    // Results never live in it: plain functions write values into the output
+    // column, and -State results are merged into the ColumnAggregateFunction's
+    // own arena. It is replaced when the partition changes, right after the
+    // states are destroyed, so it does not grow across partitions.
     std::unique_ptr<Arena> arena;
 
     // A sliding window of blocks we currently need. We add the input blocks as
@@ -261,9 +258,6 @@ public:
     UInt64 first_block_number = 0;
     // The next block we are going to pass to the consumer.
     UInt64 next_output_block_number = 0;
-    // The first row for which we still haven't calculated the window functions.
-    // Used to determine which resulting blocks we can pass to the consumer.
-    RowNumber first_not_ready_row;
 
     // Boundaries of the current partition.
     // partition_start doesn't point to a valid block, because we want to drop
@@ -320,15 +314,6 @@ public:
     // state after we find the new frame.
     RowNumber prev_frame_start;
     RowNumber prev_frame_end;
-
-    // Comparison function for RANGE OFFSET frames. We choose the appropriate
-    // overload once, based on the type of the ORDER BY column. Choosing it for
-    // each row would be slow.
-    std::function<int(
-        const IColumn * compared_column, size_t compared_row,
-        const IColumn * reference_column, size_t reference_row,
-        const Field & offset,
-        bool offset_is_preceding)> compare_values_with_offset;
 };
 
 }

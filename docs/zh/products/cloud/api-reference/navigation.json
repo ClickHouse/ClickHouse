@@ -1,9 +1,9 @@
 [
   {
-    "group": "Organization",
+    "group": "组织",
     "pages": [
       {
-        "group": "Organization",
+        "group": "组织",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -14,12 +14,14 @@
           "GET /v1/organizations/{organizationId}/activities/{activityId}",
           "products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
           "POST /v1/organizations/{organizationId}/byocInfrastructure",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
-          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}"
+          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get"
         ]
       },
       {
-        "group": "Billing",
+        "group": "账单",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
           "products/cloud/api-reference/billing/active-balances-get",
@@ -27,7 +29,7 @@
         ]
       },
       {
-        "group": "User management",
+        "group": "用户管理",
         "pages": [
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
@@ -40,7 +42,7 @@
         ]
       },
       {
-        "group": "Role Management",
+        "group": "角色管理",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -69,10 +71,10 @@
     ]
   },
   {
-    "group": "Service",
+    "group": "服务",
     "pages": [
       {
-        "group": "Service",
+        "group": "服务",
         "pages": [
           "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
@@ -103,7 +105,7 @@
         ]
       },
       {
-        "group": "Backup",
+        "group": "备份",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
@@ -137,7 +139,7 @@
     ]
   },
   {
-    "group": "API keys",
+    "group": "API 密钥",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",

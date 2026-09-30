@@ -3220,8 +3220,10 @@ void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
     if (!table.database_and_table_name)
         return;
 
+    /// A fully parameterized name such as `{p:Identifier}` has only empty name parts, so
+    /// `getTableId` throws `UNKNOWN_TABLE` rather than returning an empty `StorageID`.
     const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
-    if (!identifier)
+    if (!identifier || identifier->isParam())
         return;
 
     /// Point the read at one of the table's live `__fuzz_N` clones
@@ -3460,7 +3462,7 @@ void QueryFuzzer::wrapTableAsDistributed(ASTTableExpression & table)
     if (table.database_and_table_name)
     {
         const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
-        if (!identifier)
+        if (!identifier || identifier->isParam())
             return;
         const auto table_id = identifier->getTableId();
         if (table_id.getTableName().empty())
@@ -3495,7 +3497,7 @@ void QueryFuzzer::wrapTableAsMerge(ASTTableExpression & table)
         return;
 
     const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
-    if (!identifier)
+    if (!identifier || identifier->isParam())
         return;
     const auto table_id = identifier->getTableId();
     const String table_name = table_id.getTableName();
@@ -8487,7 +8489,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 create_role->settings.reset();
             else
             {
-                create_role->new_name.clear();
+                create_role->new_name.reset();
                 create_role->alter_settings.reset();
             }
         }
@@ -8914,7 +8916,7 @@ void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
     {
         addColumnLike(ast);
     }
-    else if (typeid_cast<ASTIdentifier *>(ast.get()))
+    else if (const auto * identifier = typeid_cast<ASTIdentifier *>(ast.get()); identifier && !identifier->isParam())
     {
         addColumnLike(ast);
     }
