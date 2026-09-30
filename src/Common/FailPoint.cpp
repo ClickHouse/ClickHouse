@@ -264,6 +264,7 @@ static struct InitFiu
     REGULAR(parallel_replicas_delay_announcement) \
     REGULAR(slowdown_skip_index_read_result_build) \
     ONCE(iceberg_writes_cleanup) \
+    PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
     REGULAR(iceberg_slow_manifest_read) \
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
     REGULAR(storage_cluster_read_sleep) \
@@ -373,6 +374,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_check_part_pause_after_check_data) \
     PAUSEABLE_ONCE(smt_check_part_pause_in_check_data) \
     REGULAR(transaction_force_unknown_state_after_commit) \
+    REGULAR(transaction_hold_unknown_state) \
     ONCE(attach_to_group_failure) \
     ONCE(thread_group_switcher_post_attach_failure) \
     REGULAR(tx_log_abort_cleanup_multi) \
