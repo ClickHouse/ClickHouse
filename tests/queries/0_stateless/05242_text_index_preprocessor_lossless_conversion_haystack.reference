@@ -24,6 +24,10 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(toNullable(s), 'Foo
 [1,2]
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(toNullable(s), 'Foo Bar') SETTINGS query_plan_direct_read_from_text_index = 0;
 [1,2]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(toNullable(s), 'Foo Bar') SETTINGS query_plan_direct_read_from_text_index = 1;
+[1,2]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(toNullable(s), 'Foo Bar') SETTINGS query_plan_direct_read_from_text_index = 0;
+[1,2]
 SELECT arraySort(groupArray(id)) FROM tab_postprocessor WHERE hasToken(toNullable(s), 'Foo') SETTINGS query_plan_direct_read_from_text_index = 1;
 [1,2]
 SELECT arraySort(groupArray(id)) FROM tab_postprocessor WHERE hasToken(toNullable(s), 'Foo') SETTINGS query_plan_direct_read_from_text_index = 0;
