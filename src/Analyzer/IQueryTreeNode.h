@@ -125,8 +125,8 @@ public:
     struct CompareOptions
     {
         bool compare_aliases = true;
-        /// Do not compare the CTE identity (is_cte, is_materialized, cte_name) of query and union nodes.
-        /// Calculate a hash as if the node is not a CTE: is_cte and is_materialized are false, cte_name is empty.
+        /// Do not compare the CTE identity (`is_cte`, `is_materialized`, `cte_name`) of query and union nodes.
+        /// Calculate a hash as if the node is not a CTE: `is_cte` and `is_materialized` are false, `cte_name` is empty.
         bool ignore_cte = false;
     };
 
