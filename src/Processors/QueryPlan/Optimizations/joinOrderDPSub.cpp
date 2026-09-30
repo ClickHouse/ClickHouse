@@ -594,7 +594,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     /// pinned `query_plan_join_swap_table`, which asks for a particular side and is entitled to it.
     /// Inner and cross joins commute; `ALL` outer joins are mirrored through `reverseJoinKind`
     /// (`Left` <-> `Right`), the same equivalence the enumeration itself uses. Semi/anti joins keep
-    /// their sides. Only done when both estimates are known.
+    /// their sides.
     ///
     /// Not for a graph whose joins get its strictness stamped on later: their entries read `All` here,
     /// and turning such a join round changes its result (`ANY LEFT` keeps one match per left row,
@@ -604,8 +604,10 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     /// entry carries its strictness (so it is left alone by the check below), while the rest are the
     /// inner joins they read.
     ///
-    /// On equal estimates keep the input with more relations on the left: the enumeration reaches a
-    /// lone relation against the rest first, which would otherwise build the hash table from a whole
+    /// An input without an estimate (e.g. a `UNION ALL` subquery) is taken to be the larger one, so
+    /// it stays on the left rather than being read into the hash table. On equal estimates, or with
+    /// neither known, keep the input with more relations on the left: the enumeration reaches a lone
+    /// relation against the rest first, which would otherwise build the hash table from a whole
     /// subtree - the left-deep shape greedy produces avoids that.
     const bool entries_carry_strictness = query_graph.join_strictness == JoinStrictness::All
         || (query_graph.semi_anti_flattened
@@ -613,12 +615,20 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     const bool can_turn_round = entries_carry_strictness
         && (isInner(entry.kind) || isCrossOrComma(entry.kind)
             || (entry.strictness == JoinStrictness::All && (isLeft(entry.kind) || isRight(entry.kind) || isFull(entry.kind))));
-    if (!query_graph.join_swap_table && can_turn_round && left->estimated_rows && right->estimated_rows)
+    if (!query_graph.join_swap_table && can_turn_round)
     {
-        const bool left_is_smaller = *left->estimated_rows < *right->estimated_rows;
-        const bool tie_with_larger_right = *left->estimated_rows == *right->estimated_rows
-            && std::popcount(entry.left) < std::popcount(entry.right);
-        if (left_is_smaller || tie_with_larger_right)
+        const auto & left_rows = left->estimated_rows;
+        const auto & right_rows = right->estimated_rows;
+        const bool fewer_relations_left = std::popcount(entry.left) < std::popcount(entry.right);
+        bool swap_sides;
+        if (left_rows && right_rows)
+            swap_sides = *left_rows < *right_rows || (*left_rows == *right_rows && fewer_relations_left);
+        else if (left_rows || right_rows)
+            swap_sides = !right_rows;
+        else
+            swap_sides = fewer_relations_left;
+
+        if (swap_sides)
         {
             left.swap(right);
             join_operator.kind = reverseJoinKind(join_operator.kind);
