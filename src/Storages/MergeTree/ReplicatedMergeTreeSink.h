@@ -77,10 +77,6 @@ public:
     void onFinish() override;
     void setHasDependentMaterializedViews(bool has_dependent_views) override;
 
-    bool orderedCommitPending() const override;
-    void commitDeferredChunk() override;
-    void abandonDeferredChunk() override;
-
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
     /// For `ATTACH`ing existing data on filesystem. `RESTORE` paths use `deduplicate_part = false`
@@ -97,9 +93,6 @@ protected:
 
     /// We can delay processing for previous chunk and start writing a new one.
     std::vector<DelayedPartInPartition> delayed_parts;
-    std::vector<DelayedPartInPartition> pending_parts;
-    bool defer_commit = false;
-    bool inline_commit = false;
 
 
     /// Rename temporary part and commit to ZooKeeper.

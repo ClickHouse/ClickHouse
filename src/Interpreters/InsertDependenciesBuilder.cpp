@@ -16,9 +16,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
-#include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageValues.h>
-#include <Storages/TimeSeries/TimeSeriesSink.h>
 
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/ProcessList.h>
@@ -1834,16 +1832,6 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
     {
         // Data is never inserted to the StorageMaterializedView, it is inserted to its inner table
         UNREACHABLE();
-    }
-    else if (auto * time_series = dynamic_cast<StorageTimeSeries *>(inner_storage.get()))
-    {
-        auto time_series_chain = buildTimeSeriesWriteChain(
-            *time_series,
-            result.empty() ? header : result.getOutputSharedHeader(),
-            select_queries.at(view_id),
-            insert_context,
-            async_insert);
-        return Chain::concat(std::move(result), std::move(time_series_chain));
     }
     else
     {

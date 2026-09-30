@@ -13,9 +13,8 @@ m	prod
 0
 0
 0
---- a failed recent samples write rejects the bad value ---
-0
-0
+--- a failed recent samples write rejects the bad value after the tags are committed ---
+1
 0
 --- an insert after a failure still writes all three tables ---
 m	dev	1

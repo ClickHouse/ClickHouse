@@ -2,7 +2,6 @@
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 
 #include <Core/Block.h>
-#include <Common/EventFD.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/ActionsDAG.h>
@@ -16,10 +15,8 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/StorageTimeSeries.h>
-#include <Storages/MergeTree/MergeTreeSink.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 
-#include <atomic>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -36,6 +33,15 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Cumulative number of tags rows that must be committed before the chunk may reach its target table.
+struct TimeSeriesRequiredTagsRows : public ChunkInfoCloneable<TimeSeriesRequiredTagsRows>
+{
+    explicit TimeSeriesRequiredTagsRows(size_t rows_) : rows(rows_) {}
+
+    size_t rows = 0;
+};
+
 
 /// Output 0 passes the original chunk through, outputs 1..N carry the blocks for the target tables.
 class TimeSeriesSplitTransform final : public IProcessor
@@ -110,6 +116,18 @@ public:
     void work() override
     {
         prepared = sink->prepareChunk(std::move(incoming));
+
+        const auto & targets = sink->getTargets();
+        for (size_t i = 0; i < targets.size(); ++i)
+        {
+            if (targets[i].is_tags)
+                tags_rows += prepared->branches[i].getNumRows();
+        }
+        for (size_t i = 0; i < targets.size(); ++i)
+        {
+            if (targets[i].is_samples || targets[i].is_recent_samples)
+                prepared->branches[i].getChunkInfos().add(std::make_shared<TimeSeriesRequiredTagsRows>(tags_rows));
+        }
     }
 
 private:
@@ -125,202 +143,172 @@ private:
     std::shared_ptr<TimeSeriesSink> sink;
     Chunk incoming;
     std::optional<TimeSeriesSink::PreparedChunk> prepared;
+    size_t tags_rows = 0;
 };
 
 
-/// One arrival per target per chunk. Later chunks do not reuse an earlier arrival.
-struct TimeSeriesCommitBarrier
-{
-    explicit TimeSeriesCommitBarrier(size_t expected_) : expected(expected_) {}
-
-    void addWaiter(EventFD * event_fd) { waiters.push_back(event_fd); }
-
-    void arrive()
-    {
-        const size_t count = arrived.fetch_add(1) + 1;
-        if (expected && count % expected == 0)
-            wake();
-    }
-
-    void fail()
-    {
-        failed.store(true);
-        wake();
-    }
-
-    void leaderFinished()
-    {
-        leader_done.store(true);
-        wake();
-    }
-
-    bool isFailed() const { return failed.load(); }
-
-    bool isCommitFailed() const { return commit_failed.load(); }
-
-    bool isLeaderFinished() const { return leader_done.load(); }
-
-    bool commitAllowed(size_t rank, size_t epoch) const
-    {
-        return commit_steps.load() >= expected * epoch + rank;
-    }
-
-    bool commitEpochDone(size_t epoch) const
-    {
-        return commit_steps.load() >= expected * epoch;
-    }
-
-    void commitStepDone()
-    {
-        commit_steps.fetch_add(1);
-        wake();
-    }
-
-    void failCommit()
-    {
-        commit_failed.store(true);
-        wake();
-    }
-
-    bool readyFor(size_t epoch) const { return arrived.load() >= expected * (epoch + 1); }
-
-private:
-    void wake()
-    {
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-        for (auto * event_fd : waiters)
-            event_fd->write();
-#else
-        (void)waiters;
-#endif
-    }
-
-    size_t expected = 0;
-    std::atomic<size_t> arrived{0};
-    std::atomic<size_t> commit_steps{0};
-    std::atomic<bool> failed{false};
-    std::atomic<bool> commit_failed{false};
-    std::atomic<bool> leader_done{false};
-    std::vector<EventFD *> waiters;
-};
-
-
-/// Sits in front of the storage sink. Every target must have the chunk before any sink consumes it.
+/// Holds the samples and recent samples chunks until the tags rows they depend on are committed.
+/// The signal input is the tags chain output: the tags sink emits block N+1 only after block N is committed.
 class TimeSeriesCommitGate final : public IProcessor
 {
 public:
-    TimeSeriesCommitGate(SharedHeader header, std::shared_ptr<TimeSeriesCommitBarrier> barrier_, bool is_leader_)
-        : IProcessor({header}, {header})
-        , input(inputs.front())
-        , output(outputs.front())
-        , barrier(std::move(barrier_))
-        , is_leader(is_leader_)
+    TimeSeriesCommitGate(
+        const SharedHeader & signal_header,
+        const std::vector<SharedHeader> & lane_headers,
+        std::function<void()> on_tags_written_)
+        : IProcessor(makeInputs(signal_header, lane_headers), makeOutputs(lane_headers))
+        , signal(inputs.front())
+        , has_row_signal(signal_header->columns() != 0)
+        , on_tags_written(std::move(on_tags_written_))
     {
-        barrier->addWaiter(&event);
+        auto input = std::next(inputs.begin());
+        auto output = outputs.begin();
+        for (size_t i = 0; i < lane_headers.size(); ++i, ++input, ++output)
+            lanes.push_back(Lane{.input = &*input, .output = &*output, .queue = {}});
     }
 
     String getName() const override { return "TimeSeriesCommitGate"; }
 
     Status prepare() override
     {
-        if (isCancelled())
-            return Status::Finished;
+        pullSignal();
 
-        if (!output.canPush())
-            return Status::PortFull;
+        if (signal_finished && !tags_marked)
+            return Status::Ready;
 
-        if (barrier->isFailed())
-            return Status::Finished;
-
-        if (!holding)
+        size_t num_finished_lanes = 0;
+        for (auto & lane : lanes)
         {
-            if (!input.hasData() && !input.isFinished())
+            auto & input = *lane.input;
+            auto & output = *lane.output;
+
+            if (output.isFinished())
             {
+                input.close();
+                ++num_finished_lanes;
+                continue;
+            }
+
+            if (!lane.queue.empty() && output.canPush() && (all_committed || lane.queue.front().required_rows <= committed_rows))
+            {
+                output.push(std::move(lane.queue.front().chunk));
+                lane.queue.pop_front();
+            }
+
+            while (true)
+            {
+                if (has_row_signal && lane.queue.size() >= lane_capacity)
+                {
+                    input.setNotNeeded();
+                    break;
+                }
+
                 input.setNeeded();
-                return Status::NeedData;
+                if (!input.hasData())
+                    break;
+
+                Chunk chunk = input.pull();
+                auto required = chunk.getChunkInfos().extract<TimeSeriesRequiredTagsRows>();
+                if (!required)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "TimeSeries gated chunk has no required tags rows");
+                lane.queue.push_back(Pending{.chunk = std::move(chunk), .required_rows = required->rows});
             }
 
-            if (input.hasData() && input.getOutputPort().getProcessor().isCancelled())
+            if (input.isFinished() && lane.queue.empty())
             {
-                auto data = input.pullData(true);
-                barrier->fail();
-                if (data.exception)
-                    output.pushException(std::move(data.exception));
-                return Status::PortFull;
-            }
-
-            if (input.hasData())
-            {
-                auto data = input.pullData(true);
-                if (data.exception)
-                {
-                    barrier->fail();
-                    output.pushException(std::move(data.exception));
-                    return Status::PortFull;
-                }
-                held = std::move(data.chunk);
-                barrier->arrive();
-                holding = true;
-            }
-            else
-            {
-                if (is_leader && !leader_signaled)
-                {
-                    leader_signaled = true;
-                    barrier->leaderFinished();
-                }
-                else if (!is_leader && !barrier->isLeaderFinished())
-                {
-                    waiting = true;
-                    return Status::Async;
-                }
                 output.finish();
-                return Status::Finished;
+                ++num_finished_lanes;
             }
         }
 
-        if (!barrier->readyFor(epoch))
-        {
-            waiting = true;
-            return Status::Async;
-        }
+        /// The tags chain treats a closed output as an error, so the gate waits for the signal to finish.
+        if (num_finished_lanes == lanes.size() && signal_finished)
+            return Status::Finished;
 
-        output.push(std::move(held));
-        holding = false;
-        ++epoch;
         return Status::PortFull;
     }
 
     void work() override
     {
-        if (!waiting)
-            return;
-        waiting = false;
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-        event.read();
-#endif
-    }
-
-    int schedule() override
-    {
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-        return event.fd;
-#else
-        return -1;
-#endif
+        tags_marked = true;
+        if (on_tags_written)
+            on_tags_written();
     }
 
 private:
-    InputPort & input;
-    OutputPort & output;
-    std::shared_ptr<TimeSeriesCommitBarrier> barrier;
-    bool is_leader = false;
-    bool holding = false;
-    bool waiting = false;
-    bool leader_signaled = false;
-    size_t epoch = 0;
-    Chunk held;
-    EventFD event;
+    struct Pending
+    {
+        Chunk chunk;
+        size_t required_rows = 0;
+    };
+
+    struct Lane
+    {
+        InputPort * input = nullptr;
+        OutputPort * output = nullptr;
+        std::deque<Pending> queue;
+    };
+
+    static InputPorts makeInputs(const SharedHeader & signal_header, const std::vector<SharedHeader> & lane_headers)
+    {
+        InputPorts ports;
+        ports.emplace_back(signal_header);
+        for (const auto & header : lane_headers)
+            ports.emplace_back(header);
+        return ports;
+    }
+
+    static OutputPorts makeOutputs(const std::vector<SharedHeader> & lane_headers)
+    {
+        OutputPorts ports;
+        for (const auto & header : lane_headers)
+            ports.emplace_back(header);
+        return ports;
+    }
+
+    void pullSignal()
+    {
+        if (signal_finished)
+            return;
+
+        while (true)
+        {
+            signal.setNeeded();
+            if (!signal.hasData())
+                break;
+
+            Chunk chunk = signal.pull();
+            seen_rows += chunk.getNumRows();
+            last_signal_rows = chunk.getNumRows();
+        }
+
+        if (signal.isFinished())
+        {
+            signal_finished = true;
+            all_committed = true;
+            committed_rows = seen_rows;
+        }
+        else
+        {
+            committed_rows = seen_rows - last_signal_rows;
+        }
+    }
+
+    /// The split pushes a block to every output at once, so a lane must accept block N+1 while it holds block N.
+    static constexpr size_t lane_capacity = 2;
+
+    InputPort & signal;
+    /// A tags chain that ends in dependent views has an empty output header and emits no rows.
+    bool has_row_signal = false;
+    std::function<void()> on_tags_written;
+    std::vector<Lane> lanes;
+
+    size_t seen_rows = 0;
+    size_t last_signal_rows = 0;
+    size_t committed_rows = 0;
+    bool all_committed = false;
+    bool signal_finished = false;
+    bool tags_marked = false;
 };
 
 
@@ -349,84 +337,6 @@ private:
     std::function<void()> on_finish;
 };
 
-
-void attachCommitOrder(IProcessor & processor, const std::shared_ptr<TimeSeriesCommitBarrier> & barrier, size_t rank)
-{
-    auto * sink = dynamic_cast<SinkToStorage *>(&processor);
-    if (!sink)
-        return;
-    if (!dynamic_cast<MergeTreeSink *>(&processor) && !dynamic_cast<ReplicatedMergeTreeSink *>(&processor))
-        return;
-
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-    auto wake = std::make_shared<EventFD>();
-    barrier->addWaiter(wake.get());
-    sink->setCommitOrder(
-        [barrier, rank](size_t epoch) { return barrier->commitAllowed(rank, epoch); },
-        [barrier] { return barrier->isCommitFailed(); },
-        [barrier] { barrier->commitStepDone(); },
-        [barrier] { barrier->failCommit(); },
-        [barrier](size_t epoch) { return barrier->commitEpochDone(epoch); },
-        [wake] { return wake->fd; },
-        [wake] { wake->read(); },
-        [wake] { wake->write(); });
-#else
-    (void)rank;
-    sink->setCommitOrder(
-        [](size_t) { return true; },
-        [] { return false; },
-        [] {},
-        [] {},
-        [](size_t) { return true; },
-        [] { return -1; },
-        [] {},
-        [] {});
-#endif
-}
-
-void insertCommitGateBeforeStorageSink(
-    Chain & chain, const std::shared_ptr<TimeSeriesCommitBarrier> & barrier, bool is_leader, size_t commit_rank)
-{
-    IProcessor * processor = &chain.getInputPort().getProcessor();
-    while (!dynamic_cast<SinkToStorage *>(processor))
-    {
-        if (processor->getOutputs().size() != 1 || !processor->getOutputs().front().isConnected())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "TimeSeries target chain has no storage sink");
-        processor = &processor->getOutputs().front().getInputPort().getProcessor();
-    }
-
-    /// Commit tags, then samples, then later targets.
-    attachCommitOrder(*processor, barrier, commit_rank);
-
-    InputPort & sink_input = processor->getInputs().front();
-    auto gate = std::make_shared<TimeSeriesCommitGate>(sink_input.getSharedHeader(), barrier, is_leader);
-
-    /// The chain input and output stay on the first and last processors.
-    if (&sink_input == &chain.getInputPort())
-    {
-        chain.addSource(std::move(gate));
-        return;
-    }
-
-    OutputPort * upstream = nullptr;
-    for (auto & current : chain.getProcessors())
-    {
-        for (auto & output : current->getOutputs())
-        {
-            if (output.isConnected() && &output.getInputPort() == &sink_input)
-                upstream = &output;
-        }
-    }
-
-    if (!upstream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "TimeSeries target chain has no storage sink");
-
-    disconnect(*upstream, sink_input);
-    connect(*upstream, gate->getInputs().front());
-    connect(gate->getOutputs().front(), sink_input);
-    chain.getProcessors().insert(std::prev(chain.getProcessors().end()), std::move(gate));
-}
-
 }
 
 
@@ -451,9 +361,10 @@ Chain buildTimeSeriesWriteChain(
 
     auto sink = std::make_shared<TimeSeriesSink>(storage, *input_header, insert_columns, context, async_insert);
     sink->buildChains();
+    auto & targets = sink->getTargets();
 
     std::vector<SharedHeader> branch_input_headers;
-    for (const auto & target : sink->getTargets())
+    for (const auto & target : targets)
         branch_input_headers.push_back(target.output_header);
 
     auto split = std::make_shared<TimeSeriesSplitTransform>(input_header, branch_input_headers, sink);
@@ -465,44 +376,67 @@ Chain buildTimeSeriesWriteChain(
     QueryPlanResourceHolder resources;
     processors.push_back(split);
 
-    auto & targets = sink->getTargets();
-    auto barrier = std::make_shared<TimeSeriesCommitBarrier>(targets.size());
-    size_t leader_index = 0;
-    for (size_t i = 0; i < targets.size(); ++i)
+    const TimeSeriesSink::Target * tags_target = nullptr;
+    std::vector<SharedHeader> lane_headers;
+    for (const auto & target : targets)
     {
-        if (targets[i].is_tags)
-        {
-            leader_index = i;
-            break;
-        }
+        if (target.is_tags)
+            tags_target = &target;
+        else if (target.is_samples || target.is_recent_samples)
+            lane_headers.push_back(target.output_header);
+    }
+
+    std::shared_ptr<TimeSeriesCommitGate> gate;
+    if (tags_target)
+    {
+        gate = std::make_shared<TimeSeriesCommitGate>(
+            tags_target->chain.getOutputSharedHeader(), lane_headers, [sink] { sink->markTagsWritten(); });
+        connect(tags_target->chain.getOutputPort(), gate->getInputs().front());
     }
 
     auto split_output = std::next(split->getOutputs().begin());
-    for (size_t i = 0; i < targets.size(); ++i)
+    auto lane_input = gate ? std::next(gate->getInputs().begin()) : InputPorts::iterator{};
+    auto lane_output = gate ? gate->getOutputs().begin() : OutputPorts::iterator{};
+    for (auto & target : targets)
     {
-        auto & target = targets[i];
-        std::function<void()> on_finish;
         if (target.is_tags)
-            on_finish = [sink] { sink->markTagsWritten(); };
-        else if (target.is_metric_families)
-            on_finish = [sink] { sink->markMetricFamiliesWritten(); };
+        {
+            connect(*split_output, target.chain.getInputPort());
+        }
+        else if (target.is_samples || target.is_recent_samples)
+        {
+            if (!gate)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "TimeSeries samples target without a tags target");
+            connect(*split_output, *lane_input);
+            connect(*lane_output, target.chain.getInputPort());
+            ++lane_input;
+            ++lane_output;
 
-        insertCommitGateBeforeStorageSink(target.chain, barrier, i == leader_index, i);
-        auto branch_sink = std::make_shared<TimeSeriesBranchSink>(target.chain.getOutputSharedHeader(), std::move(on_finish));
-        connect(*split_output, target.chain.getInputPort());
-        connect(target.chain.getOutputPort(), branch_sink->getPort());
+            auto branch_sink = std::make_shared<TimeSeriesBranchSink>(target.chain.getOutputSharedHeader(), nullptr);
+            connect(target.chain.getOutputPort(), branch_sink->getPort());
+            processors.push_back(std::move(branch_sink));
+        }
+        else
+        {
+            connect(*split_output, target.chain.getInputPort());
+
+            auto branch_sink = std::make_shared<TimeSeriesBranchSink>(
+                target.chain.getOutputSharedHeader(), [sink] { sink->markMetricFamiliesWritten(); });
+            connect(target.chain.getOutputPort(), branch_sink->getPort());
+            processors.push_back(std::move(branch_sink));
+        }
         ++split_output;
 
         resources.append(target.chain.detachResources());
         for (const auto & processor : target.chain.getProcessors())
             processors.push_back(processor);
-        processors.push_back(std::move(branch_sink));
     }
+    if (gate)
+        processors.push_back(gate);
     processors.push_back(tail);
 
     Chain result(std::move(processors));
     result.attachResources(std::move(resources));
-    result.setNumThreads(0);
     return result;
 }
 
@@ -513,10 +447,12 @@ namespace
 class TimeSeriesWriteSink final : public SinkToStorage
 {
 public:
-    explicit TimeSeriesWriteSink(Chain chain)
+    TimeSeriesWriteSink(Chain chain, size_t max_threads, bool concurrency_control)
         : SinkToStorage(chain.getInputSharedHeader())
         , pipeline(std::move(chain))
     {
+        pipeline.setNumThreads(max_threads);
+        pipeline.setConcurrencyControl(concurrency_control);
         executor = std::make_unique<PushingAsyncPipelineExecutor>(pipeline);
     }
 
@@ -556,9 +492,9 @@ private:
 }
 
 
-SinkToStoragePtr wrapTimeSeriesWriteChain(Chain chain)
+SinkToStoragePtr wrapTimeSeriesWriteChain(Chain chain, size_t max_threads, bool concurrency_control)
 {
-    return std::make_shared<TimeSeriesWriteSink>(std::move(chain));
+    return std::make_shared<TimeSeriesWriteSink>(std::move(chain), max_threads, concurrency_control);
 }
 
 }

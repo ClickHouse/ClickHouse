@@ -1,7 +1,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
-#include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
@@ -78,7 +77,6 @@ namespace FailPoints
     extern const char rmt_delay_commit_part[];
     extern const char rmt_dedup_conflict_part_name_missing[];
     extern const char merge_tree_sink_on_start_random_sleep[];
-    extern const char time_series_inner_table_flush_sleep[];
 }
 
 namespace ErrorCodes
@@ -184,11 +182,16 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
 
 ReplicatedMergeTreeSink::~ReplicatedMergeTreeSink()
 {
-    if (delayed_parts.empty() && pending_parts.empty())
+    if (delayed_parts.empty())
         return;
 
     chassert(isCancelled() || std::uncaught_exceptions());
-    ReplicatedMergeTreeSink::abandonDeferredChunk();
+
+    for (auto & partition : delayed_parts)
+    {
+        partition.temp_part->cancel();
+    }
+    delayed_parts.clear();
 }
 
 void ReplicatedMergeTreeSink::setHasDependentMaterializedViews(bool has_dependent_views)
@@ -427,34 +430,23 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
         total_streams += current_streams;
     }
 
-    if (commit_order)
-    {
-        inline_commit = settings[Setting::input_format_max_block_wait_ms] != 0
-            || synchronously_commit_part_for_dependent_views;
-        pending_parts = std::move(current_parts);
-        defer_commit = true;
-    }
-    else
-    {
+    finishDelayed(zookeeper);
+
+    delayed_parts = std::move(current_parts);
+    /// Streaming `INSERT` flushes partial blocks on a timeout, so commit the just-written
+    /// part immediately to make its rows visible without waiting for the next consume()
+    /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
+    if (settings[Setting::input_format_max_block_wait_ms] != 0)
         finishDelayed(zookeeper);
 
-        delayed_parts = std::move(current_parts);
-        /// Streaming `INSERT` flushes partial blocks on a timeout, so commit the just-written
-        /// part immediately to make its rows visible without waiting for the next consume()
-        /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
-        if (settings[Setting::input_format_max_block_wait_ms] != 0)
-            finishDelayed(zookeeper);
-
-        if (synchronously_commit_part_for_dependent_views)
-            finishDelayed(zookeeper);
-    }
+    if (synchronously_commit_part_for_dependent_views)
+        finishDelayed(zookeeper);
 
     ++num_blocks_processed;
 }
 
 MergeTreeTemporaryPartPtr ReplicatedMergeTreeSink::writeNewTempPart(BlockWithPartition & block)
 {
-    fiu_do_on(FailPoints::time_series_inner_table_flush_sleep, { sleepForMilliseconds(1000); });
     return storage.writer.writeTempPart(block, metadata_snapshot, context);
 }
 
@@ -462,8 +454,6 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
 {
     if (delayed_parts.empty())
         return;
-
-    throwIfTimeSeriesSinkCommitFailpoint(storage.getStorageID().getTableName());
 
     for (auto & partition : delayed_parts)
     {
@@ -1311,75 +1301,9 @@ void ReplicatedMergeTreeSink::onFinish()
     if (isCancelled())
         return;
 
-    if (commit_order && commit_order->failed())
-    {
-        abandonDeferredChunk();
-        return;
-    }
-
     ZooKeeperWithFaultInjectionPtr zookeeper = createKeeper("ReplicatedMergeTreeSink::onFinish");
     auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeSink::onFinish");
-    try
-    {
-        finishDelayed(zookeeper);
-        if (commit_order && !inline_commit)
-            finishCommitStep();
-    }
-    catch (...)
-    {
-        failCommitOrder();
-        abandonDeferredChunk();
-        throw;
-    }
-}
-
-bool ReplicatedMergeTreeSink::orderedCommitPending() const
-{
-    if (!commit_order)
-        return false;
-    if (defer_commit)
-        return inline_commit || num_blocks_processed > 1;
-    return !inline_commit;
-}
-
-void ReplicatedMergeTreeSink::commitDeferredChunk()
-{
-    if (!defer_commit)
-        return;
-
-    defer_commit = false;
-    const bool commit_previous = !inline_commit && num_blocks_processed > 1;
-    const bool commit_current = inline_commit;
-
-    auto zookeeper = createKeeper("ReplicatedMergeTreeSink::commitDeferredChunk");
     finishDelayed(zookeeper);
-    if (commit_previous)
-        finishCommitStep();
-
-    delayed_parts = std::move(pending_parts);
-    if (commit_current)
-    {
-        finishDelayed(zookeeper);
-        finishCommitStep();
-        holdNextChunk();
-    }
-}
-
-void ReplicatedMergeTreeSink::abandonDeferredChunk()
-{
-    auto cancel_parts = [](std::vector<DelayedPartInPartition> & parts)
-    {
-        for (auto & partition : parts)
-        {
-            if (partition.temp_part)
-                partition.temp_part->cancel();
-        }
-        parts.clear();
-    };
-
-    cancel_parts(pending_parts);
-    cancel_parts(delayed_parts);
-    defer_commit = false;
 }
 
 void ReplicatedMergeTreeSink::waitForQuorum(

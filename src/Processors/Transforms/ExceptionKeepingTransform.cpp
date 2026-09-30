@@ -36,31 +36,6 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
     if (output.isFinished())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output port is finished for {}", getName());
 
-    if (stage == Stage::WaitCommit || stage == Stage::WaitFinish)
-    {
-        if (isCancelled() || readyForCommit())
-        {
-            if (stage == Stage::WaitCommit)
-            {
-                stage = Stage::Generate;
-                return Status::Ready;
-            }
-
-            stage = Stage::Finish;
-            if (!ignore_on_start_and_finish)
-                return Status::Ready;
-
-            output.finish();
-            return Status::Finished;
-        }
-
-        /// The next chunk has to reach this input while the previous chunk waits to commit.
-        if (stage == Stage::WaitCommit && !input.hasData() && !input.isFinished())
-            input.setNeeded();
-
-        return Status::Async;
-    }
-
     if (!output.canPush())
     {
         input.setNotNeeded();
@@ -78,22 +53,12 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
     if (stage == Stage::Generate)
         return Status::Ready;
 
-    /// The next chunk stays upstream until every target has committed this chunk.
-    if (stage == Stage::Consume && !readyForNextChunk())
-        return Status::Async;
-
     while (!ready_input)
     {
         if (input.isFinished())
         {
-            if (stage != Stage::Exception && stage != Stage::Finish && stage != Stage::WaitFinish)
+            if (stage != Stage::Exception && stage != Stage::Finish)
             {
-                if (!readyForCommit())
-                {
-                    stage = Stage::WaitFinish;
-                    return Status::Async;
-                }
-
                 stage = Stage::Finish;
                 if (!ignore_on_start_and_finish)
                     return Status::Ready;
@@ -150,12 +115,6 @@ static std::exception_ptr runStep(std::function<void()> step, ThreadGroupPtr & t
 
 void ExceptionKeepingTransform::work()
 {
-    if (stage == Stage::WaitCommit || stage == Stage::WaitFinish || (stage == Stage::Consume && !readyForNextChunk()))
-    {
-        drainCommitWait();
-        return;
-    }
-
     if (stage == Stage::Start)
     {
         stage = Stage::Consume;
@@ -173,12 +132,6 @@ void ExceptionKeepingTransform::work()
     {
         if (stage == Stage::Consume)
         {
-            if (!ready_input)
-            {
-                drainCommitWait();
-                return;
-            }
-
             ready_input = false;
 
             if (auto exception = runStep([this] { onConsume(std::move(data.chunk)); }, thread_group))
@@ -190,15 +143,7 @@ void ExceptionKeepingTransform::work()
                 cancel();
             }
             else if (canGenerate())
-            {
-                if (readyForCommit())
-                    stage = Stage::Generate;
-                else
-                {
-                    stage = Stage::WaitCommit;
-                    return;
-                }
-            }
+                stage = Stage::Generate;
         }
 
         if (stage == Stage::Generate)
@@ -250,25 +195,6 @@ void ExceptionKeepingTransform::work()
             cancel();
         }
     }
-}
-
-int ExceptionKeepingTransform::schedule()
-{
-    if (stage != Stage::WaitCommit && stage != Stage::WaitFinish && stage != Stage::Consume)
-        return IProcessor::schedule();
-
-    const int descriptor = commitWaitFD();
-    if (descriptor < 0)
-        return IProcessor::schedule();
-
-    /// The wait can finish between `prepare` and `schedule`.
-    const bool still_waiting = stage == Stage::WaitCommit || stage == Stage::WaitFinish
-        ? !readyForCommit()
-        : !readyForNextChunk();
-    if (!still_waiting)
-        signalCommitWait();
-
-    return descriptor;
 }
 
 void ExceptionKeepingTransform::setRuntimeData(ThreadGroupPtr thread_group_)

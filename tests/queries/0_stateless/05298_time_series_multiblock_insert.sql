@@ -1,5 +1,5 @@
 -- One TimeSeries insert can contain more than one block.
--- Each block waits until every inner table has that block, then the sinks consume it.
+-- The samples and recent samples of a block are written after the tags of that block are committed.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -83,10 +83,10 @@ SELECT count() FROM ext_samples WHERE value IN (30, 40);
 SELECT count() FROM ext_recent WHERE value IN (30, 40);
 SELECT count() FROM ext_samples_dest WHERE value IN (30, 40);
 
--- A block that already committed stays. A block that fails the check does not.
--- A target that commits inside consume still waits until earlier targets have committed.
--- The view runs after that commit, so a cancelled insert can leave the view empty.
-SELECT '--- a failed later block keeps the earlier committed block ---';
+-- A tags block that already committed stays. A block that fails the check does not.
+-- The samples of a committed tags block are released only after the next tags block is consumed
+-- or the tags table finished, so a failure in the next block leaves them unwritten.
+SELECT '--- a failed later block keeps the earlier committed tags block ---';
 
 INSERT INTO ts_ext (metric_name, tags, samples)
 SELECT

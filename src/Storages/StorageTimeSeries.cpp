@@ -62,9 +62,7 @@ namespace Setting
 {
     extern const SettingsBool enable_time_series_table;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsMaxThreads max_insert_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
-    extern const SettingsUInt64 max_insert_threads_min_free_memory_per_thread;
     extern const SettingsBool use_concurrency_control;
 }
 
@@ -905,12 +903,7 @@ SinkToStoragePtr StorageTimeSeries::write(
     size_t max_threads = getMaxThreadsForAvailableMemory(
         std::max<size_t>(1, settings[Setting::max_threads]),
         settings[Setting::max_threads_min_free_memory_per_thread]);
-    size_t max_insert_threads = getMaxThreadsForAvailableMemory(
-        std::min(std::max<size_t>(1, settings[Setting::max_insert_threads]), max_threads),
-        settings[Setting::max_insert_threads_min_free_memory_per_thread]);
-    chain.setNumThreads(max_insert_threads);
-    chain.setConcurrencyControl(settings[Setting::use_concurrency_control]);
-    return wrapTimeSeriesWriteChain(std::move(chain));
+    return wrapTimeSeriesWriteChain(std::move(chain), max_threads, settings[Setting::use_concurrency_control]);
 }
 
 

@@ -1,8 +1,9 @@
--- Tags: no-parallel, no-fasttest
--- A sink throws after TimeSeriesCommitGate has released the block.
+-- A target sink throws inside `consume` when one block spans two partitions and
+-- `max_partitions_per_insert_block = 1`. Tags commit before samples and recent samples are written.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
+SET max_partitions_per_insert_block = 1;
 
 DROP TABLE IF EXISTS ts_ext;
 DROP TABLE IF EXISTS ext_tags;
@@ -16,53 +17,43 @@ CREATE TABLE ext_tags
     tags Map(LowCardinality(String), String),
     min_time Nullable(DateTime64(3)),
     max_time Nullable(DateTime64(3))
-) ENGINE = MergeTree ORDER BY (metric_name, id);
+) ENGINE = MergeTree PARTITION BY metric_name ORDER BY (metric_name, id);
 
-CREATE TABLE ext_samples (id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
-CREATE TABLE ext_recent (id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
+CREATE TABLE ext_samples (id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64)
+    ENGINE = MergeTree PARTITION BY (value > 100) ORDER BY (id, timestamp);
+
+CREATE TABLE ext_recent (id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64)
+    ENGINE = MergeTree ORDER BY (id, timestamp);
 
 CREATE TABLE ts_ext ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
     DATA ext_samples TAGS ext_tags RECENT SAMPLES ext_recent;
 
-SELECT '--- tags commit failure ---';
+SELECT '--- the tags sink throws: no table gets the block ---';
 
-SYSTEM ENABLE FAILPOINT time_series_sink_commit_throw_tags;
-INSERT INTO ts_ext (metric_name, tags, samples) VALUES ('tags_fail', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 10.)]); -- { serverError FAULT_INJECTED }
-SYSTEM DISABLE FAILPOINT time_series_sink_commit_throw_tags;
+INSERT INTO ts_ext (metric_name, tags, samples) VALUES
+    ('tags_fail_a', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 10.)]),
+    ('tags_fail_b', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 11.)]); -- { serverError TOO_MANY_PARTS }
 
-SELECT count() FROM ext_tags WHERE metric_name = 'tags_fail';
-SELECT count() FROM ext_samples WHERE value = 10;
-SELECT count() FROM ext_recent WHERE value = 10;
+SELECT count() FROM ext_tags WHERE metric_name LIKE 'tags_fail%';
+SELECT count() FROM ext_samples WHERE value IN (10, 11);
+SELECT count() FROM ext_recent WHERE value IN (10, 11);
 
-SELECT '--- samples commit failure ---';
+SELECT '--- the samples sink throws: tags are committed, samples are empty ---';
 
-SYSTEM ENABLE FAILPOINT time_series_sink_commit_throw_samples;
-INSERT INTO ts_ext (metric_name, tags, samples) VALUES ('samples_fail', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 20.)]); -- { serverError FAULT_INJECTED }
-SYSTEM DISABLE FAILPOINT time_series_sink_commit_throw_samples;
+INSERT INTO ts_ext (metric_name, tags, samples) VALUES
+    ('samples_fail', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 20.), (now64(3) - INTERVAL 2 MINUTE, 200.)]); -- { serverError TOO_MANY_PARTS }
 
 SELECT count() FROM ext_tags WHERE metric_name = 'samples_fail';
-SELECT count() FROM ext_samples WHERE value = 20;
-SELECT count() FROM ext_recent WHERE value = 20;
+SELECT count() FROM ext_samples WHERE value IN (20, 200);
 
-SELECT '--- tags commit failure when the block commits inside consume ---';
+SELECT '--- no sink throws: every table gets the block ---';
 
-SYSTEM ENABLE FAILPOINT time_series_sink_commit_throw_tags;
-INSERT INTO ts_ext (metric_name, tags, samples) SETTINGS input_format_connection_handling = 1, input_format_max_block_wait_ms = 1 VALUES ('tags_fail_inline', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 30.)]); -- { serverError FAULT_INJECTED }
-SYSTEM DISABLE FAILPOINT time_series_sink_commit_throw_tags;
+INSERT INTO ts_ext (metric_name, tags, samples) VALUES
+    ('ok', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 30.), (now64(3) - INTERVAL 2 MINUTE, 31.)]);
 
-SELECT count() FROM ext_tags WHERE metric_name = 'tags_fail_inline';
-SELECT count() FROM ext_samples WHERE value = 30;
-SELECT count() FROM ext_recent WHERE value = 30;
-
-SELECT '--- samples commit failure when the block commits inside consume ---';
-
-SYSTEM ENABLE FAILPOINT time_series_sink_commit_throw_samples;
-INSERT INTO ts_ext (metric_name, tags, samples) SETTINGS input_format_connection_handling = 1, input_format_max_block_wait_ms = 1 VALUES ('samples_fail_inline', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 40.)]); -- { serverError FAULT_INJECTED }
-SYSTEM DISABLE FAILPOINT time_series_sink_commit_throw_samples;
-
-SELECT count() FROM ext_tags WHERE metric_name = 'samples_fail_inline';
-SELECT count() FROM ext_samples WHERE value = 40;
-SELECT count() FROM ext_recent WHERE value = 40;
+SELECT count() FROM ext_tags WHERE metric_name = 'ok';
+SELECT count() FROM ext_samples WHERE value IN (30, 31);
+SELECT count() FROM ext_recent WHERE value IN (30, 31);
 
 DROP TABLE ts_ext;
 DROP TABLE ext_tags;

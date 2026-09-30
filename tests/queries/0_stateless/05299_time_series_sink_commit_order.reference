@@ -1,16 +1,11 @@
---- tags commit failure ---
+--- the tags sink throws: no table gets the block ---
 0
 0
 0
---- samples commit failure ---
+--- the samples sink throws: tags are committed, samples are empty ---
 1
 0
-0
---- tags commit failure when the block commits inside consume ---
-0
-0
-0
---- samples commit failure when the block commits inside consume ---
+--- no sink throws: every table gets the block ---
 1
-0
-0
+2
+2

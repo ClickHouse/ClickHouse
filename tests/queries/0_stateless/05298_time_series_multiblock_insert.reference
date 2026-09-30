@@ -18,11 +18,11 @@ e1
 0
 0
 0
---- a failed later block keeps the earlier committed block ---
-1
+--- a failed later block keeps the earlier committed tags block ---
 1
 0
-1
+0
+0
 0
 0
 0

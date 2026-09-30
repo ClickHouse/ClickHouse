@@ -360,7 +360,7 @@ TimeSeriesSink::Target TimeSeriesSink::createTarget(
     auto target_context = Context::createCopy(getContext());
     target_context->setCurrentQueryId(fmt::format("{}:{}", getContext()->getCurrentQueryId(), kind));
 
-    /// Squashing drops a chunk with no rows. The commit gate then sees fewer chunks on that target.
+    /// Squashing would hold tags rows back from the commit gate and stall the gated targets.
     InterpreterInsertQuery interpreter(
         insert_query,
         target_context,

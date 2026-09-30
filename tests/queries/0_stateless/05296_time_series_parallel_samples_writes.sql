@@ -1,5 +1,5 @@
 -- A TimeSeries insert writes tags, samples, and recent samples on the insert executor.
--- No inner table commits until every inner flush has finished. Tags commit first.
+-- Tags commit first. Samples and recent samples are written in parallel after that.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -59,12 +59,12 @@ SELECT count() FROM ext_tags WHERE metric_name = 'bad_tags';
 SELECT count() FROM ext_samples WHERE value = 10;
 SELECT count() FROM ext_recent WHERE value = 10;
 
-SELECT '--- a failed recent samples write rejects the bad value ---';
+SELECT '--- a failed recent samples write rejects the bad value after the tags are committed ---';
 
 INSERT INTO ts_ext (metric_name, tags, samples) VALUES ('bad_recent', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 2000.)]); -- { serverError VIOLATED_CONSTRAINT }
 
+-- The samples table is written in parallel with the recent samples table, so its content is not checked here.
 SELECT count() FROM ext_tags WHERE metric_name = 'bad_recent';
-SELECT count() FROM ext_samples WHERE value = 2000;
 SELECT count() FROM ext_recent WHERE value = 2000;
 
 SELECT '--- an insert after a failure still writes all three tables ---';

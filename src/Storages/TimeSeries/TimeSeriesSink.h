@@ -34,7 +34,7 @@ Chain buildTimeSeriesWriteChain(
     ContextPtr context,
     bool async_insert);
 
-SinkToStoragePtr wrapTimeSeriesWriteChain(Chain chain);
+SinkToStoragePtr wrapTimeSeriesWriteChain(Chain chain, size_t max_threads, bool concurrency_control);
 
 /// Builds blocks for the TimeSeries target tables and the insert chains that write them.
 class TimeSeriesSink : public WithContext

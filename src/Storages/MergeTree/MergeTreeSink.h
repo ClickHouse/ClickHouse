@@ -1,7 +1,6 @@
 #pragma once
 
 #include <exception>
-#include <base/types.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
@@ -57,10 +56,6 @@ public:
     void onFinish() override;
     void setHasDependentMaterializedViews(bool has_dependent_views) override;
 
-    bool orderedCommitPending() const override;
-    void commitDeferredChunk() override;
-    void abandonDeferredChunk() override;
-
 protected:
     StorageMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
@@ -75,15 +70,10 @@ protected:
     bool synchronously_commit_part_for_dependent_views = false;
     /// We can delay processing for previous chunk and start writing a new one.
     std::unique_ptr<MergeTreeDelayedChunk> delayed_chunk;
-    std::unique_ptr<MergeTreeDelayedChunk> pending_chunk;
-    bool defer_commit = false;
-    bool inline_commit = false;
 
     std::vector<std::string> commitPart(MutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes);
     virtual void finishDelayedChunk();
     virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block);
 };
-
-void throwIfTimeSeriesSinkCommitFailpoint(const String & table_name);
 
 }
