@@ -47,6 +47,6 @@ SELECT arraySort(groupArray((id, timestamp, value))) = (SELECT arraySort(groupAr
     arraySort(groupArray(value))
 FROM timeSeriesSelector(rx, '{__name__=~"a_total|b_total"}', 0, 2000);
 SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"a_total|b_total"}', 0, 2000) SETTINGS force_primary_key = 1;
-SELECT count() FROM timeSeriesSelector(rx, '{__name__!~"a_total|b_total"}', 0, 2000);
+SELECT count() FROM timeSeriesSelector(rx, '{__name__!~"a_total|b_total", job="api"}', 0, 2000);
 
 DROP TABLE rx;
