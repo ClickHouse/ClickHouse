@@ -616,10 +616,12 @@ MergeTreeReadTaskColumns getReadTaskColumns(
                 return false;
             };
 
-            /// Size-only and same-reader reads need no companion. Check demand before
-            /// resolving part columns and enumerating serialization streams for every read task.
-            if ((needs_parent(column_to_read_after_prewhere)
-                    || std::any_of(required_source_columns_by_step.begin(), required_source_columns_by_step.end(), needs_parent))
+            /// Do not pull output-only Strings into PREWHERE. Even on legacy parts, reading
+            /// sizes alone skips payload bytes without materializing them, whereas co-reading
+            /// the String copies payloads for rows that the size filter may reject.
+            /// Keep co-reading when a filtering step already needs the full String.
+            /// Check demand before resolving part columns and enumerating serialization streams.
+            if (std::any_of(required_source_columns_by_step.begin(), required_source_columns_by_step.end(), needs_parent)
                 && has_separate_reads() && isLegacyStringSize(name, parent_name))
             {
                 legacy_string_companions.emplace(name, parent_name);
@@ -642,8 +644,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         collectLegacyStringCompanions(column_to_read_after_prewhere);
     }
 
-    /// A legacy String and its virtual size share one stream. Request both at the earliest
-    /// use of either; columns_from_previous_steps then prevents later readers from rereading it.
+    /// A legacy String needed by a filtering step shares a stream with its virtual size.
+    /// Request both at the earliest use; columns_from_previous_steps prevents rereading it.
     /// Pairing step inputs also covers later PREWHERE consumers without changing action order.
     for (auto & names : required_source_columns_by_step)
     {

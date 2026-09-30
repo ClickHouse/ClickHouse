@@ -95,8 +95,9 @@
     </fill_query>
     <fill_query>OPTIMIZE TABLE string_size_filter_only_legacy_perf FINAL SETTINGS mutations_sync = 1</fill_query>
 
-    <!-- Legacy sizes are virtual. Explicit s.size keeps this benchmark runnable
-         on both binaries while exercising the co-read planner added by this PR. -->
+    <!-- Legacy sizes are virtual, but size-only reads still avoid materializing
+         rejected payloads. Keep output-only Strings deferred until after PREWHERE.
+         Explicit s.size keeps this regression query runnable on both binaries. -->
     <query tag="Legacy String size filter-only">
         SELECT s
         FROM string_size_filter_only_legacy_perf
@@ -127,6 +128,37 @@
         PREWHERE like(s, '%foo%') AND id &gt; 0 AND s.size != 0
         FORMAT Null
         SETTINGS enable_multiple_prewhere_read_steps = 1
+    </query>
+
+    <!-- Append coverage without changing the indices or data of the existing queries.
+         Output-only Strings must also retain the reference read shape when most or
+         none of the rows survive, rather than guessing selectivity in the planner. -->
+    <query tag="Legacy String output-only nonselective">
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE s.size != 0
+        FORMAT Null
+    </query>
+
+    <query tag="Legacy String output-only nonselective control">
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE notEmpty(s)
+        FORMAT Null
+    </query>
+
+    <query tag="Legacy String output-only reject-all">
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE s.size &gt; 2048
+        FORMAT Null
+    </query>
+
+    <query tag="Legacy String output-only reject-all control">
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE length(s) &gt; 2048
+        FORMAT Null
     </query>
     <drop_query>DROP TABLE IF EXISTS string_size_filter_only_legacy_perf</drop_query>
 </test>
