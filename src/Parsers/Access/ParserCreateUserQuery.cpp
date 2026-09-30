@@ -10,7 +10,6 @@
 #include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/Access/ParserPublicSSHKey.h>
 #include <Parsers/Access/parseAccessRightsElements.h>
-#include <Parsers/Access/parseUserName.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -123,18 +122,18 @@ bool parseAuthenticationGrants(IParserBase::Pos & pos, Expected & expected, Acce
 
 namespace
 {
-    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, std::optional<String> & new_name)
+    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTUserNameWithHost> & new_name)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (!ParserKeyword{Keyword::RENAME_TO}.ignore(pos, expected))
                 return false;
 
-            String maybe_new_name;
-            if (!parseUserName(pos, expected, maybe_new_name, /*allow_query_parameter=*/true))
+            ASTPtr new_name_ast;
+            if (!ParserUserNameWithHost(/*allow_query_parameter=*/true).parse(pos, new_name_ast, expected))
                 return false;
 
-            new_name.emplace(std::move(maybe_new_name));
+            new_name = boost::static_pointer_cast<ASTUserNameWithHost>(new_name_ast);
             return true;
         });
     }
@@ -663,7 +662,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     auto pos_after_parsing_names = pos;
 
-    std::optional<String> new_name;
+    boost::intrusive_ptr<ASTUserNameWithHost> new_name;
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
@@ -852,6 +851,12 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->reset_authentication_methods_to_new = reset_authentication_methods_to_new;
     query->add_identified_with = parsed_add_identified_with;
     query->replace_authentication_methods = parsed_identified_with;
+
+    if (query->names && query->names->hasQueryParameters())
+        query->children.push_back(query->names);
+
+    if (query->new_name && query->new_name->usernameWasQueryParameter())
+        query->children.push_back(query->new_name);
 
     for (const auto & authentication_method : query->authentication_methods)
     {
@@ -1164,6 +1169,18 @@ Create the user account `john` and allow him to grant his privileges to the user
 CREATE USER john GRANTEES jack;
 ```
 
+Create the user account `john` with a default database:
+
+```sql
+CREATE USER john DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` leaves the default database unset. To use a database named `NONE`, quote its name with backticks:
+
+```sql
+DEFAULT DATABASE `NONE`
+```
+
 Use a query parameter to create the user account `john`:
 
 ```sql
@@ -1204,6 +1221,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [DROP ALL PROFILES]
     [DROP ALL SETTINGS]
@@ -1287,6 +1305,18 @@ Reset authentication methods and keep the most recent added one:
 ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 ```
 
+Change the default database for a user:
+
+```sql
+ALTER USER user1 DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` clears the user's default database. To use a database named `NONE`, quote its name with backticks:
+
+```sql
+DEFAULT DATABASE `NONE`
+```
+
 ## VALID UNTIL Clause {#valid-until-clause}
 
 Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`. The accepted deadline range is `1900-01-01 00:00:00 UTC` through `9999-12-31 09:59:59 UTC` — the latest instant that stays within year 9999 in every time zone, so the stored instant is never clamped when it is rendered. A deadline in the past means the credentials are already expired. Deadlines before `1970-01-01 00:00:01 UTC` are accepted only as an "already expired" marker: they are canonicalized to the smallest expired instant, one second after the Unix epoch (`1970-01-01 00:00:01 UTC`), so `SHOW CREATE USER` reports that instant instead of the deadline you wrote. Deadlines from that instant onward are stored exactly.
@@ -1336,6 +1366,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [DROP ALL PROFILES]
     [DROP ALL SETTINGS]

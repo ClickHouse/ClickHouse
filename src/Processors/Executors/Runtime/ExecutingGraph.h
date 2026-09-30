@@ -19,7 +19,6 @@ namespace DB
 /// Graph of executing pipeline.
 class ExecutingGraph
 {
-public:
     struct Node;
 
     /// Edge represents connection between OutputPort and InputPort.
@@ -110,10 +109,12 @@ public:
         }
     };
 
+
+public:
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
-    using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
+    using DequeWithMemoryTracker = boost::container::devector<IProcessor *, AllocatorWithMemoryTracking<IProcessor *>>;
+    using Queue = std::queue<IProcessor *, DequeWithMemoryTracker>;
 
     explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_);
 
@@ -126,10 +127,10 @@ public:
         Cancelled,
     };
 
-    /// Update processor at `start_node` (call IProcessor::prepare).
+    /// Update `initial` processor (call IProcessor::prepare).
     /// Check parents and children of current processor and push them to stacks if they also need to be updated.
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
-    UpdateNodeStatus updateNode(Node * start_node, Queue & queue, Queue & async_queue);
+    UpdateNodeStatus updateNode(IProcessor & initial, Queue & queue, Queue & async_queue);
 
     /// Cancel every processor with the given reason.
     void cancel(IProcessor::CancelReason reason);
@@ -170,6 +171,7 @@ private:
     /// Update graph after processor `node` returned UpdatePipeline status.
     /// All new nodes and nodes with updated ports are pushed into stack.
     UpdateNodeStatus updatePipeline(boost::container::devector<Node *> & stack, Node & node);
+    UpdateNodeStatus updatePipelineImpl(boost::container::devector<Node *> & stack, Node & node, IProcessor::PipelineUpdate & update);
 
     /// Shared with QueryPipeline.
     std::shared_ptr<Processors> processors;
@@ -191,6 +193,16 @@ private:
     uint64_t next_node_id = 0;
 
     SharedMutex nodes_mutex;
+
+    /// Set when `updatePipeline` threw halfway through recording the processors an expansion
+    /// added (an allocation failed, for example): the parent's ports are already connected to
+    /// processors that never became nodes, so the nodes and edges no longer describe the ports and
+    /// any further expansion would trip over them. The exception has already cancelled the executor;
+    /// later expansions only bail out. Guarded by the `nodes_mutex` write lock.
+    bool expansion_failed = false;
+    /// The processors of the failed expansion. Ports of live nodes point at them, so they have to
+    /// stay alive as long as the graph does, although they are not part of it.
+    Processors processors_of_failed_expansion;
 
     const bool profile_processors;
     IProcessor::CancelReason cancel_reason = IProcessor::CancelReason::NotCancelled;

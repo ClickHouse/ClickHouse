@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <array>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -21,7 +23,7 @@ namespace DB
         vec##INDEX.resize(input_rows_count);
 
 #define MASK(IDX, ...) \
-        ((mask) ? shrink(mask->getColumn((IDX)).getUInt(0), std::get<IDX>(__VA_ARGS__)) : std::get<IDX>(__VA_ARGS__))
+        ((mask) ? shrink(mask_ratios[(IDX)], std::get<IDX>(__VA_ARGS__)) : std::get<IDX>(__VA_ARGS__))
 
 #define EXECUTE() \
     size_t nd; \
@@ -34,6 +36,11 @@ namespace DB
     auto non_const_arguments = arguments; \
     non_const_arguments[1].column = non_const_arguments[1].column->convertToFullColumnIfConst(); \
     const ColumnPtr & col_code = non_const_arguments[1].column; \
+    const auto code_span = makeUIntColumnSpan(*col_code); \
+    std::array<UInt64, 8> mask_ratios{}; \
+    if (mask) \
+        for (size_t mask_idx = 0; mask_idx < std::min<size_t>(nd, mask_ratios.size()); ++mask_idx) \
+            mask_ratios[mask_idx] = mask->getColumn(mask_idx).getUInt(0); \
     Columns tuple_columns(nd); \
     EXTRACT_VECTOR(0) \
     if (nd == 1) \
@@ -42,7 +49,7 @@ namespace DB
         { \
             for (size_t i = 0; i < input_rows_count; i++) \
             { \
-                vec0[i] = shrink(mask->getColumn(0).getUInt(0), col_code->getUInt(i)); \
+                vec0[i] = shrink(mask_ratios[0], code_span[i]); \
             } \
             tuple_columns[0] = std::move(col0); \
         } \
@@ -50,7 +57,7 @@ namespace DB
         { \
             for (size_t i = 0; i < input_rows_count; i++) \
             { \
-                vec0[i] = col_code->getUInt(i); \
+                vec0[i] = code_span[i]; \
             } \
             tuple_columns[0] = std::move(col0); \
         } \
@@ -166,7 +173,7 @@ namespace DB
         { \
             for (size_t i = 0; i < input_rows_count; i++) \
             { \
-                auto res = MortonND_##ND##D_Dec.Decode(col_code->getUInt(i)); \
+                auto res = MortonND_##ND##D_Dec.Decode(code_span[i]); \
                 __VA_ARGS__ \
             } \
         }
@@ -229,7 +236,7 @@ public:
         { \
             for (size_t i = 0; i < input_rows_count; i++) \
             { \
-                auto res = MortonND_##ND##D::Decode(col_code->getUInt(i)); \
+                auto res = MortonND_##ND##D::Decode(code_span[i]); \
                 __VA_ARGS__ \
             } \
         }

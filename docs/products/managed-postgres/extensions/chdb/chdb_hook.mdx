@@ -342,11 +342,12 @@ higher to have chdb_hook send the query and parameters to the Postgres log
 2026-08-08 09:41:06.842 EDT [59940] STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
 ```
 
-> [!WARNING]
-> Do not leave [log_min_messages] set to a debugging level beyond a single
-> debugging session so as to avoid logging sensitive information such as
-> credentials, and because PostgreSQL itself also logs debugging information
-> and can quickly fill the log.
+<Warning>
+Do not leave [log_min_messages] set to a debugging level beyond a single
+debugging session so as to avoid logging sensitive information such as
+credentials, and because PostgreSQL itself also logs debugging information and
+can quickly fill the log.
+</Warning>
 
 ## CREATE TABLE Overloading {#create-table-overloading}
 
@@ -734,6 +735,7 @@ Copyright (c) 2026, ClickHouse
     "Azure: Manage storage account access keys"
   [row-level security]: https://www.postgresql.org/docs/current/ddl-rowsecurity.html
     "Postgres Docs: Row Security Policies"
+  [JSON type]: /reference/data-types/newjson "ClickHouse Docs: JSON Data Type"
   [LOAD]: https://www.postgresql.org/docs/current/sql-load.html "Postgres Docs: LOAD"
   [session_preload_libraries]:https://www.postgresql.org/docs/18/runtime-config-client.html#GUC-SESSION-PRELOAD-LIBRARIES
     "Postgres Docs: `session_preload_libraries`"
