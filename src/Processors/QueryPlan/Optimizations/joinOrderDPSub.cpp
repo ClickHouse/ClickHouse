@@ -604,11 +604,11 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     /// entry carries its strictness (so it is left alone by the check below), while the rest are the
     /// inner joins they read.
     ///
-    /// An input without an estimate (e.g. a `UNION ALL` subquery) is taken to be the larger one, so
-    /// it stays on the left rather than being read into the hash table. On equal estimates, or with
-    /// neither known, keep the input with more relations on the left: the enumeration reaches a lone
-    /// relation against the rest first, which would otherwise build the hash table from a whole
-    /// subtree - the left-deep shape greedy produces avoids that.
+    /// On equal estimates, or when an input has none (e.g. a `UNION ALL` subquery), keep the input
+    /// with more relations on the left: the enumeration reaches a lone relation against the rest
+    /// first, which would otherwise build the hash table from a whole subtree - the left-deep shape
+    /// greedy produces avoids that. A missing estimate says nothing about the size, so two single
+    /// relations keep their sides.
     const bool entries_carry_strictness = query_graph.join_strictness == JoinStrictness::All
         || (query_graph.semi_anti_flattened
             && (query_graph.join_strictness == JoinStrictness::Semi || query_graph.join_strictness == JoinStrictness::Anti));
@@ -620,13 +620,9 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
         const auto & left_rows = left->estimated_rows;
         const auto & right_rows = right->estimated_rows;
         const bool fewer_relations_left = std::popcount(entry.left) < std::popcount(entry.right);
-        bool swap_sides;
-        if (left_rows && right_rows)
-            swap_sides = *left_rows < *right_rows || (*left_rows == *right_rows && fewer_relations_left);
-        else if (left_rows || right_rows)
-            swap_sides = !right_rows;
-        else
-            swap_sides = fewer_relations_left;
+        const bool swap_sides = (left_rows && right_rows)
+            ? (*left_rows < *right_rows || (*left_rows == *right_rows && fewer_relations_left))
+            : fewer_relations_left;
 
         if (swap_sides)
         {
