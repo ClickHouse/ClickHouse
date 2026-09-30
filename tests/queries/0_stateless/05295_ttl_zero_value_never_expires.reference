@@ -31,3 +31,6 @@ TTLDropMerge
 -- rows whose TTL is 0 survive the drop of an expired column TTL that was removed
 10	10
 1
+-- ttl_only_drop_parts drops an expired part after a column TTL that is 0 for some rows is removed, also after a restart
+0
+TTLDropMerge

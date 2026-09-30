@@ -92,11 +92,13 @@ struct MergeTreeDataPartTTLInfos
             part_max_ttl = ttl_info.max;
     }
 
-    /// A column TTL that is 0 for every row never expires, so it must not keep the part from being dropped.
+    /// A column TTL never deletes rows, so its values of 0, which never expire, must not keep the part from being dropped.
     void updatePartMinMaxColumnTTL(const MergeTreeDataPartTTLInfo & ttl_info)
     {
-        if (ttl_info.min)
-            updatePartMinMaxTTL(ttl_info);
+        MergeTreeDataPartTTLInfo part_ttl_info = ttl_info;
+        if (part_ttl_info.max == MergeTreeDataPartTTLInfo::NEVER)
+            part_ttl_info.max = 0;
+        updatePartMinMaxTTL(part_ttl_info);
     }
 
     bool empty() const

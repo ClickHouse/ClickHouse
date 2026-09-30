@@ -200,3 +200,29 @@ $CLICKHOUSE_CLIENT -q "
     WHERE database = currentDatabase() AND table = 't_removed_column_ttl' AND event_type = 'MergeParts';
     DROP TABLE t_removed_column_ttl;
 "
+
+echo "-- ttl_only_drop_parts drops an expired part after a column TTL that is 0 for some rows is removed, also after a restart"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_removed_mixed_column_ttl (id UInt64, ts DateTime, v_expire DateTime, v String TTL v_expire)
+    ENGINE = MergeTree ORDER BY id TTL ts + INTERVAL 1 DAY
+    SETTINGS merge_with_ttl_timeout = 0, ttl_only_drop_parts = 1;
+    SYSTEM STOP MERGES t_removed_mixed_column_ttl;
+    INSERT INTO t_removed_mixed_column_ttl SELECT number, now() - INTERVAL 5 DAY,
+        if(number % 2 = 0, toDateTime(0), now() - INTERVAL 5 DAY), 'x' FROM numbers(10);
+    ALTER TABLE t_removed_mixed_column_ttl MODIFY COLUMN v REMOVE TTL;
+    DETACH TABLE t_removed_mixed_column_ttl;
+    ATTACH TABLE t_removed_mixed_column_ttl;
+    SYSTEM START MERGES t_removed_mixed_column_ttl;
+"
+for _ in $(seq 1 300); do
+    unmerged=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_removed_mixed_column_ttl' AND active AND level = 0")
+    [ "$unmerged" = "0" ] && break
+    sleep 0.1
+done
+$CLICKHOUSE_CLIENT -q "
+    SELECT count() FROM t_removed_mixed_column_ttl;
+    SYSTEM FLUSH LOGS part_log;
+    SELECT merge_reason FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_removed_mixed_column_ttl' AND event_type = 'MergeParts';
+    DROP TABLE t_removed_mixed_column_ttl;
+"
