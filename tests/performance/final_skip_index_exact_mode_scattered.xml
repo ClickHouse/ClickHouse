@@ -20,7 +20,14 @@
             min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0
     </fill_query>
 
-    <query>SELECT count() FROM final_skip_index_scattered FINAL WHERE v = 1 SETTINGS use_skip_indexes_if_final = 1, use_skip_indexes_if_final_exact_mode = 1, use_query_condition_cache = 0</query>
+    <!-- The layout the query measures: 40 active parts, each covering the whole key range. -->
+    <fill_query>
+        SELECT throwIf(count() != 40 OR max(min_key) >= 40 OR min(max_key) &lt; 7999960,
+            'final_skip_index_exact_mode_scattered: expected 40 active parts, each covering the whole key range')
+        FROM (SELECT _part, min(key) AS min_key, max(key) AS max_key FROM final_skip_index_scattered GROUP BY _part)
+    </fill_query>
+
+    <query>SELECT count() FROM final_skip_index_scattered FINAL WHERE v = 1 SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1, use_skip_indexes_if_final_exact_mode = 1, use_query_condition_cache = 0</query>
 
     <drop_query>DROP TABLE IF EXISTS final_skip_index_scattered</drop_query>
 </test>
