@@ -95,6 +95,10 @@ public:
     /// Bytes of chars and sizes that no settled row covers.
     size_t unsettledBytes() const;
 
+    /// Rows whose sizes have arrived, settled or not, counting the sizes that `more_size_bytes` further bytes of
+    /// sizes complete after the partial one `appendSizes` kept.
+    size_t rowsWithSizes(size_t more_size_bytes) const { return sizedRows() + (pending_sizes.size() + more_size_bytes) / sizeof(uint64_t); }
+
     size_t bytes() const { return chars.size(); }
 
     size_t rows() const override { return settled_rows; }

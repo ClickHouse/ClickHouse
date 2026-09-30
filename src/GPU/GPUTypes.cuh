@@ -52,6 +52,7 @@ struct DeviceFixedColumn
     size_t rows = 0;
 };
 
+/// `offsets` holds `rows + 1` values, and may be null when `rows` is 0.
 struct DeviceVariableColumn
 {
     const uint64_t * offsets = nullptr;
