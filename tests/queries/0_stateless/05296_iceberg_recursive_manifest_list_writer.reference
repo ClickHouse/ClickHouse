@@ -1,0 +1,8 @@
+--- repeated named record type that is not recursive ---
+ICEBERG_SPECIFICATION_VIOLATION missing required field
+--- recursive record ---
+ICEBERG_SPECIFICATION_VIOLATION recursive schema
+--- recursive record behind a nullable union ---
+ICEBERG_SPECIFICATION_VIOLATION recursive schema
+--- stateless server is still alive ---
+1

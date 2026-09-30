@@ -1827,6 +1827,17 @@ void forEachAvroEntry(
             filename,
             static_cast<int>(reader.readerSchema().root()->type()));
 
+    try
+    {
+        /// avro-cpp builds and reads `GenericDatum` recursively without a depth limit, so a recursive schema must not reach it.
+        AvroSchemaReader::avroNodeToDataType(reader.readerSchema().root());
+    }
+    catch (const Exception & e)
+    {
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Avro file {} has a schema that cannot be read: {}", filename, e.message());
+    }
+
     avro::GenericDatum datum(reader.readerSchema());
     while (reader.read(datum))
         callback(datum);
