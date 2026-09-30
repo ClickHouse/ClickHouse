@@ -7,42 +7,42 @@
       "versionId": "d32db41de0afcd9c73f863b43acae05eb332f8a5d948c665a343043032ed5f0d",
       "translations": {
         "ko": {
-          "updatedAt": "2026-09-29T15:26:34.480Z",
+          "updatedAt": "2026-09-30T02:02:49.033Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ja": {
-          "updatedAt": "2026-09-29T15:26:34.264Z",
+          "updatedAt": "2026-09-30T02:02:48.807Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ru": {
-          "updatedAt": "2026-09-29T15:26:34.925Z",
+          "updatedAt": "2026-09-30T02:02:49.451Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "es": {
-          "updatedAt": "2026-09-29T15:26:33.998Z",
+          "updatedAt": "2026-09-30T02:02:48.597Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-29T15:26:34.705Z",
+          "updatedAt": "2026-09-30T02:02:49.250Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "zh": {
-          "updatedAt": "2026-09-29T15:26:35.142Z",
+          "updatedAt": "2026-09-30T02:02:49.648Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "fr": {
-          "updatedAt": "2026-09-29T15:26:35.559Z",
+          "updatedAt": "2026-09-30T02:02:50.059Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ar": {
-          "updatedAt": "2026-09-29T15:26:35.352Z",
+          "updatedAt": "2026-09-30T02:02:49.856Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         }
@@ -83749,51 +83749,50 @@
     },
     {
       "fileId": "4c8d1c71b2193e422c749fbbc2560a70d1b0cf7d2b22a131b54e0b56fa0b7db7",
-      "versionId": "436f1462757f0496e2ded5fb69404109c89b80b01bb3c910834168f425608015",
+      "versionId": "b98cb0d78ec193aeb41321deb89dadb89aa911ab3e50fbddbf1bb5b67c663e39",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.128Z",
-          "fileName": "es/products/cloud/guides/data-sources/accessing-s3-data-securely.mdx",
-          "postProcessHash": "b736c8cd804fd529f9c1add7147f15d30652608cd7b68bf591a1be058c01c060"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.128Z",
-          "fileName": "ja/products/cloud/guides/data-sources/accessing-s3-data-securely.mdx",
-          "postProcessHash": "c756569693a672096f24ee9b95dfb9cc4e409d2ed38b54d29178c276cc02e6d6"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.128Z",
-          "fileName": "ko/products/cloud/guides/data-sources/accessing-s3-data-securely.mdx",
-          "postProcessHash": "161cfc70a7edb2c8ce55dc08f06a6205426345d98d82f8e41e5e08eee051518d"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.129Z",
-          "fileName": "pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely.mdx",
-          "postProcessHash": "7c6d9804dde57081557b3b4419f436a77b20ca17a5005e59e625084f296ef805"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.129Z",
-          "fileName": "ru/products/cloud/guides/data-sources/accessing-s3-data-securely.mdx",
-          "postProcessHash": "6bf0a98742687962bf07ffc80e05560fc277163c67802c6b264aba032d773d01"
+        "fr": {
+          "updatedAt": "2026-09-30T02:02:53.704Z",
+          "fileName": "fr/products/cloud/guides/data-sources/accessing-s3-data-securely.mdx",
+          "postProcessHash": "424c30af50b59008debb76c074682b80061d4a33d3cdae36364cced775ba088d"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.129Z",
+          "updatedAt": "2026-09-30T02:02:53.704Z",
           "fileName": "zh/products/cloud/guides/data-sources/accessing-s3-data-securely.mdx",
-          "postProcessHash": "2bce733672302283e09eb93861b500c44be0c48c7b8f38c646d061659de17c77"
+          "postProcessHash": "128b559d408cc35c29e591fe9e1d6338d6c5913b6aca8e9df6f546cbbc570b1a"
+        },
+        "ja": {
+          "updatedAt": "2026-09-30T02:02:53.705Z",
+          "fileName": "ja/products/cloud/guides/data-sources/accessing-s3-data-securely.mdx",
+          "postProcessHash": "515b2b8c52deca6e952af4206f6ee163e821698f29e3983d1494bcd0c15daff4"
+        },
+        "ko": {
+          "updatedAt": "2026-09-30T02:02:53.705Z",
+          "fileName": "ko/products/cloud/guides/data-sources/accessing-s3-data-securely.mdx",
+          "postProcessHash": "47238a1bf1a4de65278b5c4a38c8b7c67c2408548d8d01cc925e3e0823ce1f4d"
+        },
+        "ru": {
+          "updatedAt": "2026-09-30T02:02:53.705Z",
+          "fileName": "ru/products/cloud/guides/data-sources/accessing-s3-data-securely.mdx",
+          "postProcessHash": "148b40585bc901a0e4e5550f668ca24c34af3eb2927160a2cb2c194fd5db92b1"
+        },
+        "es": {
+          "updatedAt": "2026-09-30T02:02:53.706Z",
+          "fileName": "es/products/cloud/guides/data-sources/accessing-s3-data-securely.mdx",
+          "postProcessHash": "8af4b8add4a71dadbd97e5243714072bd7a6c9ae150e36f1f8e31fe13044dd79"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.129Z",
+          "updatedAt": "2026-09-30T02:02:53.706Z",
           "fileName": "ar/products/cloud/guides/data-sources/accessing-s3-data-securely.mdx",
-          "postProcessHash": "0c3510e6c2ed1a7a7ad44363ff96c3ab560eef78f157716ba366894b37e62cda"
+          "postProcessHash": "18d26802aa52979fba66abc933cc47916426f9ef2ff700647060990d5f6376f8"
         },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:08.129Z",
-          "fileName": "fr/products/cloud/guides/data-sources/accessing-s3-data-securely.mdx",
-          "postProcessHash": "085777624daa93ff512b24a12286c333b0fec4c75cdf77b5584fde3336258739"
+        "pt-BR": {
+          "updatedAt": "2026-09-30T02:02:53.707Z",
+          "fileName": "pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely.mdx",
+          "postProcessHash": "7f3d5beb1d51d8509982d19d186df5d0c309d1c5945143db4f12f00bc588a919"
         }
       },
-      "fileName": "products/cloud/guides/data-sources/accessing-s3-data-securely.mdx",
-      "staged": false
+      "fileName": "products/cloud/guides/data-sources/accessing-s3-data-securely.mdx"
     },
     {
       "fileId": "4cc5aa7f5c9a1ed2b12f3abf6debe70f23955c98ffadb6dbb1fa276ceb2e862f",
