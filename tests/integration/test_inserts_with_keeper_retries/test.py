@@ -263,7 +263,7 @@ def test_ambiguous_zk_commit_query_timeout_preserves_data(started_cluster):
         # part must remain readable and retrying the insert must be deduplicated.
         assert node1.query("SELECT count() FROM amb_timeout") == "10\n"
         node1.query(
-            "INSERT INTO amb_timeout SELECT number, toString(number) FROM numbers(10) ORDER BY ALL SETTINGS async_insert=0"
+            "INSERT INTO amb_timeout SELECT number, toString(number) FROM numbers(10) ORDER BY ALL"
         )
         assert node1.query("SELECT count() FROM amb_timeout") == "10\n"
         assert (
@@ -343,7 +343,7 @@ def test_ambiguous_zk_commit_kill_preserves_data(started_cluster):
 
         assert node1.query("SELECT count() FROM amb_kill") == "10\n"
         node1.query(
-            "INSERT INTO amb_kill SELECT number, toString(number) FROM numbers(10) ORDER BY ALL SETTINGS async_insert=0"
+            "INSERT INTO amb_kill SELECT number, toString(number) FROM numbers(10) ORDER BY ALL"
         )
         assert node1.query("SELECT count() FROM amb_kill") == "10\n"
         assert (
