@@ -1663,7 +1663,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         LOG_TEST(log, "Existing table {}", name);
 
         UUID local_replicated_id = UUIDHelpers::Nil;
-        if (existing_tables_it->table()->supportsReplication() || existing_tables_it->table()->as<StorageKeeperMap>())
+        if (existing_tables_it->table()->supportsReplication()
+            || castStorage<StorageKeeperMap>(existing_tables_it->table(), DeferredTable::Load))
         {
             /// Check if replicated tables have the same UUID
             local_replicated_id = existing_tables_it->table()->getStorageID().uuid;
