@@ -6,6 +6,12 @@
 --
 -- The dimensions are the ones that family varies: the join algorithm (`hash` and
 -- `full_sorting_merge`) and `parallel_replicas_prefer_local_join`, over a LEFT and a RIGHT join.
+--
+-- `JoinLogical` is what says the join itself was shipped rather than one of its sides: the fragment
+-- inside `ReadFromParallelReplicas` is printed in logical form, while a join the initiator kept is
+-- already a physical `Join` step by the time `EXPLAIN` prints it. A `ParallelReplicas` step alone
+-- would also match the shape where only one side is distributed - the `Memory`-left arm of
+-- `05240_pr_plan_based_right_join_materialized_left`, which has no `JoinLogical`.
 
 DROP TABLE IF EXISTS t_algo_left SYNC;
 DROP TABLE IF EXISTS t_algo_right SYNC;
@@ -31,43 +37,49 @@ SETTINGS enable_parallel_replicas = 0;
 SELECT count(), sum(r.item_id) FROM t_algo_left AS l RIGHT JOIN t_algo_right AS r ON l.item_id = r.item_id
 SETTINGS enable_parallel_replicas = 0;
 
-SELECT 'hash, prefer_local_join=0: distributed, then the answer';
-SELECT countIf(explain ILIKE '%ParallelReplicas%') > 0 FROM (
+SELECT 'hash, prefer_local_join=0: the join is shipped, then the answer';
+SELECT countIf(explain ILIKE '%ParallelReplicas%') > 0
+   AND countIf(explain ILIKE '%JoinLogical%') > 0 FROM (
     EXPLAIN SELECT count(), sum(l.price) FROM t_algo_left AS l LEFT JOIN t_algo_right AS r ON l.item_id = r.item_id)
 SETTINGS join_algorithm = 'hash', parallel_replicas_prefer_local_join = 0;
 SELECT count(), sum(l.price) FROM t_algo_left AS l LEFT JOIN t_algo_right AS r ON l.item_id = r.item_id
 SETTINGS join_algorithm = 'hash', parallel_replicas_prefer_local_join = 0;
 
-SELECT 'hash, prefer_local_join=1: distributed, then the answer';
-SELECT countIf(explain ILIKE '%ParallelReplicas%') > 0 FROM (
+SELECT 'hash, prefer_local_join=1: the join is shipped, then the answer';
+SELECT countIf(explain ILIKE '%ParallelReplicas%') > 0
+   AND countIf(explain ILIKE '%JoinLogical%') > 0 FROM (
     EXPLAIN SELECT count(), sum(l.price) FROM t_algo_left AS l LEFT JOIN t_algo_right AS r ON l.item_id = r.item_id)
 SETTINGS join_algorithm = 'hash', parallel_replicas_prefer_local_join = 1;
 SELECT count(), sum(l.price) FROM t_algo_left AS l LEFT JOIN t_algo_right AS r ON l.item_id = r.item_id
 SETTINGS join_algorithm = 'hash', parallel_replicas_prefer_local_join = 1;
 
-SELECT 'full_sorting_merge, prefer_local_join=0: distributed, then the answer';
-SELECT countIf(explain ILIKE '%ParallelReplicas%') > 0 FROM (
+SELECT 'full_sorting_merge, prefer_local_join=0: the join is shipped, then the answer';
+SELECT countIf(explain ILIKE '%ParallelReplicas%') > 0
+   AND countIf(explain ILIKE '%JoinLogical%') > 0 FROM (
     EXPLAIN SELECT count(), sum(l.price) FROM t_algo_left AS l LEFT JOIN t_algo_right AS r ON l.item_id = r.item_id)
 SETTINGS join_algorithm = 'full_sorting_merge', parallel_replicas_prefer_local_join = 0;
 SELECT count(), sum(l.price) FROM t_algo_left AS l LEFT JOIN t_algo_right AS r ON l.item_id = r.item_id
 SETTINGS join_algorithm = 'full_sorting_merge', parallel_replicas_prefer_local_join = 0;
 
-SELECT 'full_sorting_merge, prefer_local_join=1: distributed, then the answer';
-SELECT countIf(explain ILIKE '%ParallelReplicas%') > 0 FROM (
+SELECT 'full_sorting_merge, prefer_local_join=1: the join is shipped, then the answer';
+SELECT countIf(explain ILIKE '%ParallelReplicas%') > 0
+   AND countIf(explain ILIKE '%JoinLogical%') > 0 FROM (
     EXPLAIN SELECT count(), sum(l.price) FROM t_algo_left AS l LEFT JOIN t_algo_right AS r ON l.item_id = r.item_id)
 SETTINGS join_algorithm = 'full_sorting_merge', parallel_replicas_prefer_local_join = 1;
 SELECT count(), sum(l.price) FROM t_algo_left AS l LEFT JOIN t_algo_right AS r ON l.item_id = r.item_id
 SETTINGS join_algorithm = 'full_sorting_merge', parallel_replicas_prefer_local_join = 1;
 
-SELECT 'right join, hash: distributed, then the answer';
-SELECT countIf(explain ILIKE '%ParallelReplicas%') > 0 FROM (
+SELECT 'right join, hash: the join is shipped, then the answer';
+SELECT countIf(explain ILIKE '%ParallelReplicas%') > 0
+   AND countIf(explain ILIKE '%JoinLogical%') > 0 FROM (
     EXPLAIN SELECT count(), sum(r.item_id) FROM t_algo_left AS l RIGHT JOIN t_algo_right AS r ON l.item_id = r.item_id)
 SETTINGS join_algorithm = 'hash', parallel_replicas_prefer_local_join = 0;
 SELECT count(), sum(r.item_id) FROM t_algo_left AS l RIGHT JOIN t_algo_right AS r ON l.item_id = r.item_id
 SETTINGS join_algorithm = 'hash', parallel_replicas_prefer_local_join = 0;
 
-SELECT 'right join, full_sorting_merge: distributed, then the answer';
-SELECT countIf(explain ILIKE '%ParallelReplicas%') > 0 FROM (
+SELECT 'right join, full_sorting_merge: the join is shipped, then the answer';
+SELECT countIf(explain ILIKE '%ParallelReplicas%') > 0
+   AND countIf(explain ILIKE '%JoinLogical%') > 0 FROM (
     EXPLAIN SELECT count(), sum(r.item_id) FROM t_algo_left AS l RIGHT JOIN t_algo_right AS r ON l.item_id = r.item_id)
 SETTINGS join_algorithm = 'full_sorting_merge', parallel_replicas_prefer_local_join = 0;
 SELECT count(), sum(r.item_id) FROM t_algo_left AS l RIGHT JOIN t_algo_right AS r ON l.item_id = r.item_id
