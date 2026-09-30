@@ -859,32 +859,66 @@ void generateManifestList(
                 forEachAvroEntry(resolved_manifest_list_path, object_storage, context, "IcebergWrites",
                     [&](const avro::GenericDatum & datum)
                     {
+                        if (datum.type() != avro::AVRO_RECORD)
+                            throw Exception(
+                                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                                "Manifest list {} contains an entry with Avro type {}, but a record is required",
+                                resolved_manifest_list_path,
+                                static_cast<int>(datum.type()));
+
                         const avro::GenericRecord & old_entry = datum.value<avro::GenericRecord>();
+
+                        auto validate_field_type = [&](const String & field_name, avro::Type expected_type) -> const avro::GenericDatum &
+                        {
+                            if (!old_entry.hasField(field_name))
+                                throw Exception(
+                                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                                    "Manifest list {} entry is missing required field '{}'",
+                                    resolved_manifest_list_path,
+                                    field_name);
+
+                            const avro::GenericDatum & field = old_entry.field(field_name);
+                            if (field.type() != expected_type)
+                                throw Exception(
+                                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                                    "Manifest list {} field '{}' has Avro type {}, but type {} is required",
+                                    resolved_manifest_list_path,
+                                    field_name,
+                                    static_cast<int>(field.type()),
+                                    static_cast<int>(expected_type));
+
+                            return field;
+                        };
+
+                        const avro::GenericDatum & old_manifest_path = validate_field_type(Iceberg::f_manifest_path, avro::AVRO_STRING);
+
                         /// When a path filter is supplied, copy only the matching entries.
                         if (!carry_forward_manifest_paths.empty()
-                            && !carry_forward_manifest_paths.contains(old_entry.field(Iceberg::f_manifest_path).value<std::string>()))
+                            && !carry_forward_manifest_paths.contains(old_manifest_path.value<std::string>()))
                             return;
                         avro::GenericDatum new_datum(schema.root());
                         avro::GenericRecord & new_entry = new_datum.value<avro::GenericRecord>();
-                        new_entry.field(f_manifest_path) = old_entry.field(Iceberg::f_manifest_path);
-                        new_entry.field(f_manifest_length) = old_entry.field(Iceberg::f_manifest_length);
-                        new_entry.field(f_partition_spec_id) = old_entry.field(Iceberg::f_partition_spec_id);
+
+                        auto copy_required_field = [&](const String & field_name, avro::Type expected_type)
+                        {
+                            new_entry.field(field_name) = validate_field_type(field_name, expected_type);
+                        };
+
+                        new_entry.field(f_manifest_path) = old_manifest_path;
+                        copy_required_field(Iceberg::f_manifest_length, avro::AVRO_LONG);
+                        copy_required_field(Iceberg::f_partition_spec_id, avro::AVRO_INT);
                         /// iceberg-spark changed `f_added_snapshot_id` from 'null, long' to 'long' (apache/iceberg#11626); rewrite with the new schema in case we read the old type.
                         if (old_entry.hasField(Iceberg::f_added_snapshot_id))
                         {
                             const avro::GenericDatum & old_added_snapshot_id_entry = old_entry.field(Iceberg::f_added_snapshot_id);
-                            if (old_added_snapshot_id_entry.isUnion())
-                            {
-                                if (old_added_snapshot_id_entry.unionBranch() == 0) /// it means add_snapshot_id is null
-                                {
-                                    /// This only happens when we read data written by a old version of iceberg, which violates the spec of iceberg.
-                                    throw Exception(
-                                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                                        "Manifest list {} has null value for field '{}', but it is required",
-                                        resolved_manifest_list_path,
-                                        Iceberg::f_added_snapshot_id);
-                                }
-                            }
+                            if (old_added_snapshot_id_entry.type() != avro::AVRO_LONG)
+                                throw Exception(
+                                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                                    "Manifest list {} field '{}' has Avro type {}, but a non-null long is required",
+                                    resolved_manifest_list_path,
+                                    Iceberg::f_added_snapshot_id,
+                                    static_cast<int>(old_added_snapshot_id_entry.type()));
+
                             new_entry.field(f_added_snapshot_id) = old_added_snapshot_id_entry.value<Int64>();
                         }
                         else
