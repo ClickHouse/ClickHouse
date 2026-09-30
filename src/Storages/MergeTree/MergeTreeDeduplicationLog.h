@@ -152,7 +152,7 @@ public:
     std::vector<AddPartResult> getDuplicates(const std::vector<std::string> & block_ids);
 
     /// Publish the block IDs of a committed part. Add them to the in-memory hash table and write them to disk.
-    /// Return an empty vector if they were published.
+    /// Return an empty vector if they were published, or if the deduplication window is 0.
     /// Otherwise, in case of duplicate, publish nothing and return block_id with the collision and previous part name
     /// with the same hash (useful for logging).
     /// The caller must commit the part first, and must hold the parts lock from `getDuplicates` until here. A block ID

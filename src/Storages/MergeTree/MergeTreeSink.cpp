@@ -472,8 +472,8 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         /// Publish the block IDs only after the part is committed. If they were published first, any failure between
         /// the publication and the commit (a table size limit, an I/O error, a server kill) would leave block IDs of a
         /// part that does not exist, and a retry of the insert would be deduplicated against it. Its rows would be
-        /// silently lost. Now such a failure leaves either nothing or a committed part without its block IDs, so a
-        /// retry can only insert the rows again. Duplicates can be found and removed, lost rows cannot.
+        /// silently lost. Now such a failure leaves either nothing or a committed part without some or all of its block
+        /// IDs, so a retry can only insert the rows again. Duplicates can be found and removed, lost rows cannot.
         ///
         /// The publication stays under the same `lockParts` as the check above. `commitPart` is the only place that
         /// publishes block IDs, so no other insert can publish the same block ID in between, and no `DROP` can select
@@ -496,9 +496,10 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
             }
 
             if (!duplicates.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Block with ID {} of the committed part {} is already published as part {} although it was not found "
-                                                                    "by the duplicate check. It's a bug",
-                                                                    duplicates.front().block_id, part->name, duplicates.front().part_info.getPartNameForLogs());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, 
+                "Block with ID {} of the committed part {} is already published as part {} although it was not found "
+                    "by the duplicate check. It's a bug",
+                    duplicates.front().block_id, part->name, duplicates.front().part_info.getPartNameForLogs());
         }
     }
 
