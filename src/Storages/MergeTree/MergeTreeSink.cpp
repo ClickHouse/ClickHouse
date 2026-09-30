@@ -496,7 +496,7 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
             }
 
             if (!duplicates.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, 
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Block with ID {} of the committed part {} is already published as part {} although it was not found "
                     "by the duplicate check. It's a bug",
                     duplicates.front().block_id, part->name, duplicates.front().part_info.getPartNameForLogs());
