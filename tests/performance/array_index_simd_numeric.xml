@@ -13,10 +13,14 @@
         SELECT materialize(range(4096)::Array(UInt32))
         FROM numbers(20000)
     </fill_query>
+    <!-- Keep one representative input, but time each function independently. -->
     <query>
-        SELECT
-            sum(has(arr, 4294967295)),
-            sum(indexOf(arr, 100))
+        SELECT sum(has(arr, 4294967295))
+        FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(arr, 100))
         FROM perf_array_index_simd_numeric
         FORMAT Null
     </query>
