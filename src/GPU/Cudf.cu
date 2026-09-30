@@ -19,7 +19,7 @@ namespace DB::GPU
 namespace
 {
 
-std::string typeNameOf(const std::exception & exception)
+__host__ std::string typeNameOf(const std::exception & exception)
 {
     int status = 0;
     char * demangled = abi::__cxa_demangle(typeid(exception).name(), nullptr, nullptr, &status);
@@ -30,37 +30,13 @@ std::string typeNameOf(const std::exception & exception)
 
 }
 
-std::string describeForeign(const std::exception & exception)
-{
-    const std::string type = typeNameOf(exception);
-
-    /// `rmm::bad_alloc` overrides `what` in the island, so the call reads its own libstdc++ message.
-    if (const auto * rmm_error = dynamic_cast<const rmm::bad_alloc *>(&exception))
-        return type + ": " + rmm_error->what();
-
-    /// The `what` of `std::logic_error` and `std::runtime_error` binds to libc++'s, which reads the
-    /// message at the offset of ClickHouse's larger libc++ `std::exception`. The libstdc++ layout of
-    /// both is the vtable pointer and then a pointer to the message's characters.
-    const void * with_message = dynamic_cast<const std::logic_error *>(&exception);
-    if (!with_message)
-        with_message = dynamic_cast<const std::runtime_error *>(&exception);
-    if (with_message)
-    {
-        const char * message = *reinterpret_cast<const char * const *>(static_cast<const char *>(with_message) + sizeof(void *));
-        return type + ": " + (message ? message : "");
-    }
-
-    /// No other layout is known, so the message is not read.
-    return type;
-}
-
-void checkCuda(cudaError_t status, const std::string & what)
+__host__ void checkCuda(cudaError_t status, const std::string & what)
 {
     if (status != cudaSuccess)
         throwGPUError((what + ": " + cudaGetErrorString(status)).c_str());
 }
 
-cudf::data_type cudfTypeOf(GPUElementType element_type)
+__host__ cudf::data_type cudfTypeOf(GPUElementType element_type)
 {
     switch (element_type)
     {
@@ -82,7 +58,7 @@ cudf::data_type cudfTypeOf(GPUElementType element_type)
 namespace
 {
 
-cudf::size_type rowsForCudf(size_t rows, const std::string & what)
+__host__ cudf::size_type rowsForCudf(size_t rows, const std::string & what)
 {
     if (rows > static_cast<size_t>(std::numeric_limits<cudf::size_type>::max()))
         throwGPUError((what + " of " + std::to_string(rows) + " rows is too large for cuDF").c_str());
@@ -91,7 +67,7 @@ cudf::size_type rowsForCudf(size_t rows, const std::string & what)
 
 }
 
-cudf::column_view columnViewOf(const DeviceColumnView & column, GPUElementType expected_type, const std::string & what)
+__host__ cudf::column_view columnViewOf(const DeviceColumnView & column, GPUElementType expected_type, const std::string & what)
 {
     if (column.null_mask)
         throwGPUError((what + " arrived with a null mask, which is not taken yet").c_str());
@@ -111,7 +87,7 @@ cudf::column_view columnViewOf(const DeviceColumnView & column, GPUElementType e
     throwGPUError(("unknown column kind " + std::to_string(static_cast<int>(column.kind))).c_str());
 }
 
-cudf::column_view columnViewOf(const DeviceFixedColumn & column, GPUElementType expected_type, const std::string & what)
+__host__ cudf::column_view columnViewOf(const DeviceFixedColumn & column, GPUElementType expected_type, const std::string & what)
 {
     if (columnKindOf(column.element_type) != GPUColumnKind::Fixed)
         throwGPUError((what + " arrived as fixed-width values of a type of varying width").c_str());
@@ -124,7 +100,7 @@ cudf::column_view columnViewOf(const DeviceFixedColumn & column, GPUElementType 
     return cudf::column_view(cudfTypeOf(column.element_type), rowsForCudf(column.rows, what), column.data, nullptr, 0);
 }
 
-cudf::column_view columnViewOf(const DeviceVariableColumn & column, const std::string & what)
+__host__ cudf::column_view columnViewOf(const DeviceVariableColumn & column, const std::string & what)
 {
     const cudf::size_type rows = rowsForCudf(column.rows, what);
 
@@ -136,7 +112,7 @@ cudf::column_view columnViewOf(const DeviceVariableColumn & column, const std::s
     return cudf::column_view(cudf::data_type{cudf::type_id::STRING}, rows, column.chars, nullptr, 0, 0, {offsets});
 }
 
-void checkNoNulls(const cudf::column_view & column, const std::string & what)
+__host__ void checkNoNulls(const cudf::column_view & column, const std::string & what)
 {
     if (column.null_count() != 0)
         throwGPUError(
@@ -144,7 +120,7 @@ void checkNoNulls(const cudf::column_view & column, const std::string & what)
             + ", where the input had no null mask at all").c_str());
 }
 
-DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUElementType expected_type, const std::string & what)
+__host__ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUElementType expected_type, const std::string & what)
 {
     checkNoNulls(column, what);
 
@@ -159,7 +135,7 @@ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUElementType 
     return {.element_type = expected_type, .data = column.head<char>(), .rows = static_cast<size_t>(column.size())};
 }
 
-DeviceVariableColumn deviceViewOfVariable(
+__host__ DeviceVariableColumn deviceViewOfVariable(
     const cudf::column_view & column, std::unique_ptr<cudf::column> & widened_offsets, const std::string & what, rmm::cuda_stream_view stream)
 {
     checkNoNulls(column, what);
