@@ -187,7 +187,7 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
 # normal `--progress=plain` output (unlike progress text such as "resolve image
 # config"), so a real Dockerfile/build error (RUN/COPY/package install) still fails
 # fast on the first attempt. The count is bounded by the job budget below.
-BUILDX_RETRIES = 2
+BUILDX_RETRIES = 5
 BUILDX_RETRY_ERRORS = [
     # Docker registry (docker.io / registry-1.docker.io)
     "failed to do request",
