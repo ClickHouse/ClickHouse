@@ -15,6 +15,17 @@ Managed mode runs on an Amazon EKS cluster you own. Each release ships four Terr
 
 <Image img="/images/cloud/reference/byoc-connector-terraform-flow.svg" size="lg" alt="Terraform provisioning flow for the ClickHouse Connector on AWS" />
 
+## Before you begin {#before-you-begin}
+
+You need:
+
+- Terraform 1.10+ or OpenTofu 1.12+, plus the AWS provider `~> 6.0`.
+- An AWS identity authorized to create and modify the resources required by your selected root.
+- `curl`, a SHA-256 tool (`sha256sum` or `shasum`), and `cosign` to download and verify the release archive.
+- The `chart_repository_arn`, enrollment endpoint, and platform bundle supplied during Connector onboarding.
+
+For `production` and `existing-vpc`, plan how the machine running `clicklink clctl init` and `kubectl` will reach the private EKS API—for example through a VPN, bastion, peered network, or SSM port forward.
+
 <Steps titleSize="h2">
 
 <Step title="Choose the Terraform root for your environment" id="choose-a-root">
