@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
 
-#include <Disks/IDisk.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 
 #include <IO/ReadSettings.h>
@@ -59,31 +58,21 @@ std::vector<BitmapFile> enumerateFiles(const IDataPartStorage & storage)
 namespace
 {
 
-/// Both writers land the bytes the same way; only what produces them differs.
+/// Both writers land the bytes the same way; only what produces them differs. The file goes
+/// straight to its final name: it is written into a part nothing can see before `publish`, and
+/// each name at most once, so a crash leaves a torn file only in a temporary part.
 template <typename WriteBody>
-MergeTreeDataPartChecksum writeUnderName(IDataPartStorage & storage, const String & final_name, WriteBody && write_body)
+MergeTreeDataPartChecksum writeBitmapFile(IDataPartStorage & storage, const String & file_name, WriteBody && write_body)
 {
-    const String tmp_name = final_name + ".tmp";
-
-    /// Clear any stale `.tmp` from a previous failed attempt.
-    storage.removeFileIfExists(tmp_name);
-
-    MergeTreeDataPartChecksum checksum;
-    {
-        WriteSettings write_settings;
-        auto buf = storage.writeFile(tmp_name, /*buf_size=*/4096, WriteMode::Rewrite, write_settings);
-        HashingWriteBuffer hashing(*buf);
-        write_body(hashing);
-        hashing.finalize();
-        checksum = {hashing.count(), hashing.getHash()};
-        /// fsync the tmp file before rename: a power loss after rename but before flush would otherwise resurrect deleted rows.
-        buf->sync();
-        buf->finalize();
-    }
-
-    /// Dir-sync guard makes the rename itself durable.
-    auto sync_guard = storage.getDirectorySyncGuard();
-    storage.replaceFile(tmp_name, final_name);
+    WriteSettings write_settings;
+    auto buf = storage.writeFile(file_name, /*buf_size=*/4096, WriteMode::Rewrite, write_settings);
+    HashingWriteBuffer hashing(*buf);
+    write_body(hashing);
+    hashing.finalize();
+    const MergeTreeDataPartChecksum checksum{hashing.count(), hashing.getHash()};
+    /// A published bitmap that is lost on power failure resurrects the rows it deleted.
+    buf->sync();
+    buf->finalize();
 
     return checksum;
 }
@@ -119,7 +108,7 @@ MergeTreeDataPartChecksum stageBitmap(
     const BitmapFile & file,
     const DeleteBitmap & bitmap)
 {
-    return writeUnderName(holder, file.fileName(), [&](WriteBuffer & buf) { bitmap.serialize(buf); });
+    return writeBitmapFile(holder, file.fileName(), [&](WriteBuffer & buf) { bitmap.serialize(buf); });
 }
 
 MergeTreeDataPartChecksum carryBitmap(
@@ -133,7 +122,7 @@ MergeTreeDataPartChecksum carryBitmap(
 
     ReadSettings read_settings;
     auto in = from.readFile(from_file.fileName(), read_settings, /*read_hint=*/{});
-    return writeUnderName(to, to_file.fileName(), [&](WriteBuffer & buf) { copyData(*in, buf); });
+    return writeBitmapFile(to, to_file.fileName(), [&](WriteBuffer & buf) { copyData(*in, buf); });
 }
 
 DeleteBitmapPtr tryReadBitmap(const IDataPartStorage & holder, const BitmapFile & file)

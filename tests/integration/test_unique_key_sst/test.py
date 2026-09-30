@@ -17,6 +17,13 @@ node = cluster.add_instance(
     # UNIQUE KEY reads and writes both open a transaction, and `TransactionLog` loads from
     # Keeper, so every query here needs one.
     with_zookeeper=True,
+    # Transactions refuse to start unless Keeper advertises these.
+    keeper_required_feature_flags=[
+        "filtered_list",
+        "multi_read",
+        "list_with_stat_and_data",
+        "check_stat",
+    ],
     # The tests operate on local part/metadata files directly; with the remote
     # database disk ("db disk" CI flavor) the table metadata .sql lives in S3
     # and the metadata edit below would have nothing to sed.

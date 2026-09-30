@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/UniqueKey/BlockAllocation.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
@@ -263,7 +264,7 @@ private:
     /// Return false (with `part_discarded`) when nothing survives the filter.
     bool rewritePartIgnoreConflicts(const IColumn::Filter & keep);
 
-    IUniqueKeyInsertSink & sink;
+    MergeTreeSink & sink;
     MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
     ContextPtr context;
@@ -483,7 +484,7 @@ std::vector<std::string> UniqueKeyTxnCommit::InsertCommit::run()
     return allocation->dedupConflicts();
 }
 
-UniqueKeyTxnCommit::InsertOutcome UniqueKeyTxnCommit::insert(InsertRequest request)
+UniqueKeyInsertOutcome UniqueKeyTxnCommit::insert(InsertRequest request)
 {
     InsertCommit op(request);
     auto conflicts = op.run();

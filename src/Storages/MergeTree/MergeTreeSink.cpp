@@ -1,7 +1,11 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
+#include <Storages/MergeTree/MergeTreeCommittingBlock.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/UniqueKey/BlockAllocation.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxnCommit.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
@@ -210,9 +214,13 @@ void MergeTreeSink::consume(Chunk & chunk)
         UInt64 elapsed_ns = 0;
         TemporaryPartPtr temp_part;
 
+        MergeTreeTransactionHolder uk_txn;
+        if (metadata_snapshot->hasUniqueKey())
+            uk_txn = beginUniqueKeyTransaction(context, "INSERT");
+
         {
             Stopwatch watch;
-            temp_part = writeNewTempPart(current_block);
+            temp_part = writeNewTempPart(current_block, uk_txn.getTransaction());
             elapsed_ns = watch.elapsed();
         }
 
@@ -268,6 +276,7 @@ void MergeTreeSink::consume(Chunk & chunk)
             .temp_part = std::move(temp_part),
             .elapsed_ns = elapsed_ns,
             .part_counters = std::move(part_counters),
+            .uk_txn = std::move(uk_txn),
         });
 
         total_streams += current_streams;
@@ -312,10 +321,21 @@ void MergeTreeSink::finishDelayedChunk()
             partition.temp_part->finalize();
             partition.temp_part->part->getDataPartStorage().commitTransaction();
 
-            auto & part = partition.temp_part->part;
-            auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(part->info.getPartitionId(), deduplicate);
-            auto conflicts = commitPart(part, deduplication_hashes);
+            const String partition_id = partition.temp_part->part->info.getPartitionId();
+            auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(partition_id, deduplicate);
+            auto outcome = metadata_snapshot->hasUniqueKey()
+                ? commitUniqueKeyPart(partition, deduplication_hashes)
+                : UniqueKeyInsertOutcome{.conflicting_blocks = commitPart(partition.temp_part->part, deduplication_hashes)};
 
+            /// ignore dropped every row: nothing published, no retry.
+            if (outcome.part_discarded)
+                break;
+
+            auto conflicts = std::move(outcome.conflicting_blocks);
+
+            /// Re-fetch after the commit: an ignore rewrite may have
+            /// swapped `partition.temp_part` for the filtered part.
+            auto & part = partition.temp_part->part;
             if (conflicts.empty())
             {
                 partition.temp_part->prewarmCaches();
@@ -390,7 +410,7 @@ void MergeTreeSink::finishDelayedChunk()
             /// writeTempPart moves the partition value out of block_with_partition into the part,
             /// so restore it from the just-written part before rewriting the filtered block.
             partition.block_with_partition.partition = MergeTreePartition(partition.temp_part->part->partition.value);
-            partition.temp_part = writeNewTempPart(partition.block_with_partition);
+            partition.temp_part = writeNewTempPart(partition.block_with_partition, partition.uk_txn.getTransaction());
 
             /// If optimize_on_insert setting is true, the rewritten partition.block_with_partition
             /// could become empty after merge and then no part is created.
@@ -401,12 +421,36 @@ void MergeTreeSink::finishDelayedChunk()
         }
     }
 
+    /// Any partition transaction that never reached a commit -- a deduplicated block, a
+    /// discarded part -- is rolled back by its `MergeTreeTransactionHolder` here.
     delayed_chunk.reset();
 }
 
-MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & block)
+MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & block, const MergeTreeTransactionPtr & txn)
 {
-    return storage.writer.writeTempPart(block, metadata_snapshot, context);
+    return storage.writer.writeTempPart(block, metadata_snapshot, context, /*may_have_leftover=*/true, txn);
+}
+
+std::unique_ptr<BlockAllocation> MergeTreeSink::allocateBlock(
+    MutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes)
+{
+    return std::make_unique<BlockAllocation>(
+        storage.log.load(), storage.allocateBlockNumber(CommittingBlock::Op::NewPart), storage.getDeduplicationLog(), *part,
+        deduplication_hashes);
+}
+
+UniqueKeyInsertOutcome MergeTreeSink::commitUniqueKeyPart(
+    MergeTreeDelayedChunk::Partition & partition, const std::vector<DeduplicationHash> & deduplication_hashes)
+{
+    return UniqueKeyTxnCommit::insert(
+        {.sink = *this,
+         .storage = storage,
+         .metadata_snapshot = metadata_snapshot,
+         .context = context,
+         .temp_part = partition.temp_part,
+         .block = partition.block_with_partition.block,
+         .deduplication_hashes = deduplication_hashes,
+         .transaction = partition.uk_txn});
 }
 
 std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes)

@@ -1,7 +1,8 @@
 #pragma once
 
+#include <Interpreters/InsertDeduplication.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/UniqueKey/UniqueKeyInsertSink.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/MergeTreeCommittingBlock.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
@@ -16,7 +17,16 @@ namespace DB
 {
 
 class StorageMergeTree;
+class MergeTreeSink;
 class MergedPartOffsets;
+
+struct UniqueKeyInsertOutcome
+{
+    /// The dedup-log conflicts that ask the sink to retry.
+    std::vector<std::string> conflicting_blocks;
+    /// `unique_key_conflict_action = ignore` filtered every incoming row, so there is no part.
+    bool part_discarded = false;
+};
 
 /// The three writes that implement `IUniqueKeyCommit`, one entry point each. The protocol they
 /// run -- stage, publish, commit, all inside one hold of the partition guard -- is described on
@@ -26,7 +36,7 @@ class UniqueKeyTxnCommit
 public:
     struct InsertRequest
     {
-        IUniqueKeyInsertSink & sink;
+        MergeTreeSink & sink;
         MergeTreeData & storage;
         StorageMetadataPtr metadata_snapshot;
         ContextPtr context;
@@ -38,18 +48,10 @@ public:
         MergeTreeTransactionHolder & transaction;
     };
 
-    struct InsertOutcome
-    {
-        /// The dedup-log conflicts that ask the sink to retry.
-        std::vector<std::string> conflicting_blocks;
-        /// `unique_key_conflict_action = ignore` filtered every incoming row, so there is no part.
-        bool part_discarded = false;
-    };
-
     /// INSERT:
     /// 1. Write temp part
     /// 2. Probes the dense index for every key in the written part and resolves conflicts per `unique_key_conflict_action`.
-    static InsertOutcome insert(InsertRequest request);
+    static UniqueKeyInsertOutcome insert(InsertRequest request);
 
     struct MergeRequest
     {
