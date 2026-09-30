@@ -594,6 +594,13 @@ static bool isNullPropagatingFunction(const ActionsDAG::Node & node)
     const auto & name = node.function_base->getName();
     if (!names.contains(name))
         return false;
+    /// The operands of a join key comparison are brought to a common supertype only when the physical
+    /// join is built (`predicateOperandsToCommonType`), after reordering. With a `Variant`/`Dynamic`/
+    /// `JSON` operand that supertype is `Variant`/`Dynamic`, so a `Nullable` operand is cast to it and a
+    /// NULL key then matches a NULL key: the comparison does not reject a null-extended row.
+    if (std::ranges::any_of(node.children, [](const auto * child)
+            { return isVariant(child->result_type) || isDynamic(child->result_type) || isObject(child->result_type); }))
+        return false;
     /// A cast to a non-`Nullable` type raises `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` rather than
     /// returning `NULL`; a cast to `Variant`/`Dynamic` returns `NULL` but a join on such a key
     /// matches `NULL` to `NULL`. Neither shape rejects a null-extended row, so neither counts.
@@ -945,6 +952,11 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     query_graph.join_kinds = std::move(query_graph_builder.join_kinds);
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);
     query_graph.conflict_ops = std::move(query_graph_builder.conflict_ops);
+    for (size_t i = 0; i < query_graph_builder.inputs.size(); ++i)
+    {
+        if (typeid_cast<const JoinStepLogicalLookup *>(query_graph_builder.inputs[i]->step.get()))
+            query_graph.prepared_storage_relations.set(i);
+    }
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());
 

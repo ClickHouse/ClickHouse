@@ -460,7 +460,7 @@ String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookee
     return node_path;
 }
 
-String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, bool internal_query)
+String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, QueryFlags flags)
 {
     /// NOTE Possibly it would be better to execute initial query on the most up-to-date node,
     /// but it requires more complex logic around /try node.
@@ -487,6 +487,8 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     chassert(!task->entry.query.empty());
     chassert(!zookeeper->exists(task->getFinishedNodePath()));
     task->is_initial_query = true;
+    if (flags.run_as_submitting_user && query_context->getUserID())
+        task->submitting_user_context = query_context;
 
     UInt64 timeout = query_context->getSettingsRef()[Setting::database_replicated_initial_query_timeout_sec];
     StopToken cancellation = query_context->getDDLQueryCancellation();
@@ -522,7 +524,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     if (entry.parent_table_uuid.has_value() && !checkParentTableExists(entry.parent_table_uuid.value()))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Parent table doesn't exist");
 
-    processTask(*task, zookeeper, internal_query);
+    processTask(*task, zookeeper, flags.internal);
 
     if (!task->was_executed)
     {

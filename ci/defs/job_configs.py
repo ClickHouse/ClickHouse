@@ -258,6 +258,12 @@ common_integration_test_job_config = Job.Config(
             "./ci/jobs/integration_test_job.py",
             "./ci/jobs/scripts/integration_tests_configs.py",
             "./ci/jobs/scripts/integration_coverage_export.py",
+            # The selector modules decide which tests a targeted job runs.
+            "./ci/jobs/scripts/find_tests.py",
+            "./ci/jobs/scripts/coverage_selection.py",
+            "./ci/jobs/scripts/test_selection_config.py",
+            "./ci/praktika/cidb.py",
+            "./ci/praktika/info.py",
             "./ci/jobs/scripts/job_hooks/promql_compliance_upload_hook.py",
             "./ci/jobs/scripts/job_hooks/promql_compliance_s3.py",
             "./ci/jobs/promql_compliance_job.py",
@@ -1439,12 +1445,13 @@ class JobConfigs:
         )
     )
 
-    integration_test_targeted_pr_jobs = common_integration_test_job_config.parametrize(
-        Job.ParamSet(
-            parameter="amd_asan_ubsan, targeted",
-            runs_on=RunnerLabels.AMD_MEDIUM,
-            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
-        )
+    # PR replacement for the full integration runs: one job per configuration runs once
+    # the changed test modules, the modules covering the changed lines (per-module
+    # coverage from `integration_test_per_test_coverage_jobs`) and the tests that failed
+    # in the PR before.
+    integration_test_targeted_pr_jobs = targeted_variants(
+        integration_test_jobs_required + integration_test_jobs_non_required,
+        allow_failure=False,
     )
     # Keeper stress job config — shared by PR and nightly workflows.
     # Mode (PR vs nightly faults vs nightly no-faults) is determined inside the job

@@ -1376,7 +1376,14 @@ bool StorageFile::parallelizeOutputAfterReading(ContextPtr context) const
 
 size_t StorageFile::getMaxReadStreams(size_t num_streams, ContextPtr)
 {
-    const size_t files_to_read = archive_info ? archive_info->paths_to_archives.size() : paths.size();
+    size_t files_to_read = 0;
+    if (archive_info)
+        files_to_read = archive_info->paths_to_archives.size();
+    else
+    {
+        std::lock_guard lock{paths_mutex};
+        files_to_read = paths.size();
+    }
     return std::min(num_streams, std::max(1uz, files_to_read));
 }
 
@@ -1695,7 +1702,10 @@ void StorageFileSource::beforeDestroy()
                     throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exists", pathToGenericString(file_path));
 
                 fs::rename(pathFromString(file_path_ref), file_path);
-                file_path_ref = pathToGenericString(file_path);
+                {
+                    std::lock_guard paths_lock{storage->paths_mutex};
+                    file_path_ref = pathToGenericString(file_path);
+                }
                 storage->was_renamed = true;
             }
             catch (const std::exception & e)
@@ -2372,7 +2382,7 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromFile::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
 }
@@ -2410,7 +2420,7 @@ bool ReadFromFile::canUseLazyMaterialization() const
     /// The lazy pass reopens every path and uses the physical row positions from the main pass.
     /// Pipes and pseudo-files are single-pass streams, so their `stat` tokens cannot establish
     /// that the second read sees the same data.
-    for (const auto & path : storage->paths)
+    for (const auto & path : paths_snapshot)
     {
         struct stat file_stat{};
         if (0 != stat(path.c_str(), &file_stat))
@@ -2422,7 +2432,7 @@ bool ReadFromFile::canUseLazyMaterialization() const
 
     /// The lazy pass rereads the surviving rows by their physical positions, which needs random
     /// access to the raw file; a compression wrapper reads only sequentially.
-    for (const auto & path : storage->paths)
+    for (const auto & path : paths_snapshot)
         if (chooseCompressionMethod(path, storage->compression_method) != CompressionMethod::None)
             return false;
 
@@ -2431,12 +2441,10 @@ bool ReadFromFile::canUseLazyMaterialization() const
 
 std::unique_ptr<LazilyReadFromFile> ReadFromFile::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names)
 {
-    /// A bare row policy (no PREWHERE) is not propagated into `info` — `updateFormatPrewhereInfo`
-    /// would prune its input columns from the format header and break `DEFAULT` expressions that
-    /// the source computes from them — but the source still evaluates it in the main pass via
+    /// A row policy is not part of `info`, but the source evaluates it in the main pass via
     /// `FormatFilterInfo`, so its input columns must not be deferred to the lazy branch.
     NameSet names_to_keep = required_names;
-    if (!info.row_level_filter && query_info.row_level_filter)
+    if (query_info.row_level_filter)
         for (const auto & column : query_info.row_level_filter->actions.getRequiredColumns())
             names_to_keep.insert(column.name);
 
@@ -2486,7 +2494,10 @@ void StorageFile::read(
             context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
 
     if (use_table_fd)
+    {
+        std::lock_guard lock{paths_mutex};
         paths = {""};   /// when use fd, paths are empty
+    }
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
@@ -2499,9 +2510,9 @@ void StorageFile::read(
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
     if (query_info.prewhere_info)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
         && context->getSettingsRef()[Setting::optimize_count_from_files]
         && !query_info.row_level_filter
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
@@ -2526,7 +2537,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         return;
 
     files_iterator = std::make_shared<StorageFileSource::FilesIterator>(
-        storage->paths,
+        paths_snapshot,
         storage->archive_info,
         predicate,
         storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
@@ -2546,7 +2557,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (storage->archive_info)
         files_to_read = storage->archive_info->paths_to_archives.size();
     else
-        files_to_read = storage->paths.size();
+        files_to_read = paths_snapshot.size();
 
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;
@@ -3105,7 +3116,12 @@ SinkToStoragePtr StorageFile::write(
             flags);
     }
 
+    auto lock = std::unique_lock{rwlock, getLockTimeout(context)};
+    if (!lock)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
     String path;
+    std::optional<String> path_to_publish;
     if (!paths.empty())
     {
         if (is_path_with_globs)
@@ -3132,8 +3148,8 @@ SinkToStoragePtr StorageFile::write(
                     ++index;
                 }
                 while (fs::exists(pathFromString(new_path)));
-                paths.push_back(new_path);
                 path = new_path;
+                path_to_publish = std::move(new_path);
             }
             else
                 throw Exception(
@@ -3146,10 +3162,10 @@ SinkToStoragePtr StorageFile::write(
         }
     }
 
-    return std::make_shared<StorageFileSink>(
+    auto sink = std::make_shared<StorageFileSink>(
         metadata_snapshot,
         getStorageID().getNameForLogs(),
-        std::unique_lock{rwlock, getLockTimeout(context)},
+        std::move(lock),
         table_fd,
         use_table_fd,
         base_path,
@@ -3159,6 +3175,15 @@ SinkToStoragePtr StorageFile::write(
         format_name,
         context,
         flags);
+
+    /// A reader that cannot stat a path throws, so `paths` may only name the file once it exists.
+    if (path_to_publish)
+    {
+        std::lock_guard paths_lock{paths_mutex};
+        paths.push_back(std::move(*path_to_publish));
+    }
+
+    return sink;
 }
 
 bool StorageFile::storesDataOnDisk() const
@@ -3166,11 +3191,18 @@ bool StorageFile::storesDataOnDisk() const
     return is_db_table;
 }
 
+Strings StorageFile::getPathsSnapshot() const
+{
+    std::lock_guard lock{paths_mutex};
+    return paths;
+}
+
 Strings StorageFile::getDataPaths() const
 {
-    if (paths.empty())
+    auto snapshot = getPathsSnapshot();
+    if (snapshot.empty())
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table '{}' is in readonly mode", getStorageID().getNameForLogs());
-    return paths;
+    return snapshot;
 }
 
 void StorageFile::rename(const String & new_path_to_table_data, const StorageID & new_table_id)

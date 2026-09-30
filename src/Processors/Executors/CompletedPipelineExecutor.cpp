@@ -71,9 +71,9 @@ void CompletedPipelineExecutor::initialize()
         return;
 
     data = std::make_unique<Data>();
-    data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element, pipeline.step_wall_clock_registry.get());
+    data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
     data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
-    data->executor->setCollectWorkIntervals(pipeline.collect_work_intervals);
+    data->executor->setStepProfiler(pipeline.getStepProfiler());
 }
 
 void CompletedPipelineExecutor::execute()
@@ -106,15 +106,11 @@ void CompletedPipelineExecutor::execute()
 
         if (data->has_exception)
             std::rethrow_exception(data->exception);
-
-        pipeline.work_intervals = data->executor->takeWorkIntervals();
     }
     else
     {
         data->executor->execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
         data->is_finished = true;
-
-        pipeline.work_intervals = data->executor->takeWorkIntervals();
     }
 }
 
