@@ -223,6 +223,8 @@ private:
     bool blob_move_attempted{false};
     /// Only after the source is saved can it be removed; the target is not touched before.
     bool source_saved{false};
+    /// A failed copy can leave a partial backup, so only a completed one may overwrite the target.
+    bool target_saved{false};
     bool had_existing_target{false};
 
 public:
@@ -247,7 +249,7 @@ public:
     /**
      * @brief Undo the `execute` logic:
      *  1. Restore remote_path_from from tmp_remote_path_from, if saved.
-     *  2. Restore remote_path_to from tmp_remote_path_to, or remove it if there was no target.
+     *  2. Restore remote_path_to from tmp_remote_path_to, if saved, or remove it if there was no target.
      *  3. Remove the temporary copies.
      */
     void undo() override;

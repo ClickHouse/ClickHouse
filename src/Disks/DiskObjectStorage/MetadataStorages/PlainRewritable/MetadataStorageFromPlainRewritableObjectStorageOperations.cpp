@@ -622,6 +622,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         });
 
         copyBlobOfListedFile(*object_storage, path_to, remote_path_to, tmp_remote_path_to, read_settings, write_settings);
+        target_saved = true;
 
         fs_tree->removeFile(path_to);
         fs_tree->recordFile(path_to, file_from_remote_info.value());
@@ -697,15 +698,14 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
             return;
         }
 
-        if (object_storage->exists(StoredObject(tmp_remote_path_to)))
+        if (target_saved && object_storage->exists(StoredObject(tmp_remote_path_to)))
             object_storage->copyObject(
                 /*object_from=*/StoredObject(tmp_remote_path_to),
                 /*object_to=*/StoredObject(remote_path_to),
                 read_settings,
                 write_settings);
 
-        /// Otherwise there is nothing to restore: the copy above comes before anything overwrites or removes the
-        /// target, so either it succeeded and its result is here, or it threw and the target was never touched.
+        /// Otherwise there is nothing to restore: nothing overwrites or removes the target before its backup completes.
     });
 
     /// The temporary copies go last, so a stage that fails never leaves the reversal without a copy it still needs.

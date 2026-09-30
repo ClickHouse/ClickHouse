@@ -2556,11 +2556,17 @@ public:
         if (!exists(object_from))
             throw std::runtime_error("The source object does not exist");
         if (object_from.remote_path == fail_copy_of)
+        {
+            const std::string partial = "partial";
+            auto out = writeObject(object_to, WriteMode::Rewrite);
+            out->write(partial.data(), partial.size());
+            out->finalize();
             throw std::runtime_error("Injected foreign error");
+        }
         LocalObjectStorage::copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
     }
 
-    /// The copy of this existing key fails.
+    /// The copy of this existing key fails after it wrote a part of the blob.
     std::string fail_copy_of;
 };
 
@@ -2630,7 +2636,7 @@ TEST_F(MetadataPlainRewritableDiskTest, ForeignErrorRollsBackTransaction)
     object_storage->fail_copy_of = metadata->getStorageObjects("/A/target").front().remote_path;
     const auto objects_before = allObjects(object_storage, key_prefix);
 
-    /// The backup of the target fails after the unlink and after the move saved the source.
+    /// The backup of the target fails halfway, after the unlink and after the move saved the source.
     auto tx = metadata->createTransaction();
     tx->unlinkFile("/A/other", /*if_exists=*/false, /*should_remove_objects=*/true);
     tx->replaceFile("/A/source", "/A/target");
