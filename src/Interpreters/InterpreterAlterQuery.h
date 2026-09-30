@@ -11,6 +11,7 @@ namespace DB
 class AccessRightsElements;
 class ASTAlterCommand;
 class ASTAlterQuery;
+struct StorageID;
 
 
 /** Allows you add or remove a column in the table.
@@ -48,6 +49,10 @@ public:
 
 private:
     AccessRightsElements getRequiredAccess(const StoragePtr & storage) const;
+
+    /// Applies every `MODIFY QUERY` of the statement to a copy of the view's metadata as the user who runs it,
+    /// for the paths where the real `AlterCommand::apply` runs without that user.
+    void checkAccessForModifyQuery(const StoragePtr & table, const StorageID & table_id) const;
 
     BlockIO executeToTable(const ASTAlterQuery & alter);
 
