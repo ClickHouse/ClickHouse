@@ -1164,7 +1164,9 @@ def test_dropping_a_settings_profile_a_user_uses(start_cluster):
             assert_experimental_change_is_blocked(
                 instance, "DROP SETTINGS PROFILE tier_droppable_profile"
             )
-            assert read_experimental_setting(instance, "tier_g2") == "1"
+            # The profile assigned by its `TO` clause still carries the setting, so the user cannot log in.
+            assert_login_is_refused(instance, "tier_g2")
+        assert read_experimental_setting(instance, "tier_g2") == "1"
 
 
 def test_dropping_a_role_that_carries_a_setting(start_cluster):
@@ -1479,7 +1481,9 @@ def test_overlapping_settings_profiles_use_the_effective_precedence(start_cluste
             assert_experimental_change_is_blocked(
                 instance, f"DROP SETTINGS PROFILE {effective_profile}"
             )
-            assert read_experimental_setting(instance, user) == value_before
+            # `profile_one` still reaches the user through its `TO` clause, so the user cannot log in.
+            assert_login_is_refused(instance, user)
+        assert read_experimental_setting(instance, user) == value_before
 
 
 def test_concurrent_access_changes_cannot_compose_a_restricted_setting(start_cluster):

@@ -2286,6 +2286,13 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
         new_session_constraints->constraints.check(
             new_session_settings, enabled_roles->settings_from_enabled_roles, SettingSource::ROLE,
             /* skip_config_defined_profiles= */ true);
+
+        /// A profile also reaches the user through its own `TO` clause, which neither list above holds.
+        SettingsProfileElements applied_profiles;
+        for (const auto & profile_id : enabled_profiles->profiles)
+            applied_profiles.emplace_back().parent_profile = profile_id;
+        new_session_constraints->constraints.check(
+            new_session_settings, applied_profiles, SettingSource::PROFILE, /* skip_config_defined_profiles= */ true);
     }
 
     /// Apply user's profiles, constraints, settings, roles.
