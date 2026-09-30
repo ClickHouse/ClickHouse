@@ -1,0 +1,13 @@
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <url>/bad_predefined_delete_without_post</url>
+            <methods>DELETE</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>DELETE FROM default.t WHERE 1</query>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>

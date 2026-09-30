@@ -177,10 +177,11 @@ def test_predefined_handler_rejects_body_query_with_safe_method(start_cluster):
     [
         "bad_predefined_insert_without_post.xml",
         "bad_predefined_form_insert_without_post.xml",
+        "bad_predefined_delete_without_post.xml",
     ],
 )
 def test_predefined_handler_rejects_mutating_query_without_post(start_cluster, config_name):
-    # Both streaming input and form-bound parameters need POST for a mutating configured query.
+    # A mutating query needs POST, even without request-body input or parameters.
     _assert_predefined_handler_config_error(
         config_name,
         BAD_PREDEFINED_INSERT_WITHOUT_POST_CONFIG_IN_CONTAINER,
