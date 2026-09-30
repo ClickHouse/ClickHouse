@@ -864,10 +864,9 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     {
         QueryPlan query_plan = deserializeQueryPlan(task_description.serialized_query_plan, context);
 
-        /// A fragment keeps the thread limit it was stamped with. Without one, the limit comes from the query's
-        /// settings, and so does the concurrency-control flag in any case.
-        if (!query_plan.getMaxThreads())
-            query_plan.setMaxThreads(pipeline_settings.max_threads);
+        /// The thread limit and the concurrency-control flag come from the task's settings, which for
+        /// a local task carry its stage's share of the plan's thread limit.
+        query_plan.setMaxThreads(pipeline_settings.max_threads);
         query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
         auto builder = query_plan.buildQueryPipeline(
