@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-bun-beta" />
 
@@ -29,8 +28,6 @@ In the ClickHouse Cloud console, click **New service** and select **Postgres**. 
 
 Open your service and click **Connect** in the left sidebar. Keep **Directly** selected and turn on **Use SSL**. The URL now ends with `sslmode=verify-full&sslrootcert=...`. Click **Download CA certificate** to download the CA certificate for your instance.
 
-<Image img="/images/managed-postgres/guides/bun/connect-modal.webp" alt="Connect modal with Directly selected, Use SSL turned on, and the Download CA certificate button" size="md" border/>
-
 This guide connects **directly** on port `5432`. A `Bun.serve` app is a long-running process, and `Bun.sql` keeps its own connection pool, so a server-side pooler isn't needed. If you run many short-lived Bun processes, see [Connect through PgBouncer](#pgbouncer).
 
 ## Set up the project {#setup}
@@ -43,7 +40,9 @@ bun init -y
 ```
 
 <Tip>
-**Adding to an existing app?** Skip `mkdir` and `bun init -y`, since `Bun.sql` is built into Bun and there's nothing to install. In your project root, continue with [Configure the connection](#configure), and also put `NODE_EXTRA_CA_CERTS=./ca-certificate.pem` in front of your app's own start script so it can verify the server.
+**Adding to an existing app?**
+
+Skip `mkdir` and `bun init -y`, since `Bun.sql` is built into Bun and there's nothing to install. In your project root, continue with [Configure the connection](#configure), and also put `NODE_EXTRA_CA_CERTS=./ca-certificate.pem` in front of your app's own start script so it can verify the server.
 </Tip>
 
 ## Configure the connection {#configure}
@@ -247,13 +246,27 @@ curl -X POST http://localhost:3106/todos -H 'Content-Type: application/json' -d 
 
 ## Verify {#verify}
 
-Open [http://localhost:3106/todos](http://localhost:3106/todos) in your browser to see all rows:
+Open [http://localhost:3106/todos](http://localhost:3106/todos) in your browser to see all rows. The response looks like this, formatted for readability:
 
-<Image img="/images/managed-postgres/guides/bun/app-todos.webp" alt="Browser showing the JSON returned by the /todos endpoint" size="md" border/>
+```json
+[
+  {"id":1,"title":"Download the CA certificate","done":true,"created_at":"2026-09-30T16:51:23.040Z"},
+  {"id":2,"title":"Connect with Bun.sql","done":false,"created_at":"2026-09-30T16:51:23.136Z"},
+  {"id":3,"title":"Serve rows with Bun.serve","done":false,"created_at":"2026-09-30T16:51:23.136Z"},
+  {"id":4,"title":"Write a transaction","done":true,"created_at":"2026-09-30T16:51:23.184Z"},
+  {"id":5,"title":"Take a screenshot","done":false,"created_at":"2026-09-30T16:51:30.372Z"}
+]
+```
 
 In the console, open **SQL console** and expand **guide_bun**, then **public**, then **todos** to see the same rows:
 
-<Image img="/images/managed-postgres/guides/bun/sql-console-todos.webp" alt="SQL console showing the todos table and its rows" size="md" border/>
+| id | title | done | created_at |
+|----|-------|------|------------|
+| 1 | Download the CA certificate | true | 2026-09-30 16:51:23.04083+00 |
+| 2 | Connect with Bun.sql | false | 2026-09-30 16:51:23.136975+00 |
+| 3 | Serve rows with Bun.serve | false | 2026-09-30 16:51:23.136975+00 |
+| 4 | Write a transaction | true | 2026-09-30 16:51:23.184716+00 |
+| 5 | Take a screenshot | false | 2026-09-30 16:51:30.372292+00 |
 
 ## Connect through PgBouncer {#pgbouncer}
 

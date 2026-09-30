@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-laravel-beta" />
 
@@ -31,11 +30,9 @@ Click **Connect** in the left sidebar of your service. The modal shows your user
 
 A PHP app doesn't keep a connection pool between requests. By default, every request opens a new Postgres connection and closes it when the request ends. This guide connects the app through the bundled [PgBouncer](/products/managed-postgres/connection#pgbouncer) on port `6432`, so those short-lived connections share a small set of Postgres backends. Migrations connect directly to Postgres on port `5432`, because they run DDL and can hold long transactions.
 
-Select **via PgBouncer** to see the pooled connection details. The port changes to `6432`, and the connection strings include `sslmode=verify-full`:
+Select **via PgBouncer** to see the pooled connection details. The port changes to `6432`, and the connection strings include `sslmode=verify-full`.
 
-<Image img="/images/managed-postgres/guides/laravel/connect-pgbouncer.webp" alt="Connect modal with via PgBouncer selected, showing port 6432 and the Download CA certificate button" size="md" border/>
-
-Click **Download CA certificate**. You can also download it from **Settings → CA Certificate**. The certificate is unique to your instance, so the driver can use it to verify that it's talking to your server.
+In the same modal, click **Download CA certificate**. You can also download it from **Settings → CA Certificate**. The certificate is unique to your instance, so the driver can use it to verify that it's talking to your server.
 
 ## Set up the project {#project-setup}
 
@@ -47,7 +44,9 @@ cd laravel-managed-postgres
 ```
 
 <Tip>
-**Adding to an existing app?** Skip `composer create-project`. In your project, check that `php -m` lists `pdo_pgsql`, then follow the rest of this section and continue with [Configure the connection](#configure), which switches the app from SQLite to Postgres. `php artisan migrate` then creates your existing tables in Postgres, but it doesn't copy data from SQLite.
+**Adding to an existing app?**
+
+Skip `composer create-project`. In your project, check that `php -m` lists `pdo_pgsql`, then follow the rest of this section and continue with [Configure the connection](#configure), which switches the app from SQLite to Postgres. `php artisan migrate` then creates your existing tables in Postgres, but it doesn't copy data from SQLite.
 </Tip>
 
 Move the CA certificate you downloaded into the project directory and rename it to `ca-certificate.pem`.
@@ -231,13 +230,41 @@ php artisan serve --port=3104
   Press Ctrl+C to stop the server
 ```
 
-Open `http://localhost:3104/tasks` in your browser:
+Open `http://localhost:3104/tasks` in your browser. The response looks like this:
 
-<Image img="/images/managed-postgres/guides/laravel/app-tasks.webp" alt="Browser showing the JSON list of tasks returned by the Laravel route" size="md" border/>
+```json
+[
+  {
+    "id": 1,
+    "title": "Create a Managed Postgres service",
+    "done": true,
+    "created_at": "2026-09-30T17:10:28.000000Z",
+    "updated_at": "2026-09-30T17:10:28.000000Z"
+  },
+  {
+    "id": 2,
+    "title": "Connect Laravel with verify-full TLS",
+    "done": true,
+    "created_at": "2026-09-30T17:10:29.000000Z",
+    "updated_at": "2026-09-30T17:10:29.000000Z"
+  },
+  {
+    "id": 3,
+    "title": "Ship the app",
+    "done": false,
+    "created_at": "2026-09-30T17:10:29.000000Z",
+    "updated_at": "2026-09-30T17:10:29.000000Z"
+  }
+]
+```
 
-To see the data in the console, open **SQL console** in the left sidebar of your service, expand `guide_laravel` and then `public`, and click the `tasks` table:
+To see the data in the console, open **SQL console** in the left sidebar of your service, expand `guide_laravel` and then `public`, and click the `tasks` table. The `public` schema also lists the default Laravel tables, such as `users`, `sessions`, and `migrations`:
 
-<Image img="/images/managed-postgres/guides/laravel/sql-console-tasks.webp" alt="SQL console showing the tasks table and the default Laravel tables in the guide_laravel database" size="md" border/>
+| id | title | done | created_at | updated_at |
+|----|-------|------|------------|------------|
+| 1 | Create a Managed Postgres service | true | 2026-09-30 17:10:28 | 2026-09-30 17:10:28 |
+| 2 | Connect Laravel with verify-full TLS | true | 2026-09-30 17:10:29 | 2026-09-30 17:10:29 |
+| 3 | Ship the app | false | 2026-09-30 17:10:29 | 2026-09-30 17:10:29 |
 
 ## Next steps {#next-steps}
 

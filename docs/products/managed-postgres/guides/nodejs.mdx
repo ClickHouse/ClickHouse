@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-nodejs-beta" />
 
@@ -28,13 +27,9 @@ In the ClickHouse Cloud console, click **New service** and select **Postgres**. 
 
 Click **Connect** in the left sidebar of your service. With **Directly** selected, copy the connection URL from the **url** tab. Leave **Use SSL** off: the app passes the CA certificate in code instead of in the URL (see [Configure the connection pool](#configure-pool)).
 
-<Image img="/images/managed-postgres/guides/nodejs/connect-modal.webp" alt="Connect modal with Directly selected, showing the connection URL on port 5432" size="md" border/>
-
 This guide connects **directly** to Postgres on port `5432`. A long-lived Node.js server already keeps its own pool of connections through `pg.Pool`, so it doesn't need a second pooler in front of Postgres. If you run many processes or serverless functions, use the bundled PgBouncer instead; see [Use PgBouncer](#pgbouncer).
 
 Next, download the CA certificate for your instance. Turn on **Use SSL** and click **Download CA certificate**, or go to **Settings → CA Certificate → Download CA certificate**. The certificate is unique to your instance.
-
-<Image img="/images/managed-postgres/guides/nodejs/download-ca.webp" alt="Use SSL switch and Download CA certificate button in the Connect modal" size="md" border/>
 
 ## Set up the project {#project-setup}
 
@@ -47,7 +42,9 @@ npm install pg
 ```
 
 <Tip>
-**Adding to an existing app?** Skip `mkdir` and `npm init -y`. In your project, run `npm install pg`, then continue with [Create the database](#create-database).
+**Adding to an existing app?**
+
+Skip `mkdir` and `npm init -y`. In your project, run `npm install pg`, then continue with [Create the database](#create-database).
 </Tip>
 
 The examples in this guide are ES modules with the `.mjs` extension, so they work whether your `package.json` uses CommonJS or ES modules.
@@ -312,9 +309,22 @@ curl -X POST localhost:3107/transfers -H 'content-type: application/json' -d '{"
 }
 ```
 
-The third transfer had already debited `alice` when it failed, but the `ROLLBACK` undid it. Open [http://localhost:3107/accounts](http://localhost:3107/accounts) in your browser to see the balances:
+The third transfer had already debited `alice` when it failed, but the `ROLLBACK` undid it. Open [http://localhost:3107/accounts](http://localhost:3107/accounts) in your browser to see the balances. The response looks like this:
 
-<Image img="/images/managed-postgres/guides/nodejs/app-accounts.webp" alt="Browser showing the JSON response of the /accounts endpoint" size="md" border/>
+```json
+[
+  {
+    "id": 1,
+    "owner": "alice",
+    "balance": "75.00"
+  },
+  {
+    "id": 2,
+    "owner": "bob",
+    "balance": "75.00"
+  }
+]
+```
 
 To confirm that the connection uses verified TLS, run a query against `pg_stat_ssl`:
 
@@ -335,9 +345,12 @@ If you point `DATABASE_CA_CERT` at any other certificate, the connection fails w
 
 Finally, stop the server with <kbd>Ctrl</kbd>+<kbd>C</kbd>. It prints `SIGINT received, shutting down` and then `Pool closed`.
 
-You can also look at the data in the console. Open **SQL console**, expand the `guide_nodejs` database, and open the `accounts` or `transfers` table:
+You can also look at the data in the console. Open **SQL console**, expand the `guide_nodejs` database, and open the `accounts` table:
 
-<Image img="/images/managed-postgres/guides/nodejs/sql-console.webp" alt="SQL console showing the accounts table in the guide_nodejs database" size="md" border/>
+| id | owner | balance |
+|----|-------|---------|
+| 1  | alice | 75.00   |
+| 2  | bob   | 75.00   |
 
 ## Use PgBouncer {#pgbouncer}
 

@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-cloudflare-workers-beta" />
 
@@ -28,8 +27,6 @@ In the ClickHouse Cloud console, click **New service** and select **Postgres**. 
 ## Get your connection details {#connection-details}
 
 Click **Connect** in the left sidebar of your service. Keep **Directly** selected and turn on **Use SSL**. The URL now ends in `sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem`. Click **Download CA certificate** to download the CA certificate for your instance. You can also download it from **Settings → CA Certificate**.
-
-<Image img="/images/managed-postgres/guides/cloudflare-workers/connect-modal.webp" alt="Connect modal with Directly selected, Use SSL turned on, and the Download CA certificate button" size="md" border/>
 
 This guide points Hyperdrive at the **direct** connection on port `5432`, not at the bundled PgBouncer on port `6432`:
 
@@ -69,7 +66,9 @@ npm install -D @types/pg
 ```
 
 <Tip>
-**Adding to an existing app?** Skip `npm create cloudflare`. In your Worker project, run `npm install pg` and `npm install -D @types/pg`, then continue with [Create a Hyperdrive configuration](#create-hyperdrive), which adds the Hyperdrive binding, and [Configure the Worker](#configure-worker), which turns on `nodejs_compat`.
+**Adding to an existing app?**
+
+Skip `npm create cloudflare`. In your Worker project, run `npm install pg` and `npm install -D @types/pg`, then continue with [Create a Hyperdrive configuration](#create-hyperdrive), which adds the Hyperdrive binding, and [Configure the Worker](#configure-worker), which turns on `nodejs_compat`.
 </Tip>
 
 Move `ca-certificate.pem` into your project directory. If you haven't used Wrangler before, run `npx wrangler login` to authorize it with your Cloudflare account.
@@ -259,15 +258,20 @@ curl -X POST https://hyperdrive-notes.<your-subdomain>.workers.dev/notes -H "Con
 {"id":"2","content":"Hello from Hyperdrive","created_at":"2026-09-30T16:58:39.733Z"}
 ```
 
-Open `https://hyperdrive-notes.<your-subdomain>.workers.dev/notes` in your browser to see both notes:
+Open `https://hyperdrive-notes.<your-subdomain>.workers.dev/notes` in your browser to see both notes. The response looks like this:
 
-<Image img="/images/managed-postgres/guides/cloudflare-workers/worker-notes.webp" alt="Browser showing the JSON list of notes returned by the deployed Worker" size="md" border/>
+```json
+[{"id":"1","content":"Hello from wrangler dev","created_at":"2026-09-30T16:58:16.232Z"},{"id":"2","content":"Hello from Hyperdrive","created_at":"2026-09-30T16:58:39.733Z"}]
+```
 
 ## Verify in the console {#verify}
 
-Open **SQL console** in the left sidebar of your service, expand `guide_cloudflare` and then `public`, and click the `notes` table:
+Open **SQL console** in the left sidebar of your service, expand `guide_cloudflare` and then `public`, and click the `notes` table. It shows both notes:
 
-<Image img="/images/managed-postgres/guides/cloudflare-workers/sql-console-notes.webp" alt="SQL console showing the notes table in the guide_cloudflare database" size="md" border/>
+| id | content | created_at |
+|---|---|---|
+| 1 | Hello from wrangler dev | 2026-09-30 16:58:16.232466+00 |
+| 2 | Hello from Hyperdrive | 2026-09-30 16:58:39.733203+00 |
 
 ## Clean up {#clean-up}
 

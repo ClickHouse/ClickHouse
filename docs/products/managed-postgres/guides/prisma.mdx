@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-prisma-beta" />
 
@@ -36,11 +35,9 @@ This guide uses two connections, because Prisma has two components that talk to 
 - **Your application (Prisma Client)** connects **via PgBouncer** on port `6432`. PgBouncer pools connections, so many app processes or serverless instances can share a small number of Postgres backends.
 - **The Prisma CLI (Prisma Migrate)** connects **directly** on port `5432`. Prisma Migrate takes a session-level advisory lock while it runs. In PgBouncer's transaction pooling mode, that lock can stay held on a pooled backend that then serves other clients, and later migrations block on it.
 
-Switch the toggle to **via PgBouncer** to see the pooled port. The server and credentials are the same for both connections; only the port changes.
+At the top of the modal, switch between **Directly** and **via PgBouncer** to see each port. The server and credentials are the same for both connections; only the port changes.
 
-<Image img="/images/managed-postgres/guides/prisma/connect-pgbouncer.webp" alt="Connect modal with via PgBouncer selected, showing port 6432 and the Download CA certificate button" size="md" border/>
-
-Click **Download CA certificate**. The file is named `<service-name>-ca-certificate.pem`. You also find it under **Settings → CA Certificate**. The certificate is unique to your instance, and you use it to connect with `sslmode=verify-full`, which checks that you're talking to your own server.
+With **via PgBouncer** selected, click **Download CA certificate**. With **Directly** selected, turn on **Use SSL** first to show the button. The file is named `<service-name>-ca-certificate.pem`. You also find it under **Settings → CA Certificate**. The certificate is unique to your instance, and you use it to connect with `sslmode=verify-full`, which checks that you're talking to your own server.
 
 ## Set up the project {#setup}
 
@@ -77,7 +74,9 @@ Create a `tsconfig.json`:
 ```
 
 <Tip>
-**Adding to an existing app?** Skip `mkdir`, `npm init`, and the `tsconfig.json`. In your project, run `npm install tsx @types/pg prisma@7 --save-dev` and `npm install @prisma/client@7 @prisma/adapter-pg pg dotenv`, then continue with [Initialize Prisma](#init).
+**Adding to an existing app?**
+
+Skip `mkdir`, `npm init`, and the `tsconfig.json`. In your project, run `npm install tsx @types/pg prisma@7 --save-dev` and `npm install @prisma/client@7 @prisma/adapter-pg pg dotenv`, then continue with [Initialize Prisma](#init).
 </Tip>
 
 ## Initialize Prisma {#init}
@@ -348,9 +347,24 @@ curl -X POST localhost:3000/todos -H "Content-Type: application/json" -d '{"titl
 curl -X POST localhost:3000/todos -H "Content-Type: application/json" -d '{"title": "Add a read replica"}'
 ```
 
-Open [http://localhost:3000/todos](http://localhost:3000/todos) in your browser to see them:
+Open [http://localhost:3000/todos](http://localhost:3000/todos) in your browser to see them. The response looks like this:
 
-<Image img="/images/managed-postgres/guides/prisma/app-todos.webp" alt="Browser showing the JSON list of todos returned by the Prisma HTTP endpoint" size="md" border/>
+```json
+[
+  {
+    "id": 2,
+    "title": "Try Prisma with ClickHouse Managed Postgres",
+    "done": false,
+    "createdAt": "2026-09-30T16:53:06.098Z"
+  },
+  {
+    "id": 3,
+    "title": "Add a read replica",
+    "done": false,
+    "createdAt": "2026-09-30T16:53:06.184Z"
+  }
+]
+```
 
 </Step>
 </Steps>
@@ -359,7 +373,12 @@ Open [http://localhost:3000/todos](http://localhost:3000/todos) in your browser 
 
 In the ClickHouse Cloud console, open **SQL console** for your service, expand your database and the `public` schema, and select the `Todo` table. You also see the `_prisma_migrations` table, where Prisma Migrate records applied migrations.
 
-<Image img="/images/managed-postgres/guides/prisma/sql-console.webp" alt="SQL console showing the Todo and _prisma_migrations tables created by Prisma" size="md" border/>
+The `Todo` table contains the two rows you added through the HTTP endpoint:
+
+| id | title | done | createdAt |
+|---|---|---|---|
+| 2 | Try Prisma with ClickHouse Managed Postgres | false | 2026-09-30 16:53:06.098 |
+| 3 | Add a read replica | false | 2026-09-30 16:53:06.184 |
 
 ## Troubleshooting {#troubleshooting}
 

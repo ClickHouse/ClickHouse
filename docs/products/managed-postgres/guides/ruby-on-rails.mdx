@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-ruby-on-rails-beta" />
 
@@ -31,8 +30,6 @@ In the ClickHouse Cloud console, click **New service** and select **Postgres**. 
 Open your service and click **Connect** in the left sidebar. Keep **Directly** selected and turn on **Use SSL**.
 Copy the password and server hostname, then click **Download CA certificate**.
 
-<Image img="/images/managed-postgres/guides/ruby-on-rails/connect-modal.webp" alt="Connect modal with Directly selected, Use SSL turned on, and the Download CA certificate button" size="md" border/>
-
 The CA certificate is unique to your service. You can also download it later from **Settings → CA Certificate**.
 
 **Direct or PgBouncer?** A Rails server is a long-lived process that keeps its own connection pool (`max_connections` in `config/database.yml`, five per process by default), so this guide connects directly to Postgres on port `5432`.
@@ -49,7 +46,9 @@ cd blog
 ```
 
 <Tip>
-**Adding to an existing app?** Skip `gem install rails` and `rails new`. In your app's directory, run `bundle add pg`, then continue with [Configure the database connection](#configure-connection), where the new `development` section replaces the SQLite one.
+**Adding to an existing app?**
+
+Skip `gem install rails` and `rails new`. In your app's directory, run `bundle add pg`, then continue with [Configure the database connection](#configure-connection), where the new `development` section replaces the SQLite one.
 </Tip>
 
 ## Configure the database connection {#configure-connection}
@@ -155,12 +154,17 @@ bin/rails server
 
 Open [http://localhost:3000/posts](http://localhost:3000/posts) to list, create, edit, and delete posts. Every request reads from and writes to ClickHouse Managed Postgres.
 
-<Image img="/images/managed-postgres/guides/ruby-on-rails/rails-posts.webp" alt="Rails scaffold listing posts stored in ClickHouse Managed Postgres" size="md" border/>
+The page lists each post with its title and body and a **Show this post** link, followed by a **New post** link. Edit and delete links are on each post's page.
 
 To see the table in the console, open **SQL console** in the left sidebar, expand the `guide_rails` database, and select the `posts` table.
 Rails also creates `schema_migrations` and `ar_internal_metadata` to track migrations.
 
-<Image img="/images/managed-postgres/guides/ruby-on-rails/sql-console-posts.webp" alt="SQL console showing the posts table in the guide_rails database" size="md" border/>
+The `posts` table contains the two rows from `script/posts_demo.rb`:
+
+| id | title | body | created_at | updated_at |
+|----|-------|------|------------|------------|
+| 1 | Hello from Rails | Updated with Active Record. | 2026-09-30 16:50:15.862005 | 2026-09-30 16:50:16.150928 |
+| 2 | Second post | Created with Active Record. | 2026-09-30 16:50:16.010488 | 2026-09-30 16:50:16.010488 |
 
 ## Using PgBouncer {#pgbouncer}
 

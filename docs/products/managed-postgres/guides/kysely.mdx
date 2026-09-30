@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-kysely-beta" />
 
@@ -31,8 +30,6 @@ In the ClickHouse Cloud console, click **New service** and select **Postgres**. 
 
 Click **Connect** in the left sidebar of your service. Keep **Directly** selected and turn on **Use SSL**: the **url** connection string now ends with `sslmode=verify-full&sslrootcert=...`. Click **Download CA certificate** to download your service's CA certificate, named `<service-name>-ca-certificate.pem`, and copy the connection string.
 
-<Image img="/images/managed-postgres/guides/kysely/connect-modal.webp" alt="Connect modal with Directly selected, Use SSL turned on, and the Download CA certificate button" size="md" border/>
-
 This guide connects **directly** to Postgres on port `5432`, for two reasons:
 
 - A Node.js server is a long-lived process. The `pg` `Pool` already keeps a small set of connections open and reuses them, so a server-side pooler adds little.
@@ -54,7 +51,9 @@ mkdir src migrations
 ```
 
 <Tip>
-**Adding to an existing app?** Skip `mkdir kysely-todo && cd kysely-todo` and `npm init -y`. In your project, run the following commands, which add `migrate` and `typecheck` scripts but leave your `start` script alone, then continue with [Configure the connection](#connection-config).
+**Adding to an existing app?**
+
+Skip `mkdir kysely-todo && cd kysely-todo` and `npm init -y`. In your project, run the following commands, which add `migrate` and `typecheck` scripts but leave your `start` script alone, then continue with [Configure the connection](#connection-config).
 
 ```bash
 npm install kysely pg
@@ -287,13 +286,31 @@ curl -X PATCH localhost:3000/todos/1 -d '{"done": true}'
 curl -X DELETE localhost:3000/todos/3
 ```
 
-Open [http://localhost:3000/todos](http://localhost:3000/todos) in your browser to list the remaining to-dos:
+Open [http://localhost:3000/todos](http://localhost:3000/todos) in your browser to list the remaining to-dos. The response looks like this:
 
-<Image img="/images/managed-postgres/guides/kysely/app-todos.webp" alt="Browser showing the JSON list of to-dos returned by the Kysely app" size="md" border/>
+```json
+[
+  {
+    "id": 1,
+    "title": "Create a Managed Postgres service",
+    "done": true,
+    "created_at": "2026-09-30T16:47:31.081Z"
+  },
+  {
+    "id": 2,
+    "title": "Connect Kysely with verify-full",
+    "done": false,
+    "created_at": "2026-09-30T16:47:31.142Z"
+  }
+]
+```
 
 To see the same data in the console, open **SQL console** in the left sidebar of your service, expand `guide_kysely` and the `public` schema, and click the `todo` table. The `kysely_migration` and `kysely_migration_lock` tables that Kysely created are listed next to it:
 
-<Image img="/images/managed-postgres/guides/kysely/sql-console.webp" alt="SQL console showing the todo table and the Kysely migration tables" size="md" border/>
+| id | title | done | created_at |
+|----|-------|------|------------|
+| 1 | Create a Managed Postgres service | true | 2026-09-30 16:47:31.081942+00 |
+| 2 | Connect Kysely with verify-full | false | 2026-09-30 16:47:31.142225+00 |
 
 ## Next steps {#next-steps}
 

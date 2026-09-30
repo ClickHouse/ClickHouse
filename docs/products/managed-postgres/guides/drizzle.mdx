@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-drizzle-beta" />
 
@@ -37,15 +36,9 @@ This guide uses two connection strings:
 If you run a single long-lived Node.js server, `node-postgres` already keeps its own connection pool, so you can also point the app at the direct connection. Use the PgBouncer connection when you scale out to many processes or run on serverless platforms.
 </Tip>
 
-With **Directly** selected, turn on **Use SSL**. The connection URL now ends in `sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem`:
+With **Directly** selected, turn on **Use SSL**. The connection URL on the **url** tab now ends in `sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem`, and the port is `5432`. Select **via PgBouncer** to see the pooled connection details: the port changes to `6432`, and the URL always includes `sslmode=verify-full`.
 
-<Image img="/images/managed-postgres/guides/drizzle/connect-modal-direct.webp" alt="Connect modal with Directly selected, Use SSL turned on, and the Download CA certificate button" size="md" border/>
-
-Switch to **via PgBouncer** to see the pooled connection details. The port changes to `6432`:
-
-<Image img="/images/managed-postgres/guides/drizzle/connect-modal-pgbouncer.webp" alt="Connect modal with via PgBouncer selected, showing port 6432" size="md" border/>
-
-Click **Download CA certificate**. You can also download it from **Settings → CA Certificate**. The certificate is unique to your instance, so the driver can use it to verify that it's talking to your server.
+In the modal, click **Download CA certificate**. You can also download it from **Settings → CA Certificate**. The certificate is unique to your instance, so the driver can use it to verify that it's talking to your server.
 
 ## Set up the project {#project-setup}
 
@@ -60,7 +53,9 @@ npm install -D drizzle-kit tsx @types/pg
 ```
 
 <Tip>
-**Adding to an existing app?** Skip the `mkdir`, `npm init`, and `npm pkg set type=module` commands. In your project, run `npm install drizzle-orm pg dotenv` and `npm install -D drizzle-kit tsx @types/pg`, then continue with [Configure the connection](#configure-connection).
+**Adding to an existing app?**
+
+Skip the `mkdir`, `npm init`, and `npm pkg set type=module` commands. In your project, run `npm install drizzle-orm pg dotenv` and `npm install -D drizzle-kit tsx @types/pg`, then continue with [Configure the connection](#configure-connection).
 </Tip>
 
 ## Configure the connection {#configure-connection}
@@ -252,13 +247,24 @@ The `PATCH` request returns the updated row:
 }
 ```
 
-Open `http://localhost:3101/todos` in your browser to list the remaining todos:
+Open `http://localhost:3101/todos` in your browser to list the remaining todos. The response looks like this:
 
-<Image img="/images/managed-postgres/guides/drizzle/app-todos.webp" alt="Browser showing the JSON list of todos returned by the Drizzle app" size="md" border/>
+```json
+[
+  {
+    "id": 1,
+    "title": "Try Drizzle ORM",
+    "done": true,
+    "createdAt": "2026-09-30T16:45:14.610Z"
+  }
+]
+```
 
-To see the data in the console, open **SQL console** in the left sidebar of your service, expand `guide_drizzle` and then `public`, and click the `todos` table. The `drizzle` schema holds the migration history table.
+To see the data in the console, open **SQL console** in the left sidebar of your service, expand `guide_drizzle` and then `public`, and click the `todos` table. The `drizzle` schema holds the migration history table. The table contains the remaining row:
 
-<Image img="/images/managed-postgres/guides/drizzle/sql-console-todos.webp" alt="SQL console showing the todos table in the guide_drizzle database" size="md" border/>
+| id | title | done | created_at |
+|----|-------|------|------------|
+| 1 | Try Drizzle ORM | true | 2026-09-30 16:45:14.610099+00 |
 
 ## Next steps {#next-steps}
 
