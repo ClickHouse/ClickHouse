@@ -25,7 +25,7 @@ CREATE TABLE p_cols_05210 (id Tuple(UInt64, LowCardinality(UUID)), timestamp Dat
 -- An external target is refused the same way. Both properties the proxy asserts hold for a Memory
 -- table, so nothing there would stop the in-memory rename.
 CREATE TABLE ext_samples_05210 (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = Memory;
-CREATE TABLE ts_ext_05210 ENGINE = TimeSeries DATA ext_samples_05210;
+CREATE TABLE ts_ext_05210 ENGINE = TimeSeries SETTINGS version = 5 DATA ext_samples_05210;
 CREATE TABLE p_ext_05210 AS timeSeriesData(ts_ext_05210); -- { serverError BAD_ARGUMENTS }
 
 -- No persisted definition over a TimeSeries table may survive this test: such a definition can fail

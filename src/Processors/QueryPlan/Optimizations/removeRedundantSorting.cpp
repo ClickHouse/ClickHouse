@@ -79,6 +79,7 @@ public:
             || typeid_cast<FillingStep *>(current_step) /// (5) if ORDER BY is with FILL WITH, it is non-removable
             || typeid_cast<SortingStep *>(current_step) /// (6) ORDER BY will change order of previous sorting
             || typeid_cast<AggregatingStep *>(current_step) /// (7) aggregation change order
+            || current_step->isInputOrderDependent() /// (8) the step consumes rows in the established order
             )
         {
             logStep("nodes_affect_order/push", current_node);

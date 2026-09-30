@@ -18,7 +18,7 @@ CREATE TABLE ts_tags (
     min_time SimpleAggregateFunction(min, Nullable(DateTime64(3, 'UTC'))),
     max_time SimpleAggregateFunction(max, Nullable(DateTime64(3, 'UTC'))))
 ENGINE = AggregatingMergeTree ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1;
-CREATE TABLE ts ENGINE = TimeSeries DATA ts_data TAGS ts_tags;
+CREATE TABLE ts ENGINE = TimeSeries DATA ts_data TAGS ts_tags SETTINGS version = 7;
 INSERT INTO ts_tags VALUES ('00000000-0000-0000-0000-000000000001', 'up', {'instance':'host1'}, toDateTime64(1700000100, 3, 'UTC'), toDateTime64(1700000110, 3, 'UTC'));
 INSERT INTO ts_data VALUES ('00000000-0000-0000-0000-000000000001', toDateTime64(1700000100, 3, 'UTC'), 100), ('00000000-0000-0000-0000-000000000001', toDateTime64(1700000110, 3, 'UTC'), 999);
 "

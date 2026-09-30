@@ -9,6 +9,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <base/arithmeticOverflow.h>
 
 
@@ -53,8 +54,6 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT group, CAST(CAST(timestamp, 'result_timestamp_type') + INTERVAL <x> <unit>, 'result_timestamp_type') AS timestamp, value
-                /// FROM <raw_data>
                 SelectQueryBuilder builder;
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
@@ -79,18 +78,44 @@ namespace
                 /// (for example, DateTime64(4) + INTERVAL 1 MICROSECOND is DateTime64(6)), so we cast the sum back.
                 /// Both casts do nothing if the types already match.
                 const String result_timestamp_type_name = context.result_timestamp_type->getName();
-                ASTPtr new_timestamp = makeASTFunction(
-                    "CAST",
-                    makeASTFunction(
-                        "plus",
-                        makeASTFunction("CAST", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), make_intrusive<ASTLiteral>(result_timestamp_type_name)),
-                        makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(offset_in_interval_units))),
-                    make_intrusive<ASTLiteral>(result_timestamp_type_name));
+                auto add_offset = [&](ASTPtr timestamp)
+                {
+                    return makeASTFunction(
+                        "CAST",
+                        makeASTFunction(
+                            "plus",
+                            makeASTFunction(
+                                "CAST", std::move(timestamp), make_intrusive<ASTLiteral>(result_timestamp_type_name)),
+                            makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(offset_in_interval_units))),
+                        make_intrusive<ASTLiteral>(result_timestamp_type_name));
+                };
 
-                new_timestamp->setAlias(ColumnNames::Timestamp);
-                builder.select_list.push_back(std::move(new_timestamp));
+                if (context.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
+                {
+                    /// SELECT group, arrayMap(sample -> (sample.1 + INTERVAL X, sample.2), time_series) AS time_series
+                    auto new_sample = makeASTFunction(
+                        "tuple",
+                        add_offset(makeASTFunction(
+                            "tupleElement", make_intrusive<ASTIdentifier>("sample"), make_intrusive<ASTLiteral>(UInt64{1}))),
+                        makeASTFunction(
+                            "tupleElement", make_intrusive<ASTIdentifier>("sample"), make_intrusive<ASTLiteral>(UInt64{2})));
 
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+                    auto new_time_series = makeASTFunction(
+                        "arrayMap",
+                        makeASTFunction(
+                            "lambda", makeASTFunction("tuple", make_intrusive<ASTIdentifier>("sample")), std::move(new_sample)),
+                        make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
+                    new_time_series->setAlias(ColumnNames::TimeSeries);
+                    builder.select_list.push_back(std::move(new_time_series));
+                }
+                else
+                {
+                    /// SELECT group, CAST(CAST(timestamp, 'result_timestamp_type') + INTERVAL <x> <unit>, 'result_timestamp_type') AS timestamp, value
+                    auto new_timestamp = add_offset(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+                    new_timestamp->setAlias(ColumnNames::Timestamp);
+                    builder.select_list.push_back(std::move(new_timestamp));
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+                }
 
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);

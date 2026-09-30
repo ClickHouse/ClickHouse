@@ -41,15 +41,10 @@ def test_insert_basic():
         " ('cpu_usage', {'job': 'test', 'instance': 'localhost:9090'}, [(toDateTime64(1000, 3), 0.5), (toDateTime64(2000, 3), 0.7)])"
     )
 
-    # Check inner tables.
+    # Check inner tables: a row of the samples table contains the samples of one series within one time bucket.
     assert node.query(
-        "SELECT d.timestamp, d.value"
-        " FROM timeSeriesData(prometheus) AS d"
-        " ORDER BY d.timestamp"
-    ) == TSV([
-        ["1970-01-01 00:16:40.000", "0.5"],
-        ["1970-01-01 00:33:20.000", "0.7"],
-    ])
+        "SELECT samples FROM timeSeriesData(prometheus)"
+    ) == TSV([["[('1970-01-01 00:16:40.000',0.5),('1970-01-01 00:33:20.000',0.7)]"]])
 
     assert node.query(
         "SELECT t.metric_name, t.tags"
@@ -75,8 +70,8 @@ def test_insert_with_metrics_metadata():
     ) == TSV([["http_requests", "counter", "requests", "Total HTTP requests"]])
 
     assert node.query(
-        "SELECT d.value FROM timeSeriesData(prometheus) AS d"
-    ) == TSV([["100"]])
+        "SELECT samples FROM timeSeriesData(prometheus)"
+    ) == TSV([["[('1970-01-01 00:16:40.000',100)]"]])
 
 
 def insert_time_series():
@@ -114,7 +109,7 @@ ALL_COLUMNS_EXPECTED = TSV([
 
 
 def test_select_all_columns():
-    """Reads all three target tables using `INNER ANY JOIN` for samples/tags and `FULL JOIN` for metadata:
+    """Reads all three target tables using `INNER JOIN` for samples/tags and `FULL JOIN` for metadata:
     a series with metadata, a series whose family has no metadata
     (kept, with empty metadata columns), and a metadata-only family (kept, with empty series columns)."""
     insert_time_series()

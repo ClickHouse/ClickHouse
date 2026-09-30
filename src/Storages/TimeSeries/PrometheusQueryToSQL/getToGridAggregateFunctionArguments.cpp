@@ -5,6 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <base/defines.h>
 
@@ -72,8 +73,13 @@ ASTs getToGridAggregateFunctionArguments(const SQLQueryPiece & range_vector, Con
 
         case StoreMethod::RAW_DATA:
         {
-            /// timestamps: the `timestamp` column
-            /// values:     the `value` column
+            if (context.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
+            {
+                /// Bucketed tables expose each input row as an array of `(timestamp, value)` samples.
+                return {make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries)};
+            }
+
+            /// Older tables preserve the row layout used by the historical SQL translation.
             timestamps = make_intrusive<ASTIdentifier>(ColumnNames::Timestamp);
             values = make_intrusive<ASTIdentifier>(ColumnNames::Value);
             break;

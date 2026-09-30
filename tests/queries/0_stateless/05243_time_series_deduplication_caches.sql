@@ -5,7 +5,7 @@
 
 SET allow_experimental_time_series_table = 1;
 
-DROP TABLE IF EXISTS ts, ts2, ts3, ts_v6, ts_tags, ext_metric_families;
+DROP TABLE IF EXISTS ts, ts2, ts3, ts_v6, ts_v7, ts_tags, ext_metric_families;
 
 -- The inner tables use MergeTree, so the counts below don't depend on background merges.
 CREATE TABLE ts ENGINE = TimeSeries TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id) METRIC FAMILIES INNER ENGINE = MergeTree ORDER BY metric_family;
@@ -114,6 +114,12 @@ INSERT INTO ts_v6 (metric_family, type, unit, help) VALUES ('m', 'gauge', 'secon
 SELECT count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts_v6);
 ALTER TABLE ts_v6 MODIFY SETTING metric_families_deduplication_cache_expiration_seconds = 10; -- { serverError INVALID_SETTING_VALUE }
 
+SELECT '--- version 7 keeps row samples and enables the deduplication cache ---';
+CREATE TABLE ts_v7 ENGINE = TimeSeries SETTINGS version = 7 METRIC FAMILIES INNER ENGINE = MergeTree ORDER BY metric_family;
+INSERT INTO ts_v7 (metric_family, type, unit, help) VALUES ('m', 'gauge', 'seconds', 'first');
+INSERT INTO ts_v7 (metric_family, type, unit, help) VALUES ('m', 'gauge', 'seconds', 'first');
+SELECT count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts_v7);
+
 SELECT '--- two tables have separate caches for a shared external metric families table ---';
 CREATE TABLE ts2 ENGINE = TimeSeries METRIC FAMILIES ext_metric_families;
 CREATE TABLE ts3 ENGINE = TimeSeries METRIC FAMILIES ext_metric_families;
@@ -128,4 +134,4 @@ ALTER TABLE ext_metric_families DROP CONSTRAINT c;
 INSERT INTO ts2 (metric_family, type, unit, help) VALUES ('bad', 'gauge', '', '');
 SELECT count() FROM ext_metric_families WHERE metric_family = 'bad';
 
-DROP TABLE ts, ts2, ts3, ts_v6, ts_tags, ext_metric_families;
+DROP TABLE ts, ts2, ts3, ts_v6, ts_v7, ts_tags, ext_metric_families;

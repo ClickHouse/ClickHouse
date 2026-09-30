@@ -5,7 +5,6 @@
 #include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterDefs.h>
 
-
 namespace DB::PrometheusQueryToSQL
 {
 
@@ -13,7 +12,10 @@ namespace DB::PrometheusQueryToSQL
 class Converter
 {
 public:
-    Converter(std::shared_ptr<const PrometheusQueryTree> promql_tree_, PrometheusQueryEvaluationSettings settings_);
+    Converter(
+        std::shared_ptr<const PrometheusQueryTree> promql_tree_,
+        PrometheusQueryEvaluationSettings settings_,
+        NativeFragmentDescriptions native_fragments_ = {});
 
     /// Returns the result type of the query. Takes into account the evaluation range and the query tree.
     ResultType getResultType() const { return result_type; }
@@ -27,6 +29,7 @@ public:
 private:
     const std::shared_ptr<const PrometheusQueryTree> promql_tree;
     const PrometheusQueryEvaluationSettings settings;
+    const NativeFragmentDescriptions native_fragments;
     const ResultType result_type;
 };
 

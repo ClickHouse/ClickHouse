@@ -219,12 +219,21 @@ the function selects the samples with `min_time <= timestamp <= max_time` exactl
 
 ## Returned value {#returned-value}
 
-The function returns three columns:
+For `TimeSeries` table version 8 and newer, the function returns two columns:
 - `id` - Contains the identifiers of time series matching the specified selector.
-- `timestamp` - Contains timestamps.
-- `value` - Contains values.
+- `time_series` - Contains samples of a time series as an array of tuples `(timestamp, value)` sorted by timestamp.
 
-There is no specific order for returned data.
+The samples of a time series can be returned in multiple rows, for example one row per time bucket of the samples table.
+There is no specific order for returned rows. Use the aggregate function `timeSeriesGroupArray` to merge the rows of a time series:
+
+```sql
+SELECT id, timeSeriesGroupArray(time_series) AS time_series
+FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now())
+GROUP BY id
+```
+
+For `TimeSeries` table versions before 8, the function returns `id`, `timestamp`, and `value`, with one sample per row.
+There is no specific order for returned rows in this layout either.
 
 ## Example {#example}
 
