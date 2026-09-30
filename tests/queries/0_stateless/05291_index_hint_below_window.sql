@@ -1,4 +1,4 @@
--- https://github.com/ClickHouse/ClickHouse/issues/121177: an indexHint over non-partition columns must not prune rows below a window
+-- https://github.com/ClickHouse/ClickHouse/issues/121177: an indexHint must not prune rows below a window or GROUP BY
 
 SET optimize_and_compare_chain = 1;
 
@@ -14,3 +14,13 @@ SELECT sum(s) FROM (SELECT k, sum(w) OVER (PARTITION BY k) AS s FROM t_hint_wind
 SELECT sum(s) FROM (SELECT k, sum(w) OVER (PARTITION BY k) AS s FROM t_hint_window QUALIFY indexHint(k < 100 AND indexHint(v < 41)));
 
 DROP TABLE t_hint_window;
+
+-- granules hold rows of two keys, so pruning by a key hint leaves a key with part of its rows
+DROP TABLE IF EXISTS t_hint_key;
+CREATE TABLE t_hint_key (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_hint_key SELECT intDiv(number, 10), number FROM numbers(100);
+
+SELECT count(), sum(s) FROM (SELECT k, count() OVER (PARTITION BY k) AS s FROM t_hint_key QUALIFY indexHint(k = 1));
+SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_hint_key GROUP BY k HAVING indexHint(k = 1));
+
+DROP TABLE t_hint_key;
