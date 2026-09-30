@@ -33,6 +33,16 @@
                 <value>1048576</value>
             </values>
         </substitution>
+        <substitution>
+            <name>no_op_unique_pairs</name>
+            <values>
+                <value>20000</value>
+                <value>20001</value>
+                <value>50000</value>
+                <value>75000</value>
+                <value>100000</value>
+            </values>
+        </substitution>
     </substitutions>
 
     <!-- At and just above the 20%-unique component-dedup boundary, plus a near-unique control. -->
@@ -124,7 +134,8 @@
         FORMAT Null
     </query>
 
-    <!-- copyTag can return the original tags; do not hide lookup overhead behind tag allocation. -->
+    <!-- copyTag can return the original tags; do not hide lookup overhead behind tag allocation.
+         Cover both sides of the component-dedup boundary, intermediate reuse, and all-unique pairs. -->
     <query>
         WITH
             (
@@ -145,7 +156,7 @@
                     ORDER BY number
                 )
             ) AS src_groups,
-            if(number % 100000 &lt; 75000, number % 100000, 0) AS pair_index
+            if(number % 100000 &lt; {no_op_unique_pairs}, number % 100000, 0) AS pair_index
         SELECT timeSeriesCopyTag(dest_groups[pair_index + 1], src_groups[pair_index + 1], 'missing')
         FROM numbers(1000000)
         SETTINGS max_threads = 1, max_block_size = 100000

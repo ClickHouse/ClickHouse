@@ -27,9 +27,11 @@ WITH
     cutoffs[intDiv(number, 100) + 1] AS unique_pairs,
     (number * 37 + 11) % 100 AS row_index,
     if(row_index < unique_pairs, row_index, 0) AS pair_index,
-    timeSeriesCopyTags(dest_groups[pair_index + 1], src_groups[100 - pair_index], ['src']) AS result
+    timeSeriesCopyTags(dest_groups[pair_index + 1], src_groups[100 - pair_index], ['src']) AS result,
+    timeSeriesCopyTag(dest_groups[pair_index + 1], src_groups[100 - pair_index], 'missing') AS no_op_result
 SELECT unique_pairs, count(), uniqExact(result),
-       countIf(timeSeriesGroupToTags(result) != [('dest', toString(pair_index)), ('src', toString(99 - pair_index))])
+       countIf(timeSeriesGroupToTags(result) != [('dest', toString(pair_index)), ('src', toString(99 - pair_index))]
+               OR no_op_result != dest_groups[pair_index + 1])
 FROM numbers(600)
 GROUP BY unique_pairs
 ORDER BY unique_pairs
