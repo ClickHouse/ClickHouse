@@ -10496,7 +10496,7 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
     DECLARE(Seconds, promql_lookback_delta, 300, R"(
 The lookback period of PromQL instant selectors, in seconds: an instant selector returns the latest sample newer than this.
 Applies to the `promql` dialect, the `prometheusQuery` and `prometheusQueryRange` table functions and the Prometheus HTTP API,
-where the `lookback_delta` URL parameter takes priority. It is the same as the `--query.lookback-delta` flag of Prometheus:
+where a non-zero `lookback_delta` URL parameter takes priority. It is the same as the `--query.lookback-delta` flag of Prometheus:
 0 means the default of 5 minutes.
 )", PRIVATE_PREVIEW, \
         {"26.10", 300, 300, "New setting."}) \

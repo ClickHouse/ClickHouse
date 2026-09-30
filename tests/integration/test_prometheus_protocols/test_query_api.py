@@ -210,6 +210,15 @@ def test_query_lookback_delta_setting():
         == expected
     )
 
+    # As in Prometheus, `lookback_delta=0` leaves the lookback to the setting.
+    assert (
+        execute_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query", query, timestamp=151,
+            params={"promql_lookback_delta": "0.5", "lookback_delta": "0"},
+        )
+        == '{"resultType": "vector", "result": []}'
+    )
+
     # Zero means the default.
     assert (
         execute_query_via_http_api(
