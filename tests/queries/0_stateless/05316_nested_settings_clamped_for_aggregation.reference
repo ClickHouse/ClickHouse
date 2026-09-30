@@ -1,0 +1,7 @@
+a nested max_threads reaches the aggregation
+23
+a nested clause dropped in readonly mode does not reach the aggregation
+1
+GROUP BY LIMIT stops at LIMIT keys
+10	1
+a nested group_by_overflow_mode equal to the inherited value is still respected
