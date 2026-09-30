@@ -148,3 +148,29 @@ WHERE database = currentDatabase() AND table IN ('t_untyped_fpc_defaults_r1', 't
 
 DROP TABLE t_untyped_fpc_defaults_r1;
 DROP TABLE t_untyped_fpc_defaults_r2;
+
+-- A supplied FPC width must survive preprocessing into the projection's part-writer metadata,
+-- including when the SELECT output type later changes.
+CREATE TABLE t_projection_fpc_pinned_width
+(
+    k UInt64,
+    x Float32,
+    PROJECTION p (x CODEC(FPC(12, 4))) AS (SELECT k, x ORDER BY k)
+)
+ENGINE = MergeTree ORDER BY k;
+
+SELECT count() FROM system.projections
+WHERE database = currentDatabase() AND table = 't_projection_fpc_pinned_width'
+    AND codecs['x'] = 'CODEC(FPC(12, 4))';
+
+ALTER TABLE t_projection_fpc_pinned_width MODIFY COLUMN x Float64;
+
+SELECT count() FROM system.projections
+WHERE database = currentDatabase() AND table = 't_projection_fpc_pinned_width'
+    AND codecs['x'] = 'CODEC(FPC(12, 4))';
+
+INSERT INTO t_projection_fpc_pinned_width SELECT number, toFloat64(number) FROM numbers(10);
+SELECT sum(x) FROM t_projection_fpc_pinned_width
+SETTINGS force_optimize_projection = 1, force_optimize_projection_name = 'p';
+
+DROP TABLE t_projection_fpc_pinned_width;

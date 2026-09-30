@@ -13,6 +13,9 @@ source_table="${CLICKHOUSE_DATABASE}.t_projection_column_list_source"
 copy_table="${CLICKHOUSE_DATABASE}.t_projection_column_list_cluster_copy"
 inherited_table="${CLICKHOUSE_DATABASE}.t_projection_column_list_cluster_inherited"
 memory_table="${CLICKHOUSE_DATABASE}.t_projection_column_list_cluster_memory"
+lazy_database="${CLICKHOUSE_DATABASE}_projection_lazy"
+lazy_source="${lazy_database}.src"
+lazy_copy="${CLICKHOUSE_DATABASE}.t_projection_column_list_lazy_copy"
 
 old_format=(--distributed_ddl_entry_format_version=1)
 wait_for_worker=(--distributed_ddl_task_timeout=180 --distributed_ddl_output_mode=throw)
@@ -71,7 +74,26 @@ ${CLICKHOUSE_CLIENT} "${old_format[@]}" "${wait_for_worker[@]}" \
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_inherited'"
 
+# The catalog returns a TableProxy after reattaching a lazy database. The initiator must
+# materialize it before inspecting projections, or it will see only cached columns.
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${lazy_database} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${lazy_source}
+    (x UInt64, PROJECTION p (x UInt64) AS (SELECT x ORDER BY x))
+    ENGINE = MergeTree ORDER BY x"
+${CLICKHOUSE_CLIENT} -q "DETACH DATABASE ${lazy_database}"
+${CLICKHOUSE_CLIENT} -q "ATTACH DATABASE ${lazy_database}"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
+    WHERE database = '${lazy_database}' AND name = 'src' AND engine = 'TableProxy'"
+expect_disabled_before_enqueue lazy_source "
+    CREATE TABLE ${lazy_copy} ON CLUSTER test_shard_localhost AS ${lazy_source}
+        ENGINE = MergeTree ORDER BY x"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_projection_column_list_lazy_copy'"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
+    WHERE database = '${lazy_database}' AND name = 'src' AND engine = 'MergeTree'"
+
 ${CLICKHOUSE_CLIENT} "${wait_for_worker[@]}" -q "DROP TABLE ${copy_table} ON CLUSTER test_shard_localhost FORMAT Null"
 ${CLICKHOUSE_CLIENT} "${wait_for_worker[@]}" -q "DROP TABLE ${inherited_table} ON CLUSTER test_shard_localhost FORMAT Null"
 ${CLICKHOUSE_CLIENT} "${wait_for_worker[@]}" -q "DROP TABLE ${memory_table} ON CLUSTER test_shard_localhost FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${source_table}"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${lazy_database}"

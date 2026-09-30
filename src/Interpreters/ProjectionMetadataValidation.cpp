@@ -18,6 +18,7 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageTableProxy.h>
 
 #include <unordered_set>
 
@@ -179,11 +180,18 @@ void validateProjectionMetadataAdmission(
         const String source_database = context->resolveDatabase(create.as_database);
         if (context->getAccess()->isGranted(AccessType::SHOW_COLUMNS, source_database, create.as_table))
         {
-            const auto source_table = DatabaseCatalog::instance().tryGetTable({source_database, create.as_table}, context);
+            auto source_table = DatabaseCatalog::instance().tryGetTable({source_database, create.as_table}, context);
+            /// A lazy table proxy only caches columns. Load the source before deciding whether it
+            /// can copy projections, or the preflight could approve metadata it never inspected.
+            if (const auto * proxy = source_table ? source_table->as<StorageTableProxy>() : nullptr)
+                source_table = proxy->getNested();
             const auto * alias = source_table ? source_table->as<StorageAlias>() : nullptr;
             if (source_table && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {})))
             {
-                if ((create.storage && create.storage->engine) || endsWith(source_table->getName(), "MergeTree"))
+                /// StorageAlias resolves lazy targets in isMergeTree(), so its forwarded metadata
+                /// below is the target's full metadata rather than a proxy's cached columns.
+                const bool source_is_merge_tree = source_table->isMergeTree();
+                if ((create.storage && create.storage->engine) || source_is_merge_tree)
                 {
                     /// Without an explicit engine, the destination inherits the source's engine.
                     /// Only a `MergeTree` destination copies projections.
