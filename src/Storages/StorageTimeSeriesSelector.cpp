@@ -313,28 +313,43 @@ namespace
         return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));
     }
 
-    /// Returns the terms of a regex like `a|b` or `(?:a|b)` if every term is a plain literal.
+    /// Returns the terms of a regex like `a|b` or `(a|b)|(?:c)` if every term is a plain literal.
+    /// A group is allowed only as a whole term, so `(a|b)c` is not a list.
     std::optional<Strings> tryGetLiteralAlternatives(std::string_view regex)
     {
-        if (regex.starts_with('(') && regex.ends_with(')'))
+        Strings terms(1);
+        size_t depth = 0;
+        bool term_ended = false;
+        for (size_t pos = 0; pos < regex.size(); ++pos)
         {
-            regex = regex.substr(1, regex.size() - 2);
-            if (regex.starts_with("?:"))
-                regex.remove_prefix(2);
+            char c = regex[pos];
+            if (c == '|')
+            {
+                terms.emplace_back();
+                term_ended = false;
+            }
+            else if (c == '(')
+            {
+                if (term_ended || !terms.back().empty())
+                    return {};
+                if (regex.substr(pos + 1).starts_with("?:"))
+                    pos += 2;
+                ++depth;
+            }
+            else if (c == ')')
+            {
+                if (depth == 0)
+                    return {};
+                --depth;
+                term_ended = true;
+            }
+            else if (term_ended || std::string_view("\\.^$?*+[]{}").contains(c))
+                return {};
+            else
+                terms.back() += c;
         }
-
-        if (regex.find_first_of("\\.^$?*+()[]{}") != std::string_view::npos)
+        if (depth != 0)
             return {};
-
-        Strings terms;
-        for (size_t pos = 0;;)
-        {
-            size_t next = regex.find('|', pos);
-            terms.emplace_back(regex.substr(pos, next - pos));
-            if (next == std::string_view::npos)
-                break;
-            pos = next + 1;
-        }
         return terms;
     }
 
