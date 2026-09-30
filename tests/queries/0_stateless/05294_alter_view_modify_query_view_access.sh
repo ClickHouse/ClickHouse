@@ -9,10 +9,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 db=${CLICKHOUSE_DATABASE}
 author="author_${CLICKHOUSE_DATABASE}"
 definer="definer_${CLICKHOUSE_DATABASE}"
+view_definer="view_definer_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} --query "
-DROP USER IF EXISTS $author, $definer;
-CREATE USER $author, $definer IDENTIFIED WITH no_password;
+DROP USER IF EXISTS $author, $definer, $view_definer;
+CREATE USER $author, $definer, $view_definer IDENTIFIED WITH no_password;
 
 CREATE TABLE $db.secret (id UInt64, secret String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO $db.secret VALUES (1, 'SECRET');
@@ -21,6 +22,9 @@ CREATE TABLE $db.tgt (id UInt64, secret String) ENGINE = MergeTree ORDER BY id;
 
 CREATE VIEW $db.plain_view AS SELECT id, secret FROM $db.secret;
 CREATE VIEW $db.param_view AS SELECT id, secret FROM $db.secret WHERE id = {x:UInt64};
+GRANT SELECT ON $db.secret TO $view_definer;
+CREATE VIEW $db.definer_param_view DEFINER = $view_definer SQL SECURITY DEFINER
+AS SELECT id, secret FROM $db.secret WHERE id = {x:UInt64};
 
 GRANT SELECT ON $db.src TO $definer;
 GRANT INSERT ON $db.tgt TO $definer;
@@ -72,6 +76,11 @@ run 'refresh param       ' "ALTER TABLE $db.rmv MODIFY QUERY SELECT id, secret F
 run 'refresh param subq  ' "ALTER TABLE $db.rmv MODIFY QUERY SELECT id, secret FROM (SELECT * FROM $db.param_view(x = 1))"
 run 'refresh plain subq  ' "ALTER TABLE $db.rmv MODIFY QUERY SELECT id, secret FROM (SELECT * FROM $db.plain_view)"
 
+echo '-- a parameterized view that runs as its definer is checked on the view itself, at any depth'
+run 'definer param       ' "ALTER TABLE $db.rmv MODIFY QUERY SELECT id, secret FROM $db.definer_param_view(x = 1)"
+run 'definer param subq  ' "ALTER TABLE $db.rmv MODIFY QUERY SELECT id, secret FROM (SELECT * FROM $db.definer_param_view(x = 1))"
+run 'create, param subq  ' "CREATE MATERIALIZED VIEW $db.rmv_new REFRESH EVERY 1 YEAR APPEND TO $db.tgt DEFINER = $definer SQL SECURITY DEFINER AS SELECT id, secret FROM (SELECT * FROM $db.definer_param_view(x = 1))"
+
 echo '-- an unqualified name resolves in the database of the view, not of the session'
 run 'session database    ' "USE ${db}_session; ALTER TABLE $db.rmv MODIFY QUERY SELECT id, secret FROM param_view(x = 1)"
 run 'session db, cluster ' "USE ${db}_session; ALTER TABLE $db.rmv ON CLUSTER test_shard_localhost MODIFY QUERY SELECT id, secret FROM param_view(x = 1)"
@@ -83,6 +92,8 @@ run 'own table subquery  ' "ALTER TABLE $db.rmv MODIFY QUERY SELECT id, ''::Stri
 ${CLICKHOUSE_CLIENT} --query "
 DROP TABLE $db.rmv SYNC;
 DROP TABLE $db.mv SYNC;
+DROP TABLE IF EXISTS $db.rmv_new SYNC;
+DROP VIEW $db.definer_param_view SYNC;
 DROP DATABASE ${db}_session;
-DROP USER $author, $definer;
+DROP USER $author, $definer, $view_definer;
 "

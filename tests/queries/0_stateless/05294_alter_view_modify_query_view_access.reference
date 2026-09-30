@@ -8,6 +8,10 @@ param view subquery  QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW
 refresh param        ACCESS_DENIED
 refresh param subq   ACCESS_DENIED
 refresh plain subq   ACCESS_DENIED
+-- a parameterized view that runs as its definer is checked on the view itself, at any depth
+definer param        ACCESS_DENIED
+definer param subq   ACCESS_DENIED
+create, param subq   ACCESS_DENIED
 -- an unqualified name resolves in the database of the view, not of the session
 session database     ACCESS_DENIED
 session db, cluster  ACCESS_DENIED

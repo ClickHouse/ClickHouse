@@ -401,7 +401,8 @@ std::unordered_map<const IQueryTreeNode *, NameSet> collectReferencedColumnsPerT
         if (const auto * column_node = node_to_process->as<ColumnNode>())
         {
             /// `getColumnSourceOrNull` keeps the sourceless `__grouping_set` column from throwing here.
-            if (auto column_source = column_node->getColumnSourceOrNull(); column_source && column_source->as<TableNode>())
+            if (auto column_source = column_node->getColumnSourceOrNull();
+                column_source && (column_source->as<TableNode>() || column_source->as<TableFunctionNode>()))
                 result[column_source.get()].insert(column_node->getColumnName());
         }
 
@@ -418,28 +419,32 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
 {
     auto referenced_columns = collectReferencedColumnsPerTableExpression(subquery_node);
 
-    auto table_nodes = extractAllTableReferences(subquery_node);
-    for (const auto & table_node_ptr : table_nodes)
+    /** Check the columns the subquery names, so a column grant authorizes the same read at any nesting
+      * depth, matching the column-aware check the join tree applies to a top-level table.
+      * An empty list means no column of this table is read (`SELECT count()`), which `checkAccessRights`
+      * resolves with the same "at least one readable column" rule the join tree uses.
+      */
+    auto check = [&](const IQueryTreeNode * node, const StoragePtr & storage, const StorageID & storage_id, const StorageSnapshotPtr & snapshot)
     {
-        const auto & table_node = table_node_ptr->as<TableNode &>();
-        if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
-            continue;
+        if (typeid_cast<const StorageDummy *>(storage.get()) || !storage_id.hasDatabase())
+            return;
 
-        const auto & storage_id = table_node.getStorageID();
-        if (!storage_id.hasDatabase())
-            continue;
-
-        /** Check the columns the subquery names, so a column grant authorizes the same read at any nesting
-          * depth, matching the column-aware check the join tree applies to a top-level table.
-          * An empty list means no column of this table is read (`SELECT count()`), which `checkAccessRights`
-          * resolves with the same "at least one readable column" rule the join tree uses.
-          */
         Names column_names;
-        if (auto it = referenced_columns.find(table_node_ptr.get()); it != referenced_columns.end())
+        if (auto it = referenced_columns.find(node); it != referenced_columns.end())
             column_names.assign(it->second.begin(), it->second.end());
 
-        checkAccessRights(
-            table_node.getStorage(), storage_id, table_node.getStorageSnapshot(), column_names, query_context);
+        checkAccessRights(storage, storage_id, snapshot, column_names, query_context);
+    };
+
+    auto table_expressions = extractTableExpressions(
+        std::static_pointer_cast<ITableExpressionNode>(subquery_node), /*add_array_join=*/ false, /*recursive=*/ true);
+    for (const auto & table_expression : table_expressions)
+    {
+        if (const auto * table_node = table_expression->as<TableNode>())
+            check(table_node, table_node->getStorage(), table_node->getStorageID(), table_node->getStorageSnapshot());
+        /// A parameterized view is checked like the view it wraps, as at the top level: no `ITableFunction::execute` runs for it.
+        else if (const auto * function_node = table_expression->as<TableFunctionNode>(); function_node && function_node->isParameterizedView())
+            check(function_node, function_node->getStorage(), function_node->getStorageID(), function_node->getStorageSnapshot());
     }
 }
 
