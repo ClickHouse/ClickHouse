@@ -937,8 +937,9 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 /// when the size filter does not reject whole granules. All String size rewrites are disabled
 /// for on-fly mutations: a pending UPDATE can change the String while its stored `.size` still
 /// describes the pre-mutation value. For legacy String parts where .size is virtual,
-/// the MergeTree read planner co-reads the parent String in PREWHERE to avoid
-/// scanning the regular String stream again after filtering.
+/// the MergeTree read planner can co-read the parent String when a filtering step
+/// already needs it. Output-only Strings remain deferred; reading their sizes skips
+/// materializing payloads but still traverses the regular String stream.
 /// The second pass applies this permission at identifier granularity, so another
 /// eligible direct transformer on the same identifier may also be rewritten in
 /// the filter. Keep this set limited to transformers that make that behavior safe.

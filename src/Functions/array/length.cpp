@@ -25,7 +25,7 @@ When [`optimize_string_size_subcolumn_with_full_read = 1`](/reference/settings/s
 For example, `SELECT s FROM t PREWHERE length(s) > 1000` can benefit when the filter rejects whole granules. This extra optimization is disabled by default.
 
 On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, `PREWHERE` can filter on the size stream before reading String data for surviving granules.
-On legacy `single_stream` parts, `s.size` is virtual and still requires the regular String stream. When both `s` and `s.size` are needed, they are read together to avoid scanning that stream twice.
+On legacy `single_stream` parts, `s.size` is virtual and still requires the regular String stream. The reader can read `s` and `s.size` together when a filtering step already needs the full `s`. Strings needed only after `PREWHERE` remain deferred; reading their sizes skips materializing the payloads but still traverses the regular stream.
 </Note>
     )";
     FunctionDocumentation::Syntax syntax = "length(x)";

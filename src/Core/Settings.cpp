@@ -5685,7 +5685,7 @@ These functions can be transformed:
 
 String filters in `WHERE` and `PREWHERE` can also use the `size` subcolumn when the full String is needed elsewhere, if [`optimize_string_size_subcolumn_with_full_read`](#optimize_string_size_subcolumn_with_full_read) is enabled.
 On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, this can avoid reading String payloads for rejected granules.
-On legacy `single_stream` parts, `size` is virtual and requires the regular String stream. When both the String and its size are needed, the reader reads them together to avoid scanning that stream twice.
+On legacy `single_stream` parts, `size` is virtual and still requires the regular String stream. The reader can read the String and its size together when a filtering step already needs the full String. Strings needed only after `PREWHERE` remain deferred; reading their sizes skips materializing the payloads but still traverses the regular stream.
 
 Possible values:
 
@@ -5701,7 +5701,7 @@ On `MergeTree` parts written with `string_serialization_version = 'with_size_str
 The optimization is disabled by default because reading sizes separately can add overhead when the filter does not reject whole granules.
 Enable it for workloads where measurements show a benefit, such as clustered or sufficiently rare String-length outliers.
 
-On legacy `single_stream` parts, `size` is virtual and still requires the regular String stream. The reader reads the String and its size together to avoid scanning that stream twice.
+On legacy `single_stream` parts, `size` is virtual and still requires the regular String stream. The reader can read the String and its size together when a filtering step already needs the full String. Strings needed only after `PREWHERE` remain deferred; reading their sizes skips materializing the payloads but still traverses the regular stream.
 This setting does not disable size-subcolumn rewrites when the full String is not needed, and does not affect explicit subcolumn access.
 
 Possible values:
