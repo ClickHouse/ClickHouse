@@ -1176,7 +1176,7 @@ Contains a list of all ReplicatedMergeTree engine specific settings, their curre
 )DOCS_MD");
     attach<StorageSystemEngineSettings>(context, system_database, "engine_settings", R"DOCS_MD(
 .description
-Contains the settings of every table engine that has engine-specific settings, one row per engine and setting, with their values, default values and descriptions.
+Contains the engine-specific settings of table engines, one row per engine and setting, with their values, default values and descriptions. `Join` and the `Log` family, which also accept engine-specific settings, are not listed yet.
 
 `value` is what a new table of the engine starts from, before the `SETTINGS` clause of its definition is applied:
 - For most engines, the compiled-in default.

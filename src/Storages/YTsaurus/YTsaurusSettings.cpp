@@ -5,6 +5,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/YTsaurus/YTsaurusSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
@@ -105,6 +106,8 @@ bool YTsaurusSettings::hasBuiltin(std::string_view name)
 {
     return YTsaurusSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(YTsaurusSettings)
 
 
 }

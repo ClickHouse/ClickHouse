@@ -2551,7 +2551,6 @@ void registerStorageHudi(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
-            .enumerate_engine_settings_fn = enumerateCompiledDefaults<DataLakeStorageSettings>,
         },
         Documentation{
             .description = R"DOCS_MD(
