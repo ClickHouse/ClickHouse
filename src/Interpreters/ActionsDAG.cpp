@@ -3488,14 +3488,17 @@ struct ConjunctionNodes
     ActionsDAG::NodeRawConstPtrs rejected;
 };
 
-/// indexHint keeps its arguments in its own dag, so they are not children of the node
-const ActionsDAG::NodeRawConstPtrs * tryGetIndexHintInputs(const ActionsDAG::Node & node)
+/// indexHint keeps its arguments in its own dag, so they are not children of the node, and hints may nest
+template <typename Predicate>
+bool allIndexHintInputs(const ActionsDAG::Node & node, const Predicate & predicate)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION || node.function_base->getName() != "indexHint")
-        return nullptr;
+        return true;
 
     const auto & adaptor = assert_cast<const FunctionToFunctionBaseAdaptor &>(*node.function_base);
-    return &assert_cast<const FunctionIndexHint &>(*adaptor.getFunction()).getActions().getInputs();
+    const auto & dag = assert_cast<const FunctionIndexHint &>(*adaptor.getFunction()).getActions();
+    return std::ranges::all_of(dag.getInputs(), predicate)
+        && std::ranges::all_of(dag.getNodes(), [&](const auto & inner) { return allIndexHintInputs(inner, predicate); });
 }
 
 /// Take a node which result is a predicate.
@@ -3594,12 +3597,10 @@ ConjunctionNodes getConjunctionNodes(
                     && !allNodeFunctions(
                         *cur.node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
 
-                const auto * index_hint_inputs = tryGetIndexHintInputs(*cur.node);
-
                 if (cur.node->type != ActionsDAG::ActionType::ARRAY_JOIN
                     && cur.node->type != ActionsDAG::ActionType::INPUT
                     && !is_deprecated_function
-                    && (!index_hint_inputs || std::ranges::all_of(*index_hint_inputs, is_index_hint_input_allowed)))
+                    && allIndexHintInputs(*cur.node, is_index_hint_input_allowed))
                     allowed_nodes.emplace(cur.node);
             }
 
