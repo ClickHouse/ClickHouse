@@ -213,13 +213,7 @@ Pipe StorageDictionary::read(
     const size_t max_block_size,
     const size_t threads)
 {
-    auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
-    const auto & external_loader = getContext()->getExternalDictionariesLoader();
-
-    /// Check access before loading the dictionary, because loading contacts the dictionary source.
-    checkDictionaryAccess(external_loader.getDictionaryID(registered_dictionary_name, local_context), local_context);
-
-    auto dictionary = external_loader.getDictionary(registered_dictionary_name, local_context);
+    auto dictionary = getDictionary(local_context);
     return dictionary->read(column_names, max_block_size, threads);
 }
 
@@ -232,10 +226,14 @@ void StorageDictionary::checkDictionaryAccess(const StorageID & dictionary_id, c
         local_context->checkAccess(AccessType::dictGet, dictionary_database, dictionary_id.getTableName());
 }
 
-std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const
+std::shared_ptr<const IDictionary> StorageDictionary::getDictionary(const ContextPtr & query_context) const
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
-    return getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, getContext());
+    const auto & external_loader = getContext()->getExternalDictionariesLoader();
+
+    /// Check access before loading the dictionary, because loading contacts the dictionary source.
+    checkDictionaryAccess(external_loader.getDictionaryID(registered_dictionary_name, query_context), query_context);
+    return external_loader.getDictionary(registered_dictionary_name, query_context);
 }
 
 void StorageDictionary::shutdown(bool)

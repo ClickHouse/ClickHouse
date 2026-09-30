@@ -43,6 +43,18 @@ NOT_LOADED
 SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = 0
 ACCESS_DENIED
 NOT_LOADED
+EXPLAIN SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = 1
+ACCESS_DENIED
+NOT_LOADED
+CREATE VIEW v_by_user AS SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = 1
+ACCESS_DENIED
+NOT_LOADED
+EXPLAIN SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = 0
+ACCESS_DENIED
+NOT_LOADED
+CREATE VIEW v_by_user AS SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = 0
+ACCESS_DENIED
+NOT_LOADED
 --- creating a Dictionary table needs access to the dictionary
 CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(db.d)
 ACCESS_DENIED
@@ -89,6 +101,10 @@ NOT_LOADED
 SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id ORDER BY n.number SETTINGS join_algorithm = 'direct'
 0	
 1	a
+LOADED
+NOT_LOADED
+CREATE VIEW v_by_user AS SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct'
+
 LOADED
 NOT_LOADED
 CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(db.d)

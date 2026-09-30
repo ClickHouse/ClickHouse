@@ -83,6 +83,15 @@ do
     as_user "SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS ${settings}"
     status
 done
+# Queries that are only analyzed do not read the right table, but the join planning must not load the dictionary either.
+${CLICKHOUSE_CLIENT} --query "GRANT CREATE VIEW ON ${CLICKHOUSE_DATABASE}.* TO ${username}"
+for analyzer in 1 0
+do
+    as_user "EXPLAIN SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = ${analyzer}"
+    status
+    as_user "CREATE VIEW v_by_user AS SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = ${analyzer}"
+    status
+done
 
 echo "--- creating a Dictionary table needs access to the dictionary"
 ${CLICKHOUSE_CLIENT} -m --query "
@@ -128,6 +137,9 @@ as_user "SELECT * FROM dictionary('d')"
 status
 unload
 as_user "SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id ORDER BY n.number SETTINGS join_algorithm = 'direct'"
+status
+unload
+as_user "CREATE VIEW v_by_user AS SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct'"
 status
 # Creating a Dictionary table only validates the columns against the definition, it does not load the dictionary.
 unload

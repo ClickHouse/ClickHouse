@@ -281,7 +281,8 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
             }
 
             auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage);
-            if (storage_dict && try_use_direct_join && storage_dict->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
+            /// This runs even if the right table is not read, e.g. for `CREATE VIEW`, so the access must be checked here.
+            if (storage_dict && try_use_direct_join && storage_dict->getDictionary(context)->getSpecialKeyType() != DictionarySpecialKeyType::Range)
             {
                 FunctionDictHelper dictionary_helper(context);
 
