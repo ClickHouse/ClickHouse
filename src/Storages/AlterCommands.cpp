@@ -1236,8 +1236,9 @@ void AlterCommand::apply(
                 "Use DROP PROJECTION and ADD PROJECTION to change the query",
                 projection_name);
 
-        /// Intentionally not a mutation because the new settings apply lazily
-        /// to parts written by future inserts and merges; `MATERIALIZE PROJECTION` forces a rebuild.
+        /// Intentionally not a mutation: the new settings apply lazily, to projection parts written
+        /// by future inserts and merges. `MATERIALIZE PROJECTION` does not rebuild a projection that
+        /// a part already has, so existing data picks up the new settings only when its parts are merged.
         metadata.projections.replace(std::move(new_projection));
     }
     else if (type == DROP_PROJECTION)
@@ -2462,6 +2463,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (from_nested_table_name != to_nested_table_name)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
                 all_columns.rename(command.column_name, command.rename_to);
+                renamed_columns.emplace(command.column_name);
+                renamed_columns.emplace(command.rename_to);
             }
             else if (!from_nested && !to_nested)
             {

@@ -1584,7 +1584,8 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     bool looks_like_replicated = metadata.contains("Replicated");
     bool looks_like_shared = metadata.contains("Shared");
     bool looks_like_merge_tree = metadata.contains("MergeTree");
-    if (!(looks_like_replicated || looks_like_shared) || !looks_like_merge_tree)
+    bool looks_like_keeper_map = metadata.contains("KeeperMap");
+    if (!((looks_like_replicated || looks_like_shared) && looks_like_merge_tree) && !looks_like_keeper_map)
         return UUIDHelpers::Nil;
 
     ParserCreateQuery parser;
@@ -1595,8 +1596,10 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     const ASTCreateQuery & create = query->as<const ASTCreateQuery &>();
     if (!create.storage || !create.storage->engine)
         return UUIDHelpers::Nil;
-    if (!(startsWith(create.storage->engine->name, "Replicated") || startsWith(create.storage->engine->name, "Shared"))
-        || !endsWith(create.storage->engine->name, "MergeTree"))
+    const String & engine_name = create.storage->engine->name;
+    bool is_replicated_merge_tree = (startsWith(engine_name, "Replicated") || startsWith(engine_name, "Shared"))
+        && endsWith(engine_name, "MergeTree");
+    if (!is_replicated_merge_tree && engine_name != "KeeperMap")
         return UUIDHelpers::Nil;
     chassert(create.uuid != UUIDHelpers::Nil);
     return create.uuid;
@@ -1626,6 +1629,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     /// For ReplicatedMergeTree tables we can compare only UUIDs to ensure that it's the same table.
     /// Metadata can be different, it's handled on table replication level.
+    /// KeeperMap tables are matched by UUID too: their data is stored in Keeper, so re-creating them would lose it.
     /// We need to handle renamed tables only.
     /// TODO maybe we should also update MergeTree SETTINGS if required?
     std::unordered_map<UUID, String> zk_replicated_id_to_name;
@@ -1659,7 +1663,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         LOG_TEST(log, "Existing table {}", name);
 
         UUID local_replicated_id = UUIDHelpers::Nil;
-        if (existing_tables_it->table()->supportsReplication())
+        if (existing_tables_it->table()->supportsReplication() || existing_tables_it->table()->as<StorageKeeperMap>())
         {
             /// Check if replicated tables have the same UUID
             local_replicated_id = existing_tables_it->table()->getStorageID().uuid;

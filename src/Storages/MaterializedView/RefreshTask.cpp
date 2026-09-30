@@ -663,7 +663,7 @@ void RefreshTask::run()
         /// stays owed across a Keeper session loss or restart. One per replica, so repeats coalesce; any replica may run it.
         auto component_guard = Coordination::setCurrentComponent("RefreshTask::run");
         String path = coordination.path + "/" + requestZnodeName();
-        auto code = context->getZooKeeper()->tryCreate(path, coordination.replica_name, zkutil::CreateMode::Persistent);
+        auto code = context->getZooKeeper()->tryCreate(path, "1", zkutil::CreateMode::Persistent);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
             throw Coordination::Exception::fromPath(code, path);
     }
