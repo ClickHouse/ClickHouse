@@ -944,6 +944,8 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 /// Local tasks all run in this process at once, so the tasks of a stage share the plan's thread limit.
 /// A synchronous remote read raises that limit to `max_distributed_connections` for threads that wait
 /// on sockets; the tasks do not, so they never get more than the setting.
+/// TODO: stages that run at the same time each get the whole limit. Throttling task starts across them must not
+/// hold back a consumer whose streaming producers already run and wait for it to connect.
 static void shareMaxThreadsAmongLocalTasks(DistributedQueryPlan & distributed_plan, size_t plan_max_threads, size_t setting_max_threads)
 {
     const size_t limit = plan_max_threads ? std::min(plan_max_threads, setting_max_threads) : setting_max_threads;
