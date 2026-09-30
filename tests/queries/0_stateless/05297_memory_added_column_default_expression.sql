@@ -70,7 +70,20 @@ INSERT INTO t_memory_add_default_missing_input VALUES (1), (2);
 ALTER TABLE t_memory_add_default_missing_input ADD COLUMN t Tuple(a UInt64);
 ALTER TABLE t_memory_add_default_missing_input ADD COLUMN c UInt64 DEFAULT t.a + k;
 SELECT k, t, c FROM t_memory_add_default_missing_input ORDER BY k;
+SELECT k, c FROM t_memory_add_default_missing_input ORDER BY k;
+SELECT t.a, c FROM t_memory_add_default_missing_input ORDER BY c;
 DROP TABLE t_memory_add_default_missing_input;
+
+SELECT 'a default reading added columns without a default that the query does not read';
+DROP TABLE IF EXISTS t_memory_add_default_unread_input;
+CREATE TABLE t_memory_add_default_unread_input (k UInt64) ENGINE = Memory;
+INSERT INTO t_memory_add_default_unread_input VALUES (1);
+ALTER TABLE t_memory_add_default_unread_input ADD COLUMN e Enum8('a' = 1, 'b' = 2), ADD COLUMN x Nullable(UInt64);
+ALTER TABLE t_memory_add_default_unread_input ADD COLUMN s String DEFAULT toString(e), ADD COLUMN u UInt8 DEFAULT x.null;
+SELECT s, u FROM t_memory_add_default_unread_input;
+SELECT s, u FROM t_memory_add_default_unread_input PREWHERE k = 1;
+SELECT e, x, s, u FROM t_memory_add_default_unread_input;
+DROP TABLE t_memory_add_default_unread_input;
 
 SELECT 'Nested';
 DROP TABLE IF EXISTS t_memory_add_default_nested;

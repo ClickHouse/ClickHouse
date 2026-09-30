@@ -92,6 +92,8 @@ struct MemorySourceDefaults
     /// Built on the first block that lacks a requested column with a default, so a read whose blocks all have them does not pay for it.
     mutable ContextPtr context TSA_GUARDED_BY(mutex);
     mutable std::optional<NamesAndTypesList> stored_inputs TSA_GUARDED_BY(mutex);
+    /// Parallel to `stored_inputs`: whether the column has a default expression.
+    mutable std::vector<bool> stored_input_has_default TSA_GUARDED_BY(mutex);
     /// Shared by all sources of the step, so that a stateless default (e.g. `now()`) is analyzed once and has one value per header shape.
     mutable std::map<std::tuple<MemorySourceColumnList, std::vector<bool>, std::vector<bool>>, Evaluation> evaluations
         TSA_GUARDED_BY(mutex);
@@ -105,6 +107,7 @@ void MemorySourceDefaults::initialize() const
         return;
 
     NamesAndTypesList inputs;
+    std::vector<bool> has_default;
     const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
     NameSet stored_input_names;
     for (const auto & column : storage_snapshot->metadata->getColumns())
@@ -118,7 +121,10 @@ void MemorySourceDefaults::initialize() const
         {
             auto stored_column = storage_snapshot->tryGetColumn(options, identifier);
             if (stored_column && stored_input_names.emplace(stored_column->getNameInStorage()).second)
+            {
                 inputs.emplace_back(stored_column->getNameInStorage(), stored_column->getTypeInStorage());
+                has_default.push_back(storage_snapshot->metadata->getColumns().getDefault(stored_column->getNameInStorage()).has_value());
+            }
         }
     }
 
@@ -126,6 +132,7 @@ void MemorySourceDefaults::initialize() const
     enableAllExperimentalSettings(default_context);
 
     context = std::move(default_context);
+    stored_input_has_default = std::move(has_default);
     stored_inputs = std::move(inputs);
 }
 
@@ -357,11 +364,15 @@ private:
 
             std::vector<bool> is_input_provided;
             is_input_provided.reserve(cache.stored_inputs->size());
-            for (const auto & input : *cache.stored_inputs)
-                is_input_provided.push_back(!block.has(input.name) && src.has(input.name));
+            /// A stored input without a default that the block lacks is its type default, as for `INSERT`.
+            for (size_t i = 0; const auto & input : *cache.stored_inputs)
+            {
+                is_input_provided.push_back(!block.has(input.name) && (src.has(input.name) || !cache.stored_input_has_default[i]));
+                ++i;
+            }
 
             /// The key determines the header of the evaluation: the column list, which of its columns are read, and which
-            /// stored inputs the block provides.
+            /// stored inputs the header gets.
             auto key = std::make_tuple(columns_id, is_missing, is_input_provided);
 
             if (auto cached = cache.evaluations.find(key); cached != cache.evaluations.end())
@@ -428,7 +439,7 @@ private:
 
         const auto & inputs_to_read = evaluation->stored_inputs_to_read;
         Columns inputs = readStoredColumns(src, inputs_to_read, mask, num_rows, read_bytes);
-        /// An input the block lacks is a subcolumn of a requested column filled with the default value of its type.
+        /// An input the block lacks has no default of its own: it gets the default value of its type.
         fillMissingColumns(inputs, num_rows, inputs_to_read, inputs_to_read, {}, nullptr);
         auto input_it = inputs_to_read.begin();
         for (const auto & input : inputs)

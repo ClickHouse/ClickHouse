@@ -40,6 +40,14 @@ a default reading subcolumns of stored columns
 a default reading a subcolumn of an added column without a default
 1	(0)	1
 2	(0)	2
+1	1
+2	2
+0	1
+0	2
+a default reading added columns without a default that the query does not read
+a	1
+a	1
+a	\N	a	1
 Nested
 1	[100,200]
 2	[300]
