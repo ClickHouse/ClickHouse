@@ -481,7 +481,6 @@ SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS 
     avg(ProfileEvent_FileSegmentWriteMicroseconds) / 1000000 AS Write,
     avg(ProfileEvent_FileSegmentCompleteMicroseconds) / 1000000 AS Complete,
     avg(ProfileEvent_FileSegmentHolderCompleteMicroseconds) / 1000000 AS HolderComplete,
-    avg(ProfileEvent_FileSegmentRemoveMicroseconds) / 1000000 AS Remove,
     avg(ProfileEvent_FileSegmentIncreasePriorityMicroseconds) / 1000000 AS IncreasePriority
 FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
