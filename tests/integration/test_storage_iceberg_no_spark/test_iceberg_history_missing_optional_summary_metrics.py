@@ -57,7 +57,10 @@ def test_iceberg_history_missing_optional_summary_metrics(
         "(x Int)",
         format_version,
     )
-    # Two `append` snapshots.
+    # Two `append` snapshots. `getHistory` parses every summary regardless of operation,
+    # so `append` is required not to reach the parse but to avoid an unrelated rejection
+    # after it: `tryGetAppendUpdate` skips `delete` and position-delete-only `overwrite`
+    # and throws on `replace` and any other `overwrite`.
     instance.query(f"INSERT INTO {table_name} VALUES (1);")
     instance.query(f"INSERT INTO {table_name} VALUES (2);")
 
@@ -70,7 +73,8 @@ def test_iceberg_history_missing_optional_summary_metrics(
         assert (
             summary.get("operation") == "append"
         ), f"fixture requires append snapshots, got {summary.get('operation')!r}"
-        # Only the two fields from the bug report are removed.
+        # `checkIfIcebergHistorySupported` rejects an append with 0 added files, so only
+        # the two fields from the bug report are removed.
         assert "added-data-files" in summary, "added-data-files must be kept"
         for field in ("added-files-size", "changed-partition-count"):
             if field in summary:
@@ -83,11 +87,36 @@ def test_iceberg_history_missing_optional_summary_metrics(
     # already-read version is not re-read and this test would pass without the fix.
     _write_next_metadata(instance, table_name, meta, prev)
 
-    # The bug report used `OPTIMIZE TABLE`, which reached the summary parse through
-    # `getHistory`. Iceberg data compaction is now refused before `getHistory` runs, so
-    # `system.iceberg_history` is the remaining reader of that parse and the assertion
-    # below is what exercises it, on either build.
-    #
+    # This is the statement from the bug report. The open-source build refuses data
+    # compaction before reading any summary. Where compaction runs, `getHistory` reads
+    # every summary first and only the compaction that follows it is v2-only. On the cloud
+    # build `OPTIMIZE` is gated by a member flag rather than this setting and that path
+    # never calls `getHistory` at all.
+    is_cloud = instance.query(
+        "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'"
+    ).strip()
+    try:
+        instance.query(
+            f"OPTIMIZE TABLE {table_name};",
+            settings={"allow_experimental_iceberg_compaction": 1},
+        )
+    except Exception as exception:
+        message = str(exception)
+        assert (
+            "Can not convert empty value" not in message
+        ), f"OPTIMIZE hit the missing-optional-summary-metric conversion: {message}"
+        # Anything else must be one of the known rejections, otherwise an unrelated
+        # failure would pass this check silently.
+        tolerated = (
+            is_cloud == "1"
+            or "not yet supported for Iceberg data compaction" in message
+            or (
+                format_version == 1
+                and "Compaction is supported only for format_version 2" in message
+            )
+        )
+        assert tolerated, f"OPTIMIZE failed unexpectedly: {message}"
+
     # `StorageSystemIcebergHistory::fillData` swallows a `getHistory` exception, so the
     # regression drops the rows rather than reporting an error. The row count therefore
     # discriminates it on either build.
