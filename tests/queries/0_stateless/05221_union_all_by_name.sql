@@ -254,6 +254,39 @@ SELECT formatQueryFromJSON(
         '"list_of_modes":["UNION_ALL"]',
         '"list_of_modes":[]')); -- { serverError BAD_ARGUMENTS }
 
+-- Clearing both edge lists must not turn UNION ALL BY NAME into plain UNION.
+SELECT formatQueryFromJSON(
+    replace(
+        replace(
+            parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'),
+            '"list_of_modes":["UNION_ALL"]',
+            '"list_of_modes":[]'),
+        '"list_of_column_match_modes":["NAME"]',
+        '"list_of_column_match_modes":[]')); -- { serverError BAD_ARGUMENTS }
+
+-- Omitting both keys is equivalent to empty lists and must also be rejected.
+SELECT formatQueryFromJSON(
+    replace(
+        replace(
+            parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'),
+            '"list_of_modes":["UNION_ALL"],',
+            ''),
+        '"list_of_column_match_modes":["NAME"],',
+        '')); -- { serverError BAD_ARGUMENTS }
+
+-- Positional multi-select ASTs also require one mode per separator.
+SELECT formatQueryFromJSON(
+    replace(
+        parseQueryToJSON('SELECT 1 AS a UNION ALL SELECT 2 AS a'),
+        '"list_of_modes":["UNION_ALL"]',
+        '"list_of_modes":[]')); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON(
+    replace(
+        parseQueryToJSON('SELECT 1 AS a UNION ALL SELECT 2 AS a'),
+        '"list_of_modes":["UNION_ALL"],',
+        '')); -- { serverError BAD_ARGUMENTS }
+
 SELECT 'duplicate output names';
 SELECT 1 AS x, 2 AS x
 UNION ALL BY NAME

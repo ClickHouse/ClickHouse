@@ -374,25 +374,22 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
                 "`SelectWithUnionQuery` 'list_of_selects' must contain only select queries during AST JSON deserialization");
     children.push_back(list_of_selects);
 
-    /// `list_of_modes` describes the separators between adjacent selects, so its cardinality must be
-    /// exactly one less than the number of selects. `formatQueryImpl` indexes `list_of_modes` by
-    /// `(position - 1)`, so a mismatch would either read stale modes or leave gaps; reject it.
-    if (!list_of_modes.empty() && list_of_modes.size() != list_of_selects->children.size() - 1)
+    /// An unnormalized AST needs one mode per separator, even when both edge lists are empty.
+    /// Otherwise formatting silently falls back to the top-level defaults and loses ALL / BY NAME.
+    /// Normalized ASTs use the top-level modes and were checked above.
+    const size_t expected_modes = list_of_selects->children.size() - 1;
+    if (!is_normalized && list_of_modes.size() != expected_modes)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`SelectWithUnionQuery` AST has {} entries in 'list_of_modes' but expected {} for {} selects "
             "during AST JSON deserialization",
-            list_of_modes.size(), list_of_selects->children.size() - 1, list_of_selects->children.size());
+            list_of_modes.size(), expected_modes, list_of_selects->children.size());
 
-    if (!list_of_column_match_modes.empty() && list_of_column_match_modes.size() != list_of_selects->children.size() - 1)
+    /// The column-match list is optional for backwards-compatible positional ASTs.
+    if (!list_of_column_match_modes.empty() && list_of_column_match_modes.size() != expected_modes)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`SelectWithUnionQuery` AST has {} entries in 'list_of_column_match_modes' but expected {} for {} selects "
             "during AST JSON deserialization",
-            list_of_column_match_modes.size(), list_of_selects->children.size() - 1, list_of_selects->children.size());
-
-    if (list_of_modes.empty() && !list_of_column_match_modes.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`SelectWithUnionQuery` AST cannot have 'list_of_column_match_modes' without 'list_of_modes' "
-            "during AST JSON deserialization");
+            list_of_column_match_modes.size(), expected_modes, list_of_selects->children.size());
 
     for (size_t i = 0; i < list_of_column_match_modes.size(); ++i)
     {
