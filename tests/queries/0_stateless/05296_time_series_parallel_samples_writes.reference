@@ -1,0 +1,17 @@
+--- an insert writes the same rows to the tags, samples and recent samples tables ---
+m	dev
+m	prod
+1
+2
+3
+3
+--- external target tables get the same rows ---
+m	prod
+1
+1
+--- a failed tags write rejects the bad metric name ---
+0
+--- an insert after a failure still writes all three tables ---
+m	dev	1
+5
+1

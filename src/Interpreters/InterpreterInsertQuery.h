@@ -7,6 +7,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/TableLockHolder.h>
+#include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 namespace DB
@@ -65,6 +66,10 @@ public:
     /// Never set this for a user-visible target table.
     void setSkipTargetInsertAccessCheck(bool skip) { skip_target_insert_access_check = skip; }
 
+    /// Builds the push chain of a plain `INSERT` into the destination table and its dependent views.
+    /// The caller connects the chain input and output and runs it on its own executor.
+    Chain buildPlainInsertChain();
+
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
 
     static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
@@ -97,6 +102,15 @@ public:
         bool async_insert_);
 
 private:
+    /// Resolves, checks, and share-locks the destination table of `query`.
+    StoragePtr prepareInsertTarget(ASTInsertQuery & query, TableLockHolder & table_lock);
+
+    static Chain buildPushChainFromDependencies(
+        std::shared_ptr<const InsertDependenciesBuilder> insert_dependencies,
+        ContextPtr context_,
+        const StoragePtr & table,
+        bool no_squash_,
+        bool async_insert_);
     static Block getSampleBlock(
         const Names & names,
         const StoragePtr & table,

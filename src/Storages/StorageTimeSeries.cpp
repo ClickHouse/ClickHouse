@@ -890,18 +890,9 @@ void StorageTimeSeries::readImpl(
 
 
 SinkToStoragePtr StorageTimeSeries::write(
-    const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert)
+    const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*local_context*/, bool /*async_insert*/)
 {
-    checkTimeSeriesVersionIsWritable(*this);
-
-    Names insert_columns;
-    if (const auto * insert_query = query->as<ASTInsertQuery>())
-    {
-        if (insert_query->columns)
-            for (const auto & col : insert_query->columns->children)
-                insert_columns.push_back(col->getColumnName());
-    }
-    return std::make_shared<TimeSeriesSink>(*this, metadata_snapshot->getSampleBlock(), insert_columns, local_context, async_insert);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "TimeSeries inserts are built in the insert pipeline");
 }
 
 

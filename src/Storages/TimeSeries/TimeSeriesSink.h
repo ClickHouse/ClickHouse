@@ -5,10 +5,13 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTViewTargets.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <QueryPipeline/BlockIO.h>
+#include <Parsers/IAST_fwd.h>
+#include <Processors/Chunk.h>
+#include <QueryPipeline/Chain.h>
 #include <Storages/TimeSeries/TimeSeriesDeduplicationCache.h>
 
+#include <memory>
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -20,18 +23,37 @@ namespace DB
 class StorageTimeSeries;
 class ExpressionActions;
 class IColumn;
-class PushingPipelineExecutor;
 struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
-/// Sink for inserting data into the TimeSeries table engine.
-/// Transforms outer columns (samples, metric_name, tags, metric_family, type, unit, help)
-/// into blocks for the target tables (Tags, Samples, RecentSamples, MetricFamilies).
-class TimeSeriesSink : public SinkToStorage, WithContext
+Chain buildTimeSeriesWriteChain(
+    StorageTimeSeries & storage,
+    const SharedHeader & input_header,
+    const ASTPtr & query,
+    ContextPtr context,
+    bool async_insert);
+
+/// Builds blocks for the TimeSeries target tables and the insert chains that write them.
+class TimeSeriesSink : public WithContext
 {
 public:
-    /// `insert_columns` contains column names from the INSERT query,
-    /// empty `insert_columns` means all columns from `header_`.
+    struct Target
+    {
+        Chain chain;
+        std::shared_ptr<ExpressionActions> converting_actions;
+        SharedHeader output_header;
+        bool is_tags = false;
+        bool is_samples = false;
+        bool is_recent_samples = false;
+        bool is_metric_families = false;
+    };
+
+    struct PreparedChunk
+    {
+        Chunk passthrough;
+        std::vector<Chunk> branches;
+    };
+
     TimeSeriesSink(
         StorageTimeSeries & time_series_storage_,
         const Block & header_,
@@ -39,10 +61,15 @@ public:
         ContextPtr context_,
         bool async_insert_);
 
-    String getName() const override { return "TimeSeriesSink"; }
+    const Block & getHeader() const { return header; }
+    const std::vector<Target> & getTargets() const { return targets; }
+    std::vector<Target> & getTargets() { return targets; }
 
-    void consume(Chunk & chunk) override;
-    void onFinish() override;
+    void buildChains();
+    PreparedChunk prepareChunk(Chunk chunk);
+
+    void markTagsWritten();
+    void markMetricFamiliesWritten();
 
     /// Sorts tags by name, removes exact duplicates and tags with empty values,
     /// and throws if the `__name__` tag is missing or appears with conflicting values.
@@ -59,24 +86,21 @@ public:
         std::unordered_map<std::string_view, IColumn *> & columns_by_tag_name);
 
 private:
-    /// A persistent pipeline for inserting blocks into one target table.
-    struct TargetPipeline
-    {
-        ContextMutablePtr context;
-        BlockIO io;
-        std::unique_ptr<PushingPipelineExecutor> executor;
-        std::shared_ptr<ExpressionActions> converting_actions;
+    Target createTarget(
+        ViewTarget::Kind kind,
+        const Block & source_header,
+        bool is_tags,
+        bool is_samples,
+        bool is_recent_samples,
+        bool is_metric_families);
 
-        void push(Block block) const;
-        ~TargetPipeline();
-    };
+    void initTagsAndSamples();
+    void initMetricFamilies();
 
-    void initTagsAndSamplesPipelines();
-    void initMetricFamiliesPipeline();
-    std::unique_ptr<TargetPipeline> createTargetPipeline(ViewTarget::Kind kind, const Block & header);
+    void consumeTagsAndSamples(const Block & block, Block & tags_block_out, Block & samples_block_out);
+    void consumeMetricFamilies(const Block & block, Block & metric_families_block_out);
 
-    void consumeTagsAndSamples(const Block & block);
-    void consumeMetricFamilies(const Block & block);
+    Chunk convertToChunk(const Block & block, const Target & target) const;
 
     /// Calculates the "id" column by applying id_generator defaults and type conversion to the tags block.
     ColumnPtr calculateId(const Block & tags_block) const;
@@ -84,13 +108,18 @@ private:
     StorageTimeSeries & time_series_storage;
     TimeSeriesSettingsPtr time_series_settings;
     LoggerPtr log;
+    Block header;
 
     bool insert_tags_and_samples = false;
     bool insert_metric_families = false;
     bool async_insert = false;
+    bool has_recent_samples = false;
 
-    /// Source header for the tags pipeline WITHOUT the `id` column.
+    /// Source header for the tags chain WITHOUT the `id` column.
     Block tags_header_before_id;
+    Block tags_source_header;
+    Block samples_source_header;
+    Block metric_families_source_header;
 
     /// Type of the `id` column in the tags target table.
     DataTypePtr id_type;
@@ -102,10 +131,7 @@ private:
     std::shared_ptr<ExpressionActions> calculate_id_actions;
     std::shared_ptr<ExpressionActions> convert_id_actions;
 
-    std::unique_ptr<TargetPipeline> tags_pipeline;
-    std::unique_ptr<TargetPipeline> samples_pipeline;
-    std::unique_ptr<TargetPipeline> recent_samples_pipeline;
-    std::unique_ptr<TargetPipeline> metric_families_pipeline;
+    std::vector<Target> targets;
 
     /// Skip the rows already written to the "tags" and "metric families" tables, null if the corresponding cache is disabled.
     TimeSeriesDeduplicationCachePtr tags_deduplication_cache;

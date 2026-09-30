@@ -77,6 +77,7 @@ namespace FailPoints
     extern const char rmt_delay_commit_part[];
     extern const char rmt_dedup_conflict_part_name_missing[];
     extern const char merge_tree_sink_on_start_random_sleep[];
+    extern const char time_series_inner_table_flush_sleep[];
 }
 
 namespace ErrorCodes
@@ -447,6 +448,7 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
 MergeTreeTemporaryPartPtr ReplicatedMergeTreeSink::writeNewTempPart(BlockWithPartition & block)
 {
+    fiu_do_on(FailPoints::time_series_inner_table_flush_sleep, { sleepForMilliseconds(1000); });
     return storage.writer.writeTempPart(block, metadata_snapshot, context);
 }
 

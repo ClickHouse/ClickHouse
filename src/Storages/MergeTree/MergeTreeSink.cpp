@@ -50,6 +50,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char merge_tree_sink_on_start_random_sleep[];
+    extern const char time_series_inner_table_flush_sleep[];
 }
 
 MergeTreeSink::~MergeTreeSink()
@@ -406,6 +407,7 @@ void MergeTreeSink::finishDelayedChunk()
 
 MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & block)
 {
+    fiu_do_on(FailPoints::time_series_inner_table_flush_sleep, { sleepForMilliseconds(1000); });
     return storage.writer.writeTempPart(block, metadata_snapshot, context);
 }
 
