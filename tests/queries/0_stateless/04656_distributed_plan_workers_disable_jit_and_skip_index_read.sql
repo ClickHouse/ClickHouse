@@ -27,7 +27,7 @@ SELECT 'join with a skip-index filter and a JIT-eligible expression matches sing
 SELECT count(), sum(b.v + 1) FROM t_dp_big AS b INNER JOIN t_dp_small AS s ON b.v = s.id
     WHERE b.v < 50000
     SETTINGS log_comment = '04656_distributed_plan_auto_switch',
-    SETTINGS distributed_plan_fallback_to_local_execution = 0;
+    distributed_plan_fallback_to_local_execution = 0;
 
 SELECT count(), sum(b.v + 1) FROM t_dp_big AS b INNER JOIN t_dp_small AS s ON b.v = s.id
     WHERE b.v < 50000
