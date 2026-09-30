@@ -1986,7 +1986,10 @@ class SettingsRandomizer:
             'greedy,dpsize', 'greedy,dpsub', 'greedy,dphyp',
             'dphyp,dpsize,greedy', 'dpsub,dphyp,greedy',
         ]),
-        "query_plan_optimize_join_order_max_searched_plans": lambda: random.choice([0, 1, 10, 100, 1000, 100000]),
+        # 0 means no bound at all, which is the one draw that makes a DP algorithm enumerate
+        # exponentially: on a query with more relations than `..._join_order_limit`, planning alone
+        # costs hundreds of MiB and, without a memory cap to stop it, hangs.
+        "query_plan_optimize_join_order_max_searched_plans": lambda: random.choice([1, 10, 100, 1000, 100000]),
         # Reachable: dpsub is in the algorithm list above. The detector decides which reorderings
         # DPsub considers valid, so an unsound one is a wrong-results bug. The two `cd_a`/`cd_c`
         # flags this replaces were renamed into this enum in 26.9 with no alias kept, and the bug
