@@ -41,6 +41,36 @@ LimitStep::LimitStep(
 {
 }
 
+IQueryPlanStep::UnneededInputPositions LimitStep::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
+{
+    auto unneeded = unneeded_output_positions;
+    if (with_ties)
+    {
+        const auto & header = *input_headers.front();
+        std::erase_if(unneeded, [&](size_t position)
+        {
+            return std::ranges::any_of(description, [&](const auto & column) { return column.column_name == header.getByPosition(position).name; });
+        });
+    }
+
+    return {std::move(unneeded)};
+}
+
+IQueryPlanStep::RemoveUnusedColumnsResult
+LimitStep::removeUnusedColumns(const std::vector<size_t> & /*unneeded_output_positions*/, const std::vector<PrunedInput> & inputs)
+{
+    const auto & pruned = inputs.at(0);
+
+    RemoveUnusedColumnsResult result;
+    result.dropped_output_positions = pruned.dropped_positions;
+    result.step_changed = !blocksHaveEqualStructure(*input_headers.front(), *pruned.header);
+
+    if (result.step_changed)
+        updateInputHeader(pruned.header, 0);
+
+    return result;
+}
+
 void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     /// WITH TIES compares adjacent rows under `description`, so it needs a single ordered
