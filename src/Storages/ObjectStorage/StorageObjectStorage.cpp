@@ -824,14 +824,14 @@ void StorageObjectStorage::read(
         PrepareReadingFromFormatHiveParams{ file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
 
 
-    if (query_info.prewhere_info || query_info.row_level_filter)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+    if (query_info.prewhere_info)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
     const bool need_only_count = (query_info.optimize_trivial_count
                                   || (read_from_format_info.requested_columns.empty()
-                                      && !read_from_format_info.prewhere_info
-                                      && !read_from_format_info.row_level_filter))
+                                      && !read_from_format_info.prewhere_info))
         && settings[Setting::optimize_count_from_files]
+        && !query_info.row_level_filter
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto modified_format_settings{format_settings};
