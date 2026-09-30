@@ -1080,7 +1080,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.rows_where_ttl[ttl_entry.result_column], block, true, false);
 
     for (const auto & [name, ttl_entry] : metadata_snapshot->getColumnTTLs())
-        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block, true, true);
+    {
+        auto & column_ttl_info = new_data_part->ttl_infos.columns_ttl[name];
+        updateTTL(context, ttl_entry, new_data_part->ttl_infos, column_ttl_info, block, false, true);
+        new_data_part->ttl_infos.updatePartMinMaxColumnTTL(column_ttl_info);
+    }
 
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
     for (const auto & ttl_entry : recompression_ttl_entries)

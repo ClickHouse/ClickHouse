@@ -177,3 +177,26 @@ $CLICKHOUSE_CLIENT -q "
     WHERE database = currentDatabase() AND table = 't_drop_column_zero' AND event_type = 'MergeParts';
     DROP TABLE t_drop_column_zero;
 "
+
+echo "-- rows whose TTL is 0 survive the drop of an expired column TTL that was removed"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_removed_column_ttl (id UInt64, delete_at DateTime DEFAULT 0, ts DateTime, v String TTL ts + INTERVAL 1 DAY)
+    ENGINE = MergeTree ORDER BY id TTL delete_at DELETE
+    SETTINGS merge_with_ttl_timeout = 0, ttl_only_drop_parts = 0;
+    SYSTEM STOP MERGES t_removed_column_ttl;
+    INSERT INTO t_removed_column_ttl SELECT number, toDateTime(0), now() - INTERVAL 5 DAY, 'x' FROM numbers(10);
+    ALTER TABLE t_removed_column_ttl MODIFY COLUMN v REMOVE TTL;
+    SYSTEM START MERGES t_removed_column_ttl;
+"
+for _ in $(seq 1 300); do
+    unmerged=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_removed_column_ttl' AND active AND level = 0")
+    [ "$unmerged" = "0" ] && break
+    sleep 0.1
+done
+$CLICKHOUSE_CLIENT -q "
+    SELECT count(), countIf(delete_at = 0) FROM t_removed_column_ttl;
+    SYSTEM FLUSH LOGS part_log;
+    SELECT count() > 0 FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_removed_column_ttl' AND event_type = 'MergeParts';
+    DROP TABLE t_removed_column_ttl;
+"
