@@ -94,9 +94,19 @@ CREATE ROW POLICY p1, p2 ON t1, t2
 CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 ON table2
 ```
 
-## USING предложение {#using-clause}
+## Предложение USING {#using-clause}
 
-Позволяет задать условие для фильтрации строк. Пользователь увидит строку, если значение условия для этой строки не равно нулю.
+Задаёт условие фильтрации для таблицы. Пользователь видит только те строки, для которых условие истинно (то есть интерпретируется как ненулевое значение). По сути, это равносильно добавлению дополнительного условия `WHERE` к каждому запросу пользователя к этой таблице.
+
+Например, следующая политика ограничивает для `analyst_role` доступ только строками из ЕС:
+
+```sql
+CREATE ROW POLICY region_filter ON db.orders
+USING region = 'EU'
+TO analyst_role;
+```
+
+При такой политике запрос `SELECT * FROM db.orders` возвращает те же строки, что и запрос `SELECT * FROM db.orders WHERE region = 'EU'`.
 
 ## Предложение TO {#to-clause}
 

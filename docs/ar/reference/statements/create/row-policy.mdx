@@ -96,7 +96,17 @@ CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 O
 
 ## عبارة USING {#using-clause}
 
-تتيح تحديد شرط لتصفية الصفوف. يرى المستخدم صفًا إذا كانت قيمة الشرط المحسوبة لهذا الصف غير صفرية.
+تُحدِّد شرط تصفية لجدول ما، بحيث لا يرى المستخدم إلا الصفوف التي يتحقق فيها الشرط (أي التي يُقيَّم فيها إلى قيمة غير صفرية). ويُشبه ذلك إضافة شرط `WHERE` إضافي إلى كل استعلام يُنفّذه المستخدم على هذا الجدول.
+
+على سبيل المثال، تقصر السياسة التالية وصول `analyst_role` على الصفوف الخاصة بالاتحاد الأوروبي:
+
+```sql
+CREATE ROW POLICY region_filter ON db.orders
+USING region = 'EU'
+TO analyst_role;
+```
+
+بتطبيق هذه السياسة، يُعيد الاستعلام `SELECT * FROM db.orders` الصفوف نفسها التي كان سيُعيدها الاستعلام `SELECT * FROM db.orders WHERE region = 'EU'`.
 
 ## عبارة TO {#to-clause}
 

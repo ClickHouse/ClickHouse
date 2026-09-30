@@ -96,7 +96,17 @@ CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 O
 
 ## USING 句 {#using-clause}
 
-行を絞り込むための条件を指定できます。ある行に対する条件の評価結果が非ゼロの場合、その行はユーザーに表示されます。
+テーブルに対するフィルタ条件を定義します。ユーザーが参照できるのは、条件が true となる (0 以外の値に評価される) 行のみです。これは、ユーザーがそのテーブルに対して実行するすべてのクエリに `WHERE` 条件を追加するのと同じ効果があります。
+
+例えば、次のポリシーは `analyst_role` が参照できる行を EU の行に限定します。
+
+```sql
+CREATE ROW POLICY region_filter ON db.orders
+USING region = 'EU'
+TO analyst_role;
+```
+
+このポリシーを適用すると、`SELECT * FROM db.orders` は、`SELECT * FROM db.orders WHERE region = 'EU'` を実行した場合と同じ行を返します。
 
 ## TO 句 {#to-clause}
 

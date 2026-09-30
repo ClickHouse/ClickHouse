@@ -7,42 +7,42 @@
       "versionId": "d32db41de0afcd9c73f863b43acae05eb332f8a5d948c665a343043032ed5f0d",
       "translations": {
         "ko": {
-          "updatedAt": "2026-09-30T10:50:36.363Z",
+          "updatedAt": "2026-09-30T17:47:13.639Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ja": {
-          "updatedAt": "2026-09-30T10:50:36.139Z",
+          "updatedAt": "2026-09-30T17:47:13.436Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ru": {
-          "updatedAt": "2026-09-30T10:50:36.786Z",
+          "updatedAt": "2026-09-30T17:47:14.026Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "es": {
-          "updatedAt": "2026-09-30T10:50:35.911Z",
+          "updatedAt": "2026-09-30T17:47:13.236Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-30T10:50:36.579Z",
+          "updatedAt": "2026-09-30T17:47:13.831Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "zh": {
-          "updatedAt": "2026-09-30T10:50:37.011Z",
+          "updatedAt": "2026-09-30T17:47:14.212Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "fr": {
-          "updatedAt": "2026-09-30T10:50:37.435Z",
+          "updatedAt": "2026-09-30T17:47:14.599Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ar": {
-          "updatedAt": "2026-09-30T10:50:37.226Z",
+          "updatedAt": "2026-09-30T17:47:14.415Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         }
@@ -67768,47 +67768,47 @@
     },
     {
       "fileId": "4a8bb8a10992c09d654d5fc88fd97d7e1e94d1ce44d2b26c802aa98c5f75e558",
-      "versionId": "9a0723cd6b4464bcf3e39d1fd177672a368256f0f85789ff0054c771b2108e24",
+      "versionId": "69528d87c282445b1e7d31aa0942cf66443fe774f6f1636e859b7cee56bc6276",
       "translations": {
-        "ja": {
-          "updatedAt": "2026-09-28T19:13:35.120Z",
-          "fileName": "ja/reference/statements/create/row-policy.mdx",
-          "postProcessHash": "3be37ec5101a9d0aa711d4d7a83fc2ba84f5f34af85dbcbfc15a7c3a59749734"
-        },
-        "es": {
-          "updatedAt": "2026-09-28T19:13:35.144Z",
-          "fileName": "es/reference/statements/create/row-policy.mdx",
-          "postProcessHash": "c028a5db444a34d5ad9940b3add76c99e8263155afd6368b39839a6c457822b6"
+        "pt-BR": {
+          "updatedAt": "2026-09-30T17:47:17.948Z",
+          "fileName": "pt-BR/reference/statements/create/row-policy.mdx",
+          "postProcessHash": "bdafecd8a8c314c152aaa3b0c48971f6f4789c785fc29ee4af818c23014f1ad7"
         },
         "zh": {
-          "updatedAt": "2026-09-28T19:13:35.565Z",
+          "updatedAt": "2026-09-30T17:47:17.948Z",
           "fileName": "zh/reference/statements/create/row-policy.mdx",
-          "postProcessHash": "34feb29d7d10d5ec6ca5f85d068159fdf2e37b8d7c29334aefa4c34807d13279"
-        },
-        "ru": {
-          "updatedAt": "2026-09-28T19:13:36.247Z",
-          "fileName": "ru/reference/statements/create/row-policy.mdx",
-          "postProcessHash": "64dcb9bceb7ad6a35de0539c67302682b3f01e3f78565965934eadc3e8f0e4b1"
+          "postProcessHash": "51b134a8d4a985582f39f771c00684f24e8e3a4f2656e5a958ee31365923ef97"
         },
         "fr": {
-          "updatedAt": "2026-09-28T19:13:36.482Z",
+          "updatedAt": "2026-09-30T17:47:17.949Z",
           "fileName": "fr/reference/statements/create/row-policy.mdx",
-          "postProcessHash": "c79954570a8c14294aa1c5d436550a3588b7cad5a713f9c017a232363099b66c"
-        },
-        "ar": {
-          "updatedAt": "2026-09-28T19:13:36.533Z",
-          "fileName": "ar/reference/statements/create/row-policy.mdx",
-          "postProcessHash": "956768bd7e1aadca55064ea801301c934829c01b1395b696f3dede1b211c0b30"
+          "postProcessHash": "d3e37b37e123a3561468db4727e44844328c45b71f010441c454b7fb6bee750b"
         },
         "ko": {
-          "updatedAt": "2026-09-28T19:13:36.561Z",
+          "updatedAt": "2026-09-30T17:47:17.949Z",
           "fileName": "ko/reference/statements/create/row-policy.mdx",
-          "postProcessHash": "e7bcd4acad361a32ad191f9b294147f8b4ff172b89256bf27faa8754ccd6a65c"
+          "postProcessHash": "959da19d9edde47df4a9c1c9f9437bc33a667e6568a012dca0349c909931934e"
         },
-        "pt-BR": {
-          "updatedAt": "2026-09-28T19:13:36.562Z",
-          "fileName": "pt-BR/reference/statements/create/row-policy.mdx",
-          "postProcessHash": "d92023fafe3e3792e83feef14923bd314edc908f988402aa4a66b19f1bacb9e5"
+        "es": {
+          "updatedAt": "2026-09-30T17:47:17.950Z",
+          "fileName": "es/reference/statements/create/row-policy.mdx",
+          "postProcessHash": "930fb0523aaa41c9561201697d895f2c57f4cef790eb6167fd61a56480943eed"
+        },
+        "ru": {
+          "updatedAt": "2026-09-30T17:47:17.950Z",
+          "fileName": "ru/reference/statements/create/row-policy.mdx",
+          "postProcessHash": "04791a87de267683e8d0d5adf3b20b6cebd6f6c2d9023e0bc18b5cce8348e8b4"
+        },
+        "ja": {
+          "updatedAt": "2026-09-30T17:47:17.951Z",
+          "fileName": "ja/reference/statements/create/row-policy.mdx",
+          "postProcessHash": "67280e601498bf5fbc78d2bfeb1bc451a17c1c3995f2b9e7ba68c0727b7828e9"
+        },
+        "ar": {
+          "updatedAt": "2026-09-30T17:47:17.951Z",
+          "fileName": "ar/reference/statements/create/row-policy.mdx",
+          "postProcessHash": "3acc47786de7d0002102cec788be33ae344aefaae342a763e9be337c4fc43788"
         }
       },
       "fileName": "reference/statements/create/row-policy.mdx"

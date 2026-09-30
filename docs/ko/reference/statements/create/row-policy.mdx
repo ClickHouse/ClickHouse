@@ -96,7 +96,17 @@ CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 O
 
 ## USING 절 {#using-clause}
 
-행을 필터링할 조건을 지정할 수 있습니다. 특정 행에 대해 이 조건의 계산 결과가 0이 아니면 사용자는 해당 행을 볼 수 있습니다.
+테이블에 적용할 필터 조건을 정의합니다. 사용자는 조건이 참인(0이 아닌 값으로 평가되는) 행만 볼 수 있습니다. 이는 사용자가 해당 테이블에 실행하는 모든 쿼리에 `WHERE` 조건을 추가하는 것과 비슷합니다.
+
+예를 들어, 다음 정책은 `analyst_role`이 EU 지역의 행만 조회할 수 있도록 제한합니다.
+
+```sql
+CREATE ROW POLICY region_filter ON db.orders
+USING region = 'EU'
+TO analyst_role;
+```
+
+이 정책을 적용하면 `SELECT * FROM db.orders`는 `SELECT * FROM db.orders WHERE region = 'EU'`를 실행했을 때와 동일한 행을 반환합니다.
 
 ## TO 절 {#to-clause}
 

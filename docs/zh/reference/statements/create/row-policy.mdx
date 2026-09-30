@@ -96,7 +96,17 @@ CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 O
 
 ## USING 子句 {#using-clause}
 
-允许指定用于过滤行的条件。若某一行上的该条件计算结果非零，用户就能看到该行。
+为表定义过滤条件。用户只能看到条件为 true (即求值结果为非零值) 的行。其效果类似于在该用户对此表执行的每个查询中额外添加一个 `WHERE` 条件。
+
+例如，以下策略将 `analyst_role` 限制为只能访问来自欧盟的行：
+
+```sql
+CREATE ROW POLICY region_filter ON db.orders
+USING region = 'EU'
+TO analyst_role;
+```
+
+应用此策略后，`SELECT * FROM db.orders` 返回的行与 `SELECT * FROM db.orders WHERE region = 'EU'` 的返回结果相同。
 
 ## TO 子句 {#to-clause}
 

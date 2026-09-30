@@ -96,7 +96,17 @@ CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 O
 
 ## Clause USING {#using-clause}
 
-Permet de spécifier une condition pour filtrer les lignes. Un utilisateur voit une ligne si la condition, appliquée à cette ligne, renvoie une valeur non nulle.
+Définit une condition de filtrage pour une table. Un utilisateur ne peut voir que les lignes pour lesquelles la condition est vraie (c&#39;est-à-dire qu&#39;elle renvoie une valeur non nulle). Cela revient à ajouter une condition `WHERE` supplémentaire à chaque requête que l&#39;utilisateur exécute sur la table.
+
+Par exemple, la politique suivante restreint `analyst_role` aux lignes provenant de l&#39;UE :
+
+```sql
+CREATE ROW POLICY region_filter ON db.orders
+USING region = 'EU'
+TO analyst_role;
+```
+
+Avec cette politique, `SELECT * FROM db.orders` renvoie les mêmes lignes que le ferait `SELECT * FROM db.orders WHERE region = 'EU'`.
 
 ## Clause TO {#to-clause}
 
