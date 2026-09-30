@@ -35,6 +35,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Columns/ColumnDynamic.h>
@@ -4993,7 +4994,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         if (!const_type->equals(*common_type))
                         {
                             // Replace direct call that throws exception with try version
-                            Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
+                            /// `convertFieldToType` returns an `Object` as it is, but a `Bool` is `UInt64` in a typed path
+                            /// and `Bool` in a dynamic one, so convert it as a column, as the comparison itself does.
+                            Field converted = containsObjectType(*common_type)
+                                ? (*castColumn({const_type->createColumnConst(1, const_value), const_type, ""}, common_type))[0]
+                                : tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
                             if (converted.isNull())
                                 return false;
 

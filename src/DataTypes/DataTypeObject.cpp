@@ -2,6 +2,8 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
@@ -54,6 +56,53 @@ bool containsObjectType(const IDataType & type)
     bool contains_object = false;
     type.forEachChild([&](const IDataType & child) { contains_object |= isObject(child); });
     return contains_object;
+}
+
+void normalizeBoolFieldsInTypedPaths(Field & field, const DataTypePtr & type)
+{
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Dynamic:
+            break;
+        case TypeIndex::Nullable:
+            if (!field.isNull())
+                normalizeBoolFieldsInTypedPaths(field, assert_cast<const DataTypeNullable &>(*type).getNestedType());
+            break;
+        case TypeIndex::Array:
+            for (auto & element : field.safeGet<Array>())
+                normalizeBoolFieldsInTypedPaths(element, assert_cast<const DataTypeArray &>(*type).getNestedType());
+            break;
+        case TypeIndex::Tuple:
+        {
+            const auto & element_types = assert_cast<const DataTypeTuple &>(*type).getElements();
+            auto & elements = field.safeGet<Tuple>();
+            for (size_t i = 0; i < elements.size(); ++i)
+                normalizeBoolFieldsInTypedPaths(elements[i], element_types[i]);
+            break;
+        }
+        case TypeIndex::Map:
+        {
+            const auto & map_type = assert_cast<const DataTypeMap &>(*type);
+            for (auto & element : field.safeGet<Map>())
+            {
+                auto & key_value = element.safeGet<Tuple>();
+                normalizeBoolFieldsInTypedPaths(key_value[0], map_type.getKeyType());
+                normalizeBoolFieldsInTypedPaths(key_value[1], map_type.getValueType());
+            }
+            break;
+        }
+        case TypeIndex::Object:
+        {
+            auto & object = field.safeGet<Object>();
+            for (const auto & [path, path_type] : assert_cast<const DataTypeObject &>(*type).getTypedPaths())
+                if (auto it = object.find(path); it != object.end())
+                    normalizeBoolFieldsInTypedPaths(it->second, path_type);
+            break;
+        }
+        default:
+            normalizeBoolFields(field);
+            break;
+    }
 }
 
 namespace Setting
