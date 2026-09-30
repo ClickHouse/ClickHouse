@@ -251,7 +251,7 @@ def test_restore_codec_projection_with_missing_dictionary(started_cluster):
         "RESTORE TABLE codec_restore_missing_dict.typed_source "
         f"AS codec_restore_missing_dict.typed_restored FROM Disk('backups', '{typed_backup}')"
     )
-    assert "CODEC(Gorilla)" in node.query(
+    assert "CODEC(Gorilla(8))" in node.query(
         "SHOW CREATE TABLE codec_restore_missing_dict.typed_restored"
     )
 

@@ -117,7 +117,7 @@ def test_replay_updates_settings_of_unavailable_projection(started_cluster):
     )
     node1.query(
         "CREATE TABLE r_settings.t (a UInt64, b String, "
-        "PROJECTION pp (SELECT b, a ORDER BY 1, 2)) "
+        "PROJECTION pp (SELECT b, a GROUP BY 1, 2)) "
         "ENGINE = MergeTree ORDER BY a"
     )
     assert_eq_with_retry(node2, projection_count, "1")
@@ -129,17 +129,17 @@ def test_replay_updates_settings_of_unavailable_projection(started_cluster):
 
         error = node2.query_and_get_error(
             "ALTER TABLE r_settings.t MODIFY PROJECTION IF EXISTS pp "
-            "(SELECT b, a ORDER BY 1, 2) WITH SETTINGS (index_granularity = 64)"
+            "(SELECT b, a GROUP BY 1, 2) WITH SETTINGS (index_granularity = 64)"
         )
         assert "Cannot modify unavailable projection" in error
 
         node1.query(
             "ALTER TABLE r_settings.t MODIFY PROJECTION pp "
-            "(SELECT b, a ORDER BY 1, 2) WITH SETTINGS (index_granularity = 128)"
+            "(SELECT b, a GROUP BY 1, 2) WITH SETTINGS (index_granularity = 128)"
         )
         node1.query(
             "ALTER TABLE r_settings.t MODIFY PROJECTION IF EXISTS pp "
-            "(SELECT b, a ORDER BY 1, 2) WITH SETTINGS (index_granularity = 256)"
+            "(SELECT b, a GROUP BY 1, 2) WITH SETTINGS (index_granularity = 256)"
         )
         node1.query("ALTER TABLE r_settings.t MODIFY COMMENT 'settings_replayed'")
         assert_eq_with_retry(
@@ -176,7 +176,7 @@ def test_replay_preserves_canonical_codec_body_of_unavailable_projection(started
     )
     node1.query(
         "CREATE TABLE r_codec_settings.t (a UInt64, "
-        "PROJECTION pp (a UInt64 CODEC(Delta)) AS (SELECT a ORDER BY 1)) "
+        "PROJECTION pp (a UInt64 CODEC(Delta, ZSTD)) AS (SELECT a, count() GROUP BY 1)) "
         "ENGINE = MergeTree ORDER BY a",
         settings={"allow_projection_column_list_in_replicated_metadata": 1},
     )
@@ -190,7 +190,7 @@ def test_replay_preserves_canonical_codec_body_of_unavailable_projection(started
 
         node1.query(
             "ALTER TABLE r_codec_settings.t MODIFY PROJECTION pp "
-            "(a UInt64 CODEC(Delta)) AS (SELECT a ORDER BY 1) "
+            "(a UInt64 CODEC(Delta, ZSTD)) AS (SELECT a, count() GROUP BY 1) "
             "WITH SETTINGS (index_granularity = 128)",
             settings={"allow_projection_column_list_in_replicated_metadata": 1},
         )
