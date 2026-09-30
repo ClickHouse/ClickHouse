@@ -1550,6 +1550,21 @@ static bool requiresDetachedMV(const std::string & name)
     return name == "buckets";
 }
 
+/// The values are compared as the setting parses them, so `4` and `'4'` are the same value.
+static bool isSettingValueChanged(const SettingChange & old_setting, const SettingChange & new_setting)
+{
+    if (old_setting.value == new_setting.value)
+        return false;
+    if (!ObjectStorageQueueSettings::hasBuiltin(new_setting.name))
+        return true;
+
+    ObjectStorageQueueSettings settings;
+    settings.applyChanges(SettingsChanges{old_setting});
+    Field old_value = settings.get(old_setting.name);
+    settings.applyChanges(SettingsChanges{new_setting});
+    return settings.get(new_setting.name) != old_value;
+}
+
 static AlterCommands normalizeAlterCommands(const AlterCommands & alter_commands)
 {
     /// Remove s3queue_ prefix from setting to avoid duplicated settings,
@@ -1615,7 +1630,7 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
                 old_settings->begin(), old_settings->end(),
                 [&](const SettingChange & change) { return change.name == setting.name; });
 
-            setting_changed = it != old_settings->end() && it->value != setting.value;
+            setting_changed = it != old_settings->end() && isSettingValueChanged(*it, setting);
         }
 
         if (setting_changed)
@@ -1743,7 +1758,7 @@ void StorageObjectStorageQueue::alter(
                     old_settings->begin(), old_settings->end(),
                     [&](const SettingChange & change) { return change.name == setting.name; });
 
-                setting_changed = it == old_settings->end() || it->value != setting.value;
+                setting_changed = it == old_settings->end() || isSettingValueChanged(*it, setting);
             }
             if (!setting_changed)
                 continue;

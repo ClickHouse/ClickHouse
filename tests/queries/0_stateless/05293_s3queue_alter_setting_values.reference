@@ -15,3 +15,5 @@ polling_min_timeout_ms	20000
 processing_threads_num	2
 cleanup_interval_max_ms	100
 cleanup_interval_min_ms	101
+enable_hash_ring_filtering	false
+processing_threads_num	2
