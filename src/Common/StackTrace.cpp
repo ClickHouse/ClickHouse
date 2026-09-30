@@ -100,6 +100,11 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
     if (sig == SIGTSTP)
         return "This is a signal used for debugging purposes by the user.";
 
+#if defined(si_syscall)
+    if (sig == SIGSYS)
+        return fmt::format("System call number: {}. {}", info.si_syscall, message);
+#endif
+
     return message;
 }
 
@@ -291,6 +296,23 @@ std::string getSignalCodeDescription(int sig, int si_code)
                     return fmt::format("Unknown si_code: {}", si_code);
             }
         }
+        case SIGSYS:
+        {
+            switch (si_code)
+            {
+#if defined(SYS_SECCOMP)
+                case SYS_SECCOMP:
+                    return "The system call is not allowed by the seccomp policy that the server applied to itself. "
+                           "See the `seccomp` server setting.";
+#endif
+#if defined(SYS_USER_DISPATCH)
+                case SYS_USER_DISPATCH:
+                    return "The system call was redirected by syscall user dispatch.";
+#endif
+                default:
+                    return fmt::format("Unknown si_code: {}", si_code);
+            }
+        }
         default:
             return "";
     }
@@ -345,19 +367,40 @@ resolveAddressImpl(const DB::SymbolIndex & symbol_index, const void * virtual_ad
 }
 #endif
 
-StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr)
-{
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+namespace
+{
+StackTrace::ResolvedAddress resolveAddress(const DB::SymbolIndex & symbol_index, const void * virtual_addr)
+{
     const auto [address, object] = resolveAddressImpl(symbol_index, virtual_addr);
 
     if (!object)
-        return {virtual_addr, {}, AddressKind::UnknownMapping};
+        return {virtual_addr, {}, StackTrace::AddressKind::UnknownMapping};
     if (object == symbol_index.thisObject())
-        return {reinterpret_cast<const void *>(address), {}, AddressKind::MainObject};
-    return {reinterpret_cast<const void *>(address), object->name, AddressKind::OtherObject};
+        return {reinterpret_cast<const void *>(address), {}, StackTrace::AddressKind::MainObject};
+    return {reinterpret_cast<const void *>(address), object->name, StackTrace::AddressKind::OtherObject};
+}
+}
+#endif
+
+StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr)
+{
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    return ::resolveAddress(DB::SymbolIndex::instance(), virtual_addr);
 #else
     return {virtual_addr, {}, AddressKind::Unsupported};
+#endif
+}
+
+std::optional<StackTrace::ResolvedAddress> StackTrace::tryResolveAddress(const void * virtual_addr)
+{
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    const DB::SymbolIndex * symbol_index = DB::SymbolIndex::instanceIfInitialized();
+    if (!symbol_index)
+        return std::nullopt;
+    return ::resolveAddress(*symbol_index, virtual_addr);
+#else
+    return ResolvedAddress{virtual_addr, {}, AddressKind::Unsupported};
 #endif
 }
 
