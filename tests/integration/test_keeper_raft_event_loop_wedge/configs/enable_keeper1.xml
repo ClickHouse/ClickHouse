@@ -5,29 +5,20 @@
         <server_id>1</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
-        <!-- No snapshot on exit, so that after a restart the on-disk logs are not covered by a
-             snapshot and have to be replayed (localLogsPreprocessed() == false during startup). -->
+        <!-- No snapshot on exit, so a restart has local logs to replay. -->
         <create_snapshot_on_exit>false</create_snapshot_on_exit>
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>
             <session_timeout_ms>30000</session_timeout_ms>
-            <!-- No snapshot is taken on its own, so the leader never compacts and the restarted node
-                 is caught up by streamed log entries rather than by install_snapshot - until the last
-                 test asks for a snapshot here, and then almost nothing is kept, so that node2 can
-                 only be caught up by installing it. -->
+            <!-- No automatic snapshots, so no compaction; the last test takes one with `csnp`, and then
+                 almost nothing is kept, so node2 can only catch up by installing it. -->
             <snapshot_distance>1000000</snapshot_distance>
             <reserved_log_items>1</reserved_log_items>
-            <!-- A silent peer is force-reconnected after reconnect_limit * heart_beat_interval_ms,
-                 and every reconnect brings a fresh connection, handled by another thread of the
-                 Raft event loop. 100 ms compresses the time axis of the incident 50 times. -->
+            <!-- A short heartbeat makes the leader reconnect often, as in the incident but faster. -->
             <heart_beat_interval_ms>100</heart_beat_interval_ms>
             <raft_limits_reconnect_limit>1</raft_limits_reconnect_limit>
-            <!-- The wait for the replay lasts heart_beat_interval_ms times one heartbeat less
-                 than the smaller of the two limits above, which is none of it here: at a
-                 reconnect limit of 1 there is no margin to wait inside, so the callback answers
-                 at once. The bound on waiting threads is reached through a failpoint rather
-                 than through this timing. -->
+            <!-- With a reconnect limit of 1 the wait here is zero. -->
             <raft_limits_response_limit>2</raft_limits_response_limit>
             <election_timeout_lower_bound_ms>1000</election_timeout_lower_bound_ms>
             <election_timeout_upper_bound_ms>2000</election_timeout_upper_bound_ms>

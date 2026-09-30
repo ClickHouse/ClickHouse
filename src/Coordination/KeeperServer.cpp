@@ -1054,22 +1054,23 @@ void KeeperServer::resetLeaderMetrics()
 /// unbounded wait on a thread of the Raft event loop would stop the loop.
 void KeeperServer::waitForLocalLogsPreprocessing()
 {
-    if (threads_waiting_for_local_logs_preprocessing.fetch_add(1) != 0)
+    if (thread_waiting_for_local_logs_preprocessing.exchange(true))
     {
-        threads_waiting_for_local_logs_preprocessing.fetch_sub(1);
         LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: another thread is already waiting for preprocessing");
         return;
     }
 
-    SCOPE_EXIT(threads_waiting_for_local_logs_preprocessing.fetch_sub(1));
+    SCOPE_EXIT(thread_waiting_for_local_logs_preprocessing.store(false));
     CurrentMetrics::Increment waiting_metric_increment{CurrentMetrics::KeeperRaftThreadsWaitingForLogsPreprocessing};
+
+    /// Mark the node busy for NuRaft's election timeout while this thread waits; a thread turned away
+    /// above does not touch the flag here.
+    raft_instance->setServingRequest(true);
+    SCOPE_EXIT(raft_instance->setServingRequest(false));
 
     FailPointInjection::pauseFailPoint(FailPoints::keeper_local_logs_preprocessing_wait);
 
-    /// The values the instance is running with, already narrowed to int32 on their way into
-    /// NuRaft. The smaller limit binds - the leader discards the response past the reconnect
-    /// limit, the cluster counts the node down past the response limit - and one heartbeat of it
-    /// is margin, of which there is none to spend once that limit is one.
+    /// One heartbeat less than the smaller Raft limit, past which the leader stops waiting for the answer.
     const auto raft_limits = nuraft::raft_server::get_raft_limits();
     const uint64_t heartbeats_to_wait = std::min<uint64_t>(raft_limits.response_limit_, raft_limits.reconnect_limit_);
     const uint64_t wait_timeout_ms = static_cast<uint64_t>(raft_instance->get_current_params().heart_beat_interval_)
@@ -1224,15 +1225,14 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                     raft_instance->isCommitInProgress(),
                     raft_instance->get_target_committed_log_idx());
 
-                /// committing/preprocessing of local logs can take some time
-                /// and we don't want election to start during that time so we
-                /// set serving requests to avoid elections on timeout
-                raft_instance->setServingRequest(true);
-                SCOPE_EXIT(raft_instance->setServingRequest(false));
                 /// maybe we got snapshot installed
                 if (state_machine->last_commit_index() >= last_log_idx_on_disk && !raft_instance->isCommitInProgress())
                 {
                     LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: preprocessing logs");
+                    /// preprocessing of local logs can take some time and we don't want election to
+                    /// start during that time so we set serving requests to avoid elections on timeout
+                    raft_instance->setServingRequest(true);
+                    SCOPE_EXIT(raft_instance->setServingRequest(false));
                     preprocess_logs();
                 }
                 /// we don't want to append new logs if we are committing local logs

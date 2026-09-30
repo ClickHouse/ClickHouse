@@ -129,8 +129,8 @@ private:
 
     std::atomic<uint64_t> last_log_idx_on_disk = 0;
 
-    /// Number of Raft event loop threads currently waiting for the local logs to be preprocessed.
-    std::atomic<uint64_t> threads_waiting_for_local_logs_preprocessing = 0;
+    /// Whether a Raft event loop thread is currently waiting for the local logs to be preprocessed.
+    std::atomic<bool> thread_waiting_for_local_logs_preprocessing = false;
 
     nuraft::ptr<nuraft::cluster_config> last_local_config;
 
