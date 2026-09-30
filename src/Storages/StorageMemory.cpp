@@ -4,7 +4,10 @@
 #include <Core/Settings.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/DatabaseCatalog.h>
@@ -16,6 +19,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/StorageFactory.h>
@@ -96,11 +100,12 @@ public:
     MemorySink(
         StorageMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        ContextPtr context)
+        ContextPtr context_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage(storage_)
-        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context))
+        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context_))
         , metadata_version(metadata_snapshot_->getMetadataVersion())
+        , context(std::move(context_))
     {
     }
 
@@ -130,9 +135,11 @@ public:
         /// The blocks have the column names of `metadata_version`.
         for (const auto & entry : storage.column_changes)
         {
+            ExpressionActionsPtr fill_actions;
             if (entry.metadata_version > metadata_version)
                 for (auto & block : new_blocks)
-                    StorageMemory::applyColumnChanges(block, entry, storage.getMemorySettingsRef()[MemorySetting::compress]);
+                    StorageMemory::applyColumnChanges(
+                        block, entry, storage.getMemorySettingsRef()[MemorySetting::compress], context, fill_actions);
         }
 
         size_t inserted_bytes = 0;
@@ -178,6 +185,7 @@ private:
     StorageMemory & storage;
     StorageSnapshotPtr storage_snapshot;
     const Int32 metadata_version;
+    const ContextPtr context;
 };
 
 
@@ -476,7 +484,27 @@ std::vector<StorageMemory::ColumnChange> StorageMemory::getColumnChanges(
     return changes;
 }
 
-void StorageMemory::applyColumnChanges(Block & block, const ColumnChangesEntry & entry, bool compress)
+namespace
+{
+
+/// The actions computing the physical columns for a block without columns as an `INSERT` that omits them does.
+ExpressionActionsPtr makeFillActions(const ColumnsDescription & columns, const ContextPtr & context)
+{
+    /// The default expressions are resolved against the header, so its only column must not be a column of the table.
+    String header_column = "_dummy";
+    while (columns.has(header_column) || columns.hasNested(header_column))
+        header_column += "_";
+    const auto physical_columns = columns.getAllPhysical();
+    auto dag = addMissingDefaults(
+        Block{{ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), header_column}}, physical_columns, columns, context);
+    dag.removeUnusedActions(physical_columns.getNames());
+    return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
+}
+
+}
+
+void StorageMemory::applyColumnChanges(
+    Block & block, const ColumnChangesEntry & entry, bool compress, const ContextPtr & context, ExpressionActionsPtr & fill_actions)
 {
     const size_t rows = block.rows();
     for (const auto & change : entry.changes)
@@ -499,21 +527,34 @@ void StorageMemory::applyColumnChanges(Block & block, const ColumnChangesEntry &
 
     if (block.columns() == 0)
     {
-        const auto & type = entry.fill_column.type;
-        ColumnPtr fill = type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst();
+        if (entry.fill_with_defaults)
+        {
+            if (!fill_actions)
+                fill_actions = makeFillActions(*entry.fill_with_defaults, context);
+            size_t fill_rows = rows;
+            fill_actions->execute(block, fill_rows);
+        }
+        else
+        {
+            const auto & type = entry.fill_column.type;
+            block.insert({type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst(), type, entry.fill_column.name});
+        }
         if (compress)
-            fill = fill->compress(/*force_compression=*/true);
-        block.insert({fill, type, entry.fill_column.name});
+            for (auto & column : block)
+                column.column = column.column->compress(/*force_compression=*/true);
     }
 }
 
-NameAndTypePair StorageMemory::chooseFillColumn(const StorageInMemoryMetadata & metadata)
+void StorageMemory::setFillColumn(ColumnChangesEntry & entry, const StorageInMemoryMetadata & metadata)
 {
-    const auto physical_columns = metadata.getColumns().getAllPhysical();
-    const auto columns_without_default_expressions = metadata.getColumnsWithoutDefaultExpressions({});
+    const auto & columns = metadata.getColumns();
+    const auto physical_columns = columns.getAllPhysical();
     auto fill_column = std::find_if(physical_columns.begin(), physical_columns.end(),
-        [&](const auto & column) { return columns_without_default_expressions.contains(column.name); });
-    return fill_column != physical_columns.end() ? *fill_column : physical_columns.front();
+        [&](const auto & column) { return !columns.hasDefault(column.name); });
+    if (fill_column != physical_columns.end())
+        entry.fill_column = *fill_column;
+    else
+        entry.fill_with_defaults = std::make_shared<const ColumnsDescription>(columns);
 }
 
 void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr context, DB::IStorage::AlterLockHolder & /*alter_lock_holder*/, DB::DDLGuardPtr & /*ddl_guard*/)
@@ -546,15 +587,16 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
     const auto physical_columns = new_metadata.getColumns().getAllPhysical();
     if (!column_changes_of_alter.empty() && !physical_columns.empty())
     {
-        column_changes_entry.fill_column = chooseFillColumn(new_metadata);
+        setFillColumn(column_changes_entry, new_metadata);
         column_changes_entry.metadata_version = new_metadata.getMetadataVersion();
         column_changes_entry.changes = column_changes_of_alter;
 
         new_data = std::make_unique<BlocksWithCounts>(*(data.get()));
         new_data->bytes = 0;
+        ExpressionActionsPtr fill_actions;
         for (auto & block : new_data->blocks)
         {
-            applyColumnChanges(block, column_changes_entry, new_settings[MemorySetting::compress]);
+            applyColumnChanges(block, column_changes_entry, new_settings[MemorySetting::compress], context, fill_actions);
             new_data->bytes += block.allocatedBytes();
         }
         new_data->columns_version = column_changes_entry.metadata_version;
@@ -834,12 +876,13 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
 
     restorer.addDataRestoreTask(
         [storage = std::static_pointer_cast<StorageMemory>(shared_from_this()), backup, data_path_in_backup,
-         metadata_version = metadata_snapshot->getMetadataVersion(), names_verified, unmapped_names]
-        { storage->restoreDataImpl(backup, data_path_in_backup, metadata_version, names_verified, unmapped_names); });
+         metadata_version = metadata_snapshot->getMetadataVersion(), names_verified, unmapped_names, context = restorer.getContext()]
+        { storage->restoreDataImpl(backup, data_path_in_backup, metadata_version, names_verified, unmapped_names, context); });
 }
 
 void StorageMemory::restoreDataImpl(
-    const BackupPtr & backup, const String & data_path_in_backup, Int32 metadata_version, bool names_verified, const NameSet & unmapped_names)
+    const BackupPtr & backup, const String & data_path_in_backup, Int32 metadata_version, bool names_verified,
+    const NameSet & unmapped_names, const ContextPtr & context)
 {
     /// Our data are in the StripeLog format.
 
@@ -922,8 +965,9 @@ void StorageMemory::restoreDataImpl(
                 "Columns of table {} were renamed or dropped by an ALTER during the restore, "
                 "and the column names in the backup are not verified",
                 getStorageID().getNameForLogs());
+        ExpressionActionsPtr fill_actions;
         for (auto & block : new_blocks)
-            applyColumnChanges(block, entry, (*memory_settings)[MemorySetting::compress]);
+            applyColumnChanges(block, entry, (*memory_settings)[MemorySetting::compress], context, fill_actions);
     }
 
     /// A stored column that the table does not have would be read by a later `ADD COLUMN` with its name.
@@ -932,7 +976,8 @@ void StorageMemory::restoreDataImpl(
     for (const auto & column : metadata->getColumns().getAllPhysical())
         table_columns.insert(column.name);
     ColumnChangesEntry unknown_columns;
-    unknown_columns.fill_column = chooseFillColumn(*metadata);
+    setFillColumn(unknown_columns, *metadata);
+    ExpressionActionsPtr fill_actions;
     for (auto & block : new_blocks)
     {
         unknown_columns.changes.clear();
@@ -949,7 +994,7 @@ void StorageMemory::restoreDataImpl(
             unknown_columns.changes.push_back({column.name, ""});
         }
         if (!unknown_columns.changes.empty())
-            applyColumnChanges(block, unknown_columns, (*memory_settings)[MemorySetting::compress]);
+            applyColumnChanges(block, unknown_columns, (*memory_settings)[MemorySetting::compress], context, fill_actions);
     }
 
     size_t new_bytes = 0;

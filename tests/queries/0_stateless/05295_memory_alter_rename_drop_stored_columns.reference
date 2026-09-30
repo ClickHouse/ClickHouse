@@ -32,6 +32,8 @@ add dropped name	0	\N
 add dropped name	0	\N
 add dropped name	0	\N
 add dropped name	0	5
+fill columns with defaults	2	[7,7]	['x','x']
+fill column materialized from another default	2	[7,7]	[3,3]
 rejected drop of the last physical column	1	7
 rejected drop of the last physical column	2	7
 bytes before drop	1
@@ -44,6 +46,7 @@ rejected mixed alter	3	6
 accepted mixed alter	1	3
 insert after mixed alter	1	4
 restored column the table lacks	2	0	0
+restored into a column with a default	2	14
 empty tuple rows	3	0
 empty tuple restored	3
 empty tuple restore into a non-empty table	3

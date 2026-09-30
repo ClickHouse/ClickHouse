@@ -44,7 +44,7 @@ insert_across_alter t_rename "ALTER TABLE t_rename RENAME COLUMN c0 TO c1"
 $CLICKHOUSE_CLIENT -q "SELECT 'insert across rename', count(), countIf(c1 = 0), sum(c1) FROM t_rename"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_drop (a UInt64) ENGINE = Memory"
-insert_across_alter t_drop "ALTER TABLE t_drop ADD COLUMN b UInt64, DROP COLUMN a"
+insert_across_alter t_drop "ALTER TABLE t_drop ADD COLUMN b UInt64 DEFAULT 7, DROP COLUMN a"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_drop ADD COLUMN a UInt64"
 $CLICKHOUSE_CLIENT -q "SELECT 'insert across drop', count(), sum(b), sum(a) FROM t_drop"
 

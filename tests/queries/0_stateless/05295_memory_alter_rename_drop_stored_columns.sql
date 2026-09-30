@@ -103,6 +103,24 @@ ALTER TABLE mem_fill ADD COLUMN a UInt8;
 SELECT 'add dropped name', a, b FROM mem_fill ORDER BY b NULLS FIRST;
 DROP TABLE mem_fill;
 
+-- If every remaining column has a default expression, such rows get the values an INSERT without the columns would store.
+DROP TABLE IF EXISTS mem_fill_default;
+CREATE TABLE mem_fill_default (a UInt8) ENGINE = Memory;
+INSERT INTO mem_fill_default VALUES (1), (2);
+ALTER TABLE mem_fill_default ADD COLUMN b UInt8 DEFAULT 7, ADD COLUMN c String DEFAULT 'x';
+ALTER TABLE mem_fill_default DROP COLUMN a;
+SELECT 'fill columns with defaults', count(), groupArray(b), groupArray(c) FROM mem_fill_default;
+DROP TABLE mem_fill_default;
+
+DROP TABLE IF EXISTS mem_fill_materialized;
+CREATE TABLE mem_fill_materialized (a UInt8) ENGINE = Memory;
+INSERT INTO mem_fill_materialized VALUES (1), (2);
+ALTER TABLE mem_fill_materialized ADD COLUMN t Tuple(x UInt8) DEFAULT tuple(3);
+ALTER TABLE mem_fill_materialized ADD COLUMN m UInt8 MATERIALIZED t.x + 4;
+ALTER TABLE mem_fill_materialized DROP COLUMN a;
+SELECT 'fill column materialized from another default', count(), groupArray(m), groupArray(t.x) FROM mem_fill_materialized;
+DROP TABLE mem_fill_materialized;
+
 CREATE TEMPORARY TABLE tmp_last (a UInt8, e UInt8 ALIAS 7) ENGINE = Memory;
 INSERT INTO tmp_last VALUES (1), (2);
 ALTER TABLE tmp_last DROP COLUMN a; -- { serverError EMPTY_LIST_OF_COLUMNS_PASSED }
@@ -154,6 +172,7 @@ DROP TEMPORARY TABLE tmp_mixed;
 -- later with its name gets default values.
 DROP TABLE IF EXISTS mem_backup_src;
 DROP TABLE IF EXISTS mem_restored;
+DROP TABLE IF EXISTS mem_restored_default;
 CREATE TABLE mem_backup_src (a UInt64) ENGINE = Memory;
 INSERT INTO mem_backup_src VALUES (7), (9);
 BACKUP TABLE mem_backup_src TO Memory('05295_mem_backup') FORMAT Null;
@@ -161,8 +180,12 @@ CREATE TABLE mem_restored (k UInt64) ENGINE = Memory;
 RESTORE TABLE mem_backup_src AS mem_restored FROM Memory('05295_mem_backup') SETTINGS allow_different_table_def = 1 FORMAT Null;
 ALTER TABLE mem_restored ADD COLUMN a UInt64;
 SELECT 'restored column the table lacks', count(), sum(k), sum(a) FROM mem_restored;
+CREATE TABLE mem_restored_default (k UInt64 DEFAULT 7) ENGINE = Memory;
+RESTORE TABLE mem_backup_src AS mem_restored_default FROM Memory('05295_mem_backup') SETTINGS allow_different_table_def = 1 FORMAT Null;
+SELECT 'restored into a column with a default', count(), sum(k) FROM mem_restored_default;
 DROP TABLE mem_backup_src;
 DROP TABLE mem_restored;
+DROP TABLE mem_restored_default;
 
 -- Rows whose only stored column is an empty `Tuple()` take no bytes: BACKUP keeps them, and RESTORE does not see
 -- the table as empty.

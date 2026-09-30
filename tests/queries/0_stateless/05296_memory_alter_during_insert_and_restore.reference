@@ -1,5 +1,5 @@
 insert across rename	50010	0	1250525055
-insert across drop	50010	0	0
+insert across drop	50010	350070	0
 restore RESTORED
 restore across rename	10	55
 backup across rename BACKUP_FAILED
