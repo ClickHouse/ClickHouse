@@ -86,11 +86,11 @@ private:
     {
         /// One entry per column of the input header, in header order.
         std::vector<InputColumnUsage> input_columns;
-        /// The DAG outputs nobody needs, as positions in `getOutputs` before any is removed, sorted. Never the filter
-        /// column: it is needed to filter, whether or not anyone reads it.
-        /// Unlike for the other steps, these are not just the caller's positions. The header the caller counts in
-        /// may have the filter column erased from it, so the caller's positions are shifted back over that column
-        /// first.
+        /// The DAG outputs nobody needs, as positions in `getOutputs` before any is removed, sorted.
+        /// Never contains the filter column: it is needed to filter, whether or not anyone reads it.
+        /// Unlike for the other steps, these are not just the caller's positions.
+        /// The header the caller counts in may have the filter column erased from it,
+        /// so the caller's positions are shifted back over that column first.
         std::vector<size_t> unneeded_dag_positions;
         /// The position of the filter column in the DAG's outputs, before any is removed.
         size_t filter_output_position = 0;
