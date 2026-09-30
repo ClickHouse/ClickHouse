@@ -1,6 +1,7 @@
 #include <base/types.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -8,6 +9,9 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Functions/array/FunctionArrayMapped.h>
+#include <Functions/castTypeToEither.h>
+
+#include <Common/findExtreme.h>
 
 namespace DB
 {
@@ -32,40 +36,52 @@ struct ArrayMinMaxIndexImpl
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
+        constexpr bool is_min = strategy == ArrayMinMaxIndexStrategy::Min;
         const auto & offsets = array.getOffsets();
-        static constexpr int nan_null_direction_hint = strategy == ArrayMinMaxIndexStrategy::Min ? 1 : -1;
-
         auto result = ColumnUInt32::create(offsets.size());
         auto & result_data = result->getData();
-        size_t begin = 0;
-        for (size_t row = 0; row < offsets.size(); ++row)
+
+        /// extreme_index(begin, end) returns the absolute index of the first extreme in a non-empty range.
+        auto fill = [&](auto && extreme_index)
         {
-            const size_t end = offsets[row];
-            if (begin == end)
+            size_t begin = 0;
+            for (size_t row = 0; row < offsets.size(); ++row)
             {
-                result_data[row] = 0;
+                const size_t end = offsets[row];
+                result_data[row] = begin == end ? 0 : static_cast<UInt32>(extreme_index(begin, end) - begin + 1);
                 begin = end;
-                continue;
             }
+        };
 
-            size_t best = begin;
-            for (size_t i = begin + 1; i < end; ++i)
+        const bool handled = castTypeToEither<
+            ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
+            ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
+            ColumnFloat32, ColumnFloat64,
+            ColumnDecimal<Decimal32>, ColumnDecimal<Decimal64>, ColumnDecimal<DateTime64>>(mapped.get(), [&](const auto & column)
+        {
+            const auto * data = column.getData().data();
+            fill([&](size_t begin, size_t end)
             {
-                const int comparison = mapped->compareAt(i, best, *mapped, nan_null_direction_hint);
-                if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
-                {
-                    if (comparison < 0)
-                        best = i;
-                }
-                else
-                {
-                    if (comparison > 0)
-                        best = i;
-                }
-            }
+                return is_min ? *findExtremeMinIndex(data, begin, end) : *findExtremeMaxIndex(data, begin, end);
+            });
+            return true;
+        });
 
-            result_data[row] = static_cast<UInt32>(best - begin + 1);
-            begin = end;
+        if (!handled)
+        {
+            /// Plain floats took the fast path above; NaN only gets here inside `Nullable`.
+            /// The direction hint sorts NULL and NaN last, so they only win if nothing else is in the array.
+            fill([&](size_t begin, size_t end)
+            {
+                size_t best = begin;
+                for (size_t i = begin + 1; i < end; ++i)
+                {
+                    const int comparison = mapped->compareAt(i, best, *mapped, is_min ? 1 : -1);
+                    if (is_min ? comparison < 0 : comparison > 0)
+                        best = i;
+                }
+                return best;
+            });
         }
 
         return result;
