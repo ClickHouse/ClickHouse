@@ -280,7 +280,7 @@ DROP TABLE jit_decimal_parity_input;
 -- ============================================================================
 -- `multiIf` with `Decimal` branches of different scales (#103390): each branch
 -- is lifted to the largest scale. The second query adds factors wider than
--- 64 bits, a negative and a non-constant value, and a `Nullable` branch.
+-- 64 bits, a negative and a non-constant value, and a smaller-scale `Nullable` `else` branch.
 -- ============================================================================
 SELECT 'multiif_mixed_scales:jit',
     toString(multiIf(number = 0, toDecimal32(1.5, 2), number = 1, toDecimal32(2.5, 2), toDecimal64(3.5, 4)))
@@ -292,11 +292,11 @@ FROM numbers(3) ORDER BY number
 SETTINGS compile_expressions = 0;
 
 SELECT 'multiif_mixed_scales_dec128:jit',
-    toString(multiIf(number = 0, materialize(toDecimal32('-1.5', 2)), number = 1, toNullable(toDecimal32('2.5', 4)), toDecimal128('3.5', 25)))
+    toString(multiIf(number = 0, materialize(toDecimal32('-1.5', 2)), number = 1, toDecimal128('3.5', 25), toNullable(toDecimal32('2.5', 4))))
 FROM numbers(3) ORDER BY number
 SETTINGS compile_expressions = 1, log_comment = '04205_mixed_scales_dec128';
 SELECT 'multiif_mixed_scales_dec128:no_jit',
-    toString(multiIf(number = 0, materialize(toDecimal32('-1.5', 2)), number = 1, toNullable(toDecimal32('2.5', 4)), toDecimal128('3.5', 25)))
+    toString(multiIf(number = 0, materialize(toDecimal32('-1.5', 2)), number = 1, toDecimal128('3.5', 25), toNullable(toDecimal32('2.5', 4))))
 FROM numbers(3) ORDER BY number
 SETTINGS compile_expressions = 0;
 
