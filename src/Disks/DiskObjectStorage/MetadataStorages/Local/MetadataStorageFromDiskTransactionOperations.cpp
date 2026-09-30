@@ -106,9 +106,10 @@ WriteFileOperation::WriteFileOperation(std::string path_, std::string data_, IDi
 
 void WriteFileOperation::execute()
 {
-    if (auto buf = disk.readFileIfExists(path, getReadSettings()))
+    file_existed = disk.existsFile(path);
+    if (file_existed)
     {
-        file_existed = true;
+        auto buf = disk.readFile(path, getReadSettings());
         fiu_do_on(FailPoints::write_file_operation_fail_on_read,
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault in WriteFileOperation read");
