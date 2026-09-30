@@ -374,7 +374,7 @@ ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr
     /// We don't have enough data in buffer to check if it's a null.
     /// Use PeekableReadBuffer to make a checkpoint before checking null
     /// representation and rollback if check was failed.
-    PeekableReadBuffer peekable_buf(istr, true);
+    PeekableReadBuffer peekable_buf(istr);
     auto check_for_null = [&null_representation, &settings](ReadBuffer & buf_)
     {
         auto & buf = assert_cast<PeekableReadBuffer &>(buf_);
@@ -549,7 +549,7 @@ ReturnType deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const 
     /// to differentiate for example NULL and NaN for float)
     /// Use PeekableReadBuffer to make a checkpoint before checking
     /// null and rollback if the check was failed.
-    PeekableReadBuffer peekable_buf(istr, true);
+    PeekableReadBuffer peekable_buf(istr);
     auto check_for_null = [](ReadBuffer & buf_)
     {
         auto & buf = assert_cast<PeekableReadBuffer &>(buf_);
@@ -626,7 +626,7 @@ ReturnType deserializeWholeTextImpl(IColumn & column, ReadBuffer & istr, const F
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    PeekableReadBuffer peekable_buf(istr, true);
+    PeekableReadBuffer peekable_buf(istr);
     auto check_for_null = [](ReadBuffer & buf_)
     {
         auto & buf = assert_cast<PeekableReadBuffer &>(buf_);
@@ -756,7 +756,7 @@ ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const For
     /// We don't have enough data in buffer to check if it's a null.
     /// Use PeekableReadBuffer to make a checkpoint before checking null
     /// representation and rollback if the check was failed.
-    PeekableReadBuffer peekable_buf(istr, true);
+    PeekableReadBuffer peekable_buf(istr);
     auto check_for_null = [&null_representation, &settings](ReadBuffer & buf_)
     {
         auto & buf = assert_cast<PeekableReadBuffer &>(buf_);

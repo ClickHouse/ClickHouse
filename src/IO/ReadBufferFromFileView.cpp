@@ -76,6 +76,8 @@ bool ReadBufferFromFileView::nextImpl()
     {
         file_offset_of_buffer_end += available();
         resizeWorkingBuffer();
+        /// After `next`, `impl` may leave `pos` past the start of its working buffer.
+        nextimpl_working_buffer_offset = offset();
     }
 
     return result;
