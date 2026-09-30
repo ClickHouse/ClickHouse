@@ -2512,6 +2512,34 @@ TEST_F(MetadataPlainRewritableDiskTest, ReplaceFromFileWithoutBlobKeepsTarget)
     EXPECT_FALSE(metadata->existsFile("/A/source"));
 }
 
+TEST_F(MetadataPlainRewritableDiskTest, CopyOfFileWithoutBlob)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("CopyWithoutBlob");
+    auto object_storage = getObjectStorage("CopyWithoutBlob");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/file").serialize(), "the file");
+        tx->createMetadataFile("/A/file", {StoredObject("/A/file", "file", size_bytes)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto blob = metadata->getStorageObjects("/A/file").front().remote_path;
+    object_storage->removeObjectIfExists(StoredObject(blob));
+    const auto objects_before = allObjects(object_storage, "CopyWithoutBlob");
+
+    auto tx = metadata->createTransaction();
+    tx->createHardLink("/A/file", "/A/copy");
+    expectCommitReportsDivergence(tx, blob);
+
+    EXPECT_EQ(allObjects(object_storage, "CopyWithoutBlob"), objects_before);
+    EXPECT_TRUE(metadata->existsFile("/A/file"));
+    EXPECT_FALSE(metadata->existsFile("/A/copy"));
+}
+
 /// Throws its own exception type from `copyObject`, as the Azure SDK does.
 class LocalObjectStorageWithForeignErrors final : public LocalObjectStorage
 {

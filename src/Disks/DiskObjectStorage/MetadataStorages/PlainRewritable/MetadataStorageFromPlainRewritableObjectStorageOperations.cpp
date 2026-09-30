@@ -55,13 +55,13 @@ void copyBlobOfListedFile(
     IObjectStorage & object_storage,
     const std::filesystem::path & path,
     const std::filesystem::path & remote_path,
-    const std::filesystem::path & tmp_remote_path,
+    const std::filesystem::path & remote_path_to,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings)
 {
     try
     {
-        object_storage.copyObject(StoredObject(remote_path), StoredObject(tmp_remote_path), read_settings, write_settings);
+        object_storage.copyObject(StoredObject(remote_path), StoredObject(remote_path_to), read_settings, write_settings);
     }
     catch (...)
     {
@@ -70,14 +70,14 @@ void copyBlobOfListedFile(
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "The metadata lists the file '{}', but its blob '{}' does not exist: metadata and object storage diverged "
-                "before this transaction. Copying the blob to the temporary key '{}' failed with: {}",
+                "before this transaction. Copying the blob to '{}' failed with: {}",
                 path,
                 remote_path,
-                tmp_remote_path,
+                remote_path_to,
                 getCurrentExceptionMessage(/*with_stacktrace=*/ false));
 
         if (auto * e = current_exception_cast<Exception *>())
-            e->addMessage(fmt::format("While copying the blob '{}' of the file '{}' to the temporary key '{}'", remote_path, path, tmp_remote_path));
+            e->addMessage(fmt::format("While copying the blob '{}' of the file '{}' to '{}'", remote_path, path, remote_path_to));
         throw;
     }
 }
@@ -530,7 +530,7 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
     remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
 
     copy_attempted = true;
-    object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
+    copyBlobOfListedFile(*object_storage, path_from, remote_path_from, remote_path_to, getReadSettings(), getWriteSettings());
     fs_tree->recordFile(path_to, fs_tree->getFileRemoteInfo(path_from).value());
 }
 

@@ -105,7 +105,7 @@ void MetadataOperationsHolder::commit()
             rollback(i, error);
 
             tryLogException(std::make_exception_ptr(error), __PRETTY_FUNCTION__);
-            throw error;
+            error.rethrow();
         }
     }
 
