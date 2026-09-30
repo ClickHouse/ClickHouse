@@ -2,6 +2,7 @@
 
 #include <stack>
 #include <cmath>
+#include <string_view>
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -253,6 +254,25 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
         result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats));
     }
     return result;
+}
+
+bool ConditionSelectivityEstimator::hasColumnStatistics(const Names & required_columns) const
+{
+    if (required_columns.empty())
+        return hasColumnStatistics();
+
+    constexpr std::string_view null_map_suffix = ".null";
+    for (const auto & required_column : required_columns)
+    {
+        if (column_estimators.contains(required_column))
+            return true;
+
+        if (required_column.ends_with(null_map_suffix)
+            && column_estimators.contains(required_column.substr(0, required_column.size() - null_map_suffix.size())))
+            return true;
+    }
+
+    return false;
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const

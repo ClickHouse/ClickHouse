@@ -3,6 +3,7 @@
 #include <Storages/Statistics/Statistics.h>
 
 #include <Core/Field.h>
+#include <Core/Names.h>
 #include <Core/PlainRanges.h>
 #include <Interpreters/ActionsDAG.h>
 
@@ -142,6 +143,7 @@ public:
 
     UInt64 getTotalRows() const { return total_rows; }
     bool hasColumnStatistics() const { return !column_estimators.empty(); }
+    bool hasColumnStatistics(const Names & required_columns) const;
 
 private:
     friend class ColumnStatistics;

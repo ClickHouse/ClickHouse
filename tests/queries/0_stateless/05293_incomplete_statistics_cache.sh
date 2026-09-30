@@ -12,6 +12,12 @@ dim="cache_dim_${test_suffix}"
 query_prefix="${test_suffix}_$$_${RANDOM}_${RANDOM}"
 common_settings="--allow_statistics=1 --enable_analyzer=1 --explain_query_plan_default=legacy --use_statistics=1 --use_statistics_for_part_pruning=0 --enable_cascades_optimizer=0 --enable_parallel_replicas=0 --enable_join_runtime_filters=0 --query_plan_optimize_join_order_limit=10 --query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_order_algorithm=greedy --query_plan_join_swap_table=0 --use_hash_table_stats_for_join_reordering=0 --mutations_sync=2 --alter_sync=2 --log_queries=1 --max_threads=1"
 
+cleanup()
+{
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${dim} SYNC; DROP TABLE IF EXISTS ${table} SYNC" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
 die()
 {
     echo "FAIL: $*" >&2
@@ -110,10 +116,24 @@ part_statistics()
         FORMAT TabSeparated"
 }
 
+nullable_part_statistics()
+{
+    $CLICKHOUSE_CLIENT --enable_parallel_replicas=0 -q "
+        SELECT partition, column, notEmpty(statistics)
+        FROM system.parts_columns
+        WHERE database = currentDatabase()
+            AND table = '${table}'
+            AND active
+            AND column = 'n'
+        ORDER BY partition, column
+        FORMAT TabSeparated"
+}
+
 plan_relation_token()
 {
     local use_cache="$1"
     local predicate="$2"
+    local select_settings="${3:-}"
     local token token_regex
 
     # The exact empty estimator can legitimately yield an unknown relation row
@@ -128,6 +148,7 @@ plan_relation_token()
             FROM ${table}
             INNER JOIN ${dim} ON ${dim}.id = ${table}.id
             WHERE ${predicate}
+            ${select_settings}
         )
         WHERE explain LIKE '%Join:%'
         FORMAT TabSeparated")
@@ -176,6 +197,18 @@ $CLICKHOUSE_CLIENT $common_settings --materialize_statistics_on_insert=1 -q "
 "
 
 [[ "$(part_statistics)" == $'0\tv\t1\n0\ty\t1\n1\tv\t0\n1\ty\t1' ]] || die "expected incomplete v and complete y coverage, got $(part_statistics)"
+
+unreferenced_predicate="${table}.v >= 750"
+unreferenced_query="SELECT count() FROM ${table} INNER JOIN ${dim} ON ${dim}.id = ${table}.id WHERE ${unreferenced_predicate} FORMAT TabSeparated"
+unreferenced_expected_result=250
+
+unreferenced_cold_load=$(run_and_read_event "${query_prefix}_unreferenced_cold" 0 "$unreferenced_query" "$unreferenced_expected_result")
+expect_positive_load "unreferenced-y cache-off control" "$unreferenced_cold_load"
+unreferenced_cold_token=$(plan_relation_token 0 "$unreferenced_predicate")
+wait_for_full_cache_hit "unreferenced-y partial-state snapshot" "$unreferenced_query" "$unreferenced_expected_result"
+unreferenced_cached_token=$(plan_relation_token 1 "$unreferenced_predicate")
+assert_equal_token "unreferenced-y partial-state cache reuse" "$unreferenced_cold_token" "$unreferenced_cached_token"
+
 predicate="${table}.v >= 750 AND ${table}.y = 0"
 query="SELECT count() FROM ${table} INNER JOIN ${dim} ON ${dim}.id = ${table}.id WHERE ${predicate} FORMAT TabSeparated"
 expected_result=125
@@ -214,4 +247,43 @@ empty_cold_token=$(plan_relation_token 0 "$predicate")
 empty_cached_token=$(plan_relation_token 1 "$predicate")
 assert_equal_token "empty-state cache reuse" "$empty_cold_token" "$empty_cached_token"
 
+# Reuse the fact table after the negative-cache phase to cover the stored parent
+# statistic required by a Nullable .null subcolumn. Keep the dimension unchanged.
+# shellcheck disable=SC2086
+$CLICKHOUSE_CLIENT $common_settings --materialize_statistics_on_insert=1 -q "
+    DROP TABLE ${table} SYNC;
+    CREATE TABLE ${table}
+    (
+        p UInt8,
+        id UInt64,
+        n Nullable(UInt64) STATISTICS(basic)
+    )
+    ENGINE = MergeTree
+    PARTITION BY p
+    ORDER BY id
+    SETTINGS auto_statistics_types = '', refresh_statistics_interval = 0;
+    INSERT INTO ${table}
+    SELECT 0, number, if(number % 5 = 0, CAST(NULL, 'Nullable(UInt64)'), number)
+    FROM numbers(500);
+    INSERT INTO ${table}
+    SELECT 1, number + 500, if(number % 5 = 0, CAST(NULL, 'Nullable(UInt64)'), number + 500)
+    FROM numbers(500);
+    ALTER TABLE ${table} MODIFY SETTING refresh_statistics_interval = 1;
+"
+
+[[ "$(nullable_part_statistics)" == $'0\tn\t1\n1\tn\t1' ]] || die "expected complete parent n statistics in both parts, got $(nullable_part_statistics)"
+
+nullable_predicate="${table}.n.null != 0"
+nullable_settings="SETTINGS optimize_functions_to_subcolumns=1"
+nullable_query="SELECT count() FROM ${table} INNER JOIN ${dim} ON ${dim}.id = ${table}.id WHERE ${nullable_predicate} ${nullable_settings} FORMAT TabSeparated"
+nullable_expected_result=200
+
+nullable_cold_load=$(run_and_read_event "${query_prefix}_nullable_cold" 0 "$nullable_query" "$nullable_expected_result")
+expect_positive_load "nullable .null cache-off control" "$nullable_cold_load"
+nullable_cold_token=$(plan_relation_token 0 "$nullable_predicate" "$nullable_settings")
+wait_for_full_cache_hit "nullable-null-map snapshot" "$nullable_query" "$nullable_expected_result"
+nullable_cached_token=$(plan_relation_token 1 "$nullable_predicate" "$nullable_settings")
+assert_equal_token "nullable .null cache reuse" "$nullable_cold_token" "$nullable_cached_token"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${dim} SYNC; DROP TABLE ${table} SYNC"
+trap - EXIT
