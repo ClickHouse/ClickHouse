@@ -3,7 +3,6 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <Access/Common/AccessFlags.h>
-#include <Access/ContextAccess.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -52,13 +51,7 @@ ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr c
     const ExternalDictionariesLoader & external_loader = context->getExternalDictionariesLoader();
 
     /// Check access before loading the dictionary, because loading contacts the dictionary source.
-    /// The same rule as in `StorageDictionary::read`: either `dictGet` or `SELECT` is enough.
-    auto dictionary_id = external_loader.getDictionaryID(dictionary_name, context);
-    auto dictionary_database = IDictionary::getDatabaseOrNoDatabaseTag(dictionary_id);
-    const auto & access = context->getAccess();
-    if (!access->isGranted(AccessType::dictGet, dictionary_database, dictionary_id.getTableName())
-        && !access->isGranted(AccessType::SELECT, dictionary_database, dictionary_id.getTableName()))
-        context->checkAccess(AccessType::dictGet, dictionary_database, dictionary_id.getTableName());
+    StorageDictionary::checkDictionaryAccess(external_loader.getDictionaryID(dictionary_name, context), context);
 
     std::string resolved_name = external_loader.resolveDictionaryName(dictionary_name, context);
     auto load_result = external_loader.load(resolved_name);

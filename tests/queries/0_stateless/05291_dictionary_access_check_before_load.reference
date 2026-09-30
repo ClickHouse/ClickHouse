@@ -34,6 +34,19 @@ NOT_LOADED
 SELECT * FROM w
 ACCESS_DENIED
 NOT_LOADED
+SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct'
+ACCESS_DENIED
+NOT_LOADED
+SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'hash'
+ACCESS_DENIED
+NOT_LOADED
+SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = 0
+ACCESS_DENIED
+NOT_LOADED
+--- creating a Dictionary table needs access to the dictionary
+CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(db.d)
+ACCESS_DENIED
+NOT_LOADED
 --- no grants, naiveBayesClassifier
 NOT_LOADED
 SELECT naiveBayesClassifier('nb', 'good')
@@ -72,6 +85,15 @@ NOT_LOADED
 SELECT * FROM dictionary('d')
 1	a
 LOADED
+NOT_LOADED
+SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id ORDER BY n.number SETTINGS join_algorithm = 'direct'
+0	
+1	a
+LOADED
+NOT_LOADED
+CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(db.d)
+
+NOT_LOADED
 --- dictGet, naiveBayesClassifier
 SELECT naiveBayesClassifier('nb', 'good')
 0

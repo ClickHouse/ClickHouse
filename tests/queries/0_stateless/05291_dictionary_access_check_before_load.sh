@@ -77,6 +77,20 @@ echo "--- SELECT on a Dictionary table is not enough without a grant on the dict
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.w TO ${username}"
 as_user "SELECT * FROM w"
 status
+# A join may use the dictionary directly as a key-value storage, check it is covered as well.
+for settings in "join_algorithm = 'direct'" "join_algorithm = 'hash'" "join_algorithm = 'direct', enable_analyzer = 0"
+do
+    as_user "SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS ${settings}"
+    status
+done
+
+echo "--- creating a Dictionary table needs access to the dictionary"
+${CLICKHOUSE_CLIENT} -m --query "
+    GRANT CREATE TABLE ON ${CLICKHOUSE_DATABASE}.* TO ${username};
+    GRANT TABLE ENGINE ON Dictionary TO ${username};
+"
+as_user "CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(${CLICKHOUSE_DATABASE}.d)"
+status
 
 echo "--- no grants, naiveBayesClassifier"
 status nb
@@ -111,6 +125,13 @@ as_user "SELECT count() FROM numbers(1) GROUP BY dictGet('d', 'value', number) S
 status
 unload
 as_user "SELECT * FROM dictionary('d')"
+status
+unload
+as_user "SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id ORDER BY n.number SETTINGS join_algorithm = 'direct'"
+status
+# Creating a Dictionary table only validates the columns against the definition, it does not load the dictionary.
+unload
+as_user "CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(${CLICKHOUSE_DATABASE}.d)"
 status
 
 echo "--- dictGet, naiveBayesClassifier"
