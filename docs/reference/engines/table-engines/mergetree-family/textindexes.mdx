@@ -1463,22 +1463,19 @@ Needles that span several tokens keep using the complete tokens of the needle an
 
 As a special case, if the index tokenizer is `array`, then _any_ pattern qualifies for the optimization: anchors, punctuation, `_` wildcards, several `%`-separated needles and escaped metacharacters.
 
-When the optimization is enabled, LIKE/ILIKE queries should be significantly faster than a full-table scan. However, when the pattern matches most dictionary tokens, the performance can be worse compared to a full-table scan. Several guards bound that cost:
+When the optimization is enabled, LIKE/ILIKE queries should be significantly faster than a full-table scan. However, when the pattern matches most dictionary tokens, the performance can be worse compared to a full-table scan. Two guards bound that cost:
 
-1. If the alphanumeric needle of the pattern is shorter than [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length), the dictionary scan is skipped and the pattern is evaluated on the column as usual.
-2. While scanning the dictionary, ClickHouse adds up how much work reading the matched tokens would be. Two limits bound it: [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read) caps how many posting lists are read, and [text_index_like_max_postings_rows_to_read](/reference/settings/session-settings/text-index) caps how many rows those lists point at in total. If either limit is exceeded, the index gives up on the pattern, and the rows are read and filtered as usual.
-3. A token that occurs in every row of a part cannot skip anything, so reading its posting list is wasted work. [use_text_index_like_pattern_bypass](/reference/settings/session-settings/use-text) lets ClickHouse skip reading such posting lists and evaluate the pattern on the column instead. It decides this from row counts the index already stores, never from an estimate, so a token that could have pruned something is never skipped.
+1. If the needle of the pattern is shorter than [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length), the dictionary scan is skipped and the pattern is evaluated on the column as usual. With the `splitByNonAlpha` tokenizer the needle is the alphanumeric run between the `%` wildcards; with the `array` tokenizer, the non-wildcard characters of the whole pattern are counted.
+2. While scanning the dictionary, ClickHouse counts the matched tokens whose posting lists it would have to read. [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read) caps that number; a token whose rows the primary key or an earlier index has already ruled out is not counted. If the limit is exceeded, the index gives up on the pattern, and the rows are read and filtered as usual.
 
 The speed-up of a `value%` or `%value` pattern comes from skipping granules, so it depends on how the matching rows are laid out. Needles that match rows in every granule prune nothing, and the query pays for the dictionary scan on top of the full scan it would have done anyway. Disable [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) for such workloads.
 
 The optimization is controlled by a setting:
 - [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
-The guards above are controlled by four settings:
+The guards above are controlled by two settings:
 - [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
-- [text_index_like_max_postings_rows_to_read](/reference/settings/session-settings/text-index)
-- [use_text_index_like_pattern_bypass](/reference/settings/session-settings/use-text)
 
 This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`.
 It generally requires an index without a preprocessor or postprocessor (`ilike` also accepts the `lower` or `upper` as the preprocessor function).

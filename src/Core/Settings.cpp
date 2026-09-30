@@ -10101,31 +10101,11 @@ Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
     DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
 Maximum number of posting lists the text index may read for a LIKE/ILIKE pattern when LIKE evaluation by the dictionary scan is enabled.
 
-Each matched token whose posting list is stored outside the dictionary counts once, regardless of its size; `text_index_like_max_postings_rows_to_read` limits the total number of rows instead. If either limit is exceeded, the dictionary scan stops, the pattern is not answered from the index, and the rows are read and filtered by the pattern as usual.
+Each matched token whose posting list is stored outside the dictionary counts once, regardless of its size; a token whose rows an earlier filter (for example, the primary key) has already ruled out is not counted. If the limit is exceeded, the dictionary scan stops, the pattern is not answered from the index, and the rows are read and filtered by the pattern as usual.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0, \
         {"26.4", 50, 50, "New setting"}) \
-    DECLARE(UInt64, text_index_like_max_postings_rows_to_read, 1000000, R"(
-Maximum total number of rows the posting lists read for a LIKE/ILIKE pattern may point at when text index LIKE evaluation by the dictionary scan is enabled.
-
-Each matched token whose posting list is stored outside the dictionary counts its number of rows, so one very common token can exhaust the limit; a token whose rows an earlier filter (for example, the primary key) has already ruled out is not counted. If either this limit or `text_index_like_max_postings_to_read` is exceeded, the dictionary scan stops, the pattern is not answered from the index, and the rows are read and filtered by the pattern as usual.
-
-Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
-)", 0, \
-        {"26.10", std::numeric_limits<UInt64>::max(), 1000000, "New setting bounding the total posting rows read by the text index LIKE dictionary scan; previous_value is unlimited so `compatibility` below 26.10 restores the old no-budget scan."}) \
-    DECLARE(Bool, use_text_index_like_pattern_bypass, true, R"(
-Whether a LIKE/ILIKE pattern whose matched tokens are known to occur in every row of the part may skip reading their posting lists, because those posting lists could not skip anything. The pattern is then evaluated on the column directly.
-
-The decision uses only what the index already stores, never an estimate: a matched token's row count equals the row count of the part, or the small posting lists kept inside the dictionary (and read during the dictionary scan) together cover every row. A pattern whose posting lists are all read already is left alone.
-
-"Every row" means every row of the part, not only the rows left after an earlier filter, so a combined predicate does not make the bypass more eager.
-
-Disabling this setting turns off only the bypass; `text_index_like_max_postings_to_read` and `text_index_like_max_postings_rows_to_read` can still stop the dictionary scan. A test that must reach the posting-list reader on a broad pattern also needs both limits set high enough for its data.
-
-Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
-)", 0, \
-        {"26.10", false, true, "New setting to skip reading posting lists for a LIKE pattern whose matched tokens cover every row; previous_value=false so `compatibility` below 26.10 keeps reading them."}) \
     DECLARE(Bool, use_text_index_tokens_cache, true, R"(
 Whether to cache deserialized text index token infos in memory.
 Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.

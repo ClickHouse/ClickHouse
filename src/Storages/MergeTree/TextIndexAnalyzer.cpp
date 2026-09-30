@@ -12,7 +12,6 @@ namespace ProfileEvents
     extern const Event TextIndexUseHint;
     extern const Event TextIndexDiscardHint;
     extern const Event TextIndexUsedEmbeddedPostings;
-    extern const Event TextIndexDiscardPatternQueryLowSelectivity;
 }
 
 namespace DB
@@ -553,52 +552,6 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassHints(double selectivity_th
 
             for (const auto & [query_token, _] : query_builder.tokens)
                 queries_by_token[query_token].erase(hash);
-        }
-    }
-}
-
-void TextIndexAnalyzer::analyzeCardinalitiesAndBypassPatterns(size_t total_rows)
-{
-    if (total_rows == 0)
-        return;
-
-    for (auto & [query_hash, query_builder] : query_builders)
-    {
-        if (query_builder.is_failed || query_builder.is_bypassed)
-            continue;
-
-        const auto & query = *query_builder.query;
-        if (query.getPatterns().empty() || !query.getTokens().empty())
-            continue;
-
-        /// Empty token set: scan was already cut short and the query bypassed by the budget.
-        if (query_builder.tokens.empty())
-            continue;
-
-        /// Every matched posting already read (embedded lists fold during the dictionary scan):
-        /// nothing left to save, and bypassing would trade a finished answer for a column scan.
-        if (!query_builder.needReadPostings())
-            continue;
-
-        /// Only a token present in every row proves the postings cannot prune, so the bypass needs
-        /// that exact fact rather than an estimate. The independence estimate is not a proof here:
-        /// correlated tokens that all match the same half of the table drive it to `total_rows`
-        /// while the real union still prunes half the part.
-        bool covers_every_row = query_builder.postings && query_builder.postings->cardinality() == total_rows;
-        for (const auto & [token, token_info] : query_builder.tokens)
-        {
-            if (covers_every_row)
-                break;
-            if (!hasReadPostings(token) && token_info->cardinality == total_rows)
-                covers_every_row = true;
-        }
-
-        if (covers_every_row)
-        {
-            /// Reading these postings cannot prune anything; bypass before reading them.
-            query_builder.markBypassed();
-            detachQueryFromTokens(query_hash, query_builder);
-            ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternQueryLowSelectivity);
         }
     }
 }

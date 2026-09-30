@@ -106,9 +106,6 @@ public:
     /// Discards `Hint`-mode queries whose estimated cardinality (read postings + `cardinality`
     /// estimates for unread multi-block tokens) exceeds `selectivity_threshold * total_rows`.
     void analyzeCardinalitiesAndBypassHints(double selectivity_threshold, size_t total_rows);
-    /// Bypasses pattern queries whose scan-discovered token union is not selective, before any
-    /// posting lists are read for them.
-    void analyzeCardinalitiesAndBypassPatterns(size_t total_rows);
 
 private:
     using QueryHashes = absl::flat_hash_set<UInt128>;

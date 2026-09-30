@@ -120,8 +120,6 @@ UInt64 computeCountForPart(
         .part_info = part_info,
         .index = *index.index,
         .readable_ranges = nullptr,
-        /// The count is answered for the whole part, so whole-part accounting is the guards' correct context.
-        .apply_pattern_selectivity_guards = true,
         .skip_postings_deserialization = single_token,
     };
 
