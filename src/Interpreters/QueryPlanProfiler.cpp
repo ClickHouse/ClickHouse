@@ -1,7 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/SensitiveDataMasker.h>
 #include <Core/Settings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
@@ -53,19 +52,8 @@ ExplainPlanOptions planExplainOptions()
     };
 }
 
-void maskSensitiveValues(JSONBuilder::IItem & item)
-{
-    auto masker = SensitiveDataMasker::getInstance();
-    if (!masker)
-        return;
-
-    item.transformStringValues([&](String & value) { masker->wipeSensitiveData(value); });
-}
-
 String toJSONString(JSONBuilder::ItemPtr item)
 {
-    maskSensitiveValues(*item);
-
     FormatSettings format_settings;
     format_settings.json.quote_64bit_integers = false;
 
