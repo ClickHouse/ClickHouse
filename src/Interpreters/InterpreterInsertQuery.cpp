@@ -1093,122 +1093,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     return pipeline;
 }
 
-Chain InterpreterInsertQuery::buildPlainInsertChain()
-{
-    auto & query = query_ptr->as<ASTInsertQuery &>();
-    if (query.select || query.hasInlinedData())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Plain insert chain does not accept SELECT or inlined data");
-
-    TableLockHolder table_lock;
-    StoragePtr table = prepareInsertTarget(query, table_lock);
-
-    auto context = getContext();
-    if (context->canUseParallelReplicasOnInitiator())
-    {
-        auto mutable_context = Context::createCopy(context);
-        mutable_context->setSetting("enable_parallel_replicas", Field{0});
-        context = mutable_context;
-    }
-
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
-    auto query_sample_block
-        = std::make_shared<const Block>(getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized));
-    if (query_sample_block->empty())
-        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Empty list of columns to insert");
-
-    auto insert_dependencies = InsertDependenciesBuilder::create(
-        table,
-        query_ptr,
-        query_sample_block,
-        async_insert,
-        /*skip_destination_table*/ no_destination,
-        /*max_insert_threads*/ 1,
-        context);
-
-    Chain chain = buildPushChainFromDependencies(insert_dependencies, context, table, no_squash, async_insert);
-    chain.addStorageHolder(table);
-    chain.addTableLock(std::move(table_lock));
-    return chain;
-}
-
-
-/// Single-stream head of a push insert: counting, deduplication info, and squashing planning
-/// before the data is distributed across the sink streams.
-static Chain buildPushHeadChain(
-    const std::shared_ptr<const InsertDependenciesBuilder> & insert_dependencies,
-    const ContextPtr & context_,
-    const StoragePtr & table,
-    const SharedHeader & insert_header,
-    bool should_squash,
-    bool squash_with_strict_limits)
-{
-    const Settings & settings = context_->getSettingsRef();
-    Chain head;
-
-    /// Shrink over-allocated columns produced by parsing (e.g. String columns grown power-of-two) to
-    /// fit, right after the source where the chunk is uniquely owned, to reduce peak memory usage.
-    if (static_cast<double>(settings[Setting::shrink_over_allocated_columns_min_waste_ratio]) > 1.0)
-        head.addSink(std::make_shared<ShrinkColumnsTransform>(
-            insert_header,
-            static_cast<double>(settings[Setting::shrink_over_allocated_columns_min_waste_ratio]),
-            settings[Setting::shrink_over_allocated_columns_min_waste_bytes]));
-
-    {
-        auto counting = std::make_shared<CountingTransform>(insert_header, context_->getQuota(), context_->getNormalizedQueryHash());
-        counting->setProcessListElement(context_->getProcessListElement());
-        counting->setProgressCallback(context_->getProgressCallback());
-        head.addSink(std::move(counting));
-    }
-
-    if (!squash_with_strict_limits)
-        head.addSink(std::make_shared<AddDeduplicationInfoTransform>(
-            insert_dependencies,
-            insert_dependencies->getRootViewID(),
-            settings[Setting::insert_deduplication_token].value,
-            insert_header));
-
-    if (should_squash)
-    {
-        bool table_prefers_large_blocks = table->prefersLargeBlocks();
-        size_t min_block_size_bytes = table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL;
-        /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
-        if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
-            min_block_size_bytes = std::min<size_t>(min_block_size_bytes, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
-        head.addSink(std::make_shared<PlanSquashingTransform>(
-            insert_header,
-            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-            min_block_size_bytes,
-            settings[Setting::max_insert_block_size],
-            settings[Setting::max_insert_block_size_bytes],
-            squash_with_strict_limits));
-    }
-
-    return head;
-}
-
-/// Prepend the per-stream transforms to a sink chain. `addSource` prepends, so the
-/// resulting top-to-bottom order matches the previous single-stream pipeline:
-/// ApplySquashing -> AddDeduplicationInfo (strict) -> sink.
-static void addPushStreamTransforms(
-    Chain & sink_chain,
-    const std::shared_ptr<const InsertDependenciesBuilder> & insert_dependencies,
-    const ContextPtr & context_,
-    bool should_squash,
-    bool squash_with_strict_limits)
-{
-    const Settings & settings = context_->getSettingsRef();
-
-    if (squash_with_strict_limits)
-        sink_chain.addSource(std::make_shared<AddDeduplicationInfoTransform>(
-            insert_dependencies,
-            insert_dependencies->getRootViewID(),
-            settings[Setting::insert_deduplication_token].value,
-            sink_chain.getInputSharedHeader()));
-
-    if (should_squash)
-        sink_chain.addSource(std::make_shared<ApplySquashingTransform>(sink_chain.getInputSharedHeader()));
-}
-
 QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
     std::shared_ptr<const InsertDependenciesBuilder> insert_dependencies,
     ContextPtr context_,
@@ -1232,14 +1116,77 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
 
     auto processors = std::make_shared<Processors>();
 
-    Chain head = buildPushHeadChain(insert_dependencies, context_, table, insert_header, should_squash, squash_with_strict_limits);
-    InputPort * pipeline_input = &head.getInputPort();
-    OutputPort * head_output = &head.getOutputPort();
-    for (auto processor : head.getProcessors())
-        processors->emplace_back(std::move(processor));
+    /// Build the single-stream head of the pipeline. It processes the input data
+    /// (counting, deduplication info, planning of squashing) before the data is
+    /// distributed across the parallel insert streams.
+    InputPort * pipeline_input = nullptr;
+    OutputPort * head_output = nullptr;
 
+    auto add_head_transform = [&](ProcessorPtr processor)
+    {
+        chassert(processor->getInputs().size() == 1);
+        chassert(processor->getOutputs().size() == 1);
+        if (head_output)
+            connect(*head_output, processor->getInputs().front());
+        else
+            pipeline_input = &processor->getInputs().front();
+        head_output = &processor->getOutputs().front();
+        processors->emplace_back(std::move(processor));
+    };
+
+    /// Shrink over-allocated columns produced by parsing (e.g. String columns grown power-of-two) to
+    /// fit, right after the source where the chunk is uniquely owned, to reduce peak memory usage.
+    if (static_cast<double>(settings[Setting::shrink_over_allocated_columns_min_waste_ratio]) > 1.0)
+        add_head_transform(std::make_shared<ShrinkColumnsTransform>(
+            insert_header,
+            static_cast<double>(settings[Setting::shrink_over_allocated_columns_min_waste_ratio]),
+            settings[Setting::shrink_over_allocated_columns_min_waste_bytes]));
+
+    {
+        auto counting = std::make_shared<CountingTransform>(insert_header, context_->getQuota(), context_->getNormalizedQueryHash());
+        counting->setProcessListElement(context_->getProcessListElement());
+        counting->setProgressCallback(context_->getProgressCallback());
+        add_head_transform(std::move(counting));
+    }
+
+    if (!squash_with_strict_limits)
+        add_head_transform(std::make_shared<AddDeduplicationInfoTransform>(
+            insert_dependencies,
+            insert_dependencies->getRootViewID(),
+            settings[Setting::insert_deduplication_token].value,
+            insert_header));
+
+    if (should_squash)
+    {
+        bool table_prefers_large_blocks = table->prefersLargeBlocks();
+        size_t min_block_size_bytes = table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL;
+        /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
+        if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
+            min_block_size_bytes = std::min<size_t>(min_block_size_bytes, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
+        add_head_transform(std::make_shared<PlanSquashingTransform>(
+            insert_header,
+            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
+            min_block_size_bytes,
+            settings[Setting::max_insert_block_size],
+            settings[Setting::max_insert_block_size_bytes],
+            squash_with_strict_limits));
+    }
+
+    /// Prepend the per-stream transforms to each sink chain. `addSource` prepends, so the
+    /// resulting top-to-bottom order matches the previous single-stream pipeline:
+    /// ApplySquashing -> AddDeduplicationInfo (strict) -> sink.
     for (auto & sink_chain : sink_chains)
-        addPushStreamTransforms(sink_chain, insert_dependencies, context_, should_squash, squash_with_strict_limits);
+    {
+        if (squash_with_strict_limits)
+            sink_chain.addSource(std::make_shared<AddDeduplicationInfoTransform>(
+                insert_dependencies,
+                insert_dependencies->getRootViewID(),
+                settings[Setting::insert_deduplication_token].value,
+                sink_chain.getInputSharedHeader()));
+
+        if (should_squash)
+            sink_chain.addSource(std::make_shared<ApplySquashingTransform>(sink_chain.getInputSharedHeader()));
+    }
 
     /// Distribute the single input stream across the parallel insert streams.
     std::vector<OutputPort *> stream_outputs;
@@ -1288,32 +1235,6 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
 
     return pipeline;
 }
-
-Chain InterpreterInsertQuery::buildPushChainFromDependencies(
-    std::shared_ptr<const InsertDependenciesBuilder> insert_dependencies,
-    ContextPtr context_,
-    const StoragePtr & table,
-    bool no_squash_,
-    bool async_insert_)
-{
-    const Settings & settings = context_->getSettingsRef();
-
-    auto sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
-    if (sink_chains.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Push insert chain needs one sink stream, got {}", sink_chains.size());
-
-    bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert_;
-    bool should_squash = shouldAddSquashingForStorage(table, context_) && !no_squash_;
-
-    auto & sink_chain = sink_chains.front();
-    Chain chain = buildPushHeadChain(
-        insert_dependencies, context_, table, sink_chain.getInputSharedHeader(), should_squash, squash_with_strict_limits);
-    addPushStreamTransforms(sink_chain, insert_dependencies, context_, should_squash, squash_with_strict_limits);
-    chain = Chain::concat(std::move(chain), std::move(sink_chain));
-    chain.setNumThreads(0);
-    return chain;
-}
-
 
 std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(
     const ASTInsertQuery & query, ContextPtr local_context)
@@ -1512,10 +1433,11 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
 }
 
 
-StoragePtr InterpreterInsertQuery::prepareInsertTarget(ASTInsertQuery & query, TableLockHolder & table_lock)
+BlockIO InterpreterInsertQuery::execute()
 {
     auto context = getContext();
     const Settings & settings = context->getSettingsRef();
+    auto & query = query_ptr->as<ASTInsertQuery &>();
 
     StoragePtr table = getTable(query);
     setInsertContextValues(context, query, table);
@@ -1550,7 +1472,7 @@ StoragePtr InterpreterInsertQuery::prepareInsertTarget(ASTInsertQuery & query, T
     /// Handed to the async insert queue transform on the queue route, which drops it once the queue has
     /// the block, so it does not outlive the flush wait. The SELECT side's own lock does outlive it, and
     /// that is why the queue route is refused below for a SELECT that may read the destination.
-    table_lock = table->lockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
+    auto table_lock = table->lockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
     table->updateExternalDynamicMetadataIfExists(context);
     auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
@@ -1576,19 +1498,6 @@ StoragePtr InterpreterInsertQuery::prepareInsertTarget(ASTInsertQuery & query, T
             if (column.default_desc.kind == ColumnDefaultKind::Materialized && query_sample_block.has(column.name))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column.", column.name);
     }
-
-    return table;
-}
-
-
-BlockIO InterpreterInsertQuery::execute()
-{
-    auto context = getContext();
-    const Settings & settings = context->getSettingsRef();
-    auto & query = query_ptr->as<ASTInsertQuery &>();
-
-    TableLockHolder table_lock;
-    StoragePtr table = prepareInsertTarget(query, table_lock);
 
     BlockIO res;
     if (query.select && !query.async_insert_flush)

@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -33,7 +32,6 @@
 #include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <base/insertAtEnd.h>
-#include <algorithm>
 #include <filesystem>
 #include <mutex>
 #include <boost/algorithm/string.hpp>
@@ -61,9 +59,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_time_series_table;
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
-    extern const SettingsBool use_concurrency_control;
 }
 
 namespace TimeSeriesSetting
@@ -897,13 +892,16 @@ void StorageTimeSeries::readImpl(
 SinkToStoragePtr StorageTimeSeries::write(
     const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert)
 {
-    auto header = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-    auto chain = buildTimeSeriesWriteChain(*this, header, query, local_context, async_insert);
-    const Settings & settings = local_context->getSettingsRef();
-    size_t max_threads = getMaxThreadsForAvailableMemory(
-        std::max<size_t>(1, settings[Setting::max_threads]),
-        settings[Setting::max_threads_min_free_memory_per_thread]);
-    return wrapTimeSeriesWriteChain(std::move(chain), max_threads, settings[Setting::use_concurrency_control]);
+    checkTimeSeriesVersionIsWritable(*this);
+
+    Names insert_columns;
+    if (const auto * insert_query = query->as<ASTInsertQuery>())
+    {
+        if (insert_query->columns)
+            for (const auto & col : insert_query->columns->children)
+                insert_columns.push_back(col->getColumnName());
+    }
+    return std::make_shared<TimeSeriesSink>(*this, metadata_snapshot->getSampleBlock(), insert_columns, local_context, async_insert);
 }
 
 

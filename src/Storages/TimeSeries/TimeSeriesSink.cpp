@@ -12,7 +12,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -20,6 +19,8 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Processors/Executors/PushingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
@@ -330,6 +331,42 @@ void TimeSeriesSink::insertSortedTagsToColumns(
 }
 
 
+void TimeSeriesSink::TargetPipeline::push(Block block) const
+{
+    converting_actions->execute(block);
+    if (async_executor)
+        async_executor->push(std::move(block));
+    else
+        executor->push(std::move(block));
+}
+
+void TimeSeriesSink::TargetPipeline::finish() const
+{
+    if (async_executor)
+        async_executor->finish();
+    else
+        executor->finish();
+}
+
+TimeSeriesSink::TargetPipeline::~TargetPipeline()
+{
+    /// On cancellation without an exception (e.g. `timeout_overflow_mode='break'`) neither
+    /// `onFinish` nor `onException` runs, leaving the executor started but unfinished.
+    /// Cancel it so `~PushingPipelineExecutor`'s finished-or-unwinding invariant holds.
+    try
+    {
+        if (async_executor)
+            async_executor->cancel();
+        else if (executor)
+            executor->cancel();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("TimeSeriesSink");
+    }
+}
+
+
 ColumnPtr TimeSeriesSink::calculateId(const Block & tags_block) const
 {
     Block block = tags_block;
@@ -339,54 +376,65 @@ ColumnPtr TimeSeriesSink::calculateId(const Block & tags_block) const
 }
 
 
-TimeSeriesSink::Target TimeSeriesSink::createTarget(
-    ViewTarget::Kind kind,
-    const Block & source_header,
-    bool is_tags,
-    bool is_samples,
-    bool is_recent_samples,
-    bool is_metric_families)
+std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipeline(
+    ViewTarget::Kind kind, const Block & header, bool sequential)
 {
+    auto pipeline = std::make_unique<TargetPipeline>();
+
     const auto & target_table_id = time_series_storage.getTargetTableID(kind, getContext());
 
     auto insert_query = make_intrusive<ASTInsertQuery>();
     insert_query->table_id = target_table_id;
 
     auto columns_ast = make_intrusive<ASTExpressionList>();
-    for (const auto & name : source_header.getNames())
+    for (const auto & name : header.getNames())
         columns_ast->children.emplace_back(make_intrusive<ASTIdentifier>(name));
     insert_query->columns = columns_ast;
 
-    auto target_context = Context::createCopy(getContext());
-    target_context->setCurrentQueryId(fmt::format("{}:{}", getContext()->getCurrentQueryId(), kind));
+    pipeline->context = Context::createCopy(getContext());
+    pipeline->context->setCurrentQueryId(fmt::format("{}:{}", getContext()->getCurrentQueryId(), kind));
 
-    /// Squashing would hold tags rows back from the commit gate and stall the gated targets.
+    /// A sequential pipeline passes every block to a single sink in the order of pushes, see `pushDelayedSamples`.
+    if (sequential)
+        pipeline->context->setSetting("max_insert_threads", Field{1});
+
+    /// The blocks are already squashed by the insert into the TimeSeries table. Squashing here again
+    /// would hold every block until the pipeline finishes, so the target tables could not be written in parallel.
     InterpreterInsertQuery interpreter(
         insert_query,
-        target_context,
+        pipeline->context,
         /* allow_materialized= */ true,
         /* no_squash= */ true,
         /* no_destination= */ false,
         async_insert);
 
-    Target target;
-    target.chain = interpreter.buildPlainInsertChain();
-    target.chain.setNumThreads(0);
-    target.chain.addInterpreterContext(target_context);
-    target.output_header = target.chain.getInputSharedHeader();
-    target.is_tags = is_tags;
-    target.is_samples = is_samples;
-    target.is_recent_samples = is_recent_samples;
-    target.is_metric_families = is_metric_families;
+    pipeline->io = interpreter.execute();
 
+    const Block * target_header = nullptr;
+    if (!sequential && pipeline->io.pipeline.getNumThreads() > 1)
+    {
+        /// The outer insert already reports the read progress of these rows.
+        pipeline->async_executor = std::make_unique<PushingAsyncPipelineExecutor>(pipeline->io.pipeline, /* report_read_progress= */ false);
+        pipeline->async_executor->start();
+        target_header = &pipeline->async_executor->getHeader();
+    }
+    else
+    {
+        pipeline->executor = std::make_unique<PushingPipelineExecutor>(pipeline->io.pipeline);
+        pipeline->executor->start();
+        target_header = &pipeline->executor->getHeader();
+    }
+
+    /// Precompute converting actions from our source block types to the pipeline's expected types.
     auto converting_dag = ActionsDAG::makeConvertingActions(
-        source_header.getColumnsWithTypeAndName(),
-        target.output_header->getColumnsWithTypeAndName(),
+        header.getColumnsWithTypeAndName(),
+        target_header->getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name,
-        target_context);
-    target.converting_actions = std::make_shared<ExpressionActions>(
-        std::move(converting_dag), ExpressionActionsSettings(target_context));
-    return target;
+        pipeline->context);
+    pipeline->converting_actions = std::make_shared<ExpressionActions>(
+        std::move(converting_dag), ExpressionActionsSettings(pipeline->context));
+
+    return pipeline;
 }
 
 
@@ -396,11 +444,11 @@ TimeSeriesSink::TimeSeriesSink(
     const Names & insert_columns_,
     ContextPtr context_,
     bool async_insert_)
-    : WithContext(context_)
+    : SinkToStorage(std::make_shared<const Block>(header_))
+    , WithContext(context_)
     , time_series_storage(time_series_storage_)
     , time_series_settings(time_series_storage_.getStorageSettings())
     , log(getLogger("TimeSeriesSink"))
-    , header(header_)
     , async_insert(async_insert_)
 {
     /// Determine which target tables need pipelines based on the columns mentioned in the INSERT query.
@@ -420,14 +468,29 @@ TimeSeriesSink::TimeSeriesSink(
         || is_insert_column(TimeSeriesColumnNames::Help);
 
     if (insert_tags_and_samples)
-        initTagsAndSamples();
+        initTagsAndSamplesPipelines();
 
     if (insert_metric_families)
-        initMetricFamilies();
+        initMetricFamiliesPipeline();
 }
 
 
-void TimeSeriesSink::initTagsAndSamples()
+void TimeSeriesSink::consume(Chunk & chunk)
+{
+    if (!chunk.getNumRows())
+        return;
+
+    Block block = getHeader().cloneWithColumns(chunk.getColumns());
+
+    if (insert_tags_and_samples)
+        consumeTagsAndSamples(block);
+
+    if (insert_metric_families)
+        consumeMetricFamilies(block);
+}
+
+
+void TimeSeriesSink::initTagsAndSamplesPipelines()
 {
     /// It's important to use here for `tags_header` and `samples_header`
     /// the same data types as function consumeTagsAndSamples() uses to push blocks.
@@ -536,19 +599,23 @@ void TimeSeriesSink::initTagsAndSamples()
             tags_header.insert(column);
     }
 
-    tags_source_header = std::move(tags_header);
+    tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_header, /* sequential= */ true);
     tags_deduplication_cache = time_series_storage.getTagsDeduplicationCache();
 
-    samples_source_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
-    samples_source_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
-    samples_source_header.insert(ColumnWithTypeAndName{value_type, TimeSeriesColumnNames::Value});
+    /// Build source header for samples block.
+    Block samples_header;
+    samples_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
+    samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
+    samples_header.insert(ColumnWithTypeAndName{value_type, TimeSeriesColumnNames::Value});
+    samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header, /* sequential= */ false);
 
+    /// The recent samples table (if any) receives a copy of every samples block.
     if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
-        has_recent_samples = true;
+        recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, samples_header, /* sequential= */ false);
 }
 
 
-void TimeSeriesSink::consumeTagsAndSamples(const Block & block, Block & tags_block_out, Block & samples_block_out)
+void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
 {
     /// Step 1. Extract columns from the input block.
     const auto & metric_name_col = block.getByName(TimeSeriesColumnNames::MetricName);
@@ -683,10 +750,15 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block, Block & tags_blo
         tags_block = tags_deduplication_cache->filterOutWrittenRows(
             tags_block, /* key_column_index = */ tags_block.getPositionByName(TimeSeriesColumnNames::ID), pending_tags);
 
+    /// Tags are pushed first so that if the samples insert fails,
+    /// we don't end up with sample rows referencing IDs that were never written to the tags table.
     if (tags_block.rows())
-        tags_block_out = std::move(tags_block);
+    {
+        tags_pipeline->push(std::move(tags_block));
+        ++tags_pushes;
+    }
 
-    /// Step 5. Assemble the samples block.
+    /// Step 5. Assemble the samples block and delay it until its tags are committed.
     if (total_samples)
     {
         /// Build columns for the samples block.
@@ -710,37 +782,64 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block, Block & tags_blo
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), value_type, TimeSeriesColumnNames::Value});
 
-        samples_block_out = std::move(samples_block);
+        delayed_samples_blocks.push_back({std::move(samples_block), tags_pushes});
+    }
+
+    pushDelayedSamples(/* all= */ false);
+}
+
+
+void TimeSeriesSink::pushDelayedSamples(bool all)
+{
+    /// `tags_pipeline->push` returns after the tags sink has consumed the previous block, and a MergeTree sink
+    /// commits a block when it consumes the next one. So the tags block of push `k` is committed once push `k + 2`
+    /// has returned or the tags pipeline has finished. A samples block whose tags were all written by earlier
+    /// inserts has `tags_push_index == 0` and does not wait.
+    while (!delayed_samples_blocks.empty())
+    {
+        auto & delayed = delayed_samples_blocks.front();
+        if (!all && delayed.tags_push_index != 0 && tags_pushes < delayed.tags_push_index + 2)
+            break;
+
+        /// The samples and recent samples tables are written in parallel when their pipelines
+        /// run in the background. The copy is cheap: a Block copy only copies column pointers.
+        samples_pipeline->push(delayed.block);
+        if (recent_samples_pipeline)
+            recent_samples_pipeline->push(std::move(delayed.block));
+
+        delayed_samples_blocks.pop_front();
     }
 }
 
 
-void TimeSeriesSink::initMetricFamilies()
+void TimeSeriesSink::initMetricFamiliesPipeline()
 {
     /// It's important to use here for `metric_families_header`
     /// the same data types as function consumeMetricFamilies() uses to push blocks.
     /// There is a conversion step in the target pipelines, so we don't have to always
     /// match the data types of the columns in the "tags" or "samples" tables.
 
-    const Block & input_header = getHeader();
+    const Block & header = getHeader();
 
-    metric_families_source_header.insert(ColumnWithTypeAndName{
-        input_header.getByName(TimeSeriesColumnNames::MetricFamily).type, TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage.getVersion())});
+    Block metric_families_header;
+    metric_families_header.insert(ColumnWithTypeAndName{
+        header.getByName(TimeSeriesColumnNames::MetricFamily).type, TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage.getVersion())});
 
-    metric_families_source_header.insert(ColumnWithTypeAndName{
-        input_header.getByName(TimeSeriesColumnNames::Type).type, TimeSeriesColumnNames::Type});
+    metric_families_header.insert(ColumnWithTypeAndName{
+        header.getByName(TimeSeriesColumnNames::Type).type, TimeSeriesColumnNames::Type});
 
-    metric_families_source_header.insert(ColumnWithTypeAndName{
-        input_header.getByName(TimeSeriesColumnNames::Unit).type, TimeSeriesColumnNames::Unit});
+    metric_families_header.insert(ColumnWithTypeAndName{
+        header.getByName(TimeSeriesColumnNames::Unit).type, TimeSeriesColumnNames::Unit});
 
-    metric_families_source_header.insert(ColumnWithTypeAndName{
-        input_header.getByName(TimeSeriesColumnNames::Help).type, TimeSeriesColumnNames::Help});
+    metric_families_header.insert(ColumnWithTypeAndName{
+        header.getByName(TimeSeriesColumnNames::Help).type, TimeSeriesColumnNames::Help});
 
+    metric_families_pipeline = createTargetPipeline(ViewTarget::MetricFamilies, metric_families_header, /* sequential= */ false);
     metric_families_deduplication_cache = time_series_storage.getMetricFamiliesDeduplicationCache();
 }
 
 
-void TimeSeriesSink::consumeMetricFamilies(const Block & block, Block & metric_families_block_out)
+void TimeSeriesSink::consumeMetricFamilies(const Block & block)
 {
     /// Step 1. Extract columns from the input block.
     const auto & metric_family_col = block.getByName(TimeSeriesColumnNames::MetricFamily);
@@ -777,78 +876,36 @@ void TimeSeriesSink::consumeMetricFamilies(const Block & block, Block & metric_f
             column.column = column.column->filter(filter, num_rows_with_metric_family);
     }
 
-    if (metric_families_block.rows())
-        metric_families_block_out = std::move(metric_families_block);
+    if (!metric_families_block.rows())
+        return;
+
+    metric_families_pipeline->push(std::move(metric_families_block));
 }
 
 
-void TimeSeriesSink::buildChains()
+void TimeSeriesSink::onFinish()
 {
-    if (insert_tags_and_samples)
+    if (tags_pipeline)
     {
-        targets.push_back(createTarget(ViewTarget::Tags, tags_source_header, true, false, false, false));
-        targets.push_back(createTarget(ViewTarget::Samples, samples_source_header, false, true, false, false));
-        if (has_recent_samples)
-            targets.push_back(createTarget(ViewTarget::RecentSamples, samples_source_header, false, false, true, false));
+        tags_pipeline->finish();
+        /// The pending rows are in the table for sure now.
+        if (tags_deduplication_cache && !pending_tags.empty())
+            tags_deduplication_cache->markRowsAsWritten(std::move(pending_tags));
     }
-    if (insert_metric_families)
-        targets.push_back(createTarget(ViewTarget::MetricFamilies, metric_families_source_header, false, false, false, true));
-}
-
-
-Chunk TimeSeriesSink::convertToChunk(const Block & block, const Target & target) const
-{
-    if (!block.rows())
+    if (samples_pipeline)
     {
-        auto empty = target.output_header->cloneEmpty();
-        return Chunk(empty.getColumns(), 0);
+        pushDelayedSamples(/* all= */ true);
+        samples_pipeline->finish();
     }
-
-    Block converted = block;
-    target.converting_actions->execute(converted);
-    return Chunk(converted.getColumns(), converted.rows());
-}
-
-
-TimeSeriesSink::PreparedChunk TimeSeriesSink::prepareChunk(Chunk chunk)
-{
-    PreparedChunk result;
-    Block block;
-    if (chunk.getNumRows())
-        block = header.cloneWithColumns(chunk.getColumns());
-    result.passthrough = std::move(chunk);
-
-    Block tags_block;
-    Block samples_block;
-    Block metric_families_block;
-    if (block.rows())
+    if (recent_samples_pipeline)
+        recent_samples_pipeline->finish();
+    if (metric_families_pipeline)
     {
-        if (insert_tags_and_samples)
-            consumeTagsAndSamples(block, tags_block, samples_block);
-        if (insert_metric_families)
-            consumeMetricFamilies(block, metric_families_block);
+        metric_families_pipeline->finish();
+        /// The pending rows are in the table for sure now.
+        if (metric_families_deduplication_cache && !pending_metric_families.empty())
+            metric_families_deduplication_cache->markRowsAsWritten(std::move(pending_metric_families));
     }
-
-    for (const auto & target : targets)
-    {
-        const Block & source = target.is_tags ? tags_block : target.is_metric_families ? metric_families_block : samples_block;
-        result.branches.push_back(convertToChunk(source, target));
-    }
-    return result;
-}
-
-
-void TimeSeriesSink::markTagsWritten()
-{
-    if (tags_deduplication_cache && !pending_tags.empty())
-        tags_deduplication_cache->markRowsAsWritten(std::move(pending_tags));
-}
-
-
-void TimeSeriesSink::markMetricFamiliesWritten()
-{
-    if (metric_families_deduplication_cache && !pending_metric_families.empty())
-        metric_families_deduplication_cache->markRowsAsWritten(std::move(pending_metric_families));
 }
 
 }
