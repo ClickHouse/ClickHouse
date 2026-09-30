@@ -34,13 +34,11 @@
 7
 8
 9
--- left is a table function: only the right side is distributed
+-- left is a Memory table: only the right side is distributed
 0	1
 -- the same with a local join
 0	1
--- left is system.one
-0	1
--- left joins a table function to a table
+-- left joins a Memory table to a table
 0	1
 -- both sides eligible: the join is shipped
 1	1
