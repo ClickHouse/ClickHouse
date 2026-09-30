@@ -1265,14 +1265,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.is_dictionary)
     {
         if (!create.dictionary || !create.dictionary->source)
-            return {};
+            return properties;
 
         /// Evaluate expressions (like currentDatabase() or tcpPort()) in dictionary source definition.
         NormalizeAndEvaluateConstantsVisitor::Data visitor_data{getContext()};
         NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
         visitor.visit(create.dictionary->source->ptr());
 
-        return {};
+        return properties;
     }
     else if (!create.storage || !create.storage->engine)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected application state. CREATE query is missing either its storage or engine.");
