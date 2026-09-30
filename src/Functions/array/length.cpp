@@ -26,6 +26,8 @@ For example, `SELECT s FROM t PREWHERE length(s) > 1000` can benefit when the fi
 
 On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, `PREWHERE` can filter on the size stream before reading String data for surviving granules.
 On legacy `single_stream` parts, `s.size` is virtual and still requires the regular String stream. The reader can read `s` and `s.size` together when a filtering step already needs the full `s`. Strings needed only after `PREWHERE` remain deferred; reading their sizes skips materializing the payloads but still traverses the regular stream.
+
+When `apply_mutations_on_fly = 1`, this String-size rewrite is disabled even when the full String is not needed, because pending updates can change the String without updating its stored size.
 </Note>
     )";
     FunctionDocumentation::Syntax syntax = "length(x)";

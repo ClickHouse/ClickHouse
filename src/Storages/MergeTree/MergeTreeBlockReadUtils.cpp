@@ -601,27 +601,27 @@ MergeTreeReadTaskColumns getReadTaskColumns(
                 return std::find(columns.begin(), columns.end(), parent_name) != columns.end();
             };
 
-            /// If the earliest use already reads both columns, they share a reader.
-            /// The same applies when both are only needed after PREWHERE.
-            auto has_separate_reads = [&]
-            {
-                for (const auto & columns : required_source_columns_by_step)
-                {
-                    const bool reads_parent = needs_parent(columns);
-                    const bool reads_size = std::find(columns.begin(), columns.end(), name) != columns.end();
-                    if (reads_parent || reads_size)
-                        return reads_parent != reads_size;
-                }
-                return false;
-            };
-
             /// Do not pull output-only Strings into PREWHERE. Even on legacy parts, reading
             /// sizes alone skips payload bytes without materializing them, whereas co-reading
             /// the String copies payloads for rows that the size filter may reject.
-            /// Keep co-reading when a filtering step already needs the full String.
+            const auto first_parent_step = std::find_if(
+                required_source_columns_by_step.begin(), required_source_columns_by_step.end(), needs_parent);
+            if (first_parent_step == required_source_columns_by_step.end())
+                continue;
+
+            auto needs_size = [&](const Names & columns)
+            {
+                return std::find(columns.begin(), columns.end(), name) != columns.end();
+            };
+
+            /// If the first parent read already includes its size, only an earlier size read
+            /// needs a companion. Reuse the first parent position instead of searching for it again.
+            if (needs_size(*first_parent_step)
+                && std::none_of(required_source_columns_by_step.begin(), first_parent_step, needs_size))
+                continue;
+
             /// Check demand before resolving part columns and enumerating serialization streams.
-            if (std::any_of(required_source_columns_by_step.begin(), required_source_columns_by_step.end(), needs_parent)
-                && has_separate_reads() && isLegacyStringSize(name, parent_name))
+            if (isLegacyStringSize(name, parent_name))
             {
                 legacy_string_companions.emplace(name, parent_name);
                 legacy_string_companions.emplace(parent_name, name);

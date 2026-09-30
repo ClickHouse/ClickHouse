@@ -5687,6 +5687,8 @@ String filters in `WHERE` and `PREWHERE` can also use the `size` subcolumn when 
 On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, this can avoid reading String payloads for rejected granules.
 On legacy `single_stream` parts, `size` is virtual and still requires the regular String stream. The reader can read the String and its size together when a filtering step already needs the full String. Strings needed only after `PREWHERE` remain deferred; reading their sizes skips materializing the payloads but still traverses the regular stream.
 
+When `apply_mutations_on_fly = 1`, all automatic String-size rewrites are disabled, including queries that do not need the full String. Pending updates can change the String while its stored size still describes the pre-mutation value.
+
 Possible values:
 
 - 0 — Optimization disabled.
@@ -5703,6 +5705,8 @@ Enable it for workloads where measurements show a benefit, such as clustered or 
 
 On legacy `single_stream` parts, `size` is virtual and still requires the regular String stream. The reader can read the String and its size together when a filtering step already needs the full String. Strings needed only after `PREWHERE` remain deferred; reading their sizes skips materializing the payloads but still traverses the regular stream.
 This setting does not disable size-subcolumn rewrites when the full String is not needed, and does not affect explicit subcolumn access.
+
+When `apply_mutations_on_fly = 1`, all automatic String-size rewrites are disabled, including queries that do not need the full String. Pending updates can change the String while its stored size still describes the pre-mutation value.
 
 Possible values:
 

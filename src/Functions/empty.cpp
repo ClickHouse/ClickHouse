@@ -215,6 +215,8 @@ When the query also needs the full `s`, rewrites in `WHERE` and `PREWHERE` addit
 This extra optimization is disabled by default because it may add overhead when the filter does not reject whole granules.
 On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, `PREWHERE` can filter on sizes before reading String data for surviving granules.
 On legacy `single_stream` parts, `s.size` is virtual and still requires the regular String stream. The reader can read `s` and `s.size` together when a filtering step already needs the full `s`. Strings needed only after `PREWHERE` remain deferred; reading their sizes skips materializing the payloads but still traverses the regular stream.
+
+When `apply_mutations_on_fly = 1`, this String-size rewrite is disabled even when the full String is not needed, because pending updates can change the String without updating its stored size.
 </Note>
 
 The function also works for Strings or UUIDs.
@@ -232,6 +234,8 @@ When the query also needs the full `s`, rewrites in `WHERE` and `PREWHERE` addit
 This extra optimization is disabled by default because it may add overhead when the filter does not reject whole granules.
 On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, `PREWHERE` can filter on sizes before reading String data for surviving granules.
 On legacy `single_stream` parts, `s.size` is virtual and still requires the regular String stream. The reader can read `s` and `s.size` together when a filtering step already needs the full `s`. Strings needed only after `PREWHERE` remain deferred; reading their sizes skips materializing the payloads but still traverses the regular stream.
+
+When `apply_mutations_on_fly = 1`, this String-size rewrite is disabled even when the full String is not needed, because pending updates can change the String without updating its stored size.
 </Note>
 
 The function also works for Strings or UUIDs.
@@ -259,6 +263,8 @@ When the query also needs the full `s`, rewrites in `WHERE` and `PREWHERE` addit
 This extra optimization is disabled by default because it may add overhead when the filter does not reject whole granules.
 On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, `PREWHERE` can filter on sizes before reading String data for surviving granules.
 On legacy `single_stream` parts, `s.size` is virtual and still requires the regular String stream. The reader can read `s` and `s.size` together when a filtering step already needs the full `s`. Strings needed only after `PREWHERE` remain deferred; reading their sizes skips materializing the payloads but still traverses the regular stream.
+
+When `apply_mutations_on_fly = 1`, this String-size rewrite is disabled even when the full String is not needed, because pending updates can change the String without updating its stored size.
 </Note>
 )";
     FunctionDocumentation::Description description_not_empty_string = R"(
@@ -272,6 +278,8 @@ When the query also needs the full `s`, rewrites in `WHERE` and `PREWHERE` addit
 This extra optimization is disabled by default because it may add overhead when the filter does not reject whole granules.
 On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, `PREWHERE` can filter on sizes before reading String data for surviving granules.
 On legacy `single_stream` parts, `s.size` is virtual and still requires the regular String stream. The reader can read `s` and `s.size` together when a filtering step already needs the full `s`. Strings needed only after `PREWHERE` remain deferred; reading their sizes skips materializing the payloads but still traverses the regular stream.
+
+When `apply_mutations_on_fly = 1`, this String-size rewrite is disabled even when the full String is not needed, because pending updates can change the String without updating its stored size.
 </Note>
 )";
     FunctionDocumentation::Syntax syntax_empty_string = "empty(x)";

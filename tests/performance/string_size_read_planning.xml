@@ -75,5 +75,22 @@
         PREWHERE s.size &gt; 0 AND id % 3 != 0 AND position(s, 'x') = 1
             AND s.size + id &gt; 0 FORMAT Null
     </query>
+    <!-- Repeated size inputs must not pull an output-only String into PREWHERE. -->
+    <query tag="Repeated size inputs with an output-only String">
+        SELECT s, s.size FROM string_size_read_planning_{serialization}
+        PREWHERE s.size &gt; 0 AND id % 3 != 0 AND s.size + id &gt; 1 FORMAT Null
+    </query>
+    <!-- The first String reader already reads its size; later size inputs need no companion. -->
+    <query tag="Repeated size inputs after a shared String reader">
+        SELECT s, s.size FROM string_size_read_planning_{serialization}
+        PREWHERE s.size + position(s, 'x') &gt; 0 AND id % 3 != 0
+            AND s.size + id &gt; 1 FORMAT Null
+    </query>
+    <!-- A shared later reader still needs pairing when an earlier step reads only the size. -->
+    <query tag="Size input before a shared String reader">
+        SELECT s, s.size FROM string_size_read_planning_{serialization}
+        PREWHERE s.size &gt; 0 AND id % 3 != 0
+            AND s.size + position(s, 'x') &gt; 1 FORMAT Null
+    </query>
     <drop_query>DROP TABLE IF EXISTS string_size_read_planning_{serialization}</drop_query>
 </test>
