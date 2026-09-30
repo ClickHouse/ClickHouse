@@ -19,4 +19,4 @@ SELECT * FROM format(JSONEachRow, 'ts DateTime64(3)', $$
 $$);
 
 -- A malformed near-miss is still rejected instead of falling back to the raw value of `123`.
-SELECT * FROM format(JSONEachRow, 'ts DateTime64(3)', '{"ts": ISODate123}'); -- { serverError CANNOT_PARSE_NUMBER }
+SELECT * FROM format(JSONEachRow, 'ts DateTime64(3)', '{"ts": ISODate123}'); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }

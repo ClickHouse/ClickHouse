@@ -7,10 +7,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <IO/PeekableReadBuffer.h>
 #include <IO/parseDateTimeBestEffort.h>
 #include <Common/assert_cast.h>
-#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -219,19 +217,6 @@ void SerializationDateTime64::serializeTextJSON(const IColumn & column, size_t r
     writeChar('"', ostr);
 }
 
-/// checkString() consumes matched bytes even on a partial mismatch, so the caller must roll back
-/// (via a PeekableReadBuffer checkpoint) on a false return before trying anything else.
-static bool checkISODatePrefix(ReadBuffer & istr)
-{
-    if (istr.eof())
-        return false;
-    if (*istr.position() == 'n')
-        return checkString("new ISODate(", istr);
-    if (*istr.position() == 'I')
-        return checkString("ISODate(", istr);
-    return false;
-}
-
 /// Not valid JSON but accept it as mongodb shell syntax to parse inner string
 /// Case: ISODate("2024-05-29T23:16:12.256") or new ISODate("2024-05-29T23:16:12.256Z")
 template <typename ReturnType>
@@ -304,8 +289,8 @@ static ReturnType deserializeNumberJSON(DateTime64 & x, UInt32 scale, ReadBuffer
 }
 
 /// Handles the non-quoted JSON cases: a numeric timestamp, or the mongodb shell syntax
-/// ISODate("...") / new ISODate("..."). Uses PeekableReadBuffer so a malformed near-miss like
-/// "ISODate123" rolls back instead of falling through to numeric parsing on "123".
+/// ISODate("...") / new ISODate("..."). A number never starts with 'I' or 'n', so such a token can only be
+/// the wrapper: it is matched without any rollback, and a malformed near-miss like "ISODate123" is rejected.
 /// The wrapper syntax is recognized regardless of `input_format_read_datetime_number_as_raw_value`;
 /// that setting governs only how an actual number is interpreted.
 template <typename ReturnType>
@@ -313,39 +298,16 @@ static ReturnType deserializeNonQuotedJSON(
     DateTime64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & settings,
     const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+    if (istr.eof() || (*istr.position() != 'I' && *istr.position() != 'n'))
+        return deserializeNumberJSON<ReturnType>(x, scale, istr, settings);
 
-    /// A number is by far the common case; avoid PeekableReadBuffer's allocation for it.
-    if (istr.eof() || (*istr.position() != 'n' && *istr.position() != 'I'))
-    {
-        if constexpr (throw_exception)
-        {
-            deserializeNumberJSON<void>(x, scale, istr, settings);
-            return;
-        }
-        else
-            return ReturnType(deserializeNumberJSON<bool>(x, scale, istr, settings));
-    }
-
-    PeekableReadBuffer peekable_buf(istr, true);
-    peekable_buf.setCheckpoint();
-    SCOPE_EXIT(peekable_buf.dropCheckpoint());
-
-    if (checkISODatePrefix(peekable_buf))
-    {
-        if constexpr (throw_exception)
-            deserializeISODateJSON<void>(x, scale, peekable_buf, settings, time_zone, utc_time_zone);
-        else if (!deserializeISODateJSON<bool>(x, scale, peekable_buf, settings, time_zone, utc_time_zone))
-            return ReturnType(false);
-        return ReturnType(true);
-    }
-
-    peekable_buf.rollbackToCheckpoint();
-    if constexpr (throw_exception)
-        deserializeNumberJSON<void>(x, scale, peekable_buf, settings);
-    else if (!deserializeNumberJSON<bool>(x, scale, peekable_buf, settings))
+    const char * prefix = *istr.position() == 'I' ? "ISODate(" : "new ISODate(";
+    if constexpr (std::is_same_v<ReturnType, void>)
+        assertString(prefix, istr);
+    else if (!checkString(prefix, istr))
         return ReturnType(false);
-    return ReturnType(true);
+
+    return deserializeISODateJSON<ReturnType>(x, scale, istr, settings, time_zone, utc_time_zone);
 }
 
 void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
