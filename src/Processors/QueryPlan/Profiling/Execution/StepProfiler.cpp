@@ -8,7 +8,7 @@ namespace DB
 namespace
 {
 
-StepWallClocks createWallClocksForPlanSteps(const QueryPlan & plan, UInt64 origin_ns)
+StepWallClocks createWallClocksForPlanSteps(const QueryPlan & plan)
 {
     StepWallClocks clocks;
 
@@ -24,7 +24,7 @@ StepWallClocks createWallClocksForPlanSteps(const QueryPlan & plan, UInt64 origi
             continue;
 
         for (size_t group : cur->step->getStepGroups())
-            clocks.try_emplace(std::make_pair(cur->step.get(), group), std::make_unique<StepWallClock>(origin_ns));
+            clocks.try_emplace(std::make_pair(cur->step.get(), group), std::make_unique<StepWallClock>());
 
         for (const auto * child : cur->children)
             stack.push_back(child);
@@ -40,7 +40,7 @@ StepWallClocks createWallClocksForPlanSteps(const QueryPlan & plan, UInt64 origi
 StepProfiler::StepProfiler(const QueryPlan & plan, bool collect_work_intervals_, UInt64 origin_ns_)
     : origin_ns(origin_ns_)
     , collect_work_intervals(collect_work_intervals_)
-    , clocks(createWallClocksForPlanSteps(plan, origin_ns))
+    , clocks(createWallClocksForPlanSteps(plan))
 {
 }
 

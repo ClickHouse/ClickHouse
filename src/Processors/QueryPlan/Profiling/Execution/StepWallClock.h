@@ -8,10 +8,6 @@ namespace DB
 class StepWallClock
 {
 public:
-    explicit StepWallClock(const UInt64 query_start)
-    : query_start_time(query_start)
-    {}
-
     void onEnter()
     {
         UInt64 new_value = 0;
@@ -25,7 +21,7 @@ public:
             UInt64 time_value = 0;
             if (cur_num_threads == 0)
             {
-                const UInt64 elapsed = clock_gettime_ns() - query_start_time;
+                const UInt64 elapsed = clock_gettime_ns() - origin_ns;
                 /// The elapsed time is stored in the upper 48 bits, so it must fit into 48 bits.
                 chassert(elapsed <= MAX_TIME_NS);
                 time_value = elapsed << TIME_SHIFT;
@@ -49,7 +45,7 @@ public:
             /// otherwise the decrement borrows from the time bits.
             chassert((old_value & MASK_16_BIT) != 0);
             new_value = old_value - 1;
-            exit_time = clock_gettime_ns() - query_start_time;
+            exit_time = clock_gettime_ns() - origin_ns;
             /// Extract the number of threads after decrement
             last_thread = (new_value & MASK_16_BIT) == 0;
         } while (!threads_and_time.compare_exchange_weak(old_value, new_value, std::memory_order_release, std::memory_order_relaxed));
@@ -70,7 +66,7 @@ private:
     std::atomic<UInt64> threads_and_time = 0;
 
     std::atomic<UInt64> wall_clock_time = 0;
-    const UInt64 query_start_time = 0;
+    const UInt64 origin_ns = clock_gettime_ns();
     /// The time occupies the upper 48 bits, the thread counter the lower 16.
     constexpr static UInt64 TIME_SHIFT = 16;
     constexpr static UInt64 MASK_16_BIT = 0xFFFF;
