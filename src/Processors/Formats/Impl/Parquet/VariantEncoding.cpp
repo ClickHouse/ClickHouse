@@ -2,33 +2,25 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeDynamic.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTime64.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesCache.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <base/unaligned.h>
 
 #include <algorithm>
-#include <array>
 #include <bit>
 #include <cstring>
+#include <vector>
+
+#include <fmt/format.h>
 
 namespace DB::ErrorCodes
 {
@@ -67,8 +59,6 @@ enum class PrimitiveType : UInt8
     TimestampNanosNTZ = 19,
     UUID = 20
 };
-
-constexpr size_t NUM_PRIMITIVE_TYPES = 21;
 
 enum class BasicType : UInt8
 {
@@ -158,92 +148,123 @@ Metadata parseMetadata(std::string_view blob)
     return res;
 }
 
-/// A type together with its name, so that neither has to be recomputed per value: going through
-/// DataTypeFactory or IDataType::getName for every decoded value dominates the decoding cost.
-struct TypeEntry
-{
-    DataTypePtr type;
-    String name;
-};
-
-struct TypeTables
-{
-    std::array<TypeEntry, NUM_PRIMITIVE_TYPES> primitive;
-    /// Decimal scale comes from the value itself, so these are indexed by scale.
-    std::array<TypeEntry, 10> decimal4;
-    std::array<TypeEntry, 19> decimal8;
-    std::array<TypeEntry, 39> decimal16;
-    TypeEntry string;
-    TypeEntry object;
-    TypeEntry array;
-
-    static TypeEntry make(DataTypePtr type)
-    {
-        String name = type->getName();
-        return {std::move(type), std::move(name)};
-    }
-
-    TypeTables()
-    {
-        primitive[UInt8(PrimitiveType::True)] = make(DataTypeFactory::instance().get("Bool"));
-        primitive[UInt8(PrimitiveType::False)] = primitive[UInt8(PrimitiveType::True)];
-        primitive[UInt8(PrimitiveType::Int8)] = make(std::make_shared<DataTypeInt8>());
-        primitive[UInt8(PrimitiveType::Int16)] = make(std::make_shared<DataTypeInt16>());
-        primitive[UInt8(PrimitiveType::Int32)] = make(std::make_shared<DataTypeInt32>());
-        primitive[UInt8(PrimitiveType::Int64)] = make(std::make_shared<DataTypeInt64>());
-        primitive[UInt8(PrimitiveType::Float)] = make(std::make_shared<DataTypeFloat32>());
-        primitive[UInt8(PrimitiveType::Double)] = make(std::make_shared<DataTypeFloat64>());
-        primitive[UInt8(PrimitiveType::Date)] = make(std::make_shared<DataTypeDate32>());
-        primitive[UInt8(PrimitiveType::TimestampTZ)] = make(std::make_shared<DataTypeDateTime64>(6, "UTC"));
-        primitive[UInt8(PrimitiveType::TimestampNTZ)] = make(std::make_shared<DataTypeDateTime64>(6));
-        primitive[UInt8(PrimitiveType::TimestampNanosTZ)] = make(std::make_shared<DataTypeDateTime64>(9, "UTC"));
-        primitive[UInt8(PrimitiveType::TimestampNanosNTZ)] = make(std::make_shared<DataTypeDateTime64>(9));
-        primitive[UInt8(PrimitiveType::TimeNTZ)] = make(std::make_shared<DataTypeTime64>(6));
-        primitive[UInt8(PrimitiveType::UUID)] = make(std::make_shared<DataTypeUUID>());
-
-        string = make(std::make_shared<DataTypeString>());
-        primitive[UInt8(PrimitiveType::Binary)] = string;
-        primitive[UInt8(PrimitiveType::String)] = string;
-
-        for (size_t scale = 0; scale < decimal4.size(); ++scale)
-            decimal4[scale] = make(std::make_shared<DataTypeDecimal<Decimal32>>(9, scale));
-        for (size_t scale = 0; scale < decimal8.size(); ++scale)
-            decimal8[scale] = make(std::make_shared<DataTypeDecimal<Decimal64>>(18, scale));
-        for (size_t scale = 0; scale < decimal16.size(); ++scale)
-            decimal16[scale] = make(std::make_shared<DataTypeDecimal<Decimal128>>(38, scale));
-
-        object = make(std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeDynamic>()));
-        array = make(std::make_shared<DataTypeArray>(std::make_shared<DataTypeDynamic>()));
-    }
-};
-
-const TypeTables & typeTables()
-{
-    static const TypeTables tables;
-    return tables;
-}
-
 struct DecodeContext
 {
     const Metadata & metadata;
     size_t max_depth;
 };
 
-/// The type of the value at `pos`, without decoding it. nullptr for a variant null.
-const TypeEntry * getValueType(std::string_view data, size_t pos)
+void checkDepth(const DecodeContext & context, size_t depth)
 {
-    const TypeTables & tables = typeTables();
+    checkStackSize();
+    if (context.max_depth != 0 && depth > context.max_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Parquet variant value is nested deeper than the limit ({}). It can be raised with the "
+            "setting 'max_parser_depth', but a very deeply nested value is rarely intentional",
+            context.max_depth);
+}
+
+struct ObjectLayout
+{
+    UInt32 num_elements = 0;
+    UInt8 id_size = 0;
+    UInt8 offset_size = 0;
+    size_t ids_pos = 0;
+    size_t offsets_pos = 0;
+    size_t values_pos = 0;
+
+    UInt32 fieldId(std::string_view data, UInt32 i) const
+    {
+        return readUnsigned(data, ids_pos + size_t(i) * id_size, id_size);
+    }
+
+    size_t valuePos(std::string_view data, UInt32 i) const
+    {
+        return values_pos + readUnsigned(data, offsets_pos + size_t(i) * offset_size, offset_size);
+    }
+};
+
+ObjectLayout parseObjectLayout(std::string_view data, size_t pos, UInt8 value_header)
+{
+    const bool is_large = (value_header >> 4) & 0x01;
+    ObjectLayout res;
+    res.id_size = ((value_header >> 2) & 0x03) + 1;
+    res.offset_size = (value_header & 0x03) + 1;
+    res.num_elements = readUnsigned(data, pos, is_large ? 4 : 1);
+    res.ids_pos = pos + (is_large ? 4 : 1);
+    res.offsets_pos = res.ids_pos + size_t(res.num_elements) * res.id_size;
+    res.values_pos = res.offsets_pos + (size_t(res.num_elements) + 1) * res.offset_size;
+    checkRange(data, res.ids_pos, res.values_pos - res.ids_pos);
+    return res;
+}
+
+struct ArrayLayout
+{
+    UInt32 num_elements = 0;
+    UInt8 offset_size = 0;
+    size_t offsets_pos = 0;
+    size_t values_pos = 0;
+
+    size_t elementPos(std::string_view data, UInt32 i) const
+    {
+        return values_pos + readUnsigned(data, offsets_pos + size_t(i) * offset_size, offset_size);
+    }
+};
+
+ArrayLayout parseArrayLayout(std::string_view data, size_t pos, UInt8 value_header)
+{
+    const bool is_large = (value_header >> 2) & 0x01;
+    ArrayLayout res;
+    res.offset_size = (value_header & 0x03) + 1;
+    res.num_elements = readUnsigned(data, pos, is_large ? 4 : 1);
+    res.offsets_pos = pos + (is_large ? 4 : 1);
+    res.values_pos = res.offsets_pos + (size_t(res.num_elements) + 1) * res.offset_size;
+    checkRange(data, res.offsets_pos, res.values_pos - res.offsets_pos);
+    return res;
+}
+
+bool isObject(std::string_view data, size_t pos)
+{
+    return BasicType(readByte(data, pos) & 0x03) == BasicType::Object;
+}
+
+bool isArrayOfObjects(std::string_view data, size_t pos, UInt8 value_header)
+{
+    const ArrayLayout layout = parseArrayLayout(data, pos, value_header);
+    if (layout.num_elements == 0)
+        return false;
+    for (UInt32 i = 0; i < layout.num_elements; ++i)
+    {
+        if (!isObject(data, layout.elementPos(data, i)))
+            return false;
+    }
+    return true;
+}
+
+String decimalTypeName(std::string_view data, size_t pos, UInt8 precision)
+{
+    const UInt8 scale = readByte(data, pos + 1);
+    if (scale > precision)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "Malformed Parquet variant: decimal with precision {} has invalid scale {}", UInt16(precision), UInt16(scale));
+    return fmt::format("Decimal({}, {})", UInt16(precision), UInt16(scale));
+}
+
+/// The name of the type of the value at `pos`, without decoding it. Empty for a variant null.
+String getValueTypeName(std::string_view data, size_t pos)
+{
     const UInt8 header = readByte(data, pos);
     const UInt8 value_header = header >> 2;
 
     switch (BasicType(header & 0x03))
     {
         case BasicType::ShortString:
-            return &tables.string;
+            return "String";
         case BasicType::Object:
-            return &tables.object;
+            return "JSON";
         case BasicType::Array:
-            return &tables.array;
+            return isArrayOfObjects(data, pos + 1, value_header) ? "Array(JSON)" : "Array(Dynamic)";
         case BasicType::Primitive:
             break;
     }
@@ -251,45 +272,59 @@ const TypeEntry * getValueType(std::string_view data, size_t pos)
     switch (PrimitiveType(value_header))
     {
         case PrimitiveType::Null:
-            return nullptr;
+            return {};
+        case PrimitiveType::True:
+        case PrimitiveType::False:
+            return "Bool";
+        case PrimitiveType::Int8:
+            return "Int8";
+        case PrimitiveType::Int16:
+            return "Int16";
+        case PrimitiveType::Int32:
+            return "Int32";
+        case PrimitiveType::Int64:
+            return "Int64";
+        case PrimitiveType::Float:
+            return "Float32";
+        case PrimitiveType::Double:
+            return "Float64";
         case PrimitiveType::Decimal4:
-        {
-            const UInt8 scale = readByte(data, pos + 1);
-            if (scale >= tables.decimal4.size())
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet variant decimal4 has invalid scale {}", UInt16(scale));
-            return &tables.decimal4[scale];
-        }
+            return decimalTypeName(data, pos, 9);
         case PrimitiveType::Decimal8:
-        {
-            const UInt8 scale = readByte(data, pos + 1);
-            if (scale >= tables.decimal8.size())
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet variant decimal8 has invalid scale {}", UInt16(scale));
-            return &tables.decimal8[scale];
-        }
+            return decimalTypeName(data, pos, 18);
         case PrimitiveType::Decimal16:
-        {
-            const UInt8 scale = readByte(data, pos + 1);
-            if (scale >= tables.decimal16.size())
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet variant decimal16 has invalid scale {}", UInt16(scale));
-            return &tables.decimal16[scale];
-        }
-        default:
-            break;
+            return decimalTypeName(data, pos, 38);
+        case PrimitiveType::Date:
+            return "Date32";
+        case PrimitiveType::TimestampTZ:
+            return "DateTime64(6, 'UTC')";
+        case PrimitiveType::TimestampNTZ:
+            return "DateTime64(6)";
+        case PrimitiveType::TimestampNanosTZ:
+            return "DateTime64(9, 'UTC')";
+        case PrimitiveType::TimestampNanosNTZ:
+            return "DateTime64(9)";
+        case PrimitiveType::TimeNTZ:
+            return "Time64(6)";
+        case PrimitiveType::UUID:
+            return "UUID";
+        case PrimitiveType::Binary:
+        case PrimitiveType::String:
+            return "String";
     }
 
     /// The id is 6 bits of a byte of the blob, so it can be any of 0..63, while the encoding spec
     /// assigns only 0..20.
-    if (value_header >= NUM_PRIMITIVE_TYPES || !tables.primitive[value_header].type)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA, "Malformed Parquet variant: unknown primitive type id {}", UInt16(value_header));
-
-    return &tables.primitive[value_header];
+    throw Exception(
+        ErrorCodes::INCORRECT_DATA, "Malformed Parquet variant: unknown primitive type id {}", UInt16(value_header));
 }
 
-void decodeValueIntoDynamic(std::string_view data, size_t pos, const DecodeContext & context, size_t depth, ColumnDynamic & target);
+void decodeValueIntoDynamic(
+    std::string_view data, size_t pos, const DecodeContext & context, size_t depth, ColumnDynamic & target);
 
 /// `target` must be a column of the type reported by getValueType for this value.
-void decodeValueIntoColumn(std::string_view data, size_t pos, const DecodeContext & context, size_t depth, IColumn & target);
+void decodeValueIntoColumn(
+    std::string_view data, size_t pos, const DecodeContext & context, size_t depth, IColumn & target);
 
 void decodePrimitiveIntoColumn(std::string_view data, size_t pos, PrimitiveType type_id, IColumn & target)
 {
@@ -374,60 +409,138 @@ void decodePrimitiveIntoColumn(std::string_view data, size_t pos, PrimitiveType 
         ErrorCodes::INCORRECT_DATA, "Malformed Parquet variant: unknown primitive type id {}", UInt16(type_id));
 }
 
-void decodeObjectIntoColumn(
-    std::string_view data, size_t pos, UInt8 value_header, const DecodeContext & context, size_t depth, IColumn & target)
+struct SharedDataValue
 {
-    const bool is_large = (value_header >> 4) & 0x01;
-    const UInt8 id_size = ((value_header >> 2) & 0x03) + 1;
-    const UInt8 offset_size = (value_header & 0x03) + 1;
+    String path;
+    size_t pos;
+    size_t depth;
+};
 
-    const UInt32 num_elements = readUnsigned(data, pos, is_large ? 4 : 1);
-    const size_t ids_pos = pos + (is_large ? 4 : 1);
-    const size_t offsets_pos = ids_pos + size_t(num_elements) * id_size;
-    const size_t values_pos = offsets_pos + (size_t(num_elements) + 1) * offset_size;
-    checkRange(data, ids_pos, values_pos - ids_pos);
+/// Nested objects are flattened into dot-separated paths, the same way the `JSON` type stores them.
+void insertObjectPaths(
+    std::string_view data,
+    size_t pos,
+    UInt8 value_header,
+    const DecodeContext & context,
+    size_t depth,
+    const String & prefix,
+    bool is_root,
+    ColumnObject & column,
+    size_t prev_size,
+    std::vector<SharedDataValue> & shared_data_values)
+{
+    const ObjectLayout layout = parseObjectLayout(data, pos, value_header);
 
-    auto & map_column = assert_cast<ColumnMap &>(target);
-    auto & key_value = map_column.getNestedData();
-    auto & keys = assert_cast<ColumnString &>(key_value.getColumn(0));
-    auto & values = assert_cast<ColumnDynamic &>(key_value.getColumn(1));
-
-    for (UInt32 i = 0; i < num_elements; ++i)
+    for (UInt32 i = 0; i < layout.num_elements; ++i)
     {
-        const UInt32 field_id = readUnsigned(data, ids_pos + size_t(i) * id_size, id_size);
-        const UInt32 offset = readUnsigned(data, offsets_pos + size_t(i) * offset_size, offset_size);
-        const std::string_view name = context.metadata.getName(field_id);
-        keys.insertData(name.data(), name.size());
-        decodeValueIntoDynamic(data, values_pos + offset, context, depth + 1, values);
-    }
+        const std::string_view name = context.metadata.getName(layout.fieldId(data, i));
+        String path = is_root ? String(name) : prefix + "." + String(name);
+        const size_t value_pos = layout.valuePos(data, i);
+        const UInt8 header = readByte(data, value_pos);
 
-    map_column.getNestedColumn().getOffsets().push_back(key_value.size());
+        if (BasicType(header & 0x03) == BasicType::Object)
+        {
+            checkDepth(context, depth + 1);
+            insertObjectPaths(data, value_pos + 1, header >> 2, context, depth + 1, path, false, column, prev_size, shared_data_values);
+            continue;
+        }
+
+        /// Like in the `JSON` type, a null is equivalent to the absence of the path.
+        if (header == UInt8(PrimitiveType::Null) << 2)
+            continue;
+
+        ColumnDynamic * dynamic_column = nullptr;
+        auto & dynamic_paths = column.getDynamicPathsPtrs();
+        if (auto it = dynamic_paths.find(path); it != dynamic_paths.end())
+        {
+            dynamic_column = it->second;
+            if (dynamic_column->size() > prev_size)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Parquet variant object has the path '{}' more than once after flattening nested objects", path);
+        }
+        else
+        {
+            dynamic_column = column.tryToAddNewDynamicPath(path);
+        }
+
+        if (!dynamic_column)
+        {
+            shared_data_values.push_back({std::move(path), value_pos, depth + 1});
+            continue;
+        }
+
+        decodeValueIntoDynamic(data, value_pos, context, depth + 1, *dynamic_column);
+    }
+}
+
+void decodeObjectIntoJSON(
+    std::string_view data, size_t pos, UInt8 value_header, const DecodeContext & context, size_t depth, ColumnObject & column)
+{
+    const size_t prev_size = column.size();
+
+    std::vector<SharedDataValue> shared_data_values;
+    insertObjectPaths(data, pos, value_header, context, depth, "", true, column, prev_size, shared_data_values);
+
+    /// Paths in shared data must be sorted.
+    std::sort(
+        shared_data_values.begin(), shared_data_values.end(), [](const auto & left, const auto & right) { return left.path < right.path; });
+
+    auto [shared_data_paths, shared_data_values_column] = column.getSharedDataPathsAndValues();
+    MutableColumnPtr tmp_dynamic_column;
+    for (size_t i = 0; i < shared_data_values.size(); ++i)
+    {
+        const SharedDataValue & value = shared_data_values[i];
+        if (i != 0 && value.path == shared_data_values[i - 1].path)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Parquet variant object has the path '{}' more than once after flattening nested objects", value.path);
+
+        if (!tmp_dynamic_column)
+            tmp_dynamic_column = ColumnDynamic::create(column.getMaxDynamicTypes());
+        auto & tmp_dynamic = assert_cast<ColumnDynamic &>(*tmp_dynamic_column);
+        decodeValueIntoDynamic(data, value.pos, context, value.depth, tmp_dynamic);
+        ColumnObject::serializePathAndValueIntoSharedData(
+            shared_data_paths, shared_data_values_column, value.path, tmp_dynamic, tmp_dynamic.size() - 1);
+    }
+    column.getSharedDataOffsets().push_back(shared_data_paths->size());
+
+    for (auto & [_, dynamic_column] : column.getDynamicPathsPtrs())
+    {
+        if (dynamic_column->size() == prev_size)
+            dynamic_column->insertDefault();
+    }
 }
 
 void decodeArrayIntoColumn(
     std::string_view data, size_t pos, UInt8 value_header, const DecodeContext & context, size_t depth, IColumn & target)
 {
-    const bool is_large = (value_header >> 2) & 0x01;
-    const UInt8 offset_size = (value_header & 0x03) + 1;
-
-    const UInt32 num_elements = readUnsigned(data, pos, is_large ? 4 : 1);
-    const size_t offsets_pos = pos + (is_large ? 4 : 1);
-    const size_t values_pos = offsets_pos + (size_t(num_elements) + 1) * offset_size;
-    checkRange(data, offsets_pos, values_pos - offsets_pos);
+    const ArrayLayout layout = parseArrayLayout(data, pos, value_header);
 
     auto & array_column = assert_cast<ColumnArray &>(target);
-    auto & elements = assert_cast<ColumnDynamic &>(array_column.getData());
+    auto & elements = array_column.getData();
 
-    for (UInt32 i = 0; i < num_elements; ++i)
+    if (auto * objects = typeid_cast<ColumnObject *>(&elements))
     {
-        const UInt32 offset = readUnsigned(data, offsets_pos + size_t(i) * offset_size, offset_size);
-        decodeValueIntoDynamic(data, values_pos + offset, context, depth + 1, elements);
+        for (UInt32 i = 0; i < layout.num_elements; ++i)
+        {
+            const size_t element_pos = layout.elementPos(data, i);
+            checkDepth(context, depth + 1);
+            decodeObjectIntoJSON(data, element_pos + 1, readByte(data, element_pos) >> 2, context, depth + 1, *objects);
+        }
+    }
+    else
+    {
+        auto & dynamic_elements = assert_cast<ColumnDynamic &>(elements);
+        for (UInt32 i = 0; i < layout.num_elements; ++i)
+            decodeValueIntoDynamic(data, layout.elementPos(data, i), context, depth + 1, dynamic_elements);
     }
 
     array_column.getOffsets().push_back(elements.size());
 }
 
-void decodeValueIntoColumn(std::string_view data, size_t pos, const DecodeContext & context, size_t depth, IColumn & target)
+void decodeValueIntoColumn(
+    std::string_view data, size_t pos, const DecodeContext & context, size_t depth, IColumn & target)
 {
     const UInt8 header = readByte(data, pos);
     const UInt8 value_header = header >> 2;
@@ -444,7 +557,7 @@ void decodeValueIntoColumn(std::string_view data, size_t pos, const DecodeContex
             return;
         }
         case BasicType::Object:
-            decodeObjectIntoColumn(data, pos + 1, value_header, context, depth, target);
+            decodeObjectIntoJSON(data, pos + 1, value_header, context, depth, assert_cast<ColumnObject &>(target));
             return;
         case BasicType::Array:
             decodeArrayIntoColumn(data, pos + 1, value_header, context, depth, target);
@@ -452,18 +565,13 @@ void decodeValueIntoColumn(std::string_view data, size_t pos, const DecodeContex
     }
 }
 
-void decodeValueIntoDynamic(std::string_view data, size_t pos, const DecodeContext & context, size_t depth, ColumnDynamic & target)
+void decodeValueIntoDynamic(
+    std::string_view data, size_t pos, const DecodeContext & context, size_t depth, ColumnDynamic & target)
 {
-    checkStackSize();
-    if (context.max_depth != 0 && depth > context.max_depth)
-        throw Exception(
-            ErrorCodes::TOO_DEEP_RECURSION,
-            "Parquet variant value is nested deeper than the limit ({}). It can be raised with the "
-            "setting 'max_parser_depth', but a very deeply nested value is rarely intentional",
-            context.max_depth);
+    checkDepth(context, depth);
 
-    const TypeEntry * entry = getValueType(data, pos);
-    if (!entry)
+    const String type_name = getValueTypeName(data, pos);
+    if (type_name.empty())
     {
         target.insertDefault();
         return;
@@ -473,11 +581,11 @@ void decodeValueIntoDynamic(std::string_view data, size_t pos, const DecodeConte
     /// addNewVariant below.
     auto & variant_column = target.getVariantColumn();
 
-    if (target.getVariantInfo().variant_name_to_discriminator.contains(entry->name)
-        || target.addNewVariant(entry->type, entry->name))
+    if (target.getVariantInfo().variant_name_to_discriminator.contains(type_name)
+        || target.addNewVariant(getDataTypesCache().getType(type_name), type_name))
     {
         const ColumnVariant::Discriminator discriminator
-            = target.getVariantInfo().variant_name_to_discriminator.at(entry->name);
+            = target.getVariantInfo().variant_name_to_discriminator.at(type_name);
         auto & variant = variant_column.getVariantByGlobalDiscriminator(discriminator);
         decodeValueIntoColumn(data, pos, context, depth, variant);
         variant_column.getOffsets().push_back(variant.size() - 1);
@@ -487,9 +595,10 @@ void decodeValueIntoDynamic(std::string_view data, size_t pos, const DecodeConte
 
     /// The Dynamic is out of variant slots, so the value goes into the shared variant, which needs
     /// it as a standalone column.
-    auto single_value_column = entry->type->createColumn();
+    const DataTypePtr type = getDataTypesCache().getType(type_name);
+    auto single_value_column = type->createColumn();
     decodeValueIntoColumn(data, pos, context, depth, *single_value_column);
-    target.insertValueIntoSharedVariant(*single_value_column, entry->type, entry->name, 0);
+    target.insertValueIntoSharedVariant(*single_value_column, type, type_name, 0);
 }
 
 const ColumnString & unwrapLeaf(const IColumn & column, const NullMap *& out_null_map)
