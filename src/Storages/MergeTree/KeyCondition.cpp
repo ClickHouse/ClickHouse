@@ -5435,6 +5435,11 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
             if (float_literal_was_rewritten
                 && (float_rewrite_element.function == RPNElement::ALWAYS_TRUE || float_rewrite_element.function == RPNElement::ALWAYS_FALSE))
             {
+                /// A transformed constant already has the type of its key column, so only an untransformed
+                /// constant, which describes the predicate exactly, can fold here. A relaxed fold to
+                /// `ALWAYS_TRUE` would claim that every row matches.
+                chassert(!is_relaxed);
+
                 /// The comparison folded to a constant. Return it directly so `atom_map` does not
                 /// overwrite its `ALWAYS_TRUE` or `ALWAYS_FALSE` function.
                 float_rewrite_element.key_columns.push_back(candidate.key_column_num);
