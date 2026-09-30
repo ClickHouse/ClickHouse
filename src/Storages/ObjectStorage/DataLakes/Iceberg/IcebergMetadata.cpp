@@ -506,6 +506,7 @@ bool IcebergMetadata::optimize(
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+        const auto table_state = extractIcebergSnapshotIdFromMetadataObject(metadata_snapshot);
         auto snapshots_info = getHistory(context, /* ignore_metadata_pointer_overrides */ true);
         compactIcebergTable(
             snapshots_info,
@@ -514,6 +515,7 @@ bool IcebergMetadata::optimize(
             getMetadataLookupSettings(),
             format_settings,
             sample_block,
+            table_state ? table_state->metadata_file_path : String{},
             context,
             write_format);
         return true;

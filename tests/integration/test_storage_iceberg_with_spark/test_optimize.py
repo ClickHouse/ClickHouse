@@ -122,6 +122,9 @@ def test_optimize_manifest_per_file_stats(started_cluster_iceberg_with_spark):
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
+    # Load the state produced by the external delete before compacting it.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
     instance.query(
         f"OPTIMIZE TABLE {TABLE_NAME};",
         settings={"allow_experimental_iceberg_compaction": 1},
@@ -279,7 +282,7 @@ def test_optimize_rejects_latest_gc_disabled_with_pinned_metadata(
 
 
 @pytest.mark.parametrize("storage_type", ["local"])
-def test_optimize_uses_latest_metadata_with_pinned_metadata(
+def test_optimize_rejects_changed_metadata_with_pinned_metadata(
     started_cluster_iceberg_with_spark, storage_type
 ):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
@@ -296,10 +299,20 @@ def test_optimize_uses_latest_metadata_with_pinned_metadata(
         "SET TBLPROPERTIES('clickhouse.test.external-commit' = '1')",
     )
 
-    instance.query(
+    table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    checksum_command = [
+        "bash", "-c", f"find '{table_dir}' -type f -exec sha256sum {{}} + | sort"
+    ]
+    files_before = instance.exec_in_container(checksum_command)
+    assert files_before
+
+    error = instance.query_and_get_error(
         f"OPTIMIZE TABLE {TABLE_NAME};",
         settings={"allow_experimental_iceberg_compaction": 1},
     )
+    assert "BAD_ARGUMENTS" in error, error
+    assert "Iceberg metadata changed" in error, error
+    assert instance.exec_in_container(checksum_command) == files_before
 
     instance.query(f"DROP TABLE {TABLE_NAME}")
     create_iceberg_table(
@@ -342,8 +355,9 @@ def test_optimize_rejects_external_schema_change(
 
 
 @pytest.mark.parametrize("storage_type", ["local"])
-def test_optimize_uses_latest_metadata_compression(
-    started_cluster_iceberg_with_spark, storage_type
+@pytest.mark.parametrize("gc_enabled", ["true", "false"])
+def test_optimize_rejects_changed_metadata_compression(
+    started_cluster_iceberg_with_spark, storage_type, gc_enabled
 ):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = "test_optimize_latest_codec_" + get_uuid_str()
@@ -356,7 +370,8 @@ def test_optimize_uses_latest_metadata_compression(
         spark,
         storage_type,
         TABLE_NAME,
-        "SET TBLPROPERTIES('write.metadata.compression-codec' = 'gzip')",
+        "SET TBLPROPERTIES('write.metadata.compression-codec' = 'gzip', "
+        f"'gc.enabled' = '{gc_enabled}')",
     )
 
     metadata_dir = (
@@ -367,11 +382,45 @@ def test_optimize_uses_latest_metadata_compression(
     ).strip()
     assert compressed_metadata
 
+    table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    checksum_command = [
+        "bash", "-c", f"find '{table_dir}' -type f -exec sha256sum {{}} + | sort"
+    ]
+    files_before = instance.exec_in_container(checksum_command)
+    assert files_before
+
+    error = instance.query_and_get_error(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+    assert "BAD_ARGUMENTS" in error, error
+    expected_error = "GC is disabled" if gc_enabled == "false" else "Iceberg metadata changed"
+    assert expected_error in error, error
+    assert instance.exec_in_container(checksum_command) == files_before
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+    create_iceberg_table(
+        storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_allows_unchanged_pinned_metadata(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_unchanged_pinned_" + get_uuid_str()
+    create_pinned_optimize_table(
+        started_cluster_iceberg_with_spark, instance, storage_type, TABLE_NAME
+    )
+
     instance.query(
         f"OPTIMIZE TABLE {TABLE_NAME};",
         settings={"allow_experimental_iceberg_compaction": 1},
     )
 
+    # Compaction replaces the pinned metadata file; reopen on the new head.
     instance.query(f"DROP TABLE {TABLE_NAME}")
     create_iceberg_table(
         storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark

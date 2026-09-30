@@ -1487,6 +1487,7 @@ void compactIcebergTable(
     const DataLakeStorageSettings & data_lake_settings,
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
+    const String & loaded_metadata_path,
     ContextPtr context_,
     const String & write_format)
 {
@@ -1533,6 +1534,13 @@ void compactIcebergTable(
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Iceberg metadata changed during compaction planning; retry OPTIMIZE");
+
+        /// The rewrite rebuilds metadata from the loaded schema; matching columns alone
+        /// cannot protect properties, refs, or other metadata-only changes.
+        if (loaded_metadata_path != plan.metadata_file_path)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Iceberg metadata changed since the table metadata was loaded; refusing OPTIMIZE to avoid rewriting stale metadata");
 
         auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
         writeDataFiles(
