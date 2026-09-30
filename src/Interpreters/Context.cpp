@@ -6419,7 +6419,7 @@ UInt32 Context::getZooKeeperSessionUptime() const
 
 void Context::reconnectZooKeeper(const String & reason) const
 {
-    std::lock_guard lock(shared->zookeeper_mutex);
+    auto lock = acquireZooKeeperLock(*this, shared->zookeeper_mutex, "ZooKeeper lock");
     if (shared->zookeeper)
     {
         shared->zookeeper->finalize(reason);
