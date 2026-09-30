@@ -2,12 +2,12 @@
 
 #include <base/types.h>
 
-namespace DB 
+namespace DB
 {
 
 struct ElasticsearchConfiguration
 {
-    String url = "http://localhost:9200";
+    String url;
     String index;
 };
 

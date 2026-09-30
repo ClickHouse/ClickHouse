@@ -1,14 +1,13 @@
 #pragma once
 
-#include <Storages/BigQuery/BigQueryConfiguration.h>
 #include <Storages/Elasticsearch/ElasticsearchConfiguration.h>
+#include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/URI.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Common/logger_useful.h>
 
-namespace DB 
+namespace DB
 {
 class ElasticsearchClient
 {
@@ -17,7 +16,7 @@ public:
 
     using IndexPage = Poco::JSON::Array::Ptr;
 
-    IndexPage searchIndex() const;
+    IndexPage searchIndex(bool fetch_source) const;
 
 private:
 

@@ -21,7 +21,7 @@ public:
         const StorageID & table_id_,
         ElasticsearchConfiguration configuration_,
         const ColumnsDescription & columns_,
-        const ConstraintsDescription & constaints_,
+        const ConstraintsDescription & constraints_,
         const String & comment_
     );
 
