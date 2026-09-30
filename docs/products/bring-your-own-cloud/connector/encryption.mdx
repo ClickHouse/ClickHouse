@@ -164,7 +164,7 @@ Two roles use a TDE key. The connector's IAM role (`executor_role_arn` in the `c
 }
 ```
 
-Create needs `kms:DescribeKey` and `kms:Encrypt` for the connector's role. Rotation needs `kms:ReEncryptFrom` on the old key and `kms:ReEncryptTo` plus `kms:DescribeKey` on the new one. The `tde-key` Terraform example creates such a key: it takes the two role ARNs and outputs `tde_kms_key_arn` for the create.
+Create needs `kms:DescribeKey` and `kms:Encrypt` for the connector's role. Rotation needs `kms:ReEncryptFrom` on the old key and `kms:ReEncryptTo` plus `kms:DescribeKey` on the new one. The `tde-key` Terraform example ships in the Terraform archive from the connector release that adds it; earlier archives do not have it, and the policy above is what to create by hand. The example creates one KMS key with annual rotation, a 30-day deletion window, and the alias `alias/<cluster-name>-<name>-tde`, carrying this policy for the two role ARNs you pass, and outputs `tde_kms_key_arn` for the create.
 
 ## Enabling TDE {#enabling-tde}
 
