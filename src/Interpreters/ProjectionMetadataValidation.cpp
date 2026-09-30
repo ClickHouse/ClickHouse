@@ -210,12 +210,11 @@ void validateProjectionMetadataAdmission(
                     source_projection_safety_known = true;
             }
         }
-        if (reject_column_list && !source_projection_safety_known)
+        if ((reject_column_list || reject_unavailable_copy) && !source_projection_safety_known)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Cannot verify projection metadata of the source table for ON CLUSTER AS. "
-                "Make the source visible to the initiator with SHOW COLUMNS access, or enable "
-                "allow_projection_column_list_in_replicated_metadata = 1");
+                "Make the source visible to the initiator with SHOW COLUMNS access before copying it");
     }
     /// `CREATE AS` has already normalized its query at this call site. Unavailable source declarations
     /// remain in the copied properties, but have not yet been appended to the query for persistence.

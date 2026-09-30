@@ -108,17 +108,15 @@ def test_legacy_create_as_source_only_on_worker(test_cluster):
         error = initiator.query_and_get_error(inherited_query, settings=legacy_settings)
         assert "Cannot verify projection metadata" in error, error
 
-        initiator.query(
+        error = initiator.query_and_get_error(
             copy_query,
             settings={
                 **legacy_settings,
                 "allow_projection_column_list_in_replicated_metadata": 1,
             },
         )
-        assert "PROJECTION p" in worker.query(
-            "SHOW CREATE TABLE default.legacy_worker_copy"
-        )
-        assert initiator.query("EXISTS TABLE default.legacy_worker_copy").strip() == "0"
+        assert "Cannot verify projection metadata" in error, error
+        assert worker.query("EXISTS TABLE default.legacy_worker_copy").strip() == "0"
 
         initiator.query(
             "CREATE TABLE default.legacy_worker_memory ON CLUSTER worker_only "
