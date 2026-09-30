@@ -29,7 +29,7 @@ namespace DB::ErrorCodes
     extern const int FAULT_INJECTED;
 }
 
-/// Throws on the chosen calls of `writeFile`, `moveFile`, `removeFileIfExists` and `prepareRead`, numbered from 1 since the last `arm`.
+/// Throws on the chosen calls of `writeFile`, `moveFile`, `removeFileIfExists`, `prepareRead` and `existsFile`, numbered from 1 since the last `arm`.
 class FaultInjectingDiskLocal : public DB::DiskLocal
 {
 public:
@@ -39,6 +39,7 @@ public:
         std::set<size_t> move_file = {};
         std::set<size_t> remove_file_if_exists = {};
         std::set<size_t> prepare_read = {};
+        std::set<size_t> exists_file = {};
     };
 
     using DB::DiskLocal::DiskLocal;
@@ -50,9 +51,14 @@ public:
         move_file_calls = 0;
         remove_file_if_exists_calls = 0;
         prepare_read_calls = 0;
+        exists_file_calls = 0;
+        fired_faults = 0;
     }
 
     void disarm() { arm({}); }
+
+    size_t firedFaults() const { return fired_faults; }
+    size_t writeFileCalls() const { return write_file_calls; }
 
     std::unique_ptr<DB::WriteBufferFromFileBase> writeFile(
         const std::string & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
@@ -79,11 +85,20 @@ public:
         DB::DiskLocal::prepareRead(path, settings, read_hint, pipeline);
     }
 
+    bool existsFile(const std::string & path) const override
+    {
+        injectFault(faults.exists_file, exists_file_calls, "existsFile", path);
+        return DB::DiskLocal::existsFile(path);
+    }
+
 private:
-    static void injectFault(const std::set<size_t> & armed, size_t & calls, std::string_view method, const std::string & path)
+    void injectFault(const std::set<size_t> & armed, size_t & calls, std::string_view method, const std::string & path) const
     {
         if (armed.contains(++calls))
+        {
+            ++fired_faults;
             throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injected fault in {} #{} of {}", method, calls, path);
+        }
     }
 
     Faults faults;
@@ -91,6 +106,8 @@ private:
     size_t move_file_calls = 0;
     size_t remove_file_if_exists_calls = 0;
     mutable size_t prepare_read_calls = 0;
+    mutable size_t exists_file_calls = 0;
+    mutable size_t fired_faults = 0;
 };
 
 class MetadataLocalDiskTest : public testing::Test
@@ -1271,6 +1288,7 @@ TEST_F(MetadataLocalDiskTest, TestUnlinkRollbackFailureDoesNotUndercountHardlink
         tx->createMetadataFile("non-existing/fail-tx", /*objects=*/{});
         EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
     }
+    EXPECT_EQ(disk->firedFaults(), 1);
     disk->disarm();
 
     {
@@ -1297,13 +1315,15 @@ TEST_F(MetadataLocalDiskTest, TestUnlinkMoveFailureDoesNotUndercountHardlinks)
     auto [metadata, disk] = getFaultInjectingMetadataStorage("/TestUnlinkMoveFailureDoesNotUndercountHardlinks");
     createPartWithDetachedCopy(metadata, {{"a", "ka"}});
 
-    /// The move of "part/a" fails, and so does restoring its count if it was decremented before the move.
+    /// The move of "part/a" fails before any count is written; write #2 would fail restoring a count decremented before it.
     disk->arm({.write_file = {2}, .move_file = {1}});
     {
         auto tx = metadata->createTransaction();
         tx->unlinkFile("part/a", /*if_exists=*/false, /*should_remove_objects=*/true);
         EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
     }
+    EXPECT_EQ(disk->firedFaults(), 1);
+    EXPECT_EQ(disk->writeFileCalls(), 0);
     disk->disarm();
 
     EXPECT_EQ(metadata->getHardlinkCount("part/a"), 1);
@@ -1336,6 +1356,7 @@ TEST_F(MetadataLocalDiskTest, TestUnlinkRollbackCompletesWhenReadFails)
         tx->unlinkFile("part/b", /*if_exists=*/false, /*should_remove_objects=*/true);
         EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
     }
+    EXPECT_EQ(disk->firedFaults(), 1);
     disk->disarm();
 
     ASSERT_TRUE(metadata->existsFile("part/a"));
@@ -1371,6 +1392,7 @@ TEST_F(MetadataLocalDiskTest, TestRemoveRecursiveRollbackFailureDoesNotUndercoun
         tx->createMetadataFile("non-existing/fail-tx", /*objects=*/{});
         EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
     }
+    EXPECT_EQ(disk->firedFaults(), 1);
     disk->disarm();
 
     {
@@ -1437,6 +1459,7 @@ TEST_F(MetadataLocalDiskTest, TestRemoveRecursiveOfFileRollbackFailureDoesNotUnd
         tx->createMetadataFile("non-existing/fail-tx", /*objects=*/{});
         EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
     }
+    EXPECT_EQ(disk->firedFaults(), 1);
     disk->disarm();
 
     {
@@ -1462,13 +1485,15 @@ TEST_F(MetadataLocalDiskTest, TestRemoveRecursiveOfFileMoveFailureDoesNotUnderco
     auto [metadata, disk] = getFaultInjectingMetadataStorage("/TestRemoveRecursiveOfFileMoveFailureDoesNotUndercountHardlinks");
     createPartWithDetachedCopy(metadata, {{"a", "ka"}});
 
-    /// The move of "part/a" fails, and so does restoring its count if it was decremented before the move.
+    /// The move of "part/a" fails before any count is written; write #2 would fail restoring a count decremented before it.
     disk->arm({.write_file = {2}, .move_file = {1}});
     {
         auto tx = metadata->createTransaction();
         tx->removeRecursive("part/a", /*should_remove_objects=*/nullptr);
         EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
     }
+    EXPECT_EQ(disk->firedFaults(), 1);
+    EXPECT_EQ(disk->writeFileCalls(), 0);
     disk->disarm();
 
     EXPECT_EQ(metadata->getHardlinkCount("part/a"), 1);
@@ -1500,6 +1525,7 @@ TEST_F(MetadataLocalDiskTest, TestRemoveRecursiveTraverseFailureDoesNotUndercoun
         tx->removeRecursive("part", /*should_remove_objects=*/nullptr);
         EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
     }
+    EXPECT_EQ(disk->firedFaults(), 2);
     disk->disarm();
 
     {
@@ -1570,6 +1596,7 @@ TEST_F(MetadataLocalDiskTest, TestHardlinkRollbackFailureDoesNotUndercount)
         tx->createMetadataFile("non-existing/fail-tx", /*objects=*/{});
         EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
     }
+    EXPECT_EQ(disk->firedFaults(), 1);
     disk->disarm();
 
     EXPECT_EQ(metadata->getHardlinkCount("a"), 1);
@@ -1606,6 +1633,40 @@ TEST_F(MetadataLocalDiskTest, TestHardlinkRollbackKeepsSourceWhenReadFails)
         tx->createHardLink("a", "b");
         EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
     }
+    EXPECT_EQ(disk->firedFaults(), 1);
+    disk->disarm();
+
+    ASSERT_TRUE(metadata->existsFile("a"));
+    EXPECT_FALSE(metadata->existsFile("b"));
+    EXPECT_EQ(metadata->getHardlinkCount("a"), 0);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("a", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+        verifyBlobsToRemove(metadata, {"ka"});
+    }
+}
+
+/// When checking whether the source file exists fails while creating a hard link, the rollback keeps the source file.
+TEST_F(MetadataLocalDiskTest, TestHardlinkRollbackKeepsSourceWhenExistsCheckFails)
+{
+    auto [metadata, disk] = getFaultInjectingMetadataStorage("/TestHardlinkRollbackKeepsSourceWhenExistsCheckFails");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createMetadataFile("a", {DB::StoredObject("ka", "a", 1)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// Check #1 is made while parsing "a", #2 before writing its count.
+    disk->arm({.exists_file = {2}});
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("a", "b");
+        EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
+    }
+    EXPECT_EQ(disk->firedFaults(), 1);
     disk->disarm();
 
     ASSERT_TRUE(metadata->existsFile("a"));

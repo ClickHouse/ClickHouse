@@ -107,7 +107,7 @@ WriteFileOperation::WriteFileOperation(std::string path_, std::string data_, IDi
 void WriteFileOperation::execute()
 {
     file_existed = disk.existsFile(path);
-    if (file_existed)
+    if (*file_existed)
     {
         auto buf = disk.readFile(path, getReadSettings());
         fiu_do_on(FailPoints::write_file_operation_fail_on_read,
@@ -128,16 +128,16 @@ void WriteFileOperation::undo()
 {
     if (prev_data.has_value())
     {
-        chassert(file_existed);
+        chassert(file_existed == true);
         auto buf = disk.writeFile(path);
         writeString(prev_data.value(), *buf);
         buf->finalize();
     }
-    else if (!file_existed)
+    else if (file_existed == false)
     {
         disk.removeFileIfExists(path);
     }
-    // else: file existed but the file content is unchanged, leave it alone.
+    // else: the file existed, or the check threw before anything was written; leave it alone.
 }
 
 UnlinkFileOperation::UnlinkFileOperation(std::string path_, bool if_exists_, bool should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)

@@ -61,11 +61,8 @@ private:
 
     std::optional<std::string> prev_data;
 
-    // True once execute() has confirmed the file exists on disk.
-    // Used by undo() to distinguish "file was created by this operation"
-    // (safe to delete on undo) from "file already existed, execute() failed
-    // before overwriting it" (must NOT delete — the file is unchanged).
-    bool file_existed = false;
+    /// Unset until execute() has checked whether `path` exists; undo() removes the file only if it did not.
+    std::optional<bool> file_existed;
 };
 
 struct UnlinkFileOperation final : public IMetadataOperation
