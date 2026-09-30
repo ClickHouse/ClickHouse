@@ -7398,6 +7398,10 @@ This is an expert-level setting which should only be used for debugging by devel
 )", 0, \
         {"26.10", false, true, "Enable query_plan_lower_array_join_function by default."}, \
         {"26.9", false, false, "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."}) \
+    DECLARE(Bool, legacy_array_join_function_nondeterministic_evaluation, false, R"(
+How a non-deterministic function next to the `arrayJoin` function is evaluated when it does not depend on the joined value, for example `rand()` or `generateUUIDv4()` in the same `SELECT`. By default it gives a different value on every output row, like with the `ARRAY JOIN` clause. Enable to get the behavior of older versions: one value per source row, repeated across that row's expanded rows.
+)", 0, \
+        {"26.10", true, false, "A non-deterministic function next to the `arrayJoin` function gives a different value on every output row, like with the `ARRAY JOIN` clause. The setting restores one value per source row."}) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
@@ -9756,6 +9760,17 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"25.12", false, true, "New setting. Add optimization to remove unused columns in query plan."}) \
+    DECLARE(Bool, kill_throw_if_noop, false, R"(
+Controls whether [`KILL QUERY`](/sql-reference/statements/kill#kill-query) and [`KILL MUTATION`](/sql-reference/statements/kill#kill-mutation) throw an exception when their `WHERE` clauses match no rows.
+
+If set to true, `KILL QUERY` throws when there are no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when no rows match in `system.mutations`. By default, an empty match returns without an exception. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
+
+Possible values:
+
+- 1 — Throw an exception.
+- 0 — Do not throw an exception.
+)", 0, \
+        {"26.10", false, false, "New setting"}) \
     DECLARE(Bool, jemalloc_enable_profiler, false, R"(
 Enable jemalloc profiler for the query. Jemalloc will sample allocations and all deallocations for sampled allocations.
 Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
