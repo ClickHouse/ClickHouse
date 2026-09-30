@@ -558,11 +558,9 @@ String MergeTask::buildTempPartBasename(const String & prefix, const String & pa
     return prefix + suffix;
 }
 
-bool MergeTask::canDropTTLExpiredPartsUnread(const StorageInMemoryMetadata & metadata, const MergeTreeData::DataPartsVector & parts, time_t time)
+bool MergeTask::isRowsTTLExpired(const IMergeTreeDataPart & part, time_t time)
 {
-    return metadata.hasOnlyRowsTTL()
-        && std::ranges::all_of(parts, [time](const auto & part)
-            { return part->ttl_infos.table_ttl.min != 0 && part->ttl_infos.table_ttl.max <= time; });
+    return part.ttl_infos.table_ttl.min != 0 && part.ttl_infos.table_ttl.max <= time;
 }
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
@@ -886,8 +884,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// not drop rows, so it falls through to the normal pipeline, which builds no TTLTransform.
     const bool can_short_circuit_ttl_drop =
         global_ctx->future_part->merge_type == MergeType::TTLDrop
+        && global_ctx->metadata_snapshot->hasOnlyRowsTTL()
         && ctx->need_remove_expired_values
-        && canDropTTLExpiredPartsUnread(*global_ctx->metadata_snapshot, global_ctx->future_part->parts, global_ctx->time_of_merge);
+        && std::ranges::all_of(global_ctx->future_part->parts, [&](const auto & part) { return isRowsTTLExpired(*part, global_ctx->time_of_merge); });
 
     /// The short-circuit below commits a 0-row part without ever running a pipeline, so nothing
     /// would retire these projections. Decide before the bookkeeping rather than undoing it

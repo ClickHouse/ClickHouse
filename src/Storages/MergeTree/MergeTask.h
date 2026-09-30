@@ -91,9 +91,8 @@ public:
     /// Assembles the temporary directory name of a merge.
     static String buildTempPartBasename(const String & prefix, const String & part_name, const String & suffix);
 
-    /// Whether a TTLDrop merge of `parts` may write an empty part without reading them: the table's only TTL
-    /// is an unconditional rows TTL, and every part has a calculated rows TTL that has expired at `time`.
-    static bool canDropTTLExpiredPartsUnread(const StorageInMemoryMetadata & metadata, const MergeTreeData::DataPartsVector & parts, time_t time);
+    /// Whether `part` has a calculated rows TTL that has expired at `time` for all its rows.
+    static bool isRowsTTLExpired(const IMergeTreeDataPart & part, time_t time);
 
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,

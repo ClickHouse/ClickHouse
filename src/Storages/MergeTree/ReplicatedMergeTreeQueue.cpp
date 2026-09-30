@@ -1878,13 +1878,18 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     return false;
                 }
 
-                /// A TTLDrop merge that drops every source part unread writes an empty part. Any other
-                /// merge may rewrite rows, so it needs room for what its source parts hold.
-                if (entry.merge_type == MergeType::TTLDrop && source_parts.size() == entry.source_parts.size())
+                /// Every row of a part whose rows TTL has expired is dropped, so a TTLDrop merge needs room
+                /// only for the other source parts.
+                if (entry.merge_type == MergeType::TTLDrop)
                 {
                     const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
-                    if (MergeTask::canDropTTLExpiredPartsUnread(*metadata_snapshot, source_parts, entry.create_time))
-                        ignore_max_size = true;
+                    if (metadata_snapshot->hasOnlyRowsTTL())
+                    {
+                        sum_parts_size_in_bytes = 0;
+                        for (const auto & part : source_parts)
+                            if (!MergeTask::isRowsTTLExpired(*part, entry.create_time))
+                                sum_parts_size_in_bytes += part->getExistingBytesOnDisk();
+                    }
                 }
             }
 
