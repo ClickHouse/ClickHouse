@@ -69,9 +69,23 @@ public:
     /// The function returns false if user-defined function at a specified zk path are being already restored by another replica.
     virtual bool acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type) = 0;
 
+    /// Sets that this replica is going to restore replicated workload entities (WORKLOAD and RESOURCE).
+    /// The function returns false if workload entities at a specified zk path are being already restored by another replica.
+    virtual bool acquireReplicatedWorkloadEntities(const String & loader_zk_path) = 0;
+
     /// Sets that this table is going to restore data into Keeper for all KeeperMap tables defined on root_zk_path.
     /// The function returns false if data for this specific root path is already being restored by another table.
     virtual bool acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id) = 0;
+
+    /// Registers an EmbeddedRocksDB table sharing rocksdb_dir with the given election_id. When a writable
+    /// table shares the directory with read_only siblings, only the writable table replays the shared RocksDB.
+    virtual void addRocksDBTable(const String & rocksdb_dir, const String & election_id) = 0;
+
+    /// Returns the election_id of the elected owner for rocksdb_dir. The caller replays the shared data only
+    /// when it is the owner, or when the owner is not a writable table (an all-read_only group has no common
+    /// live view, so each table restores its own). Must be called only after all tables sharing the directory
+    /// have registered via addRocksDBTable().
+    virtual String getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const = 0;
 
     /// Generates a new UUID for a table. The same UUID must be used for a replicated table on each replica,
     /// (because otherwise the macro "{uuid}" in the ZooKeeper path will not work correctly).

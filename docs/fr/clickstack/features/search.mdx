@@ -1,0 +1,102 @@
+---
+slug: /use-cases/observability/clickstack/search
+title: 'Recherche avec ClickStack'
+sidebarTitle: 'Search'
+description: 'Recherche avec ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'recherche', 'logs', 'observabilité', 'recherche en texte intégral']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import Tagging from '/snippets/fr/_clickstack_tagging.mdx';
+
+ClickStack vous permet d’effectuer une recherche en texte intégral dans vos événements (logs et traces). Pour commencer, il vous suffit de saisir des mots-clés correspondant à vos événements. Par exemple, si votre log contient &quot;Error&quot;, vous pouvez le retrouver en saisissant simplement &quot;Error&quot; dans la barre de recherche.
+
+Cette même syntaxe de recherche est également utilisée pour filtrer les événements dans les tableaux de bord et les graphiques.
+
+<div id="search-features">
+  ## Fonctionnalités de Search
+</div>
+
+<div id="natural-language-syntax">
+  ### Syntaxe de recherche en langage naturel
+</div>
+
+* Les recherches ne sont pas sensibles à la casse
+* Par défaut, les recherches portent sur des mots entiers (par ex. `Error` correspondra à `Error here`
+  mais pas à `Errors here`). Vous pouvez encadrer un mot avec des caractères génériques pour faire correspondre des
+  mots partiels (par ex. `*Error*` correspondra à `AnyError` et `AnyErrors`)
+* Les termes de recherche peuvent apparaître dans n&#39;importe quel ordre (par ex. `Hello World` correspondra à des logs qui
+  contiennent `Hello World` et `World Hello`)
+* Vous pouvez exclure des mots-clés en utilisant `NOT` ou `-` (par ex. `Error NOT Exception` ou
+  `Error -Exception`)
+* Vous pouvez utiliser `AND` et `OR` pour combiner plusieurs mots-clés (par ex.
+  `Error OR Exception`)
+* Vous pouvez effectuer des correspondances exactes à l&#39;aide de guillemets doubles (par ex. `"Error tests not found"`)
+
+<Image img="/images/use-cases/observability/hyperdx-27.webp" alt="Search" size="md" />
+
+<div id="column-search">
+  #### Recherche par colonne/propriété
+</div>
+
+* Vous pouvez rechercher des colonnes et des propriétés JSON/map à l’aide de `column:value` (ex. `level:Error`,
+  `service:app`)
+* Vous pouvez rechercher un intervalle de valeurs à l’aide des opérateurs de comparaison (`>`, `<`,
+  `>=`, `<=`) (ex. `Duration:>1000`)
+* Vous pouvez rechercher la présence d’une propriété à l’aide de `property:*` (ex.
+  `duration:*`)
+
+<div id="time-input">
+  ### Saisie de l’heure
+</div>
+
+* La saisie de l’heure accepte des entrées en langage naturel (par ex. `1 hour ago`, `yesterday`,
+  `last week`)
+* Si vous indiquez un seul point dans le temps, la recherche s’effectuera à partir de ce moment
+  jusqu’à maintenant.
+* L’intervalle de temps sera toujours converti en intervalle de temps interprété lors de la recherche, afin de faciliter le débogage des requêtes temporelles.
+* Vous pouvez également sélectionner une barre de l’histogramme pour zoomer sur un intervalle de temps spécifique.
+
+<div id="sql-syntax">
+  ### Syntaxe de recherche SQL
+</div>
+
+Vous pouvez, si vous le souhaitez, activer le mode SQL pour les champs de recherche. Ils accepteront alors toute
+clause SQL `WHERE` valide pour effectuer une recherche. Cela est utile pour les requêtes complexes qui ne peuvent pas être
+exprimées avec la syntaxe Lucene.
+
+<div id="select-statement">
+  ### Instruction SELECT
+</div>
+
+Pour spécifier les colonnes à afficher dans les résultats de recherche, vous pouvez utiliser le champ `SELECT`.
+Cette expression SQL SELECT définit les colonnes à sélectionner sur la page Search.
+Les alias ne sont pas pris en charge pour le moment (par ex. vous ne pouvez pas utiliser `column as "alias"`).
+
+<div id="saved-searches">
+  ## Recherches enregistrées
+</div>
+
+Vous pouvez enregistrer vos recherches pour y accéder rapidement plus tard. Une fois enregistrées, elles apparaîtront sur la page `Saved Searches`, ce qui vous permet de retrouver facilement les recherches que vous utilisez souvent, sans avoir à les recréer.
+
+<Image img="/images/use-cases/observability/clickstack-saved-search-listing.webp" alt="Page listant les recherches enregistrées" size="lg" />
+
+Pour enregistrer une recherche, configurez simplement votre recherche, puis cliquez sur le bouton d’enregistrement. Vous pouvez donner à votre recherche enregistrée un nom explicite pour la retrouver plus facilement par la suite.
+
+<Image img="/images/use-cases/observability/clickstack-saved-search.webp" alt="Enregistrement d’une recherche" size="md" />
+
+<div id="alerts-on-saved-searches">
+  ### Ajouter des alertes aux recherches enregistrées
+</div>
+
+Les recherches enregistrées peuvent être surveillées à l’aide d’alertes afin de vous avertir lorsque certaines conditions sont remplies. Vous pouvez configurer des alertes pour qu’elles se déclenchent lorsque le nombre d’événements correspondant à votre recherche enregistrée dépasse ou passe en dessous d’un seuil défini.
+
+Pour plus d’informations sur la configuration et le paramétrage des alertes, consultez la [documentation sur les alertes](/fr/clickstack/features/alerts).
+
+<div id="tagging">
+  ### Ajout de tags
+</div>
+
+<Tagging />

@@ -1,0 +1,57 @@
+---
+title: 'Instalação autogerenciada'
+sidebarTitle: 'Visão geral'
+description: 'Instale o ClickHouse na sua própria infraestrutura.'
+doc_type: 'landing-page'
+keywords: ['instalar', 'autogerenciado', 'linux', 'macOS', 'windows', 'docker']
+---
+
+Instale o ClickHouse na plataforma que você administra.
+
+<div id="local-development">
+  ## Desenvolvimento local
+</div>
+
+Execute o ClickHouse na sua própria máquina para compilar, testar e experimentar.
+
+<CardGroup cols={2}>
+  <Card title="Instalação rápida" href="/pt-BR/get-started/setup/self-managed/quick-install" icon="bolt">
+    Script `curl` de uma linha que baixa um único binário do ClickHouse.
+  </Card>
+
+  <Card title="clickhousectl (CLI)" href="/pt-BR/get-started/setup/self-managed/clickhousectl" icon="terminal">
+    Instale e gerencie versões e servidores locais do ClickHouse com a ClickHouse CLI.
+  </Card>
+
+  <Card title="Docker" href="/pt-BR/get-started/setup/self-managed/docker" icon="docker">
+    Baixe a imagem Docker oficial e execute um contêiner.
+  </Card>
+
+  <Card title="Compilação do código-fonte" href="/pt-BR/get-started/setup/self-managed/advanced" icon="code">
+    Compile a partir do código-fonte e use outros métodos avançados de instalação.
+  </Card>
+</CardGroup>
+
+<div id="production-server">
+  ## Servidor de produção
+</div>
+
+Instale o servidor ClickHouse a partir de pacotes ou binários para uma implantação de longo prazo.
+
+<CardGroup cols={2}>
+  <Card title="Debian / Ubuntu" href="/pt-BR/get-started/setup/self-managed/debian-ubuntu" icon="ubuntu">
+    Instale usando o repositório APT oficial.
+  </Card>
+
+  <Card title="Red Hat / CentOS" href="/pt-BR/get-started/setup/self-managed/redhat" icon="redhat">
+    Instale usando o repositório YUM/DNF oficial.
+  </Card>
+
+  <Card title="NixOS" href="/pt-BR/get-started/setup/self-managed/nixos" icon="snowflake">
+    Instale no NixOS usando o gerenciador de pacotes.
+  </Card>
+
+  <Card title="Outras distribuições Linux" href="/pt-BR/get-started/setup/self-managed/other-linux" icon="linux">
+    Instalação genérica em distribuições Linux via tarball.
+  </Card>
+</CardGroup>

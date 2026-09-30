@@ -36,14 +36,37 @@ std::string_view foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size
     return std::string_view(folded_key.data(), cipher_key_size);
 }
 
-const EVP_CIPHER * getCipherByName(std::string_view cipher_name)
+EVP_CIPHER_ptr fetchCipher(std::string_view cipher_name)
 {
-    // NOTE: cipher obtained not via EVP_CIPHER_fetch() would cause extra work on each context reset
-    // with EVP_CIPHER_CTX_reset() or EVP_EncryptInit_ex(), but using EVP_CIPHER_fetch()
-    // causes data race, so we stick to the slower but safer alternative here.
+    /// A cipher obtained via EVP_get_cipherbyname has prov == NULL, which makes OpenSSL 3.x
+    /// implicitly call EVP_CIPHER_fetch (with locking and provider lookups) on every
+    /// EVP_EncryptInit_ex / EVP_DecryptInit_ex invocation. Fetching the cipher explicitly
+    /// here returns a provider-backed cipher and avoids that per-row overhead.
+    /// Returns nullptr for an unknown cipher name; the caller reports it as an invalid mode.
+    /// We need a zero-terminated string here:
+    auto * fetched = EVP_CIPHER_fetch(nullptr, std::string{cipher_name}.c_str(), nullptr);
+    if (!fetched)
+        /// For an unknown name EVP_CIPHER_fetch pushes an "unsupported" entry onto the
+        /// thread-local OpenSSL error queue. The caller turns nullptr into a BAD_ARGUMENTS
+        /// "Invalid mode" without draining the queue via getOpenSSLErrors, so clear it here to
+        /// avoid leaking this stale entry into an unrelated OpenSSL error later reported on the
+        /// same thread (unlike EVP_get_cipherbyname, which never touched the queue).
+        ERR_clear_error();
+    return EVP_CIPHER_ptr(fetched, EVP_CIPHER_free);
+}
 
-    /// We need zero-terminated string here:
-    return EVP_get_cipherbyname(std::string{cipher_name}.c_str());
+std::string_view ecbEquivalentCipherName(std::string_view mode)
+{
+    /// Only plain AES block ciphers. The list is intentionally exact: e.g.
+    /// aes-128-cbc-hmac-sha1 also reports EVP_CIPH_CBC_MODE but is not a plain
+    /// block cipher and must not take the block-composed fast path.
+    if (mode == "aes-128-ecb" || mode == "aes-128-cbc")
+        return "aes-128-ecb";
+    if (mode == "aes-192-ecb" || mode == "aes-192-cbc")
+        return "aes-192-ecb";
+    if (mode == "aes-256-ecb" || mode == "aes-256-cbc")
+        return "aes-256-ecb";
+    return {};
 }
 
 }

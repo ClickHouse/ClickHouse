@@ -1,7 +1,6 @@
 import os
 import pytest
 
-from kazoo.client import KazooClient, KazooRetry
 from helpers.cluster import ClickHouseCluster
 
 CLUSTER_SIZE = 3
@@ -9,7 +8,7 @@ CLUSTER_SIZE = 3
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
-ch_node = cluster.add_instance(f"node1", stay_alive=True, with_zookeeper=True)
+ch_node = cluster.add_instance("node1", stay_alive=True, with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")

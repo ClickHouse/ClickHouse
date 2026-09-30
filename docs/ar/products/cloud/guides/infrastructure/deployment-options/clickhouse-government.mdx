@@ -1,0 +1,62 @@
+---
+title: 'ClickHouse Government'
+slug: /cloud/infrastructure/clickhouse-government
+keywords: ['Government', 'fips', 'fedramp', 'السحابة الحكومية']
+description: 'نظرة عامة على خدمة ClickHouse Government'
+doc_type: 'مرجع'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+ClickHouse Government هي حزمة ذاتية النشر تضم الإصدار الاحتكاري نفسه من ClickHouse المستخدم في ClickHouse Cloud، إلى جانب ClickHouse Operator الخاص بنا، وهي مُعدّة وفق بنية الفصل بين الحوسبة والتخزين ومُحصّنة لتلبية المتطلبات الصارمة للهيئات الحكومية ومؤسسات القطاع العام.
+
+<Info>
+  **ملاحظة**
+
+  صُممت ClickHouse Government للهيئات الحكومية ومؤسسات القطاع العام، أو لشركات البرمجيات السحابية التي تبيع لهذه الجهات، مع إتاحة تحكم وإدارة كاملين لبنيتها التحتية المخصصة. الحد الأدنى لحجم النشر هو 2 تيرابايت. لا يتوفر هذا الخيار إلا من خلال [التواصل معنا](https://clickhouse.com/government).
+</Info>
+
+<div id="benefits-over-os">
+  ## المزايا مقارنةً بالإصدار المفتوح المصدر
+</div>
+
+تُميّز الميزات التالية ClickHouse Government عن عمليات النشر المفتوحة المصدر المُدارة ذاتيًا:
+
+* الفصل بين الحوسبة والتخزين
+* ميزات سحابية مملوكة مثل [shared merge tree](/ar/products/cloud/features/infrastructure/shared-merge-tree) ووظائف [warehouse](/ar/products/cloud/features/infrastructure/warehouses)
+* إصدارات قاعدة بيانات ClickHouse وOperator المختبرة بالكامل والمعتمدة في ClickHouse Cloud
+* وثائق [NIST Risk Management Framework (RMF)](https://csrc.nist.gov/projects/risk-management/about-rmf) لتسريع حصولك على Authorization to Operate (ATO)
+* واجهة برمجة تطبيقات للعمليات البرمجية، بما في ذلك النسخ الاحتياطية وعمليات التوسعة
+
+<div id="architecture">
+  ## معمارية
+</div>
+
+يعمل ClickHouse Government بصورة مستقلة بالكامل داخل بيئة النشر لديك، مع اعتماد بنيتنا السحابية الأصلية التي توفر الفصل بين الحوسبة والتخزين.
+
+<br />
+
+<Image img="/images/cloud/reference/private-gov-architecture.webp" size="md" alt="معمارية ClickHouse Government" background="black" />
+
+<br />
+
+<div id="supported-configurations">
+  ## التهيئات المدعومة
+</div>
+
+يُدعَم ClickHouse Government حاليًا في التهيئات التالية:
+
+| البيئة | التنسيق                          | التخزين                     | الحالة |
+| :----- | :------------------------------- | :-------------------------- | :----- |
+| AWS    | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | متاح   |
+| GCP    | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | معاينة |
+
+<div id="onboarding-process">
+  ## عملية الإعداد
+</div>
+
+يمكن للعملاء [التواصل معنا](https://clickhouse.com/company/contact?loc=nav) لطلب مكالمة لمراجعة ClickHouse Government بما يناسب حالة الاستخدام الخاصة بهم. ستُراجع حالات الاستخدام التي تستوفي الحد الأدنى من متطلبات الحجم وتُنشر ضمن التكوينات المدعومة. الإعداد متاح بشكل محدود. تتضمن عملية التثبيت اتباع دليل التثبيت الخاص بالبيئة المحددة التي سيُنشر فيها ClickHouse باستخدام الصور ومخططات Helm التي تم تنزيلها من AWS ECR.

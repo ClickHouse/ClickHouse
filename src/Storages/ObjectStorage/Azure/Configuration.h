@@ -72,7 +72,8 @@ struct AzureStorageParsedArguments : private StorageParsedArguments
     void fromAST(ASTs & args, ContextPtr context, bool with_structure);
     void initializeForOneLake(
         ASTs & args,
-        ContextPtr context);
+        ContextPtr context,
+        bool use_blob_endpoint);
 
     Path blob_path;
     AzureBlobStorage::ConnectionParams connection_params;
@@ -124,11 +125,21 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
-    void setInitializationAsOneLake(const String & client_id_, const String & client_secret_, const String & tenant_id_)
+    void setInitializationAsOneLake(
+        const String & client_id_,
+        const String & client_secret_,
+        const String & tenant_id_,
+        const String & access_token_,
+        AzureBlobStorage::TokenProviderCredential::TokenProvider access_token_provider_,
+        bool use_blob_endpoint_)
     {
         onelake_client_id = client_id_;
         onelake_client_secret = client_secret_;
         onelake_tenant_id = tenant_id_;
+        onelake_access_token = access_token_;
+        onelake_access_token_provider = std::move(access_token_provider_);
+        onelake_use_blob_endpoint = use_blob_endpoint_;
+        is_onelake = true;
     }
 
 protected:
@@ -146,6 +157,12 @@ private:
     String onelake_client_id;
     String onelake_client_secret;
     String onelake_tenant_id;
+    String onelake_access_token;
+    /// Set in refresh-token mode: yields a currently valid access token (renewed by the
+    /// catalog client with the Entra ID refresh token) for every storage request.
+    AzureBlobStorage::TokenProviderCredential::TokenProvider onelake_access_token_provider;
+    bool onelake_use_blob_endpoint = true;
+    bool is_onelake = false;
 
     void initializeFromParsedArguments(const AzureStorageParsedArguments & parsed_arguments);
 };

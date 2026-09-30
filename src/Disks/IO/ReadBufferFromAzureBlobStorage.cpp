@@ -14,6 +14,7 @@
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/ProfileEvents.h>
 #include <IO/SeekableReadBuffer.h>
+#include <base/sleep.h>
 
 
 namespace ProfileEvents
@@ -37,6 +38,29 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
+    extern const int UNEXPECTED_END_OF_FILE;
+    extern const int HTTP_RANGE_NOT_SATISFIABLE;
+}
+
+namespace
+{
+
+/// A successful `Download` is not enough to trust the body: the endpoint may have ignored the
+/// requested range and answered `200 OK` with the whole object from byte 0, or `206 Partial
+/// Content` for a different range. Consuming such a body as if it started at `requested_offset`
+/// would hand the caller the wrong bytes under the right offsets - silent data corruption - so
+/// the start of the returned range is checked against the requested one before the body is read.
+/// The SDK reports a `200 OK` response as the range starting at 0, so a full-object response is
+/// accepted exactly when the request started at 0, where it is a correct answer, the same as in
+/// `ReadWriteBufferFromHTTP`.
+void checkReturnedRange(const Azure::Storage::Blobs::Models::DownloadBlobResult & result, size_t requested_offset, const String & path)
+{
+    if (result.ContentRange.Offset != static_cast<int64_t>(requested_offset))
+        throw Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
+            "Azure Blob Storage returned a range starting at offset {} instead of the requested offset {} for file {}",
+            result.ContentRange.Offset, requested_offset, path);
+}
+
 }
 
 ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
@@ -112,7 +136,6 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         data_capacity = internal_buffer.size();
     }
 
-    size_t to_read_bytes = std::min(static_cast<size_t>(total_size - offset), data_capacity);
     size_t bytes_read = 0;
 
     size_t sleep_time_with_backoff_milliseconds = 100;
@@ -120,6 +143,14 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
 
     for (size_t i = 0; i < max_single_read_retries; ++i)
     {
+        /// A previous attempt may have reopened the download, so what is left of it is measured per attempt.
+        size_t to_read_bytes = std::min(static_cast<size_t>(total_size - offset), data_capacity);
+        /// The response may run past the right bound - e.g. the whole object in answer to a ranged
+        /// request at offset 0 - and nothing past the bound may reach the caller.
+        if (read_until_position)
+            to_read_bytes = std::min(to_read_bytes, static_cast<size_t>(read_until_position - offset));
+        bool premature_end_of_response = false;
+
         try
         {
             ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, to_read_bytes);
@@ -127,7 +158,16 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
             rlock.unlock(bytes_read); // Do not hold resource under bandwidth throttler
             if (read_settings.remote_throttler)
                 read_settings.remote_throttler->throttle(bytes_read);
-            break;
+
+            /// The body of the current response is exhausted. For a read with a right bound that is
+            /// the end of the data only if the response reached the bound: the bound is set locally
+            /// by the caller, and every layer above this buffer takes it as the length of the data,
+            /// so a response that ends before it must not be reported as the end of the file - an
+            /// endpoint or a proxy that caps its responses would silently truncate the file there.
+            if (bytes_read == 0 && read_until_position && offset < read_until_position)
+                premature_end_of_response = true;
+            else
+                break;
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
@@ -157,6 +197,37 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
             sleep_time_with_backoff_milliseconds *= 2;
             initialized = false;
             initialize(i + 1);
+        }
+
+        if (premature_end_of_response)
+        {
+            /// Reopen the download at the offset the read has reached, and if the endpoint keeps
+            /// ending its responses before the bound, fail instead of returning truncated data.
+            LOG_DEBUG(log, "Premature end of the response at offset {} while reading until position {} for file {} at attempt {}/{}",
+                offset, read_until_position, path, i + 1, max_single_read_retries);
+
+            if (i + 1 == max_single_read_retries)
+                throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE,
+                    "Premature end of the response from Azure Blob Storage at offset {} while reading until position {} of file {}",
+                    offset, read_until_position, path);
+
+            /// An endpoint that caps its responses ends every one of them before the bound, so a
+            /// read of more than the cap is a correct read assembled from several responses: the
+            /// reopen that follows the first premature end of a call continues it, and is a request
+            /// of its own rather than a retry of a failed one - it is neither an error nor worth a
+            /// backoff, both of which would be paid on every response of such a read. A reopened
+            /// download that hands out nothing at all is the error case, and it is what the further
+            /// attempts of this loop back off for.
+            const bool reopen_continues_the_read = (i == 0);
+            if (!reopen_continues_the_read)
+            {
+                ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
+                sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+                sleep_time_with_backoff_milliseconds *= 2;
+            }
+
+            initialized = false;
+            initialize(reopen_continues_the_read ? 0 : i + 1);
         }
     }
 
@@ -245,9 +316,6 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
 
     Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), attempt);
 
-    if (!blob_client)
-        blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
-
     size_t sleep_time_with_backoff_milliseconds = 100;
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromAzureInitMicroseconds);
 
@@ -262,7 +330,8 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
             if (blob_container_client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureGetObject);
 
-            auto download_response = blob_client->Download(download_options, azure_context);
+            auto download_response = getBlobClient().Download(download_options, azure_context);
+            checkReturnedRange(download_response.Value, offset, path);
 
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
             data_stream = std::move(download_response.Value.BodyStream);
@@ -335,18 +404,30 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
 
 std::optional<size_t> ReadBufferFromAzureBlobStorage::tryGetFileSize()
 {
-    if (!blob_client)
-        blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
-
     if (!file_size)
-        file_size = blob_client->GetProperties().Value.BlobSize;
+        file_size = getBlobClient().GetProperties().Value.BlobSize;
 
     return file_size;
 }
 
-std::optional<size_t> ReadBufferFromAzureBlobStorage::getRemoteFileSize() const
+std::optional<RemoteFileMetadata> ReadBufferFromAzureBlobStorage::getRemoteFileMetadata() const
 {
-    return static_cast<size_t>(blob_container_client->GetBlobClient(path).GetProperties().Value.BlobSize);
+    const auto properties = blob_container_client->GetBlobClient(path).GetProperties().Value;
+    const auto last_modification_time = std::chrono::duration_cast<std::chrono::seconds>(
+        static_cast<std::chrono::system_clock::time_point>(properties.LastModified).time_since_epoch())
+        .count();
+    return RemoteFileMetadata{
+        .size = static_cast<size_t>(properties.BlobSize),
+        .last_modification_time = static_cast<time_t>(last_modification_time)};
+}
+
+const AzureBlobStorage::BlobClient & ReadBufferFromAzureBlobStorage::getBlobClient() const
+{
+    std::call_once(blob_client_created, [this]
+    {
+        blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
+    });
+    return *blob_client;
 }
 
 size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & /*progress_callback*/) const
@@ -371,7 +452,9 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             download_options.Range = {static_cast<int64_t>(range_begin), n};
             Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), size_t{0});
 
-            auto download_response = blob_client->Download(download_options, azure_context);
+            auto download_response = getBlobClient().Download(download_options, azure_context);
+            checkReturnedRange(download_response.Value, range_begin, path);
+
             if (blob_storage_log)
             {
                 blob_storage_log->addEvent(
@@ -385,7 +468,8 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
 
             std::unique_ptr<Azure::Core::IO::BodyStream> body_stream = std::move(download_response.Value.BodyStream);
-            bytes_copied = body_stream->ReadToCount(reinterpret_cast<uint8_t *>(to), body_stream->Length(), azure_context);
+            bytes_copied = body_stream->ReadToCount(reinterpret_cast<uint8_t *>(to), n, azure_context);
+            chassert(bytes_copied <= n);
 
             LOG_TEST(log, "AzureBlobStorage readBigAt read bytes {}", bytes_copied);
 
@@ -446,7 +530,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
         n -= bytes_copied;
     }
 
-    return initial_n;
+    return initial_n - n;
 }
 
 ObjectMetadata ReadBufferFromAzureBlobStorage::getObjectMetadataFromTheLastRequest() const

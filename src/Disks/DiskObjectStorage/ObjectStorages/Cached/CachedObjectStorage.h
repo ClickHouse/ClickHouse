@@ -38,6 +38,12 @@ public:
         bool use_external_buffer = false,
         bool restrict_seek = false) const override;
 
+    SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        size_t max_size_bytes,
+        std::optional<size_t> read_hint = {}) const override;
+
     void prepareRead(
         ObjectStoragePtr storage,
         const StoredObjects & objects,
@@ -55,7 +61,9 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist(const StoredObjects & objects) override;
+    void removeObjectsIfExist( /// NOLINT
+        const StoredObjects & objects,
+        StoredObjects * successful_objects = nullptr) override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -106,6 +114,8 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
+    bool supportsObjectGenerationComparison() const override { return object_storage->supportsObjectGenerationComparison(); }
+
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
 #if USE_AZURE_BLOB_STORAGE
@@ -119,7 +129,7 @@ public:
         return object_storage->getAzureBlobStorageAuthMethod();
     }
 
-    const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const override
+    std::shared_ptr<const AzureBlobStorage::ConnectionParams> getAzureBlobStorageConnectionParams() const override
     {
         return object_storage->getAzureBlobStorageConnectionParams();
     }
@@ -137,19 +147,33 @@ public:
     }
 #endif
 
-#if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
-    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override
+    /// Forward to the underlying storage so DeltaLake's catalog-vended credentials
+    /// refresh path works through a cache disk too.
+    bool tryRefreshCredentialsViaCallback() override
     {
-        object_storage->tagObjects(objects, tag_key, tag_value);
+        return object_storage->tryRefreshCredentialsViaCallback();
+    }
+
+#if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
+    void tagObjects( /// NOLINT
+        const StoredObjects & objects,
+        const std::string & tag_key,
+        const std::string & tag_value,
+        StoredObjects * successful_objects = nullptr) override
+    {
+        object_storage->tagObjects(objects, tag_key, tag_value, successful_objects);
     }
 #endif
 
     ObjectStoragePtr getUnderlying() override { return object_storage; }
 
+    ObjectStoragePtr cloneImpl() const override;
+
 private:
     FileCacheKey getCacheKey(const std::string & path) const;
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
+    WriteSettings patchSettings(const WriteSettings & write_settings) const override;
 
     ObjectStoragePtr object_storage;
     FileCachePtr cache;

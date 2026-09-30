@@ -1,0 +1,65 @@
+---
+description: 'توثيق Svg'
+sidebarTitle: 'SVG'
+slug: /sql-reference/functions/geo/svg
+title: 'دوال لإنشاء صور SVG من بيانات Geo'
+doc_type: 'reference'
+---
+
+<div id="svg">
+  ## Svg
+</div>
+
+تُرجِع سلسلة نصية تحتوي على وسوم عناصر SVG محددة من بيانات Geo.
+
+**الصيغة**
+
+```sql
+Svg(geometry,[style])
+```
+
+الأسماء البديلة: `SVG`, `svg`
+
+**المعاملات**
+
+* `geometry` — بيانات Geo. [Geo](/ar/reference/data-types/geo).
+* `style` — اسم نمط اختياري. [String](/ar/reference/data-types/string).
+
+**القيمة المُعادة**
+
+* تمثيل SVG للمعطى الهندسي. [String](/ar/reference/data-types/string).
+  * دائرة SVG
+  * مضلع SVG
+  * مسار SVG
+
+**أمثلة**
+
+**دائرة**
+
+```sql title="Query"
+SELECT SVG((0., 0.))
+```
+
+```response title="Response"
+<circle cx="0" cy="0" r="5" style=""/>
+```
+
+**مضلع**
+
+```sql title="Query"
+SELECT SVG([(0., 0.), (10, 0), (10, 10), (0, 10)])
+```
+
+```response title="Response"
+<polygon points="0,0 0,10 10,10 10,0 0,0" style=""/>
+```
+
+**المسار**
+
+```sql title="Query"
+SELECT SVG([[(0., 0.), (10, 0), (10, 10), (0, 10)], [(4., 4.), (5, 4), (5, 5), (4, 5)]])
+```
+
+```response title="Response"
+<g fill-rule="evenodd"><path d="M 0,0 L 0,10 L 10,10 L 10,0 L 0,0M 4,4 L 5,4 L 5,5 L 4,5 L 4,4 z " style=""/></g>
+```

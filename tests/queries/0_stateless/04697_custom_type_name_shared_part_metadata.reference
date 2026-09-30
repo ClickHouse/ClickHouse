@@ -1,0 +1,4 @@
+all_1_1_0	UInt64
+all_2_2_0	SimpleAggregateFunction(sum, UInt64)
+all_1_1_0	Nullable(UInt8)
+all_2_2_0	Nullable(Bool)

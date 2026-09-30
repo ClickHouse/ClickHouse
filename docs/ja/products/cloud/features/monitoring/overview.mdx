@@ -1,0 +1,41 @@
+---
+title: 'ClickHouse Cloudデプロイメントの監視'
+slug: /cloud/monitoring
+description: 'ClickHouse Cloudの監視機能とオブザーバビリティ機能の概要'
+keywords: ['クラウド', '監視', 'オブザーバビリティ', 'メトリクス']
+sidebarTitle: '概要'
+doc_type: 'guide'
+---
+
+<div id="overview">
+  ## 概要
+</div>
+
+このガイドでは、ClickHouse Cloud の本番デプロイメントにおける監視機能とオブザーバビリティ機能について、エンタープライズチーム向けに説明します。エンタープライズのお客様からは、すぐに利用できる監視機能、Datadog や AWS CloudWatch などを含む既存のオブザーバビリティスタックとのインテグレーション、さらに ClickHouse の監視がセルフホスト環境と比べてどう異なるかについて、よく質問が寄せられます。
+
+ユーザーは次の方法で ClickHouse デプロイメントを監視できます。
+
+| セクション                                                                        | 説明                                                            | アイドル状態のサービスを起動するか | セットアップ要否          |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------------- | ----------------- |
+| [Cloud Console ダッシュボード](/ja/products/cloud/features/monitoring/cloud-console)   | サービスの健全性、リソース使用率、クエリパフォーマンスを確認するための組み込みダッシュボードを使った日常的な監視      | いいえ               | なし                |
+| [通知](/ja/products/cloud/features/monitoring/notifications)                      | スケーリングイベント、エラー、ミューテーション、請求に関するアラート                            | いいえ               | なし (カスタマイズ可能)     |
+| [Prometheus エンドポイント](/ja/products/cloud/features/monitoring/prometheus)         | メトリクスを Grafana、Datadog、またはその他の Prometheus 互換ツールにエクスポート        | いいえ               | API キー + スクレイパー設定 |
+| [システムテーブルクエリ](/ja/products/cloud/features/monitoring/system-tables)             | `system` テーブルに対する直接の SQL クエリによる詳細なデバッグとカスタム分析                 | はい                | SQL クエリ           |
+| [コミュニティおよびパートナーのインテグレーション](/ja/products/cloud/features/monitoring/integrations) | Datadog agent とのインテグレーション、コミュニティ監視ツール、Billing &amp; Usage API | 場合によります           | ツールごとに異なる         |
+| [高度なダッシュボード リファレンス](/ja/products/cloud/features/monitoring/advanced-dashboard)  | トラブルシューティング例を含む、各高度なダッシュボードの可視化についての詳細リファレンス                  | いいえ               | なし                |
+
+<div id="quick-start">
+  ## クイックスタート
+</div>
+
+ClickHouse Cloud consoleを開き、**監視**タブを選択します。使い始める際によくある注意点については、この[ブログ](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)にまとめています。
+
+ほとんどのユーザーにとって、[Cloud Console ダッシュボード](/ja/products/cloud/features/monitoring/cloud-console) には、追加の設定なしでサービスの健全性、リソース使用率、クエリのパフォーマンスを監視するために必要なものがすべて揃っています。外部の監視スタックと統合する必要がある場合は、[Prometheus互換のメトリクスエンドポイント](/ja/products/cloud/features/monitoring/prometheus)から始めてください。
+
+<div id="system-impact">
+  ## システムへの影響に関する考慮事項
+</div>
+
+上記のアプローチでは、Prometheus エンドポイントの利用、ClickHouse Cloud による管理、または直接[システムテーブルをクエリする](/ja/products/cloud/features/monitoring/system-tables)方法を組み合わせて使用します。これらのうち最後の方法は、本番環境の ClickHouse service へのクエリに依存するため、監視対象のシステムにクエリ負荷を加え、ClickHouse Cloud インスタンスが[idling](/ja/products/cloud/features/autoscaling/overview)しなくなることでコストに影響する可能性があります。さらに、本番システムで障害が発生すると、両者が密結合しているため、監視にも影響が及ぶ可能性があります。
+
+システムテーブルを直接クエリする方法は、詳細な introspection や debugging には適していますが、リアルタイムの本番監視にはあまり向いていません。[Cloud Console ダッシュボード](/ja/products/cloud/features/monitoring/cloud-console) と [Prometheus エンドポイント](/ja/products/cloud/features/monitoring/prometheus) はどちらも、アイドル状態の service を起こさない、事前に収集済みのメトリクスを使用するため、継続的な本番監視により適しています。詳細なシステム分析機能と運用オーバーヘッドの間にある、こうしたトレードオフを考慮してください。

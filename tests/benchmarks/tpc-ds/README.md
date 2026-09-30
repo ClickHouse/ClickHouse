@@ -415,7 +415,7 @@ LIMIT 100;
 ```
 
 ## Q75
-The query doesn't work out-of-the-box due to https://github.com/ClickHouse/ClickHouse/issues/94671. The alternative formulation with a minor fix works.
+The query doesn't work out-of-the-box due to https://github.com/ClickHouse/ClickHouse/issues/106707. The alternative formulation with a minor fix works.
 
 Original:
 ```sql

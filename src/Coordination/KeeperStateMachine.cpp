@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -6,6 +7,7 @@
 #include <string>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperConstants.h>
 #include <Disks/IDisk.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
@@ -25,9 +27,11 @@
 #include <base/errnoToString.h>
 #include <base/move_extend.h>
 #include <base/scope_guard.h>
+#include <fmt/ranges.h>
 #include <sys/mman.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -76,6 +80,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsBool compress_snapshots_with_zstd_format;
     extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
     extern const CoordinationSettingsUInt64 min_request_size_for_cache;
+    extern const CoordinationSettingsInt64 snapshot_zstd_compression_level;
     extern const CoordinationSettingsUInt64 snapshots_to_keep;
     extern const CoordinationSettingsUInt64 snapshot_transfer_chunk_size;
 }
@@ -93,7 +98,14 @@ static nuraft::ptr<nuraft::snapshot> cloneSnapshotMeta(nuraft::snapshot & s)
     return nuraft::snapshot::deserialize(*buf);
 }
 
-IKeeperStateMachine::IKeeperStateMachine(
+/// Snapshot identity is (last_log_idx, last_log_term); Raft log matching guarantees one per committed prefix.
+static bool sameSnapshotIdentity(const nuraft::snapshot & lhs, const nuraft::snapshot & rhs)
+{
+    return lhs.get_last_log_idx() == rhs.get_last_log_idx()
+        && lhs.get_last_log_term() == rhs.get_last_log_term();
+}
+
+KeeperStateMachine::KeeperStateMachine(
     KeeperResponseCallback response_callback_,
     SnapshotsQueue & snapshots_queue_,
     const KeeperContextPtr & keeper_context_,
@@ -109,43 +121,27 @@ IKeeperStateMachine::IKeeperStateMachine(
     , superdigest(superdigest_)
     , keeper_context(keeper_context_)
     , snapshot_manager_s3(snapshot_manager_s3_)
-{
-}
-
-template<typename Storage>
-KeeperStateMachine<Storage>::KeeperStateMachine(
-    KeeperResponseCallback response_callback_,
-    SnapshotsQueue & snapshots_queue_,
-    const KeeperContextPtr & keeper_context_,
-    KeeperSnapshotManagerS3 * snapshot_manager_s3_,
-    IKeeperStateMachine::CommitCallback commit_callback_,
-    const std::string & superdigest_)
-    : IKeeperStateMachine(
-        response_callback_,
-        snapshots_queue_,
-        keeper_context_,
-        snapshot_manager_s3_,
-        commit_callback_,
-        superdigest_),
-        snapshot_manager(
+    , snapshot_manager(
           keeper_context_->getCoordinationSettings()[CoordinationSetting::snapshots_to_keep],
           keeper_context_,
           keeper_context_->getCoordinationSettings()[CoordinationSetting::compress_snapshots_with_zstd_format],
-          superdigest_,
-          keeper_context_->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds())
+          keeper_context_->getCoordinationSettings()[CoordinationSetting::snapshot_zstd_compression_level])
 {
 }
 
+void KeeperStateMachine::setLogStore(KeeperLogStore * log_store_)
+{
+    chassert(!log_store);
+    log_store = log_store_;
+}
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::init()
+void KeeperStateMachine::init()
 {
     /// Do everything without mutexes, no other threads exist.
-    LOG_DEBUG(log, "Totally have {} snapshots", snapshot_manager.totalSnapshots());
     bool has_snapshots = snapshot_manager.totalSnapshots() != 0;
     /// Deserialize latest snapshot from disk
     uint64_t latest_log_index = snapshot_manager.getLatestSnapshotIndex();
-    LOG_DEBUG(log, "Trying to load state machine from snapshot up to log index {}", latest_log_index);
+    LOG_DEBUG(log, "Have {} snapshots, trying to load state machine from snapshot up to log index {}", snapshot_manager.totalSnapshots(), latest_log_index);
 
     if (has_snapshots)
     {
@@ -154,7 +150,13 @@ void KeeperStateMachine<Storage>::init()
             std::lock_guard lock(snapshots_lock);
 
             auto snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
-            auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf);
+            auto new_storage = KeeperStorage::create(
+                keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(),
+                superdigest, keeper_context, /* initialize_system_nodes */ false);
+            /// Loading the latest local snapshot during startup — the only place where
+            /// `remove_orphaned_nodes_on_startup` recovery is allowed to remove orphaned nodes.
+            auto snapshot_deserialization_result
+                = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf, *new_storage, /*allow_orphaned_nodes_removal=*/ true);
             auto latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
             chassert(latest_snapshot_info);
 
@@ -169,10 +171,14 @@ void KeeperStateMachine<Storage>::init()
                 tryLogCurrentException(log, "Failed to get snapshot size during init");
             }
 
-            storage = std::move(snapshot_deserialization_result.storage);
-            latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
+            storage = std::move(new_storage);
+            advanceLatestSnapshotMeta(snapshot_deserialization_result.snapshot_meta);
             cluster_config = snapshot_deserialization_result.cluster_config;
             keeper_context->setLastCommitIndex(latest_snapshot_meta->get_last_log_idx());
+            /// Verified by `KeeperServer::startup` via `findOrphanConflictInLogTail` once the log store
+            /// is loaded -- we cannot check it here because the log store does not exist yet.
+            removed_orphan_subtree_roots = std::move(snapshot_deserialization_result.removed_orphan_subtree_roots);
+            removed_orphan_ephemeral_sessions = std::move(snapshot_deserialization_result.removed_orphan_ephemeral_sessions);
         }
         catch (...)
         {
@@ -192,8 +198,561 @@ void KeeperStateMachine<Storage>::init()
         LOG_DEBUG(log, "No existing snapshots, last committed log index {}", last_committed_idx);
 
     if (!storage)
-        storage = std::make_unique<Storage>(
+        storage = KeeperStorage::create(
             keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(), superdigest, keeper_context);
+}
+
+void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, bool lock_mutex)
+{
+    if (!log_store)
+        /// We're in a unit test or a tool, not keeper server.
+        return;
+
+    start_idx = std::min(start_idx, end_idx);
+    auto entries = log_store->log_entries(start_idx, end_idx);
+    if (!entries)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Log entries [{}, {}) unavailable due to concurrent truncation or compaction", start_idx, end_idx);
+
+    if (entries->size() != end_idx - std::min(start_idx, end_idx))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of log entries returned by log store: start_idx={}, end_idx={}, count={}", start_idx, end_idx, entries->size());
+
+    if (entries->empty())
+    {
+        LOG_INFO(log, "No uncommitted log entries to preprocess ({} - {})", start_idx, end_idx);
+        return;
+    }
+
+    LOG_INFO(log, "Preprocessing {} uncommitted log entries ({} - {})", entries->size(), start_idx, end_idx);
+    for (size_t i = 0; i < entries->size(); ++i)
+    {
+        auto & entry = (*entries)[i];
+        uint64_t log_idx = start_idx + i;
+
+        if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
+        {
+            auto request_for_session = parseRequest(entry->get_buf(), /*final=*/false);
+            if (!request_for_session->zxid)
+                request_for_session->zxid = log_idx;
+            request_for_session->log_idx = log_idx;
+
+            preprocess(*request_for_session, lock_mutex);
+        }
+
+        if ((i + 1) % 50000 == 0)
+            LOG_TRACE(log, "Preprocessed {}/{} entries", i + 1, entries->size());
+    }
+    LOG_INFO(log, "Preprocessing done");
+}
+
+namespace
+{
+
+/// How much of the tree around an enumerated path a request observes; decides how far from a removed
+/// subtree the path may sit before the request would replay differently.
+enum class RequestPathKind
+{
+    /// Only the node itself: whether it exists and stats that removing a subtree never touches (its
+    /// `version`, `mzxid`, `pzxid`, ACL, and anything else in `Stat` except `numChildren` and
+    /// `cversion`). Orphan cleanup repairs only `numChildren` and the children set of the removed
+    /// root's direct parent, so such a request replays identically unless the node itself was removed.
+    /// This also covers writes that rewrite only such fields of the node (`Set`, `SetACL`).
+    NodeOnly,
+    /// The node itself and its direct children: whether it exists, its data, version and ACL, and the
+    /// `Stat` it reports (which carries `numChildren` and `cversion`) or an explicit children listing.
+    /// Nothing below the children is observed.
+    NodeAndChildren,
+    /// The whole subtree rooted at this path: a recursive listing or a recursive removal walks every
+    /// descendant, so losing any of them changes the result.
+    Subtree,
+    /// Only the stats this node accumulates as the *parent* of a created or removed child: a
+    /// create/remove bumps the parent's `numChildren`, `cversion` and `pzxid`.
+    ParentStats,
+};
+
+/// Enumerate the node paths a request refers to, calling `f(std::string_view, RequestPathKind)` for
+/// each. Returns false for request types we do not recognise, so the caller can fail closed.
+///
+/// Keep in sync with `callOnConcreteRequestType` in KeeperStorageImpl.cpp: a new op num that is not
+/// listed here is reported as a conflict rather than silently skipped.
+template <typename F>
+bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
+{
+    using Coordination::OpNum;
+    switch (request.getOpNum())
+    {
+        case OpNum::Multi:
+        case OpNum::MultiRead:
+        {
+            /// `ZooKeeperMultiRequest::getPath()` returns an empty string, so the sub-requests
+            /// carry the actual paths and must be walked.
+            const auto & multi = dynamic_cast<const Coordination::ZooKeeperMultiRequest &>(request);
+            for (const auto & sub_request : multi.requests)
+            {
+                if (!sub_request)
+                    return false;
+                if (!forEachRequestPath(*sub_request, f))
+                    return false;
+            }
+            return true;
+        }
+        /// These touch no node path at all.
+        ///
+        /// `Sync` carries a path but never reads or writes the tree -- its handler ignores the storage
+        /// argument entirely and just echoes the path back (see `process(const ZooKeeperSyncRequest &,
+        /// KeeperStorage & /* storage */, ...)` in KeeperStorageImpl.cpp). Treating its path as touched
+        /// would make a harmless tail entry such as `Sync("/")` conflict with every removed subtree and
+        /// block recovery for no reason.
+        ///
+        /// `AddWatch`, `CheckWatch` and `RemoveWatch` carry a path too, but their handlers only add,
+        /// look up or drop entries in the watch maps (`KeeperStorage::addPersistentWatch`,
+        /// `containsWatch`, `removePersistentWatch`); they never consult the node tree or its stats,
+        /// and no watch map is restored from a snapshot. Replaying them after orphan cleanup therefore
+        /// produces exactly the state an unrepaired replica ends up with, even when the path lies in a
+        /// pruned subtree. These read requests land in the log only under `quorum_reads`, and treating
+        /// them as touched paths would turn a safe recovery tail into a false `CORRUPTED_DATA`.
+        ///
+        case OpNum::Heartbeat:
+        case OpNum::Auth:
+        case OpNum::SessionID:
+        case OpNum::Error:
+        case OpNum::Sync:
+        case OpNum::AddWatch:
+        case OpNum::CheckWatch:
+        case OpNum::RemoveWatch:
+            return true;
+        /// `Close` is deliberately NOT path-free: it carries no path, but its handler removes every
+        /// ephemeral node owned by the session and updates their parents' stats
+        /// (`prepareRemoveEphemeralNodes` in KeeperStorageImpl.cpp). The paths it touches are only known
+        /// from the session's ephemeral bookkeeping, so `findOrphanConflictInLogTail` verifies it
+        /// separately before calling this function; reaching it here (e.g. nested in a `Multi`) fails closed.
+        case OpNum::Close:
+            return false;
+        /// `SetWatches`/`SetWatches2` carry lists of paths rather than a single one (`getPath()` must not
+        /// be called on them: it dereferences `data_watches[0]` without checking that the list is
+        /// non-empty). `KeeperStorage::setWatches` resolves the data, child (list), and exist watch paths
+        /// against the tree -- whether the node exists, its `mzxid` for a data watch and its `pzxid` for a
+        /// child watch decide between an immediate `DELETED`/`CHANGED`/`CREATED` watch event and
+        /// re-registering the watch -- so a watch on a pruned path would replay differently after orphan
+        /// cleanup. None of these fields is touched on a surviving node, so they only conflict inside the
+        /// removed region. The persistent (and persistent recursive) watch lists of `SetWatches2` are
+        /// registered without consulting the tree, exactly like `AddWatch` above, so they are not checked.
+        case OpNum::SetWatch:
+        case OpNum::SetWatch2:
+        {
+            const auto & set_watches = dynamic_cast<const Coordination::SetWatchesRequest &>(request);
+            for (const auto & path : set_watches.data_watches)
+                f(path, RequestPathKind::NodeOnly);
+            for (const auto & path : set_watches.child_watches)
+                f(path, RequestPathKind::NodeOnly);
+            for (const auto & path : set_watches.exist_watches)
+                f(path, RequestPathKind::NodeOnly);
+            return true;
+        }
+        /// Everything else has a meaningful single path.
+        case OpNum::Reconfig:
+        case OpNum::Get:
+        case OpNum::Exists:
+        case OpNum::Create:
+        case OpNum::Create2:
+        case OpNum::CreateContainer:
+        case OpNum::CreateIfNotExists:
+        case OpNum::CreateTTL:
+        case OpNum::Remove:
+        case OpNum::TryRemove:
+        case OpNum::RemoveRecursive:
+        case OpNum::Set:
+        case OpNum::SetACL:
+        case OpNum::GetACL:
+        case OpNum::List:
+        case OpNum::SimpleList:
+        case OpNum::FilteredList:
+        case OpNum::FilteredListWithStatsAndData:
+        case OpNum::ListRecursive:
+        case OpNum::ListWithOptions:
+        case OpNum::Check:
+        case OpNum::CheckNotExists:
+        case OpNum::CheckStat:
+        {
+            const auto path = request.getPath();
+
+            /// Some request forms are rejected by their handlers before the tree is consulted, on every
+            /// replica alike, so they change nothing and replay identically after orphan cleanup:
+            ///  - `RemoveRecursive` of `/` or of anything under the internal Keeper path returns
+            ///    `ZBADARGUMENTS` (`preprocess` for `ZooKeeperRemoveRecursiveRequest` in
+            ///    KeeperStorageImpl.cpp);
+            ///  - `ListWithOptions` with an unsupported options version (`ZUNIMPLEMENTED`), or recursive
+            ///    with a watch (`ZBADARGUMENTS`), in its `processLocal`.
+            /// Reporting their paths would turn a harmless tail entry such as `RemoveRecursive("/")` into
+            /// a false conflict with every removed subtree.
+            if (request.getOpNum() == OpNum::RemoveRecursive
+                && (path == "/" || Coordination::matchPath(path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH))
+                return true;
+            if (request.getOpNum() == OpNum::ListWithOptions)
+            {
+                const auto & lwo = dynamic_cast<const Coordination::ZooKeeperListWithOptionsRequest &>(request);
+                if (lwo.options_version != Coordination::ListOptionsVersion::V1 || (lwo.options.recursive && lwo.has_watch))
+                    return true;
+            }
+
+            /// `RemoveRecursive` walks and deletes the whole subtree (and compares its size against
+            /// `remove_nodes_limit`), `ListRecursive` returns every descendant, and `Reconfig` rewrites
+            /// the configuration subtree: all three observe arbitrarily deep descendants, so a removed
+            /// subtree anywhere below them changes the outcome. `ListWithOptions` can be recursive
+            /// depending on its options. `Check` and `CheckNotExists` compare only the node's existence,
+            /// ACL and `version`. `Set` and `SetACL` check the node's existence, ACL and `version`/`aversion`
+            /// and rewrite only the node's own data or ACL and version fields (`Set` also increments the
+            /// parent's `cversion`, which orphan cleanup never changes); neither reads the node's children or
+            /// `numChildren`, so the state they leave is the same after orphan cleanup. `CheckStat` compares exactly the fields of `stat_to_check` that are not
+            /// `-1` (`checkNodeStat` in KeeperStorageImpl.cpp), so it observes the children only when it
+            /// compares `numChildren` or `cversion`. Everything else in this group resolves the node
+            /// itself and at most its direct children.
+            auto kind = RequestPathKind::NodeAndChildren;
+            if (request.getOpNum() == OpNum::RemoveRecursive || request.getOpNum() == OpNum::ListRecursive
+                || request.getOpNum() == OpNum::Reconfig)
+                kind = RequestPathKind::Subtree;
+            else if (request.getOpNum() == OpNum::Check || request.getOpNum() == OpNum::CheckNotExists
+                || request.getOpNum() == OpNum::Set || request.getOpNum() == OpNum::SetACL)
+                kind = RequestPathKind::NodeOnly;
+            else if (request.getOpNum() == OpNum::CheckStat)
+            {
+                const auto & check = dynamic_cast<const Coordination::ZooKeeperCheckRequest &>(request);
+                if (check.stat_to_check && check.stat_to_check->numChildren == -1 && check.stat_to_check->cversion == -1)
+                    kind = RequestPathKind::NodeOnly;
+            }
+            if (request.getOpNum() == OpNum::ListWithOptions)
+            {
+                const auto & lwo = dynamic_cast<const Coordination::ZooKeeperListWithOptionsRequest &>(request);
+                if (lwo.options.recursive)
+                    kind = RequestPathKind::Subtree;
+            }
+            f(path, kind);
+
+            /// A sequential create does not touch the path it carries: the storage appends a zero-padded
+            /// sequence number taken from the parent, so the node actually created is
+            /// `<path><seq_num>` (`path_created` in KeeperStorageImpl.cpp). We cannot know the sequence
+            /// number here, but the created node is always a direct child of the same parent, and the
+            /// parent's children set and `seq_num`/`numChildren` are exactly what the create resolves
+            /// against, so checking the parent covers it.
+            if (const auto * create = dynamic_cast<const Coordination::ZooKeeperCreateRequest *>(&request);
+                create != nullptr && create->is_sequential)
+                f(Coordination::parentNodePath(path), RequestPathKind::NodeAndChildren);
+
+            /// Creates and removes also mutate the stats of the target's parent (`numChildren`,
+            /// `cversion`, `pzxid` -- see the create/remove handlers in KeeperStorageImpl.cpp), so a
+            /// sibling operation under a parent whose children were pruned replays against repaired
+            /// stats and silently diverges from replicas that still hold the lost children.
+            switch (request.getOpNum())
+            {
+                case OpNum::Create:
+                case OpNum::Create2:
+                case OpNum::CreateContainer:
+                case OpNum::CreateIfNotExists:
+                case OpNum::CreateTTL:
+                case OpNum::Remove:
+                case OpNum::TryRemove:
+                case OpNum::RemoveRecursive:
+                    f(Coordination::parentNodePath(path), RequestPathKind::ParentStats);
+                    break;
+                default:
+                    break;
+            }
+
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Whether a request that observes `path` in the way described by `kind` would replay differently
+/// after the subtree rooted at `subtree_root` was removed.
+///
+/// Removing that subtree changes exactly two things: the root and its descendants are gone, and the
+/// root's direct parent lost a child (`numChildren`, `cversion`, `pzxid`, children set). Every other
+/// node in the tree -- including strict ancestors further up the chain -- is byte for byte what a
+/// replica that still holds the lost nodes has, so a request observing only such a node replays
+/// identically and must not block recovery. Hence:
+///  - the path is the removed root or below it: our tree lost those nodes, so the request resolves
+///    differently (`Create`/`Set` -> `ZNONODE`). Conflicts for every kind;
+///  - the path is the direct parent of the removed root: its children set and `numChildren` differ
+///    from the tree the log was written against, so e.g. `Remove` returns `ZOK` here but was
+///    `ZNOTEMPTY`, `Create <root>` succeeds here but was `ZNODEEXISTS`, and a sibling create/remove
+///    updates the parent's stats from a repaired base. Conflicts for every kind except `NodeOnly`,
+///    whose observed fields are unchanged there;
+///  - the path is a higher strict ancestor: only a request that walks the whole subtree
+///    (`RemoveRecursive`, `ListRecursive`) sees the difference. A `Set`, `Get`, `List` or sibling
+///    create on such an ancestor does not, and returns `false` here.
+bool conflictsWithRemovedSubtree(std::string_view path, RequestPathKind kind, std::string_view subtree_root)
+{
+    if (Coordination::matchPath(path, subtree_root) != Coordination::PathMatchResult::NOT_MATCH)
+        return true;
+
+    if (kind == RequestPathKind::NodeOnly)
+        return false;
+
+    if (Coordination::matchPath(subtree_root, path) != Coordination::PathMatchResult::IS_CHILD)
+        return false;
+
+    return kind == RequestPathKind::Subtree || path == Coordination::parentNodePath(subtree_root);
+}
+
+}
+
+std::optional<KeeperStateMachine::OrphanLogTailConflict>
+KeeperStateMachine::findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end_idx)
+{
+    if (removed_orphan_subtree_roots.empty())
+        return {};
+
+    const auto roots_str = fmt::format("{}", fmt::join(removed_orphan_subtree_roots, ", "));
+
+    start_idx = std::min(start_idx, end_idx);
+    if (start_idx == end_idx)
+    {
+        LOG_INFO(
+            log,
+            "No local log entries above the snapshot, nothing can reference the {} removed orphaned subtree root(s): [{}]",
+            removed_orphan_subtree_roots.size(),
+            roots_str);
+        removed_orphan_subtree_roots.clear();
+        removed_orphan_ephemeral_sessions.clear();
+        return {};
+    }
+
+    /// Fail closed on anything that prevents us from reading the range. Neither branch is reachable
+    /// today (`KeeperServer::startup` attaches the log store first, and `Changelog` already refuses to
+    /// start on a gap between the snapshot and the oldest log entry), but a future reordering must
+    /// fail loudly instead of skipping the verification.
+    if (!log_store)
+    {
+        OrphanLogTailConflict conflict;
+        conflict.reason = "the log store is not available, so the local log tail cannot be verified";
+        return conflict;
+    }
+
+    if (log_store->start_index() > start_idx)
+    {
+        OrphanLogTailConflict conflict;
+        conflict.reason = fmt::format(
+            "log entries between the snapshot and the start of the log are missing (need from {}, log starts at {}), so the "
+            "local log tail cannot be verified",
+            start_idx,
+            log_store->start_index());
+        return conflict;
+    }
+
+    LOG_INFO(
+        log,
+        "Verifying local log entries [{}, {}) against {} removed orphaned subtree root(s): [{}]",
+        start_idx,
+        end_idx,
+        removed_orphan_subtree_roots.size(),
+        roots_str);
+
+    static constexpr uint64_t max_entries_without_warning = 1'000'000;
+    if (end_idx - start_idx > max_entries_without_warning)
+        LOG_WARNING(log, "There are {} local log entries to verify, this may take a while", end_idx - start_idx);
+
+    /// Read in batches: the same range is materialised again by `preprocessUncommittedLogEntries`
+    /// right after startup, so keep this verification's peak memory flat.
+    static constexpr uint64_t batch_size = 10'000;
+    for (uint64_t batch_begin = start_idx; batch_begin < end_idx; batch_begin += batch_size)
+    {
+        const uint64_t batch_end = std::min(batch_begin + batch_size, end_idx);
+        auto entries = log_store->log_entries(batch_begin, batch_end);
+        if (!entries || entries->size() != batch_end - batch_begin)
+        {
+            OrphanLogTailConflict conflict;
+            conflict.reason = fmt::format(
+                "the log store returned {} entries for the range [{}, {}), so the local log tail cannot be verified",
+                entries ? entries->size() : 0,
+                batch_begin,
+                batch_end);
+            return conflict;
+        }
+
+        for (size_t i = 0; i < entries->size(); ++i)
+        {
+            auto & entry = (*entries)[i];
+            const uint64_t log_idx = batch_begin + i;
+
+            if (!entry || entry->get_val_type() != nuraft::log_val_type::app_log)
+                continue;
+
+            std::shared_ptr<KeeperRequestForSession> request_for_session;
+            try
+            {
+                /// `final=true` keeps this scan out of `parsed_request_cache`: the entries are parsed
+                /// again during the real preprocessing pass and we must not disturb that.
+                request_for_session = parseRequest(entry->get_buf(), /*final=*/true);
+            }
+            catch (...)
+            {
+                OrphanLogTailConflict conflict;
+                conflict.log_idx = log_idx;
+                conflict.reason
+                    = fmt::format("the entry cannot be parsed ({}), so it cannot be verified", getCurrentExceptionMessage(false));
+                return conflict;
+            }
+
+            if (!request_for_session || !request_for_session->request)
+                continue;
+
+            const auto & request = *request_for_session->request;
+
+            /// `Close` names no path itself: the storage removes every ephemeral node owned by the
+            /// session and decrements each parent's `numChildren` / `cversion`
+            /// (`prepareRemoveEphemeralNodes`). Two ways this replays differently after orphan cleanup:
+            ///  - the session owned a pruned ephemeral: other replicas still remove it (and update its
+            ///    parent), we have nothing to remove;
+            ///  - the session owns a surviving ephemeral under a repaired parent: the parent's stats
+            ///    are updated from a different base, exactly like a sibling `Remove` in the tail.
+            if (request.getOpNum() == Coordination::OpNum::Close)
+            {
+                const auto session_id = request_for_session->session_id;
+                if (std::binary_search(removed_orphan_ephemeral_sessions.begin(), removed_orphan_ephemeral_sessions.end(), session_id))
+                {
+                    OrphanLogTailConflict found;
+                    found.log_idx = log_idx;
+                    found.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
+                    found.reason = fmt::format(
+                        "the entry closes session {} which owned ephemeral nodes that were removed from the snapshot, so the close "
+                        "would no longer remove them and update their parents' stats",
+                        session_id);
+                    return found;
+                }
+
+                std::vector<std::string> session_ephemerals;
+                {
+                    std::lock_guard ephemeral_lock(storage->ephemeral_mutex);
+                    if (auto ephemerals_it = storage->committed_ephemerals.find(session_id);
+                        ephemerals_it != storage->committed_ephemerals.end())
+                        session_ephemerals.assign(ephemerals_it->second.begin(), ephemerals_it->second.end());
+                }
+                std::sort(session_ephemerals.begin(), session_ephemerals.end());
+
+                for (const auto & ephemeral_path : session_ephemerals)
+                {
+                    const auto parent = Coordination::parentNodePath(ephemeral_path);
+                    for (const auto & subtree_root : removed_orphan_subtree_roots)
+                    {
+                        if (conflictsWithRemovedSubtree(ephemeral_path, RequestPathKind::NodeAndChildren, subtree_root)
+                            || conflictsWithRemovedSubtree(parent, RequestPathKind::ParentStats, subtree_root))
+                        {
+                            OrphanLogTailConflict found;
+                            found.log_idx = log_idx;
+                            found.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
+                            found.request_path = ephemeral_path;
+                            found.subtree_root = subtree_root;
+                            found.reason = fmt::format(
+                                "the entry closes session {} which owns this ephemeral node under a parent whose children were removed "
+                                "from the snapshot, so the parent's stats would be updated from a repaired base",
+                                session_id);
+                            return found;
+                        }
+                    }
+                }
+                continue;
+            }
+
+            std::optional<OrphanLogTailConflict> conflict;
+            const bool recognised = forEachRequestPath(
+                request,
+                [&](std::string_view path, RequestPathKind kind)
+                {
+                    if (conflict)
+                        return;
+
+                    /// Every request routed here carries a real path (the ones that do not are handled
+                    /// above), so this means a new request type was added without deciding which group it
+                    /// belongs to. Fail closed explicitly rather than leaning on what `matchPath` happens
+                    /// to return for an empty path.
+                    if (path.empty())
+                    {
+                        OrphanLogTailConflict empty_path;
+                        empty_path.log_idx = log_idx;
+                        empty_path.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
+                        empty_path.reason = "the request has no path, so the nodes it touches cannot be determined";
+                        conflict = std::move(empty_path);
+                        return;
+                    }
+
+                    for (const auto & subtree_root : removed_orphan_subtree_roots)
+                    {
+                        if (conflictsWithRemovedSubtree(path, kind, subtree_root))
+                        {
+                            /// Some create/remove variants are no-ops that return before touching the
+                            /// parent's stats. `CreateIfNotExists` returns `ZOK` without modifying the
+                            /// parent when the target already exists; `TryRemove` returns `ZOK` and
+                            /// `Remove` returns `ZNONODE` when the target does not exist. In all three
+                            /// cases the request replays identically after orphan cleanup, so the
+                            /// `ParentStats` conflict is a false positive.
+                            ///
+                            /// We check the committed snapshot state: the log tail has not been replayed
+                            /// yet, so the snapshot reflects the last committed tree. An earlier tail
+                            /// entry that flips this node's existence would itself conflict with the same
+                            /// removed subtree (it is a create/remove under the repaired parent) and
+                            /// would have already been reported, so reaching this point means no earlier
+                            /// entry has changed the node.
+                            if (kind == RequestPathKind::ParentStats)
+                            {
+                                const auto op = request.getOpNum();
+                                const auto target = request.getPath();
+                                const bool target_exists = storage->nodes_storage->getCommittedNodeSimple(target, nullptr, nullptr);
+
+                                if (op == Coordination::OpNum::CreateIfNotExists && target_exists)
+                                    return;
+
+                                if ((op == Coordination::OpNum::TryRemove || op == Coordination::OpNum::Remove) && !target_exists)
+                                    return;
+                            }
+
+                            OrphanLogTailConflict found;
+                            found.log_idx = log_idx;
+                            found.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
+                            found.request_path = std::string{path};
+                            found.subtree_root = subtree_root;
+                            found.reason = kind == RequestPathKind::ParentStats
+                                ? "the entry creates or removes a node under a parent whose children were removed from the snapshot, "
+                                  "so the parent's stats would be updated from a repaired base"
+                                : "the entry references a path that was removed from the snapshot, or the parent of one";
+                            conflict = std::move(found);
+                            return;
+                        }
+                    }
+                });
+
+            if (!recognised)
+            {
+                OrphanLogTailConflict unrecognised;
+                unrecognised.log_idx = log_idx;
+                unrecognised.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
+                unrecognised.reason = "the request type is not recognised, so the paths it touches cannot be determined";
+                return unrecognised;
+            }
+
+            if (conflict)
+                return conflict;
+        }
+
+        if ((batch_end - start_idx) % 50'000 == 0)
+            LOG_TRACE(log, "Verified {}/{} entries", batch_end - start_idx, end_idx - start_idx);
+    }
+
+    LOG_INFO(
+        log,
+        "Verified local log entries [{}, {}): none of them reference the {} removed orphaned subtree root(s)",
+        start_idx,
+        end_idx,
+        removed_orphan_subtree_roots.size());
+
+    /// One-shot startup token: clearing makes a second call a no-op and keeps a stale value from
+    /// surviving into a later `apply_snapshot` that replaces `storage`.
+    removed_orphan_subtree_roots.clear();
+    removed_orphan_subtree_roots.shrink_to_fit();
+    removed_orphan_ephemeral_sessions.clear();
+    removed_orphan_ephemeral_sessions.shrink_to_fit();
+    return {};
 }
 
 namespace
@@ -207,7 +766,7 @@ void assertDigest(
     uint64_t session_id,
     bool committing)
 {
-    if (!KeeperStorageBase::checkDigest(expected, actual))
+    if (!KeeperStorage::checkDigest(expected, actual))
     {
         LOG_FATAL(
             getLogger("KeeperStateMachine"),
@@ -245,9 +804,10 @@ union XidHelper
 
 }
 
-template<typename Storage>
-nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log_idx, nuraft::buffer & data)
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+
     const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
 
     double sleep_probability = keeper_context->getPrecommitSleepProbabilityForTesting();
@@ -301,7 +861,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log
 
     try
     {
-        preprocess(*request_for_session);
+        preprocess(*request_for_session, /*lock_mutex=*/ true);
     }
     catch (...)
     {
@@ -315,7 +875,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log
 }
 
 // Serialize the request for the log entry
-nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session)
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session)
 {
     DB::WriteBufferFromNuraftBuffer write_buf;
     DB::writeIntBinary(request_for_session.session_id, write_buf);
@@ -353,7 +913,7 @@ nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const Keep
     return write_buf.getBuffer();
 }
 
-std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
+std::shared_ptr<KeeperRequestForSession> KeeperStateMachine::parseRequest(
     nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * request_end_position)
 {
     ReadBufferFromNuraftBuffer buffer(data);
@@ -441,7 +1001,8 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
     };
 
     const bool should_cache
-        = min_request_size_to_cache != 0 && request_for_session->session_id != -1 && data.size() >= min_request_size_to_cache
+        = min_request_size_to_cache != 0 && request_for_session->session_id != -1
+        && request_for_session->session_id != keeper_internal_ttl_garbage_collector_session_id && data.size() >= min_request_size_to_cache
         && std::all_of(
               non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return xid != non_cacheable_xid; });
 
@@ -484,15 +1045,22 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
     return request_for_session;
 }
 
-template<typename Storage>
-std::optional<KeeperDigest> KeeperStateMachine<Storage>::preprocess(const KeeperRequestForSession & request_for_session)
+std::optional<KeeperDigest> KeeperStateMachine::preprocess(const KeeperRequestForSession & request_for_session, bool lock_mutex) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
+    /// `findOrphanConflictInLogTail` must have run (and cleared this) before any request is
+    /// preprocessed. If it did not, orphaned nodes were removed from the snapshot without verifying the
+    /// local log tail against them -- see `KeeperServer::startup`.
+    chassert(removed_orphan_subtree_roots.empty());
+
     const auto op_num = request_for_session.request->getOpNum();
 
     KeeperDigest digest_after_preprocessing;
     try
     {
-        KEEPER_STORAGE_LOCK_SHARED(lock);
+        ProfiledSharedLock lock(state_machine_storage_mutex, ProfileEvents::KeeperStorageSharedLockWaitMicroseconds, std::defer_lock);
+        if (lock_mutex)
+            lock.lock();
+
         if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
             return storage->getNodesDigest(false, /*lock_transaction_mutex=*/true);
 
@@ -531,8 +1099,7 @@ std::optional<KeeperDigest> KeeperStateMachine<Storage>::preprocess(const Keeper
     return digest_after_preprocessing;
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::reconfigure(const KeeperRequestForSession & request_for_session)
+void KeeperStateMachine::reconfigure(const KeeperRequestForSession & request_for_session)
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     KeeperResponseForSession response = processReconfiguration(request_for_session);
@@ -540,8 +1107,7 @@ void KeeperStateMachine<Storage>::reconfigure(const KeeperRequestForSession & re
         response_callback(std::move(response));
 }
 
-template<typename Storage>
-KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
+KeeperResponseForSession KeeperStateMachine::processReconfiguration(
     const KeeperRequestForSession & request_for_session)
 {
     ProfileEvents::increment(ProfileEvents::KeeperReconfigRequest);
@@ -560,7 +1126,7 @@ KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
         return { session_id, std::move(res) };
     };
 
-    if (!storage->checkACL(keeper_config_path, Coordination::ACL::Write, session_id, /*is_local=*/ true, /*should_lock_storage=*/ true))
+    if (!storage->checkCommittedACL(keeper_config_path, Coordination::ACL::Write, session_id))
         return bad_request(ZNOAUTH);
 
     KeeperDispatcher & dispatcher = *keeper_context->getDispatcher();
@@ -608,8 +1174,7 @@ KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
     return { session_id, std::move(response) };
 }
 
-template<typename Storage>
-nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t log_idx, nuraft::buffer & data)
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
     const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
 
@@ -619,7 +1184,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
 
     request_for_session->log_idx = log_idx;
 
-    if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session))
+    if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session, /*lock_mutex=*/ true))
         return nullptr;
 
     const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
@@ -676,7 +1241,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
             {
                 KEEPER_STORAGE_LOCK_SHARED(lock);
                 {
-                    ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
+                    ProfiledExclusiveLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
                     KeeperResponsesForSessions responses_for_sessions
                         = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
                     for (auto & response_for_session : responses_for_sessions)
@@ -719,60 +1284,128 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
     return nullptr;
 }
 
-template<typename Storage>
-bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
+bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 {
-    LOG_DEBUG(log, "Applying snapshot {}", s.get_last_log_idx());
-
-    bool snapshot_apply_finished = false;
-    SCOPE_EXIT({
-        if (!snapshot_apply_finished)
-            ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplysFailed);
-    });
-
-    const auto validate_snapshot_to_apply = [&](const SnapshotMetadataPtr & current_snapshot_meta)
+    try
     {
-        if (!current_snapshot_meta)
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Required to apply snapshot with last log index {}, but no latest snapshot metadata is available",
-                s.get_last_log_idx());
-        }
-        if (s.get_last_log_idx() > current_snapshot_meta->get_last_log_idx())
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Required to apply snapshot with last log index {}, but last created snapshot was for smaller log index {}",
-                s.get_last_log_idx(),
-                current_snapshot_meta->get_last_log_idx());
-        }
-        if (s.get_last_log_idx() < current_snapshot_meta->get_last_log_idx())
-        {
-            LOG_INFO(
-                log,
-                "A snapshot with a larger last log index ({}) was created, skipping applying snapshot with last log index {}",
-                current_snapshot_meta->get_last_log_idx(),
-                s.get_last_log_idx());
-            return false;
-        }
+        LOG_DEBUG(log, "Applying snapshot {}", s.get_last_log_idx());
 
-        return true;
-    };
+        bool snapshot_apply_finished = false;
+        SCOPE_EXIT({
+            if (!snapshot_apply_finished)
+                ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplysFailed);
+        });
 
-    if constexpr (std::is_same_v<Storage, KeeperMemoryStorage>)
-    {
+        /// Consume the pending install context for THIS snapshot (matched by identity) on every
+        /// exit; a different identity belongs to another install. Runs after inner lock_guards unwind.
+        SCOPE_EXIT({
+            std::lock_guard lock(snapshots_lock);
+            if (pending_snapshot_to_apply && sameSnapshotIdentity(*pending_snapshot_to_apply, s))
+            {
+                pending_snapshot_to_apply.reset();
+                /// Release the pending-install retention protection; on a successful apply the
+                /// mark already advanced to this index and protects it as the mark instead.
+                snapshot_manager.setProtectedPendingSnapshotIndex(0);
+            }
+        });
+
+        const auto validate_pending_snapshot_to_apply = [&]() TSA_REQUIRES(snapshots_lock)
+        {
+            if (!pending_snapshot_to_apply)
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Required to apply snapshot with last log index {}, but there is no pending snapshot "
+                    "saved by a preceding save_logical_snp_obj",
+                    s.get_last_log_idx());
+            }
+            if (s.get_last_log_idx() > pending_snapshot_to_apply->get_last_log_idx())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Required to apply snapshot with last log index {}, but the pending snapshot saved by "
+                    "save_logical_snp_obj is for smaller log index {}",
+                    s.get_last_log_idx(),
+                    pending_snapshot_to_apply->get_last_log_idx());
+            }
+            if (s.get_last_log_idx() < pending_snapshot_to_apply->get_last_log_idx())
+            {
+                /// A newer install's save displaced this pending context (NuRaft drops its lock
+                /// between save and apply). Skip-as-success is sound only when local commits
+                /// already cover the snapshot; otherwise fail closed — NuRaft exits the process
+                /// and `init` recovers from the displacing install, which is fully saved on disk.
+                const auto last_committed = keeper_context->lastCommittedIndex();
+                if (last_committed >= s.get_last_log_idx())
+                {
+                    LOG_INFO(
+                        log,
+                        "A pending snapshot with a larger last log index ({}) was saved after this one and "
+                        "local commits (last committed index {}) already cover snapshot {}; skipping its apply",
+                        pending_snapshot_to_apply->get_last_log_idx(),
+                        last_committed,
+                        s.get_last_log_idx());
+                    return false;
+                }
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Snapshot with last log index {} was displaced by a newer pending snapshot ({}) before it "
+                    "could be applied, and local commits (last committed index {}) do not cover it",
+                    s.get_last_log_idx(),
+                    pending_snapshot_to_apply->get_last_log_idx(),
+                    last_committed);
+            }
+
+            /// Equal index — require full identity; a term mismatch means the pairing broke.
+            if (s.get_last_log_term() != pending_snapshot_to_apply->get_last_log_term())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Required to apply snapshot with last log index {} and term {}, but the pending snapshot "
+                    "saved by save_logical_snp_obj for the same index has term {}",
+                    s.get_last_log_idx(),
+                    s.get_last_log_term(),
+                    pending_snapshot_to_apply->get_last_log_term());
+            }
+
+            /// Defensive: an apply at the mark's own index must carry the mark's term, otherwise
+            /// storage would silently diverge from what `last_snapshot` advertises.
+            if (latest_snapshot_meta
+                && s.get_last_log_idx() == latest_snapshot_meta->get_last_log_idx()
+                && s.get_last_log_term() != latest_snapshot_meta->get_last_log_term())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Required to apply snapshot with last log index {} and term {}, but the latest snapshot "
+                    "metadata for the same index has term {}",
+                    s.get_last_log_idx(),
+                    s.get_last_log_term(),
+                    latest_snapshot_meta->get_last_log_term());
+            }
+
+            return true;
+        };
+
+        /// If there are uncommitted log entries above the snapshot, we re-preprocess them in the new
+        /// KeeperStorage. This is unusual; normally apply_snapshot is called in order to fast-forward
+        /// follower's state to a log_idx far above the tail of this follower's log_store.
+        /// Call this with storage mutex locked.
+        auto preprocess_uncommitted_entries = [&](uint64_t last_uncommitted_log_idx)
+        {
+            uint64_t uncommitted_start_idx = s.get_last_log_idx() + 1;
+            uint64_t uncommitted_end_idx = last_uncommitted_log_idx + 1;
+            preprocessUncommittedLogEntries(uncommitted_start_idx, uncommitted_end_idx, /*lock_mutex=*/ false);
+        };
+
         /// Apply received snapshots in three phases to reduce peak memory:
         /// 1. Under `snapshots_lock`, validate metadata and pin the snapshot file.
         /// 2. Outside locks, read the file and validate its metadata prefix.
-        /// 3. Under `snapshots_lock` and exclusive storage lock, detach the
-        ///    uncommitted tail, drop old storage, deserialize replacement
-        ///    storage, replay the tail, and publish it.
+        /// 3. Under `snapshots_lock` and exclusive storage lock, drop old storage, deserialize
+        ///    replacement storage, replay the tail, and publish the storage.
         /// Any failure after `storage.reset` is not recoverable, so it terminates.
         SnapshotFileInfoPtr snapshot_file_info;
         {
             std::lock_guard lock(snapshots_lock);
-            if (!validate_snapshot_to_apply(latest_snapshot_meta))
+            if (!validate_pending_snapshot_to_apply())
             {
                 snapshot_apply_finished = true;
                 return true;
@@ -790,18 +1423,19 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
 
         auto snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(*snapshot_file_info);
         auto snapshot_meta_from_buffer = snapshot_manager.deserializeSnapshotMetadataFromBuffer(snapshot_buf);
-        if (snapshot_meta_from_buffer->get_last_log_idx() != s.get_last_log_idx())
+        if (!sameSnapshotIdentity(*snapshot_meta_from_buffer, s))
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Required to apply snapshot with last log index {}, but snapshot buffer metadata has last log index {}",
-                s.get_last_log_idx(),
-                snapshot_meta_from_buffer->get_last_log_idx());
+                "Required to apply snapshot with last log index {} and term {}, but snapshot buffer "
+                "metadata has last log index {} and term {}",
+                s.get_last_log_idx(), s.get_last_log_term(),
+                snapshot_meta_from_buffer->get_last_log_idx(), snapshot_meta_from_buffer->get_last_log_term());
         }
 
         {
             std::lock_guard lock(snapshots_lock);
-            if (!validate_snapshot_to_apply(latest_snapshot_meta))
+            if (!validate_pending_snapshot_to_apply())
             {
                 snapshot_apply_finished = true;
                 return true;
@@ -813,28 +1447,35 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
                 std::optional<uint64_t> latest_snapshot_meta_index_before_reset;
                 if (latest_snapshot_meta)
                     latest_snapshot_meta_index_before_reset = latest_snapshot_meta->get_last_log_idx();
-
-                auto uncommitted_tail = storage->detachUncommittedStateAfter(s.get_last_log_idx());
-                storage.reset();
+                uint64_t last_uncommitted_log_idx = storage->getLastUncommittedLogIdx();
 
                 try
                 {
-                    auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf);
+                    storage.reset();
+                    storage = KeeperStorage::create(
+                        keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(),
+                        superdigest, keeper_context, /* initialize_system_nodes */ false);
+                    /// A snapshot received from another node must be applied faithfully — orphaned
+                    /// nodes must never be removed here, otherwise this replica would diverge.
+                    auto snapshot_deserialization_result
+                        = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf, *storage, /*allow_orphaned_nodes_removal=*/ false);
                     /// This repeats the pre-reset prefix check deliberately. It
                     /// catches future divergence between
                     /// `deserializeSnapshotMetadataFromBuffer` and
                     /// `deserializeSnapshotFromBuffer`.
-                    if (snapshot_deserialization_result.snapshot_meta->get_last_log_idx() != s.get_last_log_idx())
+                    if (!sameSnapshotIdentity(*snapshot_deserialization_result.snapshot_meta, s))
                         throw Exception(
                             ErrorCodes::LOGICAL_ERROR,
-                            "Required to apply snapshot with last log index {}, but fully deserialized snapshot metadata has last log index {}",
-                            s.get_last_log_idx(),
-                            snapshot_deserialization_result.snapshot_meta->get_last_log_idx());
+                            "Required to apply snapshot with last log index {} and term {}, but fully "
+                            "deserialized snapshot metadata has last log index {} and term {}",
+                            s.get_last_log_idx(), s.get_last_log_term(),
+                            snapshot_deserialization_result.snapshot_meta->get_last_log_idx(),
+                            snapshot_deserialization_result.snapshot_meta->get_last_log_term());
 
                     snapshot_buf = nullptr;
-                    snapshot_deserialization_result.storage->applyUncommittedState(std::move(uncommitted_tail));
-                    storage = std::move(snapshot_deserialization_result.storage);
-                    latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
+                    preprocess_uncommitted_entries(last_uncommitted_log_idx);
+                    /// An apply may legitimately target an index at or below the mark — never regress.
+                    advanceLatestSnapshotMeta(snapshot_deserialization_result.snapshot_meta);
 
                     {
                         std::lock_guard cluster_config_guard(cluster_config_lock);
@@ -845,7 +1486,7 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
                 {
                     LOG_FATAL(
                         log,
-                        "Failed to apply snapshot {} after dropping old `KeeperMemoryStorage` "
+                        "Failed to apply snapshot {} after dropping old `KeeperStorage` "
                         "(latest snapshot metadata index before reset: {}): {}. Terminating to avoid inconsistent Keeper state",
                         s.get_last_log_idx(),
                         latest_snapshot_meta_index_before_reset ? std::to_string(*latest_snapshot_meta_index_before_reset) : "(None)",
@@ -858,48 +1499,21 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
             snapshot_loader_info_log_idx = 0;
             cancelIfHasUnfinishedSnapshotReceive();
         }
+
+        ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplys);
+        keeper_context->setLastCommitIndex(s.get_last_log_idx());
+        snapshot_apply_finished = true;
+        return true;
     }
-    else
+    catch (...)
     {
-        std::lock_guard lock(snapshots_lock);
-        if (!validate_snapshot_to_apply(latest_snapshot_meta))
-        {
-            snapshot_apply_finished = true;
-            return true;
-        }
-
-        SnapshotDeserializationResult<Storage> snapshot_deserialization_result
-            = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(s.get_last_log_idx()));
-
-        {
-            KEEPER_STORAGE_LOCK_EXCLUSIVE(storage_lock);
-            /// maybe some logs were preprocessed with log idx larger than the snapshot idx
-            /// we have to apply them to the new storage
-            storage->applyUncommittedState(
-                *snapshot_deserialization_result.storage,
-                snapshot_deserialization_result.snapshot_meta->get_last_log_idx());
-            storage = std::move(snapshot_deserialization_result.storage);
-            latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
-
-            {
-                std::lock_guard cluster_config_guard(cluster_config_lock);
-                cluster_config = snapshot_deserialization_result.cluster_config;
-            }
-        }
-
-        snapshot_loader_info.reset();
-        snapshot_loader_info_log_idx = 0;
-        cancelIfHasUnfinishedSnapshotReceive();
+        tryLogCurrentException(log, "Failed to apply snapshot");
+        /// (It doesn't really matter if we throw or std::terminate, NuRaft exits on exception here anyway.)
+        throw;
     }
-
-    ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplys);
-    keeper_context->setLastCommitIndex(s.get_last_log_idx());
-    snapshot_apply_finished = true;
-    return true;
 }
 
-
-void IKeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf)
+void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf)
 {
     std::lock_guard lock(cluster_config_lock);
     auto tmp = new_conf->serialize();
@@ -907,7 +1521,7 @@ void IKeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nura
     keeper_context->setLastCommitIndex(log_idx);
 }
 
-void IKeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
+void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 {
     /// Don't rollback anything until the first commit because nothing was preprocessed
     if (!keeper_context->localLogsPreprocessed())
@@ -923,8 +1537,7 @@ void IKeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
     rollbackRequest(*request_for_session, false);
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::rollbackRequest(const KeeperRequestForSession & request_for_session, bool allow_missing)
+void KeeperStateMachine::rollbackRequest(const KeeperRequestForSession & request_for_session, bool allow_missing)
 {
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
@@ -933,119 +1546,252 @@ void KeeperStateMachine<Storage>::rollbackRequest(const KeeperRequestForSession 
     storage->rollbackRequest(request_for_session.zxid, allow_missing);
 }
 
-nuraft::ptr<nuraft::snapshot> IKeeperStateMachine::last_snapshot()
+nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
 {
     /// Just return the latest snapshot.
     std::lock_guard lock(snapshots_lock);
     return latest_snapshot_meta;
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::async_result<bool>::handler_type & when_done)
+SnapshotFileInfoPtr KeeperStateMachine::writeSnapshotToDisk(const KeeperStorageSnapshot & snapshot)
+{
+    /// Streaming serialization for local disks; buffer-then-write for remote disks.
+    if (isLocalDisk(*keeper_context->getLatestSnapshotDisk()))
+        return snapshot_manager.writeSnapshotFile(snapshot);
+
+    auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(snapshot);
+    return snapshot_manager.writeSnapshotBufferToFile(*snapshot_buf, snapshot.snapshot_meta->get_last_log_idx());
+}
+
+typename KeeperStateMachine::LocalSnapshotPublishOutcome KeeperStateMachine::publishWrittenSnapshot(
+    const SnapshotFileInfoPtr & written_file_info,
+    const SnapshotMetadataPtr & written_snapshot_meta,
+    std::optional<uint64_t> written_size)
+{
+    LocalSnapshotPublishOutcome outcome;
+    const uint64_t requested_idx = written_snapshot_meta->get_last_log_idx();
+
+    if (latest_snapshot_meta && requested_idx <= latest_snapshot_meta->get_last_log_idx())
+    {
+        /// A concurrent create at the same or higher index won; adopt the mark's entry and retire ours.
+        outcome.published = snapshot_manager.getSnapshotPin(latest_snapshot_meta->get_last_log_idx());
+        chassert(outcome.published);
+        snapshot_manager.retireUnpublishedSnapshotFile(written_file_info);
+        outcome.loser_to_remove = written_file_info;
+        LOG_INFO(
+            log,
+            "Snapshot with last log idx {} was created while writing snapshot {}; reusing it and retiring our file",
+            latest_snapshot_meta->get_last_log_idx(),
+            requested_idx);
+        return outcome;
+    }
+
+    /// Drop the cached loader before maintenance retires snapshots.
+    snapshot_loader_info.reset();
+    snapshot_loader_info_log_idx = 0;
+
+    outcome.published = snapshot_manager.publishSnapshotFile(requested_idx, written_file_info);
+    if (outcome.published != written_file_info)
+    {
+        /// A saved-but-not-applied install already registered this index; validate it is still
+        /// present before retiring our freshly written file (fail-closed: if the registered file
+        /// is gone we must not silently adopt a missing path).
+        bool registered_accessible = false;
+        try
+        {
+            registered_accessible = outcome.published->disk->existsFile(outcome.published->path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to check existence of registered snapshot file");
+        }
+        if (!registered_accessible)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Snapshot with last log idx {} is already registered (file {} on disk {}) but cannot "
+                "be confirmed present; refusing to adopt it",
+                requested_idx,
+                outcome.published->path,
+                outcome.published->disk->getName());
+
+        snapshot_manager.retireUnpublishedSnapshotFile(written_file_info);
+        outcome.loser_to_remove = written_file_info;
+        advanceLatestSnapshotMeta(written_snapshot_meta);
+        LOG_INFO(
+            log,
+            "Snapshot with last log idx {} was already registered at {} while we were writing {}; reusing it and retiring our file",
+            requested_idx,
+            outcome.published->path,
+            written_file_info->path);
+        return outcome;
+    }
+
+    advanceLatestSnapshotMeta(written_snapshot_meta);
+    /// Don't clobber the size cache if a higher-index install is already registered.
+    if (written_size && snapshot_manager.getLatestSnapshotIndex() == requested_idx)
+        latest_snapshot_size.store(*written_size, std::memory_order_relaxed);
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
+    LOG_DEBUG(log, "Created persistent snapshot {} with path {}", requested_idx, outcome.published->path);
+    outcome.won = true;
+    return outcome;
+}
+
+void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_result<bool>::handler_type & when_done)
 {
     LOG_DEBUG(log, "Creating snapshot {}", s.get_last_log_idx());
 
     auto snapshot_meta_copy = cloneSnapshotMeta(s);
     CreateSnapshotTask snapshot_task;
+    std::shared_ptr<KeeperStorage> captured_storage;
     { /// lock storage for a short period time to turn on "snapshot mode". After that we can read consistent storage state without locking.
         KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-        snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot<Storage>>(
-            storage.get(), snapshot_meta_copy, getClusterConfig(), keeper_context->getWriteSnapshotVersion());
+        /// `apply_snapshot` may replace (and briefly empty) the member while this task runs;
+        /// all task work and cleanup must use the captured storage.
+        captured_storage = storage;
+        snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot>(
+            captured_storage.get(), snapshot_meta_copy, getClusterConfig(), keeper_context->getWriteSnapshotVersion());
     }
 
+    /// Guard snapshot cleanup until responsibility transfers to the task.
+    bool snapshot_cleanup_transferred = false;
+    SCOPE_EXIT({
+        if (!snapshot_cleanup_transferred)
+        {
+            KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
+            snapshot_task.snapshot = KeeperStorageSnapshotPtr{};
+        }
+    });
+
     /// create snapshot task for background execution (in snapshot thread)
-    snapshot_task.create_snapshot = [this, when_done](KeeperStorageSnapshotPtr && snapshot_, bool execute_only_cleanup)
+    snapshot_task.create_snapshot = [this, when_done, captured_storage](KeeperStorageSnapshotPtr && snapshot_, bool execute_only_cleanup)
     {
         nuraft::ptr<std::exception> exception(nullptr);
-        bool ret = false;
+        bool snapshot_published = false;
         SnapshotFileInfoPtr snapshot_file_info;
-        auto && snapshot = std::get<std::shared_ptr<KeeperStorageSnapshot<Storage>>>(std::move(snapshot_));
+        auto && snapshot = std::move(snapshot_);
         if (!execute_only_cleanup)
         {
+            const uint64_t requested_idx = snapshot->snapshot_meta->get_last_log_idx();
+            SnapshotFileInfoPtr written_file_info; /// non-null while unpublished; catch retires it
+            SnapshotFileInfoPtr loser_file_info;   /// unlinked outside the lock
+            std::optional<DetachedSnapshotReceiveFiles> detached_receive_files;
+            SnapshotMaintenanceTasks maintenance_tasks;
             try
             {
-                { /// Read storage data without locks and create snapshot
+                /// Phase 1: pre-check under the lock — reuse the mark's file if already covered.
+                bool already_covered = false;
+                {
                     std::lock_guard lock(snapshots_lock);
-
-                    if (latest_snapshot_meta && snapshot->snapshot_meta->get_last_log_idx() <= latest_snapshot_meta->get_last_log_idx())
+                    if (latest_snapshot_meta && requested_idx <= latest_snapshot_meta->get_last_log_idx())
                     {
-                        snapshot_file_info = snapshot_manager.getLatestSnapshotInfo();
+                        /// Probe existence; the result feeds S3/shutdown upload paths, consumers handle nullptr.
+                        snapshot_file_info = getSnapshotPinUnlocked(latest_snapshot_meta->get_last_log_idx());
+                        if (snapshot_file_info)
+                        {
+                            try
+                            {
+                                if (!snapshot_file_info->disk->existsFile(snapshot_file_info->path))
+                                    snapshot_file_info = nullptr;
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(log);
+                                snapshot_file_info = nullptr;
+                            }
+                        }
                         LOG_INFO(
                             log,
-                            "Will not create a snapshot with last log idx {} because a snapshot with bigger last log idx ({}) is already "
+                            "Will not create a snapshot with last log idx {} because a snapshot with last log idx >= {} is already "
                             "created",
-                            snapshot->snapshot_meta->get_last_log_idx(),
+                            requested_idx,
                             latest_snapshot_meta->get_last_log_idx());
-                    }
-                    else
-                    {
-                        /// Drop the cached loader before retiring snapshots; transfer
-                        /// contexts keep their own loaders alive.
-                        snapshot_loader_info.reset();
-                        snapshot_loader_info_log_idx = 0;
-
-                        /// Write new snapshots to the configured latest snapshot disk.
-                        if (isLocalDisk(*keeper_context->getLatestSnapshotDisk()))
-                        {
-                            snapshot_file_info = snapshot_manager.serializeSnapshotToDisk(*snapshot);
-                        }
-                        else
-                        {
-                            auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
-                            snapshot_file_info = snapshot_manager.serializeSnapshotBufferToDisk(
-                                *snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
-                        }
-
-                        latest_snapshot_meta = snapshot->snapshot_meta;
-                        cancelIfHasUnfinishedSnapshotReceive();
-
-                        ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
-                        LOG_DEBUG(
-                            log,
-                            "Created persistent snapshot {} with path {}",
-                            latest_snapshot_meta->get_last_log_idx(),
-                            snapshot_file_info->path);
-
-                        try
-                        {
-                            latest_snapshot_size.store(
-                                snapshot_file_info->disk->getFileSize(snapshot_file_info->path),
-                                std::memory_order_relaxed);
-                        }
-                        catch (...)
-                        {
-                            tryLogCurrentException(log, "Failed to get snapshot size after creation");
-                        }
+                        already_covered = true;
                     }
                 }
 
-                ret = true;
+                if (already_covered)
+                {
+                    snapshot_published = true;
+                }
+                else
+                {
+                    /// Phase 2: write + sync under a fresh unique name, outside the lock.
+                    written_file_info = writeSnapshotToDisk(*snapshot);
+
+                    std::optional<uint64_t> written_size;
+                    try
+                    {
+                        written_size = written_file_info->disk->getFileSize(written_file_info->path);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "Failed to get snapshot size after creation");
+                    }
+
+                    /// Phase 3: metadata-only publication under the lock.
+                    {
+                        std::lock_guard lock(snapshots_lock);
+                        auto outcome = publishWrittenSnapshot(written_file_info, snapshot->snapshot_meta, written_size);
+                        snapshot_file_info = std::move(outcome.published);
+                        loser_file_info = std::move(outcome.loser_to_remove);
+                        written_file_info.reset(); /// ownership transferred; catch must not retire a published file
+                        snapshot_published = true; /// publication decided — later exceptions are post-commit failures
+                        if (outcome.won)
+                        {
+                            /// Cancel any in-flight receive; partial files are deleted outside the lock.
+                            detached_receive_files = detachUnfinishedSnapshotReceiveForCleanup();
+                            maintenance_tasks = snapshot_manager.prepareSnapshotMaintenanceTasks(requested_idx);
+                        }
+                    }
+
+                    /// Phase 4: deferred disk I/O, outside the lock.
+                    loser_file_info.reset(); /// pin deleter unlinks it
+                    if (detached_receive_files)
+                        cleanupDetachedSnapshotReceive(*detached_receive_files);
+                    runSnapshotMaintenance(std::move(maintenance_tasks));
+                }
             }
             catch (...)
             {
-                ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreationsFailed);
-                LOG_TRACE(log, "Exception happened during snapshot");
-                tryLogCurrentException(log);
+                if (written_file_info)
+                {
+                    /// Written but never published — retire and unlink it.
+                    snapshot_manager.retireUnpublishedSnapshotFile(written_file_info);
+                    written_file_info.reset();
+                }
+                loser_file_info.reset();
+                if (snapshot_published)
+                {
+                    if (detached_receive_files)
+                        cleanupDetachedSnapshotReceive(*detached_receive_files);
+                    tryLogCurrentException(log, "Exception happened after snapshot metadata was published: post-commit cleanup or maintenance failed");
+                }
+                else
+                {
+                    ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreationsFailed);
+                    LOG_TRACE(log, "Exception happened during snapshot");
+                    tryLogCurrentException(log);
+                }
             }
         }
         {
-            /// Destroy snapshot with lock
+            /// Destroy snapshot under storage lock against the captured storage (member may differ after `apply_snapshot`).
             KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
             LOG_TRACE(log, "Clearing garbage after snapshot");
-            /// Turn off "snapshot mode" and clear outdate part of storage state
+            /// Turn off "snapshot mode" and clear outdated part of storage state
             snapshot.reset();
-            storage->clearGarbageAfterSnapshot();
             LOG_TRACE(log, "Cleared garbage after snapshot");
         }
 
-        when_done(ret, exception);
+        when_done(snapshot_published, exception);
 
-        return ret ? snapshot_file_info : nullptr;
+        return snapshot_published ? snapshot_file_info : nullptr;
     };
 
     if (keeper_context->getServerState() == KeeperContext::Phase::SHUTDOWN)
     {
         LOG_INFO(log, "Creating a snapshot during shutdown because 'create_snapshot_on_exit' is enabled.");
+        snapshot_cleanup_transferred = true;
         auto snapshot_file_info = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
 
         if (snapshot_file_info && snapshot_manager_s3)
@@ -1058,22 +1804,46 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
     }
 
     LOG_DEBUG(log, "In memory snapshot {} created, queueing task to flush to disk", s.get_last_log_idx());
-    /// Flush snapshot to disk in a separate thread.
-    if (!snapshots_queue.push(std::move(snapshot_task)))
+    /// Move, not copy: a copy would leave a second `KeeperStorageSnapshot` reference whose
+    /// destruction at function exit could run `~KeeperStorageSnapshot` off the storage lock.
+    /// `push` only consumes the task when it returns true, so the fallback below is safe.
+    bool pushed = false;
+    try
+    {
+        pushed = snapshots_queue.push(std::move(snapshot_task));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to push snapshot task into queue");
+    }
+
+    if (pushed)
+    {
+        snapshot_cleanup_transferred = true;
+    }
+    else
+    {
         LOG_WARNING(log, "Cannot push snapshot task into queue");
+        /// Run cleanup inline so the read view is retired and `when_done(false)` fires once.
+        snapshot_cleanup_transferred = true;
+        /// push returned false, so the task was not consumed; the use-after-move is unreachable.
+        /// NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved)
+        snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/true);
+    }
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::save_logical_snp_obj(
+void KeeperStateMachine::save_logical_snp_obj(
     nuraft::snapshot & s, uint64_t & obj_id, nuraft::buffer & data, bool is_first_obj, bool is_last_obj)
 {
     LOG_DEBUG(log, "Saving snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
 
     std::lock_guard lock(snapshots_lock);
+
+    /// A concurrent local create writes its own unique file — never this receive's path.
+    /// Whoever publishes first owns the map entry; the loser retires its file.
     try
     {
         SnapshotFileInfoPtr snapshot_file_info;
-
         if (is_first_obj && is_last_obj)
         {
             /// If there is non-finalized state from previous call - clean it up.
@@ -1081,6 +1851,8 @@ void KeeperStateMachine<Storage>::save_logical_snp_obj(
             /// Drop the cached loader before `serializeSnapshotBufferToDisk` retires snapshots.
             snapshot_loader_info.reset();
             snapshot_loader_info_log_idx = 0;
+            /// Reuses an already-registered same-index snapshot without rewriting its bytes
+            /// (idempotent leader retries); otherwise writes a fresh unique file and publishes.
             snapshot_file_info = snapshot_manager.serializeSnapshotBufferToDisk(data, s.get_last_log_idx());
             ++obj_id;
         }
@@ -1151,14 +1923,20 @@ void KeeperStateMachine<Storage>::save_logical_snp_obj(
                 snapshot_loader_info.reset();
                 snapshot_loader_info_log_idx = 0;
                 snapshot_file_info = snapshot_manager.finalizeSnapshotReceiveToDisk(*snapshot_receive_ctx);
+                /// Registered now — a later throw must not let the catch's cancel unlink it.
+                snapshot_receive_ctx.reset();
             }
         }
 
         ProfileEvents::increment(ProfileEvents::KeeperSaveSnapshotObject);
         if (is_last_obj)
         {
-            latest_snapshot_meta = cloneSnapshotMeta(s);
-            snapshot_receive_ctx.reset();
+            /// NOT `latest_snapshot_meta`: an install may target an index below it.
+            pending_snapshot_to_apply = cloneSnapshotMeta(s);
+            /// Protect its file from retention until the matching apply consumes it: the pending
+            /// index is not the mark, and a concurrent local create can otherwise advance the
+            /// mark and prune this file before apply reads it.
+            snapshot_manager.setProtectedPendingSnapshotIndex(s.get_last_log_idx());
 
             uint64_t snp_size = 0;
             try
@@ -1166,7 +1944,9 @@ void KeeperStateMachine<Storage>::save_logical_snp_obj(
                 if (snapshot_file_info)
                 {
                     snp_size = snapshot_file_info->disk->getFileSize(snapshot_file_info->path);
-                    latest_snapshot_size.store(snp_size, std::memory_order_relaxed);
+                    /// A stale lower-index install must not clobber the size cache.
+                    if (snapshot_manager.getLatestSnapshotIndex() == s.get_last_log_idx())
+                        latest_snapshot_size.store(snp_size, std::memory_order_relaxed);
                 }
             }
             catch (...)
@@ -1438,7 +2218,7 @@ struct SnapshotTransferCtx
 
 }
 
-int IKeeperStateMachine::read_logical_snp_obj(
+int KeeperStateMachine::read_logical_snp_obj(
     nuraft::snapshot & s, void *& user_snp_ctx, uint64_t obj_id, nuraft::ptr<nuraft::buffer> & data_out, bool & is_last_obj)
 {
     LOG_DEBUG(log, "Reading snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
@@ -1620,7 +2400,7 @@ int IKeeperStateMachine::read_logical_snp_obj(
     return 1;
 }
 
-void IKeeperStateMachine::free_user_snp_ctx(void *& user_snp_ctx)
+void KeeperStateMachine::free_user_snp_ctx(void *& user_snp_ctx)
 {
     if (!user_snp_ctx)
         return;
@@ -1629,12 +2409,11 @@ void IKeeperStateMachine::free_user_snp_ctx(void *& user_snp_ctx)
     user_snp_ctx = nullptr;
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::processReadRequests(const KeeperRequestsForSessions & requests)
+void KeeperStateMachine::processReadRequests(const KeeperRequestsForSessions & requests)
 {
     /// Pure local request, just process them with storage
     KEEPER_STORAGE_LOCK_SHARED(storage_lock);
-    ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
+    ProfiledExclusiveLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
 
     auto responses = storage->processLocalRequests(requests, /*check_acl=*/ true);
 
@@ -1645,8 +2424,7 @@ void KeeperStateMachine<Storage>::processReadRequests(const KeeperRequestsForSes
     }
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::shutdownStorage()
+void KeeperStateMachine::shutdownStorage()
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     if (!storage)
@@ -1654,125 +2432,78 @@ void KeeperStateMachine<Storage>::shutdownStorage()
     storage->finalize();
 }
 
-template<typename Storage>
-std::vector<int64_t> KeeperStateMachine<Storage>::getDeadSessions()
+std::vector<int64_t> KeeperStateMachine::getDeadSessions()
 {
     KEEPER_STORAGE_LOCK_SHARED(lock);
     return storage->getDeadSessions();
 }
 
-template<typename Storage>
-int64_t KeeperStateMachine<Storage>::getNextZxid() const
+int64_t KeeperStateMachine::getNextZxid() const
 {
     KEEPER_STORAGE_LOCK_SHARED(lock);
     return storage->getNextZXID();
 }
 
-template<typename Storage>
-KeeperDigest KeeperStateMachine<Storage>::getNodesDigest() const
+KeeperDigest KeeperStateMachine::getNodesDigest() const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getNodesDigest(false, /*lock_transaction_mutex=*/true);
 }
 
-template<typename Storage>
-int64_t KeeperStateMachine<Storage>::getLastProcessedZxid() const
+int64_t KeeperStateMachine::getLastProcessedZxid() const
 {
     KEEPER_STORAGE_LOCK_SHARED(lock);
     return storage->getZXID();
 }
 
-template<typename Storage>
-KeeperStorageStats KeeperStateMachine<Storage>::getStorageStats() const
+KeeperStorageStats KeeperStateMachine::getStorageStats() const
 {
-    KEEPER_STORAGE_LOCK_SHARED(lock);
+    /// (Unprofiled because we don't care how long the monitoring threads wait for locks.)
+    std::shared_lock storage_lock(state_machine_storage_mutex);
+    std::lock_guard response_lock(process_and_responses_lock);
     return storage->getStorageStats();
 }
 
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getNodesCount() const
+KeeperStorageStats KeeperStateMachine::getStorageStatsAndAsynchronousMetrics(AsynchronousMetricValues & new_values) const
 {
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    return storage->getNodesCount();
+    /// (Unprofiled because we don't care how long the monitoring threads wait for locks.)
+    std::shared_lock storage_lock(state_machine_storage_mutex);
+    std::lock_guard response_lock(process_and_responses_lock);
+    auto stats = storage->getStorageStats();
+    storage->nodes_storage->fillAsynchronousMetrics(new_values);
+    return stats;
 }
 
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getTotalWatchesCount() const
+std::unique_ptr<KeeperNodesReadView> KeeperStateMachine::getStorageReadView() const
 {
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    return storage->getTotalWatchesCount();
+    KEEPER_STORAGE_LOCK_SHARED(lock);
+    return storage->issueReadView();
 }
 
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getWatchedPathsCount() const
-{
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    return storage->getWatchedPathsCount();
-}
-
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getSessionsWithWatchesCount() const
-{
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    return storage->getSessionsWithWatchesCount();
-}
-
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getTotalEphemeralNodesCount() const
-{
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    return storage->getTotalEphemeralNodesCount();
-}
-
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getSessionWithEphemeralNodesCount() const
-{
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    return storage->getSessionWithEphemeralNodesCount();
-}
-
-template<typename Storage>
-void KeeperStateMachine<Storage>::dumpWatches(WriteBufferFromOwnString & buf) const
+void KeeperStateMachine::dumpWatches(WriteBufferFromOwnString & buf) const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->dumpWatches(buf);
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
+void KeeperStateMachine::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->dumpWatchesByPath(buf);
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
+void KeeperStateMachine::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->dumpSessionsAndEphemerals(buf);
 }
 
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getApproximateDataSize() const
-{
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    return storage->getApproximateDataSize();
-}
-
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getKeyArenaSize() const
-{
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    return storage->getArenaDataSize();
-}
-
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getLatestSnapshotSize() const
+uint64_t KeeperStateMachine::getLatestSnapshotSize() const
 {
     return latest_snapshot_size.load(std::memory_order_relaxed);
 }
 
-ClusterConfigPtr IKeeperStateMachine::getClusterConfig() const
+ClusterConfigPtr KeeperStateMachine::getClusterConfig() const
 {
     std::lock_guard lock(cluster_config_lock);
     if (cluster_config)
@@ -1784,23 +2515,46 @@ ClusterConfigPtr IKeeperStateMachine::getClusterConfig() const
     return nullptr;
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::recalculateStorageStats()
+void KeeperStateMachine::recalculateStorageStats()
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     LOG_INFO(log, "Recalculating storage stats");
-    storage->recalculateStats();
+    storage->nodes_storage->recalculateStats();
     LOG_INFO(log, "Done recalculating storage stats");
 }
 
-template<typename Storage>
-SnapshotFileInfoPtr KeeperStateMachine<Storage>::getSnapshotPinUnlocked(uint64_t log_idx) const
+SnapshotFileInfoPtr KeeperStateMachine::getSnapshotPinUnlocked(uint64_t log_idx) const
 {
     return snapshot_manager.getSnapshotPin(log_idx);
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::cancelIfHasUnfinishedSnapshotReceive()
+void KeeperStateMachine::advanceLatestSnapshotMeta(const SnapshotMetadataPtr & candidate)
+{
+    chassert(candidate);
+    if (latest_snapshot_meta)
+    {
+        if (candidate->get_last_log_idx() < latest_snapshot_meta->get_last_log_idx())
+            return;
+        if (candidate->get_last_log_idx() == latest_snapshot_meta->get_last_log_idx())
+        {
+            /// Unreachable invariant backstop — see the declaration comment.
+            if (candidate->get_last_log_term() != latest_snapshot_meta->get_last_log_term())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Refusing to advance latest snapshot metadata: candidate for index {} has term {} "
+                    "while the current metadata for the same index has term {}",
+                    candidate->get_last_log_idx(),
+                    candidate->get_last_log_term(),
+                    latest_snapshot_meta->get_last_log_term());
+            return;
+        }
+    }
+    latest_snapshot_meta = candidate;
+    /// NuRaft retries snapshot sends against this exact index until the mark advances.
+    snapshot_manager.setProtectedSnapshotIndex(candidate->get_last_log_idx());
+}
+
+void KeeperStateMachine::cancelIfHasUnfinishedSnapshotReceive()
 {
     if (!snapshot_receive_ctx)
         return;
@@ -1823,9 +2577,112 @@ void KeeperStateMachine<Storage>::cancelIfHasUnfinishedSnapshotReceive()
     }
 }
 
-template class KeeperStateMachine<KeeperMemoryStorage>;
-#if USE_ROCKSDB
-template class KeeperStateMachine<KeeperRocksStorage>;
-#endif
+std::optional<typename KeeperStateMachine::DetachedSnapshotReceiveFiles>
+KeeperStateMachine::detachUnfinishedSnapshotReceiveForCleanup()
+{
+    if (!snapshot_receive_ctx)
+        return std::nullopt;
+
+    DetachedSnapshotReceiveFiles files{
+        .disk = snapshot_receive_ctx->disk,
+        .snapshot_file_name = snapshot_receive_ctx->snapshot_file_name,
+        .log_idx = snapshot_receive_ctx->log_idx,
+    };
+
+    snapshot_receive_ctx.reset(); /// ~SnapshotReceiveCtx cancels the write buffer
+    return files;
+}
+
+void KeeperStateMachine::cleanupDetachedSnapshotReceive(const DetachedSnapshotReceiveFiles & files)
+{
+    /// No claim: the detached file name is unique, so no restarted receive can be using it.
+    try
+    {
+        const auto tmp_snapshot_file_name = "tmp_" + files.snapshot_file_name;
+        LOG_INFO(
+            log,
+            "Cleaning detached unfinished snapshot receive {}, removing partial files {} and {}",
+            files.log_idx,
+            files.snapshot_file_name,
+            tmp_snapshot_file_name);
+        files.disk->removeFileIfExists(files.snapshot_file_name);
+        files.disk->removeFileIfExists(tmp_snapshot_file_name);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to remove detached partial snapshot files");
+    }
+}
+
+void KeeperStateMachine::runSnapshotMaintenance(SnapshotMaintenanceTasks && tasks)
+{
+    try
+    {
+        /// May overlap save-path inline maintenance: each candidate holds an extra pin, so
+        /// concurrent selection skips it; publication stays serialized by `snapshots_lock`.
+        tasks.retired_snapshots.clear();
+
+        for (const auto & candidate : tasks.move_candidates)
+        {
+            snapshot_manager.moveSnapshotCandidate(candidate, [this](const SnapshotMoveCandidate & move_candidate)
+            {
+                std::lock_guard lock(snapshots_lock);
+                return snapshot_manager.publishMovedSnapshotIfValid(move_candidate);
+            });
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to run snapshot maintenance after local creation");
+    }
+}
+
+std::vector<std::pair<std::string, Int32>> KeeperStateMachine::getExpiredTTLPathsForGarbageCollector(size_t batch_size) const
+{
+    KEEPER_STORAGE_LOCK_SHARED(lock);
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    return storage->collectExpiredTTLPaths(now_ms, batch_size);
+}
+
+std::vector<std::pair<std::string, Int32>> KeeperStateMachine::getContainerCandidatesForGarbageCollector(size_t batch_size, UInt64 max_never_used_interval_ms) const
+{
+    KEEPER_STORAGE_LOCK_SHARED(lock);
+    return storage->collectContainerCandidates(batch_size, max_never_used_interval_ms);
+}
+
+std::vector<KeeperSnapshotStatus> KeeperStateMachine::getSnapshotsStatus() const
+{
+    std::lock_guard lock(snapshots_lock);
+
+    auto existing = snapshot_manager.getExistingSnapshots(lock);
+
+    std::vector<KeeperSnapshotStatus> result;
+    result.reserve(existing.size() + (snapshot_receive_ctx ? 1 : 0));
+
+    for (auto & [log_idx, file_info] : existing)
+    {
+        result.push_back(KeeperSnapshotStatus{
+            log_idx,
+            file_info->path,
+            file_info->disk,
+            std::move(file_info),
+            /*is_received=*/ false,
+        });
+    }
+
+    if (snapshot_receive_ctx)
+    {
+        result.push_back(KeeperSnapshotStatus{
+            snapshot_receive_ctx->log_idx,
+            snapshot_receive_ctx->snapshot_file_name,
+            snapshot_receive_ctx->disk,
+            /*pin=*/ nullptr,
+            /*is_received=*/ true,
+        });
+    }
+
+    return result;
+}
 
 }

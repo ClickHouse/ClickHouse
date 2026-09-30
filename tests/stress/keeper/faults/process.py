@@ -1,4 +1,3 @@
-import time
 
 from keeper.faults.registry import register_fault
 from keeper.framework.core.settings import DEFAULT_FAULT_DURATION_S

@@ -3,6 +3,7 @@
 #if USE_PARQUET
 
 #include <Formats/FormatSettings.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/Impl/Parquet/ReadManager.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -48,6 +49,8 @@ public:
         const std::optional<RelativePathWithMetadata> & object_with_metadata_ = std::nullopt);
 
     void resetParser() override;
+
+    void resetReadBuffer() override;
 
     String getName() const override { return "ParquetV3BlockInputFormat"; }
 

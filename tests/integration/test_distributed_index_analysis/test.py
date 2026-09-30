@@ -78,7 +78,7 @@ def start_cluster():
         cluster.shutdown()
 
 
-# Test to ensure that the PK is spreaded accross replicas
+# Test to ensure that the PK is spread across replicas
 def test_primary_key():
     master = cluster.instances["node1"]
 

@@ -1,7 +1,5 @@
 -- { echo }
 EXPLAIN SYNTAX SELECT NOT NOT (NOT (NOT (NULL)));
-SELECT NOT (NOT (NOT (NOT (_CAST(NULL, \'Nullable(Nothing)\')))))
-FROM system.one
+SELECT not(not(not(not(_CAST(NULL, \'Nullable(Nothing)\')))))\nFROM system.one
 EXPLAIN SYNTAX SELECT NOT (NOT (NOT NOT NULL));
-SELECT NOT (NOT (NOT (NOT _CAST(NULL, \'Nullable(Nothing)\'))))
-FROM system.one
+SELECT not(not(not(not(_CAST(NULL, \'Nullable(Nothing)\')))))\nFROM system.one

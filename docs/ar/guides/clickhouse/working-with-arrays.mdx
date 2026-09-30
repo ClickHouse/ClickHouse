@@ -1,0 +1,568 @@
+---
+title: 'التعامل مع المصفوفات في ClickHouse'
+description: 'دليل تمهيدي لاستخدام المصفوفات في ClickHouse'
+keywords: ['المصفوفات']
+sidebarTitle: 'التعامل مع المصفوفات في ClickHouse'
+slug: /guides/working-with-arrays
+doc_type: 'guide'
+---
+
+import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.jsx";
+
+> ستتعلّم في هذا الدليل كيفية استخدام المصفوفات في ClickHouse، إلى جانب بعض [دوال المصفوفات](/ar/reference/functions/regular-functions/array-functions) الأكثر شيوعًا.
+
+<div id="array-basics">
+  ## مقدمة إلى المصفوفات
+</div>
+
+المصفوفة هي بنية بيانات في الذاكرة تجمع القيم معًا.
+نسمّي هذه القيم *عناصر* المصفوفة، ويمكن الإشارة إلى كل عنصر عبر فهرس يحدّد موضعه ضمن هذا التجميع.
+
+يمكن إنشاء المصفوفات في ClickHouse باستخدام الدالة [`array`](/ar/reference/data-types/array):
+
+```sql
+array(T)
+```
+
+أو بدلًا من ذلك باستخدام `[]`:
+
+```sql
+[]
+```
+
+على سبيل المثال، يمكنك إنشاء مصفوفة من الأرقام:
+
+```sql
+SELECT array(1, 2, 3) AS numeric_array
+```
+
+```response
+┌─numeric_array─┐
+│ [1,2,3]       │
+└───────────────┘
+```
+
+أو مصفوفة من السلاسل النصية:
+
+```sql
+SELECT array('hello', 'world') AS string_array
+```
+
+```response
+┌─string_array──────┐
+│ ['hello','world'] │
+└───────────────────┘
+```
+
+أو مصفوفة من أنواع متداخلة مثل [Tuple](/ar/reference/data-types/tuple):
+
+```sql
+SELECT array(tuple(1, 2), tuple(3, 4))
+```
+
+```response
+┌─[(1, 2), (3, 4)]─┐
+│ [(1,2),(3,4)]    │
+└──────────────────┘
+```
+
+قد تُغريك فكرة إنشاء مصفوفة تضم أنواعًا مختلفة، على النحو التالي:
+
+```sql
+SELECT array('Hello', 'world', 1, 2, 3)
+```
+
+ومع ذلك، يجب أن تكون لعناصر المصفوفة دائمًا فئة عليا مشتركة، وهي أصغر نوع بيانات يمكنه تمثيل قيم من نوعين مختلفين أو أكثر من دون فقدان، مما يتيح استخدامها معًا.
+إذا لم تكن هناك فئة عليا مشتركة، فسيظهر استثناء عند محاولة إنشاء المصفوفة:
+
+```sql
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types String, String, UInt8, UInt8, UInt8 because some of them are String/FixedString/Enum and some of them are not: In scope SELECT ['Hello', 'world', 1, 2, 3]. (NO_COMMON_TYPE)
+```
+
+عند إنشاء المصفوفات مباشرةً، يختار ClickHouse أضيق نوع يستوعب جميع العناصر.
+على سبيل المثال، إذا أنشأت مصفوفة من الأعداد الصحيحة وقيم Float، فسيُختار نوع أشمل من Float:
+
+```sql
+SELECT [1::UInt8, 2.5::Float32, 3::UInt8] AS mixed_array, toTypeName([1, 2.5, 3]) AS array_type;
+```
+
+```response
+┌─mixed_array─┬─array_type─────┐
+│ [1,2.5,3]   │ Array(Float64) │
+└─────────────┴────────────────┘
+```
+
+<Accordion title="إنشاء مصفوفات من أنواع مختلفة">
+  يمكنك استخدام الإعداد `use_variant_as_common_type` لتغيير السلوك الافتراضي الموضّح أعلاه.
+  يتيح لك ذلك استخدام النوع [Variant](/ar/reference/data-types/variant) كنوع ناتج لدوال `if`/`multiIf`/`array`/`map` عندما لا يوجد نوع مشترك لأنواع الوسيطات.
+
+  على سبيل المثال:
+
+  ```sql
+  SELECT
+      [1, 'ClickHouse', ['Another', 'Array']] AS array,
+      toTypeName(array)
+  SETTINGS use_variant_as_common_type = 1;
+  ```
+
+  ```response
+  ┌─array────────────────────────────────┬─toTypeName(array)────────────────────────────┐
+  │ [1,'ClickHouse',['Another','Array']] │ Array(Variant(Array(String), String, UInt8)) │
+  └──────────────────────────────────────┴──────────────────────────────────────────────┘
+  ```
+
+  بعد ذلك، يمكنك أيضًا الوصول إلى القيم في المصفوفة حسب اسم النوع:
+
+  ```sql
+  SELECT
+      [1, 'ClickHouse', ['Another', 'Array']] AS array,
+      array.UInt8,
+      array.String,
+      array.`Array(String)`
+  SETTINGS use_variant_as_common_type = 1;
+  ```
+
+  ```response
+  ┌─array────────────────────────────────┬─array.UInt8───┬─array.String─────────────┬─array.Array(String)─────────┐
+  │ [1,'ClickHouse',['Another','Array']] │ [1,NULL,NULL] │ [NULL,'ClickHouse',NULL] │ [[],[],['Another','Array']] │
+  └──────────────────────────────────────┴───────────────┴──────────────────────────┴─────────────────────────────┘
+  ```
+</Accordion>
+
+يوفّر استخدام الفهرسة عبر `[]` طريقة ملائمة للوصول إلى عناصر المصفوفة.
+في ClickHouse، من المهم معرفة أن فهرس المصفوفة يبدأ دائمًا من **1**.
+قد يختلف ذلك عن لغات البرمجة الأخرى التي اعتدت عليها، حيث تبدأ فهرسة المصفوفات من الصفر.
+
+على سبيل المثال، إذا كانت لديك مصفوفة، فيمكنك اختيار العنصر الأول منها بكتابة ما يلي:
+
+```sql
+WITH array('hello', 'world') AS string_array
+SELECT string_array[1];
+```
+
+```response
+┌─arrayElement⋯g_array, 1)─┐
+│ hello                    │
+└──────────────────────────┘
+```
+
+من الممكن أيضًا استخدام الفهارس السالبة.
+وبهذه الطريقة، يمكنك تحديد العناصر نسبةً إلى العنصر الأخير:
+
+```sql
+WITH array('hello', 'world') AS string_array
+SELECT string_array[-1];
+```
+
+```response
+┌─arrayElement⋯g_array, -1)─┐
+│ world                     │
+└───────────────────────────┘
+```
+
+على الرغم من أن فهرسة المصفوفات تبدأ من 1، لا يزال بإمكانك الوصول إلى العناصر في الموضع 0.
+ستكون القيمة المُعادة هي *القيمة الافتراضية* لنوع المصفوفة.
+في المثال أدناه، تُعاد سلسلة فارغة لأنها القيمة الافتراضية لنوع البيانات String:
+
+```sql
+WITH ['hello', 'world', 'arrays are great aren\'t they?'] AS string_array
+SELECT string_array[0]
+```
+
+```response
+┌─arrayElement⋯g_array, 0)─┐
+│                          │
+└──────────────────────────┘
+```
+
+<div id="array-functions">
+  ## دوال المصفوفات
+</div>
+
+يوفر ClickHouse عددًا كبيرًا من الدوال المفيدة التي تعمل على المصفوفات.
+في هذا القسم، سنستعرض بعضًا من أكثرها فائدة، بدءًا من الأبسط ثم التدرج إلى الأكثر تعقيدًا.
+
+<div id="length-arrayEnumerate-indexOf-has-functions">
+  ### دوال length وarrayEnumerate وindexOf وhas*
+</div>
+
+تُستخدم الدالة `length` لإرجاع عدد العناصر في Array:
+
+```sql
+WITH array('learning', 'ClickHouse', 'arrays') AS string_array
+SELECT length(string_array);
+```
+
+```response
+┌─length(string_array)─┐
+│                    3 │
+└──────────────────────┘
+```
+
+يمكنك أيضًا استخدام الدالة [`arrayEnumerate`](/ar/reference/functions/regular-functions/array-functions#arrayEnumerate) لإرجاع مصفوفة تضم فهارس العناصر:
+
+```sql
+WITH array('learning', 'ClickHouse', 'arrays') AS string_array
+SELECT arrayEnumerate(string_array);
+```
+
+```response
+┌─arrayEnumerate(string_array)─┐
+│ [1,2,3]                      │
+└──────────────────────────────┘
+```
+
+إذا أردت العثور على فهرس قيمة معيّنة، فيمكنك استخدام الدالة `indexOf`:
+
+```sql
+SELECT indexOf([4, 2, 8, 8, 9], 8);
+```
+
+```response
+┌─indexOf([4, 2, 8, 8, 9], 8)─┐
+│                           3 │
+└─────────────────────────────┘
+```
+
+لاحظ أن هذه الدالة ستُرجع أول فهرس تعثر عليه إذا وُجدت عدة قيم متطابقة في المصفوفة.
+إذا كانت عناصر المصفوفة مرتبة ترتيبًا تصاعديًا، فيمكنك استخدام الدالة [`indexOfAssumeSorted`](/ar/reference/functions/regular-functions/array-functions#indexOfAssumeSorted).
+
+تُعد الدوال `has` و`hasAll` و`hasAny` مفيدة لتحديد ما إذا كانت المصفوفة تحتوي على قيمة معيّنة.
+تأمل المثال التالي:
+
+```sql
+WITH ['Airbus A380', 'Airbus A350', 'Airbus A220', 'Boeing 737', 'Boeing 747-400'] AS airplanes
+SELECT
+    has(airplanes, 'Airbus A350') AS has_true,
+    has(airplanes, 'Lockheed Martin F-22 Raptor') AS has_false,
+    hasAny(airplanes, ['Boeing 737', 'Eurofighter Typhoon']) AS hasAny_true,
+    hasAny(airplanes, ['Lockheed Martin F-22 Raptor', 'Eurofighter Typhoon']) AS hasAny_false,
+    hasAll(airplanes, ['Boeing 737', 'Boeing 747-400']) AS hasAll_true,
+    hasAll(airplanes, ['Boeing 737', 'Eurofighter Typhoon']) AS hasAll_false
+FORMAT Vertical;
+```
+
+```response
+has_true:     1
+has_false:    0
+hasAny_true:  1
+hasAny_false: 0
+hasAll_true:  1
+hasAll_false: 0
+```
+
+<div id="exploring-flight-data-with-array-functions">
+  ## استكشاف بيانات الرحلات باستخدام دوال المصفوفات
+</div>
+
+حتى الآن، كانت الأمثلة بسيطة إلى حدٍّ كبير.
+وتظهر فائدة المصفوفات بوضوح عند استخدامها مع مجموعة بيانات واقعية.
+
+سنستخدم [مجموعة بيانات ontime](/ar/get-started/sample-datasets/ontime)، التي تحتوي على بيانات الرحلات من هيئة إحصاءات النقل.
+يمكنك العثور على مجموعة البيانات هذه في [SQL playground](https://sql.clickhouse.com/?query_id=M4FSVBVMSHY98NKCQP8N4K).
+
+اخترنا مجموعة البيانات هذه لأن المصفوفات غالبًا ما تكون ملائمة جدًا للعمل مع بيانات السلاسل الزمنية، ويمكن أن تساعد في تبسيط
+الاستعلامات التي قد تكون معقدة بخلاف ذلك.
+
+<Tip>
+  انقر على زر &quot;play&quot; أدناه لتشغيل الاستعلامات مباشرةً في المستندات ومشاهدة النتيجة فورًا.
+</Tip>
+
+<div id="grouparray">
+  ### groupArray
+</div>
+
+هناك العديد من الأعمدة في مجموعة البيانات هذه، لكننا سنركّز على مجموعة فرعية منها.
+شغّل الاستعلام أدناه لرؤية شكل بياناتنا:
+
+<RunnableCode>
+  ```sql
+  -- SELECT
+  -- *
+  -- FROM ontime.ontime LIMIT 100
+
+  SELECT
+      FlightDate,
+      Origin,
+      OriginCityName,
+      Dest,
+      DestCityName,
+      DepTime,
+      DepDelayMinutes,
+      ArrTime,
+      ArrDelayMinutes
+  FROM ontime.ontime LIMIT 5
+  ```
+</RunnableCode>
+
+لنلقِ نظرة على أكثر 10 مطارات ازدحامًا في الولايات المتحدة في يوم معيّن مختار عشوائيًا، ولنفترض أنه &#39;2024-01-01&#39;.
+ما يهمّنا هو معرفة عدد الرحلات التي تنطلق من كل مطار.
+تتضمن بياناتنا صفًا واحدًا لكل رحلة، لكن سيكون من الملائم لو أمكننا تجميع البيانات حسب مطار الانطلاق ووضع الوجهات في Array.
+
+ولتحقيق ذلك، يمكننا استخدام الدالة التجميعية [`groupArray`](/ar/reference/functions/aggregate-functions/groupArray)، التي تأخذ قيم العمود المحدد من كل صف وتجمعها في Array.
+
+شغّل الاستعلام أدناه لترى كيف يعمل ذلك:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      FlightDate,
+      Origin,
+      groupArray(toStringCutToZero(Dest)) AS Destinations
+  FROM ontime.ontime
+  WHERE Origin IN ('ATL', 'ORD', 'DFW', 'DEN', 'LAX', 'JFK', 'LAS', 'CLT', 'SFO', 'SEA') AND FlightDate='2024-01-01'
+  GROUP BY FlightDate, Origin
+  ORDER BY length(Destinations)
+  ```
+</RunnableCode>
+
+تُستخدم [`toStringCutToZero`](/ar/reference/functions/regular-functions/type-conversion-functions#toStringCutToZero) في الاستعلام أعلاه لإزالة محارف NULL التي تظهر بعد الرمز المكوّن من ثلاثة أحرف لبعض المطارات.
+
+بهذا التنسيق للبيانات، يمكننا بسهولة معرفة ترتيب أكثر المطارات ازدحامًا من خلال إيجاد طول Arrays ‏&quot;Destinations&quot; المجمّعة:
+
+<RunnableCode>
+  ```sql highlight={7}
+  WITH
+      '2024-01-01' AS date,
+      busy_airports AS (
+      SELECT
+      FlightDate,
+      Origin,
+      groupArray(toStringCutToZero(Dest)) AS Destinations
+      FROM ontime.ontime
+      WHERE Origin IN ('ATL', 'ORD', 'DFW', 'DEN', 'LAX', 'JFK', 'LAS', 'CLT', 'SFO', 'SEA')
+      AND FlightDate = date
+      GROUP BY FlightDate, Origin
+      ORDER BY length(Destinations)
+      )
+  SELECT
+      Origin,
+      length(Destinations) AS outward_flights
+  FROM busy_airports
+  ORDER BY outward_flights DESC
+  ```
+</RunnableCode>
+
+<div id="arraymap">
+  ### arrayMap و arrayZip
+</div>
+
+رأينا في الاستعلام السابق أن مطار مطار دنفر الدولي كان المطار الذي شهد أكبر عدد من الرحلات المغادرة في اليوم الذي اخترناه.
+لنلقِ نظرة الآن على عدد تلك الرحلات التي غادرت في الوقت المحدد، أو تأخرت من 15 إلى 30 دقيقة، أو تأخرت لأكثر من 30 دقيقة.
+
+كثير من دوال المصفوفات في ClickHouse هي ما يُعرف باسم [&quot;الدوال عالية الرتبة&quot;](/ar/reference/functions/regular-functions/overview#higher-order-functions)، وتقبل دالة لامبدا بوصفها المعامل الأول.
+وتُعد الدالة [`arrayMap`](/ar/reference/functions/regular-functions/array-functions#arrayMap) مثالًا على هذا النوع من الدوال عالية الرتبة، إذ تُرجع مصفوفة جديدة من المصفوفة المُدخلة عبر تطبيق دالة لامبدا على كل عنصر من عناصر المصفوفة الأصلية.
+
+شغّل الاستعلام أدناه، الذي يستخدم الدالة `arrayMap` لمعرفة الرحلات التي تأخرت وتلك التي غادرت في الوقت المحدد.
+وبالنسبة إلى أزواج المصدر/الوجهة، فإنه يعرض رقم الذيل والحالة لكل رحلة:
+
+<RunnableCode>
+  ```sql
+  WITH arrayMap(
+                d -> if(d >= 30, 'DELAYED', if(d >= 15, 'WARNING', 'ON-TIME')),
+                groupArray(DepDelayMinutes)
+      ) AS statuses
+
+  SELECT
+      Origin,
+      toStringCutToZero(Dest) AS Destination,
+      arrayZip(groupArray(Tail_Number), statuses) as tailNumberStatuses
+  FROM ontime.ontime
+  WHERE Origin = 'DEN'
+    AND FlightDate = '2024-01-01'
+    AND DepTime IS NOT NULL
+    AND DepDelayMinutes IS NOT NULL
+  GROUP BY ALL
+  ```
+</RunnableCode>
+
+في الاستعلام أعلاه، تأخذ الدالة `arrayMap` مصفوفة أحادية العنصر `[DepDelayMinutes]` وتطبّق دالة لامبدا ‏`d -> if(d >= 30, 'DELAYED', if(d >= 15, 'WARNING', 'ON-TIME'` لتصنيفها.
+ثم يُستخرج العنصر الأول من المصفوفة الناتجة باستخدام `[DepDelayMinutes][1]`.
+وتجمع الدالة [`arrayZip`](/ar/reference/functions/regular-functions/array-functions#arrayZip) بين مصفوفة `Tail_Number` ومصفوفة `statuses` في مصفوفة واحدة.
+
+<div id="arrayfilter">
+  ### arrayFilter
+</div>
+
+بعد ذلك، سنركّز فقط على عدد الرحلات التي تأخرت لمدة 30 دقيقة أو أكثر، في المطارات `DEN` و`ATL` و`DFW`:
+
+<RunnableCode>
+  ```sql highlight={4}
+  SELECT
+      Origin,
+      OriginCityName,
+      length(arrayFilter(d -> d >= 30, groupArray(ArrDelayMinutes))) AS num_delays_30_min_or_more
+  FROM ontime.ontime
+  WHERE Origin IN ('DEN', 'ATL', 'DFW')
+      AND FlightDate = '2024-01-01'
+  GROUP BY Origin, OriginCityName
+  ORDER BY num_delays_30_min_or_more DESC
+  ```
+</RunnableCode>
+
+في query أعلاه، نمرّر دالة لامبدا بوصفها argument الأول إلى الدالة [`arrayFilter`](/ar/reference/functions/regular-functions/array-functions#arrayFilter).
+وتأخذ دالة لامبدا هذه قيمة التأخير بالدقائق (d)، وتُرجع `1` إذا تحقق الشرط، وإلا فتُرجع `0`.
+
+```sql
+d -> d >= 30
+```
+
+<div id="arraysort-and-arrayintersect">
+  ### arraySort و arrayIntersect
+</div>
+
+بعد ذلك، سنحدّد أي أزواج المطارات الأمريكية الكبرى تخدم أكبر عدد من الوجهات المشتركة، وذلك بمساعدة الدالتين [`arraySort`](/ar/reference/functions/regular-functions/array-functions#arraySort) و[`arrayIntersect`](/ar/reference/functions/regular-functions/array-functions#arrayIntersect).
+تأخذ `arraySort` مصفوفة وتفرز عناصرها بترتيب تصاعدي افتراضيًا، كما يمكنك أيضًا تمرير دالة لامبدا إليها لتحديد ترتيب الفرز.
+وتأخذ `arrayIntersect` عدة مصفوفات وتُرجع مصفوفة تضم العناصر الموجودة في جميع المصفوفات.
+
+شغّل الاستعلام أدناه لرؤية دالتي المصفوفات هاتين أثناء التنفيذ:
+
+<RunnableCode>
+  ```sql highlight={4,12}
+  WITH airport_routes AS (
+      SELECT 
+          Origin,
+          arraySort(groupArray(DISTINCT toStringCutToZero(Dest))) AS destinations
+      FROM ontime.ontime
+      WHERE FlightDate = '2024-01-01'
+      GROUP BY Origin
+  )
+  SELECT 
+      a1.Origin AS airport1,
+      a2.Origin AS airport2,
+      length(arrayIntersect(a1.destinations, a2.destinations)) AS common_destinations
+  FROM airport_routes a1
+  CROSS JOIN airport_routes a2
+  WHERE a1.Origin < a2.Origin
+      AND a1.Origin IN ('DEN', 'ATL', 'DFW', 'ORD', 'LAS')
+      AND a2.Origin IN ('DEN', 'ATL', 'DFW', 'ORD', 'LAS')
+  ORDER BY common_destinations DESC
+  LIMIT 10
+  ```
+</RunnableCode>
+
+يعمل هذا الاستعلام على مرحلتين رئيسيتين.
+في المرحلة الأولى، ينشئ مجموعة بيانات مؤقتة باسم `airport_routes` باستخدام تعبير جدول مشترك (CTE)، إذ ينظر إلى جميع الرحلات في 1 يناير 2024، وينشئ لكل مطار انطلاق قائمة مرتبة بكل وجهة فريدة يخدمها ذلك المطار.
+في مجموعة النتائج `airport_routes`، على سبيل المثال، قد تكون لدى DEN مصفوفة تحتوي على جميع المدن التي تسير إليها رحلاته، مثل `['ATL', 'BOS', 'LAX', 'MIA', ...]` وهكذا.
+
+في المرحلة الثانية، يأخذ الاستعلام خمسة مطارات محورية أمريكية كبرى (`DEN` و`ATL` و`DFW` و`ORD` و`LAS`) ويقارن كل زوج ممكن منها.
+ويفعل ذلك باستخدام `CROSS JOIN`، الذي ينشئ جميع التركيبات الممكنة لهذه المطارات.
+ثم يستخدم، لكل زوج، الدالة `arrayIntersect` للعثور على الوجهات التي تظهر في قائمتي المطارين معًا.
+وتحسب الدالة `length` عدد الوجهات المشتركة بينهما.
+
+ويضمن الشرط `a1.Origin < a2.Origin` أن يظهر كل زوج مرة واحدة فقط.
+ومن دون ذلك، ستحصل على كلٍّ من JFK-LAX وLAX-JFK كنتيجتين منفصلتين، وهذا سيكون تكرارًا لأنهما يمثلان المقارنة نفسها.
+وأخيرًا، يفرز الاستعلام النتائج لإظهار أزواج المطارات التي لديها أكبر عدد من الوجهات المشتركة، ثم يعرض أفضل 10 فقط.
+ويكشف ذلك عن المطارات المحورية الكبرى التي لديها أكبر قدر من التداخل في شبكات المسارات، وهو ما قد يشير إلى أسواق تنافسية تخدم فيها عدة شركات طيران أزواج المدن نفسها، أو إلى مطارات محورية تخدم مناطق جغرافية متشابهة ويمكن استخدامها كنقاط ربط بديلة للمسافرين.
+
+<div id="arrayReduce">
+  ### arrayReduce
+</div>
+
+بينما نستعرض التأخيرات، لنستخدم دالة مصفوفات عالية الرتبة أخرى، وهي `arrayReduce`، لإيجاد متوسط التأخير وأقصى تأخير
+لكل مسار انطلاقًا من مطار دنفر الدولي:
+
+<RunnableCode>
+  ```sql highlight={5-6}
+  SELECT
+      Origin,
+      toStringCutToZero(Dest) AS Destination,
+      groupArray(DepDelayMinutes) AS delays,
+      round(arrayReduce('avg', groupArray(DepDelayMinutes)), 2) AS avg_delay,
+      round(arrayReduce('max', groupArray(DepDelayMinutes)), 2) AS worst_delay
+  FROM ontime.ontime
+  WHERE Origin = 'DEN'
+      AND FlightDate = '2024-01-01'
+      AND DepDelayMinutes IS NOT NULL
+  GROUP BY Origin, Destination
+  ORDER BY avg_delay DESC
+  ```
+</RunnableCode>
+
+في المثال أعلاه، استخدمنا `arrayReduce` لإيجاد متوسط التأخير وأقصى تأخير لمختلف الرحلات المغادرة من `DEN`.
+تُطبّق `arrayReduce` دالة تجميع، تُحدَّد في المعلَمة الأولى للدالة، على عناصر المصفوفة المُمرَّرة إليها والمحددة في المعلَمة الثانية.
+
+<div id="arrayJoin">
+  ### arrayJoin
+</div>
+
+تتميّز الدوال العادية في ClickHouse بأنها تُرجع العدد نفسه من الصفوف التي تستقبلها.
+لكن توجد دالة واحدة مميّزة وفريدة تكسر هذه القاعدة، ويستحق الأمر التعرّف عليها، وهي الدالة `arrayJoin`.
+
+تقوم `arrayJoin` &quot;بتفجير&quot; المصفوفة، إذ تأخذها وتُنشئ صفاً منفصلاً لكل عنصر.
+وهذا يشبه دالتي SQL `UNNEST` و`EXPLODE` في قواعد البيانات الأخرى.
+
+وعلى خلاف معظم دوال المصفوفات التي تُرجع مصفوفات أو قيماً مفردة، فإن `arrayJoin` تغيّر مجموعة النتائج جذرياً عبر مضاعفة عدد الصفوف.
+
+تأمّل الاستعلام أدناه، الذي يُرجع مصفوفة من القيم من 0 إلى 100 بخطوات مقدارها 10.
+ويمكننا اعتبار هذه المصفوفة أزمنة تأخير مختلفة: 0 دقيقة، و10 دقائق، و20 دقيقة، وهكذا.
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay
+  SELECT delay
+  ```
+</RunnableCode>
+
+يمكننا كتابة استعلام باستخدام `arrayJoin` لمعرفة عدد حالات التأخير حتى ذلك العدد من الدقائق بين مطارين.
+ينشئ الاستعلام أدناه مدرجاً تكرارياً يوضّح توزيع تأخيرات الرحلات من Denver ‏(DEN) إلى Miami ‏(MIA) في 1 يناير 2024، باستخدام سلال تأخير تراكمية:
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay,
+      toStringCutToZero(Dest) AS Destination
+
+  SELECT
+      'Up to ' || arrayJoin(delay) || ' minutes' AS delayTime,
+      countIf(DepDelayMinutes >= arrayJoin(delay)) AS flightsDelayed
+  FROM ontime.ontime
+  WHERE Origin = 'DEN' AND Destination = 'MIA' AND FlightDate = '2024-01-01'
+  GROUP BY delayTime
+  ORDER BY flightsDelayed DESC
+  ```
+</RunnableCode>
+
+في الاستعلام أعلاه، نُرجع مصفوفة من قيم التأخير باستخدام عبارة CTE (عبارة `WITH`).
+ويحوّل `Destination` رمز الوجهة إلى سلسلة نصية.
+
+نستخدم `arrayJoin` لتفجير مصفوفة التأخير إلى صفوف منفصلة.
+وتصبح كل قيمة في مصفوفة `delay` صفاً مستقلاً يحمل الاسم المستعار `del`,
+ونحصل على 10 صفوف: صف لـ `del=0`، وصف لـ `del=10`، وصف لـ `del=20`، وهكذا.
+ولكل عتبة تأخير (`del`)، يحسب الاستعلام عدد الرحلات التي كان تأخيرها أكبر من تلك العتبة أو مساوياً لها
+باستخدام `countIf(DepDelayMinutes >= del)`.
+
+لدى `arrayJoin` أيضاً مكافئ بصيغة أمر SQL، وهو `ARRAY JOIN`.
+وقد أُعيد عرض الاستعلام أعلاه أدناه باستخدام أمر SQL المكافئ لأغراض المقارنة:
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay, 
+       toStringCutToZero(Dest) AS Destination
+
+  SELECT    
+      'Up to ' || del || ' minutes' AS delayTime,
+      countIf(DepDelayMinutes >= del) flightsDelayed
+  FROM ontime.ontime
+  ARRAY JOIN delay AS del
+  WHERE Origin = 'DEN' AND Destination = 'MIA' AND FlightDate = '2024-01-01'
+  GROUP BY ALL
+  ORDER BY flightsDelayed DESC
+  ```
+</RunnableCode>
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+تهانينا! لقد تعلّمت كيفية العمل مع المصفوفات في ClickHouse، بدءًا من إنشاء المصفوفات الأساسي والفهرسة وصولًا إلى الوظائف القوية مثل `groupArray` و`arrayFilter` و`arrayMap` و`arrayReduce` و`arrayJoin`.
+ولمتابعة رحلة التعلّم، اطّلع على المرجع الكامل لدوال المصفوفات لاكتشاف وظائف إضافية مثل `arrayFlatten` و`arrayReverse` و`arrayDistinct`.
+قد ترغب أيضًا في التعرّف على هياكل بيانات ذات صلة مثل أنواع [`tuples`](/ar/reference/data-types/tuple#creating-tuples) و[JSON](/ar/reference/data-types/newjson) و[Map](/ar/reference/data-types/map)، التي تعمل بكفاءة إلى جانب المصفوفات.
+تدرّب على تطبيق هذه المفاهيم على مجموعات بياناتك الخاصة، وجرّب استعلامات مختلفة في SQL playground أو على مجموعات بيانات تجريبية أخرى.
+
+تُعدّ المصفوفات ميزة أساسية في ClickHouse تتيح تنفيذ استعلامات تحليلية بكفاءة. وكلما أصبحت أكثر إلمامًا بوظائف المصفوفات، ستجد أنها قادرة على تبسيط عمليات التجميع المعقّدة وتحليل السلاسل الزمنية بشكل كبير.
+ولمزيد من المتعة مع المصفوفات، نوصي بمشاهدة فيديو YouTube أدناه من Mark، خبير البيانات المقيم لدينا:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7jaw3J6U_h8?si=6NiEJ7S1odU-VVqX" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

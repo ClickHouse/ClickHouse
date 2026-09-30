@@ -1,4 +1,11 @@
-from helpers.kafka.common_direct import *
+import logging
+import time
+
+from kafka import KafkaProducer
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 from helpers.config_cluster import kafka_sasl_user, kafka_sasl_pass
 

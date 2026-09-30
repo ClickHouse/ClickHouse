@@ -1,0 +1,219 @@
+---
+slug: /use-cases/AI/MCP/remote_mcp
+sidebarTitle: 'Включение удалённого MCP-сервера'
+title: 'Включение и подключение удалённого MCP-сервера ClickHouse Cloud'
+description: 'В этом руководстве описано, как включить и использовать удалённый MCP-сервер ClickHouse Cloud'
+keywords: ['AI', 'ClickHouse Cloud', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+В этом руководстве описано, как включить удалённый MCP-сервер ClickHouse Cloud и настроить его для работы с распространёнными инструментами разработки.
+
+**Необходимые условия**
+
+* Запущенный [сервис ClickHouse Cloud](/ru/get-started/setup/cloud)
+* IDE или выбранный вами инструмент для агентной разработки
+
+<div id="enable-remote-mcp-server">
+  ## Включение удалённого MCP-сервера для Cloud
+</div>
+
+Подключитесь к сервису ClickHouse Cloud, для которого нужно включить удалённый MCP-сервер.
+В меню слева нажмите **Connect**. Откроется окно со сведениями о подключении.
+
+Выберите **Connect with MCP**:
+
+<Image img="/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp" alt="Выберите MCP в окне Connect" size="md" />
+
+Включите переключатель, чтобы активировать MCP для сервиса:
+
+<Image img="/images/use-cases/AI_ML/MCP/2enable_mcp.webp" alt="Включить MCP Server" size="md" />
+
+Скопируйте отображаемый URL — он совпадает с приведённым ниже:
+
+```bash
+https://mcp.clickhouse.cloud/mcp
+```
+
+<div id="setup-clickhouse-cloud-remote-mcp-server">
+  ## Настройка удалённого MCP для разработки
+</div>
+
+Выберите ниже IDE или инструмент и следуйте соответствующим инструкциям по настройке.
+
+<div id="claude-code">
+  ### Claude Code
+</div>
+
+В рабочем каталоге выполните следующую команду, чтобы добавить в Claude Code конфигурацию MCP Server для ClickHouse Cloud:
+
+```bash
+claude mcp add --transport http clickhouse-cloud https://mcp.clickhouse.cloud/mcp
+```
+
+Затем запустите Claude Code:
+
+```bash
+claude
+```
+
+Выполните следующую команду, чтобы получить список MCP-серверов:
+
+```bash
+/mcp
+```
+
+Выберите `clickhouse-cloud` и авторизуйтесь через OAuth, используя свои учетные данные ClickHouse Cloud.
+
+<div id="claude-web">
+  ### Веб-интерфейс Claude
+</div>
+
+1. Перейдите в **Customize** &gt; **Connectors**
+2. Нажмите значок «+» и выберите **Add custom connector**
+3. Задайте пользовательскому коннектору имя, например `clickhouse-cloud`, и добавьте его
+4. Нажмите на только что добавленный коннектор `clickhouse-cloud`, затем нажмите **Connect**
+5. Пройдите аутентификацию через OAuth, используя свои учетные данные ClickHouse Cloud
+
+<div id="cursor">
+  ### Cursor
+</div>
+
+1. Откройте [маркетплейс Cursor](https://cursor.com/marketplace), найдите и установите MCP-серверы.
+2. Найдите ClickHouse и на странице любого сервера нажмите &quot;Add to Cursor&quot;, чтобы установить его
+3. Пройдите аутентификацию через OAuth.
+
+<div id="visual-studio-code">
+  ### Visual Studio Code
+</div>
+
+Добавьте в `.vscode/mcp.json` следующую конфигурацию:
+
+```json
+{
+  "servers": {
+    "clickhouse-cloud": {
+      "type": "http",
+      "url": "https://mcp.clickhouse.cloud/mcp"
+    }
+  }
+}
+```
+
+Подробнее см. в [документации по Visual Studio Code](https://code.visualstudio.com/docs/copilot/customization/mcp-servers).
+
+<div id="windsurf">
+  ### Windsurf
+</div>
+
+Отредактируйте файл `mcp_config.json`, указав следующую конфигурацию:
+
+```json
+{
+  "mcpServers": {
+    "clickhouse-cloud": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp.clickhouse.cloud/mcp"]
+    }
+  }
+}
+```
+
+Подробнее см. в [документации Windsurf](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp).
+
+<div id="zed">
+  ### Zed
+</div>
+
+Добавьте ClickHouse как пользовательский сервер.
+Добавьте следующее в настройки Zed в разделе **context&#95;servers**:
+
+```json
+{
+  "context_servers": {
+    "clickhouse-cloud": {
+      "url": "https://mcp.clickhouse.cloud/mcp"
+    }
+  }
+}
+```
+
+При первом подключении к серверу Zed должен предложить вам пройти аутентификацию через OAuth.
+Подробнее см. в [документации Zed](https://zed.dev/docs/ai/mcp#as-custom-servers).
+
+<div id="codex">
+  ### Codex
+</div>
+
+Выполните следующую команду, чтобы добавить MCP-сервер ClickHouse Cloud через CLI:
+
+```bash
+codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
+```
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+После подключения вы сможете взаимодействовать с ClickHouse Cloud с помощью промптов на естественном языке.
+Ниже приведены некоторые типовые сценарии работы и инструменты, которые ваш MCP-клиент будет вызывать за кулисами.
+Полный список доступных инструментов см. в [справочнике по инструментам](/ru/products/cloud/features/ai-ml/remote-mcp#available-tools).
+
+<div id="exploring-data">
+  ### Изучение ваших данных
+</div>
+
+Для начала посмотрите, что доступно:
+
+| Промпт                                                               | Используемый инструмент           |
+| -------------------------------------------------------------------- | --------------------------------- |
+| &quot;К каким организациям у меня есть доступ?&quot;                 | `get_organizations`               |
+| &quot;Какие базы данных доступны в моём сервисе?&quot;               | `list_databases`                  |
+| &quot;Покажи таблицы в базе данных `default`&quot;                   | `list_tables`                     |
+| &quot;Выведи все таблицы, имена которых начинаются с `events_`&quot; | `list_tables` (с фильтром `like`) |
+
+<div id="running-queries">
+  ### Выполнение аналитических запросов
+</div>
+
+Задавайте вопросы на естественном языке, и агент переведет их в SQL:
+
+| Промпт                                                                         | Вызываемый инструмент |
+| ------------------------------------------------------------------------------ | --------------------- |
+| &quot;Покажи 10 первых строк из таблицы `hits`&quot;                           | `run_select_query`    |
+| &quot;Какова средняя длительность сеанса по странам за последние 7 дней?&quot; | `run_select_query`    |
+| &quot;Сколько строк в каждой таблице базы данных `analytics`?&quot;            | `run_select_query`    |
+
+Инструмент `run_select_query` позволяет выполнять только команды `SELECT`. Все запросы — только для чтения.
+
+<div id="managing-services">
+  ### Управление сервисами и инфраструктурой
+</div>
+
+Получите обзор ресурсов ClickHouse Cloud:
+
+| Промпт                                                                 | Вызываемый инструмент              |
+| ---------------------------------------------------------------------- | ---------------------------------- |
+| &quot;Покажи все мои сервисы&quot;                                     | `get_services_list`                |
+| &quot;Какой статус у моего сервиса в продакшне?&quot;                  | `get_service_details`              |
+| &quot;Покажи расписание резервного копирования для этого сервиса&quot; | `get_service_backup_configuration` |
+| &quot;Покажи последние резервные копии&quot;                           | `list_service_backups`             |
+| &quot;Какие ClickPipes настроены для этого сервиса?&quot;              | `list_clickpipes`                  |
+
+<div id="monitoring-costs">
+  ### Отслеживание затрат
+</div>
+
+| Промпт                                                              | Вызываемый инструмент                               |
+| ------------------------------------------------------------------- | --------------------------------------------------- |
+| &quot;Каковы были расходы моей организации на прошлой неделе?&quot; | `get_organization_cost`                             |
+| &quot;Покажи ежедневные расходы с 1 по 15 марта&quot;               | `get_organization_cost` (с `from_date` и `to_date`) |
+
+<div id="related-content">
+  ## См. также
+</div>
+
+* [Навыки для агентов ClickHouse](https://github.com/ClickHouse/agent-skills)

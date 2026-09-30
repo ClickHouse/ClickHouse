@@ -1,0 +1,117 @@
+---
+slug: /clickhouse-operator/install/kubectl
+title: 'تثبيت ClickHouse Operator باستخدام kubectl'
+keywords: ['kubernetes']
+description: 'يغطي هذا الدليل تثبيت ClickHouse Operator باستخدام kubectl وملفات manifest.'
+doc_type: 'guide'
+sidebarTitle: 'kubectl'
+---
+
+يغطي هذا الدليل تثبيت ClickHouse Operator باستخدام kubectl وملفات manifest.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* مجموعة Kubernetes بالإصدار v1.28.0 أو أحدث
+* kubectl بالإصدار v1.28.0 أو أحدث
+* أذونات مسؤول المجموعة
+
+<div id="install-from-release-manifests">
+  ## التثبيت من ملفات manifest الخاصة بالإصدار
+</div>
+
+<Note>
+  يتطلب وجود cert-manager لإصدار شهادات webhook.
+</Note>
+
+ثبّت الـoperator وتعريفات الموارد المخصصة (CRDs) من أحدث إصدار:
+
+```bash
+kubectl apply --server-side --force-conflicts -f https://github.com/ClickHouse/clickhouse-operator/releases/latest/download/clickhouse-operator.yaml
+```
+
+يلزم التطبيق من جهة الخادم لأن تعريفات الموارد المخصصة (CRDs) المجمّعة تتجاوز الحدّ الأقصى للحجم في التطبيق من جهة العميل. بالنسبة إلى البيئات التي لا تدعم إلا التطبيق من جهة العميل، استخدم إصدار تعريفات الموارد المخصصة (CRDs) المحذوفة منه الأوصاف:
+
+```bash
+kubectl apply -f https://github.com/ClickHouse/clickhouse-operator/releases/latest/download/clickhouse-operator-stripped-crds.yaml
+```
+
+سيؤدي هذا إلى:
+
+1. إنشاء مساحة الأسماء `clickhouse-operator-system`
+2. تثبيت CustomResourceDefinitions ‏(CRDs) لـ ClickHouseCluster وKeeperCluster
+3. إنشاء ServiceAccounts وRoles وRoleBindings اللازمة
+4. نشر مدير وحدة تحكم المشغّل
+5. تسجيل webhooks للتحقق من صحة الموارد وتعيين القيم الافتراضية
+6. تهيئة شهادات SSL باستخدام cert-manager
+7. تمكين نقطة نهاية المقاييس
+
+<div id="verify-installation">
+  ## التحقق من التثبيت
+</div>
+
+تحقق من أن المشغّل يعمل:
+
+```bash
+kubectl get pods -n clickhouse-operator-system
+```
+
+المخرجات المتوقعة:
+
+```
+NAME                                                 READY   STATUS    RESTARTS   AGE
+clickhouse-operator-controller-manager-xxxxxxxxxx    1/1     Running   0          1m
+```
+
+تأكّد من تثبيت تعريفات الموارد المخصّصة (CRDs):
+
+```bash
+kubectl get crd | grep clickhouse.com
+```
+
+المخرجات المتوقعة:
+
+```
+clickhouseclusters.clickhouse.com    2025-01-06T00:00:00Z
+keeperclusters.clickhouse.com        2025-01-06T00:00:00Z
+```
+
+<div id="configure-custom-deployment-options">
+  ## تهيئة خيارات نشر مخصّصة
+</div>
+
+إذا أردت تهيئة خيارات نشر المشغّل، فاتبع الخطوات التالية.
+
+<Steps>
+  <Step>
+    ### استنسخ المستودع
+
+    ```bash
+    git clone https://github.com/ClickHouse/clickhouse-operator.git
+    cd clickhouse-operator
+    ```
+  </Step>
+
+  <Step>
+    ### تهيئة خيارات التثبيت
+
+    حرّر `config/default/kustomization.yaml` لتمكين الميزات أو تعطيلها حسب الحاجة.
+
+    * لتعطيل webhooks، أضف تعليقًا إلى القسمين `[WEBHOOK]` و`[CERTMANAGER]`.
+    * لتمكين نقطة نهاية المقاييس الآمنة، أضف تعليقًا إلى أقسام `[METRICS]` وأزل التعليق عن القسمين `[METRICS SECURE]` و`[CERTMANAGER]`.
+    * لتمكين ServiceMonitor لـ Prometheus Operator، أزل التعليق عن قسم `[PROMETHEUS]`.
+    * لتمكين سياسات شبكة المشغّل، أزل التعليق عن قسم `[NETWORK POLICY]`.
+  </Step>
+
+  <Step>
+    ### ابنِ وانشر
+
+    أنشئ ملفات البيان الخاصة بالمشغّل ثم طبّقها:
+
+    ```bash
+    make build-installer VERSION=<required operator version> [IMG=<custom registry path>]
+    kubectl apply --server-side --force-conflicts -f dist/install.yaml
+    ```
+  </Step>
+</Steps>

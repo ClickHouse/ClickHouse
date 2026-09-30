@@ -54,7 +54,7 @@ static std::pair<FileCachePtr, FileCacheSettings> getCache(
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot create cached custom disk without either "
-                    "`filesystem_caches_path` (common for all filesystem caches) or"
+                    "`filesystem_caches_path` (common for all filesystem caches) or "
                     "`custom_cached_disks_base_directory` (common only for custom cached disks) "
                     "in server configuration file");
             }
@@ -157,7 +157,10 @@ void registerDiskCache(DiskFactory & factory, bool global_skip_access_check)
         return cached_disk_object_storage;
     };
 
-    factory.registerDiskType("cache", creator);
+    factory.registerDiskType("cache", creator, Documentation{
+        .description = "Wraps another disk with a local filesystem cache, caching data read from a remote disk on local storage to speed up repeated reads.",
+        .syntax = "disk(type = cache, disk = remote_disk, path = '/var/lib/clickhouse/disk_cache/', max_size = '10Gi')",
+        .related = {"object_storage", "s3"}});
 }
 
 }

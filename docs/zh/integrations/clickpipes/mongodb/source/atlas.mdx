@@ -1,0 +1,63 @@
+---
+sidebarTitle: 'MongoDB Atlas'
+description: '将 MongoDB Atlas 配置为 ClickPipes 数据源的分步指南'
+slug: /integrations/clickpipes/mongodb/source/atlas
+title: 'MongoDB Atlas 数据源配置指南'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'MongoDB', 'CDC', '数据摄取', '实时同步']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="enable-oplog-retention">
+  ## 配置 oplog 保留时长
+</div>
+
+进行复制时，oplog 的最短保留时长必须为 24 小时。我们建议将 oplog 保留时长设置为 72 小时或更长，以确保在初始快照完成之前，oplog 不会被截断。要通过 UI 设置 oplog 保留时长：
+
+1. 前往 MongoDB Atlas 控制台中集群的 `Overview` 选项卡，然后点击 `Configuration` 选项卡。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-cluster-overview-configuration.webp" alt="导航到集群配置" size="lg" border />
+
+2. 点击 `Additional Settings`，然后向下滚动到 `More Configuration Options`。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-expand-additional-settings.webp" alt="展开其他设置" size="lg" border />
+
+3. 点击 `More Configuration Options`，并将最小 oplog 窗口设置为 `72 hours` 或更长。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-set-retention-hours.webp" alt="设置 oplog 保留小时数" size="lg" border />
+
+4. 点击 `Review Changes` 进行检查，然后点击 `Apply Changes` 应用更改。
+
+<div id="configure-database-user">
+  ## 配置数据库用户
+</div>
+
+登录 MongoDB Atlas 控制台后，点击左侧导航栏中“Security”选项卡下的 `Database Access`，然后点击“Add New Database User”。
+
+ClickPipes 需要使用密码身份验证：
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-add-new-database-user.webp" alt="添加数据库用户" size="lg" border />
+
+ClickPipes 需要一个具有以下角色的用户：
+
+* `readAnyDatabase`
+* `clusterMonitor`
+
+你可以在 `Specific Privileges` 部分找到这些角色：
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-database-user-privilege.webp" alt="配置用户角色" size="lg" border />
+
+你还可以进一步指定要授予 ClickPipes 用户访问权限的集群/实例：
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-restrict-access.webp" alt="限制集群/实例访问" size="lg" border />
+
+<div id="whats-next">
+  ## 下一步是什么？
+</div>
+
+现在，您可以[创建您的 ClickPipe](/zh/integrations/clickpipes/mongodb/index)，开始将 MongoDB 实例中的数据摄取到 ClickHouse Cloud。
+请务必记下设置 MongoDB 实例时所用的连接信息，因为在创建 ClickPipe 的过程中会用到这些信息。

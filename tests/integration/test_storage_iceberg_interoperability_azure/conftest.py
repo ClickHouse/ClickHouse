@@ -1,8 +1,6 @@
 import pytest
 import logging
 import pyspark
-import os
-import os.path as p
 
 from helpers.cluster import ClickHouseCluster
 from helpers.iceberg_utils import get_uuid_str
@@ -21,7 +19,6 @@ def get_spark(log_dir=None):
     (devstoreaccount1.blob.core.windows.net) because it does an exact match
     with the account name extracted from the WASB URI.
     """
-    hadoop_version = "3.3.4"
 
     builder = (
         pyspark.sql.SparkSession.builder

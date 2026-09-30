@@ -1,0 +1,70 @@
+---
+slug: '/examples/aggregate-function-combinators/quantilesTimingArrayIf'
+title: 'quantilesTimingArrayIf'
+description: 'Exemplo de uso do combinador quantilesTimingArrayIf'
+keywords: ['quantilesTiming', 'array', 'if', 'combinator', 'examples', 'quantilesTimingArrayIf']
+sidebarTitle: 'quantilesTimingArrayIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descrição
+</div>
+
+Os combinadores [`Array`](/pt-BR/reference/functions/aggregate-functions/combinators#-array) e [`If`](/pt-BR/reference/functions/aggregate-functions/combinators#-if)
+podem ser aplicados à função [`quantilesTiming`](/pt-BR/reference/functions/aggregate-functions/quantileTiming)
+para calcular quantis de valores de tempo em arrays nas linhas em que a condição for verdadeira,
+usando a função de combinador de agregação `quantilesTimingArrayIf`.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+Neste exemplo, vamos criar uma tabela que armazena os tempos de resposta da API para diferentes endpoints
+e usar `quantilesTimingArrayIf` para calcular os quantis do tempo de resposta de solicitações bem-sucedidas.
+
+```sql title="Query"
+CREATE TABLE api_responses(
+    endpoint String,
+    response_times_ms Array(UInt32),
+    success_rate Float32
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO api_responses VALUES
+    ('orders', [82, 94, 98, 87, 103, 92, 89, 105], 0.98),
+    ('products', [45, 52, 48, 51, 49, 53, 47, 50], 0.95),
+    ('users', [120, 125, 118, 122, 121, 119, 123, 124], 0.92);
+
+SELECT
+    endpoint,
+    quantilesTimingArrayIf(0, 0.25, 0.5, 0.75, 0.95, 0.99, 1.0)(response_times_ms, success_rate >= 0.95) as response_time_quantiles
+FROM api_responses
+GROUP BY endpoint;
+```
+
+A função `quantilesTimingArrayIf` calculará quantis apenas para endpoints com taxa de sucesso acima de 95%.
+O array retornado contém os seguintes quantis em ordem:
+
+* 0 (mínimo)
+* 0.25 (primeiro quartil)
+* 0.5 (mediana)
+* 0.75 (terceiro quartil)
+* 0.95 (95º percentil)
+* 0.99 (99º percentil)
+* 1.0 (máximo)
+
+```response title="Response"
+   ┌─endpoint─┬─response_time_quantiles─────────────────────────────────────────────┐
+1. │ orders   │ [82, 87, 92, 98, 103, 104, 105]                                     │
+2. │ products │ [45, 47, 49, 51, 52, 52, 53]                                        │
+3. │ users    │ [nan, nan, nan, nan, nan, nan, nan]                                 │
+   └──────────┴─────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [`quantilesTiming`](/pt-BR/reference/functions/aggregate-functions/quantileTiming)
+* [`combinador If`](/pt-BR/reference/functions/aggregate-functions/combinators#-if)

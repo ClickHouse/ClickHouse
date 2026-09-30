@@ -4,6 +4,12 @@
 
 #include <Core/Streaming/CursorTree.h>
 
+#include <Interpreters/Streaming/Utils.h>
+
+#include <Storages/StorageInMemoryMetadata.h>
+
+#include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -23,11 +29,7 @@ void TableExpressionModifiers::dump(WriteBuffer & buffer) const
         buffer << ", sample_offset: " << ASTSampleRatio::toString(*sample_offset_ratio);
 
     if (stream_settings)
-    {
         buffer << ", stream";
-        if (stream_settings->cursor_tree)
-            buffer << " cursor";
-    }
 }
 
 void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
@@ -51,16 +53,40 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
 
     if (stream_settings.has_value())
     {
-        if (stream_settings->cursor_tree)
+        hash_state.update(stream_settings->subscribe_for_updates);
+        hash_state.update(stream_settings->unordered);
+
+        if (stream_settings->cursor)
         {
-            for (const auto & entry : cursorTreeToMap(stream_settings->cursor_tree))
+            for (const auto & entry : cursorTreeToMap(stream_settings->cursor))
             {
                 const auto & tuple = entry.safeGet<Tuple>();
                 hash_state.update(tuple.at(0).safeGet<String>());
                 hash_state.update(tuple.at(1).safeGet<Int64>());
             }
         }
+
+        if (stream_settings->watermark)
+        {
+            hash_state.update(stream_settings->watermark->time_attribute_column);
+            hash_state.update(stream_settings->watermark->idle_timeout.count());
+            stream_settings->watermark->expression->updateTreeHash(hash_state, /*ignore_aliases=*/false);
+        }
     }
+}
+
+void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out)
+{
+    writeIntBinary(val.numerator, out);
+    writeIntBinary(val.denominator, out);
+}
+
+TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in)
+{
+    TableExpressionModifiers::Rational val;
+    readIntBinary(val.numerator, in);
+    readIntBinary(val.denominator, in);
+    return val;
 }
 
 String TableExpressionModifiers::formatForErrorMessage() const
@@ -88,11 +114,17 @@ String TableExpressionModifiers::formatForErrorMessage() const
         if (has_final || sample_size_ratio || sample_offset_ratio)
             buffer << ' ';
         buffer << "STREAM";
-        if (stream_settings->cursor_tree)
-            buffer << " CURSOR";
     }
 
     return buffer.str();
+}
+
+StorageMetadataPtr extendMetadataWithModifiers(const StorageMetadataPtr & metadata, const TableExpressionModifiers & modifiers)
+{
+    if (modifiers.hasStream())
+        return extendMetadataWithStream(metadata, *modifiers.getStreamSettings());
+
+    return metadata;
 }
 
 }

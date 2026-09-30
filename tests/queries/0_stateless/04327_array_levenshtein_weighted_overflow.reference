@@ -1,0 +1,20 @@
+--- large integer weights do not overflow ---
+36893488147419103000
+18446744073709552000
+18446744073709552000
+73786976294838210000
+--- arraySimilarity weights_sum does not overflow ---
+0
+--- results stay finite ---
+1
+1
+--- large integer weights stay exact (sum accumulated without rounding) ---
+9007199254740994
+9007199254740994
+9007199254740994
+--- widest (256-bit) weights do not wrap the accumulator ---
+1
+0
+1
+1
+1

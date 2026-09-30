@@ -1,0 +1,4 @@
+CREATE TABLE default.remote_engine_with_settings\n(\n    `dummy` UInt8\n)\nENGINE = Remote(\'localhost:1\', \'system\', \'one\')\nSETTINGS skip_unavailable_shards = 1
+the shard was skipped
+CREATE TABLE default.remote_engine_with_settings\n(\n    `dummy` UInt8\n)\nENGINE = Remote(\'localhost:1\', \'system\', \'one\')\nSETTINGS skip_unavailable_shards = 1
+the shard was skipped after ATTACH

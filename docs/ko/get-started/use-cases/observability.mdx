@@ -1,0 +1,46 @@
+---
+slug: /cloud/get-started/cloud/use-cases/observability
+title: '관측성'
+description: '분산 애플리케이션의 관측성, 모니터링, 로깅, 시스템 성능 분석에 ClickHouse Cloud를 활용합니다'
+keywords: ['사용 사례', '관측성']
+sidebarTitle: '관측성'
+doc_type: 'guide'
+---
+
+import { PrimaryButton } from "/snippets/ko/components/PrimaryButton/PrimaryButton.jsx";
+
+<div id="clickstack">
+  ## 관측성을 위한 ClickHouse
+</div>
+
+ClickHouse를 초기에 도입한 사용자들은 한 가지 본질적인 사실을 일찍 깨달았습니다. 관측성은 곧 데이터 문제라는 점입니다.
+어떤 데이터베이스를 선택하느냐에 따라 관측성 플랫폼의 비용, 확장성, 기능이 결정됩니다. 따라서 시계열 데이터에 적합한 데이터베이스를 선택하는 일은 사내에서 직접 구축하든 관측성 회사를 시작하든 대개 가장 중요한 아키텍처 결정입니다.
+
+바로 이런 이유로 ClickHouse는 수년간 관측성 스택의 핵심 역할을 해왔습니다.
+Netflix와 eBay 같은 업계 대기업부터 Sentry와 Dash0 같은 관측성 스타트업에 이르기까지, ClickHouse는 대규모 환경에서 로그, 메트릭, 트레이스를 처리합니다.
+ClickHouse의 컬럼 지향 스토리지, 강력한 압축, 그리고 벡터화된 실행 엔진은 비용을 크게 낮추고, 엔지니어가 느린 도구를 기다리지 않고 실행 중인 시스템을 디버깅하는 데 필요한 1초 미만의 쿼리 응답 속도를 제공합니다.
+
+## ClickStack
+
+관측성 사용 사례에서 ClickHouse의 핵심은 ClickStack입니다. ClickStack은 로그, 트레이스, 메트릭을 모두 단일 ClickHouse 데이터베이스에 저장하여 이를 처리하는 방식을 혁신하는 관측성 플랫폼입니다.
+이 통합된 접근 방식은 전체 인프라와 애플리케이션 전반의 신호를 매우 쉽게 연관시킬 수 있게 해줍니다.
+
+ClickStack은 긴밀하게 함께 작동하는 세 가지 핵심 구성 요소를 중심으로 구축되었습니다:
+
+<Tabs>
+  <Tab title="OpenTelemetry" icon="/images/integrations/logos/logo_otel.webp">
+    > OpenTelemetry Collector의 ClickStack 배포판은 데이터 수집 gateway 역할을 합니다. OpenTelemetry는 관측성 데이터의 업계 표준으로 자리 잡았으므로, 이 collector는 telemetry 스트림을 처리하는 데 가장 자연스러운 선택입니다.
+  </Tab>
+
+  <Tab title="ClickHouse" icon="/images/icons/icon-clickhouse-tab.svg">
+    > ClickHouse는 관측성 workloads에 필요한 고카디널리티 데이터와 초고속 집계에서 뛰어난 성능을 제공하도록 명확히 선택되었습니다.
+  </Tab>
+
+  <Tab title="HyperDX" icon="/images/hyperdx-logo.webp">
+    > HyperDX는 강력한 쿼리 기능과 상관관계 분석 기능을 통해 모든 데이터를 한곳에서 볼 수 있는 직관적인 UI를 제공합니다.
+  </Tab>
+</Tabs>
+
+ClickStack이 특히 돋보이는 이유는 유연성입니다. OpenTelemetry 네이티브이며 OpenTelemetry 생태계와 함께 사용할 때 가장 잘 작동하지만, 여기에만 종속되지는 않습니다. S3, Kafka, 기타 agent를 비롯한 다양한 소스에서 데이터를 수집할 수 있으므로 기존 인프라를 유연하게 활용할 수 있습니다.
+
+<PrimaryButton label="ClickStack 문서 읽기" href="/ko/clickstack" />

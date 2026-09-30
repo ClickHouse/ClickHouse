@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
@@ -304,7 +305,7 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
 
     result.modify("code_point", [](ColumnDescription & col) { col.comment = "The Unicode code point represented as U+XXXX."; });
     result.modify("code_point_value", [](ColumnDescription & col) { col.comment = "The integer value of the Unicode code point."; });
-    result.modify("notation", [](ColumnDescription & col) { col.comment = "The character notation (visual representation of the code point)."; });
+    result.modify("notation", [](ColumnDescription & col) { col.comment = "The code point in `U+XXXX` notation, e.g. `U+0041`."; });
 
     return result;
 }
@@ -396,7 +397,7 @@ void StorageSystemUnicode::fillData(
             ColumnString::Offset offset = col_notation_offsets.back();
             if (code <= 0xFFFF)
             {
-                col_notation_chars.resize(offset + 7);
+                col_notation_chars.resize(offset + 6);
                 col_notation_chars[offset] = 'U';
                 ++offset;
                 col_notation_chars[offset] = '+';
@@ -405,13 +406,11 @@ void StorageSystemUnicode::fillData(
                 offset += 2;
                 writeHexByteUppercase(code & 0xFF, &col_notation_chars[offset]);
                 offset += 2;
-                col_notation_chars[offset] = 0;
-                ++offset;
                 col_notation_offsets.push_back(offset);
             }
             else if (code <= 0xFFFFF)
             {
-                col_notation_chars.resize(offset + 8);
+                col_notation_chars.resize(offset + 7);
                 col_notation_chars[offset] = 'U';
                 ++offset;
                 col_notation_chars[offset] = '+';
@@ -422,13 +421,11 @@ void StorageSystemUnicode::fillData(
                 offset += 2;
                 writeHexByteUppercase(code & 0xFF, &col_notation_chars[offset]);
                 offset += 2;
-                col_notation_chars[offset] = 0;
-                ++offset;
                 col_notation_offsets.push_back(offset);
             }
             else if (code <= 0x10FFFF)
             {
-                col_notation_chars.resize(offset + 9);
+                col_notation_chars.resize(offset + 8);
                 col_notation_chars[offset] = 'U';
                 ++offset;
                 col_notation_chars[offset] = '+';
@@ -439,8 +436,6 @@ void StorageSystemUnicode::fillData(
                 offset += 2;
                 writeHexByteUppercase(code & 0xFF, &col_notation_chars[offset]);
                 offset += 2;
-                col_notation_chars[offset] = 0;
-                ++offset;
                 col_notation_offsets.push_back(offset);
             }
             else
@@ -755,3 +750,6 @@ void StorageSystemUnicode::fillData(
 }
 
 #pragma clang diagnostic pop
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemUnicode) }

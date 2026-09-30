@@ -1,3 +1,6 @@
+-- Tags: long
+-- ^ 10M-row fixture exceeds the flaky-check 180s per-run soft cap on sanitizer builds.
+
 DROP TABLE IF EXISTS pk_func;
 CREATE TABLE pk_func(d DateTime, ui UInt32) ENGINE = MergeTree ORDER BY toDate(d) SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
@@ -5,7 +8,7 @@ INSERT INTO pk_func SELECT '2020-05-05 01:00:00', number FROM numbers(1000000);
 INSERT INTO pk_func SELECT '2020-05-06 01:00:00', number FROM numbers(1000000);
 INSERT INTO pk_func SELECT '2020-05-07 01:00:00', number FROM numbers(1000000);
 
-SELECT * FROM pk_func ORDER BY toDate(d), ui LIMIT 5;
+SELECT * FROM pk_func ORDER BY toDate(d), ui LIMIT 5 SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1;
 
 DROP TABLE pk_func;
 
@@ -20,6 +23,6 @@ ORDER BY
     A ASC,
     -B ASC
 LIMIT 3
-SETTINGS max_threads = 1;
+SETTINGS max_threads = 1, optimize_read_in_order = 1, query_plan_read_in_order = 1;
 
 DROP TABLE nORX;
