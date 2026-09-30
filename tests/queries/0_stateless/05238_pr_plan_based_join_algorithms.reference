@@ -13,9 +13,15 @@ full_sorting_merge, prefer_local_join=0: the join is shipped, then the answer
 full_sorting_merge, prefer_local_join=1: the join is shipped, then the answer
 1
 1000	4500
-right join, hash: the join is shipped, then the answer
+right join, hash, prefer_local_join=0: the join is shipped, then the answer
 1
 500	249500
-right join, full_sorting_merge: the join is shipped, then the answer
+right join, hash, prefer_local_join=1: the join is shipped, then the answer
+1
+500	249500
+right join, full_sorting_merge, prefer_local_join=0: the join is shipped, then the answer
+1
+500	249500
+right join, full_sorting_merge, prefer_local_join=1: the join is shipped, then the answer
 1
 500	249500
