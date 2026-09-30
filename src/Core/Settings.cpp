@@ -4808,6 +4808,10 @@ This allows `MergingSortedTransform` to reprioritize sources more frequently, wh
 Note that it disables `read_in_order_use_buffering` optimization and preliminary merge (`read_in_order_two_level_merge_threshold`) for reading.
 )", 0, \
         {"26.4", false, false, "Emit virtual row after each block during read-in-order to allow more frequent source reprioritization in MergingSortedTransform."}) \
+    DECLARE(Bool, optimize_trivial_group_by_count_query, true, R"(
+Optimize GROUP BY monotonic_function(primary_key_column) with a single count() aggregate to use the primary key index and granularity metadata instead of reading data columns. Supports WHERE/PREWHERE on primary key range conditions. Does not apply with SAMPLE or FINAL.
+)", 0, \
+        {"26.10", false, true, "New setting to optimize GROUP BY monotonic_function(primary_key) with count() using granularity metadata."}) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/reference/statements/select/group-by) optimization in [SELECT](/reference/statements/select/index) queries for aggregating data in corresponding order in [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.
 

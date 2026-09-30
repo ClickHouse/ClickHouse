@@ -1,6 +1,7 @@
 -- Tags: distributed, no-parallel, no-flaky-check
 
 set send_logs_level = 'error';
+set optimize_trivial_group_by_count_query = 0;
 
 create database if not exists shard_0;
 create database if not exists shard_1;

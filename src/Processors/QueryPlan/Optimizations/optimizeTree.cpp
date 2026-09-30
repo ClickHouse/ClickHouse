@@ -513,6 +513,9 @@ void optimizeTreeSecondPass(
                         applied_projection_names.insert(*result.applied_projection);
                 }
 
+                if (optimization_settings.trivial_group_by_count)
+                    optimizeCountByGranularity(*frame.node, nodes, optimization_settings);
+
                 if (optimization_settings.query_plan_optimize_count_from_text_index)
                     optimizeTrivialCountFromTextIndex(*frame.node, nodes, optimization_settings);
 

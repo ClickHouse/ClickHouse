@@ -1,4 +1,5 @@
 -- Tags: no-parallel, no-random-merge-tree-settings, no-flaky-check, long
+SET optimize_trivial_group_by_count_query = 0;
 
 drop table if exists pr_t;
 drop table if exists dist_t_different_dbs;
