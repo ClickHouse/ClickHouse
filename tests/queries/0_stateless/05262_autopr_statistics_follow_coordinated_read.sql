@@ -1,10 +1,11 @@
 -- The cost model divides the instrumented read's `input_bytes` by the replica count, so the read it
--- measures has to be the read parallel replicas actually coordinates. Those were chosen by two unrelated
--- rules: the statistics by descending the query *plan* to a join's probe side
--- (`children[isRight(kind) ? 1 : 0]`), the coordinated read by the left-most table expression of the
--- query *tree* (`findTableForParallelReplicas`). A join that swaps its sides moves the first without
--- moving the second, and the model then priced a table nobody splits - at sf=100 that adopted a plan 11%
--- slower on TPC-H q07 and declined one 62% faster on SSB q2.x.
+-- measures has to be the read parallel replicas actually coordinate. Which table that is, is not the
+-- optimization's decision - it only has to stay in step with the decision that was made. It used to derive
+-- the read instead, by descending the query *plan* to a join's probe side
+-- (`children[isRight(kind) ? 1 : 0]`), while the read being coordinated on this path is pinned to the
+-- left-most table expression of the query *tree* (`findTableForParallelReplicas`). A join that swaps its
+-- sides moves the first without moving the second, and the model then priced a table nobody splits - at
+-- sf=100 that adopted a plan 11% slower on TPC-H q07 and declined one 62% faster on SSB q2.x.
 --
 -- `query_plan_join_swap_table` is the knob that moves the plan side without touching the query text, so
 -- the same query is run with the swap off and forced on. The bytes recorded must be the same either way:

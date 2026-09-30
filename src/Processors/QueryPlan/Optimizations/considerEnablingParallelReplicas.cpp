@@ -347,11 +347,17 @@ size_t canonicalChild(const QueryPlan::Node & node, size_t index)
 /// of the whole subtree. So nothing has to be searched for on the single-node side, which marks nothing:
 /// the step standing where the replicas plan coordinates its read is the read to instrument.
 ///
-/// Which read that is cannot be worked out from the single-node plan alone. Descending it lands on a join's
-/// probe side, ordered by the planner's size estimates, while the coordinated read follows the query tree's
-/// left-most table expression (`findTableForParallelReplicas`), so the two agree only when the bigger table
-/// happens to be written first. `children[isRight(kind) ? 1 : 0]`, which used to make that choice, cannot
-/// even see a swapped `INNER` join: `JoinStepLogical::swapInputs` reorders the inputs and flips
+/// Which table gets distributed is not this optimization's decision to make, and not one it should try to
+/// reproduce either. It only has to price the read that *was* chosen, so it reads the choice off the plan
+/// instead of deriving it. There is more than one rule to derive: query-based parallel replicas pin the
+/// read to the query tree's left-most table expression (`findTableForParallelReplicas`), while
+/// `parallel_replicas_plan_based` marks it in `applyParallelReplicas` through `collectReadsToDistribute`,
+/// which descends a `JoinStepLogical` by `coordinatedJoinSide` over the post-swap children - so under that
+/// setting a join swap moves which relation is distributed. Following the marker keeps the statistics in
+/// step with either, and with whatever replaces them.
+///
+/// Deriving it is what went wrong. `children[isRight(kind) ? 1 : 0]`, which used to make the choice here,
+/// cannot even see a swapped `INNER` join: `JoinStepLogical::swapInputs` reorders the inputs and flips
 /// `Left` <-> `Right` but leaves `Inner` alone. Nor would the table do, because a self-join reads one table
 /// twice and only one of the two occurrences is split between the replicas.
 ///
