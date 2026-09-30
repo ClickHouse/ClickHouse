@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include <Common/CurrentThread.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
@@ -256,6 +257,9 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     if (prefetch_future.valid())
     {
         {
+            /// Waiting on the async prefetch is a non-CPU wait: park the CPU lease so the slot serves
+            /// other work while we block. No-op when this thread holds no lease; no executor lock here.
+            CPULeaseParkGuard cpu_park;
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
             CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
 
@@ -281,6 +285,8 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
             memory.resize(buffer_size);
 
         {
+            /// A synchronous remote read is a non-CPU wait: park the CPU lease while we block.
+            CPULeaseParkGuard cpu_park;
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousRemoteReadWaitMicroseconds);
             result = readSync(memory.data(), buffer_size);
         }
