@@ -621,6 +621,9 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     /// optimization, so the replaced step can already have a predicate rewritten to `__text_index_*`
     /// virtual columns that only this task map materializes.
     parallel_replicas_step->index_read_tasks = index_read_tasks;
+    /// Empty for a classic parallel-replicas local plan, which is still unoptimized here and gets its
+    /// descriptors from its own optimization; carries them for a plan-based fragment, which does not.
+    parallel_replicas_step->copyJoinRuntimeFilterIndexAnalysisDescriptors(*this);
     return parallel_replicas_step;
 }
 
@@ -4634,6 +4637,10 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// materialized only by this task map, and losing it makes the clone evaluate the rewritten filter
     /// without the index readers (`optimizeLazyFinal` copies the same map onto its synthetic reads).
     cloned_step->index_read_tasks = index_read_tasks;
+    /// Plan-based parallel replicas clone the subtree to ship a fragment, and the fragment's local plan is
+    /// optimized with `enable_join_runtime_filters = false` (the filters are already in it), so the
+    /// optimization that attaches these descriptors does not run there and cannot put them back.
+    cloned_step->copyJoinRuntimeFilterIndexAnalysisDescriptors(*this);
     cloned_step->setStepDescription(*this);
     return cloned_step;
 }
@@ -5309,10 +5316,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         /// matched, exactly as in a single-node read. A granule skipped this way is reported to the
         /// coordinator as read, so the work is not handed to another replica instead.
         ///
-        /// A read that never got a descriptor - they are attached while a plan is optimized and are not
-        /// serialized - leaves `runtime_prune_primary_key` and `runtime_skip_indexes` empty below and reads
-        /// its share unpruned. That is a loss of coverage, not of correctness, and it is what still happens
-        /// for a plan shipped with `make_distributed_plan`.
+        /// Descriptors are attached by a plan optimization, so a replica has them whether it planned the
+        /// query itself or optimized a plan it deserialized. A read that has none leaves
+        /// `runtime_prune_primary_key` and `runtime_skip_indexes` empty below and reads its share unpruned,
+        /// which costs coverage, not correctness; `make_distributed_plan` still reads that way.
         && indexes.has_value())
     {
         /// The PK path only needs the data-read safety checks above; only the secondary skip-index
@@ -6952,12 +6959,11 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
         query_info.prewhere_info->serialize(ctx);
 
     /// `join_runtime_filters_for_index_analysis` (the descriptors that drive left-side granule pruning
-    /// for `enable_join_runtime_filters_index_analysis`) is intentionally not serialized: the worker
-    /// rebuilds a fresh `ReadFromMergeTree` in `deserialize` without these descriptors, so the pruning is
-    /// simply skipped on distributed reads. Results stay correct (the read just does no runtime pruning);
-    /// only the optimization is lost. This mirrors the parallel-replicas guard in `initializePipeline`.
-    /// Propagating the descriptors to worker plans is a follow-up. The setting's description documents
-    /// this no-op, and `05153_join_runtime_filters_index_analysis_distributed_noop` pins it.
+    /// for `enable_join_runtime_filters_index_analysis`) is not serialized, and does not need to be: the
+    /// worker rebuilds a fresh `ReadFromMergeTree` in `deserialize` and then optimizes the plan it
+    /// received, which attaches its own descriptors. A read that ends up without them reads its share
+    /// unpruned - correct, just unoptimized - which is what still happens with `make_distributed_plan`.
+    /// `05153_join_runtime_filters_index_analysis_modes` pins which modes prune.
 
     /// Bucketed reads exist only since query-plan serialization version 2. If the peer only understands
     /// version 1, throw a clear error rather than write bytes it would misread (the deserialize side checks

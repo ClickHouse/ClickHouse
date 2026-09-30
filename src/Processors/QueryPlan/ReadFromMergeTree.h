@@ -703,12 +703,12 @@ private:
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
-    /// optimization. Carried over to a projection read by copyJoinRuntimeFilterIndexAnalysisDescriptors,
-    /// but not by clone()/serialize()/deserialize(), so the pruning is intentionally skipped when the step
-    /// is rebuilt for distributed or parallel-replicas reads (results stay correct, only the optimization
-    /// is lost); propagating it there is a follow-up. This is part of the setting's documented contract
-    /// (see its description in `Settings.cpp`) and is pinned by
-    /// `05153_join_runtime_filters_index_analysis_distributed_noop`.
+    /// optimization, and carried over by copyJoinRuntimeFilterIndexAnalysisDescriptors whenever the step
+    /// is rebuilt - a projection read, a clone, a parallel-replicas read - because a rebuilt step is not
+    /// always optimized again afterwards. Not serialized: a replica that receives a plan packet attaches
+    /// its own while optimizing it. A read that ends up without them reads its share unpruned, which is
+    /// what still happens with `make_distributed_plan`, and is pinned by
+    /// `05153_join_runtime_filters_index_analysis_modes`.
     std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
