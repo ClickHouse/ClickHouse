@@ -6,6 +6,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/Logger.h>
 
+#include <atomic>
 #include <unordered_map>
 #include <mutex>
 #include <memory>
@@ -96,8 +97,9 @@ public:
     DeleteBitmapStore & deleteBitmapStore() { return *delete_bitmap_store; }
 
     /// Commit a write under a transaction, returning the commit sequence number of the commit point.
-    /// Throws if a lost commit reply resolves to a rollback.
-    CSN commitTransaction(MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & write);
+    /// Throws if a lost commit reply resolves to a rollback, or if @cancelled turns true while it is unresolved.
+    CSN commitTransaction(
+        MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & write, const std::atomic<bool> * cancelled = nullptr);
 
     /// Returns once every write that published a part into @partition_id before the call has left its commit.
     void waitForCommitsInFlight(const String & partition_id);

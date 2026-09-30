@@ -64,12 +64,24 @@ void rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept
         TransactionManager::instance().rollbackTransaction(txn);
 }
 
-/// The commit's Keeper reply was lost. The transaction log's updating thread resolves the transaction once
-/// it knows whether the csn entry exists. Polled rather than `waitStateChange`, which nothing wakes for a
-/// shutdown or a killed query: server shutdown kills queries long before it stops the transaction log.
-CSN waitForLostCommitReply(const MergeTreeTransactionPtr & txn, std::string_view kind)
+/// Why a lost-reply wait has to give up, or empty while it may go on. Server shutdown kills queries and
+/// cancels background merges and mutations long before it stops the transaction log.
+std::string_view reasonToStopWaiting(const std::atomic<bool> * cancelled)
 {
-    const auto & manager = TransactionManager::instance();
+    if (cancelled && cancelled->load())
+        return "a cancelled background task";
+    if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+        return "a killed query";
+    if (TransactionManager::instance().isShuttingDown())
+        return "shutdown";
+    return {};
+}
+
+/// The commit's Keeper reply was lost. The transaction log's updating thread resolves the transaction once
+/// it knows whether the csn entry exists. Polled rather than `waitStateChange`, which nothing wakes for
+/// the reasons above.
+CSN waitForLostCommitReply(const MergeTreeTransactionPtr & txn, std::string_view kind, const std::atomic<bool> * cancelled)
+{
     while (true)
     {
         const auto state = txn->getState();
@@ -80,11 +92,10 @@ CSN waitForLostCommitReply(const MergeTreeTransactionPtr & txn, std::string_view
             throw Exception(ErrorCodes::ABORTED,
                 "UNIQUE KEY {}: transaction {} lost its commit reply and was rolled back, retry the query", kind, txn->tid);
 
-        const bool query_killed = CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled();
-        if (query_killed || manager.isShuttingDown())
+        if (const auto reason = reasonToStopWaiting(cancelled); !reason.empty())
             throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
                 "UNIQUE KEY {}: transaction {} lost its commit reply and is still {}, stopped waiting on {}",
-                kind, txn->tid, state, query_killed ? "a killed query" : "shutdown");
+                kind, txn->tid, state, reason);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
@@ -160,7 +171,8 @@ MergeTreeTransactionHolder beginUniqueKeyTransaction(const ContextPtr & context,
     return beginUniqueKeyTransaction(context->getCurrentTransaction(), operation, /*source_parts=*/{});
 }
 
-CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & write)
+CSN UniqueKeyTxnManager::commitTransaction(
+    MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & write, const std::atomic<bool> * cancelled)
 {
     const MergeTreeTransactionPtr txn = transaction.getTransaction();
     chassert(txn, "UNIQUE KEY commit requires the transaction the part was written under");
@@ -214,7 +226,7 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
         {
             LOG_DEBUG(log, "UNIQUE KEY {} (partition {}): lost the commit reply, waiting for tid {} to resolve",
                 kind, partition_id, txn->tid);
-            csn = waitForLostCommitReply(txn, kind);
+            csn = waitForLostCommitReply(txn, kind, cancelled);
         }
 
         LOG_TRACE(log, "UNIQUE KEY {} (partition {}): committed tid {} at csn {}",

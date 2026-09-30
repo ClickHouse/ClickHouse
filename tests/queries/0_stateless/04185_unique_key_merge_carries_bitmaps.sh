@@ -13,6 +13,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_unique_key 1"
 
+# The name of table `$1`'s one active part matching `$2`.
+part_where() {
+    $CLICKHOUSE_CLIENT --query "
+        SELECT name FROM system.parts WHERE database = currentDatabase() AND table = '$1' AND active AND $2"
+}
+
 CLEANUP_SETTINGS="merge_selector_algorithm = 'Manual',
          min_bytes_for_wide_part = 0,
          old_parts_lifetime = 0,
@@ -31,29 +37,34 @@ UNIQUE KEY (id)
 ORDER BY (id)
 SETTINGS $CLEANUP_SETTINGS"
 
-# all_1_1_0 is the target; all_2_2_0 gives the merge a second source.
+# The first part is the target; the second gives the merge a second source.
 $CLICKHOUSE_CLIENT --query "INSERT INTO uk_carry SELECT number, 'a' FROM numbers(0, 10)"
 $CLICKHOUSE_CLIENT --query "INSERT INTO uk_carry SELECT number, 'b' FROM numbers(100, 10)"
 $CLICKHOUSE_CLIENT --query "DELETE FROM uk_carry WHERE id < 5"
 
+target=$(part_where uk_carry "min_block_number = (SELECT min(min_block_number) FROM system.parts
+    WHERE database = currentDatabase() AND table = 'uk_carry' AND active)")
+source=$(part_where uk_carry "rows > 0 AND name != '$target'")
+marker=$(part_where uk_carry "rows = 0")
+
 $CLICKHOUSE_CLIENT --query "
-    SELECT 'held_by_the_marker', name, unique_key_bitmap_versions FROM system.parts
-    WHERE database = currentDatabase() AND table = 'uk_carry' AND active AND rows = 0"
+    SELECT 'held_by_the_marker', arrayMap(x -> replaceAll(x, '$target', 'target'), unique_key_bitmap_versions)
+    FROM system.parts WHERE database = currentDatabase() AND table = 'uk_carry' AND active AND name = '$marker'"
 
 # The marker and one data part, NOT the target.
 $CLICKHOUSE_CLIENT --max_execution_time 60 --query "
-    SYSTEM SCHEDULE MERGE uk_carry PARTS 'all_2_2_0', 'all_3_3_0'"
+    SYSTEM SCHEDULE MERGE uk_carry PARTS '$source', '$marker'"
 $CLICKHOUSE_CLIENT --max_execution_time 60 --query "SYSTEM SYNC MERGES uk_carry"
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT 'carried_into_the_result', name,
-           arrayMap(x -> replaceRegexpOne(x, '^[0-9]+_for_', 'csn_for_'), unique_key_bitmap_versions)
+    SELECT 'carried_into_the_result',
+           arrayMap(x -> replaceAll(replaceRegexpOne(x, '^[0-9]+_for_', 'csn_for_'), '$target', 'target'), unique_key_bitmap_versions)
     FROM system.parts
-    WHERE database = currentDatabase() AND table = 'uk_carry' AND active AND name = 'all_2_3_1'"
+    WHERE database = currentDatabase() AND table = 'uk_carry' AND active AND rows > 0 AND name != '$target'"
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT 'target_untouched', name, unique_key_bitmap_versions FROM system.parts
-    WHERE database = currentDatabase() AND table = 'uk_carry' AND active AND name = 'all_1_1_0'"
+    SELECT 'target_untouched', unique_key_bitmap_versions FROM system.parts
+    WHERE database = currentDatabase() AND table = 'uk_carry' AND active AND name = '$target'"
 
 reclaimed=0
 wait_for_delete_empty_parts uk_carry "$CLICKHOUSE_DATABASE" 120 \
@@ -77,25 +88,29 @@ UNIQUE KEY (k)
 ORDER BY (k)
 SETTINGS $CLEANUP_SETTINGS"
 
-# all_1_1_0 is the target; all_2_2_0, all_3_3_0 and all_4_4_0 each overwrite a different pair of its keys.
+# The first part is the target; the next three each overwrite a different pair of its keys.
 $CLICKHOUSE_CLIENT --query "INSERT INTO uk_unpin SELECT number, 0 FROM numbers(6)"
 $CLICKHOUSE_CLIENT --query "INSERT INTO uk_unpin SELECT number, 1 FROM numbers(0, 2)"
 $CLICKHOUSE_CLIENT --query "INSERT INTO uk_unpin SELECT number, 2 FROM numbers(2, 2)"
 $CLICKHOUSE_CLIENT --query "INSERT INTO uk_unpin SELECT number, 3 FROM numbers(4, 2)"
 
+target=$(part_where uk_unpin "rows = 6")
+holders=$($CLICKHOUSE_CLIENT --query "
+    SELECT arrayStringConcat(groupArray(concat('''', name, '''')), ', ') FROM system.parts
+    WHERE database = currentDatabase() AND table = 'uk_unpin' AND active AND name != '$target' FORMAT TSVRaw")
+
 echo "versions_of_the_target $($CLICKHOUSE_CLIENT --query "
     SELECT count() FROM system.parts
     WHERE database = currentDatabase() AND table = 'uk_unpin' AND active
-      AND arrayExists(x -> x LIKE '%for_all_1_1_0', unique_key_bitmap_versions)")"
+      AND arrayExists(x -> x LIKE '%for_$target', unique_key_bitmap_versions)")"
 
 # The three holders, NOT the target: a merge that took it would absorb the kills instead.
-$CLICKHOUSE_CLIENT --max_execution_time 60 --query "
-    SYSTEM SCHEDULE MERGE uk_unpin PARTS 'all_2_2_0', 'all_3_3_0', 'all_4_4_0'"
+$CLICKHOUSE_CLIENT --max_execution_time 60 --query "SYSTEM SCHEDULE MERGE uk_unpin PARTS $holders"
 $CLICKHOUSE_CLIENT --max_execution_time 60 --query "SYSTEM SYNC MERGES uk_unpin"
 
 echo "carried_versions $($CLICKHOUSE_CLIENT --query "
     SELECT length(unique_key_bitmap_versions) FROM system.parts
-    WHERE database = currentDatabase() AND table = 'uk_unpin' AND active AND name = 'all_2_4_1'")"
+    WHERE database = currentDatabase() AND table = 'uk_unpin' AND active AND name != '$target'")"
 
 wait_for_delete_inactive_parts uk_unpin "$CLICKHOUSE_DATABASE" 30
 

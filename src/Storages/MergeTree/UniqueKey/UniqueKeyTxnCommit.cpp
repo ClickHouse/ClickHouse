@@ -32,8 +32,10 @@
 #include <base/EnumReflection.h>
 
 #include <algorithm>
+#include <chrono>
 #include <map>
 #include <optional>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -532,8 +534,6 @@ protected:
 
     bool resolveConflicts() override
     {
-        rejectUndeterminedTransactions("merge late-kill reconciliation");
-
         own_kills = computeMergeLateKills();
         own_part = request.merged_part;
 
@@ -636,7 +636,18 @@ void dropRolledBackResult(StorageMergeTree & storage, MergeTreeMutableDataPartPt
 
     try
     {
-        storage.tryRemovePartImmediately(std::move(part));
+        const auto part_info = part->info;
+        MergeTreeData::DataPartPtr to_remove = std::move(part);
+        for (size_t attempt = 1; attempt <= 10; ++attempt)
+        {
+            if (storage.tryRemovePartImmediately(std::move(to_remove)))
+                return;
+            /// A concurrent reader, such as the asynchronous metrics' `totalRows`, can hold the part for a moment.
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            to_remove = storage.getPartIfExists(part_info, {MergeTreeDataPartState::Outdated});
+            if (!to_remove)
+                return;
+        }
     }
     catch (...)
     {
@@ -652,7 +663,7 @@ void UniqueKeyTxnCommit::merge(StorageMergeTree & storage, MergeRequest request)
     try
     {
         MergeCommit op(storage, request);
-        storage.uniqueKeyTxnManager().commitTransaction(request.transaction, op);
+        storage.uniqueKeyTxnManager().commitTransaction(request.transaction, op, request.cancelled);
         late_kills = op.lateKills();
     }
     catch (...)
