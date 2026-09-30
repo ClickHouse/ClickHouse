@@ -27,6 +27,10 @@
 [('instance','host2')]	2023-11-14 22:13:20.000	15
 [('instance','host3')]	2023-11-14 22:13:20.000	5
 [('instance','host1')]	2023-11-14 22:13:20.000	5
+-- timestamp(sort_desc(up)): timestamp() keeps the order fixed by sort_desc() (30, 20, 10 before timestamp)
+[('instance','host1')]	2023-11-14 22:13:20.000	1700000000
+[('instance','host3')]	2023-11-14 22:13:20.000	1700000000
+[('instance','host2')]	2023-11-14 22:13:20.000	1700000000
 -- label_replace(sort_desc(up), ...): label changes keep the order fixed by sort_desc()
 [('__name__','up'),('instance','host1'),('note','x')]	2023-11-14 22:13:20.000	30
 [('__name__','up'),('instance','host3'),('note','x')]	2023-11-14 22:13:20.000	20

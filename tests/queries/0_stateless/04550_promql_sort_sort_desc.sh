@@ -58,6 +58,9 @@ promql_client -q "-sort(up)"
 echo "-- abs(sort(up - 25)): abs() keeps the order fixed by sort() (-15, -5, 5 before abs)"
 promql_client -q "abs(sort(up - 25))"
 
+echo "-- timestamp(sort_desc(up)): timestamp() keeps the order fixed by sort_desc() (30, 20, 10 before timestamp)"
+promql_client -q "timestamp(sort_desc(up))"
+
 echo "-- label_replace(sort_desc(up), ...): label changes keep the order fixed by sort_desc()"
 promql_client -q "label_replace(sort_desc(up), 'note', 'x', 'instance', '.*')"
 
