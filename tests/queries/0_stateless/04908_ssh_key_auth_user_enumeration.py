@@ -2,21 +2,15 @@
 # Tags: no-fasttest, no-openssl-fips
 # no-fasttest: the SSH handshake is only compiled into a server built with SSH support.
 # no-openssl-fips: creates an ssh-ed25519 credential, which FIPS builds reject.
-"""Test that the SSH-key handshake does not reveal whether a user exists.
+"""Test that SSH-key authentication does not reveal whether a user exists.
 
-A client asks for SSH-key authentication by prefixing the user name with a marker, and the server
-answers with a challenge to sign. The server used to look the user up and check for an `ssh_key`
-credential before sending that challenge, so the three user states answered differently: a user
-with an SSH key got the challenge, a user with a password got "Expected authentication with SSH
-key", and an unknown name got "There is no user ...". Telling them apart needed no key at all,
-which made the handshake a way to enumerate user names.
+A client asks for it by putting a marker in front of the user name, and the server answers with a
+challenge to sign. Every name must get that far - one with an SSH key, one with a password, one
+that nobody has - and all three must then fail identically apart from the name itself.
 
-The client asks for SSH-key authentication only when it holds a private key to sign with, so it
-cannot reach the other two states. This test speaks the native protocol over a raw socket
-instead: it requests a challenge for each name and answers with garbage. All three attempts fail,
-and they must fail the same way.
-
-https://github.com/ClickHouse/ClickHouse/pull/121704
+The client asks for SSH-key authentication only when it holds a private key, so it cannot reach
+the last two cases. This test speaks the native protocol over a raw socket instead, asking for a
+challenge for each name and answering with garbage.
 """
 
 import os
@@ -39,19 +33,17 @@ CLIENT = [
 
 TIMEOUT = 20
 
-# Packet types, from src/Core/Protocol.h.
+# Packet types of the native protocol.
 CLIENT_HELLO = 0
 CLIENT_SSH_CHALLENGE_REQUEST = 11
 CLIENT_SSH_CHALLENGE_RESPONSE = 12
 SERVER_EXCEPTION = 2
 SERVER_SSH_CHALLENGE = 18
 
-# A user name behind this marker is a request for SSH-key authentication. The misspelling is the
-# server's own, see `EncodedUserInfo` in src/Core/Protocol.h.
+# A user name behind this marker is what asks for SSH-key authentication.
 SSH_KEY_MARKER = " SSH KEY AUTHENTICATION "
 
-# The server refuses the SSH handshake below `DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION`
-# (src/Core/ProtocolDefines.h), so claim at least that revision.
+# The oldest protocol revision that supports the SSH handshake; the server refuses older ones.
 REVISION = 54466
 
 AUTHENTICATION_FAILED = 516
@@ -131,12 +123,12 @@ def ssh_handshake(user):
     hello = (
         write_varuint(CLIENT_HELLO)
         + write_string("probe")  # client name
-        + write_varuint(24)  # client version major
-        + write_varuint(3)  # client version minor
+        + write_varuint(24)      # client version major
+        + write_varuint(3)       # client version minor
         + write_varuint(REVISION)
-        + write_string("")  # default database
+        + write_string("")       # default database
         + write_string(SSH_KEY_MARKER + user)
-        + write_string("")  # an empty password completes the SSH-key request
+        + write_string("")       # empty password
     )
 
     with socket.create_connection((HOST, PORT), timeout=TIMEOUT) as sock:
