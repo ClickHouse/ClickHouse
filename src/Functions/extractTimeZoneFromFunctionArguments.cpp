@@ -1,7 +1,12 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
@@ -80,5 +85,31 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAn
     return DateLUT::instance();
 }
 
+DataTypePtr getArgumentTypeWithTimeZone(const IFunctionBase & function, const IDataType & argument_type, const IColumn * time_zone_column)
+{
+    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&function);
+    const bool takes_time_zone = (adaptor && dynamic_cast<const FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()))
+        || function.getName() == "toString";
+    if (!takes_time_zone || !time_zone_column)
+        return nullptr;
+
+    const auto full_column = time_zone_column->convertToFullColumnIfLowCardinality();
+    const auto * time_zone_const = checkAndGetColumnConstStringOrFixedString(full_column.get());
+    if (!time_zone_const)
+        return nullptr;
+    const String time_zone = time_zone_const->getValue<String>();
+
+    const IDataType * type = &argument_type;
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type))
+        type = low_cardinality_type->getDictionaryType().get();
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type))
+        type = nullable_type->getNestedType().get();
+
+    if (typeid_cast<const DataTypeDateTime *>(type))
+        return std::make_shared<DataTypeDateTime>(time_zone);
+    if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(type))
+        return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), time_zone);
+    return nullptr;
 }
 
+}
