@@ -393,8 +393,8 @@ BUILDX_TIMEOUT_MESSAGE = "ERROR: docker buildx timed out"
 # is ambiguous (OOM, external kill), so only this proves the expiry. Same discrimination
 # as clickhouse_proc.py's _TIMEOUT_KILL_DIAG.
 BUILDX_TIMEOUT_KILL_DIAG = "sending signal KILL to command"
-# Both sentinels must go to stderr: Shell.run matches retry_errors against stderr only.
-BUILDX_RETRY_ERRORS += [BUILDX_TIMEOUT_MESSAGE, BUILDX_TIMEOUT_KILL_DIAG]
+# Neither sentinel is in `BUILDX_RETRY_ERRORS`: an expired build is rebuilt against the
+# next apt mirror by `should_try_next_mirror` rather than retried on the one that stalled.
 BUILDX_TIMEOUT_KILL_AFTER = 120
 # A per-invocation bound does not bound the job: main() loops over os variants and tags,
 # so the invocation count is not fixed. Keep back this much of the cap for recording a
