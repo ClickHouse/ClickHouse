@@ -2597,7 +2597,8 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
             if (it == group_by_ttl.end())
                 group_by_ttl.emplace(name, preserved);
             else
-                it->second.ttl_finished = preserved.ttl_finished;
+                /// A row the patch moved past the merge time is live again, so the rule is not finished.
+                it->second.ttl_finished = preserved.ttl_finished && it->second.max <= global_ctx->time_of_merge;
         }
         /// The recalculation step already folded its throwaway GROUP BY values into the part's
         /// min/max, and `updatePartMinMaxTTL` only accumulates - and skips finished entries
