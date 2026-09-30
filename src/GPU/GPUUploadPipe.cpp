@@ -223,25 +223,12 @@ ColumnUploadPipe::~ColumnUploadPipe()
     }
 }
 
-void ColumnUploadPipe::makeStagingWritable()
-{
-    if (!in_flight)
-        return;
-
-    checkCuda(cudaEventSynchronize(copied.get()), "Cannot wait for an upload to the device");
-    in_flight = false;
-
-    staged_data.clear();
-    staged_offsets.clear();
-    staging_bytes = 0;
-}
-
 void ColumnUploadPipe::makeRoomFor(size_t bytes)
 {
     if (staging_bytes != 0 && staging_bytes + bytes > stage_bytes)
         sendStagedToDevice();
 
-    makeStagingWritable();
+    waitForUploads();
 }
 
 void ColumnUploadPipe::stage(const IColumn & column)
@@ -304,7 +291,7 @@ std::span<char> ColumnUploadPipe::reserveRaw(size_t max_bytes)
     if (staging_bytes >= stage_bytes)
         sendStagedToDevice();
 
-    makeStagingWritable();
+    waitForUploads();
 
     staged_data.reserve(stage_bytes);
     return {staged_data.data() + staged_data.size(), std::min(max_bytes, stage_bytes - staged_data.size())};
@@ -350,11 +337,15 @@ void ColumnUploadPipe::waitForUploads()
 
     checkCuda(cudaEventSynchronize(copied.get()), "Cannot wait for an upload to the device");
     in_flight = false;
+
+    staged_data.clear();
+    staged_offsets.clear();
+    staging_bytes = 0;
 }
 
 void ColumnUploadPipe::reset()
 {
-    makeStagingWritable();
+    waitForUploads();
 
     std::visit([](auto & column) { column.clear(); }, device);
 
