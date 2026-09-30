@@ -1,10 +1,10 @@
-Enum8(\'7\' = 3)
-7
-Enum8(\'7\' = 3)
-['UInt8','UInt8']
-['UInt8','UInt8']	['UInt8','UInt8']
-Int64	UInt64
-['UInt8','UInt8']
-String	2023-10-29 02:30:00
-String	abc
-Tuple(Int64, UInt64)
+['7']
+['7']
+['7']
+UInt64	42
+IPv4	1.2.3.4
+Map(String, UInt64)
+['Int64','UInt64']
+DateTime(\'Europe/Berlin\')	1698543000
+['2020-01-02']
+['7']
