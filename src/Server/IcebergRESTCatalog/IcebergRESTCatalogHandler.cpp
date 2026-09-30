@@ -22,6 +22,9 @@
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogStorage.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogTableMetadata.h>
 
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/scope_guard_safe.h>
+
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
 
@@ -43,6 +46,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int QUERY_IS_PROHIBITED;
     extern const int READONLY;
     extern const int KEEPER_EXCEPTION;
@@ -320,6 +324,9 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
             case IcebergRESTOperation::DropTable:
                 handleDropTable(*warehouse, *match, uri, response, *context);
                 return;
+            case IcebergRESTOperation::UpdateTable:
+                handleUpdateTable(*warehouse, *match, request, response, *context);
+                return;
             default:
                 sendError(
                     response,
@@ -451,12 +458,16 @@ void IcebergRESTCatalogHandler::handleNamespaceExists(const IcebergRESTCatalogWa
     sendNoContent(response);
 }
 
+void IcebergRESTCatalogHandler::checkNotReadonly(const Context & context, const String & action)
+{
+    if (context.getSettingsRef()[Setting::readonly])
+        throw Exception(ErrorCodes::READONLY, "Cannot {} in readonly mode", action);
+}
+
 void IcebergRESTCatalogHandler::checkDDLAllowed(const Context & context, const String & action)
 {
-    const auto & settings = context.getSettingsRef();
-    if (settings[Setting::readonly])
-        throw Exception(ErrorCodes::READONLY, "Cannot {} in readonly mode", action);
-    if (!settings[Setting::allow_ddl])
+    checkNotReadonly(context, action);
+    if (!context.getSettingsRef()[Setting::allow_ddl])
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Cannot {}. DDL queries are prohibited for the user", action);
 }
 
@@ -754,6 +765,138 @@ void IcebergRESTCatalogHandler::handleCreateTable(
     LOG_INFO(log, "Created table {}.{} at {}", joinNamespace(ns), name, pointer.metadata_location);
     /// Answer from memory. The table is registered, so a failed read-back must not turn into a 500.
     sendLoadTableResult(pointer.metadata_location, metadata, response);
+}
+
+void IcebergRESTCatalogHandler::handleUpdateTable(
+    const IcebergRESTCatalogWarehouse & warehouse,
+    const IcebergRESTRouteMatch & match,
+    HTTPServerRequest & request,
+    HTTPServerResponse & response,
+    const Context & context) const
+{
+    checkNotReadonly(context, "commit to table");
+
+    const auto ns = getNamespaceOrSendNotFound(warehouse, match, response);
+    if (!ns)
+        return;
+    const auto & table = match.path_params.at("table");
+
+    const auto body = readRequestBody(request, response, MAX_REQUEST_BODY_SIZE);
+    if (!body)
+        return;
+
+    const auto pointer = warehouse.store->getTable(*ns, table);
+    if (!pointer)
+    {
+        sendNoSuchTable(response, *ns, table);
+        return;
+    }
+    const auto current = readTableMetadata(warehouse, *pointer);
+
+    Poco::JSON::Object::Ptr updated;
+    try
+    {
+        const auto json = Poco::JSON::Parser().parse(*body).extract<Poco::JSON::Object::Ptr>();
+        const auto requirements = json->getArray("requirements");
+        const auto updates = json->getArray("updates");
+        if (!requirements || !updates)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'requirements' and 'updates' must be arrays");
+
+        if (const auto failed = checkTableRequirements(*current, *requirements))
+        {
+            sendError(response, Poco::Net::HTTPResponse::HTTP_CONFLICT, "CommitFailedException", *failed);
+            return;
+        }
+
+        updated = applyTableUpdates(*current, *updates, pointer->metadata_location);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+        {
+            sendError(response, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "UnsupportedOperationException", e.message());
+            return;
+        }
+        else if (e.code() == ErrorCodes::BAD_ARGUMENTS)
+        {
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
+                "BadRequestException",
+                fmt::format("Malformed commit request: {}", e.message()));
+            return;
+        }
+        else
+        {
+            /// Not caused by the client. Let the HTTP layer report an internal error.
+            throw;
+        }
+    }
+    catch (const Poco::Exception & e)
+    {
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
+            "BadRequestException",
+            fmt::format("Malformed commit request: {}", e.displayText()));
+        return;
+    }
+
+    /// Outside the try: a bad stored file name is a server problem, not a malformed request.
+    const String new_location = nextMetadataLocation(*updated, pointer->metadata_location);
+
+    /// Write the metadata.json to object storage.
+    const auto object_key = warehouse.objectKey(new_location);
+    writeNewObject(*warehouse.object_storage, object_key, toJSONString(*updated, 4), server.context()->getWriteSettings());
+
+    using UpdateTableResult = KeeperIcebergRESTCatalogStore::UpdateTableResult;
+    UpdateTableResult result;
+    try
+    {
+        /// Update Keeper.
+        result = warehouse.store->updateTable(*ns, table, *pointer, {.uuid = pointer->uuid, .metadata_location = new_location});
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        /// The set may have been applied, so the new file must stay. The client reloads the table to find out.
+        LOG_WARNING(log, "Commit of {}.{} to {} has an unknown outcome: {}", joinNamespace(*ns), table, new_location, e.message());
+        sendError(response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, "CommitStateUnknownException", "Commit state is unknown");
+        return;
+    }
+
+    if (result != UpdateTableResult::Updated)
+        warehouse.object_storage->removeObjectIfExists(StoredObject(object_key));
+
+    if (result == UpdateTableResult::VersionMismatch)
+    {
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_CONFLICT,
+            "CommitFailedException",
+            fmt::format("Table {}.{} was updated concurrently, retry the commit", joinNamespace(*ns), table));
+        return;
+    }
+    if (result == UpdateTableResult::UuidMismatch)
+    {
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_CONFLICT,
+            "CommitFailedException",
+            fmt::format("Table {}.{} was dropped and re-created, reload the table", joinNamespace(*ns), table));
+        return;
+    }
+    if (result == UpdateTableResult::TableMissing)
+    {
+        sendNoSuchTable(response, *ns, table);
+        return;
+    }
+
+    LOG_INFO(log, "Committed table {}.{}: {} -> {}", joinNamespace(*ns), table, pointer->metadata_location, new_location);
+
+    Poco::JSON::Object response_body;
+    response_body.set("metadata-location", new_location);
+    response_body.set("metadata", updated);
+    sendJSON(response, response_body, Poco::Net::HTTPResponse::HTTP_OK);
 }
 
 void IcebergRESTCatalogHandler::handleDropTable(
