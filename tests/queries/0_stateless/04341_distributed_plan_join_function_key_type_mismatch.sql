@@ -1,5 +1,5 @@
 SET enable_parallel_replicas = 0;
--- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0.
+-- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so pin it to 0.
 SET max_rows_to_group_by = 0;
 
 DROP TABLE IF EXISTS t1_04341;
@@ -19,8 +19,7 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, serial
     enable_parallel_replicas = 0, distributed_plan_fallback_to_local_execution = 0;
 
 -- A compatible function-wrapped key still distributes via shuffle and returns correct results.
--- The settings must be on the statement: a SETTINGS clause inside the subquery does not reach the
--- outer plan, which then runs locally without any distributed decision.
+-- Settings inside the subquery do not reach the outer plan, so they go on the statement.
 SELECT count() FROM (
     SELECT DISTINCT t2_04341.val
     FROM t1_04341 INNER JOIN t2_04341 ON intDiv(t1_04341.key, 2) = t2_04341.key

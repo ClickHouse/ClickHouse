@@ -129,9 +129,7 @@ SETTINGS force_aggregation_in_order = 1, make_distributed_plan = 1, enable_casca
     distributed_plan_execute_locally = 1, max_rows_to_group_by = 0,
     distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
--- A plan that receives no exchanges (the read stays below the broadcast threshold) with a window
--- step still distributes: the whole plan ships as one serialized fragment, so it must not fail on
--- the fragment serializability check.
+-- Below the broadcast threshold the plan has no exchange and ships as one fragment, so the window step must serialize.
 SELECT '-- 13. Exchange-free plan with a window distributes';
 SELECT DISTINCT sum(x) OVER () FROM t_gating
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 0, distributed_plan_execute_locally = 1,

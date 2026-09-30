@@ -56,7 +56,7 @@ SELECT 'BEYOND THRESHOLD distributed', a, substring(payload, 1, 4) FROM t_dist_l
 SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT 'WITH TIES local', count() FROM (SELECT a FROM t_dist_lazy ORDER BY a % 7 LIMIT 3 WITH TIES SETTINGS make_distributed_plan = 0);
--- A `SETTINGS` clause must be outside the subquery does to apply to the statement that executes
+-- Settings inside the subquery do not reach the outer plan, so they go on the statement.
 SELECT 'WITH TIES distributed', count() FROM (SELECT a FROM t_dist_lazy ORDER BY a % 7 LIMIT 3 WITH TIES)
 SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0, max_rows_to_group_by = 0;
 

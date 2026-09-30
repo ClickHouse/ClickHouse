@@ -38,9 +38,7 @@ SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_1' GROUP BY _table;
 SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_2' GROUP BY _table;
 
 SYSTEM FLUSH LOGS query_log;
--- The child plans executed as distributed-plan tasks (`main`, `stage_*`) of the statements above. The outer plan
--- falls back on `ReadFromMerge` by design, so a lost child distribution shows only here, not in the rows.
--- Only rows of this run: the test's own `Merge` table is created at the start of the run.
+-- The outer plan over `ReadFromMerge` falls back, so only these task rows show that the child plans distributed.
 WITH (SELECT metadata_modification_time FROM system.tables WHERE database = currentDatabase() AND name = 'm_dlk') AS run_start
 SELECT countIf(query = 'main' OR query LIKE 'stage\_%') > 0 AS children_executed_distributed
 FROM system.query_log
