@@ -10,13 +10,13 @@ namespace DB::GPU
 class CudfHashJoin
 {
 public:
-    CudfHashJoin(GPUElementType key_element_type, GPUSpan<GPUElementType> payload_element_types);
-    ~CudfHashJoin();
+    __host__ CudfHashJoin(GPUElementType key_element_type, GPUSpan<GPUElementType> payload_element_types);
+    __host__ ~CudfHashJoin();
 
     CudfHashJoin(const CudfHashJoin &) = delete;
     CudfHashJoin & operator=(const CudfHashJoin &) = delete;
 
-    void build(DeviceFixedColumn keys, GPUSpan<DeviceFixedColumn> payloads);
+    __host__ void build(DeviceFixedColumn keys, GPUSpan<DeviceFixedColumn> payloads);
 
 private:
     friend class CudfHashJoinProbe;
@@ -28,16 +28,16 @@ private:
 class CudfHashJoinProbe
 {
 public:
-    CudfHashJoinProbe(const CudfHashJoin & join, rmm::cuda_stream_view stream);
-    ~CudfHashJoinProbe();
+    __host__ CudfHashJoinProbe(const CudfHashJoin & join, rmm::cuda_stream_view stream);
+    __host__ ~CudfHashJoinProbe();
 
     CudfHashJoinProbe(const CudfHashJoinProbe &) = delete;
     CudfHashJoinProbe & operator=(const CudfHashJoinProbe &) = delete;
 
-    size_t probe(DeviceFixedColumn keys);
+    __host__ size_t probe(DeviceFixedColumn keys);
 
-    DeviceFixedColumn probeRowIndices() const;
-    DeviceFixedColumn gatheredPayload(size_t index) const;
+    __host__ DeviceFixedColumn probeRowIndices() const;
+    __host__ DeviceFixedColumn gatheredPayload(size_t index) const;
 
 private:
     struct State;

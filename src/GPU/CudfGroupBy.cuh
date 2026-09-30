@@ -10,18 +10,18 @@ namespace DB::GPU
 class CudfGroupBy
 {
 public:
-    CudfGroupBy(GPUSpan<GPUElementType> keys, GPUSpan<GPUGroupByValue> values, rmm::cuda_stream_view stream);
-    ~CudfGroupBy();
+    __host__ CudfGroupBy(GPUSpan<GPUElementType> keys, GPUSpan<GPUGroupByValue> values, rmm::cuda_stream_view stream);
+    __host__ ~CudfGroupBy();
 
     CudfGroupBy(const CudfGroupBy &) = delete;
     CudfGroupBy & operator=(const CudfGroupBy &) = delete;
 
-    void addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values);
+    __host__ void addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values);
 
-    size_t finalize();
+    __host__ size_t finalize();
 
-    DeviceColumnView key(size_t index) const;
-    DeviceColumnView value(size_t index) const;
+    __host__ DeviceColumnView key(size_t index) const;
+    __host__ DeviceColumnView value(size_t index) const;
 
 private:
     struct State;

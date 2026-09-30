@@ -19,7 +19,7 @@ namespace DB::GPU
 namespace
 {
 
-GPUElementType integerKeyTypeOf(GPUElementType key_element_type)
+__host__ GPUElementType integerKeyTypeOf(GPUElementType key_element_type)
 {
     if (!isInteger(key_element_type))
         throwGPUError(("a join key of element type " + std::to_string(static_cast<int>(key_element_type)) + " is not an integer").c_str());
@@ -27,7 +27,7 @@ GPUElementType integerKeyTypeOf(GPUElementType key_element_type)
     return key_element_type;
 }
 
-void checkCount(size_t actual, size_t expected, const std::string & what)
+__host__ void checkCount(size_t actual, size_t expected, const std::string & what)
 {
     if (actual != expected)
         throwGPUError((std::to_string(actual) + " " + what + ", expected " + std::to_string(expected)).c_str());
@@ -44,24 +44,24 @@ struct CudfHashJoin::State
     std::unique_ptr<cudf::hash_join> hash_join;
     bool built = false;
 
-    State(GPUElementType key_element_type_, GPUSpan<GPUElementType> payload_element_types_)
+    __host__ State(GPUElementType key_element_type_, GPUSpan<GPUElementType> payload_element_types_)
         : key_element_type(integerKeyTypeOf(key_element_type_))
         , payload_element_types(payload_element_types_.begin(), payload_element_types_.end())
     {
     }
 };
 
-CudfHashJoin::CudfHashJoin(GPUElementType key_element_type, GPUSpan<GPUElementType> payload_element_types)
+__host__ CudfHashJoin::CudfHashJoin(GPUElementType key_element_type, GPUSpan<GPUElementType> payload_element_types)
 {
     state = new State(key_element_type, payload_element_types);
 }
 
-CudfHashJoin::~CudfHashJoin()
+__host__ CudfHashJoin::~CudfHashJoin()
 {
     delete state;
 }
 
-void CudfHashJoin::build(DeviceFixedColumn keys, GPUSpan<DeviceFixedColumn> payloads)
+__host__ void CudfHashJoin::build(DeviceFixedColumn keys, GPUSpan<DeviceFixedColumn> payloads)
 {
     if (state->built)
         throwGPUError("the hash table was built twice");
@@ -99,14 +99,14 @@ struct CudfHashJoinProbe::State
     std::unique_ptr<cudf::table> gathered_payloads;
     bool probed = false;
 
-    State(const CudfHashJoin::State & join_, rmm::cuda_stream_view stream_)
+    __host__ State(const CudfHashJoin::State & join_, rmm::cuda_stream_view stream_)
         : join(join_)
         , stream(stream_)
     {
     }
 };
 
-CudfHashJoinProbe::CudfHashJoinProbe(const CudfHashJoin & join, rmm::cuda_stream_view stream)
+__host__ CudfHashJoinProbe::CudfHashJoinProbe(const CudfHashJoin & join, rmm::cuda_stream_view stream)
 {
     if (!join.state->built)
         throwGPUError("a probe of a hash table that is not built");
@@ -114,12 +114,12 @@ CudfHashJoinProbe::CudfHashJoinProbe(const CudfHashJoin & join, rmm::cuda_stream
     state = new State(*join.state, stream);
 }
 
-CudfHashJoinProbe::~CudfHashJoinProbe()
+__host__ CudfHashJoinProbe::~CudfHashJoinProbe()
 {
     delete state;
 }
 
-size_t CudfHashJoinProbe::probe(DeviceFixedColumn keys)
+__host__ size_t CudfHashJoinProbe::probe(DeviceFixedColumn keys)
 {
     if (keys.rows == 0)
         throwGPUError("an empty block of the left table");
@@ -160,7 +160,7 @@ size_t CudfHashJoinProbe::probe(DeviceFixedColumn keys)
     return num_matches;
 }
 
-DeviceFixedColumn CudfHashJoinProbe::probeRowIndices() const
+__host__ DeviceFixedColumn CudfHashJoinProbe::probeRowIndices() const
 {
     if (!state->probed)
         throwGPUError("a probe's result was asked for before the probe ran");
@@ -173,7 +173,7 @@ DeviceFixedColumn CudfHashJoinProbe::probeRowIndices() const
     return {GPUElementType::UInt32, reinterpret_cast<const char *>(state->probe_indices->data()), state->probe_indices->size()};
 }
 
-DeviceFixedColumn CudfHashJoinProbe::gatheredPayload(size_t index) const
+__host__ DeviceFixedColumn CudfHashJoinProbe::gatheredPayload(size_t index) const
 {
     if (!state->probed)
         throwGPUError("a probe's result was asked for before the probe ran");

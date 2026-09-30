@@ -35,28 +35,28 @@ constexpr size_t measurement_rows = 2UL << 20;
 
 constexpr double min_direct_cost_for_buckets = 2.0;
 
-unsigned blocksFor(size_t work)
+__host__ unsigned blocksFor(size_t work)
 {
     return static_cast<unsigned>(std::min<size_t>((work + threads_per_block - 1) / threads_per_block, max_blocks));
 }
 
-void checkCount(size_t actual, size_t expected, const std::string & what)
+__host__ void checkCount(size_t actual, size_t expected, const std::string & what)
 {
     if (actual != expected)
         throwGPUError((std::to_string(actual) + " " + what + ", expected " + std::to_string(expected)).c_str());
 }
 
-void checkLaunch(const std::string & what)
+__host__ void checkLaunch(const std::string & what)
 {
     checkCuda(cudaGetLastError(), "cannot launch the kernel that " + what);
 }
 
-rmm::cuda_stream_view computeStream()
+__host__ rmm::cuda_stream_view computeStream()
 {
     return StreamRegistry::get().compute;
 }
 
-bool isSigned(GPUElementType type)
+__host__ bool isSigned(GPUElementType type)
 {
     switch (type)
     {
@@ -70,7 +70,7 @@ bool isSigned(GPUElementType type)
     }
 }
 
-Fold foldOf(const GPUGroupByValue & value)
+__host__ Fold foldOf(const GPUGroupByValue & value)
 {
     const bool is_float = !isInteger(value.element_type);
     switch (value.aggregation)
@@ -85,7 +85,7 @@ Fold foldOf(const GPUGroupByValue & value)
     throwGPUError(("unknown aggregation " + std::to_string(static_cast<int>(value.aggregation))).c_str());
 }
 
-uint64_t identityOf(Fold fold)
+__host__ uint64_t identityOf(Fold fold)
 {
     switch (fold)
     {
@@ -107,7 +107,7 @@ uint64_t identityOf(Fold fold)
     return 0;
 }
 
-std::pair<Store, uint32_t> storeOf(const GPUGroupByValue & value)
+__host__ std::pair<Store, uint32_t> storeOf(const GPUGroupByValue & value)
 {
     if (value.aggregation == GPUAggregationKind::Sum)
         return {Store::Bits, 8};
@@ -118,7 +118,7 @@ std::pair<Store, uint32_t> storeOf(const GPUGroupByValue & value)
     return {Store::Truncate, static_cast<uint32_t>(sizeOf(value.element_type))};
 }
 
-GPUElementType leftIn(const GPUGroupByValue & value)
+__host__ GPUElementType leftIn(const GPUGroupByValue & value)
 {
     return value.aggregation == GPUAggregationKind::Sum ? value.result_type : value.element_type;
 }
@@ -133,7 +133,7 @@ struct Shape
     std::vector<Fold> folds;
     Identities identities;
 
-    Shape(GPUSpan<GPUElementType> key_element_types_, GPUSpan<GPUGroupByValue> values_)
+    __host__ Shape(GPUSpan<GPUElementType> key_element_types_, GPUSpan<GPUGroupByValue> values_)
         : key_element_types(key_element_types_.begin(), key_element_types_.end())
         , values(values_.begin(), values_.end())
     {
@@ -163,9 +163,9 @@ struct Shape
         }
     }
 
-    uint32_t numValues() const { return static_cast<uint32_t>(values.size()); }
+    __host__ uint32_t numValues() const { return static_cast<uint32_t>(values.size()); }
 
-    Chunk chunkAt(
+    __host__ Chunk chunkAt(
         GPUSpan<DeviceFixedColumn> keys,
         GPUSpan<DeviceFixedColumn> value_views,
         GPUSpan<DeviceFixedColumn> filter_columns,
@@ -213,13 +213,13 @@ struct Shape
 class KernelTimer
 {
 public:
-    KernelTimer()
+    __host__ KernelTimer()
     {
         checkCuda(cudaEventCreate(&started), "cannot create an event");
         checkCuda(cudaEventCreate(&finished), "cannot create an event");
     }
 
-    ~KernelTimer()
+    __host__ ~KernelTimer()
     {
         cudaEventDestroy(started);
         cudaEventDestroy(finished);
@@ -228,10 +228,10 @@ public:
     KernelTimer(const KernelTimer &) = delete;
     KernelTimer & operator=(const KernelTimer &) = delete;
 
-    void begin(rmm::cuda_stream_view stream) { checkCuda(cudaEventRecord(started, stream.value()), "cannot record an event"); }
-    void end(rmm::cuda_stream_view stream) { checkCuda(cudaEventRecord(finished, stream.value()), "cannot record an event"); }
+    __host__ void begin(rmm::cuda_stream_view stream) { checkCuda(cudaEventRecord(started, stream.value()), "cannot record an event"); }
+    __host__ void end(rmm::cuda_stream_view stream) { checkCuda(cudaEventRecord(finished, stream.value()), "cannot record an event"); }
 
-    double microseconds() const
+    __host__ double microseconds() const
     {
         checkCuda(cudaEventSynchronize(finished), "cannot wait for the kernel");
         float milliseconds = 0;
@@ -247,9 +247,9 @@ private:
 class GroupTable
 {
 public:
-    GroupTable() = default;
+    __host__ GroupTable() = default;
 
-    GroupTable(size_t requested, const Shape & shape, rmm::cuda_stream_view stream)
+    __host__ GroupTable(size_t requested, const Shape & shape, rmm::cuda_stream_view stream)
     {
         set = std::make_unique<Set>(
             cuco::extent<size_t>{requested},
@@ -273,13 +273,13 @@ public:
         checkLaunch("empties the accumulators of a table of groups");
     }
 
-    bool exists() const { return set != nullptr; }
+    __host__ bool exists() const { return set != nullptr; }
 
-    size_t getCapacity() const { return capacity; }
+    __host__ size_t getCapacity() const { return capacity; }
 
-    TableRef ref() const { return {.set = set->ref(cuco::op::insert_and_find), .slots = slots, .capacity = capacity, .accumulators = accumulators}; }
+    __host__ TableRef ref() const { return {.set = set->ref(cuco::op::insert_and_find), .slots = slots, .capacity = capacity, .accumulators = accumulators}; }
 
-    size_t room(size_t groups) const
+    __host__ size_t room(size_t groups) const
     {
         if (!set)
             return 0;
@@ -287,7 +287,7 @@ public:
         return fits > groups ? fits - groups : 0;
     }
 
-    void takeGroupsOf(const GroupTable & from, const Shape & shape, rmm::cuda_stream_view stream)
+    __host__ void takeGroupsOf(const GroupTable & from, const Shape & shape, rmm::cuda_stream_view stream)
     {
         checkCuda(
             cudaMemcpyAsync(
@@ -313,7 +313,7 @@ private:
 class BucketedPass
 {
 public:
-    BucketedPass(const Shape & shape, rmm::cuda_stream_view stream)
+    __host__ BucketedPass(const Shape & shape, rmm::cuda_stream_view stream)
         : buckets_in(0, stream)
         , buckets_out(0, stream)
         , indices_in(0, stream)
@@ -332,14 +332,14 @@ public:
         partial_records.resize(numPartials() * shape.values.size(), stream);
     }
 
-    bool fits(size_t rows, size_t groups) const
+    __host__ bool fits(size_t rows, size_t groups) const
     {
         return rows >= min_bucketed_rows && rows <= std::numeric_limits<uint32_t>::max() && groups <= numPartials() / 2;
     }
 
-    size_t numPartials() const { return size_t{num_buckets} * shared_capacity; }
+    __host__ size_t numPartials() const { return size_t{num_buckets} * shared_capacity; }
 
-    void run(const Chunk & chunk, const Shape & shape, TableRef table, Counters counters, rmm::cuda_stream_view stream)
+    __host__ void run(const Chunk & chunk, const Shape & shape, TableRef table, Counters counters, rmm::cuda_stream_view stream)
     {
         growBuffers(chunk.rows, stream);
         checkCuda(cudaMemsetAsync(num_overflow.data(), 0, sizeof(uint32_t), stream.value()), "cannot clear the overflow count");
@@ -376,7 +376,7 @@ public:
         checkLaunch("groups the buckets of a chunk");
     }
 
-    Partials partialsFrom(size_t offset, size_t count, const Shape & shape)
+    __host__ Partials partialsFrom(size_t offset, size_t count, const Shape & shape)
     {
         return {
             .keys = partial_keys.data() + offset,
@@ -385,11 +385,11 @@ public:
         };
     }
 
-    size_t numOverflowed(rmm::cuda_stream_view stream) const { return num_overflow.value(stream); }
-    const uint32_t * overflowRows() const { return overflow.data(); }
+    __host__ size_t numOverflowed(rmm::cuda_stream_view stream) const { return num_overflow.value(stream); }
+    __host__ const uint32_t * overflowRows() const { return overflow.data(); }
 
 private:
-    void growBuffers(size_t rows, rmm::cuda_stream_view stream)
+    __host__ void growBuffers(size_t rows, rmm::cuda_stream_view stream)
     {
         if (buckets_in.size() < rows)
         {
@@ -435,7 +435,7 @@ private:
 class PathChoice
 {
 public:
-    bool bucketed(size_t groups)
+    __host__ bool bucketed(size_t groups)
     {
         if (bucketed_cost && groups > 2 * groups_when_measured)
         {
@@ -450,11 +450,11 @@ public:
         return *bucketed_cost < *direct_cost;
     }
 
-    bool measuringBucketed() const { return !bucketed_cost; }
+    __host__ bool measuringBucketed() const { return !bucketed_cost; }
 
-    void sawDirect(double microseconds, size_t rows) { direct_cost = microseconds * 1000.0 / static_cast<double>(rows); }
+    __host__ void sawDirect(double microseconds, size_t rows) { direct_cost = microseconds * 1000.0 / static_cast<double>(rows); }
 
-    void sawBucketed(double microseconds, size_t rows, size_t groups)
+    __host__ void sawBucketed(double microseconds, size_t rows, size_t groups)
     {
         bucketed_cost = microseconds * 1000.0 / static_cast<double>(rows);
         groups_when_measured = groups;
@@ -485,7 +485,7 @@ struct RecordGroupBy::State
     size_t output_groups = 0;
     bool finalized = false;
 
-    State(GPUSpan<GPUElementType> key_element_types, GPUSpan<GPUGroupByValue> values)
+    __host__ State(GPUSpan<GPUElementType> key_element_types, GPUSpan<GPUGroupByValue> values)
         : shape(key_element_types, values)
         , buckets(shape, computeStream())
         , num_groups(0, computeStream())
@@ -493,11 +493,11 @@ struct RecordGroupBy::State
     {
     }
 
-    Counters counters() { return {.num_groups = num_groups.data(), .sentinel_seen = sentinel_seen.data()}; }
+    __host__ Counters counters() { return {.num_groups = num_groups.data(), .sentinel_seen = sentinel_seen.data()}; }
 
-    size_t room() const { return table.room(groups); }
+    __host__ size_t room() const { return table.room(groups); }
 
-    void ensureRoom(size_t more = min_chunk_rows)
+    __host__ void ensureRoom(size_t more = min_chunk_rows)
     {
         if (table.exists() && room() >= more)
             return;
@@ -514,9 +514,9 @@ struct RecordGroupBy::State
         table = std::move(larger);
     }
 
-    void countGroups() { groups = num_groups.value(computeStream()); }
+    __host__ void countGroups() { groups = num_groups.value(computeStream()); }
 
-    void aggregateDirectly(const Chunk & chunk, double & microseconds)
+    __host__ void aggregateDirectly(const Chunk & chunk, double & microseconds)
     {
         const rmm::cuda_stream_view stream = computeStream();
 
@@ -529,7 +529,7 @@ struct RecordGroupBy::State
         microseconds += timer.microseconds();
     }
 
-    void aggregateBucketed(Chunk chunk, double & microseconds)
+    __host__ void aggregateBucketed(Chunk chunk, double & microseconds)
     {
         const rmm::cuda_stream_view stream = computeStream();
 
@@ -566,7 +566,7 @@ struct RecordGroupBy::State
         }
     }
 
-    size_t aggregateChunk(
+    __host__ size_t aggregateChunk(
         GPUSpan<DeviceFixedColumn> keys,
         GPUSpan<DeviceFixedColumn> value_views,
         GPUSpan<DeviceFixedColumn> filter_columns,
@@ -596,17 +596,17 @@ struct RecordGroupBy::State
     }
 };
 
-RecordGroupBy::RecordGroupBy(GPUSpan<GPUElementType> key_element_types, GPUSpan<GPUGroupByValue> values)
+__host__ RecordGroupBy::RecordGroupBy(GPUSpan<GPUElementType> key_element_types, GPUSpan<GPUGroupByValue> values)
 {
     state = guarded("setting up a `GROUP BY`", [&] { return new State(key_element_types, values); });
 }
 
-RecordGroupBy::~RecordGroupBy()
+__host__ RecordGroupBy::~RecordGroupBy()
 {
     delete state;
 }
 
-double RecordGroupBy::addBatch(
+__host__ double RecordGroupBy::addBatch(
     GPUSpan<DeviceFixedColumn> keys, GPUSpan<DeviceFixedColumn> value_views, GPUSpan<DeviceFixedColumn> filter_columns, const GPUFilterProgram * filter)
 {
     if (state->finalized)
@@ -622,7 +622,7 @@ double RecordGroupBy::addBatch(
     });
 }
 
-size_t RecordGroupBy::finalize()
+__host__ size_t RecordGroupBy::finalize()
 {
     if (state->finalized)
         throwGPUError("the aggregation was finalized twice");
@@ -685,7 +685,7 @@ size_t RecordGroupBy::finalize()
     });
 }
 
-void RecordGroupBy::copyGroupsOut(GPUSpan<HostColumnView> keys, GPUSpan<HostColumnView> value_views)
+__host__ void RecordGroupBy::copyGroupsOut(GPUSpan<HostColumnView> keys, GPUSpan<HostColumnView> value_views)
 {
     const Shape & shape = state->shape;
     checkCount(keys.size(), shape.key_element_types.size(), "key destinations");

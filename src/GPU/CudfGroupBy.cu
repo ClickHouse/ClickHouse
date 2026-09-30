@@ -23,7 +23,7 @@ namespace DB::GPU
 namespace
 {
 
-std::unique_ptr<cudf::groupby_aggregation> groupByAggregationFor(GPUAggregationKind aggregation)
+__host__ std::unique_ptr<cudf::groupby_aggregation> groupByAggregationFor(GPUAggregationKind aggregation)
 {
     switch (aggregation)
     {
@@ -34,7 +34,7 @@ std::unique_ptr<cudf::groupby_aggregation> groupByAggregationFor(GPUAggregationK
     throwGPUError(("unknown aggregation " + std::to_string(static_cast<int>(aggregation))).c_str());
 }
 
-GPUElementType leftInOf(const GPUGroupByValue & value)
+__host__ GPUElementType leftInOf(const GPUGroupByValue & value)
 {
     return value.aggregation == GPUAggregationKind::Sum ? value.result_type : value.element_type;
 }
@@ -56,14 +56,14 @@ struct CudfGroupBy::State
     std::vector<std::unique_ptr<cudf::column>> value_offsets;
     bool finalized = false;
 
-    State(GPUSpan<GPUElementType> keys_, GPUSpan<GPUGroupByValue> values_, rmm::cuda_stream_view stream_)
+    __host__ State(GPUSpan<GPUElementType> keys_, GPUSpan<GPUGroupByValue> values_, rmm::cuda_stream_view stream_)
         : keys(keys_.begin(), keys_.end())
         , values(values_.begin(), values_.end())
         , stream(stream_)
     {
     }
 
-    std::unique_ptr<cudf::table> group(const cudf::table_view & table, const std::vector<GPUAggregationKind> & kinds) const
+    __host__ std::unique_ptr<cudf::table> group(const cudf::table_view & table, const std::vector<GPUAggregationKind> & kinds) const
     {
         std::vector<cudf::size_type> key_indices(keys.size());
         for (size_t i = 0; i < keys.size(); ++i)
@@ -102,7 +102,7 @@ struct CudfGroupBy::State
         return std::make_unique<cudf::table>(std::move(columns));
     }
 
-    void mergeAll()
+    __host__ void mergeAll()
     {
         if (partials.empty())
             return;
@@ -135,7 +135,7 @@ struct CudfGroupBy::State
     }
 };
 
-CudfGroupBy::CudfGroupBy(GPUSpan<GPUElementType> keys, GPUSpan<GPUGroupByValue> values, rmm::cuda_stream_view stream)
+__host__ CudfGroupBy::CudfGroupBy(GPUSpan<GPUElementType> keys, GPUSpan<GPUGroupByValue> values, rmm::cuda_stream_view stream)
 {
     if (stream.is_default())
         throwGPUError("a `GROUP BY` by variable-width keys on the device's default stream, where cuco cannot copy its counts back");
@@ -165,12 +165,12 @@ CudfGroupBy::CudfGroupBy(GPUSpan<GPUElementType> keys, GPUSpan<GPUGroupByValue> 
     state = new State(keys, values, stream);
 }
 
-CudfGroupBy::~CudfGroupBy()
+__host__ CudfGroupBy::~CudfGroupBy()
 {
     delete state;
 }
 
-void CudfGroupBy::addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values)
+__host__ void CudfGroupBy::addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values)
 {
     if (state->finalized)
         throwGPUError("a batch after the groups were closed");
@@ -217,7 +217,7 @@ void CudfGroupBy::addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnV
         state->mergeAll();
 }
 
-size_t CudfGroupBy::finalize()
+__host__ size_t CudfGroupBy::finalize()
 {
     if (state->finalized)
         throwGPUError("the groups were closed twice");
@@ -233,7 +233,7 @@ size_t CudfGroupBy::finalize()
     return static_cast<size_t>(state->merged->num_rows());
 }
 
-DeviceColumnView CudfGroupBy::key(size_t index) const
+__host__ DeviceColumnView CudfGroupBy::key(size_t index) const
 {
     if (!state->finalized)
         throwGPUError("the groups were asked for before they were closed");
@@ -260,7 +260,7 @@ DeviceColumnView CudfGroupBy::key(size_t index) const
     throwGPUError(("unknown column kind of element type " + std::to_string(static_cast<int>(type))).c_str());
 }
 
-DeviceColumnView CudfGroupBy::value(size_t index) const
+__host__ DeviceColumnView CudfGroupBy::value(size_t index) const
 {
     if (!state->finalized)
         throwGPUError("the groups were asked for before they were closed");

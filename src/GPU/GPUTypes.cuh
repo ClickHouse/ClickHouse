@@ -9,9 +9,9 @@
 namespace DB::GPU
 {
 
-[[noreturn]] void throwGPUError(const char * message);
+[[noreturn]] __host__ void throwGPUError(const char * message);
 
-bool isClickHouseException(const std::exception & exception);
+__host__ bool isClickHouseException(const std::exception & exception);
 
 template <typename T>
 struct GPUSpan
@@ -19,26 +19,26 @@ struct GPUSpan
     const T * values = nullptr;
     size_t count = 0;
 
-    GPUSpan() = default;
+    __host__ GPUSpan() = default;
 
-    GPUSpan(const T * values_, size_t count_)
+    __host__ GPUSpan(const T * values_, size_t count_)
         : values(values_), count(count_)
     {
     }
 
     template <typename Container, typename = typename Container::value_type>
-    GPUSpan(const Container & container)
+    __host__ GPUSpan(const Container & container)
         : values(container.data()), count(container.size())
     {
     }
 
-    const T & operator[](size_t index) const { return values[index]; }
+    __host__ const T & operator[](size_t index) const { return values[index]; }
 
-    size_t size() const { return count; }
-    bool empty() const { return count == 0; }
+    __host__ size_t size() const { return count; }
+    __host__ bool empty() const { return count == 0; }
 
-    const T * begin() const { return values; }
-    const T * end() const { return values + count; }
+    __host__ const T * begin() const { return values; }
+    __host__ const T * end() const { return values + count; }
 };
 
 enum class GPUElementType : int
@@ -82,7 +82,7 @@ enum class GPUColumnKind : int
     Variable = 1,
 };
 
-constexpr GPUColumnKind columnKindOf(GPUElementType type)
+__host__ __device__ constexpr GPUColumnKind columnKindOf(GPUElementType type)
 {
     return type == GPUElementType::String ? GPUColumnKind::Variable : GPUColumnKind::Fixed;
 }
@@ -113,13 +113,13 @@ struct DeviceColumnView
     };
     const uint8_t * null_mask = nullptr;
 
-    DeviceColumnView() : kind(GPUColumnKind::Fixed), fixed{} { }
-    DeviceColumnView(const DeviceFixedColumn & fixed_) : kind(GPUColumnKind::Fixed), fixed(fixed_) { } /// NOLINT
-    DeviceColumnView(const DeviceVariableColumn & variable_) : kind(GPUColumnKind::Variable), variable(variable_) { } /// NOLINT
+    __host__ DeviceColumnView() : kind(GPUColumnKind::Fixed), fixed{} { }
+    __host__ DeviceColumnView(const DeviceFixedColumn & fixed_) : kind(GPUColumnKind::Fixed), fixed(fixed_) { } /// NOLINT
+    __host__ DeviceColumnView(const DeviceVariableColumn & variable_) : kind(GPUColumnKind::Variable), variable(variable_) { } /// NOLINT
 
-    size_t rows() const { return kind == GPUColumnKind::Fixed ? fixed.rows : variable.rows; }
+    __host__ size_t rows() const { return kind == GPUColumnKind::Fixed ? fixed.rows : variable.rows; }
 
-    GPUElementType type() const { return kind == GPUColumnKind::Fixed ? fixed.element_type : GPUElementType::String; }
+    __host__ GPUElementType type() const { return kind == GPUColumnKind::Fixed ? fixed.element_type : GPUElementType::String; }
 };
 
 struct HostColumnView
@@ -186,12 +186,12 @@ struct GPUFilterProgram
     uint32_t result = 0;
 };
 
-constexpr bool isInteger(GPUElementType type)
+__host__ __device__ constexpr bool isInteger(GPUElementType type)
 {
     return type != GPUElementType::Float32 && type != GPUElementType::Float64 && type != GPUElementType::String;
 }
 
-constexpr size_t sizeOf(GPUElementType type)
+__host__ __device__ constexpr size_t sizeOf(GPUElementType type)
 {
     switch (type)
     {

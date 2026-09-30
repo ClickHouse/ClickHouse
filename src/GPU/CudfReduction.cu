@@ -19,7 +19,7 @@ namespace DB::GPU
 namespace
 {
 
-std::unique_ptr<cudf::reduce_aggregation> reduceAggregationFor(GPUAggregationKind aggregation)
+__host__ std::unique_ptr<cudf::reduce_aggregation> reduceAggregationFor(GPUAggregationKind aggregation)
 {
     switch (aggregation)
     {
@@ -47,7 +47,7 @@ struct CudfReduction::State
     std::unique_ptr<cudf::column> result;
     std::unique_ptr<cudf::column> result_offsets;
 
-    State(GPUElementType element_type_, GPUElementType result_type_, GPUAggregationKind aggregation_kind)
+    __host__ State(GPUElementType element_type_, GPUElementType result_type_, GPUAggregationKind aggregation_kind)
         : element_type(element_type_)
         , result_type(result_type_)
         , output_type(cudfTypeOf(result_type_))
@@ -55,7 +55,7 @@ struct CudfReduction::State
     {
     }
 
-    std::unique_ptr<cudf::column> reduce(const cudf::column_view & values, const std::string & what) const
+    __host__ std::unique_ptr<cudf::column> reduce(const cudf::column_view & values, const std::string & what) const
     {
         const rmm::cuda_stream_view stream = StreamRegistry::get().compute;
 
@@ -70,7 +70,7 @@ struct CudfReduction::State
         return guarded("keeping a reduction on the device", [&] { return cudf::make_column_from_scalar(*value, 1, stream); });
     }
 
-    void foldPartials()
+    __host__ void foldPartials()
     {
         if (partials.size() <= 1)
             return;
@@ -87,7 +87,7 @@ struct CudfReduction::State
     }
 };
 
-CudfReduction::CudfReduction(GPUElementType element_type, GPUElementType result_type, GPUAggregationKind aggregation)
+__host__ CudfReduction::CudfReduction(GPUElementType element_type, GPUElementType result_type, GPUAggregationKind aggregation)
 {
     if (aggregation == GPUAggregationKind::Sum && sizeOf(result_type) != 8)
         throwGPUError(("a sum into element type " + std::to_string(static_cast<int>(result_type)) + ", which is not eight bytes wide").c_str());
@@ -97,12 +97,12 @@ CudfReduction::CudfReduction(GPUElementType element_type, GPUElementType result_
     state = new State(element_type, result_type, aggregation);
 }
 
-CudfReduction::~CudfReduction()
+__host__ CudfReduction::~CudfReduction()
 {
     delete state;
 }
 
-void CudfReduction::addBatch(DeviceColumnView values)
+__host__ void CudfReduction::addBatch(DeviceColumnView values)
 {
     if (values.rows() == 0)
         throwGPUError("nothing to reduce");
@@ -114,7 +114,7 @@ void CudfReduction::addBatch(DeviceColumnView values)
         state->foldPartials();
 }
 
-DeviceColumnView CudfReduction::finalize()
+__host__ DeviceColumnView CudfReduction::finalize()
 {
     state->result.reset();
     state->result_offsets.reset();
