@@ -214,8 +214,21 @@ bool hasSameMeaning(const IDataType & from, const IDataType & to)
 }
 
 /// True if only SHARED REGEXP differs and typed paths match by name, since equals() ignores a timezone.
+/// Looks through Array and Nullable, like isJSONSharedDataPathRegexpsOnlyChange.
 bool isMeaningPreservingSharedRegexpChange(const IDataType & part_type, const IDataType & metadata_type)
 {
+    if (const auto * part_array = typeid_cast<const DataTypeArray *>(&part_type))
+    {
+        const auto * metadata_array = typeid_cast<const DataTypeArray *>(&metadata_type);
+        return metadata_array && isMeaningPreservingSharedRegexpChange(*part_array->getNestedType(), *metadata_array->getNestedType());
+    }
+
+    if (const auto * part_nullable = typeid_cast<const DataTypeNullable *>(&part_type))
+    {
+        const auto * metadata_nullable = typeid_cast<const DataTypeNullable *>(&metadata_type);
+        return metadata_nullable && isMeaningPreservingSharedRegexpChange(*part_nullable->getNestedType(), *metadata_nullable->getNestedType());
+    }
+
     const auto * part_object = typeid_cast<const DataTypeObject *>(&part_type);
     if (!part_object || !isJSONSharedDataPathRegexpsOnlyChange(part_type, metadata_type))
         return false;
