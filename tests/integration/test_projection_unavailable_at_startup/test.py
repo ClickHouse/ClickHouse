@@ -939,6 +939,31 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t6_local_copy") == "0"
     assert declarations_on_disk("t6_local_copy") == 1
     assert "CODEC(Delta, Delta)" in node.query("SHOW CREATE TABLE dl.t6_local_copy")
+
+    # Each clickhouse-client call has its own temporary-table session. Compare both creation
+    # paths in one session, using the source whose projection became unavailable at startup.
+    temporary_creates = node.exec_in_container(
+        [
+            "clickhouse",
+            "client",
+            "--multiquery",
+            "--format=TabSeparated",
+            "--query="
+            "CREATE TEMPORARY TABLE tmp_plain AS dl.t6 ENGINE = MergeTree ORDER BY a; "
+            "SHOW CREATE TABLE tmp_plain; "
+            "CREATE TEMPORARY TABLE tmp_replaced (a UInt64) ENGINE = Memory; "
+            "CREATE OR REPLACE TEMPORARY TABLE tmp_replaced AS dl.t6 "
+            "ENGINE = MergeTree ORDER BY a; "
+            "SHOW CREATE TABLE tmp_replaced;",
+        ]
+    ).splitlines()
+    assert len(temporary_creates) == 2, temporary_creates
+    for definition in temporary_creates:
+        assert "PROJECTION pp" in definition, definition
+        assert "CODEC(Delta, Delta)" in definition, definition
+        assert "GROUP BY 1, 2" in definition, definition
+    assert temporary_creates[0].replace("tmp_plain", "tmp_replaced") == temporary_creates[1]
+
     node.query(
         "CREATE TABLE dl.t6_limit_copy AS dl.t6 "
         "ENGINE = MergeTree ORDER BY a SETTINGS max_projections = 1"

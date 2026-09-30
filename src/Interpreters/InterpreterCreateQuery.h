@@ -6,6 +6,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/IInterpreter.h>
+#include <Interpreters/ProjectionMetadataValidation.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
@@ -100,10 +101,15 @@ public:
 private:
     struct TableProperties
     {
+        TableProperties(ProjectionDefinitionSource projection_source_, bool copies_source_projections_)
+            : projection_source(projection_source_), copies_source_projections(copies_source_projections_) {}
+
         ColumnsDescription columns;
         IndicesDescription indices;
         ConstraintsDescription constraints;
         ProjectionsDescription projections;
+        ProjectionDefinitionSource projection_source;
+        bool copies_source_projections;
         bool columns_inferred_from_select_query = false;
     };
 

@@ -910,6 +910,9 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
     ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
+    const bool copies_source_projections = !create.columns_list && !create.as_table.empty();
+    const auto projection_source = getProjectionDefinitionSource(mode, create.attach_short_syntax, is_restore_from_backup);
+
     /// CLONE AS only makes sense with a source table: the partition-attach step performed after table
     /// creation needs real partitions to copy. Reject CLONE AS SELECT / CLONE AS table_function for a
     /// fresh CREATE and for a user-supplied full ATTACH definition (an ATTACH that carries an explicit
@@ -934,7 +937,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
         normalizeTimeSeriesDefinition(create, getContext(), mode, is_restore_from_backup);
 
-    TableProperties properties;
+    TableProperties properties(projection_source, copies_source_projections);
     TableLockHolder as_storage_lock;
 
     if (create.columns_list)
@@ -2114,7 +2117,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         visitor.visitTableExpressions(*create.columns_list);
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
-    const bool copies_source_projections = !create.columns_list && !create.as_table.empty();
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
     /// The definition persisted below must not depend on the session setting, because reloads and
@@ -2192,8 +2194,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create,
         getContext(),
         database,
-        getProjectionDefinitionSource(mode, create.attach_short_syntax, is_restore_from_backup),
-        copies_source_projections,
+        properties.projection_source,
+        properties.copies_source_projections,
         &properties.projections);
 
     /// A normalized distributed CREATE sends its column list rather than the original `AS src` query.
@@ -2458,15 +2460,61 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
     }
 }
 
-void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, bool attach_short_syntax, ContextPtr context, bool is_temporary)
+/// Storage constructors analyze the declarations they can use. A copied declaration may have been
+/// accepted on the source but be unavailable under this session's settings, so install the entire
+/// candidate before validating or publishing the table. Every CREATE path must use this boundary.
+void finalizeCreatedStorage(
+    const StoragePtr & storage,
+    ASTCreateQuery & create,
+    const ProjectionsDescription & candidate_projections,
+    ProjectionDefinitionSource projection_source,
+    LoadingStrictnessLevel mode,
+    ContextPtr context,
+    bool is_temporary)
 try
 {
-    validateVirtualColumns(storage, context);
-    checkForUnsupportedColumns(storage, mode, context, is_temporary);
-    if (isFreshTableDefinition(mode, attach_short_syntax))
-        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage))
+    if (candidate_projections.hasUnavailable())
+    {
+        if (!create.columns_list || !create.columns_list->projections)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "CREATE query is missing copied projection declarations");
+        auto metadata_handle = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
+        auto metadata = *metadata_handle;
+        for (const auto & definition : candidate_projections.getUnavailableDefinitions())
         {
-            const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
+            const auto & name = definition->as<const ASTProjectionDeclaration &>().name;
+            if (!metadata.projections.has(name) && !metadata.projections.isUnavailable(name))
+                metadata.projections.addUnavailable(definition->clone());
+        }
+        metadata.projections.preserveDeclarationOrder(candidate_projections);
+        storage->setInMemoryMetadata(metadata);
+        if (auto metadata_cache = context->getQueryMetadataCache())
+        {
+            auto [cache, lock] = metadata_cache->getStorageMetadataCache();
+            cache->erase(storage.get());
+        }
+
+        /// Persist the same ordered declarations that were installed in the storage metadata.
+        create.columns_list->projections->children = metadata.projections.getDefinitionsInDeclarationOrder();
+    }
+
+    /// Check the complete prepared candidate, including analyzed definitions. A new creator
+    /// must not publish a storage that silently omitted one of its prepared projections.
+    const auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
+    for (const auto & projection : candidate_projections)
+        if (!metadata->projections.has(projection.name))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage omitted prepared projection {}", backQuote(projection.name));
+    for (const auto & definition : candidate_projections.getUnavailableDefinitions())
+    {
+        const auto & name = definition->as<const ASTProjectionDeclaration &>().name;
+        if (!metadata->projections.has(name) && !metadata->projections.isUnavailable(name))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage omitted prepared projection {}", backQuote(name));
+    }
+
+    validateVirtualColumns(*storage, context);
+    checkForUnsupportedColumns(*storage, mode, context, is_temporary);
+    if (projection_source == ProjectionDefinitionSource::NewQuery)
+        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+        {
             if (metadata->projections.hasUnavailable())
                 merge_tree->checkCopiedUnavailableProjections(*metadata, context);
         }
@@ -2477,11 +2525,11 @@ catch (...)
     {
         try
         {
-            storage.drop();
+            storage->drop();
         }
         catch (...)
         {
-            tryLogCurrentException("validateStorage");
+            tryLogCurrentException("finalizeCreatedStorage");
         }
     }
     throw;
@@ -2493,40 +2541,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
                                            DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode)
 {
-    auto preserve_unavailable_projections = [&](const StoragePtr & storage)
-    {
-        const auto & unavailable = properties.projections.getUnavailableDefinitions();
-        if (unavailable.empty())
-            return;
-
-        chassert(create.columns_list && create.columns_list->projections);
-        auto metadata_handle = storage->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/true);
-        auto metadata = *metadata_handle;
-        for (const auto & definition : unavailable)
-        {
-            const auto & name = definition->as<const ASTProjectionDeclaration &>().name;
-            if (metadata.projections.has(name)
-                || std::ranges::any_of(
-                    metadata.projections.getUnavailableDefinitions(),
-                    [&](const auto & existing) { return existing->template as<const ASTProjectionDeclaration &>().name == name; }))
-                continue;
-            metadata.projections.addUnavailable(definition->clone());
-        }
-        metadata.projections.preserveDeclarationOrder(properties.projections);
-        storage->setInMemoryMetadata(metadata);
-        /// `validateStorage` may have cached the pre-copy metadata in this query.
-        if (auto metadata_cache = getContext()->getQueryMetadataCache())
-        {
-            auto [cache, lock] = metadata_cache->getStorageMetadataCache();
-            cache->erase(storage.get());
-        }
-
-        /// A fresh storage must analyze every projection it sees. Append declarations copied from
-        /// an unavailable source only after construction, then validate the final metadata before
-        /// publishing the same set in the storage and the persisted CREATE query.
-        create.columns_list->projections->children = metadata.projections.getDefinitionsInDeclarationOrder();
-    };
-
     if (create.isTemporary())
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
@@ -2545,8 +2559,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
-            preserve_unavailable_projections(res);
-            validateStorage(*res, mode, create.attach_short_syntax, getContext(), /*is_temporary=*/true);
+            finalizeCreatedStorage(res, create, properties.projections, properties.projection_source,
+                mode, getContext(), /*is_temporary=*/true);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -2768,8 +2782,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    preserve_unavailable_projections(res);
-    validateStorage(*res, mode, create.attach_short_syntax, getContext(), create.isTemporary());
+    finalizeCreatedStorage(res, create, properties.projections, properties.projection_source,
+        mode, getContext(), create.isTemporary());
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
@@ -3287,7 +3301,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
             properties.constraints,
             mode,
             is_restore_from_backup);
-        validateStorage(*res, mode, create.attach_short_syntax, getContext(), /*is_temporary=*/true);
+        finalizeCreatedStorage(res, create, properties.projections, properties.projection_source,
+            mode, getContext(), /*is_temporary=*/true);
         return res;
     };
 
