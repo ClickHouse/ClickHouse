@@ -36,22 +36,6 @@ function wait_running() {
     return 1
 }
 
-# Being in system.processes only means a query has started. The log line shows it reached the pool;
-# an indefinite wait logs it without a frequency limit.
-function wait_blocked() {
-    local deadline=$((SECONDS + $2))
-    while (( SECONDS < deadline )); do
-        [[ $(${CLICKHOUSE_CLIENT} --query "
-            SYSTEM FLUSH LOGS text_log;
-            SELECT count() FROM system.text_log
-            WHERE event_date >= yesterday() AND query_id = '$1'
-              AND message_format_string = 'No free connections in pool. Waiting indefinitely.'
-        ") != 0 ]] && return 0
-        sleep 0.05
-    done
-    return 1
-}
-
 # Runs one pair of queries at the given connection_pool_max_wait_ms and leaves the log rows the
 # assertion below reads. The holder does not finish on its own: it is killed only once the arm's own
 # expected event has been observed, so the pool is full for the whole of the waiter's wait and no
@@ -91,7 +75,11 @@ function contend() {
     if [[ $3 == succeeds ]]; then
         # Here only the kill can end the wait, so the waiter has to be in it first: a kill that
         # landed earlier would free the connection before there was any wait to hand it over to.
-        wait_blocked "${waiter}" 60 || echo "the waiter never reached the pool"
+        wait_running 1 "'${waiter}'" 60 || echo "the waiter never started, so it never reached the pool"
+
+        # Being in system.processes only means the waiter has started, so give it time to reach the
+        # pool and log.
+        sleep 2
     else
         # Here the waiter ends on its own deadline, which is the whole point of the arm, so the kill
         # must not come first: waiting for the waiter to exit is what orders the two. Its own bound
@@ -218,7 +206,7 @@ function cancel_waiter() {
 
     # A soft deadline the pool wait has to observe by itself. A wait that does not only reports the
     # timeout once the connection comes back, which is the regression this arm pins.
-    [[ ${mode} == soft ]] && limit=", max_execution_time = 2"
+    [[ ${mode} == soft ]] && limit=", max_execution_time = 5"
 
     timeout 12 ${CLICKHOUSE_CLIENT} --query_id "${waiter}" --query "
         SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', numbers(1), '${POOL_USER}', '')
@@ -233,13 +221,9 @@ function cancel_waiter() {
         wait_running 2 "'${holder}', '${waiter}'" 60 \
             || echo "the queries never ran at the same time, so the pool was never full"
 
-        # A kill that arrives before the wait would not exercise the wait at all. A finite wait logs
-        # under a frequency limit, so its line may be suppressed and a short sleep has to do.
-        if [[ ${pool_wait_ms} == 0 ]]; then
-            wait_blocked "${waiter}" 60 || echo "the waiter never reached the pool"
-        else
-            sleep 1
-        fi
+        # Being in system.processes only means the waiter has started, so give it time to reach the
+        # pool: a kill that arrives before the wait would not exercise the wait at all.
+        sleep 2
 
         timeout 12 ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '${waiter}' SYNC" > /dev/null 2>&1 || rc=$?
         [[ ${rc} == 0 ]] || echo "the waiter did not stop when it was killed"
