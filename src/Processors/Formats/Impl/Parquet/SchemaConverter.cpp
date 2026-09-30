@@ -766,7 +766,8 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     if (schema_idx_of_role[Value].has_value() && !is_variant_blob_leaf(*schema_idx_of_role[Value]))
         return false;
 
-    if (node.type_hint && !WhichDataType(node.type_hint->getTypeId()).isDynamic())
+    const bool read_as_json = node.type_hint && isObject(node.type_hint);
+    if (node.type_hint && !read_as_json && !isDynamic(node.type_hint))
         return false;
 
     if (!schema_idx_of_role[Value].has_value())
@@ -802,7 +803,7 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     output.name = node.name;
     output.primitive_start = primitive_start;
     output.primitive_end = primitive_columns.size();
-    output.input_type = std::make_shared<DataTypeDynamic>();
+    output.input_type = read_as_json ? node.type_hint : std::make_shared<DataTypeDynamic>();
     output.output_type = output.input_type;
     output.nested_columns = {output_idx_of_role[Metadata].value(), output_idx_of_role[Value].value()};
     return true;

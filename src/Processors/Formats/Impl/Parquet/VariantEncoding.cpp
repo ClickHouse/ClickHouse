@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
@@ -9,15 +10,21 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesCache.h>
+#include <Formats/FormatSettings.h>
+#include <Interpreters/castColumn.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/re2.h>
 #include <base/unaligned.h>
 
 #include <algorithm>
 #include <bit>
 #include <cstring>
+#include <list>
+#include <optional>
 #include <vector>
 
 #include <fmt/format.h>
@@ -26,6 +33,7 @@ namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int TOO_DEEP_RECURSION;
+    extern const int TYPE_MISMATCH;
 }
 
 namespace DB::Parquet
@@ -164,6 +172,51 @@ void checkDepth(const DecodeContext & context, size_t depth)
             "setting 'max_parser_depth', but a very deeply nested value is rarely intentional",
             context.max_depth);
 }
+
+/// Typed paths and `SKIP` clauses of a `JSON` column requested by the user.
+class JSONPathsFilter
+{
+public:
+    JSONPathsFilter(const DataTypeObject & type_, bool use_partial_match_)
+        : type(type_)
+        , sorted_paths_to_skip(type.getPathsToSkip().begin(), type.getPathsToSkip().end())
+        , use_partial_match(use_partial_match_)
+    {
+        std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
+        for (const auto & regexp : type.getPathRegexpsToSkip())
+            path_regexps_to_skip.emplace_back(regexp);
+    }
+
+    bool shouldSkip(const String & path) const
+    {
+        if (type.getPathsToSkip().contains(path))
+            return true;
+
+        auto it = std::lower_bound(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end(), path);
+        if (it != sorted_paths_to_skip.begin() && path.starts_with(*std::prev(it) + "."))
+            return true;
+
+        for (const auto & regexp : path_regexps_to_skip)
+        {
+            if (use_partial_match ? re2::RE2::PartialMatch(path, regexp) : re2::RE2::FullMatch(path, regexp))
+                return true;
+        }
+        return false;
+    }
+
+    const DataTypePtr * findTypedPath(const String & path) const
+    {
+        const auto & typed_paths = type.getTypedPaths();
+        auto it = typed_paths.find(path);
+        return it == typed_paths.end() ? nullptr : &it->second;
+    }
+
+private:
+    const DataTypeObject & type;
+    std::vector<String> sorted_paths_to_skip;
+    std::list<re2::RE2> path_regexps_to_skip;
+    bool use_partial_match;
+};
 
 struct ObjectLayout
 {
@@ -409,6 +462,23 @@ void decodePrimitiveIntoColumn(std::string_view data, size_t pos, PrimitiveType 
         ErrorCodes::INCORRECT_DATA, "Malformed Parquet variant: unknown primitive type id {}", UInt16(type_id));
 }
 
+void decodeValueIntoTypedPath(
+    std::string_view data, size_t pos, const DecodeContext & context, size_t depth, const DataTypePtr & typed_type, IColumn & target)
+{
+    const String type_name = getValueTypeName(data, pos);
+    if (type_name == typed_type->getName())
+    {
+        decodeValueIntoColumn(data, pos, context, depth, target);
+        return;
+    }
+
+    const DataTypePtr type = getDataTypesCache().getType(type_name);
+    auto value_column = type->createColumn();
+    decodeValueIntoColumn(data, pos, context, depth, *value_column);
+    const ColumnPtr casted = castColumn({std::move(value_column), type, ""}, typed_type);
+    target.insertFrom(*casted, 0);
+}
+
 struct SharedDataValue
 {
     String path;
@@ -426,6 +496,7 @@ void insertObjectPaths(
     const String & prefix,
     bool is_root,
     ColumnObject & column,
+    const JSONPathsFilter * filter,
     size_t prev_size,
     std::vector<SharedDataValue> & shared_data_values)
 {
@@ -435,19 +506,34 @@ void insertObjectPaths(
     {
         const std::string_view name = context.metadata.getName(layout.fieldId(data, i));
         String path = is_root ? String(name) : prefix + "." + String(name);
+        if (filter && filter->shouldSkip(path))
+            continue;
+
         const size_t value_pos = layout.valuePos(data, i);
         const UInt8 header = readByte(data, value_pos);
-
-        if (BasicType(header & 0x03) == BasicType::Object)
-        {
-            checkDepth(context, depth + 1);
-            insertObjectPaths(data, value_pos + 1, header >> 2, context, depth + 1, path, false, column, prev_size, shared_data_values);
-            continue;
-        }
 
         /// Like in the `JSON` type, a null is equivalent to the absence of the path.
         if (header == UInt8(PrimitiveType::Null) << 2)
             continue;
+
+        if (const DataTypePtr * typed_type = filter ? filter->findTypedPath(path) : nullptr)
+        {
+            auto & typed_column = *column.getTypedPaths().at(path);
+            if (typed_column.size() > prev_size)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Parquet variant object has the path '{}' more than once after flattening nested objects", path);
+            decodeValueIntoTypedPath(data, value_pos, context, depth + 1, *typed_type, typed_column);
+            continue;
+        }
+
+        if (BasicType(header & 0x03) == BasicType::Object)
+        {
+            checkDepth(context, depth + 1);
+            insertObjectPaths(
+                data, value_pos + 1, header >> 2, context, depth + 1, path, false, column, filter, prev_size, shared_data_values);
+            continue;
+        }
 
         ColumnDynamic * dynamic_column = nullptr;
         auto & dynamic_paths = column.getDynamicPathsPtrs();
@@ -475,12 +561,18 @@ void insertObjectPaths(
 }
 
 void decodeObjectIntoJSON(
-    std::string_view data, size_t pos, UInt8 value_header, const DecodeContext & context, size_t depth, ColumnObject & column)
+    std::string_view data,
+    size_t pos,
+    UInt8 value_header,
+    const DecodeContext & context,
+    size_t depth,
+    ColumnObject & column,
+    const JSONPathsFilter * filter = nullptr)
 {
     const size_t prev_size = column.size();
 
     std::vector<SharedDataValue> shared_data_values;
-    insertObjectPaths(data, pos, value_header, context, depth, "", true, column, prev_size, shared_data_values);
+    insertObjectPaths(data, pos, value_header, context, depth, "", true, column, filter, prev_size, shared_data_values);
 
     /// Paths in shared data must be sorted.
     std::sort(
@@ -504,6 +596,12 @@ void decodeObjectIntoJSON(
             shared_data_paths, shared_data_values_column, value.path, tmp_dynamic, tmp_dynamic.size() - 1);
     }
     column.getSharedDataOffsets().push_back(shared_data_paths->size());
+
+    for (auto & [_, typed_column] : column.getTypedPaths())
+    {
+        if (typed_column->size() == prev_size)
+            typed_column->insertDefault();
+    }
 
     for (auto & [_, dynamic_column] : column.getDynamicPathsPtrs())
     {
@@ -617,15 +715,26 @@ const ColumnString & unwrapLeaf(const IColumn & column, const NullMap *& out_nul
 void decodeVariantColumn(
     const IColumn & metadata,
     const IColumn & value,
-    ColumnDynamic & output,
+    IColumn & output,
+    const DataTypePtr & output_type,
+    const String & column_name,
     size_t num_rows,
-    size_t max_parser_depth)
+    const FormatSettings & format_settings)
 {
     const NullMap * metadata_nulls = nullptr;
     const ColumnString & metadata_strings = unwrapLeaf(metadata, metadata_nulls);
 
     const NullMap * value_nulls = nullptr;
     const ColumnString & value_strings = unwrapLeaf(value, value_nulls);
+
+    auto * output_dynamic = typeid_cast<ColumnDynamic *>(&output);
+    auto * output_object = typeid_cast<ColumnObject *>(&output);
+    std::optional<JSONPathsFilter> filter;
+    if (output_object)
+        filter.emplace(
+            assert_cast<const DataTypeObject &>(*output_type), format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp);
+    else
+        chassert(output_dynamic);
 
     for (size_t row = 0; row < num_rows; ++row)
     {
@@ -639,8 +748,33 @@ void decodeVariantColumn(
         const std::string_view value_blob = value_strings.getDataAt(row);
 
         const Metadata parsed_metadata = parseMetadata(metadata_blob);
-        const DecodeContext context{.metadata = parsed_metadata, .max_depth = max_parser_depth};
-        decodeValueIntoDynamic(value_blob, 0, context, 0, output);
+        const DecodeContext context{.metadata = parsed_metadata, .max_depth = format_settings.max_parser_depth};
+
+        if (output_dynamic)
+        {
+            decodeValueIntoDynamic(value_blob, 0, context, 0, *output_dynamic);
+            continue;
+        }
+
+        const UInt8 header = readByte(value_blob, 0);
+        if (BasicType(header & 0x03) != BasicType::Object)
+        {
+            const String type_name = getValueTypeName(value_blob, 0);
+            /// A variant null is an empty object, the same as a null of the whole column.
+            if (type_name.empty())
+            {
+                output.insertDefault();
+                continue;
+            }
+            throw Exception(
+                ErrorCodes::TYPE_MISMATCH,
+                "Cannot read Parquet variant column '{}' as {}: it contains a value of type {}, but only objects can be "
+                "read as JSON. Read the column as Dynamic instead",
+                column_name, output_type->getName(), type_name);
+        }
+
+        checkDepth(context, 0);
+        decodeObjectIntoJSON(value_blob, 1, header >> 2, context, 0, *output_object, &*filter);
     }
 }
 
