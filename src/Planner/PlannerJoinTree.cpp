@@ -401,9 +401,13 @@ std::unordered_map<const IQueryTreeNode *, NameSet> collectReferencedColumnsPerT
         if (const auto * column_node = node_to_process->as<ColumnNode>())
         {
             /// `getColumnSourceOrNull` keeps the sourceless `__grouping_set` column from throwing here.
-            if (auto column_source = column_node->getColumnSourceOrNull();
-                column_source && (column_source->as<TableNode>() || column_source->as<TableFunctionNode>()))
+            auto column_source = column_node->getColumnSourceOrNull();
+            if (column_source && (column_source->as<TableNode>() || column_source->as<TableFunctionNode>()))
                 result[column_source.get()].insert(column_node->getColumnName());
+
+            /// A grant on an `ALIAS` column is enough to read it, as at the top level, so its expression is not walked.
+            if (column_node->hasExpression() && column_source && column_source->as<TableNode>())
+                continue;
         }
 
         for (const auto & child : node_to_process->getChildren())

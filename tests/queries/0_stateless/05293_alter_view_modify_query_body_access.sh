@@ -11,7 +11,7 @@ ${CLICKHOUSE_CLIENT} --query "
 DROP USER IF EXISTS $author;
 CREATE USER $author IDENTIFIED WITH no_password;
 
-CREATE TABLE $db.secret (id UInt64, secret String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE $db.secret (id UInt64, secret String, secret_alias String ALIAS secret) ENGINE = MergeTree ORDER BY id;
 INSERT INTO $db.secret VALUES (1, 'SECRET');
 CREATE TABLE $db.src (id UInt64) ENGINE = MergeTree ORDER BY id;
 
@@ -51,7 +51,9 @@ echo '-- a column grant must not be rejected just because the read sits inside a
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT(id) ON $db.secret TO $author"
 run 'granted column   ' "ALTER TABLE $db.mv_own MODIFY QUERY SELECT id, ''::String AS secret FROM (SELECT id FROM $db.secret)"
 run 'ungranted column ' "ALTER TABLE $db.mv_own MODIFY QUERY SELECT id, secret FROM (SELECT id, secret FROM $db.secret)"
-${CLICKHOUSE_CLIENT} --query "REVOKE SELECT(id) ON $db.secret FROM $author"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT(secret_alias) ON $db.secret TO $author"
+run 'granted alias    ' "ALTER TABLE $db.mv_own MODIFY QUERY SELECT id, s AS secret FROM (SELECT id, secret_alias AS s FROM $db.secret)"
+${CLICKHOUSE_CLIENT} --query "REVOKE SELECT(id, secret_alias) ON $db.secret FROM $author"
 
 echo '-- ON CLUSTER must not become a way around the checks above'
 run 'cluster top level' "ALTER TABLE $db.mv_own ON CLUSTER test_shard_localhost MODIFY QUERY SELECT id, secret FROM $db.secret"

@@ -11,6 +11,7 @@ own subquery      accepted
 -- a column grant must not be rejected just because the read sits inside a subquery
 granted column    accepted
 ungranted column  ACCESS_DENIED
+granted alias     accepted
 -- ON CLUSTER must not become a way around the checks above
 cluster top level ACCESS_DENIED
 cluster subquery  ACCESS_DENIED
