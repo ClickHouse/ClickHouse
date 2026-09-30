@@ -799,13 +799,22 @@ def test_dates_casting(started_cluster):
         == "1\n"
     )
 
-    # A member converts as `IN` converts it: a time of day is the day of a `Date` column, and a sub-second
-    # member matches nothing. The stored dates carry a time of day, so a `Date` can only match a document
-    # stored at midnight.
+    # A member converts as `IN` converts it, and a sub-second member matches nothing. MongoDB compares the
+    # stored value, so a `Date` member with a time of day is refused, and a midnight one matches the
+    # document stored at midnight.
     dates_mongo_table.insert_one({k: datetime.datetime(2000, 1, 1) for k in data})
     assert (
         node.query(
-            "SELECT COUNT() FROM dates_table WHERE k_date IN (toDateTime('2000-01-01 12:00:00'))"
+            "SELECT COUNT() FROM dates_table WHERE k_date IN (toDateTime('2000-01-01 00:00:00'))"
+        )
+        == "1\n"
+    )
+    assert "NOT_IMPLEMENTED" in node.query_and_get_error(
+        "SELECT COUNT() FROM dates_table WHERE k_date IN (toDateTime('2000-01-01 12:00:00'))"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date IN (toDateTime('2000-01-01 12:00:00')) SETTINGS mongodb_throw_on_unsupported_query = 0"
         )
         == "1\n"
     )

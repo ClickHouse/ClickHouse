@@ -386,8 +386,10 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
             elements.push_back(const_value);
 
         /// The list is a `Tuple` type over an `Array` value, so the elements are converted one by one.
-        /// A member converts as `IN` converts it, strictly but to the column's type: a `DateTime` with a time
-        /// of day is the day of a `Date` column, and a member the type cannot hold matches nothing.
+        /// A member converts as `IN` converts it, strictly but to the column's type; a member the type cannot
+        /// hold matches nothing. MongoDB compares the stored value, though: a `Date` member made of a `DateTime`
+        /// with a time of day would be sent as midnight and miss the row, so such a member is refused like a
+        /// lossy bound.
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(const_type.get());
         const auto * array_type = typeid_cast<const DataTypeArray *>(const_type.get());
         Array converted_elements;
@@ -416,6 +418,12 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
                 auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
                 LOG_DEBUG(log, "Constant value {} matches no value of column type {}", value_string, column_type->getName());
                 continue;
+            }
+            if (tryConvertFieldToTypeExact(elements[i], *column_type, element_type.get()).isNull())
+            {
+                auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
+                LOG_DEBUG(log, "Constant value {} is not stored as a value of column type {}", value_string, column_type->getName());
+                return {};
             }
             converted_elements.push_back(std::move(converted));
         }
