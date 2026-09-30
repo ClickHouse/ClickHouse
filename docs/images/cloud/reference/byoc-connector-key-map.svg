@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 660" font-family="Inter, -apple-system, 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="ah-n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#7d7d7d"/>
+    </marker>
+    <marker id="ah-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#3b82f6"/>
+    </marker>
+  </defs>
+
+  <!-- Boundaries -->
+  <rect x="40" y="50" width="940" height="540" rx="14" fill="#8a8a8a" fill-opacity="0.06" stroke="#7d7d7d" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <text x="64" y="86" font-size="16" font-weight="700" fill="#7d7d7d">Your AWS account</text>
+
+  <rect x="1020" y="50" width="260" height="540" rx="14" fill="#8a8a8a" fill-opacity="0.06" stroke="#7d7d7d" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <text x="1044" y="86" font-size="16" font-weight="700" fill="#7d7d7d">ClickHouse Cloud</text>
+
+  <!-- EKS secrets key -->
+  <rect x="70" y="120" width="190" height="70" rx="10" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
+  <text x="165" y="148" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">EKS secrets key</text>
+  <text x="165" y="172" text-anchor="middle" font-size="12" font-weight="600" font-family="'SF Mono', Menlo, Consolas, monospace" fill="#7d7d7d">kms.eks_secrets_key_arn</text>
+
+  <line x1="260" y1="155" x2="734" y2="155" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+  <text x="497" y="138" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">encrypts Kubernetes Secrets</text>
+  <text x="497" y="176" text-anchor="middle" font-size="11" fill="#7d7d7d">cluster role: kms:Encrypt, kms:Decrypt</text>
+
+  <rect x="740" y="132" width="200" height="46" rx="8" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.25"/>
+  <text x="840" y="151" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">EKS secrets</text>
+  <text x="840" y="168" text-anchor="middle" font-size="11" fill="#7d7d7d">Kubernetes Secrets in the cluster</text>
+
+  <!-- EBS key -->
+  <rect x="70" y="225" width="190" height="70" rx="10" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
+  <text x="165" y="253" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">EBS key</text>
+  <text x="165" y="277" text-anchor="middle" font-size="12" font-weight="600" font-family="'SF Mono', Menlo, Consolas, monospace" fill="#7d7d7d">kms.ebs_key_arn</text>
+
+  <line x1="260" y1="260" x2="734" y2="260" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+  <text x="497" y="243" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">encrypts the volumes</text>
+  <text x="497" y="281" text-anchor="middle" font-size="11" fill="#7d7d7d">EBS CSI driver and Karpenter</text>
+
+  <rect x="740" y="237" width="200" height="46" rx="8" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.25"/>
+  <text x="840" y="256" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">Service volumes</text>
+  <text x="840" y="273" text-anchor="middle" font-size="11" fill="#7d7d7d">server and Keeper pod volumes</text>
+
+  <!-- Object storage key -->
+  <rect x="70" y="330" width="190" height="70" rx="10" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
+  <text x="165" y="358" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Object storage key</text>
+  <text x="165" y="382" text-anchor="middle" font-size="12" font-weight="600" font-family="'SF Mono', Menlo, Consolas, monospace" fill="#7d7d7d">--storage-kms-key-arn</text>
+
+  <line x1="260" y1="365" x2="734" y2="365" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+  <text x="497" y="348" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">SSE-KMS, bucket key enabled</text>
+  <text x="497" y="386" text-anchor="middle" font-size="11" fill="#7d7d7d">service role: kms:Decrypt, kms:GenerateDataKey</text>
+
+  <rect x="740" y="342" width="200" height="46" rx="8" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.25"/>
+  <text x="840" y="361" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">S3 buckets</text>
+  <text x="840" y="378" text-anchor="middle" font-size="11" fill="#7d7d7d">data and backup buckets</text>
+
+  <!-- TDE key -->
+  <rect x="70" y="435" width="190" height="80" rx="10" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
+  <text x="165" y="463" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">TDE key</text>
+  <text x="165" y="487" text-anchor="middle" font-size="12" font-weight="600" font-family="'SF Mono', Menlo, Consolas, monospace" fill="#7d7d7d">--tde-kms-key-arn</text>
+  <text x="165" y="505" text-anchor="middle" font-size="11" fill="#7d7d7d">one key per service</text>
+
+  <line x1="260" y1="475" x2="394" y2="475" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+  <text x="327" y="458" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">kms:Encrypt</text>
+  <text x="327" y="496" text-anchor="middle" font-size="11" fill="#7d7d7d">connector IAM role</text>
+  <text x="327" y="511" text-anchor="middle" font-size="11" fill="#7d7d7d">wraps the data key</text>
+
+  <rect x="400" y="452" width="200" height="46" rx="8" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.25"/>
+  <text x="500" y="471" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">Wrapped data key</text>
+  <text x="500" y="488" text-anchor="middle" font-size="11" fill="#7d7d7d">Secret in the service namespace</text>
+
+  <line x1="600" y1="475" x2="734" y2="475" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+  <text x="667" y="458" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">kms:Decrypt</text>
+  <text x="667" y="496" text-anchor="middle" font-size="11" fill="#7d7d7d">service pods unwrap it</text>
+  <text x="667" y="511" text-anchor="middle" font-size="11" fill="#7d7d7d">when a server starts</text>
+
+  <rect x="740" y="452" width="200" height="46" rx="8" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.25"/>
+  <text x="840" y="471" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">Data inside ClickHouse</text>
+  <text x="840" y="488" text-anchor="middle" font-size="11" fill="#7d7d7d">transparent data encryption</text>
+
+  <text x="510" y="562" text-anchor="middle" font-size="11" fill="#7d7d7d">Key ARNs, not aliases, in the region of the bucket, cluster, or service they protect.</text>
+
+  <!-- Connector API endpoint -->
+  <rect x="1045" y="200" width="210" height="80" rx="10" fill="#3b82f6" fill-opacity="0.10" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="1150" y="233" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Connector API endpoint</text>
+  <text x="1150" y="257" text-anchor="middle" font-size="11" fill="#7d7d7d">receives the key ARN with the create</text>
+
+  <text x="1150" y="340" text-anchor="middle" font-size="11.5" font-weight="600" fill="#e05252">no identity in your account</text>
+  <text x="1150" y="366" text-anchor="middle" font-size="11.5" font-weight="600" fill="#e05252">never receives key material,</text>
+  <text x="1150" y="383" text-anchor="middle" font-size="11.5" font-weight="600" fill="#e05252">a wrapped data key,</text>
+  <text x="1150" y="400" text-anchor="middle" font-size="11.5" font-weight="600" fill="#e05252">or a credential to your key</text>
+
+  <!-- Legend -->
+  <g>
+    <line x1="64" y1="630" x2="112" y2="630" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+    <text x="124" y="634" font-size="12" fill="#7d7d7d">a role in your account uses the key</text>
+    <text x="440" y="634" font-size="12" font-weight="600" fill="#7d7d7d">Every call to KMS runs under a role you created.</text>
+  </g>
+</svg>

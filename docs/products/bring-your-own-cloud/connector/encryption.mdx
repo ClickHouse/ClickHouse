@@ -1,0 +1,219 @@
+---
+title: 'Encryption with your own keys'
+sidebarTitle: 'Encryption'
+description: 'Which AWS KMS key protects each layer of a managed service, how to supply your own, how to enable and rotate transparent data encryption, and what a disabled or deleted key does'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'encryption', 'KMS', 'TDE', 'customer-managed keys', 'AWS']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+Every layer that holds data for a managed service is encrypted at rest. Each layer has a default key, and each accepts a customer-managed AWS KMS key that you create and control in your account. It covers AWS; the ClickHouse Connector runs managed services on Amazon EKS only.
+
+<Image img="/images/cloud/reference/byoc-connector-key-map.svg" size="lg" alt="Which key protects which layer of a service" />
+
+## What is encrypted with which key {#layers}
+
+| Layer | Default key | Your key | Supplied with |
+|---|---|---|---|
+| Object storage: the data and backup buckets | SSE-S3 (an S3-managed key) | SSE-KMS under your key, bucket key enabled | `clicklink clctl executor prepare --storage-kms-key-arn <arn>` (also `executor storage ensure`) |
+| ClickHouse volumes: the EBS volumes of server and Keeper pods | Root-created key (`production`, `existing-vpc`); account default otherwise | Your key | `kms.ebs_key_arn` (`production`, `existing-vpc`) or `ebs_kms_key_arn` (`existing-eks`) |
+| EKS secrets: the Kubernetes Secrets in the cluster, including the wrapped TDE data key | Root-created key (`production`, `existing-vpc`); none otherwise | Your key | `kms.eks_secrets_key_arn` (`production`, `existing-vpc`) |
+| Data at rest inside ClickHouse (transparent data encryption, TDE) | Off | A data key wrapped by your key | `clicklink clctl instances create --tde-kms-key-arn <arn>` |
+
+The Terraform roots are described in [Terraform on AWS](/products/bring-your-own-cloud/connector/terraform-aws). The `production` and `existing-vpc` roots create the volume key and the EKS secrets key with rotation on unless you pass your own ARNs. `existing-eks` creates no keys and accepts `ebs_kms_key_arn`; `minimal` creates none and uses the account default EBS key. Neither adds an EKS secrets key, and EKS secrets encryption cannot be enabled on a cluster in place. The key ARN for volumes reaches the connector through the `clicklink` output as `ebs_kms_key_arn`, and the EBS CSI driver and Karpenter encrypt the volumes with it. Without TDE, data inside ClickHouse is protected by the bucket and volume layers alone.
+
+Every key must be a key ARN (`arn:aws:kms:<region>:<account-id>:key/<id>`), not an alias, in the region of the bucket, cluster, or service it protects.
+
+<Note>
+System node root volumes hold container images and kubelet logs, not ClickHouse data. They use the account default EBS key and take no customer-managed key.
+</Note>
+
+### Object storage {#object-storage}
+
+`prepare --storage-kms-key-arn <arn>` creates the data and backup buckets with your key as their default encryption, with the bucket key enabled, and attaches a bucket policy that refuses uploads asking for SSE-S3, for another KMS key, for `aws:kms` without a key, or for a customer-provided key (SSE-C). Uploads that ask for nothing take the default, which is what the ClickHouse server sends. The service's IAM role, `CH-S3-<name>-<region>-00-Role`, gets `kms:Decrypt`, `kms:GenerateDataKey`, and `kms:DescribeKey` on the key.
+
+`prepare` verifies an existing bucket against the key and never re-encrypts it. It warns when such a bucket uses SSE-S3, uses SSE-KMS under a different key, or has no bucket policy; the run still succeeds, so read the warnings. It refuses an existing managed role whose key grant disagrees with the flag. With `--role-arn` it checks the grants on the role you bring instead of writing them.
+
+## Key policies {#key-policies}
+
+Keys the roots and `prepare` create carry the account-root statement, so the IAM role policies they attach take effect. A key you supply needs the statements below. Replace the placeholders with your account ID, your cluster name, and the role ARNs.
+
+### Object storage key {#object-storage-key-policy}
+
+The key policy must let IAM delegate, because the service role's grant lives in an IAM policy that `prepare` attaches. The default account-root statement does that:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AccountRoot",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::<account-id>:root" },
+      "Action": "kms:*",
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+### ClickHouse volumes key {#ebs-key-policy}
+
+The EBS CSI driver role and the Karpenter controller role encrypt and attach volumes:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AccountRoot",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::<account-id>:root" },
+      "Action": "kms:*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowVolumeUse",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": [
+          "arn:aws:iam::<account-id>:role/<cluster-name>-ebs-csi-driver",
+          "arn:aws:iam::<account-id>:role/<cluster-name>-karpenter-controller"
+        ]
+      },
+      "Action": ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowVolumeGrants",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": [
+          "arn:aws:iam::<account-id>:role/<cluster-name>-ebs-csi-driver",
+          "arn:aws:iam::<account-id>:role/<cluster-name>-karpenter-controller"
+        ]
+      },
+      "Action": "kms:CreateGrant",
+      "Resource": "*",
+      "Condition": { "Bool": { "kms:GrantIsForAWSResource": "true" } }
+    }
+  ]
+}
+```
+
+### EKS secrets key {#eks-secrets-key-policy}
+
+The cluster role encrypts and decrypts Secrets through the EKS control plane:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AccountRoot",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::<account-id>:root" },
+      "Action": "kms:*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowClusterSecrets",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::<account-id>:role/<cluster-name>-cluster" },
+      "Action": ["kms:Encrypt", "kms:Decrypt", "kms:DescribeKey"],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+### TDE key {#tde-key-policy}
+
+Two roles use a TDE key. The connector's IAM role (`executor_role_arn` in the `clicklink` output) wraps the data key at create and re-wraps it at rotation; it never decrypts. The service's pod role, `CH-S3-<name>-<region>-00-Role` as `prepare` reports it, unwraps the data key when a server starts. Use one key per service, so that a rotation or a retirement affects one service:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AccountRoot",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::<account-id>:root" },
+      "Action": "kms:*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowWrap",
+      "Effect": "Allow",
+      "Principal": { "AWS": "<managed-services-role-arn>" },
+      "Action": ["kms:Encrypt", "kms:ReEncryptTo", "kms:ReEncryptFrom", "kms:DescribeKey"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowUnwrap",
+      "Effect": "Allow",
+      "Principal": { "AWS": "<service-role-arn>" },
+      "Action": ["kms:Decrypt", "kms:DescribeKey"],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Create needs `kms:DescribeKey` and `kms:Encrypt` for the connector's role. Rotation needs `kms:ReEncryptFrom` on the old key and `kms:ReEncryptTo` plus `kms:DescribeKey` on the new one. The `tde-key` Terraform example creates such a key: it takes the two role ARNs and outputs `tde_kms_key_arn` for the create.
+
+## Enabling TDE {#enabling-tde}
+
+Run `prepare` first, then create the key with the role ARN it printed, then pass the key to the create:
+
+```bash
+clicklink clctl instances create \
+  --from-prepare ./clicklink-access/_prepare/<name>.create.json \
+  --config clicklink-config.yaml \
+  --tde-kms-key-arn arn:aws:kms:<region>:<account-id>:key/<id> \
+  --wait
+```
+
+Before the definition reaches your cluster, the command reads the default encryption of both buckets with your AWS credentials. A bucket whose default encryption is not SSE-KMS is refused: on SSE-S3 buckets the server encrypts the objects under your key but the bucket stores them under an S3-managed key. Pass `--allow-mixed-encryption` to accept that on purpose. The flag is only accepted together with `--tde-kms-key-arn`.
+
+When the create arrives, the connector calls `kms:DescribeKey` on the key and stops before writing anything if the key is not `Enabled`, is not for `ENCRYPT_DECRYPT`, or refuses the role. Then it generates a 32-byte data key, wraps it with `kms:Encrypt` under your key, and stores the wrapped key in a Secret in the service namespace. The server unwraps the data key with the service's pod role. A retried create keeps the first data key. A retry with a different key is refused, and the error lists both ARNs.
+
+<Note>
+TDE is fixed at create. A service created without `--tde-kms-key-arn` cannot be switched to TDE later, and a TDE service cannot be switched off. To change either, create a new service.
+</Note>
+
+## Rotating the TDE key {#rotating-the-tde-key}
+
+Rotation moves the data key under another key of yours in the same region:
+
+```bash
+clicklink clctl instances rotate-tde-key --name <name> \
+  --tde-kms-key-arn arn:aws:kms:<region>:<account-id>:key/<new-id>
+```
+
+The command reaches the connector's local API, so run it on the connector host, or through a `kubectl port-forward` as for [status](/products/bring-your-own-cloud/connector/managed-services#status). The wrapped data key is re-wrapped inside KMS with `kms:ReEncrypt`: the data key itself does not change and its plaintext never leaves KMS. The Secret's current key entry is replaced in place, and the server pods roll the way a restart rolls them. The service no longer references the old key once the pods are back; check that no backup you intend to restore was taken under it before you disable it. Submitting the key that is already current only rolls the pods. A new key in another region is refused.
+
+This command is for moving to a different key. Automatic key rotation on the KMS key itself, which the Terraform example turns on, needs no action: KMS keeps the earlier key material and the wrapped data key stays decryptable.
+
+## Key loss {#key-loss}
+
+Disabling or deleting a key makes everything it protects unreadable. For the bucket and volume keys that is the standard AWS behavior for SSE-KMS and encrypted EBS. For a TDE key:
+
+- A server pod that starts after the key is disabled cannot unwrap the data key and does not become ready. Restarts, version upgrades, scale-ups, and starts after a stop all start pods.
+- The connector reports the service as `degraded` while some replicas are not ready and `provisioning` while none are, in `clicklink clctl instances get`. The status is the same one any unready replica produces; nothing marks it as a key problem.
+- A create against a disabled key is refused before anything is written, with `KMS key <arn> is Disabled, not Enabled`.
+- A key scheduled for deletion can be recovered within its deletion window (7 to 30 days). Once it is deleted, the data encrypted under it is gone; the deletion window is the only way back.
+
+Nothing in the connector or in ClickHouse Cloud polls the key. The first sign of a disabled key is a replica that does not come up. For notice before that, alarm on the key in your own account: an EventBridge rule on the CloudTrail events `DisableKey` and `ScheduleKeyDeletion` for the key, or an AWS Config rule on its state.
+
+## What ClickHouse never has {#what-clickhouse-never-has}
+
+- ClickHouse Cloud has no identity in your account. Every call to KMS, S3, and IAM runs under a role you created: the Terraform roles, the service role `prepare` creates, or your own credentials when you run `prepare`, `storage ensure`, and `instances create`.
+- The connector holds no credentials for your buckets or IAM roles. The only KMS calls the connector makes are `kms:DescribeKey`, `kms:Encrypt`, and `kms:ReEncrypt` on a TDE key; there is no `kms:Decrypt` call.
+- The plaintext data key is generated in your cluster and cleared as soon as it is wrapped. Afterwards the connector holds only the wrapped key; the server pods unwrap it with the service's pod role. At rotation it is re-wrapped inside KMS and never appears in plaintext outside KMS.
+- ClickHouse Cloud receives the key ARN with the create. It never receives key material, a wrapped data key, or a credential to your key.
+- The key policy is yours. Remove the statements for the connector's role or the service role, or disable the key, and access ends with them.

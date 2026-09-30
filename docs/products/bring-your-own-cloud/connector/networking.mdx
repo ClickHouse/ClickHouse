@@ -1,0 +1,105 @@
+---
+title: 'Private connectivity with AWS PrivateLink'
+sidebarTitle: 'PrivateLink'
+description: 'Reach your connector endpoint and enrollment endpoint over interface endpoints in your VPC instead of the public internet'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'PrivateLink', 'VPC endpoint', 'AWS']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+The ClickHouse Connector reaches ClickHouse Cloud over two hostnames: your connector endpoint, `<subdomain>.<connector-domain>`, and your enrollment endpoint, `<subdomain>.enroll.<connector-domain>`. By default both resolve to public addresses and the connector reaches them through your VPC's internet egress. Each hostname is also published as an AWS PrivateLink endpoint service. You create one interface endpoint per service in your VPC, with private DNS enabled, and the same hostnames resolve to addresses inside the VPC. The traffic then stays on the AWS network.
+
+Only the route changes. TLS and mutual TLS still terminate on the ClickHouse side, and the client certificate, HMAC signing, and WebSocket channels in [architecture](/products/bring-your-own-cloud/connector/architecture#connections) are unchanged. Every connection stays outbound; the endpoints give ClickHouse Cloud no path in. On Kubernetes the NetworkPolicy egress CIDRs do change; see [verify](#verify).
+
+Two hostnames are covered. `releases.clicklink.clickhouse.com` and Amazon ECR Public at install time, the registry your nodes pull ClickHouse images from, and the AWS APIs your cluster uses still need internet egress or their own VPC endpoints.
+
+<Image img="/images/cloud/reference/byoc-connector-privatelink.svg" size="lg" alt="Connector API over AWS PrivateLink" />
+
+## Prerequisites {#prerequisites}
+
+The endpoint services accept connections only from AWS accounts ClickHouse has allowlisted. During [registration](/products/bring-your-own-cloud/connector/onboarding#registration), give your account team the ID of every AWS account that will host a connector. An endpoint created from any other account fails.
+
+Your VPC needs DNS support and DNS hostnames enabled; private DNS on an interface endpoint needs both. The Terraform roots that create a VPC enable them, and `existing-vpc` refuses a VPC without them. The endpoint network interfaces need one private subnet per availability zone that your cluster nodes run in.
+
+When the VPC has no internet egress, the cluster also needs endpoints for the AWS services it reaches: Amazon ECR (`ecr.api` and `ecr.dkr`), STS, EC2, CloudWatch Logs, SSM (`ssm`, `ssmmessages`, `ec2messages`), SQS, KMS, and Elastic Load Balancing, plus S3 through a gateway endpoint. The `production` Terraform root creates all of them. The interface endpoints come from its `interface_endpoints` variable and the S3 gateway endpoint is always created. In a VPC you build yourself, create the same set.
+
+<Note>
+The Terraform roots do not create the two connector endpoints. Create them as described below.
+</Note>
+
+## Create the endpoints {#create-the-endpoints}
+
+You need two interface endpoints, one for the API endpoint service and one for the enrollment endpoint service, with the service names from [service names](#service-names). Both need private DNS enabled and a security group that allows TCP 443 from your cluster nodes.
+
+With Terraform, in the account and region of your cluster:
+
+```hcl
+resource "aws_security_group" "connector_endpoints" {
+  name        = "connector-endpoints"
+  description = "HTTPS from the cluster nodes to the connector interface endpoints"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = var.node_subnet_cidrs
+  }
+}
+
+resource "aws_vpc_endpoint" "connector_api" {
+  vpc_id              = var.vpc_id
+  service_name        = var.connector_api_service_name
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = var.private_subnet_ids
+  security_group_ids  = [aws_security_group.connector_endpoints.id]
+  private_dns_enabled = true
+}
+
+resource "aws_vpc_endpoint" "connector_enroll" {
+  vpc_id              = var.vpc_id
+  service_name        = var.connector_enroll_service_name
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = var.private_subnet_ids
+  security_group_ids  = [aws_security_group.connector_endpoints.id]
+  private_dns_enabled = true
+}
+```
+
+In the AWS console, open VPC, then Endpoints, then Create endpoint. Choose "Endpoint services that use NLBs and GWLBs", paste the API service name, and click Verify service. Select your VPC, one private subnet per availability zone, and a security group that allows TCP 443 from the nodes. Enable "Private DNS names", then create the endpoint. Repeat with the enrollment service name.
+
+The endpoint services require acceptance. ClickHouse accepts the connection request from an allowlisted account; the endpoint then shows `available`. If an endpoint stays pending, contact your account team with the endpoint ID.
+
+## Verify {#verify}
+
+From a node or a pod in the cluster, resolve both hostnames. With private DNS active each returns addresses in the endpoint subnets:
+
+```bash
+dig +short <subdomain>.<connector-domain>
+dig +short <subdomain>.enroll.<connector-domain>
+```
+
+Then enroll as in [onboarding](/products/bring-your-own-cloud/connector/onboarding#install-and-enroll). `init --enroll` redeems the token and gets the certificate signed over the enrollment endpoint; every later request goes to the API endpoint. Both now travel through the interface endpoints:
+
+```bash
+clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm --managed \
+  --egress-cidrs <endpoint-subnet-cidrs>
+```
+
+On Kubernetes, pass the CIDRs of the endpoint subnets as `--egress-cidrs`. The chart's NetworkPolicy allows egress only to the CIDRs you list, and on the private path the connector hostnames resolve to those subnets.
+
+A connector enrolled before the endpoints existed keeps its configuration; the hostnames now resolve to the endpoints. On Kubernetes, add the endpoint subnet CIDRs to `allowEgressCIDRs` and run `helm upgrade` (see [configuration](/products/bring-your-own-cloud/connector/configuration#network-policy)) or the NetworkPolicy blocks the new addresses.
+
+## Limits {#limits}
+
+Your interface endpoints must be in the region that hosts your connector endpoint.
+
+Both endpoints are needed to keep the traffic private. Enrollment and certificate issuance use the enrollment hostname; every other request uses the API hostname. With only one endpoint in place, the other hostname keeps resolving to its public address and that traffic leaves through your internet egress.
+
+## Service names {#service-names}
+
+Each environment publishes two endpoint services, named `com.amazonaws.vpce.<region>.vpce-svc-<id>`. The names are not public; your account team provides them with your connector endpoint and enrollment token during [registration](/products/bring-your-own-cloud/connector/onboarding#registration).

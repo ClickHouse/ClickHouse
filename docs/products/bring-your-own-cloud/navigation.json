@@ -57,6 +57,8 @@
           "pages": [
             "products/bring-your-own-cloud/connector/overview",
             "products/bring-your-own-cloud/connector/onboarding",
+            "products/bring-your-own-cloud/connector/encryption",
+            "products/bring-your-own-cloud/connector/networking",
             "products/bring-your-own-cloud/connector/architecture",
             "products/bring-your-own-cloud/connector/managed-services",
             "products/bring-your-own-cloud/connector/platform-updates",
