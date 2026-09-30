@@ -35,19 +35,19 @@ SlidingBlock & SlidingBlocks::add(Chunk chunk, const WindowTransformParams & par
 void SlidingBlocks::pop()
 {
     blocks.pop_front();
+    ++first_block_number;
 }
 
 const SlidingBlock & SlidingBlocks::blockAt(int64_t block_number) const
 {
-    chassert(!blocks.empty());
-    chassert(block_number >= blocks.front().block_number);
-    chassert(block_number - blocks.front().block_number < static_cast<int64_t>(blocks.size()));
-    return blocks[block_number - blocks.front().block_number];
+    chassert(block_number >= first_block_number);
+    chassert(block_number < next_block_number);
+    return blocks[block_number - first_block_number];
 }
 
 RowNumber SlidingBlocks::begin() const
 {
-    return {blocks.empty() ? next_block_number : blocks.front().block_number, 0};
+    return {first_block_number, 0};
 }
 
 RowNumber SlidingBlocks::end() const
