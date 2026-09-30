@@ -394,6 +394,10 @@ if (NOT ENABLE_FUZZING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
 endif()
 
+# Probe every page of a large stack allocation (big frames, `alloca`, VLAs) so that it cannot jump over
+# the guard page into another mapping. Only functions with frames larger than a page pay for it.
+set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-clash-protection")
+
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
@@ -677,6 +681,8 @@ endif ()
 # Not on Darwin: ld64 does not accept '-z' options.
 if (NOT OS_DARWIN)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro,-z,now")
+    # Keep read-only data out of executable pages, so its bytes cannot serve as ROP gadgets.
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,separate-code")
 endif ()
 
 if (ENABLE_TESTS)
