@@ -14,6 +14,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -2268,6 +2269,13 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
     ColumnPtr index_column = arguments[1].column;
     if (isEnum(type_map.getKeyType()) && isStringOrFixedString(removeLowCardinality(arguments[1].type)))
         index_column = castColumn(arguments[1], type_map.getKeyType());
+
+    /// A map with FixedString(N, 'representation') keys is indexed by the text representation, e.g. `m['encoded key']`.
+    /// Cast the index to the key type, so it is matched by the stored bytes.
+    if (const auto * fixed_string_key_type = typeid_cast<const DataTypeFixedString *>(removeLowCardinality(type_map.getKeyType()).get());
+        fixed_string_key_type && fixed_string_key_type->hasCustomTextRepresentation()
+        && isString(removeNullable(removeLowCardinality(arguments[1].type))))
+        index_column = castColumn(arguments[1], removeLowCardinality(type_map.getKeyType()));
 
     /// At first step calculate indices in array of values for requested keys.
     auto indices_column = DataTypeNumber<UInt64>().createColumn();

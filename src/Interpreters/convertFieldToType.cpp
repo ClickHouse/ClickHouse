@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/Serializations/SerializationFixedStringWithTextRepresentation.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 
 #include <Core/AccurateComparison.h>
@@ -44,6 +45,7 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int INCORRECT_DATA;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int DECIMAL_OVERFLOW;
@@ -717,12 +719,21 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             if (which_type.isFixedString())
             {
                 const auto & fixed_string_type = assert_cast<const DataTypeFixedString &>(type);
-                if (fixed_string_type.hasCustomTextRepresentation())
+
+                /// A String is parsed from the text representation of FixedString(N, 'representation'),
+                /// while a value of another FixedString already holds the bytes.
+                const bool source_is_fixed_string = from_type_hint && WhichDataType(removeLowCardinalityAndNullable(from_type_hint->getPtr())).isFixedString();
+                if (fixed_string_type.hasCustomTextRepresentation() && !source_is_fixed_string)
                 {
-                    auto column = type.createColumn();
-                    ReadBufferFromString in_buffer(src.safeGet<String>());
-                    type.getDefaultSerialization()->deserializeWholeText(*column, in_buffer, format_settings);
-                    return (*column)[0];
+                    const auto & encoded = src.safeGet<String>();
+                    String decoded(fixed_string_type.getN(), '\0');
+                    if (!SerializationFixedStringWithTextRepresentation::tryDecode(
+                            fixed_string_type.getTextRepresentation(), fixed_string_type.getN(), encoded, reinterpret_cast<UInt8 *>(decoded.data())))
+                        throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "Cannot convert '{}' to {}: expected a valid {} representation of exactly {} bytes",
+                            std::string_view(encoded).substr(0, 128), type.getName(),
+                            fixedStringTextRepresentationToString(fixed_string_type.getTextRepresentation()), fixed_string_type.getN());
+                    return decoded;
                 }
 
                 size_t n = fixed_string_type.getN();

@@ -4,13 +4,23 @@
 #include <Common/Base58.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
+#include <Common/PODArray.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/Serializations/SerializationFixedString.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <base/types.h>
+#include <base/hex.h>
+
+#include "config.h"
+
+#if USE_SIMDUTF
+#    include <simdutf.h>
+#else
+#    include <Poco/Exception.h>
+#endif
 
 #include <cstring>
 
@@ -25,24 +35,90 @@ namespace ErrorCodes
 namespace
 {
 
-UInt8 decodeHexDigit(char c)
-{
-    if (c >= '0' && c <= '9')
-        return c - '0';
-    if (c >= 'a' && c <= 'f')
-        return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F')
-        return c - 'A' + 10;
+/// Encoded values of up to this size are formatted on the stack.
+constexpr size_t STACK_BUFFER_SIZE = 256;
 
-    throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid hexadecimal digit '{}'", c);
-}
+/// Invalid values in exception messages are truncated to this size.
+constexpr size_t MAX_VALUE_SIZE_IN_EXCEPTION = 128;
 
-String normalizeHexInput(std::string_view encoded)
+bool tryDecodeHex(std::string_view encoded, size_t n, UInt8 * dst)
 {
     if (encoded.size() >= 2 && encoded[0] == '0' && (encoded[1] == 'x' || encoded[1] == 'X'))
         encoded.remove_prefix(2);
 
-    return String(encoded.data(), encoded.size());
+    if (encoded.size() != n * 2)
+        return false;
+
+    for (size_t i = 0; i != n; ++i)
+    {
+        const char high = encoded[2 * i];
+        const char low = encoded[2 * i + 1];
+        if (!isHexDigit(high) || !isHexDigit(low))
+            return false;
+        dst[i] = static_cast<UInt8>((unhex(high) << 4) | unhex(low));
+    }
+    return true;
+}
+
+bool tryDecodeBase64(std::string_view encoded, size_t n, UInt8 * dst, bool url_encoding)
+{
+#if USE_SIMDUTF
+    /// Same accepted syntax as the base64Decode / base64URLDecode functions:
+    /// Base64 requires a complete (padded) final chunk, Base64URL accepts both alphabets and optional padding.
+    const auto options = url_encoding ? simdutf::base64_default_or_url : simdutf::base64_default;
+    const auto last_chunk = url_encoding ? simdutf::loose : simdutf::strict;
+
+    size_t written = n;
+    auto res = simdutf::base64_to_binary_safe(encoded.data(), encoded.size(), reinterpret_cast<char *>(dst), written, options, last_chunk);
+    if (res.error == simdutf::BASE64_EXTRA_BITS && !url_encoding)
+    {
+        /// Like base64Decode, ignore non-zero leftover bits in a complete, properly padded final chunk.
+        written = n;
+        res = simdutf::base64_to_binary_safe(encoded.data(), encoded.size(), reinterpret_cast<char *>(dst), written, options, simdutf::loose);
+    }
+
+    /// OUTPUT_BUFFER_TOO_SMALL means that the decoded value is longer than N bytes.
+    return res.error == simdutf::SUCCESS && written == n;
+#else
+    std::string decoded;
+    try
+    {
+        decoded = base64Decode(std::string(encoded), url_encoding, /* no_padding */ url_encoding);
+    }
+    catch (const Poco::Exception &)
+    {
+        return false;
+    }
+    if (decoded.size() != n)
+        return false;
+    memcpy(dst, decoded.data(), n);
+    return true;
+#endif
+}
+
+bool tryDecodeBase58(std::string_view encoded, size_t n, UInt8 * dst)
+{
+    const auto * src = reinterpret_cast<const UInt8 *>(encoded.data());
+
+    /// Specialized decoders write exactly 32 / 64 bytes and validate the input length themselves.
+    if (n == 32)
+        return decodeBase58_32(src, encoded.size(), dst).value_or(0) == n;
+    if (n == 64)
+        return decodeBase58_64(src, encoded.size(), dst).value_or(0) == n;
+
+    /// The generic decoder writes up to one byte per input character without any bound, and it is quadratic.
+    /// An N bytes value is encoded with at most N characters (all zero bytes are encoded as '1')
+    /// or ceil(N * log(256) / log(58)) < N * 1.3658 + 1 characters, so longer inputs are invalid.
+    if (encoded.size() > n + n / 2 + 1)
+        return false;
+
+    PODArrayWithStackMemory<UInt8, STACK_BUFFER_SIZE> buffer(encoded.size());
+    const auto decoded_size = decodeBase58(src, encoded.size(), buffer.data());
+    if (decoded_size.value_or(0) != n)
+        return false;
+
+    memcpy(dst, buffer.data(), n);
+    return true;
 }
 
 }
@@ -68,112 +144,119 @@ SerializationPtr SerializationFixedStringWithTextRepresentation::create(FixedStr
     return ISerialization::pooled(getHash(text_representation_, n_), [=] { return new SerializationFixedStringWithTextRepresentation(text_representation_, n_); });
 }
 
-String SerializationFixedStringWithTextRepresentation::encodeValue(const IColumn & column, size_t row_num) const
+size_t SerializationFixedStringWithTextRepresentation::maxEncodedSize(FixedStringTextRepresentation text_representation, size_t n)
 {
-    const auto & data = assert_cast<const ColumnFixedString &>(column).getChars();
-    const auto * pos = data.data() + n * row_num;
-
-    if (text_representation == FixedStringTextRepresentation::Base64)
-        return base64Encode(String(reinterpret_cast<const char *>(pos), n));
-
-    if (text_representation == FixedStringTextRepresentation::Base64URL)
-        return base64Encode(String(reinterpret_cast<const char *>(pos), n), /* url_encoding */ true, /* no_padding */ true);
-
-    if (text_representation == FixedStringTextRepresentation::Hex)
+    switch (text_representation)
     {
-        static constexpr char hex[] = "0123456789abcdef";
-        String res;
-        res.resize(n * 2);
-        for (size_t i = 0; i != n; ++i)
-        {
-            res[2 * i] = hex[pos[i] >> 4];
-            res[2 * i + 1] = hex[pos[i] & 0x0F];
-        }
-        return res;
+        case FixedStringTextRepresentation::Raw:
+            return n;
+        case FixedStringTextRepresentation::Hex:
+            return n * 2;
+        case FixedStringTextRepresentation::Base64:
+        case FixedStringTextRepresentation::Base64URL:
+            return (n + 2) / 3 * 4;
+        case FixedStringTextRepresentation::Base58:
+            if (n == 32)
+                return BASE58_ENCODED_32_LEN;
+            if (n == 64)
+                return BASE58_ENCODED_64_LEN;
+            return n * 2 + 1;
     }
-
-    if (text_representation == FixedStringTextRepresentation::Base58)
-    {
-        String res;
-        if (n == 32)
-            res.resize(BASE58_ENCODED_32_LEN);
-        else if (n == 64)
-            res.resize(BASE58_ENCODED_64_LEN);
-        else
-            res.resize(n * 2 + 1);
-
-        size_t written = 0;
-        if (n == 32)
-            written = encodeBase58_32(pos, reinterpret_cast<UInt8 *>(res.data()));
-        else if (n == 64)
-            written = encodeBase58_64(pos, reinterpret_cast<UInt8 *>(res.data()));
-        else
-            written = encodeBase58(pos, n, reinterpret_cast<UInt8 *>(res.data()));
-
-        res.resize(written);
-        return res;
-    }
-
-    return String(reinterpret_cast<const char *>(pos), n);
 }
 
-void SerializationFixedStringWithTextRepresentation::decodeAndAppend(IColumn & column, std::string_view encoded) const
+size_t SerializationFixedStringWithTextRepresentation::encode(FixedStringTextRepresentation text_representation, size_t n, const UInt8 * src, char * dst)
+{
+    switch (text_representation)
+    {
+        case FixedStringTextRepresentation::Raw:
+        {
+            memcpy(dst, src, n);
+            return n;
+        }
+        case FixedStringTextRepresentation::Hex:
+        {
+            for (size_t i = 0; i != n; ++i)
+                writeHexByteLowercase(src[i], dst + 2 * i);
+            return n * 2;
+        }
+        case FixedStringTextRepresentation::Base64:
+        case FixedStringTextRepresentation::Base64URL:
+        {
+            const bool url_encoding = text_representation == FixedStringTextRepresentation::Base64URL;
+#if USE_SIMDUTF
+            /// simdutf emits the base64url alphabet without padding for the URL variant, like base64URLEncode.
+            return simdutf::binary_to_base64(reinterpret_cast<const char *>(src), n, dst, url_encoding ? simdutf::base64_url : simdutf::base64_default);
+#else
+            std::string encoded = base64Encode(std::string(reinterpret_cast<const char *>(src), n), url_encoding, /* no_padding */ url_encoding);
+            memcpy(dst, encoded.data(), encoded.size());
+            return encoded.size();
+#endif
+        }
+        case FixedStringTextRepresentation::Base58:
+        {
+            auto * out = reinterpret_cast<UInt8 *>(dst);
+            if (n == 32)
+                return encodeBase58_32(src, out);
+            if (n == 64)
+                return encodeBase58_64(src, out);
+            return encodeBase58(src, n, out);
+        }
+    }
+}
+
+bool SerializationFixedStringWithTextRepresentation::tryDecode(FixedStringTextRepresentation text_representation, size_t n, std::string_view encoded, UInt8 * dst)
+{
+    switch (text_representation)
+    {
+        case FixedStringTextRepresentation::Raw:
+        {
+            if (encoded.size() != n)
+                return false;
+            memcpy(dst, encoded.data(), n);
+            return true;
+        }
+        case FixedStringTextRepresentation::Hex:
+            return tryDecodeHex(encoded, n, dst);
+        case FixedStringTextRepresentation::Base64:
+            return tryDecodeBase64(encoded, n, dst, /* url_encoding */ false);
+        case FixedStringTextRepresentation::Base64URL:
+            return tryDecodeBase64(encoded, n, dst, /* url_encoding */ true);
+        case FixedStringTextRepresentation::Base58:
+            return tryDecodeBase58(encoded, n, dst);
+    }
+}
+
+template <typename Callback>
+void SerializationFixedStringWithTextRepresentation::withEncodedValue(const IColumn & column, size_t row_num, Callback && callback) const
+{
+    const auto * src = assert_cast<const ColumnFixedString &>(column).getChars().data() + n * row_num;
+
+    PODArrayWithStackMemory<char, STACK_BUFFER_SIZE> buffer(maxEncodedSize(text_representation, n));
+    const size_t size = encode(text_representation, n, src, buffer.data());
+    callback(std::string_view(buffer.data(), size));
+}
+
+bool SerializationFixedStringWithTextRepresentation::tryDecodeAndAppend(IColumn & column, std::string_view encoded) const
 {
     auto & data = assert_cast<ColumnFixedString &>(column).getChars();
     const size_t old_size = data.size();
     data.resize(old_size + n);
 
-    try
-    {
-        if (text_representation == FixedStringTextRepresentation::Base64 || text_representation == FixedStringTextRepresentation::Base64URL)
-        {
-            const bool url_encoding = text_representation == FixedStringTextRepresentation::Base64URL;
-            const bool no_padding = text_representation == FixedStringTextRepresentation::Base64URL;
-            String decoded = base64Decode(String(encoded.data(), encoded.size()), url_encoding, no_padding);
-            if (decoded.size() != n)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Decoded FixedString({}, '{}') value has {} bytes, expected {} bytes",
-                    n, fixedStringTextRepresentationToString(text_representation), decoded.size(), n);
-            memcpy(data.data() + old_size, decoded.data(), n);
-        }
-        else if (text_representation == FixedStringTextRepresentation::Hex)
-        {
-            String hex = normalizeHexInput(encoded);
-            if (hex.size() != n * 2)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Decoded FixedString({}, 'Hex') value must be represented by {} hex digits, got {}",
-                    n, n * 2, hex.size());
-
-            for (size_t i = 0; i != n; ++i)
-                data[old_size + i] = static_cast<UInt8>((decodeHexDigit(hex[2 * i]) << 4) | decodeHexDigit(hex[2 * i + 1]));
-        }
-        else if (text_representation == FixedStringTextRepresentation::Base58)
-        {
-            std::optional<size_t> decoded_size;
-            if (n == 32)
-                decoded_size = decodeBase58_32(reinterpret_cast<const UInt8 *>(encoded.data()), encoded.size(), data.data() + old_size);
-            else if (n == 64)
-                decoded_size = decodeBase58_64(reinterpret_cast<const UInt8 *>(encoded.data()), encoded.size(), data.data() + old_size);
-            else
-                decoded_size = decodeBase58(reinterpret_cast<const UInt8 *>(encoded.data()), encoded.size(), data.data() + old_size);
-
-            if (!decoded_size || *decoded_size != n)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Cannot decode FixedString({}, 'Base58') value of length {} as exactly {} bytes", n, encoded.size(), n);
-        }
-        else
-        {
-            if (encoded.size() != n)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "FixedString({}, 'Raw') value has {} bytes, expected {} bytes", n, encoded.size(), n);
-            memcpy(data.data() + old_size, encoded.data(), n);
-        }
-    }
-    catch (...)
+    if (!tryDecode(text_representation, n, encoded, data.data() + old_size))
     {
         data.resize_assume_reserved(old_size);
-        throw;
+        return false;
     }
+    return true;
+}
+
+void SerializationFixedStringWithTextRepresentation::decodeAndAppend(IColumn & column, std::string_view encoded) const
+{
+    if (!tryDecodeAndAppend(column, encoded))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Cannot parse '{}{}' as FixedString({}, '{}'): expected a valid {} representation of exactly {} bytes",
+            encoded.substr(0, MAX_VALUE_SIZE_IN_EXCEPTION), encoded.size() > MAX_VALUE_SIZE_IN_EXCEPTION ? "..." : "", n, fixedStringTextRepresentationToString(text_representation),
+            fixedStringTextRepresentationToString(text_representation), n);
 }
 
 void SerializationFixedStringWithTextRepresentation::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -201,14 +284,17 @@ void SerializationFixedStringWithTextRepresentation::serializeBinaryBulk(const I
     nested->serializeBinaryBulk(column, ostr, offset, limit);
 }
 
-void SerializationFixedStringWithTextRepresentation::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const
+void SerializationFixedStringWithTextRepresentation::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
-    nested->deserializeBinaryBulk(column, istr, rows_offset, limit, avg_value_size_hint);
+    nested->deserializeBinaryBulk(column, istr, limit, avg_value_size_hint);
 }
+
+/// The encoded alphabets (hex digits, Base64, Base64URL and Base58) do not contain characters
+/// that must be escaped in the TSV, Values, CSV and XML formats, so the encoded text is written as is.
 
 void SerializationFixedStringWithTextRepresentation::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeString(encodeValue(column, row_num), ostr);
+    withEncodedValue(column, row_num, [&](std::string_view encoded) { writeString(encoded, ostr); });
 }
 
 void SerializationFixedStringWithTextRepresentation::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
@@ -218,23 +304,16 @@ void SerializationFixedStringWithTextRepresentation::deserializeWholeText(IColum
     decodeAndAppend(column, encoded);
 }
 
-bool SerializationFixedStringWithTextRepresentation::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+bool SerializationFixedStringWithTextRepresentation::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    try
-    {
-        deserializeWholeText(column, istr, settings);
-        return true;
-    }
-    catch (...)
-    {
-        return false;
-    }
+    String encoded;
+    readStringUntilEOF(encoded, istr);
+    return tryDecodeAndAppend(column, encoded);
 }
 
 void SerializationFixedStringWithTextRepresentation::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    String encoded = encodeValue(column, row_num);
-    writeAnyEscapedString<'\''>(encoded.data(), encoded.data() + encoded.size(), ostr);
+    withEncodedValue(column, row_num, [&](std::string_view encoded) { writeString(encoded, ostr); });
 }
 
 void SerializationFixedStringWithTextRepresentation::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -249,28 +328,22 @@ void SerializationFixedStringWithTextRepresentation::deserializeTextEscaped(ICol
 
 bool SerializationFixedStringWithTextRepresentation::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    try
-    {
-        deserializeTextEscaped(column, istr, settings);
-        return true;
-    }
-    catch (...)
-    {
-        return false;
-    }
+    String encoded;
+    if (settings.tsv.crlf_end_of_line_input)
+        readEscapedStringCRLF(encoded, istr);
+    else
+        readEscapedString(encoded, istr);
+    return tryDecodeAndAppend(column, encoded);
 }
 
-void SerializationFixedStringWithTextRepresentation::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationFixedStringWithTextRepresentation::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    String encoded = encodeValue(column, row_num);
-    if (settings.values.escape_quote_with_quote)
+    withEncodedValue(column, row_num, [&](std::string_view encoded)
     {
         writeChar('\'', ostr);
-        writeAnyEscapedString<'\'', true, false>(encoded.data(), encoded.data() + encoded.size(), ostr);
+        writeString(encoded, ostr);
         writeChar('\'', ostr);
-    }
-    else
-        writeAnyQuotedString<'\''>(encoded.data(), encoded.data() + encoded.size(), ostr);
+    });
 }
 
 void SerializationFixedStringWithTextRepresentation::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
@@ -282,23 +355,14 @@ void SerializationFixedStringWithTextRepresentation::deserializeTextQuoted(IColu
 
 bool SerializationFixedStringWithTextRepresentation::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    try
-    {
-        String encoded;
-        if (!tryReadQuotedStringInto<true>(encoded, istr))
-            return false;
-        decodeAndAppend(column, encoded);
-        return true;
-    }
-    catch (...)
-    {
-        return false;
-    }
+    String encoded;
+    return tryReadQuotedStringInto<true>(encoded, istr) && tryDecodeAndAppend(column, encoded);
 }
 
 void SerializationFixedStringWithTextRepresentation::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(encodeValue(column, row_num), ostr, settings);
+    /// Base64 contains '/', which is escaped depending on output_format_json_escape_forward_slashes.
+    withEncodedValue(column, row_num, [&](std::string_view encoded) { writeJSONString(encoded, ostr, settings); });
 }
 
 void SerializationFixedStringWithTextRepresentation::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -310,29 +374,19 @@ void SerializationFixedStringWithTextRepresentation::deserializeTextJSON(IColumn
 
 bool SerializationFixedStringWithTextRepresentation::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    try
-    {
-        String encoded;
-        if (!tryReadJSONStringInto(encoded, istr, settings.json))
-            return false;
-        decodeAndAppend(column, encoded);
-        return true;
-    }
-    catch (...)
-    {
-        return false;
-    }
+    String encoded;
+    return tryReadJSONStringInto(encoded, istr, settings.json) && tryDecodeAndAppend(column, encoded);
 }
 
 void SerializationFixedStringWithTextRepresentation::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    String encoded = encodeValue(column, row_num);
-    writeXMLStringForTextElement(encoded.data(), encoded.data() + encoded.size(), ostr);
+    withEncodedValue(column, row_num, [&](std::string_view encoded) { writeString(encoded, ostr); });
 }
 
 void SerializationFixedStringWithTextRepresentation::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeCSVString(encodeValue(column, row_num), ostr);
+    /// Quoted like String and FixedString values.
+    withEncodedValue(column, row_num, [&](std::string_view encoded) { writeCSVString(encoded, ostr); });
 }
 
 void SerializationFixedStringWithTextRepresentation::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -344,26 +398,21 @@ void SerializationFixedStringWithTextRepresentation::deserializeTextCSV(IColumn 
 
 bool SerializationFixedStringWithTextRepresentation::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    try
-    {
-        String encoded;
-        readCSVStringInto<String, false, false>(encoded, istr, settings.csv);
-        decodeAndAppend(column, encoded);
-        return true;
-    }
-    catch (...)
-    {
-        return false;
-    }
+    String encoded;
+    readCSVStringInto<String, false, false>(encoded, istr, settings.csv);
+    return tryDecodeAndAppend(column, encoded);
 }
 
 void SerializationFixedStringWithTextRepresentation::serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    String encoded = encodeValue(column, row_num);
-    if (settings.markdown.escape_special_characters)
-        writeMarkdownEscapedString(encoded, ostr);
-    else
-        writeAnyEscapedString<'\''>(encoded.data(), encoded.data() + encoded.size(), ostr);
+    /// Base64 and Base64URL contain '+', '-' and '_', which are special in Markdown.
+    withEncodedValue(column, row_num, [&](std::string_view encoded)
+    {
+        if (settings.markdown.escape_special_characters)
+            writeMarkdownEscapedString(encoded, ostr);
+        else
+            writeString(encoded, ostr);
+    });
 }
 
 }

@@ -77,46 +77,41 @@ DataTypePtr throwOrReturn(const DataTypes & types, std::string_view message_suff
 }
 
 
+/// FixedString(N, 'representation') with a representation other than 'Raw' can be combined only with:
+/// - the same FixedString(N, 'representation');
+/// - FixedString(N), which holds the same bytes;
+/// - String, which is parsed from the text representation.
+/// The common type is FixedString(N, 'representation'), so that e.g. has(array_of_ids, 'encoded id') and
+/// [id, 'encoded id'] compare stored bytes.
+/// Returns std::nullopt if there is no such FixedString among the types, otherwise the result of getLeastSupertype.
 template <LeastSupertypeOnError on_error>
-DataTypePtr getFixedStringWithTextRepresentationSupertypeIfAny(const DataTypes & types)
+std::optional<DataTypePtr> getFixedStringWithTextRepresentationSupertype(const DataTypes & types)
 {
     const DataTypeFixedString * target = nullptr;
-
     for (const auto & type : types)
     {
         const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(type.get());
-        if (!fixed_string || !fixed_string->hasCustomTextRepresentation())
-            continue;
-
-        if (!target)
+        if (fixed_string && fixed_string->hasCustomTextRepresentation())
         {
             target = fixed_string;
-            continue;
+            break;
         }
-
-        if (target->getN() != fixed_string->getN() || target->getTextRepresentation() != fixed_string->getTextRepresentation())
-            return throwOrReturn<on_error>(
-                types,
-                "because FixedString types with different text representations or sizes are not implicitly compatible",
-                ErrorCodes::NO_COMMON_TYPE);
     }
 
     if (!target)
-        return nullptr;
+        return std::nullopt;
 
     for (const auto & type : types)
     {
         if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(type.get()))
         {
-            if (fixed_string->getN() == target->getN()
-                && (fixed_string->getTextRepresentation() == FixedStringTextRepresentation::Raw
-                    || fixed_string->getTextRepresentation() == target->getTextRepresentation()))
-                continue;
+            if (fixed_string->getN() != target->getN())
+                return throwOrReturn<on_error>(types, "because FixedString types have different sizes", ErrorCodes::NO_COMMON_TYPE);
 
-            return throwOrReturn<on_error>(
-                types,
-                "because FixedString size or text representation differs",
-                ErrorCodes::NO_COMMON_TYPE);
+            if (fixed_string->hasCustomTextRepresentation() && fixed_string->getTextRepresentation() != target->getTextRepresentation())
+                return throwOrReturn<on_error>(types, "because FixedString types have different text representations", ErrorCodes::NO_COMMON_TYPE);
+
+            continue;
         }
 
         if (type->getTypeId() == TypeIndex::String)
@@ -124,7 +119,7 @@ DataTypePtr getFixedStringWithTextRepresentationSupertypeIfAny(const DataTypes &
 
         return throwOrReturn<on_error>(
             types,
-            "because FixedString with text representation can be combined only with String or compatible FixedString",
+            "because FixedString with text representation can be combined only with String or FixedString of the same size",
             ErrorCodes::NO_COMMON_TYPE);
     }
 
@@ -743,8 +738,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     for (const auto & type : types)
         type_ids.insert(type->getTypeId());
 
-    if (auto fixed_string_text_representation_supertype = getFixedStringWithTextRepresentationSupertypeIfAny<on_error>(types))
-        return fixed_string_text_representation_supertype;
+    if (auto fixed_string_with_text_representation_supertype = getFixedStringWithTextRepresentationSupertype<on_error>(types))
+        return *fixed_string_with_text_representation_supertype;
 
     /// For String and FixedString, or for different FixedStrings, the common type is String.
     /// If there are Enums and any type of Strings, the common type is String.

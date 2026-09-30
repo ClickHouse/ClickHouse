@@ -10,6 +10,8 @@
 
 #include <IO/WriteHelpers.h>
 
+#include <Poco/String.h>
+
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -35,24 +37,25 @@ String fixedStringTextRepresentationToString(FixedStringTextRepresentation repre
         case FixedStringTextRepresentation::Base64URL: return "Base64URL";
         case FixedStringTextRepresentation::Base58: return "Base58";
     }
-
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown FixedString text representation");
+    UNREACHABLE();
 }
 
 FixedStringTextRepresentation parseFixedStringTextRepresentation(const String & representation)
 {
-    if (representation == "Raw" || representation == "raw" || representation == "RAW")
-        return FixedStringTextRepresentation::Raw;
-    if (representation == "Hex" || representation == "hex" || representation == "HEX")
-        return FixedStringTextRepresentation::Hex;
-    if (representation == "Base64" || representation == "base64" || representation == "BASE64")
-        return FixedStringTextRepresentation::Base64;
-    if (representation == "Base64URL" || representation == "base64url" || representation == "BASE64URL" || representation == "Base64Url")
-        return FixedStringTextRepresentation::Base64URL;
-    if (representation == "Base58" || representation == "base58" || representation == "BASE58")
-        return FixedStringTextRepresentation::Base58;
+    static constexpr FixedStringTextRepresentation all_representations[] = {
+        FixedStringTextRepresentation::Raw,
+        FixedStringTextRepresentation::Hex,
+        FixedStringTextRepresentation::Base64,
+        FixedStringTextRepresentation::Base64URL,
+        FixedStringTextRepresentation::Base58,
+    };
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown FixedString text representation '{}'. Supported values are Raw, Hex, Base64, Base64URL, Base58", representation);
+    for (auto candidate : all_representations)
+        if (Poco::icompare(representation, fixedStringTextRepresentationToString(candidate)) == 0)
+            return candidate;
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Unknown FixedString text representation '{}'. Supported values are Raw, Hex, Base64, Base64URL, Base58", representation);
 }
 
 DataTypeFixedString::DataTypeFixedString(size_t n_, FixedStringTextRepresentation text_representation_) : n(n_), text_representation(text_representation_)
@@ -234,8 +237,54 @@ FORMAT JSONStringsEachRow
 
 {"name":"a\u0000"}
 ```
+
+## Text representation {#text-representation}
+
+An optional second argument declares how the value is represented as text:
+
+```sql
+<column_name> FixedString(N, 'representation')
+```
+
+Where `representation` is one of (case-insensitive):
+
+- `'Raw'` — the default, the same as `FixedString(N)`.
+- `'Hex'` — hexadecimal digits, `2 * N` characters. On input, an optional `0x` prefix and uppercase digits are accepted. On output, lowercase digits are used.
+- `'Base64'` — Base64 with padding, like the [base64Encode](/reference/functions/regular-functions/encoding-functions#base64Encode) function.
+- `'Base64URL'` — URL-safe Base64 without padding, like the [base64URLEncode](/reference/functions/regular-functions/encoding-functions#base64URLEncode) function. Padding is optional on input.
+- `'Base58'` — Base58 with the Bitcoin alphabet, like the [base58Encode](/reference/functions/regular-functions/encoding-functions#base58Encode) function. Encoding and decoding of 32 and 64 bytes values are specialized.
+
+The value is always stored as exactly `N` raw bytes: the storage, the binary formats (`Native`, `RowBinary`, `Parquet`, ...) and the comparison of values
+are the same as for `FixedString(N)`. The representation only changes the conversion from and to text:
+
+- Text input (`INSERT`, text formats, `CAST` from `String`) is decoded, and the decoded value must be exactly `N` bytes, otherwise an exception is thrown. `CAST` to `Nullable` and `accurateCastOrNull` return `NULL` instead.
+- Text output (text formats, `toString`, `CAST` to `String`) is encoded in the declared representation.
+- A string constant compared with the column (`=`, `!=`, `<`, `IN`, `has`, ...) is decoded once, and the values are compared as bytes. The primary key and skipping indexes are used as for `FixedString(N)`.
+- The common type of `FixedString(N, 'representation')` and `String` or `FixedString(N)` is `FixedString(N, 'representation')`. Values with different sizes or different representations cannot be compared or combined without an explicit `CAST`.
+- `FixedString(N)` values are converted without decoding, so `toFixedString(base58Decode(s), 32)` can be compared with `FixedString(32, 'Base58')`, and a column can be changed from `FixedString(N)` with `ALTER TABLE ... MODIFY COLUMN` without changing the stored data.
+- Functions that accept `FixedString` (`length`, `hex`, `base58Encode`, `LIKE`, `startsWith`, ...) operate on the stored bytes.
+- Values are sorted by bytes, which is not the order of the Base58 and Base64 strings.
+
+```sql
+CREATE TABLE accounts
+(
+    id FixedString(32, 'Base58'),
+    name String
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO accounts VALUES ('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'usdc');
+
+SELECT id, hex(id), name FROM accounts WHERE id = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+```
+
+```text
+┌─id───────────────────────────────────────────┬─hex(id)──────────────────────────────────────────────────────────┬─name─┐
+│ EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v │ C6FA7AF3BEDBAD3A3D65F36AABC97431B1BBE4C2D2F6E0E47CA60203452F5D61 │ usdc │
+└──────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────┴──────┘
+```
 )DOCS_MD",
-            .syntax = "FixedString(N)",
+            .syntax = "FixedString(N[, representation])",
             .related = {"String"},
         });
 

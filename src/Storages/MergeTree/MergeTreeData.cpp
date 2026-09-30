@@ -39,6 +39,7 @@
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -5381,6 +5382,15 @@ bool isSafeForKeyConversion(const IDataType * from, const IDataType * to)
             return to_enum16->contains(*from_enum16);
         if (typeid_cast<const DataTypeInt16 *>(to))
             return true;    // NOLINT
+        return false;
+    }
+
+    /// FixedString(N, 'representation') stores and serializes the same N bytes as FixedString(N),
+    /// the representation only affects the conversion from and to text.
+    if (const auto * from_fixed_string = typeid_cast<const DataTypeFixedString *>(from))
+    {
+        if (const auto * to_fixed_string = typeid_cast<const DataTypeFixedString *>(to))
+            return from_fixed_string->getN() == to_fixed_string->getN();
         return false;
     }
 

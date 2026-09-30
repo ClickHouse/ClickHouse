@@ -1,7 +1,5 @@
 #include <Functions/FunctionsConversion.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
-#include <IO/ReadBufferFromString.h>
+#include <DataTypes/Serializations/SerializationFixedStringWithTextRepresentation.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -19,6 +17,7 @@ namespace ErrorCodes
     extern const int CANNOT_CONVERT_TYPE;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
@@ -636,83 +635,56 @@ FunctionCast::WrapperType FunctionCast::createFixedStringWrapper(const DataTypeP
     /// (e.g. CAST('abc', 'Nullable(FixedString(2))')) or when using accurateCastOrNull.
     bool exception_mode_null = cast_type == CastType::accurateOrNull || requested_result_is_nullable;
 
+    /// FixedString(N, 'representation') is parsed from its text representation, while
+    /// a FixedString of the same size is copied as is (the stored bytes are the same).
     if (fixed_string_type->hasCustomTextRepresentation() && WhichDataType(from_type).isString())
     {
-        auto serialization = to_type->getDefaultSerialization();
-        auto format_settings = settings.format_settings;
+        const auto text_representation = fixed_string_type->getTextRepresentation();
 
-        return [to_type, serialization, format_settings, exception_mode_null] (
-            ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/) -> ColumnPtr
+        return [to_type, N, text_representation, exception_mode_null] (
+            ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
         {
-            const IColumn & source = *arguments[0].column;
+            const auto * source = checkAndGetColumn<ColumnString>(arguments[0].column.get());
+            if (!source)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} as the source of CAST to {}",
+                    arguments[0].column->getName(), to_type->getName());
 
-            auto decode_one = [&](std::string_view encoded, IColumn & destination)
-            {
-                ReadBufferFromString in(encoded);
-                serialization->deserializeWholeText(destination, in, format_settings);
-            };
+            const NullMap * source_null_map = nullable_source ? &nullable_source->getNullMapData() : nullptr;
 
-            auto result = to_type->createColumn();
-            result->reserve(source.size());
+            auto result = ColumnFixedString::create(N);
+            auto & result_chars = result->getChars();
+            result_chars.resize_fill(input_rows_count * N);
 
-            MutableColumnPtr null_map_column;
-            ColumnUInt8::Container * null_map = nullptr;
-
+            ColumnUInt8::MutablePtr result_null_map;
             if (exception_mode_null)
-            {
-                auto column_uint8 = ColumnUInt8::create();
-                column_uint8->getData().reserve(source.size());
-                null_map = &column_uint8->getData();
-                null_map_column = std::move(column_uint8);
-            }
+                result_null_map = ColumnUInt8::create(input_rows_count, false);
 
-            auto decode_or_null = [&](std::string_view encoded)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
+                if (source_null_map && (*source_null_map)[i])
+                    continue;
+
+                const auto encoded = source->getDataAt(i);
+                if (SerializationFixedStringWithTextRepresentation::tryDecode(
+                        text_representation, N, std::string_view(encoded.data(), encoded.size()), &result_chars[i * N]))
+                    continue;
+
                 if (!exception_mode_null)
-                {
-                    decode_one(encoded, *result);
-                    return;
-                }
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Cannot parse '{}' as {}: expected a valid {} representation of exactly {} bytes",
+                        std::string_view(encoded.data(), std::min<size_t>(encoded.size(), 128)), to_type->getName(),
+                        fixedStringTextRepresentationToString(text_representation), N);
 
-                try
-                {
-                    decode_one(encoded, *result);
-                    null_map->push_back(UInt8{0});
-                }
-                catch (...)
-                {
-                    result->insertDefault();
-                    null_map->push_back(UInt8{1});
-                }
-            };
-
-            if (const auto * const_column = checkAndGetColumnConstStringOrFixedString(&source))
-            {
-                const Field field = const_column->getField();
-                const auto & encoded = field.safeGet<String>();
-                for (size_t i = 0; i != source.size(); ++i)
-                    decode_or_null(encoded);
-            }
-            else if (const auto * string_column = checkAndGetColumn<ColumnString>(&source))
-            {
-                for (size_t i = 0; i != source.size(); ++i)
-                {
-                    auto encoded = string_column->getDataAt(i);
-                    decode_or_null(std::string_view(encoded.data(), encoded.size()));
-                }
-            }
-            else
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Cannot cast column {} to {} using text representation", source.getName(), to_type->getName());
+                memset(&result_chars[i * N], 0, N);
+                result_null_map->getData()[i] = true;
             }
 
             if (exception_mode_null)
-                return ColumnNullable::create(std::move(result), std::move(null_map_column));
-
+                return ColumnNullable::create(std::move(result), std::move(result_null_map));
             return result;
         };
     }
+
     return [exception_mode_null, N] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/)
     {
         if (exception_mode_null)
@@ -2268,6 +2240,17 @@ ColumnPtr FunctionCast::createVariantFromDescriptorsAndOneNonEmptyVariant(const 
     return ColumnVariant::create(discriminators, variants);
 }
 
+/// Whether the values of the type are text that can be parsed when cast to Variant or Dynamic.
+/// FixedString(N, 'representation') holds raw bytes, which are converted to its own type instead.
+static bool isStringTypeWithTextValues(const DataTypePtr & type)
+{
+    auto nested_type = removeNullable(removeLowCardinality(type));
+    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(nested_type.get());
+        fixed_string_type && fixed_string_type->hasCustomTextRepresentation())
+        return false;
+    return isStringOrFixedString(nested_type);
+}
+
 FunctionCast::WrapperType FunctionCast::createStringToVariantWrapper() const
 {
     return [&](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
@@ -2307,7 +2290,7 @@ FunctionCast::WrapperType FunctionCast::createColumnToVariantWrapper(const DataT
     auto from_nested_type = removeNullableOrLowCardinalityNullable(from_type);
     auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(from_nested_type->getName());
     /// Cast String to Variant through parsing if it's not Variant(String).
-    if (settings.cast_string_to_variant_use_inference && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))) && (!variant_discr_opt || to_variant.getVariants().size() > 1))
+    if (settings.cast_string_to_variant_use_inference && isStringTypeWithTextValues(from_type) && (!variant_discr_opt || to_variant.getVariants().size() > 1))
         return createStringToVariantWrapper();
 
     if (!variant_discr_opt)
@@ -2550,7 +2533,7 @@ FunctionCast::WrapperType FunctionCast::createColumnToDynamicWrapper(const DataT
             return result;
         };
 
-    if (settings.cast_string_to_dynamic_use_inference && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))))
+    if (settings.cast_string_to_dynamic_use_inference && isStringTypeWithTextValues(from_type))
         return createStringToDynamicThroughParsingWrapper();
 
     /// First, cast column to Variant with 2 variants - the type of the column we cast and shared variant type.

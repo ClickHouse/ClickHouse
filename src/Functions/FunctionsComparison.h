@@ -1936,53 +1936,59 @@ public:
     }
 
 
-    ColumnPtr executeFixedStringTextRepresentationComparison(
+    /// FixedString(N, 'representation') stores raw bytes, so it is compared as bytes with:
+    /// - FixedString(N) or the same FixedString(N, 'representation') - directly;
+    /// - String - the string is parsed from the text representation (once, if it is a constant).
+    /// Returns nullptr if none of the arguments is a FixedString with a text representation other than 'Raw'.
+    ColumnPtr executeFixedStringWithTextRepresentation(
         const ColumnWithTypeAndName & left,
         const ColumnWithTypeAndName & right,
-        size_t /*input_rows_count*/) const
+        size_t input_rows_count) const
     {
         const auto * left_fixed_string = typeid_cast<const DataTypeFixedString *>(left.type.get());
         const auto * right_fixed_string = typeid_cast<const DataTypeFixedString *>(right.type.get());
 
-        const DataTypeFixedString * target_type = nullptr;
-        const ColumnWithTypeAndName * target = nullptr;
-        const ColumnWithTypeAndName * source = nullptr;
-        bool left_is_target = false;
-
-        if (left_fixed_string && left_fixed_string->hasCustomTextRepresentation())
-        {
-            target_type = left_fixed_string;
-            target = &left;
-            source = &right;
-            left_is_target = true;
-        }
-        else if (right_fixed_string && right_fixed_string->hasCustomTextRepresentation())
-        {
-            target_type = right_fixed_string;
-            target = &right;
-            source = &left;
-        }
-        else
+        const bool left_is_target = left_fixed_string && left_fixed_string->hasCustomTextRepresentation();
+        const bool right_is_target = right_fixed_string && right_fixed_string->hasCustomTextRepresentation();
+        if (!left_is_target && !right_is_target)
             return nullptr;
 
-        if (const auto * source_fixed_string = typeid_cast<const DataTypeFixedString *>(source->type.get()))
+        const auto & target = left_is_target ? left : right;
+        const auto & source = left_is_target ? right : left;
+        const auto & target_type = assert_cast<const DataTypeFixedString &>(*target.type);
+
+        if (const auto * source_fixed_string = typeid_cast<const DataTypeFixedString *>(source.type.get()))
         {
-            if (source_fixed_string->getN() != target_type->getN())
+            if (source_fixed_string->getN() != target_type.getN()
+                || (source_fixed_string->hasCustomTextRepresentation()
+                    && source_fixed_string->getTextRepresentation() != target_type.getTextRepresentation()))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Cannot compare {} and {} because their FixedString sizes differ",
+                    "Cannot compare {} and {}: FixedString types with different sizes or text representations are not comparable",
                     left.type->getName(),
                     right.type->getName());
+
+            return executeString(left.column.get(), right.column.get());
         }
-        else if (!WhichDataType(source->type).isString())
+
+        if (!WhichDataType(source.type).isString())
             return nullptr;
 
-        ColumnPtr converted_source = castColumnAccurate(*source, target->type);
+        ColumnPtr converted_source;
+        if (const auto * source_const = checkAndGetColumnConst<ColumnString>(source.column.get()))
+        {
+            /// Parse the constant once. Throws if it is not a valid text representation, like comparison of other types with constant strings.
+            Field converted = convertFieldToType(source_const->getField(), *target.type, source.type.get(), params.format_settings);
+            converted_source = target.type->createColumnConst(input_rows_count, converted);
+        }
+        else
+        {
+            converted_source = castColumnAccurate(source, target.type);
+        }
 
         if (left_is_target)
-            return executeString(target->column.get(), converted_source.get());
-
-        return executeString(converted_source.get(), target->column.get());
+            return executeString(target.column.get(), converted_source.get());
+        return executeString(converted_source.get(), target.column.get());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -2059,7 +2065,7 @@ public:
         bool types_equal = left_type->equals(*right_type);
 
         ColumnPtr res;
-        if ((res = executeFixedStringTextRepresentationComparison(col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count)))
+        if ((res = executeFixedStringWithTextRepresentation(col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count)))
             return res;
 
         if (left_is_num && right_is_num && !date_and_time_datetime

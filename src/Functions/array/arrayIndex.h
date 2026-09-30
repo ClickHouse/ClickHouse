@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
@@ -592,6 +593,8 @@ public:
             argument.type = recursiveRemoveLowCardinality(argument.type);
         }
 
+        castToCommonTypeIfFixedStringWithTextRepresentation(new_arguments);
+
         return executeArrayImpl(new_arguments, result_type);
     }
 
@@ -601,6 +604,38 @@ private:
     using ResultColumnPtr = decltype(ResultColumnType::create());
 
     using NullMaps = std::pair<const NullMap *, const NullMap *>;
+
+    /// FixedString(N, 'representation') stores raw bytes, while String values are its text representation.
+    /// The specialized implementations (e.g. for constant arrays) compare values as is,
+    /// so cast the array elements and the value to the common type, which decodes the strings.
+    static void castToCommonTypeIfFixedStringWithTextRepresentation(ColumnsWithTypeAndName & arguments)
+    {
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        if (!array_type)
+            return;
+
+        const DataTypePtr & element_type = array_type->getNestedType();
+        const DataTypePtr & value_type = arguments[1].type;
+        if (element_type->equals(*value_type))
+            return;
+
+        auto has_text_representation = [](const DataTypePtr & type)
+        {
+            const auto * fixed_string = checkAndGetDataType<DataTypeFixedString>(removeNullable(type).get());
+            return fixed_string && fixed_string->hasCustomTextRepresentation();
+        };
+
+        if (!has_text_representation(element_type) && !has_text_representation(value_type))
+            return;
+
+        DataTypePtr common_type = getLeastSupertype(DataTypes{element_type, value_type});
+        DataTypePtr common_array_type = std::make_shared<DataTypeArray>(common_type);
+
+        arguments[0].column = castColumn(arguments[0], common_array_type);
+        arguments[0].type = common_array_type;
+        arguments[1].column = castColumn(arguments[1], common_type);
+        arguments[1].type = common_type;
+    }
 
     static bool allowArguments(const DataTypePtr & inner_type, const DataTypePtr & arg)
     {

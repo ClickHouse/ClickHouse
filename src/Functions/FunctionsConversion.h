@@ -3943,6 +3943,11 @@ private:
         {
             if (from_type->getCustomSerialization())
                 return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count, settings.format_settings);
+
+            /// FixedString(N, 'representation') is converted to its text representation, like it is formatted on output.
+            if (const auto * from_fixed_string = typeid_cast<const DataTypeFixedString *>(from_type.get());
+                from_fixed_string && from_fixed_string->hasCustomTextRepresentation())
+                return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count, settings.format_settings);
         }
 
         bool done = false;
@@ -4817,6 +4822,17 @@ struct ToStringMonotonicity
         /// Order on enum values (which is the order on integers) is completely arbitrary in respect to the order on strings.
         if (WhichDataType(*type_ptr).isEnum())
             return not_monotonic;
+
+        if (const auto * fixed_string_type = checkAndGetDataType<DataTypeFixedString>(type_ptr);
+            fixed_string_type && fixed_string_type->hasCustomTextRepresentation())
+        {
+            /// `toString(FixedString(N, 'representation'))` returns the encoded value. Lowercase hex of a fixed width
+            /// preserves the order of bytes, while Base58 has a variable length and the Base64 alphabet is not
+            /// in the ASCII order.
+            if (fixed_string_type->getTextRepresentation() == FixedStringTextRepresentation::Hex)
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+            return not_monotonic;
+        }
 
         if (checkDataTypes<DataTypeFixedString>(type_ptr))
         {
