@@ -596,9 +596,8 @@ void optimizeTreeSecondPass(
                 pushLimitByIntoSort(frame_node);
         });
 
-    /// The TopK filter is merged into the read's PREWHERE, so it needs the final read: after PREWHERE
-    /// promotion, after a projection has replaced the read, and after reading in order was decided.
-    /// All three change what there is to merge into, and the last one whether to merge at all.
+    /// After PREWHERE promotion, projection replacement and the read-in-order decision: each changes the
+    /// PREWHERE the TopK filter joins, or whether it is added.
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
