@@ -144,18 +144,17 @@ public:
         if (row_begin == row_end)
             return;
 
-        const size_t size = row_end - row_begin;
         if constexpr (is_integer<Value>)
         {
             if (!null_map && !if_map)
             {
-                reserveForAdditional(size);
+                reserveForAdditional(row_end - row_begin);
                 array.insert(values + row_begin, values + row_end);
                 return;
             }
         }
 
-        reserveForAdditional(size);
+        /// Let add() reserve only for values that pass the filters and NaN check.
         for (size_t i = row_begin; i < row_end; ++i)
         {
             if ((null_map && null_map[i]) || (if_map && !if_map[i]))

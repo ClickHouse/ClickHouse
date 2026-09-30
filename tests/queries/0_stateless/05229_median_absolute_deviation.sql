@@ -79,5 +79,25 @@ FROM
 GROUP BY key
 ORDER BY key;
 
+-- Sparse batches retain the same four values through each filtering path.
+SELECT madIf(number, number % 1024 = 0),
+       mad(if(number % 1024 = 0, toNullable(number), NULL)),
+       mad(if(number % 1024 = 0, toFloat64(number), nan)),
+       madIf(if(number % 512 = 0, toNullable(number), NULL), number % 1024 = 0)
+FROM numbers(4096)
+SETTINGS max_block_size = 256, max_threads = 1;
+
+-- Entirely rejected batches leave an empty state.
+SELECT isNaN(madIf(number, number > 4096)),
+       isNaN(mad(if(number > 4096, toNullable(number), NULL))),
+       isNaN(mad(if(number > 4096, toFloat64(number), nan)))
+FROM numbers(4096)
+SETTINGS max_block_size = 256, max_threads = 1;
+
+-- Filtering happens before rejecting infinite values.
+SELECT madIf(if(number % 1024 = 0, toFloat64(number), inf), number % 1024 = 0)
+FROM numbers(4096)
+SETTINGS max_block_size = 256, max_threads = 1;
+
 SELECT mad(x)
 FROM (SELECT arrayJoin([1.0, inf]) AS x); -- { serverError BAD_ARGUMENTS }
