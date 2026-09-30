@@ -506,11 +506,6 @@ bool IcebergMetadata::optimize(
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "OPTIMIZE is not supported with iceberg_metadata_file_path on a standalone Iceberg table");
-
-        if (lookup_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "OPTIMIZE is not supported with iceberg_use_version_hint on a standalone Iceberg table");
     }
 
 #if CLICKHOUSE_CLOUD
@@ -530,6 +525,11 @@ bool IcebergMetadata::optimize(
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "OPTIMIZE is not supported for catalog-backed Iceberg tables in this build");
+
+    if (getMetadataLookupSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "OPTIMIZE is not supported with iceberg_use_version_hint on a standalone Iceberg table");
 
     if (settings[Setting::allow_experimental_iceberg_compaction])
     {

@@ -26,6 +26,14 @@ DELETE FROM t WHERE id = 1;    -- v3, with a position-delete file
 INSERT INTO t VALUES (3);      -- v4, committed before compaction
 SELECT id FROM t ORDER BY id;
 
+OPTIMIZE TABLE t SETTINGS allow_experimental_iceberg_compaction = 1, iceberg_snapshot_id = 1; -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM system.iceberg_history WHERE database = currentDatabase() AND table = 't';
+SELECT id FROM t ORDER BY id;
+
+OPTIMIZE TABLE t SETTINGS allow_experimental_iceberg_compaction = 1, iceberg_timestamp_ms = 9223372036854775807; -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM system.iceberg_history WHERE database = currentDatabase() AND table = 't';
+SELECT id FROM t ORDER BY id;
+
 CREATE TABLE pinned
 ENGINE = IcebergLocal((SELECT path FROM iceberg_path), 'Parquet')
 SETTINGS iceberg_metadata_file_path = 'metadata/v3.metadata.json',
@@ -55,7 +63,8 @@ SETTINGS iceberg_use_version_hint = 1,
          allow_experimental_iceberg_compaction = 0;
 SELECT id FROM hinted ORDER BY id;
 
-OPTIMIZE TABLE hinted SETTINGS allow_experimental_iceberg_compaction = 1; -- { serverError NOT_IMPLEMENTED }
+-- OSS rejects the stale hint with (NOT_IMPLEMENTED); the cloud fails with (BAD_ARGUMENTS) at a later stage
+OPTIMIZE TABLE hinted SETTINGS allow_experimental_iceberg_compaction = 1; -- { serverError NOT_IMPLEMENTED, BAD_ARGUMENTS }
 
 SELECT id
 FROM icebergLocal((SELECT path FROM iceberg_path), 'Parquet')
