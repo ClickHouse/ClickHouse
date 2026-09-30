@@ -69,7 +69,7 @@ private:
     std::unordered_map<Int32, DB::DataTypePtr> min_max_column_types;
 
 public:
-    /// `partition_key_` is the key of the manifest's partition spec, nullptr if it has none; it must outlive the pruner.
+    /// `partition_key_` may be nullptr and must outlive the pruner.
     /// `require_ready_sets` makes `IN` conditions whose sets are not built yet unknown instead of building them.
     ManifestFilesPruner(
         const IcebergSchemaProcessor & schema_processor_,
