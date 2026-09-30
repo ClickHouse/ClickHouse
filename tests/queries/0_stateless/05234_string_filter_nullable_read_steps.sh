@@ -19,6 +19,7 @@ opts=(
     --use_skip_indexes 0
     --log_queries 1
     --log_queries_probability 1
+    --log_queries_min_query_duration_ms 0
     --log_profile_events 1
     --max_threads 1
 )
@@ -52,7 +53,8 @@ ${CLICKHOUSE_CLIENT} -q "
     ALTER TABLE string_filter_nullable_steps RENAME COLUMN ns TO renamed_ns, RENAME COLUMN t TO renamed_t;
 "
 
-prefix="nullable_string_steps_${CLICKHOUSE_DATABASE}"
+# Ignore QueryFinish rows left by earlier invocations in the same database.
+prefix="nullable_string_steps_${CLICKHOUSE_DATABASE}_${BASHPID}_${RANDOM}_${RANDOM}"
 echo 'wrapped read results'
 for column in renamed_ns renamed_t.value; do
     for layout in legacy modern mixed; do
