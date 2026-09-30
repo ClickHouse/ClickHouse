@@ -1,5 +1,4 @@
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -53,51 +52,6 @@ std::optional<size_t> getRemovePosition(UInt64 index, size_t array_size)
     return static_cast<size_t>(index - 1);
 }
 
-ColumnPtr executeConstantArray(
-    const ColumnArray & array,
-    const IColumn & index_column,
-    bool index_is_unsigned,
-    size_t input_rows_count)
-{
-    const auto & source_data = array.getData();
-    const size_t array_size = array.getOffsets()[0];
-    auto result_data = source_data.cloneEmpty();
-    auto result_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
-    auto & result_offsets = result_offsets_column->getData();
-    size_t result_size = 0;
-
-    for (size_t row = 0; row < input_rows_count; ++row)
-    {
-        const auto remove_position = index_is_unsigned
-            ? getRemovePosition(index_column.getUInt(row), array_size)
-            : getRemovePosition(index_column.getInt(row), array_size);
-
-        if (remove_position)
-        {
-            const size_t prefix_size = *remove_position;
-            const size_t suffix_begin = prefix_size + 1;
-            const size_t suffix_size = array_size - suffix_begin;
-
-            if (prefix_size != 0)
-                result_data->insertRangeFrom(source_data, 0, prefix_size);
-            if (suffix_size != 0)
-                result_data->insertRangeFrom(source_data, suffix_begin, suffix_size);
-
-            result_size += array_size - 1;
-        }
-        else
-        {
-            if (array_size != 0)
-                result_data->insertRangeFrom(source_data, 0, array_size);
-            result_size += array_size;
-        }
-
-        result_offsets[row] = result_size;
-    }
-
-    return ColumnArray::create(std::move(result_data), std::move(result_offsets_column));
-}
-
 class FunctionArrayRemoveAt final : public IFunction
 {
 public:
@@ -144,20 +98,8 @@ public:
         const auto & index_column = *arguments[1].column;
         const bool index_is_unsigned = isUInt(arguments[1].type);
 
-        if (const auto * const_array = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get()))
-        {
-            const auto * array = checkAndGetColumn<ColumnArray>(const_array->getDataColumnPtr().get());
-            if (!array)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "First argument for function {} must be Array, got {}",
-                    getName(),
-                    arguments[0].column->getName());
-
-            return executeConstantArray(*array, index_column, index_is_unsigned, input_rows_count);
-        }
-
-        const auto * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+        const auto array_column = arguments[0].column->convertToFullColumnIfConst();
+        const auto * array = checkAndGetColumn<ColumnArray>(array_column.get());
         if (!array)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -165,19 +107,18 @@ public:
                 getName(),
                 arguments[0].column->getName());
 
-        const auto & source_data = array->getData();
-        const auto & source_offsets = array->getOffsets();
-        auto result_data = source_data.cloneEmpty();
-        result_data->reserve(source_data.size());
+        const auto & data = array->getData();
+        const auto & offsets = array->getOffsets();
+        IColumn::Filter filter(data.size(), 1);
         auto result_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
         auto & result_offsets = result_offsets_column->getData();
+
         size_t source_begin = 0;
-        size_t copy_begin = 0;
         size_t removed = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const size_t source_end = source_offsets[row];
+            const size_t source_end = offsets[row];
             const size_t array_size = source_end - source_begin;
             const auto remove_position = index_is_unsigned
                 ? getRemovePosition(index_column.getUInt(row), array_size)
@@ -185,14 +126,7 @@ public:
 
             if (remove_position)
             {
-                const size_t absolute_remove_position = source_begin + *remove_position;
-                if (absolute_remove_position > copy_begin)
-                    result_data->insertRangeFrom(
-                        source_data,
-                        copy_begin,
-                        absolute_remove_position - copy_begin);
-
-                copy_begin = absolute_remove_position + 1;
+                filter[source_begin + *remove_position] = 0;
                 ++removed;
             }
 
@@ -200,13 +134,9 @@ public:
             source_begin = source_end;
         }
 
-        if (removed == 0)
-            return arguments[0].column;
-
-        if (copy_begin < source_data.size())
-            result_data->insertRangeFrom(source_data, copy_begin, source_data.size() - copy_begin);
-
-        return ColumnArray::create(std::move(result_data), std::move(result_offsets_column));
+        return ColumnArray::create(
+            data.filter(filter, -1),
+            std::move(result_offsets_column));
     }
 };
 
