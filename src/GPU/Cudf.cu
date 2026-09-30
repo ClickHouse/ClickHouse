@@ -3,11 +3,14 @@
 #include <cudf/strings/strings_column_view.hpp>
 #include <cudf/unary.hpp>
 
+#include <rmm/error.hpp>
+
 #include <cxxabi.h>
 
 #include <cstdlib>
 #include <exception>
 #include <limits>
+#include <stdexcept>
 #include <string>
 
 namespace DB::GPU
@@ -31,15 +34,24 @@ std::string describeForeign(const std::exception & exception)
 {
     const std::string type = typeNameOf(exception);
 
-    static const char * const without_message[] = {"bad_alloc", "bad_cast", "bad_typeid", "bad_function_call", "bad_variant_access", "bad_optional_access", "bad_exception", "std::exception"};
-    for (const char * bare : without_message)
+    /// `rmm::bad_alloc` overrides `what` in the island, so the call reads its own libstdc++ message.
+    if (const auto * rmm_error = dynamic_cast<const rmm::bad_alloc *>(&exception))
+        return type + ": " + rmm_error->what();
+
+    /// The `what` of `std::logic_error` and `std::runtime_error` binds to libc++'s, which reads the
+    /// message at the offset of ClickHouse's larger libc++ `std::exception`. The libstdc++ layout of
+    /// both is the vtable pointer and then a pointer to the message's characters.
+    const void * with_message = dynamic_cast<const std::logic_error *>(&exception);
+    if (!with_message)
+        with_message = dynamic_cast<const std::runtime_error *>(&exception);
+    if (with_message)
     {
-        if (type.find(bare) != std::string::npos)
-            return type;
+        const char * message = *reinterpret_cast<const char * const *>(static_cast<const char *>(with_message) + sizeof(void *));
+        return type + ": " + (message ? message : "");
     }
 
-    const char * message = *reinterpret_cast<const char * const *>(reinterpret_cast<const char *>(&exception) + sizeof(void *));
-    return type + ": " + (message ? message : "");
+    /// No other layout is known, so the message is not read.
+    return type;
 }
 
 void checkCuda(cudaError_t status, const std::string & what)
@@ -115,6 +127,11 @@ cudf::column_view columnViewOf(const DeviceFixedColumn & column, GPUElementType 
 cudf::column_view columnViewOf(const DeviceVariableColumn & column, const std::string & what)
 {
     const cudf::size_type rows = rowsForCudf(column.rows, what);
+
+    /// An empty column may come without offsets, and cuDF's own empty strings column has no children either.
+    if (rows == 0)
+        return cudf::column_view(cudf::data_type{cudf::type_id::STRING}, 0, nullptr, nullptr, 0);
+
     const cudf::column_view offsets(cudf::data_type{cudf::type_id::INT64}, rows + 1, column.offsets, nullptr, 0);
     return cudf::column_view(cudf::data_type{cudf::type_id::STRING}, rows, column.chars, nullptr, 0, 0, {offsets});
 }

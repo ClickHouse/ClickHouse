@@ -407,7 +407,7 @@ size_t CompressedUploadPipe::stagedRows() const
             if constexpr (std::is_same_v<std::decay_t<decltype(column)>, DeviceFixedColumnBuffer>)
                 return staged_bytes / column.elementSize();
             else
-                return column.rows() + (column.unsettledBytes() + staged_sizes.expanded_bytes) / sizeof(uint64_t);
+                return column.rowsWithSizes(staged_sizes.expanded_bytes);
         },
         device);
 }

@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 #include <map>
 #include <mutex>
@@ -18,6 +19,10 @@ namespace DB::GPU
 namespace
 {
 
+/// Keeps pinned host buffers for reuse, as `cudaHostAlloc` is slow. The buffers are by power-of-two size class, and a
+/// request takes one of exactly its class, so a large buffer is never kept for small requests. Buffers larger than
+/// `max_pooled_capacity` are allocated to size and freed as soon as they are released, and at most `max_pooled_bytes`
+/// are kept in all, so a large query does not keep its peak of unswappable memory after it ends.
 class PinnedBufferPool
 {
 public:
@@ -29,22 +34,25 @@ public:
 
     std::pair<char *, size_t> acquire(size_t bytes)
     {
+        const size_t capacity = bytes <= max_pooled_capacity ? std::bit_ceil(bytes) : bytes;
+
+        if (capacity <= max_pooled_capacity)
         {
             std::lock_guard lock(mutex);
-            const auto it = free_buffers.lower_bound(bytes);
+            const auto it = free_buffers.find(capacity);
             if (it != free_buffers.end())
             {
-                const std::pair<char *, size_t> taken{it->second, it->first};
-                pooled_bytes -= it->first;
+                char * const taken = it->second;
+                pooled_bytes -= capacity;
                 free_buffers.erase(it);
-                return taken;
+                return {taken, capacity};
             }
         }
 
         void * fresh = nullptr;
-        checkCuda(cudaHostAlloc(&fresh, bytes, cudaHostAllocDefault), "Cannot allocate {} bytes of pinned host memory", bytes);
+        checkCuda(cudaHostAlloc(&fresh, capacity, cudaHostAllocDefault), "Cannot allocate {} bytes of pinned host memory", capacity);
 
-        return {static_cast<char *>(fresh), bytes};
+        return {static_cast<char *>(fresh), capacity};
     }
 
     void release(char * buffer, size_t capacity) noexcept
@@ -52,6 +60,7 @@ public:
         if (buffer == nullptr)
             return;
 
+        if (capacity <= max_pooled_capacity)
         {
             std::lock_guard lock(mutex);
             if (pooled_bytes + capacity <= max_pooled_bytes)
@@ -68,7 +77,9 @@ public:
 private:
     ~PinnedBufferPool() = default;
 
-    static constexpr size_t max_pooled_bytes = 16UL * 1024 * 1024 * 1024;
+    /// The largest staging buffer of `GPUAccumulator`.
+    static constexpr size_t max_pooled_capacity = 256UL * 1024 * 1024;
+    static constexpr size_t max_pooled_bytes = 1024UL * 1024 * 1024;
 
     std::mutex mutex;
     std::multimap<size_t, char *> free_buffers TSA_GUARDED_BY(mutex);
