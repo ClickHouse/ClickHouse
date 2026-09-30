@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/ProcessList.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTDeleteQuery.h>
@@ -53,6 +54,7 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -190,7 +192,10 @@ struct DeleteStatement
                 addMatches(block, rows_by_part_name);
 
         /// Otherwise a killed or timed-out scan looks like a DELETE that found fewer rows.
-        executor.throwIfCancelled();
+        /// `checkTimeLimit` throws on a kill and on a `throw`-mode timeout; a `break`-mode one truncated the scan.
+        if (const auto status = pipeline.getProcessListElement(); status && !status->checkTimeLimit())
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "UNIQUE KEY DELETE: the scan of partition {} ran out of time before it finished", partition_id);
 
         DeleteRowsByPart rows_by_part;
         for (auto & [part_name, rows] : rows_by_part_name)
@@ -199,6 +204,7 @@ struct DeleteStatement
     }
 
     /// Scan and commit one partition under one transaction, retrying on a conflict.
+    /// Each partition has its own snapshot, so a DELETE is atomic per partition, not statement-wide as a mutation.
     /// Returns the newly-dead rows committed.
     size_t deleteInPartition(const String & partition_id) const
     {

@@ -21,7 +21,11 @@ struct StorageSnapshot;
 class ReadSnapshot
 {
 public:
-    ReadSnapshot(const DeleteBitmapStore & store_, CSN csn_, std::shared_ptr<const MergeTreeTransactionHolder> pin_ = {});
+    ReadSnapshot(
+        const DeleteBitmapStore & store_,
+        CSN csn_,
+        TransactionID tid_ = Tx::EmptyTID,
+        std::shared_ptr<const MergeTreeTransactionHolder> pin_ = {});
 
     /// Never null -- an empty bitmap means "no deletions". Highest version at or below the
     /// snapshot; an uncommitted one resolves to no csn and so is never selected. Every reader of
@@ -31,10 +35,16 @@ public:
     /// `part`'s rows minus the ones its bitmap kills.
     size_t liveRows(const IMergeTreeDataPart & part) const;
 
+    CSN snapshotCSN() const { return csn; }
+
+    /// The reading transaction -- the query's or the read's own pin -- whose parts the read sees.
+    TransactionID readerTID() const { return tid; }
+
 private:
     /// Owned by the storage, which outlives every read it serves.
     const DeleteBitmapStore & store;
     CSN csn;
+    TransactionID tid;
     std::shared_ptr<const MergeTreeTransactionHolder> pin;
 
     /// So index analysis and the read pool agree even if a version's csn resolves between their lookups.

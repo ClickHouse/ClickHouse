@@ -411,7 +411,7 @@ std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) cons
     {
         const auto uk_read_snapshot = makeUniqueKeyReadSnapshot(local_context);
         UInt64 res = 0;
-        for (const auto & part : getVisibleDataPartsVector(local_context))
+        for (const auto & part : getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID()))
             res += uk_read_snapshot->liveRows(*part);
         return res;
     }
@@ -441,7 +441,9 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Acti
     ReadSnapshotPtr uk_read_snapshot;
     if (hasUniqueKey())
         uk_read_snapshot = makeUniqueKeyReadSnapshot(local_context);
-    auto parts = getVisibleDataPartsVector(local_context);
+    auto parts = uk_read_snapshot
+        ? getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID())
+        : getVisibleDataPartsVector(local_context);
     return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts), uk_read_snapshot.get());
 }
 

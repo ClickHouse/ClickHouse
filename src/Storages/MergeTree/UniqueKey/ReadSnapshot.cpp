@@ -8,8 +8,9 @@
 namespace DB
 {
 
-ReadSnapshot::ReadSnapshot(const DeleteBitmapStore & store_, CSN csn_, std::shared_ptr<const MergeTreeTransactionHolder> pin_)
-    : store(store_), csn(csn_), pin(std::move(pin_))
+ReadSnapshot::ReadSnapshot(
+    const DeleteBitmapStore & store_, CSN csn_, TransactionID tid_, std::shared_ptr<const MergeTreeTransactionHolder> pin_)
+    : store(store_), csn(csn_), tid(tid_), pin(std::move(pin_))
 {
 }
 

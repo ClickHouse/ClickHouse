@@ -906,7 +906,7 @@ MergeTreeData::MergeTreeData(
             bitmap_cache = ctx->getDeleteBitmapCache();
 
         unique_key_txn_manager = std::make_unique<UniqueKeyTxnManager>(
-            std::make_shared<DeleteBitmapStore>(*this, std::move(bitmap_cache)));
+            *this, std::make_shared<DeleteBitmapStore>(*this, std::move(bitmap_cache)));
     }
 
     String reason;
@@ -4968,7 +4968,7 @@ ReadSnapshotPtr MergeTreeData::makeUniqueKeyReadSnapshot(const ContextPtr & loca
 {
     /// An explicit transaction, or `implicit_transaction=1`, is already the pin.
     if (auto txn = local_context->getCurrentTransaction())
-        return makeUniqueKeyReadSnapshot(txn->getSnapshot());
+        return std::make_shared<const ReadSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), txn->getSnapshot(), txn->tid);
 
     /// Otherwise this read pins its own snapshot for as long as the returned value lives. Not
     /// autocommit: nothing is written, and the holder's destructor rolls it back, which for a
@@ -4980,7 +4980,7 @@ ReadSnapshotPtr MergeTreeData::makeUniqueKeyReadSnapshot(const ContextPtr & loca
     LOG_TRACE(log, "UNIQUE KEY READ: pinned csn {} on tid {} for the duration of the read",
         snapshot_csn, txn->tid);
 
-    return std::make_shared<const ReadSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), snapshot_csn, std::move(pin));
+    return std::make_shared<const ReadSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), snapshot_csn, txn->tid, std::move(pin));
 }
 
 std::vector<ConstDeleteBitmapPtr> MergeTreeData::captureUniqueKeyMergeInputBitmaps(const DataPartsVector & parts) const
@@ -14607,7 +14607,17 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
     if (metadata_snapshot->hasUniqueKey())
         snapshot_data->uk_read_snapshot = makeUniqueKeyReadSnapshot(query_context);
 
-    auto [query_ranges, query_parts] = getPossiblySharedVisibleDataPartsRanges(query_context);
+    RangesInDataPartsPtr query_ranges;
+    DataPartsVectorPtr query_parts;
+    if (const auto & uk_read_snapshot = snapshot_data->uk_read_snapshot)
+    {
+        /// Not every Active part: a UNIQUE KEY commit publishes its part Active before its commit point.
+        auto parts = getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID());
+        query_ranges = std::make_shared<const RangesInDataParts>(parts);
+        query_parts = std::make_shared<const DataPartsVector>(std::move(parts));
+    }
+    else
+        std::tie(query_ranges, query_parts) = getPossiblySharedVisibleDataPartsRanges(query_context);
     snapshot_data->parts = query_ranges;
 
     auto parts_info = getPartsSnapshotInfo(*query_parts);

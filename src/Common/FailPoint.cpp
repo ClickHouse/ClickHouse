@@ -376,6 +376,7 @@ static struct InitFiu
     REGULAR(transaction_force_unknown_state_after_commit) \
     REGULAR(transaction_hold_unknown_state) \
     PAUSEABLE_ONCE(unique_key_delete_pause_before_commit) \
+    PAUSEABLE_ONCE(unique_key_insert_pause_before_commit) \
     PAUSEABLE_ONCE(unique_key_merge_pause_before_commit) \
     ONCE(unique_key_merge_fail_after_publish) \
     ONCE(attach_to_group_failure) \

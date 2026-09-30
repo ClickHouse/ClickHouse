@@ -3,3 +3,4 @@ after_delete	0
 after_reinsert	2	2
 replay	1	a
 aborted_retry	1	a
+coalesced	[(1,'a'),(2,'b')]

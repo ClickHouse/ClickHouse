@@ -5,7 +5,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
-#include <Interpreters/TransactionManager.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeCommittingBlock.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -51,6 +50,7 @@ namespace DB
 
 namespace FailPoints
 {
+extern const char unique_key_insert_pause_before_commit[];
 extern const char unique_key_merge_fail_after_publish[];
 }
 
@@ -94,11 +94,6 @@ public:
                 writeKind(), partitionId());
             return {};
         }
-
-        /// Only when this write installs a bitmap of its own: a write that touches no target
-        /// derives nothing from the physical set and so cannot shadow anything.
-        if (!kills_per_part.empty())
-            rejectUndeterminedTransactions("delete bitmap");
 
         auto kills = ownKills();
         auto carried = selectCarriedBitmaps();
@@ -194,18 +189,6 @@ protected:
         return prepared;
     }
 
-    static void rejectUndeterminedTransactions(std::string_view what)
-    {
-        if (!TransactionManager::instance().hasUnknownStateTransactions())
-            return;
-
-        throw Exception(
-            ErrorCodes::ABORTED,
-            "UNIQUE KEY {}: a transaction is in an undetermined state, so the delete bitmaps it "
-            "wrote cannot be told apart from ones that will never exist; retrying after it resolves",
-            what);
-    }
-
     DeleteBitmapStore & delete_bitmap_store;
     LoggerPtr log;
 
@@ -253,6 +236,9 @@ public:
         const PartitionWriteGuard &, const MergeTreeTransactionPtr & txn, const StagedWrite &) override
     {
         addPartToActiveSet(storage, own_part, txn);
+
+        /// The window a read sees the part Active before its commit point, otherwise too narrow to hit.
+        FailPointInjection::pauseFailPoint(FailPoints::unique_key_insert_pause_before_commit);
         return *own_part;
     }
 
@@ -395,8 +381,13 @@ std::vector<ProbeResult> UniqueKeyTxnCommit::InsertCommit::probeActiveParts(cons
     ProbeTargetsSnapshot targets;
     targets.reserve(active_parts.size());
     for (const auto & part : active_parts)
+    {
+        /// Rolled back after the part list was read.
+        if (part->version->getInfo().creation_csn == Tx::RolledBackCSN)
+            continue;
         if (auto probe_target = makeSSTProbeTarget(part))
             targets.push_back(std::move(probe_target));
+    }
 
     auto columns = metadata_snapshot->getUniqueKeyColumns();
     auto probe = makeUniqueKeyProbe(
