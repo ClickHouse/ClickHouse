@@ -137,13 +137,14 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE t_modify_column;
 "
 
+# max_number_of_merges_with_ttl_in_pool is compared with the number of TTL merges of the whole server, so the tables
+# below that wait for a background TTL merge raise it to 100. Where the part must be prepared first, it stays 0 until then.
+
 echo "-- background TTL merge"
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_background (id UInt64, delete_at DateTime DEFAULT 0) ENGINE = MergeTree ORDER BY id TTL delete_at DELETE
-    SETTINGS merge_with_ttl_timeout = 0, ttl_only_drop_parts = 0;
-    SYSTEM STOP MERGES t_background;
+    SETTINGS merge_with_ttl_timeout = 0, ttl_only_drop_parts = 0, max_number_of_merges_with_ttl_in_pool = 100;
     INSERT INTO t_background $FIXTURE;
-    SYSTEM START MERGES t_background;
 "
 # Wait until the inserted part has been merged away.
 for _ in $(seq 1 300); do
@@ -160,10 +161,8 @@ echo "-- ttl_only_drop_parts drops an expired part whose column TTL is 0 for eve
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_drop_column_zero (id UInt64, ts DateTime, v_expire DateTime DEFAULT 0, v String TTL v_expire)
     ENGINE = MergeTree ORDER BY id TTL ts + INTERVAL 1 DAY
-    SETTINGS merge_with_ttl_timeout = 0, ttl_only_drop_parts = 1;
-    SYSTEM STOP MERGES t_drop_column_zero;
+    SETTINGS merge_with_ttl_timeout = 0, ttl_only_drop_parts = 1, max_number_of_merges_with_ttl_in_pool = 100;
     INSERT INTO t_drop_column_zero (id, ts, v) SELECT number, now() - INTERVAL 5 DAY, 'x' FROM numbers(10);
-    SYSTEM START MERGES t_drop_column_zero;
 "
 for _ in $(seq 1 300); do
     unmerged=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_drop_column_zero' AND active AND level = 0")
@@ -182,11 +181,10 @@ echo "-- rows whose TTL is 0 survive the drop of an expired column TTL that was 
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_removed_column_ttl (id UInt64, delete_at DateTime DEFAULT 0, ts DateTime, v String TTL ts + INTERVAL 1 DAY)
     ENGINE = MergeTree ORDER BY id TTL delete_at DELETE
-    SETTINGS merge_with_ttl_timeout = 0, ttl_only_drop_parts = 0;
-    SYSTEM STOP MERGES t_removed_column_ttl;
+    SETTINGS merge_with_ttl_timeout = 0, ttl_only_drop_parts = 0, max_number_of_merges_with_ttl_in_pool = 0;
     INSERT INTO t_removed_column_ttl SELECT number, toDateTime(0), now() - INTERVAL 5 DAY, 'x' FROM numbers(10);
     ALTER TABLE t_removed_column_ttl MODIFY COLUMN v REMOVE TTL;
-    SYSTEM START MERGES t_removed_column_ttl;
+    ALTER TABLE t_removed_column_ttl MODIFY SETTING max_number_of_merges_with_ttl_in_pool = 100;
 "
 for _ in $(seq 1 300); do
     unmerged=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_removed_column_ttl' AND active AND level = 0")
@@ -205,14 +203,13 @@ echo "-- ttl_only_drop_parts drops an expired part after a column TTL that is 0 
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_removed_mixed_column_ttl (id UInt64, ts DateTime, v_expire DateTime, v String TTL v_expire)
     ENGINE = MergeTree ORDER BY id TTL ts + INTERVAL 1 DAY
-    SETTINGS merge_with_ttl_timeout = 0, ttl_only_drop_parts = 1;
-    SYSTEM STOP MERGES t_removed_mixed_column_ttl;
+    SETTINGS merge_with_ttl_timeout = 0, ttl_only_drop_parts = 1, max_number_of_merges_with_ttl_in_pool = 0;
     INSERT INTO t_removed_mixed_column_ttl SELECT number, now() - INTERVAL 5 DAY,
         if(number % 2 = 0, toDateTime(0), now() - INTERVAL 5 DAY), 'x' FROM numbers(10);
     ALTER TABLE t_removed_mixed_column_ttl MODIFY COLUMN v REMOVE TTL;
     DETACH TABLE t_removed_mixed_column_ttl;
     ATTACH TABLE t_removed_mixed_column_ttl;
-    SYSTEM START MERGES t_removed_mixed_column_ttl;
+    ALTER TABLE t_removed_mixed_column_ttl MODIFY SETTING max_number_of_merges_with_ttl_in_pool = 100;
 "
 for _ in $(seq 1 300); do
     unmerged=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_removed_mixed_column_ttl' AND active AND level = 0")
