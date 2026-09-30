@@ -28,8 +28,7 @@ SELECT CAST(+1 AS Int128), CAST([+1, +2] AS Array(UInt256)), +1::Int128;
 SELECT CAST(0x1p3 AS Decimal32(2)), CAST((1e3) AS Decimal32(2));
 EXPLAIN SYNTAX SELECT CAST((0.1) AS Decimal256(76)), CAST(0xFF AS Decimal32(2)), CAST(0b101 AS UInt128), 0xFF::UInt128, CAST(+1 AS Int128), CAST(0x1p3 AS Decimal32(2));
 
--- Written back, the number in brackets is the nearest `Float64`, which is all a number that is not
--- written plainly carries. Written plainly it keeps every digit.
+-- A number keeps its spelling, so in brackets it keeps every digit, as it does written plainly.
 SELECT CAST((0.10000000000000000000001) AS Decimal256(76)), CAST(0.10000000000000000000001 AS Decimal256(76));
 
 -- A number written back in a form the type does not read - `1e19` is written back as `1e19`, and the
