@@ -487,23 +487,29 @@ JoinStepLogical::analyzeUnneededColumns(const std::vector<size_t> & unneeded_out
         }
     }
 
-    /// Keep one input of a side that nothing else needs, so that the side does not lose every column.
-    /// The inputs should be in the same order as input headers.
+    /// Keep one input of a side that nothing else needs, so that the side does not lose every column. The first input
+    /// of the side is taken: the inputs are not always all of the left side and then all of the right one, as an input
+    /// added later, such as one consuming a column a side appended, comes after all the others.
     const auto & inputs = actions_dag.getInputs();
-    if (!has_required_input_from_left && !inputs.empty() && !getInputHeaders().at(0)->empty())
+    const auto keep_first_input_of = [&](size_t side)
     {
-        const auto * maybe_left_input = inputs.front();
-        if (JoinActionRef(maybe_left_input, expression_actions).fromLeft())
-            plan.extra_pruning_roots.push_back(maybe_left_input);
-    }
+        if (getInputHeaders().at(side)->empty())
+            return;
 
-    const auto number_of_left_inputs = input_headers.at(0)->columns();
-    if (!has_required_input_from_right && inputs.size() > number_of_left_inputs && !getInputHeaders().at(1)->empty())
-    {
-        const auto * maybe_right_input = inputs.at(number_of_left_inputs);
-        if (JoinActionRef(maybe_right_input, expression_actions).fromRight())
-            plan.extra_pruning_roots.push_back(maybe_right_input);
-    }
+        const auto it = std::ranges::find_if(inputs, [&](const auto * input)
+        {
+            const JoinActionRef ref(input, expression_actions);
+            return side == 0 ? ref.fromLeft() : ref.fromRight();
+        });
+
+        if (it != inputs.end())
+            plan.extra_pruning_roots.push_back(*it);
+    };
+
+    if (!has_required_input_from_left)
+        keep_first_input_of(0);
+    if (!has_required_input_from_right)
+        keep_first_input_of(1);
 
     if (kept_output_nodes.empty() && plan.extra_pruning_roots.empty() && !plan.adds_dummy_output)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No required output nodes, actions_dag: {}", actions_dag.dumpDAG());
