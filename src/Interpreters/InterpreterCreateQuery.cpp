@@ -1949,38 +1949,50 @@ void checkProjectionColumnListReplicationCompatibility(
     else if (!create.columns_list && !create.as_table.empty() && !create.isView() && !create.is_dictionary
         && (!create.storage || !create.storage->engine || endsWith(create.storage->engine->name, "MergeTree")))
     {
-        /// Old ON CLUSTER formats expand AS source_table on each worker. The source need not exist
-        /// or be visible to this initiator, so only preflight it when it is available here; a
-        /// mandatory lookup would reject DDL that the workers could execute.
+        /// Old `ON CLUSTER` formats expand `AS source_table` on each worker. If the initiator
+        /// cannot inspect a source that may supply projections, reject the copy unless the
+        /// initiator explicitly opted in to projection column lists.
+        bool source_projection_safety_known = false;
         const String source_database = context->resolveDatabase(create.as_database);
         if (context->getAccess()->isGranted(AccessType::SHOW_COLUMNS, source_database, create.as_table))
         {
             const auto source = DatabaseCatalog::instance().tryGetTable({source_database, create.as_table}, context);
             const auto * alias = source ? source->as<StorageAlias>() : nullptr;
-            if (source && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {}))
-                && ((create.storage && create.storage->engine) || endsWith(source->getName(), "MergeTree")))
+            if (source && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {})))
             {
-                /// Without an explicit engine, the destination inherits the source's engine.
-                /// Only a MergeTree destination copies projections.
-                const auto source_metadata = source->getInMemoryMetadataPtr(context, false);
-                has_unavailable_source_projection = source_metadata->getProjections().hasUnavailable();
-                auto inspect_projection = [&](const ASTPtr & definition)
+                if ((create.storage && create.storage->engine) || endsWith(source->getName(), "MergeTree"))
                 {
-                    if (const auto * declaration = definition ? definition->as<const ASTProjectionDeclaration>() : nullptr;
-                        declaration && declaration->columns)
+                    /// Without an explicit engine, the destination inherits the source's engine.
+                    /// Only a MergeTree destination copies projections.
+                    const auto source_metadata = source->getInMemoryMetadataPtr(context, false);
+                    has_unavailable_source_projection = source_metadata->getProjections().hasUnavailable();
+                    auto inspect_projection = [&](const ASTPtr & definition)
                     {
-                        has_projection_column_list = true;
-                        has_projection_column_codec |= hasDeclaredProjectionColumnCodec(*declaration);
-                    }
-                };
+                        if (const auto * declaration = definition ? definition->as<const ASTProjectionDeclaration>() : nullptr;
+                            declaration && declaration->columns)
+                        {
+                            has_projection_column_list = true;
+                            has_projection_column_codec |= hasDeclaredProjectionColumnCodec(*declaration);
+                        }
+                    };
 
-                for (const auto & projection : source_metadata->getProjections())
-                    inspect_projection(projection.definition_ast);
-                /// `ProjectionsDescription::clone` copies unavailable declarations too.
-                for (const auto & definition : source_metadata->getProjections().getUnavailableDefinitions())
-                    inspect_projection(definition);
+                    for (const auto & projection : source_metadata->getProjections())
+                        inspect_projection(projection.definition_ast);
+                    /// `ProjectionsDescription::clone` copies unavailable declarations too.
+                    for (const auto & definition : source_metadata->getProjections().getUnavailableDefinitions())
+                        inspect_projection(definition);
+                    source_projection_safety_known = true;
+                }
+                else if (!alias)
+                    source_projection_safety_known = true;
             }
         }
+        if (reject_column_list && !source_projection_safety_known)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot verify projection metadata of the source table for ON CLUSTER AS. "
+                "Make the source visible to the initiator with SHOW COLUMNS access, or enable "
+                "allow_projection_column_list_in_replicated_metadata = 1");
     }
     /// `CREATE AS` has already normalized its query at this call site. Unavailable source declarations
     /// remain in the copied properties, but have not yet been appended to the query for persistence.
