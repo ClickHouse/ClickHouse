@@ -54,3 +54,20 @@ SELECT timeSeriesLastToGrid(100, 100, 1, 10)([95, 95]::Array(UInt32), [0., -0.]:
 SELECT timeSeriesLastToGrid(100, 100, 1, 10)([95, 95]::Array(UInt32), [-0., 0.]::Array(Float64));
 SELECT timeSeriesChangesToGrid(100, 100, 1, 10)([95, 95, 98]::Array(UInt32), [0., -0., 0.]::Array(Float64));
 SELECT timeSeriesChangesToGrid(100, 100, 1, 10)([95, 95, 98]::Array(UInt32), [-0., 0., 0.]::Array(Float64));
+
+-- States saved by earlier versions kept the second sample at a timestamp: here the stale marker after a NaN, and -0 after +0.
+-- Such a state keeps its value, and merging it with a new state at the same timestamp applies the rule above in either order.
+WITH
+    CAST(unhex('0500010000000000000001000000000000000000000000000000015F000000020000000000F07F'), 'AggregateFunction(timeSeriesLastToGrid(100, 100, 1, 10), UInt32, Float64)') AS saved,
+    timeSeriesLastToGridState(100, 100, 1, 10)(95::UInt32, nan::Float64) AS new
+SELECT
+    arrayMap(x -> hex(reinterpretAsUInt64(assumeNotNull(x))), finalizeAggregation(saved)),
+    arrayMap(x -> hex(reinterpretAsUInt64(assumeNotNull(x))), arrayReduce('timeSeriesLastToGridMerge(100, 100, 1, 10)', [saved, new])),
+    arrayMap(x -> hex(reinterpretAsUInt64(assumeNotNull(x))), arrayReduce('timeSeriesLastToGridMerge(100, 100, 1, 10)', [new, saved]));
+WITH
+    CAST(unhex('0500010000000000000001000000000000000000000000000000015F0000000000000000000080'), 'AggregateFunction(timeSeriesLastToGrid(100, 100, 1, 10), UInt32, Float64)') AS saved,
+    timeSeriesLastToGridState(100, 100, 1, 10)(95::UInt32, 0.::Float64) AS new
+SELECT
+    arrayMap(x -> hex(reinterpretAsUInt64(assumeNotNull(x))), finalizeAggregation(saved)),
+    arrayMap(x -> hex(reinterpretAsUInt64(assumeNotNull(x))), arrayReduce('timeSeriesLastToGridMerge(100, 100, 1, 10)', [saved, new])),
+    arrayMap(x -> hex(reinterpretAsUInt64(assumeNotNull(x))), arrayReduce('timeSeriesLastToGridMerge(100, 100, 1, 10)', [new, saved]));
