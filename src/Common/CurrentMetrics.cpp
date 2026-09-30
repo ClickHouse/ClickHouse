@@ -73,8 +73,8 @@
     M(ReplicaReady, "Indicates if the replica is ready for queries: 0 = no, 1 = yes") \
     M(MergeTreeLeaderElectionLeader, "Number of MergeTree tables with `leader_election` enabled for which this instance currently holds the leader lease and accepts writes.") \
     M(MergeTreeLeaderElectionFollower, "Number of MergeTree tables with `leader_election` enabled for which this instance is currently a follower (the table is in read-only mode).") \
-    M(MemoryTracking, "Total amount of memory (bytes) allocated by the server.") \
-    M(MemoryTrackingUncorrected, "Total amount of memory (bytes) allocated by the server not corrected by RSS.") \
+    M(MemoryTracking, "Total amount of memory (bytes) tracked by the server. By default the background memory worker corrects this value on every tick from an external measurement of the memory the process really uses (see the `memory_worker_correct_memory_tracker` server setting), so it follows the measured usage rather than a plain count of allocations. See `MemoryTrackingUncorrected` for the value with no corrections applied.") \
+    M(MemoryTrackingUncorrected, "The value the global memory tracker would have had with no corrections from a measurement applied: a plain counter to which allocations are added and from which deallocations are subtracted. It is a snapshot taken by the background memory worker on every tick (see `memory_worker_period_ms`), so it lags the counter by at most one tick, and it stays `0` when the worker is not running. The difference between the two is the current gap between the plain counter and the measured usage: besides the accounting drift, it includes the memory that the process uses but that never went through the counter, such as the pages retained by the allocator.") \
     M(MergesMutationsMemoryTracking, "Total amount of memory (bytes) allocated by background tasks (merges and mutations).") \
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
     M(MaxAllocatedEphemeralLockSequentialNumber, "The maximum sequential number allocated for ephemeral lock znodes in ZooKeeper. Primarily influenced by the block numbers.") \
@@ -426,6 +426,10 @@
     M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
     M(EncryptionHeaderCacheBytes, "Total size of the encryption header cache in bytes") \
     M(EncryptionHeaderCacheEntries, "Total number of entries in the encryption header cache") \
+    M(TimeSeriesMetricFamiliesDeduplicationCacheEntries, "Number of entries in the deduplication caches of the metric families tables of TimeSeries tables") \
+    M(TimeSeriesMetricFamiliesDeduplicationCacheBytes, "Approximate size in bytes of the deduplication caches of the metric families tables of TimeSeries tables") \
+    M(TimeSeriesTagsDeduplicationCacheEntries, "Number of entries in the deduplication caches of the tags tables of TimeSeries tables") \
+    M(TimeSeriesTagsDeduplicationCacheBytes, "Approximate size in bytes of the deduplication caches of the tags tables of TimeSeries tables") \
     M(CompiledExpressionCacheBytes, "Reserved page-block capacity (rounded up to whole pages with a 2x over-provisioning factor) held by `JITModuleMemoryManager` for executable/data sections of cached JIT-compiled functions. NOT the actual bytes of machine code in use (that's smaller). Allocated via `posix_memalign`, which is intercepted into jemalloc, so this is accounted within the dedicated JIT arena and is a subset of `jemalloc.jit_arena.active_bytes`.") \
     M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled machine code.") \
     M(SerializationCacheBytesInMemoryAllocated, "Total size of the serialization cache in bytes including keys and overhead from empty slots") \

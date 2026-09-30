@@ -88,11 +88,17 @@ public:
     FunctionSecretArgumentsFinder::Result getResult() const { return result; }
 
     /// Whether a key of the `extra_credentials(..)` nested map carries a non-secret identifier whose
-    /// value stays visible when the map is masked (`role_arn` and `role_session_name`; the map's
-    /// secret is `external_id`). Any other key - unknown, malformed or an expression - fails closed.
+    /// value stays visible when the map is masked. Only `role_arn` qualifies: it names the role to
+    /// assume, like `access_key_id` names a key. The other two keys of the assume-role triple are
+    /// secrets: `external_id` is its shared secret, and `role_session_name` can be one too, because a
+    /// trust policy can require a specific value through the `sts:RoleSessionName` condition (the
+    /// ClickHouse Cloud guide documents exactly this use). Any other key - unknown, malformed or an
+    /// expression - fails closed.
+    /// The `.backup` metadata is a different matter: its `<base_backup>` locator keeps `role_session_name`
+    /// on purpose, so that a role-authenticated backup chain stays restorable (see `BackupInfo.cpp`).
     static bool isNonSecretExtraCredentialsKey(std::string_view key)
     {
-        return key == "role_arn" || key == "role_session_name";
+        return key == "role_arn";
     }
 
 protected:
@@ -100,11 +106,12 @@ protected:
     Result result;
 
     /// Named arguments carrying S3 secrets, shared by every S3 form (explicit-url and named-collection).
-    /// `external_id` is the shared secret of the assume-role triple; the other two (`role_arn`,
-    /// `role_session_name`) are non-secret identifiers passed inside `extra_credentials` and stay
-    /// visible (see isNonSecretExtraCredentialsKey).
+    /// `external_id` and `role_session_name` are the secrets of the assume-role triple; the third key
+    /// (`role_arn`) is a non-secret identifier passed inside `extra_credentials` and stays visible
+    /// (see isNonSecretExtraCredentialsKey).
     static constexpr std::string_view s3_secret_keys[]
-        = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "external_id"};
+        = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "external_id",
+           "role_session_name"};
 
     /// Named arguments carrying TLS credentials as the literal contents of a certificate or a key file,
     /// rather than as a path to it. They are secret and have to be hidden the same way a password is.
@@ -126,9 +133,10 @@ protected:
     void markSecretArgument(size_t index, bool argument_is_named = false);
 
     /// `headers(..)` and `extra_credentials(..)` are nested maps whose values are secret auth material
-    /// (`extra_credentials` carries the assume-role secret `external_id`; its non-secret identifiers
-    /// stay visible, see isNonSecretExtraCredentialsKey). The parsers accept them at any position, not
-    /// just at the tail. Record them so their values are hidden with the keys kept.
+    /// (`extra_credentials` carries the assume-role secrets `external_id` and `role_session_name`; its
+    /// non-secret identifier `role_arn` stays visible, see isNonSecretExtraCredentialsKey). The parsers
+    /// accept them at any position, not just at the tail. Record them so their values are hidden with
+    /// the keys kept.
     /// Idempotent: each map is recorded at most once.
     void maskNestedSecretMaps();
 

@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 from dataclasses import asdict
@@ -11,17 +12,24 @@ import time
 sys.path.append("./")
 
 from ci.jobs.scripts.coverage_selection import (
+    attach_bracket_owners,
+    build_bracket_owners_query,
+    build_bracket_spans_query,
     build_candidate_query,
     build_selector_smoke_seed_query,
     canonical_coverage_path,
     load_snapshots,
+    find_brackets,
     parse_rows,
     protect_selection,
     rank_candidates,
     snapshot_predicate,
     validate_snapshots,
 )
-from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
+from ci.jobs.scripts.test_selection_config import (
+    INTEGRATION_SELECTION_CONFIG,
+    SELECTION_CONFIG,
+)
 
 from ci.praktika.cidb import CIDB
 from ci.praktika.info import Info
@@ -77,6 +85,7 @@ class Targeting:
             self.job_type = self.STATELESS_JOB_TYPE
         elif "integration" in info.job_name.lower():
             self.job_type = self.INTEGRATION_JOB_TYPE
+            self.config = INTEGRATION_SELECTION_CONFIG
         else:
             self.job_type = None
 
@@ -380,7 +389,8 @@ class Targeting:
                     test_base_name
                 ):
                     print(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
-                    # Add '.' suffix to precisely match this test only
+                    # The '.' suffix marks a whole-test name; `selection_pattern`
+                    # turns it into the selector that runs only this test.
                     result.add(f"{test_base_name}.")
                     continue
 
@@ -399,7 +409,8 @@ class Targeting:
                     print(
                         f"Detected changed data file '{fpath}' owned by test '{base_name}'"
                     )
-                    # Add '.' suffix to precisely match this test only
+                    # The '.' suffix marks a whole-test name; `selection_pattern`
+                    # turns it into the selector that runs only this test.
                     result.add(f"{base_name}.")
             else:
                 print(
@@ -662,7 +673,41 @@ class Targeting:
             hunk_ranges or {},
             self.coverage_snapshots(),
             self.config,
+            brackets=self.get_brackets(coverage_lines, hunk_ranges or {}),
         )
+
+    def get_brackets(self, coverage_lines, hunk_ranges):
+        """The hunks that overlap no coverage region, with the tests that own the
+        regions on both sides of them; see `SelectionConfig.bracket_gap_lines`."""
+        if not self.config.bracket_gap_lines:
+            return []
+        files = {path for path, _ in coverage_lines}
+        hunks = {
+            canonical_coverage_path(path): ranges
+            for path, ranges in hunk_ranges.items()
+            if canonical_coverage_path(path) in files
+        }
+        if not hunks:
+            return []
+        snapshots = self.coverage_snapshots()
+        spans = parse_rows(
+            self._ci_db().query(
+                build_bracket_spans_query(hunks, snapshots, self.config), log_level=""
+            )
+        )
+        brackets = find_brackets(hunks, spans, self.config)
+        if brackets:
+            owners = parse_rows(
+                self._ci_db().query(
+                    build_bracket_owners_query(brackets, snapshots, self.config),
+                    log_level="",
+                )
+            )
+            attach_bracket_owners(brackets, owners)
+        self.selection_diagnostics["brackets"] = [
+            {**bracket, "owners": len(bracket["owners"])} for bracket in brackets
+        ]
+        return brackets
 
     def get_changed_or_new_tests_with_info(self, strict=False):
         tests = sorted(self.get_changed_tests(strict=strict))
@@ -832,6 +877,29 @@ class Targeting:
                 break
         return name + "."
 
+    @classmethod
+    def selection_pattern(cls, test):
+        """Render a selected stateless test as a `clickhouse-test` positional selector.
+
+        Those arguments are regexes, and `TestSuite.get_selected_tests` searches them
+        against the suite file name *including* its extension, so a selector that stops
+        short of the whole file name also selects every test whose name extends this one
+        (`01655_plan_optimizations` picks up `01655_plan_optimizations_merge_filters`).
+        Spell the file name out: anchored, escaped, one known extension.
+        """
+        name = re.escape(cls.selection_test_name(test).rstrip("."))
+        extensions = "|".join(re.escape(ext) for ext in cls._TEST_FILE_EXTENSIONS)
+        return f"^{name}(?:{extensions})$"
+
+    @staticmethod
+    def selection_args(tests):
+        """Render selectors as the argument list of a `clickhouse-test` command line.
+
+        `run_tests` executes that command line through bash, whose quote removal would
+        otherwise consume the regex syntax before `clickhouse-test` parses it.
+        """
+        return " ".join(shlex.quote(test) for test in tests) if tests else ""
+
     def get_most_relevant_tests(self):
         changed_lines = self.get_changed_lines_from_diff()
         hunk_ranges = self._parse_diff_hunk_ranges(self.get_diff_text())
@@ -839,9 +907,14 @@ class Targeting:
         self._coverage_candidates = []
         missing = []
         for candidate in candidates:
-            if self.functional_test_source_file(
-                self.selection_test_name(candidate["test"])
-            ):
+            if self.job_type == self.INTEGRATION_JOB_TYPE:
+                # Integration coverage is recorded per module, e.g. `test_storage_s3/test.py`.
+                exists = (Path("tests/integration") / candidate["test"]).is_file()
+            else:
+                exists = self.functional_test_source_file(
+                    self.selection_test_name(candidate["test"])
+                )
+            if exists:
                 self._coverage_candidates.append(candidate)
             else:
                 missing.append(
@@ -856,8 +929,7 @@ class Targeting:
         )
 
     def get_all_relevant_tests_with_info(self, include_changed_tests=True):
-        if self.job_type == self.STATELESS_JOB_TYPE:
-            self.get_diff_text()
+        self.get_diff_text()
         results = []
         changed = []
         if include_changed_tests and self.job_type == self.STATELESS_JOB_TYPE:
@@ -865,11 +937,9 @@ class Targeting:
             results.append(result)
         failed, result = self.get_previously_failed_tests_with_info(strict=True)
         results.append(result)
-        candidates = []
-        if self.job_type == self.STATELESS_JOB_TYPE:
-            _, result = self.get_most_relevant_tests()
-            candidates = self._coverage_candidates
-            results.append(result)
+        _, result = self.get_most_relevant_tests()
+        candidates = self._coverage_candidates
+        results.append(result)
         normalize = (
             self.selection_test_name
             if self.job_type == self.STATELESS_JOB_TYPE
