@@ -142,6 +142,8 @@ public:
 
     void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater);
 
+    /// Removing unused columns. Every list of positions below is a sorted list of positions in a header.
+
     /// Returns true if the step can take part in removing unused columns: it implements removeUnusedColumns,
     /// and getUnneededColumns unless it has no children to ask about.
     virtual bool canRemoveUnusedColumns() const { return false; }
@@ -152,7 +154,7 @@ public:
         /// Whether the step itself changed: its expressions, its input headers, or the columns it outputs.
         bool step_changed = false;
 
-        /// The positions of the step's former output header that went away, sorted.
+        /// The positions of the step's former output header that went away.
         /// They are the subset of the given unneeded positions that the step can remove.
         /// For example, a `FINAL` read keeps the columns of its sorting key.
         /// The new output header has the remaining columns first, in their former order,
@@ -161,7 +163,7 @@ public:
         std::vector<size_t> dropped_output_positions;
     };
 
-    /// Per child: the positions of the child's current output header the step does not need, sorted.
+    /// Per child: the positions of the child's current output header the step does not need.
     /// Always one entry per child; an empty entry means the step needs every column of that child.
     using UnneededInputPositions = std::vector<std::vector<size_t>>;
 
@@ -189,8 +191,8 @@ public:
         static PrunedInput unchanged(const SharedHeader & header);
     };
 
-    /// Removes what the step no longer needs once nobody needs the columns at `unneeded_output_positions`,
-    /// sorted positions in its current output header.
+    /// Removes what the step no longer needs once nobody needs the columns at `unneeded_output_positions`
+    /// of its current output header.
     /// `inputs` has one `PrunedInput` per child: the children are pruned first, since columns are dropped bottom-up.
     /// A column a child keeps that the step does not need is consumed by the step.
     /// A column the child dropped must be one the step does not need.
