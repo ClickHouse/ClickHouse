@@ -1,5 +1,6 @@
 -- Force a three-point dense destination to merge a four-point sparse source.
 -- arrayReduce fixes the merge order rather than relying on UNION ALL scheduling.
+-- A position missing from both states must remain NULL in either merge order.
 DROP TABLE IF EXISTS histogram_grid_merge_states;
 CREATE TABLE histogram_grid_merge_states ENGINE = Memory AS
 SELECT part, quantilePrometheusHistogramArrayState(0.5)(le, values) AS state
@@ -17,8 +18,8 @@ WITH
     (SELECT state FROM histogram_grid_merge_states WHERE part = 0) AS shorter,
     (SELECT state FROM histogram_grid_merge_states WHERE part = 1) AS longer
 SELECT
-    arrayMap(x -> if(isNaN(x), -1., x), arrayReduce('quantilePrometheusHistogramArrayMerge(0.5)', [shorter, longer])),
-    arrayMap(x -> if(isNaN(x), -1., x), arrayReduce('quantilePrometheusHistogramArrayMerge(0.5)', [longer, shorter]));
+    arrayReduce('quantilePrometheusHistogramArrayMerge(0.5)', [shorter, longer]),
+    arrayReduce('quantilePrometheusHistogramArrayMerge(0.5)', [longer, shorter]);
 DROP TABLE histogram_grid_merge_states;
 
 -- CTAS must be able to reparse state types with integer and Decimal parameters.
