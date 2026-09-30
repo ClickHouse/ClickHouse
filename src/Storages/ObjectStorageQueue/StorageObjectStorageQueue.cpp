@@ -1557,12 +1557,8 @@ static bool isSettingValueChanged(const SettingChange & old_setting, const Setti
         return false;
     if (!ObjectStorageQueueSettings::hasBuiltin(new_setting.name))
         return true;
-
-    ObjectStorageQueueSettings settings;
-    settings.applyChanges(SettingsChanges{old_setting});
-    Field old_value = settings.get(old_setting.name);
-    settings.applyChanges(SettingsChanges{new_setting});
-    return settings.get(new_setting.name) != old_value;
+    return ObjectStorageQueueSettings::castValueUtil(old_setting.name, old_setting.value)
+        != ObjectStorageQueueSettings::castValueUtil(new_setting.name, new_setting.value);
 }
 
 static AlterCommands normalizeAlterCommands(const AlterCommands & alter_commands)

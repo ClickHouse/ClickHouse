@@ -69,15 +69,17 @@ DROP TABLE t_s3queue_alter_values_a;
 -- The `ordered` mode does not allow changing these settings: a value equal to the current one in another spelling is not a change.
 CREATE TABLE t_s3queue_alter_values_o (x UInt64)
 ENGINE = S3Queue('http://whatever-we-dont-care:9001/root/t_s3queue_alter_values_o/', 'username', 'password', CSV)
-SETTINGS mode = 'ordered', keeper_path = '/clickhouse/{database}/t_s3queue_alter_values_o', processing_threads_num = 2, enable_hash_ring_filtering = 0;
+SETTINGS mode = 'ordered', keeper_path = '/clickhouse/{database}/t_s3queue_alter_values_o', processing_threads_num = 2, enable_hash_ring_filtering = 0, s3queue_enable_logging_to_s3queue_log = 1;
 
 ALTER TABLE t_s3queue_alter_values_o MODIFY SETTING processing_threads_num = '2', enable_hash_ring_filtering = false;
 ALTER TABLE t_s3queue_alter_values_o MODIFY SETTING processing_threads_num = 2;
+ALTER TABLE t_s3queue_alter_values_o MODIFY SETTING s3queue_enable_logging_to_s3queue_log = '1';
 ALTER TABLE t_s3queue_alter_values_o MODIFY SETTING processing_threads_num = '3'; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE t_s3queue_alter_values_o MODIFY SETTING s3queue_enable_logging_to_s3queue_log = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 SELECT name, value FROM system.s3_queue_settings
 WHERE database = currentDatabase() AND table = 't_s3queue_alter_values_o'
-    AND name IN ('enable_hash_ring_filtering', 'processing_threads_num')
+    AND name IN ('enable_hash_ring_filtering', 'enable_logging_to_queue_log', 'processing_threads_num')
 ORDER BY name;
 
 DROP TABLE t_s3queue_alter_values_o;

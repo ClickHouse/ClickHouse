@@ -244,4 +244,11 @@ bool ObjectStorageQueueSettings::hasBuiltin(std::string_view name)
         name = *maybe_new_name;
     return ObjectStorageQueueSettingsImpl::hasBuiltin(name);
 }
+
+Field ObjectStorageQueueSettings::castValueUtil(std::string_view name, const Field & value)
+{
+    if (auto maybe_new_name = adjustSettingName(name); maybe_new_name.has_value())
+        name = *maybe_new_name;
+    return ObjectStorageQueueSettingsImpl::castValueUtil(name, value);
+}
 }

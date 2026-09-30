@@ -74,6 +74,8 @@ struct ObjectStorageQueueSettings
 
     static bool hasBuiltin(std::string_view name);
 
+    static Field castValueUtil(std::string_view name, const Field & value);
+
 private:
     std::unique_ptr<ObjectStorageQueueSettingsImpl> impl;
 };
