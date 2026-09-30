@@ -30,6 +30,7 @@
 #include <Common/HilbertUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
+#include <Common/assert_cast.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
@@ -46,6 +47,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <IO/WriteBufferFromString.h>
@@ -67,6 +69,7 @@ namespace Setting
 {
     extern const SettingsBool allow_key_condition_coalesce_rewrite;
     extern const SettingsBool analyze_index_with_space_filling_curves;
+    extern const SettingsBool analyze_index_with_tuple_key_elements;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsTimezone session_timezone;
 }
@@ -1562,6 +1565,7 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
+    , analyze_tuple_key_elements(context->getSettingsRef()[Setting::analyze_index_with_tuple_key_elements])
 {
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
@@ -1570,12 +1574,152 @@ KeyCondition::KeyCondition(
         ++key_index;
     }
 
+    initRPN(filter_dag, context, key_expr_, skip_analysis_, require_ready_sets_);
+}
+
+/// See KeyCondition::getKeyTupleExpansion. A key element is expanded only when it is spelled as a
+/// `tuple(...)` function over expressions that are themselves present, with identical types, among
+/// the results of the key expression (e.g. plain source columns): then each component is a valid
+/// key column for the analysis, and the corresponding loaded index column (a `ColumnTuple`) can be
+/// decomposed into its element columns by the caller.
+static std::optional<KeyCondition::KeyTupleExpansion> buildKeyTupleExpansion(const KeyDescription & key_description)
+{
+    if (!key_description.expression_list_ast || !key_description.expression)
+        return {};
+
+    const auto & elements = key_description.expression_list_ast->children;
+    if (elements.size() != key_description.column_names.size() || elements.size() != key_description.data_types.size())
+        return {};
+
+    /// A key element is a candidate for the expansion when it is spelled as a `tuple(...)`
+    /// function and its type is the matching Tuple.
+    const auto is_tuple_function_element = [&](size_t i) -> const ASTFunction *
+    {
+        const auto * tuple_func = elements[i]->as<ASTFunction>();
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(key_description.data_types[i].get());
+        if (tuple_func && tuple_func->name == "tuple" && tuple_func->arguments && tuple_type
+            && !tuple_func->arguments->children.empty()
+            && tuple_type->getElements().size() == tuple_func->arguments->children.size())
+            return tuple_func;
+        return nullptr;
+    };
+
+    /// The common case: a key without tuple-shaped elements pays for nothing.
+    {
+        bool has_candidate = false;
+        for (size_t i = 0; i < elements.size() && !has_candidate; ++i)
+            has_candidate = is_tuple_function_element(i) != nullptr;
+        if (!has_candidate)
+            return {};
+    }
+
+    const auto & sample_block = key_description.expression->getSampleBlock();
+
+    KeyCondition::KeyTupleExpansion expansion;
+    expansion.num_components.reserve(elements.size());
+    bool has_expansion = false;
+
+    for (size_t i = 0; i < elements.size(); ++i)
+    {
+        Names component_names;
+        DataTypes component_types;
+
+        if (const auto * tuple_func = is_tuple_function_element(i))
+        {
+            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*key_description.data_types[i]);
+            const auto & component_asts = tuple_func->arguments->children;
+            for (size_t j = 0; j < component_asts.size(); ++j)
+            {
+                auto name = component_asts[j]->getColumnName();
+                const auto * column = sample_block.findByName(name);
+                if (!column || !column->type->equals(*tuple_type.getElements()[j]))
+                {
+                    component_names.clear();
+                    break;
+                }
+                component_names.push_back(std::move(name));
+                component_types.push_back(tuple_type.getElements()[j]);
+            }
+        }
+
+        if (component_names.empty())
+        {
+            /// The element is kept as a single key column.
+            expansion.num_components.push_back(std::nullopt);
+            expansion.column_names.push_back(key_description.column_names[i]);
+            expansion.data_types.push_back(key_description.data_types[i]);
+        }
+        else
+        {
+            /// Expanded, even when the tuple has a single component (e.g. ORDER BY (a, tuple(b))):
+            /// the caller must decompose the ColumnTuple index column of an expanded element.
+            expansion.num_components.push_back(component_names.size());
+            std::move(component_names.begin(), component_names.end(), std::back_inserter(expansion.column_names));
+            std::move(component_types.begin(), component_types.end(), std::back_inserter(expansion.data_types));
+            has_expansion = true;
+        }
+    }
+
+    if (!has_expansion)
+        return {};
+
+    if (!key_description.reverse_flags.empty())
+    {
+        /// A reverse tuple element reverses its lexicographic comparison,
+        /// which is the same as reversing every component.
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            bool reverse = i < key_description.reverse_flags.size() && key_description.reverse_flags[i];
+            expansion.reverse_flags.insert(expansion.reverse_flags.end(), expansion.num_components[i].value_or(1), reverse);
+        }
+    }
+
+    return expansion;
+}
+
+KeyCondition::KeyCondition(
+    const ActionsDAGWithInversionPushDown & filter_dag,
+    ContextPtr context,
+    const KeyDescription & key_description,
+    bool single_point_,
+    bool skip_analysis_,
+    bool expand_tuple_key_elements_)
+    : single_point(single_point_)
+    , date_time_overflow_behavior_ignore(
+          context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
+    , analyze_tuple_key_elements(context->getSettingsRef()[Setting::analyze_index_with_tuple_key_elements])
+{
+    if (expand_tuple_key_elements_ && analyze_tuple_key_elements)
+        key_tuple_expansion = buildKeyTupleExpansion(key_description);
+
+    const Names & key_column_names = key_tuple_expansion ? key_tuple_expansion->column_names : key_description.column_names;
+    num_key_columns = key_column_names.size();
+
+    size_t key_index = 0;
+    for (const auto & name : key_column_names)
+    {
+        key_columns.try_emplace(name, key_index);
+        ++key_index;
+    }
+
+    key_order = KeyOrder(key_tuple_expansion ? key_tuple_expansion->reverse_flags : key_description.reverse_flags);
+
+    initRPN(filter_dag, context, key_description.expression, skip_analysis_, /*require_ready_sets=*/false);
+}
+
+void KeyCondition::initRPN(
+    const ActionsDAGWithInversionPushDown & filter_dag,
+    const ContextPtr & context,
+    const ExpressionActionsPtr & key_expr,
+    bool skip_analysis,
+    bool require_ready_sets)
+{
     /// Skip any analysis. Toggled by the `use_primary_key` setting. This is useful for catching bugs
     /// in the index condition analysis logic. It is better to skip analysis in the constructor rather than in
     /// `checkInHyperrectangle` or elsewhere, because bugs during `extractAtomFromTree` calls can lead to
     /// unexpected exceptions.
     /// This will lead to reading all granules with no primary key skipping.
-    if (skip_analysis_)
+    if (skip_analysis)
     {
         has_filter = (filter_dag.predicate != nullptr);
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
@@ -1583,9 +1727,9 @@ KeyCondition::KeyCondition(
     }
 
     auto info = BuildInfo {
-        .key_expr = key_expr_,
-        .key_subexpr_names = getAllSubexpressionNames(*key_expr_),
-        .require_ready_sets = require_ready_sets_};
+        .key_expr = key_expr,
+        .key_subexpr_names = getAllSubexpressionNames(*key_expr),
+        .require_ready_sets = require_ready_sets};
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves(info);
@@ -1607,17 +1751,6 @@ KeyCondition::KeyCondition(
     rpn = std::move(builder).extractRPN();
 
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
-}
-
-KeyCondition::KeyCondition(
-    const ActionsDAGWithInversionPushDown & filter_dag,
-    ContextPtr context,
-    const KeyDescription & key_description,
-    bool single_point_,
-    bool skip_analysis_)
-    : KeyCondition(filter_dag, context, key_description.column_names, key_description.expression, single_point_, skip_analysis_)
-{
-    key_order = KeyOrder(key_description.reverse_flags);
 }
 
 KeyCondition::KeyCondition(
@@ -4468,6 +4601,73 @@ static bool tryRewriteFloatLiteralForIntKeyComparison(
     UNREACHABLE();
 }
 
+bool KeyCondition::tryRelaxedTupleComparisonAtom(
+    const RPNBuilderTreeNode & key_arg,
+    const BuildInfo & info,
+    const String & func_name,
+    Field & const_value,
+    DataTypePtr & const_type,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_expr_type,
+    MonotonicFunctionsChain & out_chain,
+    bool & out_condition_is_relaxed)
+{
+    if (!analyze_tuple_key_elements)
+        return false;
+
+    /// Only the operators for which the lexicographic tuple comparison implies a bound on the
+    /// first component. `notEquals` implies nothing; `isNotDistinctFrom` has its own NULL
+    /// semantics that this rewrite does not model.
+    if (func_name != "equals" && func_name != "less" && func_name != "greater" && func_name != "lessOrEquals"
+        && func_name != "greaterOrEquals")
+        return false;
+
+    if (const_value.getType() != Field::Types::Tuple || !key_arg.isFunction())
+        return false;
+
+    auto tuple_arg = key_arg.toFunctionNode();
+    if (tuple_arg.getFunctionName() != "tuple")
+        return false;
+
+    const size_t tuple_size = tuple_arg.getArgumentsSize();
+    const auto * const_tuple_type = typeid_cast<const DataTypeTuple *>(const_type.get());
+    if (tuple_size == 0 || !const_tuple_type || const_tuple_type->getElements().size() != tuple_size
+        || const_value.safeGet<Tuple>().size() != tuple_size)
+        return false;
+
+    size_t key_column_num = 0;
+    std::optional<size_t> argument_num_of_space_filling_curve;
+    DataTypePtr key_expr_type;
+    MonotonicFunctionsChain chain;
+    if (!isKeyPossiblyWrappedByMonotonicFunctions(
+            tuple_arg.getArgumentAt(0), info, key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain, single_point))
+        return false;
+
+    /// An argument of a space-filling curve is not a plain key column; the hyperrectangle
+    /// handling of such atoms does not compose with this relaxation.
+    if (argument_num_of_space_filling_curve)
+        return false;
+
+    Field first_component_value = const_value.safeGet<Tuple>()[0];
+    /// A NULL or NaN inside the constant would need the special handling the caller does for
+    /// whole-atom constants; decline instead.
+    if (first_component_value.isNull() || first_component_value.isNaN())
+        return false;
+
+    out_key_column_num = key_column_num;
+    out_key_expr_type = std::move(key_expr_type);
+    out_chain = std::move(chain);
+    const_value = std::move(first_component_value);
+    const_type = const_tuple_type->getElements()[0];
+
+    /// For a tuple of more than one element the implication is not an equivalence, so the
+    /// condition is relaxed; the caller weakens the strict comparison operators accordingly.
+    if (tuple_size > 1)
+        out_condition_is_relaxed = true;
+
+    return true;
+}
+
 /// A `Variant`/`Dynamic` constant holds exactly one value, hence exactly one active member type, while its
 /// declared type is only the wrapper and `tryGetConstant` hands out the nested value.
 /// Returns that member type, or nullptr when it cannot be determined.
@@ -4857,11 +5057,16 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             else if (func_name == "equals" || func_name == "notEquals" || func_name == "isNotDistinctFrom")
             {
                 bool atom_is_exact = false;
-                if (!canConstantBeWrappedByDeterministicFunctions(
+                if (canConstantBeWrappedByDeterministicFunctions(
                         key_arg, info, key_column_num, key_expr_type, const_value, const_type, atom_is_exact))
+                    condition_is_relaxed = !atom_is_exact;
+                else if (!tryRelaxedTupleComparisonAtom(
+                        key_arg, info, func_name, const_value, const_type, key_column_num, key_expr_type, chain, condition_is_relaxed))
                     return false;
-
-                condition_is_relaxed = !atom_is_exact;
+            }
+            else if (tryRelaxedTupleComparisonAtom(
+                    key_arg, info, func_name, const_value, const_type, key_column_num, key_expr_type, chain, condition_is_relaxed))
+            {
             }
             else
                 return false;

@@ -461,8 +461,16 @@ public:
         {
             const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
             ActionsDAGWithInversionPushDown filter_dag(filter->getOutputs().front(), context, /* boolean_context */ true);
-            KeyCondition key_condition(filter_dag, context, primary_key);
-            key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(primary_key.data_types);
+            KeyCondition key_condition(
+                filter_dag,
+                context,
+                primary_key,
+                /* single_point_ = */ false,
+                /* skip_analysis_ = */ false,
+                /* expand_tuple_key_elements_ = */ true);
+            /// Key column positions are in the expanded key when tuple key elements were expanded.
+            const auto * key_expansion = key_condition.getKeyTupleExpansion();
+            key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(key_expansion ? key_expansion->data_types : primary_key.data_types);
             LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
             if (!key_condition.alwaysFalse())

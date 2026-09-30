@@ -3012,8 +3012,17 @@ void ReadFromMergeTree::buildIndexes(
         auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-            KeyCondition key_condition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
-            key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(metadata_snapshot->getPrimaryKey().data_types);
+            KeyCondition key_condition{
+                wrapped,
+                query_context,
+                metadata_snapshot->getPrimaryKey(),
+                /* single_point_ = */ false,
+                /* skip_analysis_ = */ !query_context->getSettingsRef()[Setting::use_primary_key],
+                /* expand_tuple_key_elements_ = */ true};
+            /// Key column positions are in the expanded key when tuple key elements were expanded.
+            const auto * key_expansion = key_condition.getKeyTupleExpansion();
+            key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(
+                key_expansion ? key_expansion->data_types : metadata_snapshot->getPrimaryKey().data_types);
             return key_condition;
         };
         auto key_condition_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);

@@ -86,12 +86,46 @@ public:
     /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
     /// Any condition over a key that can be reverse-sorted (a MergeTree primary key) must be
     /// constructed this way, otherwise a reverse key would be analyzed as ascending.
+    ///
+    /// `expand_tuple_key_elements_`: analyze tuple key elements, e.g. `(id, other)` in
+    /// ORDER BY (name, (id, other)), as if they were expanded into their components,
+    /// i.e. exactly like ORDER BY (name, id, other). A tuple orders lexicographically by its
+    /// components, so both keys sort rows identically and predicates over the components
+    /// (`id = 3`) can prune by the key. Pass true only when the key has lexicographic-order
+    /// semantics (a MergeTree primary key) AND the caller feeds `checkInRange` per-column index
+    /// data in the same expanded form (see getKeyTupleExpansion and the expansion of the loaded
+    /// primary index in MergeTreeDataSelectExecutor::markRangesFromPKRange). It must stay false
+    /// for point-semantics keys whose values are fed unexpanded (e.g. PartitionPruner).
+    /// The expansion additionally requires the `analyze_index_with_tuple_key_elements` setting.
     KeyCondition(
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
         const KeyDescription & key_description,
         bool single_point_ = false,
-        bool skip_analysis_ = false);
+        bool skip_analysis_ = false,
+        bool expand_tuple_key_elements_ = false);
+
+    /// How tuple key elements were expanded into their components (see the constructor above).
+    struct KeyTupleExpansion
+    {
+        /// For each original key element: the number of components it was expanded to, or nullopt
+        /// when the element is kept as a single key column. The distinction matters even for a
+        /// 1-element tuple, e.g. ORDER BY (a, tuple(b)): its element is expanded to one component
+        /// key column `b`, and the caller must decompose the `ColumnTuple` index column exactly
+        /// when the element was expanded.
+        std::vector<std::optional<size_t>> num_components;
+        /// Expanded key column names, e.g. (name, id, other) for the key (name, (id, other)).
+        Names column_names;
+        /// Expanded key column types.
+        DataTypes data_types;
+        /// Expanded per-column reverse (DESC) flags; empty if the original key had none.
+        std::vector<bool> reverse_flags;
+    };
+
+    /// Non-null iff the condition was built with `expand_tuple_key_elements_` and some key element
+    /// was actually expanded. All key column positions in this condition (RPN atoms, checkInRange
+    /// inputs, getNumKeyColumns, ...) are then positions in the expanded key.
+    const KeyTupleExpansion * getKeyTupleExpansion() const { return key_tuple_expansion ? &*key_tuple_expansion : nullptr; }
 
     struct BloomFilterData
     {
@@ -538,7 +572,37 @@ private:
         const bool require_ready_sets = false;
     };
 
+    /// Shared tail of the public constructors: builds the RPN from the filter over the
+    /// already-registered `key_columns`.
+    void initRPN(
+        const ActionsDAGWithInversionPushDown & filter_dag,
+        const ContextPtr & context,
+        const ExpressionActionsPtr & key_expr,
+        bool skip_analysis,
+        bool require_ready_sets);
+
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);
+
+    /// Analyze a comparison of a tuple against a tuple constant, e.g. (id, other) > (3, 'a'),
+    /// where the tuple itself is not a key expression but its first component is (possibly
+    /// wrapped in monotonic functions): tuples compare lexicographically, so the comparison
+    /// implies a bound on the first component, e.g. (a, b) > (c1, c2) implies a >= c1.
+    /// On success rewrites the atom inputs to the first component: fills the key column /
+    /// type / functions chain, replaces `const_value` and `const_type` with the constant's
+    /// first element, and sets `out_condition_is_relaxed` when the implication is not an
+    /// equivalence (a tuple of more than one element). The caller weakens the strict
+    /// comparison operators of relaxed conditions afterwards. On failure `const_value` and
+    /// `const_type` are left unchanged, while the `out_*` parameters may hold garbage.
+    bool tryRelaxedTupleComparisonAtom(
+        const RPNBuilderTreeNode & key_arg,
+        const BuildInfo & info,
+        const String & func_name,
+        Field & const_value,
+        DataTypePtr & const_type,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_expr_type,
+        MonotonicFunctionsChain & out_chain,
+        bool & out_condition_is_relaxed);
 
     /// Is node the key column, or an argument of a space-filling curve that is a key column,
     ///  or expression in which that column is wrapped by a chain of functions,
@@ -680,7 +744,7 @@ private:
 
     /// If query has no filter, rpn will has one element with unknown function.
     /// This flag identify whether there are filters.
-    bool has_filter;
+    bool has_filter = false;
 
     ColumnIndices key_columns;
     /// `key_columns` may contain all columns of the key tuple or only the columns used in the
@@ -724,5 +788,13 @@ private:
 
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
     KeyOrder key_order;
+
+    /// See getKeyTupleExpansion.
+    std::optional<KeyTupleExpansion> key_tuple_expansion;
+
+    /// Holds the value of the `analyze_index_with_tuple_key_elements` setting.
+    /// Gates tryRelaxedTupleComparisonAtom (for every kind of key) and, together with the
+    /// constructor argument, the tuple key element expansion.
+    bool analyze_tuple_key_elements = false;
 };
 }
