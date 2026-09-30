@@ -452,13 +452,12 @@ BlockIO InterpreterCreateUserQuery::execute()
             return updated_user;
         };
 
+        auto ids = query.if_exists ? storage->find<User>(names) : storage->getIDs<User>(names);
+        getContext()->checkSettingsConstraintsForOverwrite(ids, update_func);
         if (query.if_exists)
-        {
-            auto ids = storage->find<User>(names);
             access_control.tryUpdate(ids, update_func);
-        }
         else
-            access_control.update(storage->getIDs<User>(names), update_func);
+            access_control.update(ids, update_func);
     }
     else
     {
@@ -476,6 +475,9 @@ BlockIO InterpreterCreateUserQuery::execute()
         }
 
         std::vector<UUID> ids;
+        if (query.or_replace)
+            getContext()->checkSettingsConstraintsForOverwrite(new_users);
+
         if (!query.storage_name.empty())
             ids = access_control.insertInto(query.storage_name, new_users, query.or_replace, !query.if_not_exists);
         else if (query.if_not_exists)

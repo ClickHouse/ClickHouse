@@ -3829,6 +3829,45 @@ void Context::checkSettingsConstraints(const AlterSettingsProfileElements & prof
     checkSettingsConstraintsWithLock(profile_elements, source);
 }
 
+void Context::checkSettingsConstraintsForOverwrite(const std::vector<UUID> & ids, const AccessEntityUpdate & update) const
+{
+    const auto & access_control = getAccessControl();
+    for (const auto & id : ids)
+    {
+        if (auto old_entity = access_control.tryRead(id))
+            checkRemovedSettings(old_entity, update(old_entity, id));
+    }
+}
+
+void Context::checkSettingsConstraintsForOverwrite(const std::vector<std::shared_ptr<const IAccessEntity>> & new_entities) const
+{
+    const auto & access_control = getAccessControl();
+    for (const auto & new_entity : new_entities)
+    {
+        auto id = access_control.find(new_entity->getType(), new_entity->getName());
+        if (auto old_entity = id ? access_control.tryRead(*id) : nullptr)
+            checkRemovedSettings(old_entity, new_entity);
+    }
+}
+
+void Context::checkRemovedSettings(const std::shared_ptr<const IAccessEntity> & old_entity, const std::shared_ptr<const IAccessEntity> & new_entity) const
+{
+    auto settings_of = [](const IAccessEntity & entity) -> const SettingsProfileElements &
+    {
+        if (const auto * user = typeid_cast<const User *>(&entity))
+            return user->settings;
+        if (const auto * role = typeid_cast<const Role *>(&entity))
+            return role->settings;
+        return typeid_cast<const SettingsProfile &>(entity).elements;
+    };
+
+    SharedLockGuard lock(mutex);
+    /// A config-defined admin may drop constraints freely.
+    if (isCurrentUserDefinedInConfigWithLock())
+        return;
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkRemovedSettings(settings_of(*old_entity), settings_of(*new_entity));
+}
+
 void Context::checkSettingsConstraints(const SettingChange & change, SettingSource source)
 {
     SharedLockGuard lock(mutex);

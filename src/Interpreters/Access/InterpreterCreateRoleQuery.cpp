@@ -90,13 +90,12 @@ BlockIO InterpreterCreateRoleQuery::execute()
             updateRoleFromQueryImpl(*updated_role, query, {}, settings_from_query);
             return updated_role;
         };
+        auto ids = query.if_exists ? storage->find<Role>(names) : storage->getIDs<Role>(names);
+        getContext()->checkSettingsConstraintsForOverwrite(ids, update_func);
         if (query.if_exists)
-        {
-            auto ids = storage->find<Role>(names);
             access_control.tryUpdate(ids, update_func);
-        }
         else
-            access_control.update(storage->getIDs<Role>(names), update_func);
+            access_control.update(ids, update_func);
     }
     else
     {
@@ -107,6 +106,9 @@ BlockIO InterpreterCreateRoleQuery::execute()
             updateRoleFromQueryImpl(*new_role, query, name, settings_from_query);
             new_roles.emplace_back(std::move(new_role));
         }
+
+        if (query.or_replace)
+            getContext()->checkSettingsConstraintsForOverwrite(new_roles);
 
         if (!query.storage_name.empty())
             access_control.insertInto(query.storage_name, new_roles, query.or_replace, !query.if_not_exists);

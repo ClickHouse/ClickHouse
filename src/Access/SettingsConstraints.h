@@ -111,6 +111,11 @@ public:
 
     void check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source, bool actor_is_config_defined = false) const;
 
+    /// Dropping a setting from a user, a role or a settings profile removes both its value and any constraint
+    /// it declared, directly or through a profile it inherits. Refuses a write that removes a setting these
+    /// constraints bind (CONST, or a min/max/disallowed bound), so that it cannot weaken them.
+    void checkRemovedSettings(const SettingsProfileElements & old_elements, const SettingsProfileElements & new_elements) const;
+
     /// Checks whether resetting the specified settings to their defaults violates these constraints.
     void checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const;
 

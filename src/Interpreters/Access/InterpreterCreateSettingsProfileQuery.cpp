@@ -99,13 +99,12 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
             updateSettingsProfileFromQueryImpl(*updated_profile, query, {}, settings_from_query, roles_from_query);
             return updated_profile;
         };
+        auto ids = query.if_exists ? storage->find<SettingsProfile>(query.names) : storage->getIDs<SettingsProfile>(query.names);
+        getContext()->checkSettingsConstraintsForOverwrite(ids, update_func);
         if (query.if_exists)
-        {
-            auto ids = storage->find<SettingsProfile>(query.names);
             access_control.tryUpdate(ids, update_func);
-        }
         else
-            access_control.update(storage->getIDs<SettingsProfile>(query.names), update_func);
+            access_control.update(ids, update_func);
     }
     else
     {
@@ -116,6 +115,9 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
             updateSettingsProfileFromQueryImpl(*new_profile, query, name, settings_from_query, roles_from_query);
             new_profiles.emplace_back(std::move(new_profile));
         }
+
+        if (query.or_replace)
+            getContext()->checkSettingsConstraintsForOverwrite(new_profiles);
 
         if (!query.storage_name.empty())
             access_control.insertInto(query.storage_name, new_profiles, query.or_replace, !query.if_not_exists);

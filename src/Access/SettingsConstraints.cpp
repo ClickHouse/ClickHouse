@@ -14,6 +14,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <bitset>
+#include <functional>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -204,21 +205,44 @@ void SettingsConstraints::check(const Settings & current_settings, const AlterSe
 {
     check(current_settings, profile_elements.add_settings, source, /*skip_config_defined_profiles=*/false, actor_is_config_defined);
     check(current_settings, profile_elements.modify_settings, source, /*skip_config_defined_profiles=*/false, actor_is_config_defined);
+    /// What `drop_settings` and the `DROP ALL` forms remove depends on the target, so `checkRemovedSettings` decides it.
+}
 
-    /// Dropping a setting from a profile/user removes both its value and any constraint it declared.
-    /// That must not be used to weaken a constraint the actor is currently bound by, so reject dropping
-    /// a setting the actor is constrained on (CONST, or a min/max/disallowed bound). A trusted
-    /// config-defined admin may drop constraints freely.
-    if (actor_is_config_defined)
+void SettingsConstraints::checkRemovedSettings(const SettingsProfileElements & old_elements, const SettingsProfileElements & new_elements) const
+{
+    if (constraints.empty())
         return;
-    for (const auto & element : profile_elements.drop_settings)
+
+    /// The names a list of elements sets or constrains, including through the profiles it inherits.
+    auto collect_names = [this](const SettingsProfileElements & elements)
     {
-        if (element.setting_name.empty())
-            continue;
-        auto setting_name = resolveSettingName(element.setting_name);
-        auto it = constraints.find(setting_name);
-        if (it != constraints.end() && it->second != Constraint{})
-            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
+        std::unordered_set<String> names;
+        boost::container::flat_set<UUID> visited_profiles;
+        std::function<void(const SettingsProfileElements &)> collect = [&](const SettingsProfileElements & list)
+        {
+            for (const auto & element : list)
+            {
+                if (element.parent_profile)
+                {
+                    if (!visited_profiles.insert(*element.parent_profile).second)
+                        continue;
+                    if (auto profile = access_control ? access_control->tryRead<SettingsProfile>(*element.parent_profile) : nullptr)
+                        collect(profile->elements);
+                }
+                else if (!element.setting_name.empty())
+                    names.insert(resolveSettingName(element.setting_name));
+            }
+        };
+        collect(elements);
+        return names;
+    };
+
+    auto kept_names = collect_names(new_elements);
+    for (const auto & name : collect_names(old_elements))
+    {
+        auto it = constraints.find(name);
+        if (!kept_names.contains(name) && it != constraints.end() && it->second != Constraint{})
+            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", name);
     }
 }
 
