@@ -45,12 +45,13 @@ import uuid
 ORG = "clickhouse"
 CONSUMER = "ci-code-review"
 
-# Per-repository Loom configuration. The namespace of a private repository must
-# be a private namespace: `_refuse_cross_boundary` rejects a private repository
-# configured with the public namespace, so a misconfiguration cannot send
-# private diffs or code to the public index. `pr_overlay` marks repositories
-# whose open PRs the Loom mirror follows (the PR-number based ops only work
-# there).
+# Per-repository Loom configuration. Only the public repository uses Loom; a
+# repository without an entry (ClickHouse-private, forks) is reviewed without
+# it. Should a private repository be added, its namespace must be a private
+# one: `_refuse_cross_boundary` rejects a private repository configured with
+# the public namespace, so a misconfiguration cannot send private diffs or code
+# to the public index. `pr_overlay` marks repositories whose open PRs the Loom
+# mirror follows (the PR-number based ops only work there).
 PUBLIC_NAMESPACE = "code-clickhouse"
 REPO_CONFIG = {
     "ClickHouse/ClickHouse": {
@@ -59,13 +60,6 @@ REPO_CONFIG = {
         "namespace": PUBLIC_NAMESPACE,
         "private": False,
         "pr_overlay": True,
-    },
-    "ClickHouse/ClickHouse-private": {
-        "base_url_secret": "/ci/loom/base_url",
-        "token_secret": "/ci/loom/private_api_key",
-        "namespace_secret": "/ci/loom/private_namespace",
-        "private": True,
-        "pr_overlay": False,
     },
 }
 

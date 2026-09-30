@@ -188,7 +188,8 @@ def test_loom_config_for_repo():
     secrets = {"/ci/loom/base_url": "http://loom/", "/ci/loom/api_key": "k"}
     cfg = loom.Config.for_repo("ClickHouse/ClickHouse", 12, secrets.__getitem__)
     assert cfg.available() and cfg.namespace == "code-clickhouse" and cfg.base_url == "http://loom"
-    # A missing secret or an unknown repository means "no Loom", not a failure.
+    # A missing secret or a repository without Loom means "no Loom", not a failure.
+    assert not loom.Config.for_repo("ClickHouse/ClickHouse", 12, {}.__getitem__).available()
     assert not loom.Config.for_repo("ClickHouse/ClickHouse-private", 12, secrets.__getitem__).available()
     assert not loom.Config.for_repo("someone/fork", 12, secrets.__getitem__).available()
 
