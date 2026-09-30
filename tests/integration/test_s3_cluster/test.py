@@ -706,7 +706,7 @@ def test_iceberg_s3_cluster_read_task_failpoint(started_cluster):
     # Create and populate the source Iceberg table before enabling the failpoint.
     node.query(
         f"""
-        CREATE TABLE {iceberg_table} (id UInt64, data String)
+        CREATE TABLE {iceberg_table} (id Int64, data String)
         ENGINE = IcebergS3('{iceberg_url}', '{minio_access_key}', '{minio_secret_key}')
         """
     )
