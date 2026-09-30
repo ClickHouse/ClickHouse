@@ -1,0 +1,15 @@
+--- standard: folded reference to the granted table resolves canonically, access passes
+7
+--- standard: folded reference to an ungranted existing table is denied, not unknown
+ACCESS_DENIED
+--- standard: ambiguity is permission-independent, same error for user and admin
+AMBIGUOUS_IDENTIFIER
+AMBIGUOUS_IDENTIFIER
+--- standard: grants do not steer resolution, folded sibling class stays ambiguous
+AMBIGUOUS_IDENTIFIER
+0
+ACCESS_DENIED
+--- sensitive: exact names behave as master for the same user
+7
+ACCESS_DENIED
+UNKNOWN_TABLE

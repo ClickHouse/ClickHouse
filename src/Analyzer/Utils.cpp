@@ -451,9 +451,9 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     return predicate_value > 0;
 }
 
-const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node)
+const std::vector<IdentifierPart> & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node)
 {
-    static const Names no_aliases;
+    static const std::vector<IdentifierPart> no_aliases;
 
     QueryTreeNodePtr current = query_or_union_node;
     while (current)
@@ -519,7 +519,7 @@ static ASTPtr convertIntoTableExpressionAST(
             auto column_aliases_ast = make_intrusive<ASTExpressionList>();
             column_aliases_ast->children.reserve(column_aliases.size());
             for (const auto & column_alias : column_aliases)
-                column_aliases_ast->children.push_back(make_intrusive<ASTIdentifier>(column_alias));
+                column_aliases_ast->children.push_back(make_intrusive<ASTIdentifier>(IdentifierName({column_alias})));
 
             result_table_expression->column_aliases = std::move(column_aliases_ast);
             result_table_expression->children.push_back(result_table_expression->column_aliases);

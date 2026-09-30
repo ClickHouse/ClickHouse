@@ -119,7 +119,9 @@ BlockIO InterpreterUpdateQuery::execute()
         /// The database has to be pinned before the access rights and the distributed dispatch are built
         /// from it: otherwise they are expanded to the configured default database of each host, so the
         /// rights that are checked and the table that is updated can name different databases.
-        update_query.setDatabase(resolved_table_id.database_name);
+        /// Write the canonical names back, so the ON CLUSTER access check and DDL entry see the same object.
+        update_query.setDatabase(resolved_table_id.database_name, IdentifierPartQuote::DoubleQuoted);
+        update_query.setTable(resolved_table_id.table_name, IdentifierPartQuote::DoubleQuoted);
         table_for_access = DatabaseCatalog::instance().tryGetTable(resolved_table_id, getContext());
     }
     const bool row_exists_is_marker = InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(table_for_access, getContext());
@@ -134,11 +136,15 @@ BlockIO InterpreterUpdateQuery::execute()
             updates_columns = true;
     }
 
-    AccessRightsElements required_access;
-    if (deletes_via_row_exists)
-        required_access.emplace_back(AccessType::ALTER_DELETE, update_query.getDatabase(), update_query.getTable());
-    if (updates_columns)
-        required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
+    auto make_required_access = [&](const String & database_name, const String & table_name)
+    {
+        AccessRightsElements access;
+        if (deletes_via_row_exists)
+            access.emplace_back(AccessType::ALTER_DELETE, database_name, table_name);
+        if (updates_columns)
+            access.emplace_back(AccessType::ALTER_UPDATE, database_name, table_name);
+        return access;
+    };
 
     if (!update_query.cluster.empty())
     {
@@ -155,18 +161,20 @@ BlockIO InterpreterUpdateQuery::execute()
         }
 
         DDLQueryOnClusterParams params;
-        params.access_to_check = std::move(required_access);
+        params.access_to_check = make_required_access(update_query.getDatabase(), update_query.getTable());
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
     if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Update queries are prohibited");
 
-    getContext()->checkAccess(required_access);
+    /// Resolve the canonical names first, so the access check sees the same object the query acts on.
     /// Same database as `resolved_table_id` above, resolved again because the `ON CLUSTER` branch returns
     /// before this point, and because this one must throw where that one returns empty. Do not collapse.
     auto table_id = getContext()->resolveStorageID(update_query, Context::ResolveOrdinary);
-    update_query.setDatabase(table_id.database_name);
+    getContext()->checkAccess(make_required_access(table_id.database_name, table_id.table_name));
+    update_query.setDatabase(table_id.database_name, IdentifierPartQuote::DoubleQuoted);
+    update_query.setTable(table_id.table_name, IdentifierPartQuote::DoubleQuoted);
 
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());

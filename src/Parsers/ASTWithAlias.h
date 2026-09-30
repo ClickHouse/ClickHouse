@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/IdentifierName.h>
 #include <Parsers/IAST.h>
 
 
@@ -16,10 +17,12 @@ protected:
     struct ASTWithAliasFlags
     {
         using ParentFlags = void;
-        static constexpr UInt32 RESERVED_BITS = 1;
+        static constexpr UInt32 RESERVED_BITS = 3;
 
         UInt32 prefer_alias_to_column_name : 1;
-        UInt32 unused : 31;
+        /// `IdentifierPartQuote` of the alias as written in the query. Kept in the flags, so it does not grow every node.
+        UInt32 alias_quote : 2;
+        UInt32 unused : 29;
     };
 
 public:
@@ -30,6 +33,10 @@ public:
 
     /// The alias, if any, or an empty string.
     String alias;
+
+    /// Quoting of the alias as written in the query.
+    IdentifierPartQuote getAliasQuote() const { return static_cast<IdentifierPartQuote>(flags<ASTWithAliasFlags>().alias_quote); }
+    void setAliasQuote(IdentifierPartQuote quote) { flags<ASTWithAliasFlags>().alias_quote = static_cast<UInt32>(quote); }
 
     /// If is true, getColumnName returns alias. Uses for aliases in former WITH section of SELECT query.
     /// Example: 'WITH pow(2, 2) as a SELECT pow(a, 2)' returns 'pow(a, 2)' instead of 'pow(pow(2, 2), 2)'
@@ -45,7 +52,19 @@ public:
     void appendColumnNameWithoutAlias(WriteBuffer & ostr) const final;
     String getAliasOrColumnName() const override { return alias.empty() ? getColumnName() : alias; }
     String tryGetAlias() const override { return alias; }
-    void setAlias(const String & to) override { alias = to; }
+
+    /// The quote flag is always updated together with the alias string.
+    void setAlias(const String & to) override
+    {
+        alias = to;
+        setAliasQuote(IdentifierPartQuote::Unquoted);
+    }
+
+    void setAlias(const String & to, IdentifierPartQuote quote)
+    {
+        alias = to;
+        setAliasQuote(quote);
+    }
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
@@ -63,6 +82,19 @@ inline ASTPtr setAlias(ASTPtr ast, const String & alias)
 {
     ast->setAlias(alias);
     return ast;
+}
+
+/// Quoting of the node's alias, or `Unquoted` for nodes that cannot carry an alias.
+inline IdentifierPartQuote tryGetAliasQuote(const IAST * ast)
+{
+    if (const auto * ast_with_alias = dynamic_cast<const ASTWithAlias *>(ast))
+        return ast_with_alias->getAliasQuote();
+    return IdentifierPartQuote::Unquoted;
+}
+
+inline IdentifierPartQuote tryGetAliasQuote(const ASTPtr & ast)
+{
+    return tryGetAliasQuote(ast.get());
 }
 
 

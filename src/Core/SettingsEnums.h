@@ -11,6 +11,7 @@
 #include <Core/ParallelReplicasMode.h>
 #include <Core/QueryLogElementType.h>
 #include <Core/SchemaInferenceMode.h>
+#include <Core/IdentifierName.h>
 #include <Core/SettingsFields.h>
 #include <Core/ShortCircuitFunctionEvaluation.h>
 #include <Core/StreamingHandleErrorMode.h>
@@ -466,6 +467,8 @@ DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateT
 DECLARE_SETTING_ENUM_WITH_RENAME(InputFormatColumnMatchingCaseSensitivity, FormatSettings::InputFormatColumnMatchingCaseSensitivity)
 
 DECLARE_SETTING_ENUM(SQLSecurityType)
+
+DECLARE_SETTING_ENUM(NameMatchMode)
 
 DECLARE_SETTING_ENUM(IdentifierQuotingRule)
 DECLARE_SETTING_ENUM(IdentifierQuotingStyle)

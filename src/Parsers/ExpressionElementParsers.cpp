@@ -353,23 +353,35 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             if (pos->size() == 6) /// Empty Unicode-quoted identifiers are not allowed.
                 return false;
-            node = make_intrusive<ASTIdentifier>(String(pos->begin + 3, pos->end - 3));
+            auto identifier = make_intrusive<ASTIdentifier>(String(pos->begin + 3, pos->end - 3));
+            /// Unicode quotes are treated as double quotes.
+            identifier->name_parts.front().quote = IdentifierPartQuote::DoubleQuoted;
+            node = std::move(identifier);
             ++pos;
             return true;
         }
 
         ReadBufferFromMemory buf(pos->begin, pos->size());
         String s;
+        IdentifierPartQuote quote = IdentifierPartQuote::Unquoted;
 
         if (*pos->begin == '`')
+        {
             readBackQuotedStringWithSQLStyle(s, buf);
+            quote = IdentifierPartQuote::Backticked;
+        }
         else
+        {
             readDoubleQuotedStringWithSQLStyle(s, buf);
+            quote = IdentifierPartQuote::DoubleQuoted;
+        }
 
         if (s.empty())    /// Identifiers "empty string" are not allowed.
             return false;
 
-        node = make_intrusive<ASTIdentifier>(s);
+        auto identifier = make_intrusive<ASTIdentifier>(s);
+        identifier->name_parts.front().quote = quote;
+        node = std::move(identifier);
         ++pos;
         return true;
     }
@@ -509,7 +521,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     delimiter_parsers.emplace_back(std::make_unique<ParserToken>(TokenType::Dot), SpecialDelimiter::NONE);
     ParserArrayOfJSONIdentifierAddition array_of_json_identifier_addition;
 
-    std::vector<String> parts;
+    IdentifierName parts;
     SpecialDelimiter last_special_delimiter = SpecialDelimiter::NONE;
     ASTs params;
 
@@ -528,18 +540,18 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
         if (last_special_delimiter != SpecialDelimiter::NONE)
         {
-            parts.push_back(static_cast<char>(last_special_delimiter) + backQuote(getIdentifierName(element)));
+            parts.push_back(IdentifierPart{static_cast<char>(last_special_delimiter) + backQuote(getIdentifierName(element))});
         }
         else
         {
-            parts.push_back(getIdentifierName(element));
+            parts.push_back(IdentifierPart{getIdentifierName(element), element->as<ASTIdentifier>()->name_parts.front().quote});
             /// Check if we have Array of JSON subcolumn additioon after identifier
             /// and replace it with corresponding type subcolumn.
             if (!is_first && array_of_json_identifier_addition.check(pos, expected))
-                parts.push_back(array_of_json_identifier_addition.getLastArrayOfJSONSubcolumnIdentifier());
+                parts.push_back(IdentifierPart{array_of_json_identifier_addition.getLastArrayOfJSONSubcolumnIdentifier()});
         }
 
-        if (parts.back().empty())
+        if (parts.back().spelling.empty())
             params.push_back(element->as<ASTIdentifier>()->getParam());
 
         is_first = false;
@@ -581,8 +593,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             has_uuid_clause = true;
         }
 
-        if (parts.size() == 1) node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
-        else node = make_intrusive<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
+        node = make_intrusive<ASTTableIdentifier>(std::move(parts), std::move(params));
         node->as<ASTTableIdentifier>()->uuid = uuid;
         node->as<ASTTableIdentifier>()->has_uuid = has_uuid_clause;
     }
@@ -693,6 +704,7 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (window_name_parser.parse(pos, window_name_ast, expected))
         {
             function.window_name = getIdentifierName(window_name_ast);
+            function.setWindowNameQuote(identifierPartQuoteFromAST(window_name_ast));
             return true;
         }
 
@@ -917,6 +929,7 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
     }
     with_parent_window->parent_window_name = window_name_identifier->as<const ASTIdentifier &>().name();
+    with_parent_window->parent_window_name_quote = identifierPartQuoteFromAST(window_name_identifier);
 
     if (!parseWindowDefinitionParts(pos, *with_parent_window, expected))
     {
@@ -947,6 +960,7 @@ bool ParserWindowList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         }
         elem->name = getIdentifierName(window_name_identifier);
+        elem->name_quote = identifierPartQuoteFromAST(window_name_identifier);
 
         ParserKeyword keyword_as(Keyword::AS);
         if (!keyword_as.ignore(pos, expected))
@@ -2352,6 +2366,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
             auto replacement = make_intrusive<ASTColumnsReplaceTransformer::Replacement>();
             replacement->name = getIdentifierName(ident);
+            replacement->name_quote = identifierPartQuoteFromAST(ident);
             replacement->children.push_back(std::move(expr));
             replacements.emplace_back(std::move(replacement));
             return true;
@@ -2542,7 +2557,7 @@ bool ParserQualifiedColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected
     auto & name_parts = identifier_node_typed.name_parts;
 
     /// ParserCompoundIdentifier parse identifier.COLUMNS
-    if (name_parts.size() == 1 || name_parts.back() != "COLUMNS")
+    if (name_parts.size() == 1 || name_parts.back().spelling != "COLUMNS")
         return false;
 
     name_parts.pop_back();
@@ -2713,6 +2728,7 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
         {
             tryGetIdentifierNameInto(alias_node, ast_with_alias->alias);
+            ast_with_alias->setAliasQuote(identifierPartQuoteFromAST(alias_node));
 
             // the alias is parametrised and will be resolved later when the query context is known
             if (!alias_node->children.empty() && alias_node->children.front()->as<ASTQueryParameter>())
@@ -2888,6 +2904,9 @@ bool ParserInterpolateElement::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     auto elem = make_intrusive<ASTInterpolateElement>();
     elem->column = getIdentifierName(ident);
+    /// Only a single-part target keeps its quote; a compound one flattens into a dotted name.
+    if (const auto * ident_typed = ident->as<ASTIdentifier>(); ident_typed && ident_typed->isShort())
+        elem->column_quote = identifierPartQuoteFromAST(ident);
     elem->expr = expr;
     elem->children.push_back(expr);
 

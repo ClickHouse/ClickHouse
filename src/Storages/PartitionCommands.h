@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/IdentifierName.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 
@@ -52,6 +53,12 @@ struct PartitionCommand
     /// For MOVE PARTITION
     String to_database;
     String to_table;
+
+    /// Quoting of the secondary table name parts as written in the query.
+    IdentifierPartQuote from_database_quote = IdentifierPartQuote::Unquoted;
+    IdentifierPartQuote from_table_quote = IdentifierPartQuote::Unquoted;
+    IdentifierPartQuote to_database_quote = IdentifierPartQuote::Unquoted;
+    IdentifierPartQuote to_table_quote = IdentifierPartQuote::Unquoted;
 
     /// For FETCH PARTITION - path in ZK to the shard, from which to download the partition.
     String from_path;

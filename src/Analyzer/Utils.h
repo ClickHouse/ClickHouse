@@ -6,6 +6,7 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <Core/Field.h>
+#include <Core/IdentifierName.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
@@ -108,7 +109,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
   * re-emit for a subquery or a CTE, or an empty list when there is nothing to restore.
   * Only an unresolved node has a list to restore.
   */
-const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node);
+const std::vector<IdentifierPart> & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node);
 
 /// Extract all TableNodes from the query tree.
 QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);

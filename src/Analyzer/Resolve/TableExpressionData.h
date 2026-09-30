@@ -3,7 +3,10 @@
 #include <IO/Operators.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/Identifier.h>
+#include <Core/IdentifierName.h>
 #include <DataTypes/NestedUtils.h>
+
+#include <map>
 
 namespace DB
 {
@@ -37,6 +40,8 @@ struct AnalysisTableExpressionData
     std::string table_expression_description;
     std::string database_name;
     std::string table_name;
+    /// `table_name` came from a double-quoted definition (e.g. a CTE name) and is pinned to exact-spelling matching.
+    bool table_name_pinned = false;
     bool should_qualify_columns = true;
     bool supports_subcolumns = false;
     NamesAndTypes column_names_and_types;
@@ -52,6 +57,9 @@ struct AnalysisTableExpressionData
     /// with `column_names` by `ensureColumnMembershipSetsArePopulated()`.
     mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
     mutable bool column_membership_sets_populated = false;
+    /// Column names from double-quoted definitions, pinned to exact-spelling matching under
+    /// `standard` matching; folded references must not match them.
+    std::unordered_set<String> pinned_column_names;
 
     void ensureColumnMembershipSetsArePopulated() const;
 
@@ -129,6 +137,34 @@ struct AnalysisTableExpressionData
         DataTypePtr subcolumn_type;
     };
 
+    /// Result of a `standard`-mode column or subcolumn lookup, see `tryMatchColumnOrSubcolumnStandard`.
+    struct StandardMatchResult
+    {
+        enum class Outcome : UInt8
+        {
+            NotFound,
+            Matched,
+            Ambiguous,
+        };
+
+        Outcome outcome = Outcome::NotFound;
+        /// Canonical column full name, when Matched.
+        String column_name;
+        /// Canonical subcolumn path within the column type, empty when the whole column matched.
+        String subcolumn_name;
+        ColumnNodePtr column_node;
+        DataTypePtr subcolumn_type;
+        /// Sorted canonical full names of all matches, when Ambiguous.
+        std::vector<String> candidates;
+    };
+
+    /// Resolve `name` against columns and type-level subcolumns with `standard` semantics: unquoted
+    /// and backticked parts fold with no exact-spelling priority, double-quoted parts match exactly.
+    StandardMatchResult tryMatchColumnOrSubcolumnStandard(const IdentifierName & name) const;
+
+    /// Whether `name` could bind to this table by its first part; never reports ambiguity (mirrors `canBindIdentifier`).
+    bool canBindIdentifierStandard(const IdentifierName & name) const;
+
     std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view full_identifier_name) const
     {
         ensureColumnMembershipSetsArePopulated();
@@ -151,8 +187,17 @@ struct AnalysisTableExpressionData
     }
 
 private:
+    void ensureFoldedColumnIndexIsPopulated() const;
+
     mutable std::optional<ColumnNameToColumnNodeMap> column_name_to_column_node;
     std::function<void(ColumnNameToColumnNodeMap &)> populate_column_node_map;
+
+    /// Index for `standard` matching, built once on the first standard-mode lookup.
+    /// Folded full column name -> sorted canonical full names.
+    mutable std::map<String, std::vector<String>> folded_column_names;
+    /// Folded `Identifier(name).at(0)` of every column name, for binding checks.
+    mutable std::unordered_set<String> folded_column_first_parts;
+    mutable bool folded_column_index_populated = false;
 };
 
 }

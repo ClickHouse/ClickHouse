@@ -83,7 +83,10 @@ bool WindowNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const WindowNode &>(rhs);
 
-    return window_frame == rhs_typed.window_frame && parent_window_name == rhs_typed.parent_window_name;
+    /// Only a double quote changes matching (it pins the name under `standard` matching).
+    return window_frame == rhs_typed.window_frame && parent_window_name == rhs_typed.parent_window_name
+        && (parent_window_name_quote == IdentifierPartQuote::DoubleQuoted)
+            == (rhs_typed.parent_window_name_quote == IdentifierPartQuote::DoubleQuoted);
 }
 
 void WindowNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
@@ -98,12 +101,16 @@ void WindowNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) cons
     hash_state.update(window_frame.end_preceding);
 
     hash_state.update(parent_window_name);
+    /// Mixed in only when set, so the hash of a window without a double-quoted parent name is unchanged.
+    if (parent_window_name_quote == IdentifierPartQuote::DoubleQuoted)
+        hash_state.update(parent_window_name_quote);
 }
 
 QueryTreeNodePtr WindowNode::cloneImpl() const
 {
     auto window_node = std::make_shared<WindowNode>(window_frame);
     window_node->parent_window_name = parent_window_name;
+    window_node->parent_window_name_quote = parent_window_name_quote;
 
     return window_node;
 }
@@ -113,6 +120,7 @@ ASTPtr WindowNode::toASTImpl(const ConvertToASTOptions & options) const
     auto window_definition = make_intrusive<ASTWindowDefinition>();
 
     window_definition->parent_window_name = parent_window_name;
+    window_definition->parent_window_name_quote = parent_window_name_quote;
 
     if (hasPartitionBy())
     {

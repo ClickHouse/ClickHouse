@@ -21,6 +21,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTOrderByElement.h>
@@ -101,6 +102,7 @@ private:
     struct CommonTableExpressionData
     {
         std::string_view cte_name;
+        IdentifierPartQuote cte_name_quote = IdentifierPartQuote::Unquoted;
         bool is_materialized = false;
     };
 
@@ -206,7 +208,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     auto union_node = std::make_shared<UnionNode>(Context::createCopy(context), select_with_union_query_typed.union_mode);
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
-    union_node->setCTEName(std::string(cte_data.cte_name));
+    union_node->setCTEName(std::string(cte_data.cte_name), cte_data.cte_name_quote);
     union_node->setIsMaterialized(cte_data.is_materialized);
     union_node->setOriginalAST(select_with_union_query);
 
@@ -250,7 +252,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     auto union_node = std::make_shared<UnionNode>(Context::createCopy(context), union_mode);
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
-    union_node->setCTEName(std::string(cte_data.cte_name));
+    union_node->setCTEName(std::string(cte_data.cte_name), cte_data.cte_name_quote);
     union_node->setIsMaterialized(cte_data.is_materialized);
     union_node->setOriginalAST(select_intersect_except_query);
 
@@ -326,7 +328,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
     current_query_tree->setIsSubquery(is_subquery);
     current_query_tree->setIsCTE(!cte_data.cte_name.empty());
-    current_query_tree->setCTEName(std::string(cte_data.cte_name));
+    current_query_tree->setCTEName(std::string(cte_data.cte_name), cte_data.cte_name_quote);
     current_query_tree->setIsMaterialized(cte_data.is_materialized);
     current_query_tree->setIsRecursiveWith(select_query_typed.recursive_with);
     current_query_tree->setIsDistinct(select_query_typed.distinct);
@@ -380,18 +382,18 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     // Apply the override aliases to the projection nodes
     if (aliases)
     {
-        // Collect the aliases into a vector of strings
-        Names collected_aliases;
+        // Collect the aliases with their quoting
+        std::vector<IdentifierPart> collected_aliases;
         auto & override_aliases_children = aliases->as<ASTExpressionList &>().children;
         collected_aliases.reserve(override_aliases_children.size());
 
         for (const auto & child : override_aliases_children)
         {
             const auto & alias_ast = child->as<ASTIdentifier &>();
-            collected_aliases.push_back(alias_ast.name());
+            collected_aliases.push_back(IdentifierPart{alias_ast.name(), identifierPartQuoteFromAST(child)});
         }
 
-        current_query_tree->setProjectionAliasesToOverride(collected_aliases);
+        current_query_tree->setProjectionAliasesToOverride(std::move(collected_aliases));
     }
 
     auto prewhere_expression = select_query_typed.prewhere();
@@ -570,7 +572,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildInterpolateList(const ASTPtr & interpola
     for (auto & expression : expression_list_typed.children)
     {
         const auto & interpolate_element = expression->as<const ASTInterpolateElement &>();
-        auto expression_to_interpolate = std::make_shared<IdentifierNode>(Identifier(interpolate_element.column));
+        /// A double-quoted target may contain dots, so it must not be re-split; the quote also pins it under `standard`.
+        auto expression_to_interpolate = interpolate_element.column_quote == IdentifierPartQuote::DoubleQuoted
+            ? std::make_shared<IdentifierNode>(IdentifierName({IdentifierPart{interpolate_element.column, IdentifierPartQuote::DoubleQuoted}}))
+            : std::make_shared<IdentifierNode>(Identifier(interpolate_element.column));
         auto interpolate_expression = buildExpression(interpolate_element.expr, context);
         auto interpolate_node = std::make_shared<InterpolateNode>(std::move(expression_to_interpolate), std::move(interpolate_expression));
 
@@ -592,7 +597,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildWindowList(const ASTPtr & window_definit
         const auto & window_list_element_typed = window_list_element->as<const ASTWindowListElement &>();
 
         auto window_node = buildWindow(window_list_element_typed.definition, context);
-        window_node->setAlias(window_list_element_typed.name);
+        window_node->setAlias(window_list_element_typed.name, window_list_element_typed.name_quote);
 
         list_node->getNodes().push_back(std::move(window_node));
     }
@@ -622,13 +627,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
 
     if (const auto * ast_identifier = expression->as<ASTIdentifier>())
     {
-        auto identifier = Identifier(ast_identifier->name_parts);
-        result = std::make_shared<IdentifierNode>(std::move(identifier));
+        result = std::make_shared<IdentifierNode>(ast_identifier->name_parts);
     }
     else if (const auto * table_identifier = expression->as<ASTTableIdentifier>())
     {
-        auto identifier = Identifier(table_identifier->name_parts);
-        result = std::make_shared<IdentifierNode>(std::move(identifier));
+        result = std::make_shared<IdentifierNode>(table_identifier->name_parts);
     }
     else if (const auto * asterisk = expression->as<ASTAsterisk>())
     {
@@ -639,7 +642,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     {
         auto & qualified_identifier = qualified_asterisk->qualifier->as<ASTIdentifier &>();
         auto column_transformers = buildColumnTransformers(qualified_asterisk->transformers, context);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_transformers));
+        auto matcher_node = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts.spellings()), std::move(column_transformers));
+        matcher_node->setQualifiedIdentifierName(qualified_identifier.name_parts);
+        result = std::move(matcher_node);
     }
     else if (const auto * ast_literal = expression->as<ASTLiteral>())
     {
@@ -657,6 +662,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
 
             Names lambda_arguments;
             NameSet lambda_arguments_set;
+            std::vector<IdentifierName> lambda_argument_names;
 
             if (lambda_arguments_tuple.arguments)
             {
@@ -676,7 +682,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                             function->formatForErrorMessage(),
                             lambda_argument_identifier->full_name);
 
-                    const auto & argument_name = lambda_argument_identifier->name_parts[0];
+                    const auto & argument_name = lambda_argument_identifier->name_parts[0].spelling;
                     auto [_, inserted] = lambda_arguments_set.insert(argument_name);
                     if (!inserted)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -685,10 +691,19 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                             argument_name);
 
                     lambda_arguments.push_back(argument_name);
+                    lambda_argument_names.push_back(lambda_argument_identifier->name_parts);
                 }
             }
 
             auto lambda_arguments_node = std::make_shared<LambdaArgumentsNode>(std::move(lambda_arguments));
+            if (std::ranges::any_of(lambda_argument_names, [](const IdentifierName & name) { return name.anyPartDoubleQuoted(); }))
+            {
+                std::vector<IdentifierPartQuote> lambda_argument_quotes;
+                lambda_argument_quotes.reserve(lambda_argument_names.size());
+                for (const auto & lambda_argument_name : lambda_argument_names)
+                    lambda_argument_quotes.push_back(lambda_argument_name.front().quote);
+                lambda_arguments_node->setQuotes(std::move(lambda_argument_quotes));
+            }
 
             const auto & lambda_expression = lambda_arguments_and_expression.at(1);
             auto lambda_expression_node = buildExpression(lambda_expression, context);
@@ -730,7 +745,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                     if (function->window_definition)
                         function_node->getWindowNode() = buildWindow(function->window_definition, context);
                     else
-                        function_node->getWindowNode() = std::make_shared<IdentifierNode>(Identifier(function->window_name));
+                        function_node->getWindowNode() = std::make_shared<IdentifierNode>(IdentifierName({IdentifierPart{function->window_name, function->getWindowNameQuote()}}));
                 }
 
                 result = std::move(function_node);
@@ -754,6 +769,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         auto with_element_subquery = with_element->subquery->as<ASTSubquery &>().children.at(0);
         CommonTableExpressionData cte_data = {
             .cte_name = with_element->name,
+            .cte_name_quote = with_element->name_quote,
             .is_materialized = with_element->is_materialized,
         };
         auto query_node = buildSelectWithUnionExpression(with_element_subquery, true /*is_subquery*/, cte_data /*cte_data*/, with_element->aliases /*aliases*/, context);
@@ -768,38 +784,51 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     else if (const auto * columns_list_matcher = expression->as<ASTColumnsListMatcher>())
     {
         Identifiers column_list_identifiers;
+        std::vector<IdentifierName> column_list_identifier_names;
         column_list_identifiers.reserve(columns_list_matcher->column_list->children.size());
+        column_list_identifier_names.reserve(columns_list_matcher->column_list->children.size());
 
         for (auto & column_list_child : columns_list_matcher->column_list->children)
         {
             auto & column_list_identifier = column_list_child->as<ASTIdentifier &>();
-            column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts});
+            column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts.spellings()});
+            column_list_identifier_names.push_back(column_list_identifier.name_parts);
         }
 
         auto column_transformers = buildColumnTransformers(columns_list_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(std::move(column_list_identifiers), std::move(column_transformers));
+        auto matcher_node = std::make_shared<MatcherNode>(std::move(column_list_identifiers), std::move(column_transformers));
+        matcher_node->setColumnsIdentifierNames(std::move(column_list_identifier_names));
+        result = std::move(matcher_node);
     }
     else if (const auto * qualified_columns_regexp_matcher = expression->as<ASTQualifiedColumnsRegexpMatcher>())
     {
         auto & qualified_identifier = qualified_columns_regexp_matcher->qualifier->as<ASTIdentifier &>();
         auto column_transformers = buildColumnTransformers(qualified_columns_regexp_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), qualified_columns_regexp_matcher->getPattern(), std::move(column_transformers));
+        auto matcher_node = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts.spellings()), qualified_columns_regexp_matcher->getPattern(), std::move(column_transformers));
+        matcher_node->setQualifiedIdentifierName(qualified_identifier.name_parts);
+        result = std::move(matcher_node);
     }
     else if (const auto * qualified_columns_list_matcher = expression->as<ASTQualifiedColumnsListMatcher>())
     {
         auto & qualified_identifier = qualified_columns_list_matcher->qualifier->as<ASTIdentifier &>();
 
         Identifiers column_list_identifiers;
+        std::vector<IdentifierName> column_list_identifier_names;
         column_list_identifiers.reserve(qualified_columns_list_matcher->column_list->children.size());
+        column_list_identifier_names.reserve(qualified_columns_list_matcher->column_list->children.size());
 
         for (auto & column_list_child : qualified_columns_list_matcher->column_list->children)
         {
             auto & column_list_identifier = column_list_child->as<ASTIdentifier &>();
-            column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts});
+            column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts.spellings()});
+            column_list_identifier_names.push_back(column_list_identifier.name_parts);
         }
 
         auto column_transformers = buildColumnTransformers(qualified_columns_list_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_list_identifiers), std::move(column_transformers));
+        auto matcher_node = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts.spellings()), std::move(column_list_identifiers), std::move(column_transformers));
+        matcher_node->setQualifiedIdentifierName(qualified_identifier.name_parts);
+        matcher_node->setColumnsIdentifierNames(std::move(column_list_identifier_names));
+        result = std::move(matcher_node);
     }
     else if (const auto * query_parameter = expression->as<ASTQueryParameter>())
     {
@@ -814,7 +843,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             expression->formatForErrorMessage());
     }
 
-    result->setAlias(expression->tryGetAlias());
+    result->setAlias(expression->tryGetAlias(), tryGetAliasQuote(expression));
     result->setOriginalAST(expression);
     result->setParenthesized(expression->isParenthesized());
 
@@ -837,7 +866,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildWindow(const ASTPtr & window_definition,
     }
 
     auto window_node = std::make_shared<WindowNode>(window_frame);
-    window_node->setParentWindowName(window_definition_typed.parent_window_name);
+    window_node->setParentWindowName(window_definition_typed.parent_window_name, window_definition_typed.parent_window_name_quote);
 
     if (window_definition_typed.partition_by)
         window_node->getPartitionByNode() = buildExpressionList(window_definition_typed.partition_by, context);
@@ -908,7 +937,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     parser, implicit_table.data(), implicit_table.data() + implicit_table.size(),
                     "implicit_table_at_top_level setting",
                     settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-                return std::make_shared<IdentifierNode>(Identifier(identifier_ast->as<ASTIdentifier &>().name_parts));
+                return std::make_shared<IdentifierNode>(identifier_ast->as<ASTIdentifier &>().name_parts);
             }
         }
 
@@ -963,15 +992,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             if (table_expression.database_and_table_name)
             {
                 auto & table_identifier_typed = table_expression.database_and_table_name->as<ASTTableIdentifier &>();
-                auto storage_identifier = Identifier(table_identifier_typed.name_parts);
                 QueryTreeNodePtr table_identifier_node;
 
                 if (table_expression_modifiers)
-                    table_identifier_node = std::make_shared<IdentifierNode>(storage_identifier, *table_expression_modifiers);
+                    table_identifier_node = std::make_shared<IdentifierNode>(table_identifier_typed.name_parts, *table_expression_modifiers);
                 else
-                    table_identifier_node = std::make_shared<IdentifierNode>(storage_identifier);
+                    table_identifier_node = std::make_shared<IdentifierNode>(table_identifier_typed.name_parts);
 
-                table_identifier_node->setAlias(table_identifier_typed.tryGetAlias());
+                table_identifier_node->setAlias(table_identifier_typed.tryGetAlias(), table_identifier_typed.getAliasQuote());
                 table_identifier_node->setOriginalAST(table_element.table_expression);
 
                 table_expressions.push_back(std::move(table_identifier_node));
@@ -990,14 +1018,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     CommonTableExpressionData{.cte_name = subquery_expression.cte_name},
                     select_query.aliases(),
                     context);
-                node->setAlias(subquery_expression.tryGetAlias());
+                node->setAlias(subquery_expression.tryGetAlias(), subquery_expression.getAliasQuote());
                 node->setOriginalAST(select_with_union_query);
 
                 /// Apply column aliases from AS alias(col1, col2, ...) syntax
                 if (table_expression.column_aliases)
                 {
                     const auto & column_aliases_list = table_expression.column_aliases->as<ASTExpressionList &>();
-                    Names column_alias_names;
+                    std::vector<IdentifierPart> column_alias_names;
                     column_alias_names.reserve(column_aliases_list.children.size());
 
                     std::unordered_set<std::string> seen_aliases;
@@ -1007,7 +1035,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                         if (!seen_aliases.insert(alias_name).second)
                             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Duplicate column alias '{}' in table expression column list", alias_name);
-                        column_alias_names.push_back(alias_name);
+                        column_alias_names.push_back(IdentifierPart{alias_name, identifierPartQuoteFromAST(column_alias)});
                     }
 
                     if (auto * query_node = node->as<QueryNode>())
@@ -1056,7 +1084,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
 
                 if (table_expression_modifiers)
                     node->setTableExpressionModifiers(*table_expression_modifiers);
-                node->setAlias(table_expression.table_function->tryGetAlias());
+                node->setAlias(table_expression.table_function->tryGetAlias(), tryGetAliasQuote(table_expression.table_function));
                 node->setOriginalAST(table_expression.table_function);
 
                 table_expressions.push_back(std::move(node));
@@ -1231,26 +1259,38 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
             else
             {
                 Names except_column_names;
+                std::vector<IdentifierPartQuote> except_column_names_quotes;
                 except_column_names.reserve(except_transformer->children.size());
+                except_column_names_quotes.reserve(except_transformer->children.size());
 
                 for (auto & except_transformer_child : except_transformer->children)
+                {
                     except_column_names.push_back(except_transformer_child->as<ASTIdentifier &>().full_name);
+                    except_column_names_quotes.push_back(identifierPartQuoteFromAST(except_transformer_child));
+                }
 
-                column_transformers.emplace_back(std::make_shared<ExceptColumnTransformerNode>(std::move(except_column_names), except_transformer->is_strict));
+                auto except_node = std::make_shared<ExceptColumnTransformerNode>(std::move(except_column_names), except_transformer->is_strict);
+                except_node->setExceptColumnNamesQuotes(std::move(except_column_names_quotes));
+                column_transformers.emplace_back(std::move(except_node));
             }
         }
         else if (auto * replace_transformer = child->as<ASTColumnsReplaceTransformer>())
         {
             std::vector<ReplaceColumnTransformerNode::Replacement> replacements;
+            std::vector<IdentifierPartQuote> replacements_names_quotes;
             replacements.reserve(replace_transformer->children.size());
+            replacements_names_quotes.reserve(replace_transformer->children.size());
 
             for (const auto & replace_transformer_child : replace_transformer->children)
             {
                 auto & replacement = replace_transformer_child->as<ASTColumnsReplaceTransformer::Replacement &>();
                 replacements.emplace_back(ReplaceColumnTransformerNode::Replacement{replacement.name, buildExpression(replacement.children[0], context)});
+                replacements_names_quotes.push_back(replacement.name_quote);
             }
 
-            column_transformers.emplace_back(std::make_shared<ReplaceColumnTransformerNode>(replacements, replace_transformer->is_strict));
+            auto replace_node = std::make_shared<ReplaceColumnTransformerNode>(replacements, replace_transformer->is_strict);
+            replace_node->setReplacementsNamesQuotes(std::move(replacements_names_quotes));
+            column_transformers.emplace_back(std::move(replace_node));
         }
         else
         {

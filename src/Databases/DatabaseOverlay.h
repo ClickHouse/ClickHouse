@@ -27,6 +27,8 @@ public:
 
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
 
+    FoldedNameIndex::ResolutionResult resolveTableName(const IdentifierPart & name, ContextPtr context) const override;
+
     void createTable(ContextPtr context, const String & table_name, const StoragePtr & table, const ASTPtr & query) override;
 
     void dropTable(ContextPtr context, const String & table_name, bool sync) override;

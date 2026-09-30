@@ -1141,6 +1141,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
+    query->as_database_quote = identifierPartQuoteFromAST(as_database);
+    query->as_table_quote = identifierPartQuoteFromAST(as_table);
     query->set(query->select, select);
 
     if (to_inner_uuid)
@@ -1738,6 +1740,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
+    query->as_database_quote = identifierPartQuoteFromAST(as_database);
+    query->as_table_quote = identifierPartQuoteFromAST(as_table);
     query->set(query->select, select);
     query->set(query->targets, targets);
 

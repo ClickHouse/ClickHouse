@@ -7,8 +7,10 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -16,7 +18,9 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTWithElement.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
@@ -396,13 +400,14 @@ public:
         }
         else if (auto * identifier = ast->as<ASTIdentifier>())
         {
-            if (identifier->compound() && isPlannerGeneratedTableAlias(identifier->name_parts[0]))
+            if (identifier->compound() && isPlannerGeneratedTableAlias(identifier->name_parts[0].spelling))
             {
                 /// Preserve every component after the planner alias, so identifiers like
                 /// `__table1.nested.field` are normalized to `nested.field`, not just `nested`.
-                std::vector<String> trimmed_parts(identifier->name_parts.begin() + 1, identifier->name_parts.end());
+                IdentifierName trimmed_parts(std::vector<IdentifierPart>(identifier->name_parts.begin() + 1, identifier->name_parts.end()));
                 auto new_identifier = make_intrusive<ASTIdentifier>(std::move(trimmed_parts));
-                new_identifier->setAlias(identifier->tryGetAlias());
+                /// Keep the alias quote: it is part of the hash under `standard` name matching.
+                new_identifier->setAlias(identifier->alias, identifier->getAliasQuote());
                 ast = std::move(new_identifier);
             }
         }
@@ -426,6 +431,55 @@ ASTPtr removeTableAliases(ASTPtr ast)
     return ast;
 }
 
+/// Under `standard` name matching a double quote pins a name to exact matching, so `ORDER BY X` and
+/// `ORDER BY "X"` can bind to different expressions. The AST hash does not see quote styles (formatting
+/// does not preserve them, and the hash must survive a format/reparse round trip), so mix the double
+/// quotes into the cache key here. Nothing is mixed in for an AST without double quotes.
+void updateHashWithDoubleQuotes(const IAST & ast, SipHash & hash, size_t & node_index)
+{
+    ++node_index;
+
+    auto is_double_quoted = [](IdentifierPartQuote quote) { return quote == IdentifierPartQuote::DoubleQuoted; };
+    /// `what` tells the quoted names of one node apart: identifier part indexes are small, the rest use tags from the top.
+    auto mix = [&](size_t what)
+    {
+        hash.update(node_index);
+        hash.update(what);
+    };
+    constexpr size_t alias_tag = std::numeric_limits<size_t>::max();
+    constexpr size_t name_tag = alias_tag - 1;
+
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        for (size_t i = 0; i < identifier->name_parts.size(); ++i)
+            if (is_double_quoted(identifier->name_parts[i].quote))
+                mix(i);
+    }
+
+    if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(&ast); with_alias && is_double_quoted(with_alias->getAliasQuote()))
+        mix(alias_tag);
+
+    if (const auto * function = ast.as<ASTFunction>(); function && is_double_quoted(function->getWindowNameQuote()))
+        mix(name_tag);
+    else if (const auto * with_element = ast.as<ASTWithElement>(); with_element && is_double_quoted(with_element->name_quote))
+        mix(name_tag);
+    else if (const auto * interpolate = ast.as<ASTInterpolateElement>(); interpolate && is_double_quoted(interpolate->column_quote))
+        mix(name_tag);
+    else if (const auto * replacement = ast.as<ASTColumnsReplaceTransformer::Replacement>(); replacement && is_double_quoted(replacement->name_quote))
+        mix(name_tag);
+    else if (const auto * window_definition = ast.as<ASTWindowDefinition>(); window_definition && is_double_quoted(window_definition->parent_window_name_quote))
+        mix(name_tag);
+    else if (const auto * window_list_element = ast.as<ASTWindowListElement>(); window_list_element && is_double_quoted(window_list_element->name_quote))
+        mix(name_tag);
+
+    for (const auto & child : ast.children)
+        updateHashWithDoubleQuotes(*child, hash, node_index);
+
+    /// The column alias list of a CTE is not a child.
+    if (const auto * with_element = ast.as<ASTWithElement>(); with_element && with_element->aliases)
+        updateHashWithDoubleQuotes(*with_element->aliases, hash, node_index);
+}
+
 /// When `pre_cleaned` is true, the caller has already cloned the AST and stripped planner table
 /// aliases (`removeTableAliases`). Skip both steps to avoid mutating the original AST or running
 /// `removeTableAliases` twice (which would over-strip chains like `__table1.__table2.x` -> `x`).
@@ -442,6 +496,8 @@ IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Set
     /// Hash the AST, we must consider aliases (issue #56258)
     SipHash hash;
     ast->updateTreeHash(hash, /*ignore_aliases=*/ false);
+    size_t node_index = 0;
+    updateHashWithDoubleQuotes(*ast, hash, node_index);
 
     /// Also hash the database specified via SQL `USE db`, otherwise identifiers in same query (AST) may mean different columns in different
     /// tables (issue #64136)

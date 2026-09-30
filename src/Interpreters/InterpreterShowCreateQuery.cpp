@@ -16,6 +16,7 @@
 #include <Interpreters/TableNameHints.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Common/Exception.h>
@@ -190,7 +191,8 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
     {
         if (show_query->isTemporary())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary databases are not possible.");
-        show_query->setDatabase(getContext()->resolveDatabase(show_query->getDatabase()));
+        show_query->setDatabase(DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+            getContext()->resolveDatabase(show_query->getDatabase()), identifierPartQuoteFromAST(show_query->database), getContext()));
         getContext()->checkAccess(AccessType::SHOW_DATABASES, show_query->getDatabase());
         create_query = DatabaseCatalog::instance().getDatabase(show_query->getDatabase())->getCreateDatabaseQuery();
     }

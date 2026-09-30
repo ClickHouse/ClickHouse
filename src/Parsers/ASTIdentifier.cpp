@@ -21,8 +21,39 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+/// The quote style of every part, written only when some part is quoted. Double quotes are semantic under
+/// `standard` name matching, so the JSON form must keep them to round-trip to the same query.
+static void writePartQuotesJSON(JSONObjectWriter & w, const IdentifierName & name_parts)
+{
+    if (std::ranges::all_of(name_parts, [](const IdentifierPart & part) { return part.quote == IdentifierPartQuote::Unquoted; }))
+        return;
+
+    w.writeKey("part_quotes");
+    auto & o = w.getOut();
+    o << '[';
+    for (size_t i = 0; i < name_parts.size(); ++i)
+    {
+        if (i > 0)
+            o << ',';
+        writeJSONString(JSONObjectWriter::quoteToJSONString(name_parts[i].quote), o, w.getFormatSettings());
+    }
+    o << ']';
+}
+
+static void readPartQuotesJSON(const JSONObjectReader & r, IdentifierName & name_parts)
+{
+    auto quotes = r.readStringArray("part_quotes");
+    if (quotes.empty())
+        return;
+    if (quotes.size() != name_parts.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Identifier JSON has {} 'part_quotes' for {} name parts during AST JSON deserialization", quotes.size(), name_parts.size());
+    for (size_t i = 0; i < quotes.size(); ++i)
+        name_parts[i].quote = JSONObjectReader::quoteFromJSONString(quotes[i], "part_quotes");
+}
+
 ASTIdentifier::ASTIdentifier(const String & short_name, ASTPtr && name_param)
-    : full_name(short_name), name_parts{short_name}, semantic(std::make_shared<IdentifierSemanticImpl>())
+    : full_name(short_name), name_parts(std::vector<String>{short_name}), semantic(std::make_shared<IdentifierSemanticImpl>())
 {
     if (!name_param)
         chassert(!full_name.empty());
@@ -31,7 +62,12 @@ ASTIdentifier::ASTIdentifier(const String & short_name, ASTPtr && name_param)
 }
 
 ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, ASTs && name_params)
-    : name_parts(name_parts_), semantic(std::make_shared<IdentifierSemanticImpl>())
+    : ASTIdentifier(IdentifierName(name_parts_), special, std::move(name_params))
+{
+}
+
+ASTIdentifier::ASTIdentifier(IdentifierName name_parts_, bool special, ASTs && name_params)
+    : name_parts(std::move(name_parts_)), semantic(std::make_shared<IdentifierSemanticImpl>())
 {
     chassert(!name_parts.empty());
     semantic->special = special;
@@ -41,7 +77,7 @@ ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, A
         [[maybe_unused]] size_t params = 0;
         for (const auto & part [[maybe_unused]] : name_parts)
         {
-            if (part.empty())
+            if (part.spelling.empty())
                 ++params;
         }
         chassert(params == name_params.size());
@@ -50,10 +86,10 @@ ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, A
     else
     {
         for (const auto & part [[maybe_unused]] : name_parts)
-            chassert(!part.empty());
+            chassert(!part.spelling.empty());
 
         if (!special && name_parts.size() >= 2)
-            semantic->table = name_parts.end()[-2];
+            semantic->table = name_parts.end()[-2].spelling;
 
         resetFullName();
     }
@@ -85,10 +121,11 @@ void ASTIdentifier::writeJSON(WriteBuffer & out) const
         for (size_t i = 0; i < name_parts.size(); ++i)
         {
             if (i > 0) o << ',';
-            writeJSONString(name_parts[i], o, w.getFormatSettings());
+            writeJSONString(name_parts[i].spelling, o, w.getFormatSettings());
         }
         o << ']';
     }
+    writePartQuotesJSON(w, name_parts);
     w.writeChildren(children);
     w.writeAlias(*this);
 }
@@ -117,7 +154,7 @@ void ASTIdentifier::readJSON(const Poco::JSON::Object & json)
             if (!child->as<ASTQueryParameter>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ASTIdentifier JSON 'name_parts' placeholder child must be an ASTQueryParameter during AST JSON deserialization");
-        name_parts = std::move(parts);
+        name_parts = IdentifierName(parts);
         /// Match the parametrised-compound ctor: leave `full_name` empty when there are
         /// query-parameter children, otherwise compute it from `name_parts`.
         if (children.empty())
@@ -132,7 +169,7 @@ void ASTIdentifier::readJSON(const Poco::JSON::Object & json)
         {
             semantic->legacy_compound = true;
             if (children.empty())
-                semantic->table = name_parts.end()[-2];
+                semantic->table = name_parts.end()[-2].spelling;
         }
     }
     else
@@ -152,7 +189,7 @@ void ASTIdentifier::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ASTIdentifier JSON with empty 'name' must have an ASTQueryParameter child during AST JSON deserialization");
             full_name.clear();
-            name_parts = {""};
+            name_parts = IdentifierName(std::vector<String>{""});
         }
         else
         {
@@ -163,6 +200,7 @@ void ASTIdentifier::readJSON(const Poco::JSON::Object & json)
             setShortName(name);
         }
     }
+    readPartQuotesJSON(r, name_parts);
     r.readAlias(*this);
 }
 
@@ -184,7 +222,7 @@ void ASTIdentifier::setShortName(const String & new_name)
     chassert(!new_name.empty());
 
     full_name = new_name;
-    name_parts = {new_name};
+    name_parts = IdentifierName(std::vector<String>{new_name});
 
     bool special = semantic->special;
     auto table = semantic->table;
@@ -194,8 +232,28 @@ void ASTIdentifier::setShortName(const String & new_name)
     semantic->table = table;
 }
 
+IdentifierPartQuote identifierPartQuoteFromAST(const IAST * node)
+{
+    if (const auto * identifier = node ? node->as<ASTIdentifier>() : nullptr)
+        if (!identifier->name_parts.empty())
+            return identifier->name_parts[0].quote;
+    return IdentifierPartQuote::Unquoted;
+}
+
+IdentifierPartQuote identifierPartQuoteFromAST(const ASTPtr & node)
+{
+    return identifierPartQuoteFromAST(node.get());
+}
+
 void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    /// Part boundaries are semantic and survive the format/reparse round-trip, so mix them in.
+    /// Quote styles do not (formatting honors identifier_quoting_style), so they stay out of the hash.
+    if (name_parts.size() > 1)
+    {
+        for (const auto & part : name_parts)
+            hash_state.update(part.spelling.size());
+    }
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -235,13 +293,13 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
             /// Some AST rewriting code, like IdentifierSemantic::setColumnLongName,
             /// does not respect children of identifier.
             /// Here we also ignore children if they are empty.
-            if (name_parts[i].empty() && j < children.size())
+            if (name_parts[i].spelling.empty() && j < children.size())
             {
                 children[j]->format(ostr, settings, state, frame);
                 ++j;
             }
             else
-                format_element(name_parts[i]);
+                format_element(name_parts[i].spelling);
         }
     }
     else
@@ -263,7 +321,7 @@ void ASTIdentifier::restoreTable()
 {
     if (!compound())
     {
-        name_parts.insert(name_parts.begin(), semantic->table);
+        name_parts.parts.insert(name_parts.parts.begin(), IdentifierPart{semantic->table});
         resetFullName();
     }
 }
@@ -275,16 +333,16 @@ boost::intrusive_ptr<ASTTableIdentifier> ASTIdentifier::createTable() const
     if (isParam())
         return nullptr;
 
-    if (name_parts.size() == 1) return make_intrusive<ASTTableIdentifier>(name_parts[0]);
-    if (name_parts.size() == 2) return make_intrusive<ASTTableIdentifier>(name_parts[0], name_parts[1]);
+    if (name_parts.size() == 1 || name_parts.size() == 2)
+        return make_intrusive<ASTTableIdentifier>(name_parts);
     return nullptr;
 }
 
 void ASTIdentifier::resetFullName()
 {
-    full_name = name_parts[0];
+    full_name = name_parts[0].spelling;
     for (size_t i = 1; i < name_parts.size(); ++i)
-        full_name += '.' + name_parts[i];
+        full_name += '.' + name_parts[i].spelling;
 }
 
 ASTTableIdentifier::ASTTableIdentifier(const String & table_name, ASTs && name_params)
@@ -292,13 +350,30 @@ ASTTableIdentifier::ASTTableIdentifier(const String & table_name, ASTs && name_p
 {
 }
 
+namespace
+{
+
+IdentifierName storageIDToIdentifierName(const StorageID & table_id)
+{
+    IdentifierName name;
+    if (!table_id.database_name.empty())
+        name.push_back(IdentifierPart{table_id.database_name, table_id.database_name_quote});
+    name.push_back(IdentifierPart{table_id.table_name, table_id.table_name_quote});
+    return name;
+}
+
+}
+
 ASTTableIdentifier::ASTTableIdentifier(const StorageID & table_id, ASTs && name_params)
-    : ASTIdentifier(
-        table_id.database_name.empty() ? std::vector<String>{table_id.table_name}
-                                       : std::vector<String>{table_id.database_name, table_id.table_name},
-        true, std::move(name_params))
+    : ASTIdentifier(storageIDToIdentifierName(table_id), true, std::move(name_params))
 {
     uuid = table_id.uuid;
+}
+
+ASTTableIdentifier::ASTTableIdentifier(IdentifierName name_parts_, ASTs && name_params)
+    : ASTIdentifier(std::move(name_parts_), true, std::move(name_params))
+{
+    chassert(name_parts.size() == 1 || name_parts.size() == 2);
 }
 
 ASTTableIdentifier::ASTTableIdentifier(const String & database_name, const String & table_name, ASTs && name_params)
@@ -320,7 +395,7 @@ void ASTTableIdentifier::writeJSON(WriteBuffer & out) const
         for (size_t i = 0; i < name_parts.size(); ++i)
         {
             if (i > 0) o << ',';
-            writeJSONString(name_parts[i], o, w.getFormatSettings());
+            writeJSONString(name_parts[i].spelling, o, w.getFormatSettings());
         }
         o << ']';
     }
@@ -336,6 +411,7 @@ void ASTTableIdentifier::writeJSON(WriteBuffer & out) const
             "A nested table reference with a UUID cannot be represented as AST JSON: it cannot be formatted back to SQL "
             "faithfully during AST JSON serialization");
     }
+    writePartQuotesJSON(w, name_parts);
     w.writeChildren(children);
     w.writeAlias(*this);
 }
@@ -360,7 +436,7 @@ void ASTTableIdentifier::readJSON(const Poco::JSON::Object & json)
             if (!child->as<ASTQueryParameter>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ASTTableIdentifier JSON 'name_parts' placeholder child must be an ASTQueryParameter during AST JSON deserialization");
-        name_parts = std::move(parts);
+        name_parts = IdentifierName(parts);
         /// `ASTTableIdentifier` can only represent a one- or two-part table name
         /// (`table` or `database.table`): `ParserCompoundIdentifier` rejects `parts.size() > 2`
         /// for table identifiers. `getTableId`/`getDatabaseName` would otherwise mis-resolve a
@@ -394,7 +470,7 @@ void ASTTableIdentifier::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ASTTableIdentifier JSON with empty 'name' must have an ASTQueryParameter child during AST JSON deserialization");
             full_name.clear();
-            name_parts = {""};
+            name_parts = IdentifierName(std::vector<String>{""});
         }
         else
         {
@@ -417,6 +493,7 @@ void ASTTableIdentifier::readJSON(const Poco::JSON::Object & json)
             "ASTTableIdentifier JSON must not carry a 'uuid': a nested table reference with a UUID cannot be "
             "formatted back to SQL faithfully during AST JSON deserialization");
     }
+    readPartQuotesJSON(r, name_parts);
     r.readAlias(*this);
 }
 
@@ -430,32 +507,47 @@ ASTPtr ASTTableIdentifier::clone() const
 
 StorageID ASTTableIdentifier::getTableId() const
 {
-    if (name_parts.size() == 2) return {name_parts[0], name_parts[1], uuid};
-    return {{}, name_parts[0], uuid};
+    if (name_parts.size() == 2)
+    {
+        StorageID table_id{name_parts[0].spelling, name_parts[1].spelling, uuid};
+        table_id.database_name_quote = name_parts[0].quote;
+        table_id.table_name_quote = name_parts[1].quote;
+        return table_id;
+    }
+    StorageID table_id{{}, name_parts[0].spelling, uuid};
+    table_id.table_name_quote = name_parts[0].quote;
+    return table_id;
 }
 
 String ASTTableIdentifier::getDatabaseName() const
 {
-    if (name_parts.size() == 2) return name_parts[0];
+    if (name_parts.size() == 2) return name_parts[0].spelling;
     return {};
+}
+
+static ASTPtr makeIdentifierFromPart(const IdentifierPart & part)
+{
+    auto identifier = make_intrusive<ASTIdentifier>(part.spelling);
+    identifier->name_parts[0].quote = part.quote;
+    return identifier;
 }
 
 ASTPtr ASTTableIdentifier::getTable() const
 {
     if (name_parts.size() == 2)
     {
-        if (!name_parts[1].empty())
-            return make_intrusive<ASTIdentifier>(name_parts[1]);
+        if (!name_parts[1].spelling.empty())
+            return makeIdentifierFromPart(name_parts[1]);
 
-        if (name_parts[0].empty())
+        if (name_parts[0].spelling.empty())
             return make_intrusive<ASTIdentifier>("", children[1]->clone());
         return make_intrusive<ASTIdentifier>("", children[0]->clone());
     }
     if (name_parts.size() == 1)
     {
-        if (name_parts[0].empty())
+        if (name_parts[0].spelling.empty())
             return make_intrusive<ASTIdentifier>("", children[0]->clone());
-        return make_intrusive<ASTIdentifier>(name_parts[0]);
+        return makeIdentifierFromPart(name_parts[0]);
     }
     return {};
 }
@@ -464,9 +556,9 @@ ASTPtr ASTTableIdentifier::getDatabase() const
 {
     if (name_parts.size() == 2)
     {
-        if (name_parts[0].empty())
+        if (name_parts[0].spelling.empty())
             return make_intrusive<ASTIdentifier>("", children[0]->clone());
-        return make_intrusive<ASTIdentifier>(name_parts[0]);
+        return makeIdentifierFromPart(name_parts[0]);
     }
     return {};
 }
@@ -475,7 +567,7 @@ void ASTTableIdentifier::resetTable(const String & database_name, const String &
 {
     auto identifier = make_intrusive<ASTTableIdentifier>(StorageID{database_name, table_name});
     full_name.swap(identifier->full_name);
-    name_parts.swap(identifier->name_parts);
+    std::swap(name_parts, identifier->name_parts);
     uuid = identifier->uuid;
 }
 
