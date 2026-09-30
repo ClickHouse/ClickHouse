@@ -604,10 +604,8 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         }
         else if (const auto * literal = pair->second->as<const ASTLiteral>())
         {
-            /// The grammar admits an array literal for any key-value parameter, and a constant expression in a definition is
-            /// evaluated to a tuple or map literal, but a dictionary source parameter has no structured representation for a
-            /// collection, so reject one instead of silently stringifying it. A replayed definition may hold a `tuple(...)`
-            /// call, which evaluates to a tuple, so a tuple or map is refused only in a fresh definition.
+            /// A dictionary source parameter has no structured representation for a collection: an array literal, or a constant
+            /// expression evaluated to a tuple or map. A replayed definition may hold a `tuple(...)` call, which evaluates to a tuple.
             const auto value_type = literal->value.getType();
             if (value_type == Field::Types::Array
                 || (is_fresh_definition && (value_type == Field::Types::Tuple || value_type == Field::Types::Map)))
