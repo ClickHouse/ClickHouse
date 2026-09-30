@@ -7,6 +7,7 @@
 
 #include <IO/WriteHelpers.h>
 
+#include <Compression/CompressionCodecNone.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedWriteBuffer.h>
 
@@ -26,7 +27,13 @@ void CompressedWriteBuffer::nextImpl()
 
     chassert(offset() <= INT_MAX);
     UInt32 decompressed_size = static_cast<UInt32>(offset());
-    UInt32 compressed_reserve_size = codec->getCompressedReserveSize(decompressed_size);
+    const ICompressionCodec * frame_codec = codec.get();
+    if (decompressed_size < min_bytes_to_compress)
+    {
+        static const CompressionCodecNone codec_none;
+        frame_codec = &codec_none;
+    }
+    UInt32 compressed_reserve_size = frame_codec->getCompressedReserveSize(decompressed_size);
 
     /** During compression we need buffer with capacity >= compressed_reserve_size + CHECKSUM_SIZE.
       *
@@ -39,7 +46,7 @@ void CompressedWriteBuffer::nextImpl()
     if (out.available() >= compressed_reserve_size + sizeof(CityHash_v1_0_2::uint128))
     {
         char * out_compressed_ptr = out.position() + sizeof(CityHash_v1_0_2::uint128);
-        UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, out_compressed_ptr);
+        UInt32 compressed_size = frame_codec->compress(working_buffer.begin(), decompressed_size, out_compressed_ptr);
 
         CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(out_compressed_ptr, compressed_size);
 
@@ -51,7 +58,7 @@ void CompressedWriteBuffer::nextImpl()
     else
     {
         compressed_buffer.resize(compressed_reserve_size);
-        UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, compressed_buffer.data());
+        UInt32 compressed_size = frame_codec->compress(working_buffer.begin(), decompressed_size, compressed_buffer.data());
 
         CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(compressed_buffer.data(), compressed_size);
 

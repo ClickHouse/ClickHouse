@@ -44,6 +44,12 @@ public:
 
     void setCodec(CompressionCodecPtr codec_);
 
+    /// Emit smaller frames with `NONE`, retaining framing and checksums. Requires a compatible receiver.
+    void setMinBytesToCompress(size_t min_bytes_to_compress_)
+    {
+        min_bytes_to_compress = min_bytes_to_compress_;
+    }
+
     /// Returns the buffer that compressed data is written into.
     WriteBuffer * getNestedBuffer() const { return &out; }
 
@@ -58,6 +64,7 @@ private:
 
     WriteBuffer & out;
     CompressionCodecPtr codec;
+    size_t min_bytes_to_compress = 0;
 
     PODArray<char> compressed_buffer;
 };

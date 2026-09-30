@@ -71,6 +71,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 network_compression_min_bytes;
+}
+
 namespace FailPoints
 {
     extern const char receive_timeout_on_table_status_response[];
@@ -1034,6 +1039,7 @@ void Connection::sendQuery(
     socket->setSendTimeout(timeouts.send_timeout);
 
     compression_codec = chooseNetworkCompressionCodec(settings);
+    compression_min_bytes = settings ? (*settings)[Setting::network_compression_min_bytes].value : DEFAULT_NETWORK_COMPRESSION_MIN_BYTES;
 
     query_id = query_id_;
 
@@ -1213,7 +1219,12 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
     if (!block_out)
     {
         if (compression == Protocol::Compression::Enable)
-            maybe_compressed_out = std::make_unique<CompressedWriteBuffer>(*out, compression_codec);
+        {
+            auto compressed_out = std::make_unique<CompressedWriteBuffer>(*out, compression_codec);
+            if (server_revision >= DBMS_MIN_REVISION_WITH_SMALL_FRAME_COMPRESSION)
+                compressed_out->setMinBytesToCompress(compression_min_bytes);
+            maybe_compressed_out = std::move(compressed_out);
+        }
         else
             maybe_compressed_out = out;
 
