@@ -4,6 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 
 #include <map>
+#include <memory>
 #include <vector>
 
 /** One column can produce many storage streams,
@@ -46,15 +47,15 @@ public:
     ColumnCodecDescription & operator=(const ASTPtr & ast) { setRoot(ast); return *this; }
     explicit operator bool() const { return !empty(); }
 
-    bool empty() const { return codecs.empty(); }
-    bool hasRoot() const { return codecs.contains(CodecPath{}); }
-    bool hasSubcolumns() const { return codecs.size() > static_cast<size_t>(hasRoot()); }
+    bool empty() const { return !codecs; }
+    bool hasRoot() const { return codecs && codecs->contains(CodecPath{}); }
+    bool hasSubcolumns() const { return codecs && codecs->size() > static_cast<size_t>(hasRoot()); }
     const ASTPtr & getRoot() const;
-    const CodecsByPath & getCodecs() const { return codecs; }
+    const CodecsByPath & getCodecs() const;
 
     void setRoot(const ASTPtr & ast);
-    void resetRoot() { codecs.erase(CodecPath{}); }
-    void reset() { codecs.clear(); }
+    void resetRoot();
+    void reset() { codecs.reset(); }
     void set(CodecPath path, const ASTPtr & ast);
     void erase(const CodecPath & path);
 
@@ -63,7 +64,9 @@ public:
     bool operator==(const ColumnCodecDescription & rhs) const;
 
 private:
-    CodecsByPath codecs;
+    /// Most columns do not declare a codec. Keep their description pointer-sized and
+    /// allocate policy storage only when the first declaration is added.
+    std::unique_ptr<CodecsByPath> codecs;
 };
 
 }
