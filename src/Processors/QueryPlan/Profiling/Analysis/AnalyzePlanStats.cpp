@@ -226,7 +226,7 @@ void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & ou
 
 }
 
-AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, const QueryPlan & plan, StepProfiler & step_profiler, UInt64 execution_query_time_ns_)
+AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, const QueryPlan & plan, StepProfiler & step_profiler, UInt64 execution_start_ns, UInt64 execution_query_time_ns_)
 : max_num_threads_per_query(pipeline.getNumThreads())
 , execution_query_time_ns(execution_query_time_ns_)
 {
@@ -238,7 +238,7 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, const Query
     computeJoinBranchCosts(plan);
 
     /// Work intervals are collected only when EXPLAIN ANALYZE requests the `time` setting.
-    if (const auto work_intervals = step_profiler.extractWorkIntervals(); !work_intervals.empty())
+    if (const auto work_intervals = step_profiler.extractWorkIntervals(execution_start_ns); !work_intervals.empty())
         interval_timings.emplace(work_intervals, plan);
 }
 

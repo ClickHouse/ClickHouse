@@ -37,9 +37,8 @@ StepWallClocks collectWallClocksForPlanSteps(const QueryPlan & plan)
 
 }
 
-StepProfiler::StepProfiler(const QueryPlan & plan, bool collect_work_intervals_, UInt64 origin_ns_)
-    : origin_ns(origin_ns_)
-    , collect_work_intervals(collect_work_intervals_)
+StepProfiler::StepProfiler(const QueryPlan & plan, bool collect_work_intervals_)
+    : collect_work_intervals(collect_work_intervals_)
     , clocks(collectWallClocksForPlanSteps(plan))
 {
 }
@@ -60,16 +59,18 @@ void StepProfiler::addWorkIntervals(WorkIntervals intervals)
     if (intervals.empty())
         return;
 
-    for (auto & interval : intervals)
-        interval.start_of_interval_ns -= origin_ns;
-
     std::lock_guard lock(mutex);
     intervals_per_thread.push_back(std::move(intervals));
 }
 
-WorkIntervalsPerThread StepProfiler::extractWorkIntervals()
+WorkIntervalsPerThread StepProfiler::extractWorkIntervals(UInt64 execution_start_ns)
 {
     std::lock_guard lock(mutex);
+
+    for (auto & thread_intervals : intervals_per_thread)
+        for (auto & interval : thread_intervals)
+            interval.start_of_interval_ns -= execution_start_ns;
+
     return std::move(intervals_per_thread);
 }
 

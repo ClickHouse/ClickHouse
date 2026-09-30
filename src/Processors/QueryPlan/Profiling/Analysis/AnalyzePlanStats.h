@@ -38,7 +38,7 @@ class AnalyzeStepsStats
     using ReportsByStep = std::unordered_map<const IQueryPlanStep *, StepAnalysisReport>;
 
 public:
-    AnalyzeStepsStats(const QueryPipeline & pipeline, const QueryPlan & plan, StepProfiler & step_profiler, UInt64 execution_query_time_ns_);
+    AnalyzeStepsStats(const QueryPipeline & pipeline, const QueryPlan & plan, StepProfiler & step_profiler, UInt64 execution_start_ns, UInt64 execution_query_time_ns_);
 
     void printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & detail_prefix, bool processors_info = false) const;
 

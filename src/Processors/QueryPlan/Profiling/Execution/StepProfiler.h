@@ -21,16 +21,15 @@ using StepWallClocks = std::map<PlanStepGroup, std::unique_ptr<StepWallClock>>;
 class StepProfiler
 {
 public:
-    StepProfiler(const QueryPlan & plan, bool collect_work_intervals_, UInt64 origin_ns_);
+    StepProfiler(const QueryPlan & plan, bool collect_work_intervals_);
 
     StepWallClock * findClockForStep(const IQueryPlanStep * step, size_t group) const;
 
     bool needCollectWorkIntervals() const;
     void addWorkIntervals(WorkIntervals intervals);
-    WorkIntervalsPerThread extractWorkIntervals();
+    WorkIntervalsPerThread extractWorkIntervals(UInt64 execution_start_ns);
 
 private:
-    const UInt64 origin_ns;
     const bool collect_work_intervals;
     const StepWallClocks clocks;
 
