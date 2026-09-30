@@ -40296,16 +40296,24 @@
     "source": "/sql-reference/operators/"
   },
   {
-    "destination": "/reference/operators/exists",
+    "destination": "/reference/statements/exists",
     "source": "/sql-reference/operators/exists"
+  },
+  {
+    "destination": "/reference/statements/exists",
+    "source": "/reference/operators/exists"
   },
   {
     "destination": "/reference/statements/in",
     "source": "/sql-reference/operators/in"
   },
   {
-    "destination": "/reference/operators/distributed-ddl",
+    "destination": "/reference/statements/distributed-ddl",
     "source": "/sql-reference/other/distributed-ddl"
+  },
+  {
+    "destination": "/reference/statements/distributed-ddl",
+    "source": "/reference/operators/distributed-ddl"
   },
   {
     "destination": "/reference/statements",
