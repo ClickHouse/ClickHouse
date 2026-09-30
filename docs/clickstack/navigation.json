@@ -127,9 +127,7 @@
               "group": "Administration",
               "pages": [
                 "clickstack/observability/managing/overview",
-                "clickstack/observability/managing/admin",
                 "clickstack/observability/managing/config",
-                "clickstack/observability/managing/production",
                 "clickstack/observability/managing/rbac"
               ]
             },
@@ -266,12 +264,7 @@
             {
               "group": "Features",
               "pages": [
-                {
-                  "group": "Deployment",
-                  "pages": [
-                    "clickstack/self-configured/deployment/managed"
-                  ]
-                },
+                "clickstack/self-configured/deployment/managed",
                 "clickstack/self-configured/features/search",
                 {
                   "group": "Dashboards",
@@ -363,7 +356,6 @@
               "group": "Administration",
               "pages": [
                 "clickstack/self-configured/managing/overview",
-                "clickstack/self-configured/managing/admin",
                 "clickstack/self-configured/managing/config",
                 "clickstack/self-configured/managing/estimating-resources",
                 "clickstack/self-configured/managing/isolating-read-write",
@@ -518,43 +510,37 @@
             {
               "group": "Deployment",
               "pages": [
-                "clickstack/deployment/overview",
+                "clickstack/deployment/oss",
+                "clickstack/deployment/all-in-one",
                 {
-                  "group": "Open Source",
+                  "group": "Helm",
                   "pages": [
-                    "clickstack/deployment/oss",
-                    "clickstack/deployment/all-in-one",
                     {
-                      "group": "Helm",
+                      "group": "v2.x",
                       "pages": [
-                        {
-                          "group": "v2.x",
-                          "pages": [
-                            "clickstack/deployment/helm",
-                            "clickstack/deployment/helm-configuration",
-                            "clickstack/deployment/helm-deployment-options",
-                            "clickstack/deployment/helm-cloud",
-                            "clickstack/deployment/helm-additional-manifests",
-                            "clickstack/deployment/helm-upgrade"
-                          ]
-                        },
-                        {
-                          "group": "v1.x (deprecated)",
-                          "pages": [
-                            "clickstack/deployment/helm-v1",
-                            "clickstack/deployment/helm-configuration-v1",
-                            "clickstack/deployment/helm-deployment-options-v1",
-                            "clickstack/deployment/helm-cloud-v1"
-                          ]
-                        }
+                        "clickstack/deployment/helm",
+                        "clickstack/deployment/helm-configuration",
+                        "clickstack/deployment/helm-deployment-options",
+                        "clickstack/deployment/helm-cloud",
+                        "clickstack/deployment/helm-additional-manifests",
+                        "clickstack/deployment/helm-upgrade"
                       ]
                     },
-                    "clickstack/deployment/docker-compose",
-                    "clickstack/deployment/hyperdx-only",
-                    "clickstack/deployment/local-mode-only",
-                    "clickstack/deployment/clickhouse-embedded"
+                    {
+                      "group": "v1.x (deprecated)",
+                      "pages": [
+                        "clickstack/deployment/helm-v1",
+                        "clickstack/deployment/helm-configuration-v1",
+                        "clickstack/deployment/helm-deployment-options-v1",
+                        "clickstack/deployment/helm-cloud-v1"
+                      ]
+                    }
                   ]
-                }
+                },
+                "clickstack/deployment/docker-compose",
+                "clickstack/deployment/hyperdx-only",
+                "clickstack/deployment/local-mode-only",
+                "clickstack/deployment/clickhouse-embedded"
               ]
             },
             "clickstack/features/search",
@@ -647,7 +633,6 @@
           "group": "Administration",
           "pages": [
             "clickstack/managing/overview",
-            "clickstack/managing/admin",
             "clickstack/managing/config",
             "clickstack/managing/estimating-resources",
             "clickstack/managing/materialized-views",

@@ -32,7 +32,7 @@ The OpenTelemetry Collector provides a sustainable and vendor-neutral solution f
 
 ## ClickHouse OpenTelemetry endpoint {#clickhouse-otel-endpoint}
 
-All data is ingested into ClickStack via an **OpenTelemetry (OTel) collector** instance, which acts as the primary entry point for logs, metrics, traces, and session data. We recommend using the official [ClickStack distribution](/clickstack/ingesting-data/opentelemetry#installing-otel-collector) of the collector for this instance, if not [already bundled in your ClickStack deployment model](/clickstack/deployment/overview).
+All data is ingested into ClickStack via an **OpenTelemetry (OTel) collector** instance, which acts as the primary entry point for logs, metrics, traces, and session data. We recommend using the official [ClickStack distribution](/clickstack/ingesting-data/opentelemetry#installing-otel-collector) of the collector for this instance, if not [already bundled in your ClickStack deployment model](/clickstack/deployment/oss).
 
 Users send data to this collector from [language SDKs](/clickstack/ingesting-data/sdks/index) or through data collection agents collecting infrastructure metrics and logs (such OTel collectors in an [agent](/clickstack/ingesting-data/collector#collector-roles) role or other technologies e.g. [Fluentd](https://www.fluentd.org/) or [Vector](https://vector.dev/)). For teams that want a managed OpenTelemetry pipeline, [Bindplane](/clickstack/integration-partners/bindplane)offers an OpenTelemetry-native solution with a native ClickStack destination, simplifying telemetry collection, processing, and routing.
 

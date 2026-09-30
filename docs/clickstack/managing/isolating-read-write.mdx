@@ -184,7 +184,7 @@ All schema changes must be run against the **read-write** service, including:
 
 Users, roles and grants aren't schema changes - they're shared by every service in the warehouse, so each only needs to be created once, from any service. The [setup steps](#prepare-read-write-service) above create the ingestion user. Any other client you point at the read-only service should authenticate as a separate read-only query user with the [permissions required by the ClickStack UI](/clickstack/managing/production#user-permissions) - not with the ingestion grants shown above.
 
-Connect to the read-write service using the [SQL console or ClickHouse client](/clickstack/managing/admin). Because the warehouse shares storage and access controls, the changes are immediately visible to the read-only service. If you've [separated merges from ingestion](#separating-merges), statements can be submitted against either read-write service - but note that mutations are executed and tracked on the merge service.
+Connect to the read-write service using the [SQL console](/products/cloud/features/sql-console-features/sql-console) or [ClickHouse client](/concepts/features/interfaces/client). Because the warehouse shares storage and access controls, the changes are immediately visible to the read-only service. If you've [separated merges from ingestion](#separating-merges), statements can be submitted against either read-write service - but note that mutations are executed and tracked on the merge service.
 
 <Warning>
 **Database DDL can hang when another service is idled**

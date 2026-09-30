@@ -1,8 +1,8 @@
 ---
 slug: /clickstack/self-configured/features/dashboards/overview
-title: 'Visualizations and dashboards with ClickStack'
+title: 'Visualizations and dashboards with Self Configured ClickHouse Observability'
 sidebarTitle: 'Overview'
-description: 'Visualizations and dashboards with ClickStack'
+description: 'Visualizations and dashboards with Self Configured ClickHouse Observability'
 doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualization', 'monitoring', 'observability']
 ---
@@ -11,25 +11,29 @@ import { Image } from "/snippets/components/Image.jsx";
 
 import Tagging from '/snippets/_clickstack_tagging.mdx';
 
-ClickStack supports visualizing events, with built-in support for charting in ClickStack UI (HyperDX). These charts can be added to dashboards for sharing with other users.
+<Warning>
+This guide has been carried over from the existing documentation and still needs review for Self Configured ClickHouse Observability. The examples still use the OSS remote demo dataset and public demo. The built-in monitoring dashboard and its required system-table permissions also need verification for this offering.
+</Warning>
+
+Self Configured ClickHouse Observability supports visualizing events, with built-in support for charting in the UI. These charts can be added to dashboards for sharing with other users.
 
 Visualizations can be created from traces, metrics, logs, or any user-defined wide event schemas.
 
 ## Creating visualizations {#creating-visualizations}
 
-The **Chart Explorer** interface in HyperDX allows you to visualize metrics, traces, and logs over time, making it easy to create quick visualizations for data analysis. This interface is also reused when creating dashboards. The following section walks through the process of creating a visualization using Chart Explorer.
+The **Chart Explorer** interface allows you to visualize metrics, traces, and logs over time, making it easy to create quick visualizations for data analysis. This interface is also reused when creating dashboards. The following section walks through the process of creating a visualization using Chart Explorer.
 
-Each visualization begins by selecting a **data source**, followed by a **metric**, with optional **filter expressions** and **group by** fields. Conceptually, visualizations in HyperDX map to a SQL `GROUP BY` query under the hood — you define metrics to aggregate across selected dimensions.
+Each visualization begins by selecting a **data source**, followed by a **metric**, with optional **filter expressions** and **group by** fields. Conceptually, visualizations map to a SQL `GROUP BY` query under the hood — you define metrics to aggregate across selected dimensions.
 
 <Tip>
 **AI-powered chart generation**
 
-ClickStack also supports creating charts from natural language prompts using the [text-to-chart](/clickstack/text-to-chart) feature. Describe what you want to see, and ClickStack generates the visualization automatically.
+Self Configured ClickHouse Observability also supports creating charts from natural language prompts using the [text-to-chart](/clickstack/self-configured/text-to-chart) feature. Describe what you want to see, and the UI generates the visualization automatically.
 </Tip>
 
 For example, you might chart the number of errors (`count()`) grouped by service name.
 
-For the examples below, we use the remote dataset available at [sql.clickhouse.com](https://sql.clickhouse.com), described in the guide ["Remote Demo Dataset"](/clickstack/example-datasets/remote-demo-data). **You can also reproduce these examples by visiting [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com).**
+For the examples below, we use the remote dataset available at [sql.clickhouse.com](https://sql.clickhouse.com), described in the guide ["OSS Remote Demo Dataset"](/clickstack/example-datasets/remote-demo-data). **You can also reproduce these examples by visiting [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com).**
 
 <Steps>
 <Step title="Navigate to Chart Explorer" id="navigate-chart-explorer">
@@ -63,7 +67,7 @@ To build a series similar to an existing one, you can duplicate it instead of st
 <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="The Duplicate series copy icon and its tooltip on a chart series row" size="lg"/>
 
 <Note>
-Visualizations can be created from any data source — metrics, traces, or logs. ClickStack treats all of these as wide events. Any **numeric column** can be charted over time, and **string**, **date**, or **numeric** columns can be used for groupings.
+Visualizations can be created from any data source — metrics, traces, or logs. Self Configured ClickHouse Observability treats all of these as wide events. Any **numeric column** can be charted over time, and **string**, **date**, or **numeric** columns can be used for groupings.
 
 This unified approach allows you to build dashboards across telemetry types using a consistent, flexible model.
 </Note>
@@ -76,7 +80,7 @@ Dashboards provide a way to group related visualizations, enabling you to compar
 
 Global filters can be applied at the dashboard level, automatically propagating to all visualizations within that dashboard. This allows for consistent drill-down across charts and simplifies correlation of events across services and telemetry types.
 
-We create a dashboard with two visualizations below using the log and trace data sources. These steps can be reproduced on [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) or locally by connecting to the dataset hosted on [sql.clickhouse.com](https://sql.clickhouse.com), as described in the guide ["Remote Demo Dataset"](/clickstack/example-datasets/remote-demo-data).
+We create a dashboard with two visualizations below using the log and trace data sources. These steps can be reproduced on [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) or locally by connecting to the dataset hosted on [sql.clickhouse.com](https://sql.clickhouse.com), as described in the guide ["OSS Remote Demo Dataset"](/clickstack/example-datasets/remote-demo-data).
 
 <Steps>
 <Step title="Navigate to Dashboards" id="navigate-dashboards">
@@ -132,7 +136,7 @@ Heatmap tiles plot the count of events falling into each (time, value) bucket as
 
 To add a heatmap tile:
 1. Select `Add New Tile`.
-2. Choose the `Heatmap` visualization type from the top menu. The data source dropdown only shows sources whose [source type is `Traces`](/clickstack/managing/config#traces). Logs, metrics, and session sources are filtered out, since heatmaps need a span duration column that only traces sources provide.
+2. Choose the `Heatmap` visualization type from the top menu. The data source dropdown only shows sources whose [source type is `Traces`](/clickstack/self-configured/managing/config#traces). Logs, metrics, and session sources are filtered out, since heatmaps need a span duration column that only traces sources provide.
 3. Pick any of your traces sources by name. The name itself is arbitrary, only the type matters.
 
 Once a source is selected, the heatmap pre-fills:
@@ -145,7 +149,7 @@ Once a source is selected, the heatmap pre-fills:
 
 The example below shows a single service over a 24 hour window, with the fast and slow paths of its span duration clearly separated into two horizontal bands.
 
-To customize the heatmap further, click **Display Settings** to open a drawer for the **Scale** (Log or Linear), **Value**, and **Count** expression. The full list of options are documented in [Customize the heatmap](/clickstack/features/event-deltas#customize) on the Event Deltas page. The same drawer is reused.
+To customize the heatmap further, click **Display Settings** to open a drawer for the **Scale** (Log or Linear), **Value**, and **Count** expression. The full list of options are documented in [Customize the heatmap](/clickstack/self-configured/features/event-deltas#customize) on the Event Deltas page. The same drawer is reused.
 
 Click `Run` to preview the chart, then `Save`.
 
@@ -167,7 +171,7 @@ Click any cell on a rendered heatmap tile to open a **View in Event Deltas** act
 
 <Image img="/images/clickstack/dashboards/heatmap-tile-drilldown.webp" alt="Heatmap cell click revealing the View in Event Deltas action" size="lg"/>
 
-Selecting it opens the [Event Deltas](/clickstack/features/event-deltas) view with the tile's data source, `Where` clause, and time range carried over. From there you can examine the same distribution interactively, slice by attribute to see what makes the slow spans different from the fast ones, and inspect the individual spans behind any cell, without rebuilding the query by hand.
+Selecting it opens the [Event Deltas](/clickstack/self-configured/features/event-deltas) view with the tile's data source, `Where` clause, and time range carried over. From there you can examine the same distribution interactively, slice by attribute to see what makes the slow spans different from the fast ones, and inspect the individual spans behind any cell, without rebuilding the query by hand.
 </Step>
 <Step title="Filter dashboard" id="filter-dashboards">
 
@@ -224,7 +228,7 @@ Colors are stored as palette tokens, not raw hex values, so the same tile reflow
 
 Use semantic tokens when the number represents a status (for example error count in `chart-error`, or a healthy rate in `chart-success`). Use categorical tokens when you want visual distinction between related KPI tiles without implying status.
 
-Older configs may still store legacy numeric tokens (`chart-1` through `chart-10`). ClickStack maps those to the hue-named tokens above when loading a dashboard.
+Older configs may still store legacy numeric tokens (`chart-1` through `chart-10`). The UI maps those to the hue-named tokens above when loading a dashboard.
 
 The same palette powers optional **color rules** in the same drawer: ordered conditions evaluated against the displayed value (last match wins). When no rule matches, the static color applies, then the default text color.
 
@@ -282,7 +286,7 @@ When creating or updating dashboards through the external API (`POST` / `PUT` `/
 }
 ```
 
-`color` accepts any token from the categorical and semantic lists above (for example `chart-blue` or `chart-success`). Optional `backgroundChart.color` overrides the sparkline color with the same token enum. See the [ClickStack API reference](/clickstack/api-reference) for authentication and base URLs.
+`color` accepts any token from the categorical and semantic lists above (for example `chart-blue` or `chart-success`). Optional `backgroundChart.color` overrides the sparkline color with the same token enum. See the [API reference](/clickstack/self-configured/api-reference) for authentication and base URLs.
 
 ## Dashboard - Listing and search {#dashboard-listing-search}
 
@@ -353,7 +357,7 @@ Custom dropdown filters are available on saved dashboards. For an example of thi
 
 With **Broadcast filter condition** enabled, the selected values are applied as a filter condition on the dashboard's tiles, without any tile explicitly referencing the filter. By default the condition reaches every tile. Use **Applies to sources** to restrict it to tiles that use a given set of sources — useful when the filter's expression only makes sense for some of the data on the dashboard.
 
-Chart builder tiles pick up broadcast filters automatically. Raw SQL tiles must include the [`$__filters` macro](/clickstack/features/dashboards/sql-visualizations#dashboard-filter-macro) and have a source selected, since ClickStack cannot infer where the condition belongs in a hand-written query.
+Chart builder tiles pick up broadcast filters automatically. Raw SQL tiles must include the [`$__filters` macro](/clickstack/self-configured/features/dashboards/sql-visualizations#dashboard-filter-macro) and have a source selected, since the UI cannot infer where the condition belongs in a hand-written query.
 
 ### Variables {#dashboard-variables}
 
@@ -412,7 +416,7 @@ GROUP BY ts
 ORDER BY ts ASC
 ```
 
-See [SQL-based visualizations](/clickstack/features/dashboards/sql-visualizations#dashboard-variables) for the full list of macros available to SQL tiles.
+See [SQL-based visualizations](/clickstack/self-configured/features/dashboards/sql-visualizations#dashboard-variables) for the full list of macros available to SQL tiles.
 
 <Note>
 Alerts on a tile that references a dashboard variable evaluate with every variable in its empty state, not the values selected on the dashboard.
@@ -431,7 +435,7 @@ This is useful for investigating specific spikes or anomalies spotted in a dashb
 
 ## Presets {#presets}
 
-HyperDX is deployed with out-of-the-box dashboards.
+The UI includes out-of-the-box dashboards.
 
 ### ClickHouse dashboard {#clickhouse-dashboard}
 

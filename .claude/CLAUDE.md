@@ -1,3 +1,17 @@
+## Local Mintlify preview
+
+Use the latest installed host Mint CLI from the relevant worktree's `docs` directory. Do not use Docker or `/Users/dominictran/.local/bin/mint-preview`. Use a supported Node LTS runtime explicitly; do not inherit the host Node without checking its version. Mint's published requirements exclude Node 25+ (checked 2026-09-30); this machine defaults to Node 26. Use Node 24 for this preview.
+
+For this worktree, the isolated Node 24 runtime is installed under `tmp/mint-preview-runtime/node_modules/node/bin`. From `docs`, launch:
+
+```bash
+PATH="$PWD/../tmp/mint-preview-runtime/node_modules/node/bin:$PATH" mint dev --no-open --disable-prefetch --port 3224
+```
+
+Stop the previous preview and wait for it to exit before reusing the port. Keep one preview per worktree. Repeated restarts are recovery, not a permanent fix. Before claiming the preview is fixed, verify real content changes and sidebar metadata changes are served, restore temporary edits, and verify the restored page too. A startup `preview ready` message or one HTTP 200 does not establish stability.
+
+Recurring freeze investigation remains OPEN: Node 26 showed a 233-second page update and heavy CPU. Node 24 served initial content/sidebar edits in under one second, but the restoration request then took 12.1 seconds. A subsequent log confirmed the restored page update took 235.08 seconds under Node 24, so the freeze also reproduces on the supported runtime. Disabling prefetch and switching runtime have not established a durable fix. Preserve this distinction in future status reports and continue diagnosis if latency returns.
+
 When working with a branch, do not use rebase or amend - add new commits instead.
 
 Do not commit to the master branch. Create a new branch for every task.

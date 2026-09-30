@@ -9,6 +9,10 @@ keywords: ['clickstack', 'dashboards', 'release markers', 'deployment tracking',
 
 import { Image } from "/snippets/components/Image.jsx";
 
+<Warning>
+This guide has been carried over from the existing documentation and still needs review for ClickHouse Observability. Source configuration, the Team Settings workflow, and sources API access need verification for this offering.
+</Warning>
+
 The first question about a latency or error spike is usually whether something shipped. Dashboard time charts can answer it in place: turn on release markers and each tile draws a dashed vertical line at the moment a version of a service first appeared in its telemetry.
 
 The versions come from the telemetry you already send, read through an expression on the tile's source. There's no CI integration to wire up and nothing to push at deploy time.
@@ -21,11 +25,11 @@ Release markers are off by default. Open a dashboard's overflow menu and select 
 
 The toggle adds `releaseMarkers=true` to the dashboard URL, so a link you share opens with markers already on. It's view state rather than dashboard configuration: it isn't saved with the dashboard, and turning it off removes the parameter again.
 
-Markers draw on time-series tiles whose source is a log or trace source. [Alert annotations](/clickstack/features/alerts) come from the same menu and can be shown at the same time — the two sets of markers are drawn together, and each keeps its own labels.
+Markers draw on time-series tiles whose source is a log or trace source. [Alert annotations](/clickstack/observability/features/alerts) come from the same menu and can be shown at the same time — the two sets of markers are drawn together, and each keeps its own labels.
 
 ## Configure where the version comes from {#version-expression}
 
-By default, ClickStack reads `ResourceAttributes['service.version']`, the OpenTelemetry resource attribute. If your services follow the [service resource semantic conventions](https://opentelemetry.io/docs/specs/semconv/registry/attributes/service/), markers work with no setup.
+By default, ClickHouse Observability reads `ResourceAttributes['service.version']`, the OpenTelemetry resource attribute. If your services follow the [service resource semantic conventions](https://opentelemetry.io/docs/specs/semconv/registry/attributes/service/), markers work with no setup.
 
 To read the version from somewhere else, set **Service Version Expression** on the log or trace source. Edit the source under **Team Settings → Sources**. On a log source the field sits behind **Configure Optional Fields**; on a trace source it appears directly in the form, below **Service Name Expression**.
 
@@ -43,7 +47,7 @@ coalesce(
 )
 ```
 
-The field is also exposed as `serviceVersionExpression` on log and trace sources in the [sources API](/clickstack/api-reference), so you can set it when provisioning sources programmatically. See the full list of source settings for [logs](/clickstack/managing/config#logs) and [traces](/clickstack/managing/config#traces).
+The field is also exposed as `serviceVersionExpression` on log and trace sources in the [sources API](/clickstack/observability/api-reference), so you can set it when provisioning sources programmatically. See the full list of source settings for [logs](/clickstack/observability/managing/config#logs) and [traces](/clickstack/observability/managing/config#traces).
 
 ## What a marker means {#what-a-marker-means}
 
@@ -56,7 +60,7 @@ The version that was already running when the window opened is recognized and dr
 
 ## Which releases a tile shows {#scoping}
 
-The releases query runs against the tile's own source with the tile's own predicates: its `WHERE` clause, each series' filter, and any [dashboard filters](/clickstack/features/dashboards/overview#custom-filters). What a tile shows depends on what it charts:
+The releases query runs against the tile's own source with the tile's own predicates: its `WHERE` clause, each series' filter, and any [dashboard filters](/clickstack/observability/features/dashboards/overview#custom-filters). What a tile shows depends on what it charts:
 
 | Tile                              | Markers                                                             |
 | :-------------------------------- | :------------------------------------------------------------------ |
@@ -82,5 +86,5 @@ Dragging horizontally across the plot still zooms while markers are shown.
 
 - **Time-series tiles only.** Tables, numbers, and heatmaps don't draw markers.
 - **Log and trace sources only.** A metric source resolves its table per metric type, so there's no single table to re-aggregate and no way to make a tile's filters meaningful against it. To annotate metric data, place a log or trace tile alongside it on the same dashboard.
-- **Empty version values are skipped.** A service that emits no version contributes no markers. If a tile finds no version changes at all, ClickStack reports `No releases found` rather than leaving you to wonder whether the feature is broken.
+- **Empty version values are skipped.** A service that emits no version contributes no markers. If a tile finds no version changes at all, the UI reports `No releases found` rather than leaving you to wonder whether the feature is broken.
 - **Up to 500 distinct versions** are read per window.

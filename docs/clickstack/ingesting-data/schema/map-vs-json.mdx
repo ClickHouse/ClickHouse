@@ -66,17 +66,7 @@ To use JSON-typed schemas instead of the [default `Map`-based schemas](/clicksta
 | `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` | OTel collector | Creates schemas in ClickHouse using the JSON type. |
 | `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` | HyperDX (ClickStack UI) | Enables the application layer to query JSON-typed schemas. ClickStack Open Source only. |
 
-### Managed ClickStack {#managed-clickstack}
-
-To enable JSON support in Managed ClickStack, contact support@clickhouse.com prior to configuring the collector. The feature must also be enabled in the ClickStack UI (HyperDX) in ClickHouse Cloud.
-
-Set `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` on the collector. For example:
-
-```shell
-docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
-```
-
-### Open source ClickStack {#oss-clickstack}
+<a id="oss-clickstack" />
 
 Set `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` on any deployment that includes the collector, and `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` on the HyperDX application layer so it can query the JSON-typed schemas.
 

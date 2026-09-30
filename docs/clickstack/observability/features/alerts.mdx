@@ -1,23 +1,23 @@
 ---
 slug: /clickstack/observability/features/alerts
-title: 'Alerts with ClickStack'
+title: 'Alerts with ClickHouse Observability'
 sidebarTitle: 'Alerts'
-description: 'Alerts with ClickStack'
+description: 'Alerts with ClickHouse Observability'
 doc_type: 'guide'
-keywords: ['ClickStack', 'observability', 'alerts', 'search-alerts', 'notifications', 'thresholds', 'slack', 'email', 'pagerduty', 'error-monitoring', 'performance-monitoring', 'user-events']
+keywords: ['ClickHouse Observability', 'observability', 'alerts', 'search-alerts', 'notifications', 'thresholds', 'slack', 'email', 'pagerduty', 'error-monitoring', 'performance-monitoring', 'user-events']
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
 
-ClickStack includes built-in support for alerting, enabling teams to detect and respond to issues in real time across logs, metrics, and traces.
+ClickHouse Observability includes built-in support for alerting, enabling teams to detect and respond to issues in real time across logs, metrics, and traces.
 
-Alerts can be created directly in the HyperDX interface and integrate with popular notification systems like Slack and PagerDuty.
+Alerts can be created directly in the user interface and integrate with popular notification systems like Slack and PagerDuty.
 
-Alerting works seamlessly across your ClickStack data, helping you track system health, catch performance regressions, and monitor key business events.
+Alerting works seamlessly across your observability data, helping you track system health, catch performance regressions, and monitor key business events.
 
 ## Types of alerts {#types-of-alerts}
 
-ClickStack supports two complementary ways to create alerts: **Search alerts** and **Dashboard chart alerts**. Once the alert is created, it is attached to either the search or the chart.
+The service supports two complementary ways to create alerts: **Search alerts** and **Dashboard chart alerts**. Once the alert is created, it is attached to either the search or the chart.
 
 ### 1. Search alerts {#search-alerts}
 
@@ -32,7 +32,7 @@ For an alert to be created for a search, the search must be saved. You can eithe
 <Steps>
 <Step title="Open alert creation dialog" id="open-dialog">
 
-Start by entering a [search](/clickstack/features/search) and clicking the `Alerts` button in the top-right corner of the `Search` page.
+Start by entering a [search](/clickstack/observability/features/search) and clicking the `Alerts` button in the top-right corner of the `Search` page.
 
 <Image img="/images/use-cases/observability/alerts_search_view.webp" alt="Alerts search view" size="lg"/>
 </Step>
@@ -45,7 +45,7 @@ From the alert creation panel, you can:
 - Specify a `grouped by` value. This allows the search to be subject to an aggregation, e.g., `ServiceName`, thus allowing multiple alerts to be triggered off the same search.
 - Choose a webhook destination for notifications. You can add a new webhook directly from this view. See [Adding a webhook](#add-webhook) for details.
 
-Before saving, ClickStack visualizes the threshold condition so you can confirm it will behave as expected.
+Before saving, the interface visualizes the threshold condition so you can confirm it will behave as expected.
 
 <Image img="/images/use-cases/observability/search_alert.webp" alt="Search alerts" size="lg"/>
 </Step>
@@ -110,11 +110,11 @@ This opens the webhook creation dialog, where you can create a new webhook:
 
 A webhook name is required, while descriptions are optional. Other settings that must be completed depend on the service type.
 
-Note that different service types are available between ClickStack Open Source and ClickStack Cloud. See [Service type integrations](#integrations).
+See [Service type integrations](#integrations) for supported notification services.
 
 ### Service type integrations {#integrations}
 
-ClickStack alerts integrate out of the box with the following service types:
+Alerts integrate out of the box with the following service types:
 
 - **Slack**: send notifications directly to a channel via either a webhook or API.
 - **PagerDuty**: route incidents for on-call teams via the PagerDuty API.
@@ -148,15 +148,15 @@ Depending on the service type, you will need to provide different details. Speci
 
 ## Managing alerts {#managing-alerts}
 
-Alerts can be centrally managed through the alerts panel on the left-hand side of HyperDX.
+Alerts can be centrally managed through the alerts panel on the left-hand side of the interface.
 
 <Image img="/images/use-cases/observability/manage_alerts.webp" alt="Manage alerts" size="lg"/>
 
-From this view, you can see all alerts that have been created and are currently running in ClickStack.
+From this view, you can see all alerts that have been created and are currently running.
 
 <Image img="/images/use-cases/observability/alerts_view.webp" alt="Alerts view" size="lg"/>
 
-This view also displays the alert evaluation history. Alerts are evaluated on a recurring time interval (defined by the period/duration set during alert creation). During each evaluation, HyperDX queries your data to check whether the alert condition is met:
+This view also displays the alert evaluation history. Alerts are evaluated on a recurring time interval (defined by the period/duration set during alert creation). During each evaluation, the service queries your data to check whether the alert condition is met:
 
 - **Red bar**: The threshold condition was met during this evaluation and the alert fired (notification sent)
 - **Green bar**: The alert was evaluated but the threshold condition wasn't met (no notification sent)
@@ -197,7 +197,7 @@ To create an alert on a SQL-based chart:
 <Steps>
 <Step title="Create or open a SQL-based chart on a dashboard" id="open-sql-chart">
 
-From a saved dashboard, either [create a new chart with the **SQL** chart mode](/clickstack/features/dashboards/sql-visualizations), or open an existing SQL-based chart for editing.
+From a saved dashboard, either [create a new chart with the **SQL** chart mode](/clickstack/observability/features/dashboards/sql-visualizations), or open an existing SQL-based chart for editing.
 
 Choose **Line**, **Stacked Bar**, or **Number** as the display type.
 
@@ -232,11 +232,11 @@ The alert system inspects the columns returned by your SQL query to determine wh
 
 - **Value column**: The **last numeric column** in your `SELECT` clause is used as the alert value. If your query returns multiple numeric columns (e.g., `count, avg_latency, p99_latency`), only the last one (`p99_latency`) is compared to the threshold.
 - **Timestamp column**: For time-series charts (Line and Stacked Bar), the system identifies the Date/DateTime column in your results as the time bucket (i.e. the x-axis on a time-series chart). The value column for each time bucket is evaluated against the threshold independently, and if the value for any time bucket breaches the configured threshold, the alert will trigger.
-- **Group columns**: Any non-numeric, non-timestamp columns (e.g., `ServiceName`, `Environment`) are treated as grouping dimensions. When groups are present, each unique combination of group values is tracked and alerted on separately. ClickStack will send an alert for each group with a value that breaches the configured threshold. Groups are only available for time-series charts.
+- **Group columns**: Any non-numeric, non-timestamp columns (e.g., `ServiceName`, `Environment`) are treated as grouping dimensions. When groups are present, each unique combination of group values is tracked and alerted on separately. The service will send an alert for each group with a value that breaches the configured threshold. Groups are only available for time-series charts.
 
 ### Query parameters and macros {#query-params}
 
-SQL alert queries support template parameters and macros that are automatically replaced at evaluation time. These are the same parameters and macros available when [building a SQL-based chart](/clickstack/features/dashboards/sql-visualizations).
+SQL alert queries support template parameters and macros that are automatically replaced at evaluation time. These are the same parameters and macros available when [building a SQL-based chart](/clickstack/observability/features/dashboards/sql-visualizations).
 
 #### Required and Recommended Parameters {#required-alert-parameters}
 
@@ -332,7 +332,7 @@ Note that the query fetches 30 intervals *before* the start of the date range to
 
 ## Common alert scenarios {#common-alert-scenarios}
 
-Here are a few common alert scenarios you can use HyperDX for:
+Here are a few common alert scenarios you can configure:
 
 **Errors:** We recommend setting up alerts for the default
 `All Error Events` and `HTTP Status >= 400` saved searches to be notified when

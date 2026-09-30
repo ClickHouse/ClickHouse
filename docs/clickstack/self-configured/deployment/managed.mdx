@@ -1,11 +1,11 @@
 ---
 slug: /clickstack/self-configured/deployment/managed
-title: 'Managed'
+title: 'Deployment'
 toc_max_heading_level: 2
-description: 'Deploying Managed ClickStack'
+description: 'Deploying Self Configured ClickHouse Observability'
 doc_type: 'guide'
 keywords: ['clickstack', 'deployment', 'setup', 'configuration', 'observability']
-sidebarTitle: 'managed'
+sidebarTitle: 'Deployment'
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
@@ -19,7 +19,7 @@ import SetupManagedIngestion from '/snippets/clickstack/_setup_managed_ingestion
 import NavigateClickStackUI from '/snippets/clickstack/_navigate_managed.mdx';
 import ProviderSelection from '/snippets/clickstack/_select_provider.mdx';
 
-This **guide is for existing users of ClickHouse Cloud**. If you're new to ClickHouse Cloud, we recommend our [Getting Started](/clickstack/getting-started/managed) guide for Managed ClickStack.
+This **guide is for existing users of ClickHouse Cloud**. If you're new to ClickHouse Cloud, we recommend our [Getting Started](/clickstack/self-configured/getting-started/managed) guide for Self Configured ClickHouse Observability.
 
 In this deployment pattern, both ClickHouse and the ClickStack UI (HyperDX) are hosted in ClickHouse Cloud, minimizing the number of components the user needs to self-host.
 
@@ -33,7 +33,7 @@ As well as reducing infrastructure management, this deployment pattern ensures a
 - Security and compliance features
 - Seamless upgrades
 
-In this mode, data ingestion is entirely left to the user. You can ingest data into Managed ClickStack using your own hosted OpenTelemetry collector, direct ingestion from client libraries, ClickHouse-native table engines (such as Kafka or S3), ETL pipelines, or ClickPipes — ClickHouse Cloud's managed ingestion service. This approach offers the simplest and most performant way to operate ClickStack.
+In this mode, data ingestion is entirely left to the user. You can ingest data into Self Configured ClickHouse Observability using your own hosted OpenTelemetry collector, direct ingestion from client libraries, ClickHouse-native table engines (such as Kafka or S3), ETL pipelines, or ClickPipes — ClickHouse Cloud's managed ingestion service. This approach offers the simplest and most performant way to operate ClickStack.
 
 ### Suitable for {#suitable-for}
 
@@ -45,7 +45,7 @@ This deployment pattern is ideal in the following scenarios:
 
 ## Setup steps {#setup-steps}
 
-The following guide assumes you have already created a ClickHouse Cloud service. If you haven't created a service, follow the [Getting Started](/clickstack/getting-started/managed) guide for Managed ClickStack. This will leave you with a service in the same state as this guide i.e. ready for observability data with ClickStack enabled.
+The following guide assumes you have already created a ClickHouse Cloud service. If you haven't created a service, follow the [Getting Started](/clickstack/self-configured/getting-started/managed) guide for Self Configured ClickHouse Observability. This will leave you with a service in the same state as this guide i.e. ready for observability data with ClickStack enabled.
 
 <Tabs>
 
@@ -119,7 +119,7 @@ If auto-detection fails, or you have no existing tables, you will be prompted to
 
 <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="ClickStack UI setup ingestion" size="lg"/>
 
-Select "Start Ingestion" and you'll be prompted to select an ingestion source. Managed ClickStack supports OpenTelemetry and [Vector](https://vector.dev/) as its main ingestion sources. However, users are also free to send data directly to ClickHouse in their own schema using any of the [ClickHouse Cloud support integrations](/integrations/home).
+Select "Start Ingestion" and you'll be prompted to select an ingestion source. Self Configured ClickHouse Observability supports OpenTelemetry and [Vector](https://vector.dev/) as its main ingestion sources. However, users are also free to send data directly to ClickHouse in their own schema using any of the [ClickHouse Cloud support integrations](/integrations/home).
 
 <Image img="/images/clickstack/select-source-clickstack-ui.webp" size="lg" alt='Select source - ClickStack UI' border/>
 
@@ -134,7 +134,7 @@ It provides the simplest and most optimized experience, with out-of-the-box sche
 
 <Tab title="OpenTelemetry">
 
-To send OpenTelemetry data to Managed ClickStack, you're recommended to use an OpenTelemetry Collector. The collector acts as a gateway that receives OpenTelemetry data from your applications (and other collectors) and forwards it to ClickHouse Cloud.
+To send OpenTelemetry data to Self Configured ClickHouse Observability, you're recommended to use an OpenTelemetry Collector. The collector acts as a gateway that receives OpenTelemetry data from your applications (and other collectors) and forwards it to ClickHouse Cloud.
 
 If you don't already have one running, start a collector using the steps below. If you have existing collectors, a configuration example is also provided.
 
@@ -151,7 +151,7 @@ To get started quickly, copy and run the Docker command shown.
 <Info>
 **Deploying to production**
 
-While this command uses the `default` user to connect Managed ClickStack, you should create a dedicated user when [going to production](/clickstack/managing/production#create-a-database-ingestion-user-managed) and modifying your configuration.
+While this command uses the `default` user to connect Self Configured ClickHouse Observability, you should create a dedicated user when [going to production](/clickstack/managing/production#create-a-database-ingestion-user-managed) and modifying your configuration.
 </Info>
 
 Running this single command starts the ClickStack collector with OTLP endpoints exposed on ports 4317 (gRPC) and 4318 (HTTP). If you already have OpenTelemetry instrumentation and agents, you can immediately begin sending telemetry data to these endpoints. 
@@ -178,7 +178,7 @@ For further details on configuring OpenTelemetry collectors, see ["Ingesting wit
 
 If you have existing applications or infrastructure to instrument with OpenTelemetry, navigate to the relevant guides linked from "Connect an application". 
 
-To instrument your applications to collect traces and logs, use the [supported language SDKs](/clickstack/ingesting-data/sdks/index) which send data to your OpenTelemetry Collector acting as a gateway for ingestion into Managed ClickStack. 
+To instrument your applications to collect traces and logs, use the [supported language SDKs](/clickstack/ingesting-data/sdks/index) which send data to your OpenTelemetry Collector acting as a gateway for ingestion into Self Configured ClickHouse Observability.
 
 Logs can be [collected using OpenTelemetry Collectors](/clickstack/integration-examples/host-logs) running in agent mode, forwarding data to the same collector. For Kubernetes monitoring, follow the [dedicated guide](/clickstack/integration-examples/kubernetes). For other integrations, see our [quickstart guides](/clickstack/integration-examples/index).
 
@@ -193,7 +193,7 @@ When using Vector with ClickStack, users are responsible for defining their own 
 <Info>
 **Timestamp required**
 
-The only strict requirement for Managed ClickStack, is that the data includes a **timestamp column** (or equivalent time field), which can be declared when configuring the data source in the ClickStack UI.
+The only strict requirement for Self Configured ClickHouse Observability, is that the data includes a **timestamp column** (or equivalent time field), which can be declared when configuring the data source in the ClickStack UI.
 </Info>
 
 The following assumes you have an instance of Vector running, pre-configured with ingest pipelines, delivering data.
@@ -291,7 +291,7 @@ Once the source is configured, click "Save" and begin exploring your data.
 
 ## Additional tasks {#additional-tasks}
 
-### Granting access to Managed ClickStack {#configure-access}
+### Granting access to Self Configured ClickHouse Observability {#configure-access}
 
 1. Navigate to your service in the ClickHouse Cloud console
 2. Go to **Settings** → **SQL Console Access**

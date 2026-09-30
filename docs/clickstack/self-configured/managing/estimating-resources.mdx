@@ -2,9 +2,9 @@
 slug: /clickstack/self-configured/managing/estimating-resources
 title: 'Estimating resources'
 sidebarTitle: 'Estimating resources'
-description: 'Resource estimation guidance for Managed ClickStack deployments'
+description: 'Resource estimation guidance for Self Configured ClickHouse Observability deployments'
 doc_type: 'guide'
-keywords: ['clickstack', 'resources', 'sizing', 'compute', 'production', 'capacity planning']
+keywords: ['ClickHouse Observability', 'resources', 'sizing', 'compute', 'production', 'capacity planning']
 ---
 
 import ResourceEstimation from '/snippets/_resource_estimation.mdx';
@@ -13,7 +13,7 @@ import ResourceEstimation from '/snippets/_resource_estimation.mdx';
 
 ## Refining sizing assumptions for your environment {#refining-sizing-assumptions}
 
-The model assumes a sustained average of 1 QPS from ClickStack, aggregating all query types including search, dashboards, and alerting.
+The model assumes a sustained average of 1 QPS from the service, aggregating all query types including search, dashboards, and alerting.
 
 For higher query volumes, scale CPU requirements linearly by multiplying CPU requirements by the target QPS. For example, a deployment ingesting at 100 MB/s with a target of 9 QPS would require 90 query CPUs (10 × 9) rather than the baseline 10, giving a revised total of 100 CPUs (10 ingest + 90 query).
 
@@ -64,17 +64,17 @@ At 579 MB/s sustained over 30 days, raw ingest equals 1,500 TB/month. Applying t
 
 ## Isolating observability workloads {#isolating-workloads}
 
-If you're adding ClickStack to an **existing ClickHouse Cloud service** that already supports other workloads, such as real-time application analytics, isolating observability traffic is strongly recommended.
+If you're adding Self Configured ClickHouse Observability to an **existing ClickHouse Cloud service** that already supports other workloads, such as real-time application analytics, isolating observability traffic is strongly recommended.
 
-Use [**Managed Warehouses**](/products/cloud/features/infrastructure/warehouses) to create a **child service** dedicated to ClickStack. This allows you to:
+Use [**Managed Warehouses**](/products/cloud/features/infrastructure/warehouses) to create a **child service** dedicated to observability. This allows you to:
 
 - Isolate ingest and query load from existing applications
 - Scale observability workloads independently
 - Prevent observability queries from impacting production analytics
 - Share the same underlying datasets across services when needed
 
-This approach ensures your existing workloads remain unaffected while allowing ClickStack to scale independently as observability data grows.
+This approach ensures your existing workloads remain unaffected while allowing observability workloads to scale independently as observability data grows.
 
-The same feature can be used to provision the ingest compute and query compute estimated above as separate services, so that each can be scaled independently. See our guide on [Isolating read and write workloads](/clickstack/managing/isolating-read-write).
+The same feature can be used to provision the ingest compute and query compute estimated above as separate services, so that each can be scaled independently. See our guide on [Isolating read and write workloads](/clickstack/self-configured/managing/isolating-read-write).
 
 For larger deployments or custom sizing guidance, please contact support for a more precise estimate.

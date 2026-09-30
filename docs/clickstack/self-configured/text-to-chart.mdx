@@ -9,6 +9,10 @@ keywords: ['clickstack', 'text-to-chart', 'AI', 'visualization', 'Chart Explorer
 
 import { Image } from "/snippets/components/Image.jsx";
 
+<Warning>
+This guide needs to be rewritten for Self Configured ClickHouse Observability. The instructions below were carried over from the OSS guide and include self-hosted deployment steps and API-key configuration that have not been verified for this offering. Do not use those setup steps for this offering.
+</Warning>
+
 ClickStack's Text-to-Chart feature allows you to create visualizations by describing what you want to see in plain text. Rather than manually selecting metrics, filters, and group-by fields, you can type a prompt such as "error rates by service over the last 24 hours" and ClickStack will generate the corresponding chart automatically.
 
 This feature uses a large language model (LLM) to convert your text prompt into a query, then builds the visualization in the [Chart Explorer](/clickstack/features/dashboards/overview#navigate-chart-explorer). It works with any configured data source.

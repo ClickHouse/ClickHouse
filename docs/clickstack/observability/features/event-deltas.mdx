@@ -1,8 +1,8 @@
 ---
 slug: /clickstack/observability/features/event-deltas
-title: 'Event deltas with ClickStack'
+title: 'Event deltas with ClickHouse Observability'
 sidebarTitle: 'Event deltas'
-description: 'Analyze trace attribute distributions and compare outlier spans with Event deltas in ClickStack'
+description: 'Analyze trace attribute distributions and compare outlier spans with Event deltas in ClickHouse Observability'
 doc_type: 'guide'
 keywords: ['clickstack', 'event deltas', 'heatmap', 'attribute distribution', 'trace analysis', 'observability']
 ---
@@ -21,7 +21,7 @@ In the screenshot above, the right edge of the heatmap sits at roughly 10 ms, no
 
 ## Prerequisites {#prerequisites}
 
-Event deltas require a **Trace** data source with a duration expression. Any OpenTelemetry-instrumented service producing span data works. Available in all ClickStack deployments (Managed, Open Source, ClickHouse Cloud).
+Event deltas require a **Trace** data source with a duration expression. Any OpenTelemetry-instrumented service producing span data works.
 
 ## Getting started {#getting-started}
 
@@ -95,7 +95,7 @@ Comparison and distribution modes are most powerful when chained. Click any bar 
 After applying a filter or exclude, the heatmap selection is cleared, the heatmap re-renders against the new population, and distribution mode resumes against that filtered set. Watch how the heatmap reshapes; a successful filter visibly removes the slow band, collapses the bimodal split, or flattens the upward drift. Repeat: spot the next suspicious value, filter, look at the new heatmap, look at the new distributions. A few iterations usually narrow a regression to one or two attributes.
 
 <Note>
-Aggregated **Other (N)** buckets that collapse low-frequency values aren't clickable. To filter for a specific value within that bucket, use the [search bar](/clickstack/features/search) directly.
+Aggregated **Other (N)** buckets that collapse low-frequency values aren't clickable. To filter for a specific value within that bucket, use the [search bar](/clickstack/observability/features/search) directly.
 </Note>
 
 When the population is small enough, switch to the **Results Table** tab to inspect individual traces; your filters carry over.
@@ -117,7 +117,7 @@ Click **Apply** to update the heatmap; the attribute analysis below follows.
 <Tip>
 **Heatmap on dashboards**
 
-The same heatmap is also available as a [dashboard tile](/clickstack/features/dashboards/overview#create-a-tile-heatmap), which is useful when you want to monitor the distribution shape over time outside the Event Deltas drill-down flow.
+The same heatmap is also available as a [dashboard tile](/clickstack/observability/features/dashboards/overview#create-a-tile-heatmap), which is useful when you want to monitor the distribution shape over time outside the Event Deltas drill-down flow.
 </Tip>
 
 Common scenarios where you'd change these defaults:

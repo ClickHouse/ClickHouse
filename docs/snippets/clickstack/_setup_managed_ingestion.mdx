@@ -2,7 +2,7 @@ import ManagedIngestionExampleOtelConfig from '/snippets/clickstack/_config_exam
 
 <img src="/images/clickstack/getting-started/start_ingestion.webp" alt="" />
 
-Select "Start Ingestion" and you'll be prompted to select an ingestion source. Managed ClickStack supports OpenTelemetry and [Vector](https://vector.dev/) as its main ingestion sources. However, users are also free to send data directly to ClickHouse in their own schema using any of the [ClickHouse Cloud support integrations](/integrations/home).
+Select "Start Ingestion" and you'll be prompted to select an ingestion source. The service supports OpenTelemetry and [Vector](https://vector.dev/) as its main ingestion sources. However, users are also free to send data directly to ClickHouse in their own schema using any of the [ClickHouse Cloud support integrations](/integrations/home).
 
 <img src="/images/clickstack/getting-started/select_source.webp" alt="" />
 
@@ -17,7 +17,7 @@ It provides the simplest and most optimized experience, with out-of-the-box sche
 
 <Tab title="OpenTelemetry">
 
-To send OpenTelemetry data to Managed ClickStack, you're recommended to use an OpenTelemetry Collector. The collector acts as a gateway that receives OpenTelemetry data from your applications (and other collectors) and forwards it to ClickHouse Cloud.
+To send OpenTelemetry data to the service, you're recommended to use an OpenTelemetry Collector. The collector acts as a gateway that receives OpenTelemetry data from your applications (and other collectors) and forwards it to ClickHouse Cloud.
 
 If you don't already have one running, start a collector using the steps below. If you have existing collectors, a configuration example is also provided.
 
@@ -34,7 +34,7 @@ This command should include your connection credentials pre-populated.
 <Info>
 **Deploying to production**
 
-While this command uses the `default` user to connect Managed ClickStack, you should create a dedicated user when [going to production](/clickstack/managing/production#create-a-database-ingestion-user-managed) and modifying your configuration.
+While this command uses the `default` user to connect to the service, you should create a dedicated user when [going to production](/clickstack/managing/production#create-a-database-ingestion-user-managed) and modifying your configuration.
 </Info>
 
 Running this single command starts the ClickStack collector with OTLP endpoints exposed on ports 4317 (gRPC) and 4318 (HTTP). If you already have OpenTelemetry instrumentation and agents, you can immediately begin sending telemetry data to these endpoints. 
@@ -61,7 +61,7 @@ For further details on configuring OpenTelemetry collectors, see ["Ingesting wit
 
 If you have existing applications or infrastructure to instrument with OpenTelemetry, navigate to the relevant guides linked from the UI. 
 
-To instrument your applications to collect traces and logs, use the [supported language SDKs](/clickstack/ingesting-data/sdks/index) which send data to your OpenTelemetry Collector acting as a gateway for ingestion into Managed ClickStack. 
+To instrument your applications to collect traces and logs, use the [supported language SDKs](/clickstack/ingesting-data/sdks/index) which send data to your OpenTelemetry Collector acting as a gateway for ingestion into the service.
 
 Logs can be [collected using OpenTelemetry Collectors](/clickstack/integration-examples/host-logs) running in agent mode, forwarding data to the same collector. For Kubernetes monitoring, follow the [dedicated guide](/clickstack/integration-examples/kubernetes). For other integrations, see our [quickstart guides](/clickstack/integration-examples/index).
 
@@ -84,7 +84,7 @@ When using Vector with ClickStack, users are responsible for defining their own 
 <Info>
 **Timestamp required**
 
-The only strict requirement for Managed ClickStack, is that the data includes a **timestamp column** (or equivalent time field), which can be declared when configuring the data source in the ClickStack UI.
+The only strict requirement for the service, is that the data includes a **timestamp column** (or equivalent time field), which can be declared when configuring the data source in the ClickStack UI.
 </Info>
 
 The following assumes you have an instance of Vector running, pre-configured with ingest pipelines, delivering data.

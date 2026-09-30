@@ -2,23 +2,23 @@
 slug: /clickstack/self-configured/url-parameters
 title: 'Deep links'
 sidebarTitle: 'Deep links'
-description: 'Link directly to ClickStack pages using URL query parameters'
+description: 'Link directly to Self Configured ClickHouse Observability pages using URL query parameters'
 doc_type: 'reference'
-keywords: ['ClickStack', 'URL parameters', 'query parameters', 'deep linking', 'permalink', 'HyperDX']
+keywords: ['ClickHouse Observability', 'URL parameters', 'query parameters', 'deep linking', 'permalink', 'HyperDX']
 ---
 
-ClickStack pages can be opened with deep links using URL query parameters, so you can jump straight into a specific search, dashboard, or panel from an external system (an alert notification, a runbook, a CI job, a chat message, and so on).
+Self Configured ClickHouse Observability pages can be opened with deep links using URL query parameters, so you can jump straight into a specific search, dashboard, or panel from an external system (an alert notification, a runbook, a CI job, a chat message, and so on).
 
-The examples on this page use `<YOUR_CLICKSTACK_URL>`. Replace this with your ClickStack URL — for example `http://localhost:8080` for a local Open Source deployment, or `https://hyperdx.clickhouse.cloud` for Managed ClickStack in ClickHouse Cloud.
+The examples on this page use `<YOUR_CLICKSTACK_URL>`. Replace this with the base URL of your observability UI.
 
 <Note>
 The examples show query parameters without URL encoding for readability. When constructing links programmatically, URL-encode each query parameter value.
 </Note>
 
 <Info>
-**Managed ClickStack Service ID Parameter**
+**Cloud service ID parameter**
 
-When using Managed ClickStack in ClickHouse Cloud, links should include a `?chcServiceId=` parameter to identify which ClickHouse Cloud service should be loaded if the authenticated user following the link is authorized to use more than one ClickHouse Cloud service.
+When using the Cloud UI, links should include a `?chcServiceId=` parameter to identify which ClickHouse Cloud service should be loaded if the authenticated user following the link is authorized to use more than one ClickHouse Cloud service.
 
 Example: Open Search against a specific Cloud service
 
@@ -29,7 +29,7 @@ https://hyperdx.clickhouse.cloud/search?chcServiceId=abc123
 
 ## Search — `/search` {#search}
 
-The primary log/trace search view. See [Search](/clickstack/features/search) for details on search syntax.
+The primary log/trace search view. See [Search](/clickstack/self-configured/features/search) for details on search syntax.
 
 | Param | Format | Description |
 | --- | --- | --- |
@@ -74,7 +74,7 @@ The list of saved searches.
 
 ## Dashboards — `/dashboards/<dashboardId>` {#dashboards}
 
-A saved dashboard. Omit `<dashboardId>` (`/dashboards`) to open a temporary, unsaved dashboard. See [Dashboards](/clickstack/features/dashboards/overview) for details on building dashboards.
+A saved dashboard. Omit `<dashboardId>` (`/dashboards`) to open a temporary, unsaved dashboard. See [Dashboards](/clickstack/self-configured/features/dashboards/overview) for details on building dashboards.
 
 | Param | Format | Description |
 | --- | --- | --- |
@@ -122,7 +122,7 @@ An ad-hoc, shareable chart builder.
 
 ## Alerts — `/alerts` {#alerts}
 
-See [Alerts](/clickstack/features/alerts) for details on creating and managing alerts.
+See [Alerts](/clickstack/self-configured/features/alerts) for details on creating and managing alerts.
 
 | Param | Format | Description |
 | --- | --- | --- |
@@ -138,7 +138,7 @@ See [Alerts](/clickstack/features/alerts) for details on creating and managing a
 
 ## Session Replay — `/sessions` {#session-replay}
 
-Session replay browsing and playback. See [Session replay](/clickstack/features/session-replay) for feature details.
+Session replay browsing and playback. See [Session replay](/clickstack/self-configured/features/session-replay) for feature details.
 
 | Param | Format | Description |
 | --- | --- | --- |
@@ -163,7 +163,7 @@ Session replay browsing and playback. See [Session replay](/clickstack/features/
 
 ## Service Map — `/service-map` {#service-map}
 
-See [Service map](/clickstack/service-maps) for feature details.
+See [Service map](/clickstack/self-configured/service-maps) for feature details.
 
 | Param | Format | Description |
 | --- | --- | --- |
@@ -221,11 +221,7 @@ Per-service HTTP, database, and error dashboards.
 
 ## Notebooks — `/notebook/<notebookId>` {#notebooks}
 
-<Info>
-**Managed ClickStack only**
-
-Notebooks are only available in Managed ClickStack deployments. See [AI Notebooks](/clickstack/notebooks) for feature details.
-</Info>
+See [AI Notebooks](/clickstack/self-configured/notebooks) for feature details.
 
 ### Example: Open a specific notebook in a given Cloud service {#example-notebook-open}
 

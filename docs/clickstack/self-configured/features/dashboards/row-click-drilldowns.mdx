@@ -9,14 +9,18 @@ keywords: ['clickstack', 'dashboards', 'drilldown', 'table', 'row click', 'inspe
 
 import { Image } from "/snippets/components/Image.jsx";
 
-A table tile is often a **catalog**: one row per service, host, endpoint, or error group, with a few columns that score each one. Row-click actions turn that catalog into an inspection workflow. You scan the catalog to find the row that matters, click it, and ClickStack carries the clicked row's values through as filters. The destination then opens already scoped to that one item with no query to rebuild by hand.
+<Warning>
+This guide has been carried over from the existing documentation and still needs review for Self Configured ClickHouse Observability. The source and dashboard selection workflows need verification for this offering.
+</Warning>
+
+A table tile is often a **catalog**: one row per service, host, endpoint, or error group, with a few columns that score each one. Row-click actions turn that catalog into an inspection workflow. You scan the catalog to find the row that matters, click it, and Self Configured ClickHouse Observability carries the clicked row's values through as filters. The destination then opens already scoped to that one item with no query to rebuild by hand.
 
 A click can land in one of two places:
 
 - **another dashboard**, for a focused view of the one item, such as a per-service detail dashboard, or
-- **the underlying events** in [Search](/clickstack/features/search), for the logs or traces behind the row.
+- **the underlying events** in [Search](/clickstack/self-configured/features/search), for the logs or traces behind the row.
 
-Both use cases below start from the same catalog (a service inventory) and drill from it into each destination. Row-click actions apply to table tiles only. They are distinct from the chart [drilldown to search](/clickstack/features/dashboards/overview#drilldown-to-search), which opens a context menu when you click a point on a line or bar chart.
+Both use cases below start from the same catalog (a service inventory) and drill from it into each destination. Row-click actions apply to table tiles only. They are distinct from the chart [drilldown to search](/clickstack/self-configured/features/dashboards/overview#drilldown-to-search), which opens a context menu when you click a point on a line or bar chart.
 
 ## Inspect a service in its own dashboard {#inspect-in-dashboard}
 
@@ -25,7 +29,7 @@ An overview table with one row per service answers "which service is unhealthy?"
 <Steps>
 <Step title="Build the detail dashboard" id="detail-dashboard">
 
-Create a dashboard named `Service Detail` and add a [custom filter](/clickstack/features/dashboards/overview#custom-filters) with the expression `ServiceName` on your traces source. The dashboard-level filter re-scopes every tile to a single service, so the tiles themselves do not hardcode a service in their queries. Add the per-service views you want: RED key figures (requests, errors, P95 duration), a latency-percentile chart (P50, P95, P99), request rate over time, and a per-endpoint breakdown grouped by `SpanName`.
+Create a dashboard named `Service Detail` and add a [custom filter](/clickstack/self-configured/features/dashboards/overview#custom-filters) with the expression `ServiceName` on your traces source. The dashboard-level filter re-scopes every tile to a single service, so the tiles themselves do not hardcode a service in their queries. Add the per-service views you want: RED key figures (requests, errors, P95 duration), a latency-percentile chart (P50, P95, P99), request rate over time, and a per-endpoint breakdown grouped by `SpanName`.
 
 Save this dashboard first so you can select it as the target in the next step.
 </Step>
@@ -68,7 +72,7 @@ Hovering a row reveals a link affordance on the right edge of the table, with a 
 
 ## Jump from a service to its traces {#jump-to-traces}
 
-Sometimes you do not want another aggregate view; you want the raw events instead. A **Search** action sends the click to the [Search](/clickstack/features/search) page instead of a dashboard, opening the logs or traces behind the row, already filtered to it.
+Sometimes you do not want another aggregate view; you want the raw events instead. A **Search** action sends the click to the [Search](/clickstack/self-configured/features/search) page instead of a dashboard, opening the logs or traces behind the row, already filtered to it.
 
 Starting from the same service inventory table, point its row click at the traces themselves rather than the detail dashboard.
 
@@ -116,11 +120,11 @@ For **Search** and **Dashboard**, you choose where the click lands and template 
 A `{{...}}` template resolves against the table tile's own columns: the group-by columns and each series by its name or alias, exactly as they appear in the table. It does not see columns of the underlying source that the table does not select. A value has to be a column in the table to be carried through a click, so `{{ServiceName}}` works because `ServiceName` is the table's group-by column, and an aliased column is referenced by its alias. Referencing a name the table does not have fails the click with `Row has no column '<name>'`.
 </Info>
 
-Click **Apply** to validate the templates (ClickStack reports any with invalid syntax), then save the dashboard to persist the action.
+Click **Apply** to validate the templates (the UI reports any with invalid syntax), then save the dashboard to persist the action.
 
 ## How the destination and filters resolve {#how-it-resolves}
 
-When a viewer clicks a row, ClickStack resolves the action against that row:
+When a viewer clicks a row, the UI resolves the action against that row:
 
 - **Destination.** Choosing a specific source or dashboard pins it by ID. A **Template** target renders against the clicked row and is then matched by name against your team's sources or dashboards. A name must be unique to resolve: if two sources or two dashboards share the rendered name, the link cannot resolve to one of them. An empty rendered name, or a name with no match, also fails to resolve.
 - **Filters.** Each filter template renders against the row and becomes an `expression IN (value)` condition at the destination. A `Search` action opens `/search` scoped to the chosen source; a `Dashboard` action opens that dashboard. The clicked row's time range carries over in both cases.
@@ -128,12 +132,12 @@ When a viewer clicks a row, ClickStack resolves the action against that row:
 <Info>
 **Dashboard targets need a matching filter declared**
 
-A filter carried into a dashboard only takes effect if the destination dashboard declares a top-level [custom filter](/clickstack/features/dashboards/overview#custom-filters) whose expression matches the filter's **Expression**. If no declared filter matches, that value is dropped at click time and the destination opens unfiltered for that expression. This is why the dashboard mode pre-fills the destination's declared filters: match the expression, and the destination dropdown auto-populates with the clicked row's value.
+A filter carried into a dashboard only takes effect if the destination dashboard declares a top-level [custom filter](/clickstack/self-configured/features/dashboards/overview#custom-filters) whose expression matches the filter's **Expression**. If no declared filter matches, that value is dropped at click time and the destination opens unfiltered for that expression. This is why the dashboard mode pre-fills the destination's declared filters: match the expression, and the destination dropdown auto-populates with the clicked row's value.
 </Info>
 
 ## Validation and limitations {#validation}
 
-- **Table tiles only.** The **Row Click Action** button appears for table tiles, both the chart-builder table and a [SQL-based](/clickstack/features/dashboards/sql-visualizations) table. Other tile types do not have a row-click action.
+- **Table tiles only.** The **Row Click Action** button appears for table tiles, both the chart-builder table and a [SQL-based](/clickstack/self-configured/features/dashboards/sql-visualizations) table. Other tile types do not have a row-click action.
 - **Search targets must be log or trace sources.** Metric and session sources are not offered, since they cannot be viewed on the search page.
 - **Template names must be unique.** A template target resolves by name, so two sources or two dashboards with the same name cannot be used as a template target.
 - **Dashboard targets need a matching declared filter** for a carried value to take effect (see the note above).

@@ -1,8 +1,8 @@
 ---
 slug: /clickstack/self-configured/notebooks
-title: 'AI Notebooks with ClickStack'
+title: 'AI Notebooks with Self Configured ClickHouse Observability'
 sidebarTitle: 'AI Notebooks'
-description: 'AI-powered investigation notebooks for ClickStack'
+description: 'AI-powered investigation notebooks for Self Configured ClickHouse Observability'
 doc_type: 'guide'
 keywords: ['clickstack', 'AI notebooks', 'investigation', 'observability', 'HyperDX']
 ---
@@ -12,15 +12,9 @@ import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge/>
 
-AI Notebooks are an interactive investigation tool in ClickStack that combines an AI agent with manual analysis. You can describe an issue in plain language, and the AI agent will query logs, traces, and metrics on your behalf — surfacing relevant data, charts, and summaries as a series of tiles. You can also add your own tiles (charts, tables, searches, and markdown notes) alongside the AI-generated output, building a complete record of an investigation.
+AI Notebooks are an interactive investigation tool in Self Configured ClickHouse Observability that combines an AI agent with manual analysis. You can describe an issue in plain language, and the AI agent will query logs, traces, and metrics on your behalf — surfacing relevant data, charts, and summaries as a series of tiles. You can also add your own tiles (charts, tables, searches, and markdown notes) alongside the AI-generated output, building a complete record of an investigation.
 
 <Image img="/images/use-cases/observability/hyperdx-notebook-hero.webp" alt="AI Notebook investigating a Visa cache full outage" size="lg"/>
-
-<Info>
-**Managed ClickStack only**
-
-AI Notebooks are only available in Managed ClickStack deployments.
-</Info>
 
 ## Setup {#setup}
 
@@ -93,11 +87,11 @@ In addition to AI-generated tiles, you can add your own analysis blocks using th
 | Button       | Shortcut | Description                                                                                                                     |
 | ------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | **Search**   | `S`      | A log/trace search view, equivalent to the search page.                                                                         |
-| **Chart**    | `L`      | A time series line chart, using the same visualization builder as [Dashboards](/clickstack/features/dashboards/overview). |
+| **Chart**    | `L`      | A time series line chart, using the same visualization builder as [Dashboards](/clickstack/self-configured/features/dashboards/overview). |
 | **Table**    | `T`      | A tabular aggregation view.                                                                                                     |
 | **Markdown** | `M`      | Freeform text for notes, hypotheses, or conclusions.                                                                            |
 
-After adding a tile, it opens in inline edit mode where you can configure the data source, filters, and aggregations — the same interface used when building [dashboard visualizations](/clickstack/features/dashboards/overview#creating-visualizations). Click **Save** to finalize the tile.
+After adding a tile, it opens in inline edit mode where you can configure the data source, filters, and aggregations — the same interface used when building [dashboard visualizations](/clickstack/self-configured/features/dashboards/overview#creating-visualizations). Click **Save** to finalize the tile.
 
 Manual tiles are added below the last visible tile in the current branch. You can resize tiles vertically by dragging their bottom edge.
 

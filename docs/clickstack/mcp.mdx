@@ -18,123 +18,7 @@ This allows you to use tools like [Claude Code](https://docs.anthropic.com/en/do
 </Frame>
 ## Availability {#availability}
 
-The MCP server is available in the following ClickStack deployment types:
-
-| Deployment | Status |
-|---|---|
-| **Open Source ClickStack** | Available |
-| **BYOC (Bring Your Own Cloud)** | Available |
-| **ClickStack on ClickHouse Cloud** | Available |
-| **HyperDX v1** ([hyperdx.io](https://hyperdx.io)) | Not supported |
-
-<Info>
-**Different setup for ClickHouse Cloud vs OSS/BYOC**
-
-ClickStack on ClickHouse Cloud uses a different endpoint and authentication method than Open Source and BYOC deployments. See the [ClickStack on ClickHouse Cloud](#managed-clickstack) section below for Cloud-specific setup.
-</Info>
-
-## ClickStack on ClickHouse Cloud {#managed-clickstack}
-
-ClickStack on ClickHouse Cloud connects through the Cloud MCP endpoint at `https://mcp.clickhouse.cloud/clickstack` and authenticates with OAuth 2.0. API key authentication is not supported for this endpoint.
-
-### Prerequisites {#managed-prerequisites}
-
-- A running ClickHouse Cloud service with [ClickStack enabled](/clickstack/deployment/managed)
-- [MCP enabled](/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) on the service — open the Cloud console, click **Connect**, select **Connect with MCP**, and toggle it on
-
-### Endpoint {#managed-endpoint}
-
-```text
-https://mcp.clickhouse.cloud/clickstack
-```
-
-Authentication uses OAuth 2.0. When your MCP client connects for the first time, it opens a browser window for you to sign in with your ClickHouse Cloud credentials. No API key is needed.
-
-### Connecting an MCP client {#managed-connecting-a-client}
-
-Each client handles the OAuth flow automatically on first connection.
-
-<Tabs>
-<Tab title="Claude Code">
-
-```shell
-claude mcp add --transport http clickstack https://mcp.clickhouse.cloud/clickstack
-```
-
-Launch Claude Code and run `/mcp`, then select `clickstack` to complete the OAuth flow.
-
-</Tab>
-<Tab title="Cursor">
-
-Add the following to `.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "clickstack": {
-      "url": "https://mcp.clickhouse.cloud/clickstack"
-    }
-  }
-}
-```
-
-</Tab>
-<Tab title="VS Code">
-
-Add the following to `.vscode/mcp.json`:
-
-```json
-{
-  "servers": {
-    "clickstack": {
-      "type": "http",
-      "url": "https://mcp.clickhouse.cloud/clickstack"
-    }
-  }
-}
-```
-
-</Tab>
-<Tab title="OpenCode">
-
-Add the following to `opencode.json`:
-
-```json
-{
-  "mcp": {
-    "clickstack": {
-      "type": "remote",
-      "url": "https://mcp.clickhouse.cloud/clickstack"
-    }
-  }
-}
-```
-
-</Tab>
-<Tab title="LibreChat">
-
-Add the following to `librechat.yaml`:
-
-```yaml
-mcpServers:
-  clickstack:
-    type: streamable-http
-    url: https://mcp.clickhouse.cloud/clickstack
-```
-
-</Tab>
-<Tab title="Other">
-
-Any MCP client that supports **Streamable HTTP** with OAuth can connect. Configure it with:
-
-- **URL:** `https://mcp.clickhouse.cloud/clickstack`
-
-</Tab>
-</Tabs>
-
-### Targeting a specific service {#managed-service-override}
-
-Without the `x-service-id` header, requests default to the first ClickStack service provisioned and used by your account. To target a different service, pass `x-service-id: <YOUR_SERVICE_ID>` as a header in your MCP client configuration.
+The MCP server is available in Open Source ClickStack and BYOC (Bring Your Own Cloud) deployments. HyperDX v1 ([hyperdx.io](https://hyperdx.io)) is not supported.
 
 ## Open Source and BYOC {#oss-byoc}
 
@@ -142,7 +26,7 @@ Open Source and BYOC deployments use your ClickStack instance's built-in MCP end
 
 ### Prerequisites {#oss-prerequisites}
 
-- A running ClickStack instance (see [Deployment](/clickstack/deployment/overview) for setup options)
+- A running ClickStack instance (see [Deployment](/clickstack/deployment/oss) for setup options)
 - A **Personal API Access Key** — find yours in HyperDX under **Team Settings → API Keys → Personal API Access Key**
 
 <Image img="/images/clickstack/api-key-personal.webp" alt="Personal API Access Key in Team Settings" size="md" border/>
@@ -271,32 +155,13 @@ The specific set of tools may expand over time. Your MCP client will automatical
 
 ## Multi-team usage (OSS/BYOC) {#multi-team}
 
-This applies to Open Source and BYOC deployments only. For ClickStack on ClickHouse Cloud, see [Targeting a specific service](#managed-service-override).
+This applies to Open Source and BYOC deployments only.
 
 By default, MCP requests operate in the context of your primary team. If you belong to multiple teams, pass the `x-hdx-team` header set to the team's ID alongside your `Authorization` header. If the header is omitted, your primary team is used. If you specify a team you don't belong to, the request is rejected with a `401` error.
 
 Use the team listing tool from your MCP client to discover which teams you have access to and which one is active.
 
 ## Troubleshooting {#troubleshooting}
-
-### ClickStack on ClickHouse Cloud {#troubleshooting-managed}
-
-<Accordion title="OAuth flow doesn't complete">
-- Confirm your MCP client supports OAuth 2.0. Clients that only support Bearer token or stdio transport can't authenticate with the Cloud endpoint.
-- Check that your browser isn't blocking the OAuth popup or redirect.
-- Verify your ClickHouse Cloud account has access to the organization and service.
-</Accordion>
-
-<Accordion title="MCP is enabled but the client can't connect">
-- Confirm you're using the ClickStack endpoint (`https://mcp.clickhouse.cloud/clickstack`), not the general Cloud MCP endpoint (`https://mcp.clickhouse.cloud/mcp`).
-- Verify that [MCP is enabled](/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) on the service in the Cloud console.
-</Accordion>
-
-<Accordion title="Requests go to the wrong service">
-Without the `x-service-id` header, requests default to the first ClickStack service provisioned and used by your account. Pass the header to target a specific service. See [Targeting a specific service](#managed-service-override).
-</Accordion>
-
-### Open Source and BYOC {#troubleshooting-oss}
 
 <Accordion title="I'm getting a 403 authentication error">
 - Verify that you're using the **Personal API Access Key** (not the Ingestion API Key).

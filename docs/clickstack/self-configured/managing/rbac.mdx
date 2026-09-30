@@ -3,48 +3,42 @@ slug: /clickstack/self-configured/managing/rbac
 title: 'Role-based access control (RBAC)'
 sidebarTitle: 'Role-based access control'
 toc_max_heading_level: 2
-description: 'Configure role-based access control in ClickStack to manage team permissions for dashboards, saved searches, sources, alerts, and more.'
+description: 'Configure role-based access control in Self Configured ClickHouse Observability to manage team permissions for dashboards, saved searches, sources, alerts, and more.'
 doc_type: 'guide'
-keywords: ['clickstack', 'rbac', 'roles', 'permissions', 'access control', 'security']
+keywords: ['ClickHouse Observability', 'rbac', 'roles', 'permissions', 'access control', 'security']
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
 
-ClickStack includes role-based access control (RBAC) so you can define custom roles with fine-grained permissions over [dashboards](/clickstack/features/dashboards/overview), [saved searches](/clickstack/features/search), sources, [alerts](/clickstack/features/alerts), webhooks, and notebooks. Permissions work at two levels: resource-level access (no access, read, or manage per resource type) and optional fine-grained rules that restrict access to individual resources by name, tag, or ID. ClickStack ships with three built-in roles, and you can create custom roles to match your team's needs.
-
-<Info>
-**Managed ClickStack only**
-
-RBAC is only available in Managed ClickStack deployments.
-</Info>
+Self Configured ClickHouse Observability includes role-based access control (RBAC) so you can define custom roles with fine-grained permissions over [dashboards](/clickstack/self-configured/features/dashboards/overview), [saved searches](/clickstack/self-configured/features/search), sources, [alerts](/clickstack/self-configured/features/alerts), webhooks, and notebooks. Permissions work at two levels: resource-level access (no access, read, or manage per resource type) and optional fine-grained rules that restrict access to individual resources by name, tag, or ID. The service ships with three built-in roles, and you can create custom roles to match your team's needs.
 
 ## User access prerequisites {#user-access-prerequisites}
 
-ClickStack authenticates through ClickHouse Cloud. Before you can assign ClickStack roles, each user must:
+The service authenticates through ClickHouse Cloud. Before you can assign observability roles, each user must:
 
 1. **Be invited to your ClickHouse Cloud organization.** An organization admin invites users from the Cloud console. See [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users) for details.
 2. **Have SQL Console access on the service.** Navigate to your service's **Settings** → **SQL Console Access** and set the appropriate permission level:
 
-| Cloud SQL Console access | ClickStack access |
+| Cloud SQL Console access | Observability access |
 |---|---|
-| **SQL Console Admin** (Full Access) | Full access to ClickStack. Required for enabling [alerts](/clickstack/features/alerts). |
+| **SQL Console Admin** (Full Access) | Full access to the service. Required for enabling [alerts](/clickstack/self-configured/features/alerts). |
 | **SQL Console Read Only** (Read Only) | Can view observability data and create dashboards. |
-| **No access** | Can't access ClickStack. |
+| **No access** | Can't access the service. |
 
-Once a user has Cloud access, they appear in the ClickStack **Team Settings** page where you can assign a ClickStack role.
+Once a user has Cloud access, they appear in the **Team Settings** page where you can assign an observability role.
 
 <Tabs>
 <Tab title="Cloud Users and roles">
 <Image img="/images/clickstack/rbac/team-page-cloud.webp" alt="ClickHouse Cloud Users and roles page" size="lg"/>
 </Tab>
-<Tab title="ClickStack Team Settings">
-<Image img="/images/clickstack/rbac/team-page-clickstack.webp" alt="ClickStack Team Settings page showing team members and their roles" size="lg"/>
+<Tab title="Team Settings">
+<Image img="/images/clickstack/rbac/team-page-clickstack.webp" alt="Team Settings page showing team members and their roles" size="lg"/>
 </Tab>
 </Tabs>
 
 ## Built-in roles {#built-in-roles}
 
-ClickStack includes three system roles. You can't edit or delete these. The Admin role is assigned to the team creator by default.
+The service includes three system roles. You can't edit or delete these. The Admin role is assigned to the team creator by default.
 
 | Permission | Admin | Member | ReadOnly |
 |---|:---:|:---:|:---:|
@@ -102,11 +96,11 @@ Each role grants an access level per resource type. The three levels are:
 
 The resource types you can control are:
 
-- **[Dashboards](/clickstack/features/dashboards/overview)** — saved dashboard layouts and charts.
-- **[Saved searches](/clickstack/features/search)** — persisted log/trace/event queries.
+- **[Dashboards](/clickstack/self-configured/features/dashboards/overview)** — saved dashboard layouts and charts.
+- **[Saved searches](/clickstack/self-configured/features/search)** — persisted log/trace/event queries.
 - **Sources** — ingestion source configurations.
-- **[Alerts](/clickstack/features/alerts)** — alert rules and their notification settings.
-- **Webhooks** — outbound notification destinations (such as Slack, PagerDuty, and generic HTTP endpoints) that [alerts](/clickstack/features/alerts) deliver to. This doesn't refer to the ClickStack API.
+- **[Alerts](/clickstack/self-configured/features/alerts)** — alert rules and their notification settings.
+- **Webhooks** — outbound notification destinations (such as Slack, PagerDuty, and generic HTTP endpoints) that [alerts](/clickstack/self-configured/features/alerts) deliver to. This doesn't refer to the observability API.
 - **Notebooks** — collaborative investigation notebooks.
 
 ### Administrative permissions {#administrative-permissions}

@@ -1,5 +1,25 @@
 [
   {
+    "destination": "/clickstack/managing/overview",
+    "source": "/clickstack/managing/admin"
+  },
+  {
+    "destination": "/clickstack/self-configured/managing/overview",
+    "source": "/clickstack/self-configured/managing/admin"
+  },
+  {
+    "destination": "/clickstack/observability/managing/overview",
+    "source": "/clickstack/observability/managing/admin"
+  },
+  {
+    "destination": "/clickstack/deployment/oss",
+    "source": "/clickstack/deployment/overview"
+  },
+  {
+    "destination": "/clickstack/index",
+    "source": "/clickstack"
+  },
+  {
     "destination": "/get-started/sample-datasets/nyc-taxi",
     "source": "/get-started/quickstarts/tutorial"
   },
@@ -41732,7 +41752,7 @@
     "source": "/use-cases/observability/clickstack"
   },
   {
-    "destination": "/clickstack/managing/admin",
+    "destination": "/clickstack/managing/overview",
     "source": "/use-cases/observability/clickstack/admin"
   },
   {

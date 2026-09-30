@@ -34,166 +34,6 @@ Users deploying OTel collectors in the agent role will typically use the [defaul
 
 ## Deploying the collector {#configuring-the-collector}
 <br/>
-<Tabs>
-
-<Tab title="Managed ClickStack">
-
-We [recommend using the official ClickStack distribution of the collector](/clickstack/deployment/hyperdx-only#otel-collector) for the gateway role when sending to Managed ClickStack, where possible. If you choose to bring your own, ensure it includes the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
-
-The collector can be deployed either via Helm (recommended for Kubernetes) or via Docker. The official [ClickStack Helm chart](https://github.com/ClickHouse/ClickStack-helm-charts) embeds the upstream [OpenTelemetry collector Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts) as a subchart with the ClickStack distribution image preconfigured—see the [ClickStack Helm deployment guide](/clickstack/deployment/helm) if you want to install the full stack including HyperDX. For a standalone collector deployment, the upstream chart can be used directly with the ClickStack image, as shown below.
-
-<Tabs>
-
-<Tab title="Helm">
-
-Add the upstream OpenTelemetry Helm repository:
-
-```shell
-helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
-helm repo update
-```
-
-Create a `values.yaml` configuring the ClickStack image and Managed ClickStack credentials:
-
-```yaml
-# values.yaml
-mode: deployment
-
-image:
-  repository: docker.clickhouse.com/clickhouse/clickstack-otel-collector
-  tag: "2.19.0"
-
-ports:
-  otlp:
-    enabled: true
-  otlp-http:
-    enabled: true
-
-extraEnvs:
-  - name: CLICKHOUSE_ENDPOINT
-    value: "https://your-instance.clickhouse.cloud:8443"
-  - name: CLICKHOUSE_USER
-    value: "default"
-  - name: CLICKHOUSE_PASSWORD
-    value: "<password>"
-```
-
-Install the chart:
-
-```shell
-helm install clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
-```
-
-For production deployments, we recommend storing `CLICKHOUSE_PASSWORD` in a Kubernetes secret and referencing it via `extraEnvsFrom` instead of inlining the value.
-
-</Tab>
-
-<Tab title="Docker">
-
-To deploy the ClickStack distribution of the OTel connector in a standalone mode, run the following docker command:
-
-```shell
-docker run -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
-```
-
-<Info>
-**Image Name Update**
-
-ClickStack images are now published as `clickhouse/clickstack-*` (previously `docker.hyperdx.io/hyperdx/*`).
-</Info>
-
-</Tab>
-
-</Tabs>
-
-The target ClickHouse instance is configured via the environment variables `CLICKHOUSE_ENDPOINT`, `CLICKHOUSE_USER`, and `CLICKHOUSE_PASSWORD`. The `CLICKHOUSE_ENDPOINT` should be the full ClickHouse Cloud HTTP endpoint, including the protocol and port—for example, `https://99rr6dm6v3.us-central1.gcp.clickhouse.cloud:8443`.
-
-For details on retrieving your Managed ClickStack credentials, see [here](/products/cloud/guides/sql-console/connection-details).
-
-<Info>
-**Production user**
-
-You should use a user with the [appropriate credentials](/clickstack/ingesting-data/collector#creating-an-ingestion-user) in production.
-</Info>
-
-### Modifying configuration {#modifying-otel-collector-configuration-managed}
-
-#### Configuring Managed ClickStack instance {#configuring-managed-clickstack}
-
-The OpenTelemetry collector can be configured to use a Managed ClickStack instance via the environment variables `CLICKHOUSE_ENDPOINT`, `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD`. How these are set depends on your deployment method:
-
-<Tabs>
-
-<Tab title="Helm">
-
-Override the relevant entries under `extraEnvs` in your `values.yaml`, then upgrade the release:
-
-```yaml
-# values.yaml
-extraEnvs:
-  - name: CLICKHOUSE_ENDPOINT
-    value: "<HTTPS_ENDPOINT>"
-  - name: CLICKHOUSE_USER
-    value: "<CLICKHOUSE_USER>"
-  - name: CLICKHOUSE_PASSWORD
-    value: "<CLICKHOUSE_PASSWORD>"
-```
-
-```shell
-helm upgrade clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
-```
-
-</Tab>
-
-<Tab title="Docker">
-
-All docker images which include the OpenTelemetry collector can be configured via environment variables. For example the all-in-one image:
-
-```shell
-export CLICKHOUSE_ENDPOINT=<HTTPS ENDPOINT>
-export CLICKHOUSE_USER=<CLICKHOUSE_USER>
-export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
-```
-
-```shell
-docker run -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
-```
-
-</Tab>
-
-</Tabs>
-
-<ExtendingConfig/>
-
-#### Docker Compose {#docker-compose-otel-managed}
-
-With Docker Compose, modify the collector configuration using the same environment variables as above:
-
-```yaml
-  otel-collector:
-    image: hyperdx/hyperdx-otel-collector
-    environment:
-      CLICKHOUSE_ENDPOINT: 'https://mxl4k3ul6a.us-east-2.aws.clickhouse-staging.com:8443'
-      HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
-      CLICKHOUSE_USER: 'default'
-      CLICKHOUSE_PASSWORD: 'password'
-      CUSTOM_OTELCOL_CONFIG_FILE: '/etc/otelcol-contrib/custom.config.yaml'
-    ports:
-      - '13133:13133' # health_check extension
-      - '24225:24225' # fluentd receiver
-      - '4317:4317' # OTLP gRPC receiver
-      - '4318:4318' # OTLP http receiver
-      - '8888:8888' # metrics extension
-    volumes:
-      - ./custom-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
-    restart: always
-    networks:
-      - internal
-```
-</Tab>
-
-<Tab title="Open Source ClickStack">
-
 If you're managing your own OpenTelemetry collector in a standalone deployment - such as when using the HyperDX-only distribution - we [recommend still using the official ClickStack distribution of the collector](/clickstack/deployment/hyperdx-only#otel-collector) for the gateway role where possible, but if you choose to bring your own, ensure it includes the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
 
 The collector can be deployed either via Helm (recommended for Kubernetes) or via Docker. The official [ClickStack Helm chart](https://github.com/ClickHouse/ClickStack-helm-charts) embeds the upstream [OpenTelemetry collector Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts) as a subchart and auto-wires the OpAMP endpoint, ClickStack image, and HyperDX API key via a shared `clickstack-config` ConfigMap and `clickstack-secret` Secret—see the [ClickStack Helm deployment guide](/clickstack/deployment/helm) if you want to install the full stack including HyperDX. For a standalone collector deployment that connects to an existing HyperDX, the upstream chart can be used directly with the ClickStack image, as shown below.
@@ -362,90 +202,7 @@ With Docker Compose, modify the collector configuration using the same environme
       - internal
 ```
 
-</Tab>
-
-</Tabs>
-
 ## Securing the collector {#securing-the-collector}
-
-<Tabs>
-
-<Tab title="Managed ClickStack">
-
-By default, the ClickStack OpenTelemetry collector isn't secured when deployed outside of the Open Source distributions and doesn't require authentication on its OTLP ports.
-
-To secure ingestion, specify an authentication token when deploying the collector using the `OTLP_AUTH_TOKEN` environment variable. How this is set depends on your deployment method:
-
-<Tabs>
-
-<Tab title="Helm">
-
-Add `OTLP_AUTH_TOKEN` to `extraEnvs` in your `values.yaml`, then upgrade the release:
-
-```yaml
-# values.yaml
-extraEnvs:
-  - name: OTLP_AUTH_TOKEN
-    value: "a_very_secure_string"
-  - name: CLICKHOUSE_ENDPOINT
-    value: "<HTTPS_ENDPOINT>"
-  - name: CLICKHOUSE_USER
-    value: "<CLICKHOUSE_USER>"
-  - name: CLICKHOUSE_PASSWORD
-    value: "<CLICKHOUSE_PASSWORD>"
-```
-
-```shell
-helm upgrade clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
-```
-
-For production deployments, we recommend storing `OTLP_AUTH_TOKEN` and `CLICKHOUSE_PASSWORD` in a Kubernetes secret and referencing them via `extraEnvsFrom`.
-
-</Tab>
-
-<Tab title="Docker">
-
-```sh
-export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
-export CLICKHOUSE_USER=<CLICKHOUSE_USER>
-export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
-export OTLP_AUTH_TOKEN="a_very_secure_string"
-
-docker run \
-  -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
-  -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
-  -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
-  -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
-  -p 4317:4317 \
-  -p 4318:4318 \
-  clickhouse/clickstack-otel-collector:latest
-```
-
-</Tab>
-
-</Tabs>
-
-We additionally recommend:
-
-- Configuring the collector to communicate with ClickHouse over HTTPS.
-- Create a dedicated user for ingestion with limited permissions - see below.
-- Enabling TLS for the OTLP endpoint, ensuring encrypted communication between SDKs/agents and the collector. This can be configured via [custom collector configuration](#extending-collector-config).
-
-### Creating an ingestion user {#creating-an-ingestion-user}
-
-We recommend creating a dedicated database and user for the OTel collector for ingestion into Managed ClickStack. This should have the ability to create and insert into the [tables created and used by ClickStack](/clickstack/ingesting-data/schemas). 
-
-```sql
-CREATE DATABASE otel;
-CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY 'ClickH0u3eRocks123!';
-GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
-```
-
-This assumes the collector has been configured to use the database `otel`. This can be controlled through the environment variable `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`. Pass this to the the collector [similar to other environment variables](#modifying-otel-collector-configuration).
-
-</Tab>
-
-<Tab title="Open Source ClickStack">
 
 The ClickStack distribution of the OpenTelemetry collector includes built-in support for OpAMP (Open Agent Management Protocol), which it uses to securely configure and manage the OTLP endpoint. On startup, you must provide an `OPAMP_SERVER_URL` environment variable — this should point to the HyperDX app, which hosts the OpAMP API at `/v1/opamp`.
 
@@ -459,6 +216,8 @@ To further secure your deployment, we recommend:
 - Create a dedicated user for ingestion with limited permissions - see below.
 - Enabling TLS for the OTLP endpoint, ensuring encrypted communication between SDKs/agents and the collector. This can be configured via [custom collector configuration](#extending-collector-config).
 
+<a id="creating-an-ingestion-user" />
+
 ### Creating an ingestion user {#creating-an-ingestion-user-oss}
 
 We recommend creating a dedicated database and user for the OTel collector for ingestion into ClickHouse. This should have the ability to create and insert into the [tables created and used by ClickStack](/clickstack/ingesting-data/schemas). 
@@ -470,9 +229,6 @@ GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hy
 ```
 
 This assumes the collector has been configured to use the database `otel`. This can be controlled through the environment variable `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`. Pass this to the image hosting the collector [similar to other environment variables](#modifying-otel-collector-configuration).
-
-</Tab>
-</Tabs>
 
 ## Processing - filtering, transforming, and enriching {#processing-filtering-transforming-enriching}
 

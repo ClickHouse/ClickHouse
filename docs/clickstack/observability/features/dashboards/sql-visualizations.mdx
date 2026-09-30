@@ -2,14 +2,18 @@
 slug: /clickstack/observability/features/dashboards/sql-visualizations
 title: 'SQL-based visualizations'
 sidebarTitle: 'SQL-based visualizations'
-description: 'Creating visualizations using SQL queries in ClickStack'
+description: 'Creating visualizations using SQL queries in ClickHouse Observability'
 doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualization', 'sql', 'observability']
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
 
-ClickStack supports visualizations based on raw SQL queries. This gives you full control over the query logic while still integrating with dashboard-level time ranges, filters, and chart rendering.
+<Warning>
+This guide has been carried over from the existing documentation and still needs review for ClickHouse Observability. Connection selection, available tables and permissions, and the public-demo examples need verification for this offering.
+</Warning>
+
+ClickHouse Observability supports visualizations based on raw SQL queries. This gives you full control over the query logic while still integrating with dashboard-level time ranges, filters, and chart rendering.
 
 SQL-based visualizations are useful when you need to go beyond the built-in Chart Explorer — for example, to join tables or build complex aggregations that are not supported by the chart builder.
 
@@ -112,7 +116,7 @@ Only filters with **Broadcast filter condition** enabled are applied by `$__filt
 
 ### Dashboard variable macros {#dashboard-variables}
 
-When a dashboard filter is [available as a variable](/clickstack/features/dashboards/overview#dashboard-variables), its selected values can be referenced anywhere in the query. These macros are only available on tiles belonging to a dashboard that declares at least one variable.
+When a dashboard filter is [available as a variable](/clickstack/observability/features/dashboards/overview#dashboard-variables), its selected values can be referenced anywhere in the query. These macros are only available on tiles belonging to a dashboard that declares at least one variable.
 
 | Macro                                          | Description                                                                                                              |
 |------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------|
@@ -124,7 +128,7 @@ A variable's values can also be interpolated directly as `$name` or `${name}`, w
 
 ## How query results are plotted {#how-results-are-plotted}
 
-ClickStack automatically maps result columns to chart elements based on column types. The mapping rules differ by chart type.
+The UI automatically maps result columns to chart elements based on column types. The mapping rules differ by chart type.
 
 ### Line and Stacked Bar charts {#line-and-stacked-bar-charts}
 

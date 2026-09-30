@@ -2,19 +2,19 @@
 slug: /clickstack/self-configured/managing/ttl
 title: 'Managing TTL'
 sidebarTitle: 'Managing TTL'
-description: 'Managing TTL with ClickStack'
+description: 'Managing TTL with Self Configured ClickHouse Observability'
 doc_type: 'guide'
-keywords: ['clickstack', 'ttl', 'data retention', 'lifecycle', 'storage management']
+keywords: ['ClickHouse Observability', 'ttl', 'data retention', 'lifecycle', 'storage management']
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
 import OtelLogsSchema from '/snippets/clickstack/_schema_otel_logs.mdx';
 
-## TTL in ClickStack {#ttl-clickstack}
+## Data retention with TTL {#ttl-clickstack}
 
-Time-to-Live (TTL) is a crucial feature in ClickStack for efficient data retention and management, especially given vast amounts of data are continuously generated. TTL allows for automatic expiration and deletion of older data, ensuring that the storage is optimally used and performance is maintained without manual intervention. This capability is essential for keeping the database lean, reducing storage costs, and ensuring that queries remain fast and efficient by focusing on the most relevant and recent data. Moreover, it helps in compliance with data retention policies by systematically managing data life cycles, thus enhancing the overall sustainability and scalability of the observability solution.
+Time-to-Live (TTL) is a crucial feature in Self Configured ClickHouse Observability for efficient data retention and management, especially given vast amounts of data are continuously generated. TTL allows for automatic expiration and deletion of older data, ensuring that the storage is optimally used and performance is maintained without manual intervention. This capability is essential for keeping the database lean, reducing storage costs, and ensuring that queries remain fast and efficient by focusing on the most relevant and recent data. Moreover, it helps in compliance with data retention policies by systematically managing data life cycles, thus enhancing the overall sustainability and scalability of the observability solution.
 
-**By default, ClickStack retains data for 3 days. To modify this, see ["Modifying TTL"](#modifying-ttl).**
+**By default, data is retained for 3 days. To modify this, see ["Modifying TTL"](#modifying-ttl).**
 
 TTL is controlled at a table level in ClickHouse. For example, the default schema for logs is shown below; `${TABLES_TTL}` is substituted with the configured retention (3 days unless changed) when the collector creates the table:
 
