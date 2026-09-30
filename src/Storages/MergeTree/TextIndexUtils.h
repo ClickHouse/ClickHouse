@@ -250,10 +250,10 @@ std::unique_ptr<MergeTreeReaderStream> makePostingsInputStream(
     const MergeTreeReaderSettings & reader_settings,
     size_t expected_read_bytes);
 
-/// Estimated size in bytes of the largest segment of `token_info`'s compressed posting list. Segment sizes
-/// follow from consecutive segment offsets; the last segment ends where the next token's postings begin,
-/// which the dictionary entry does not record, so a single-segment list is estimated from its cardinality
-/// and row span. Meant for sizing read buffers: an underestimate only costs a second read.
-size_t estimateLargestPostingListSegmentBytes(const TokenPostingsInfo & token_info);
+/// Read buffer size for the posting list of `token_info`: the estimated size in bytes of its largest
+/// compressed segment, but at least 16 KiB. Segment sizes follow from consecutive segment offsets; the last
+/// segment ends where the next token's postings begin, which the dictionary entry does not record, so a
+/// single-segment list is estimated from its cardinality and row span. An underestimate only costs a second read.
+size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info);
 
 }

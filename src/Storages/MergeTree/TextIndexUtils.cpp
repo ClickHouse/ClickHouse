@@ -1213,34 +1213,36 @@ MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, 
     return storage;
 }
 
-size_t estimateLargestPostingListSegmentBytes(const TokenPostingsInfo & token_info)
+size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info)
 {
     const size_t num_segments = token_info.offsets.size();
     if (num_segments == 0)
         return 0;
 
-    /// With several segments all but the last are full, so the last one has at most as many postings as
-    /// the largest of them and its size is bounded by theirs.
-    if (num_segments >= 2)
+    /// Small lists are read in one piece anyway, so do not go below the default buffer size for postings.
+    constexpr size_t min_buffer_size = 16 * 1024;
+    size_t largest_segment_bytes = 0;
+
+    if (num_segments == 1)
     {
-        size_t largest = 0;
+        /// A single segment holds the whole list.
+        /// Its row-id deltas are bit-packed to the bit width of the gaps:
+        /// take twice the bit width of the average gap per posting to cover larger gaps and block headers.
+        const auto & range = token_info.ranges.front();
+        const size_t cardinality = std::max<size_t>(1, token_info.cardinality);
+        const size_t average_gap = (range.end - range.begin + 1) / cardinality;
+        const size_t bits_per_posting = 2 * static_cast<size_t>(std::bit_width(average_gap));
+        largest_segment_bytes = cardinality * bits_per_posting / 8;
+    }
+    else
+    {
+        /// With several segments all but the last are full.
+        /// Estimate the largest segment by the largest gap between offsets.
         for (size_t i = 1; i < num_segments; ++i)
-            largest = std::max(largest, static_cast<size_t>(token_info.offsets[i] - token_info.offsets[i - 1]));
-        return largest;
+            largest_segment_bytes = std::max(largest_segment_bytes, static_cast<size_t>(token_info.offsets[i] - token_info.offsets[i - 1]));
     }
 
-    /// A single segment holds the whole list. Its row-id deltas are bit-packed per block of BLOCK_SIZE to the
-    /// block's largest gap, which is a few times the average gap: give the bit width of the average gap three
-    /// bits of headroom. Each block adds a bits byte and two varints of the block index.
-    const size_t cardinality = token_info.cardinality;
-    const auto & range = token_info.ranges.front();
-    const size_t span = range.end >= range.begin ? range.end - range.begin + 1 : 1;
-    const size_t average_gap = std::max<size_t>(1, span / std::max<size_t>(1, cardinality));
-    const size_t bits = std::min<size_t>(32, static_cast<size_t>(std::bit_width(average_gap)) + 3);
-    constexpr size_t block_size = IPostingListBlockCodec::BLOCK_SIZE;
-    const size_t blocks = (cardinality + block_size - 1) / block_size;
-
-    return cardinality * bits / 8 + blocks * (1 + 2 * 5) + 64;
+    return std::max(largest_segment_bytes, min_buffer_size);
 }
 
 static MergeTreeReaderSettings makePostingsReaderSettings(const MergeTreeReaderSettings & reader_settings, size_t expected_read_bytes)
@@ -1253,6 +1255,7 @@ static MergeTreeReaderSettings makePostingsReaderSettings(const MergeTreeReaderS
     {
         buffer_size = std::clamp(expected_read_bytes, std::min(buffer_size, regular_size), std::max(buffer_size, regular_size));
     };
+
     adjust(settings.read_settings.local_fs_settings.buffer_size, reader_settings.read_settings.local_fs_settings.buffer_size);
     adjust(settings.read_settings.remote_fs_settings.buffer_size, reader_settings.read_settings.remote_fs_settings.buffer_size);
 

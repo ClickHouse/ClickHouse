@@ -563,7 +563,7 @@ std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStr
         index.index->getFileName() + substream.suffix,
         substream.extension,
         settings,
-        estimateLargestPostingListSegmentBytes(token_info));
+        estimatePostingListBufferSize(token_info));
 }
 
 MergeTreeReaderStream & MergeTreeReaderTextIndex::getPostingsStream(std::string_view token, const TokenPostingsInfo & token_info)

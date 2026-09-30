@@ -182,7 +182,7 @@ UInt64 computeCountForPart(
     /// The blocks of a list are read one by one after a seek each, so the buffer fits the largest segment among the lists.
     size_t largest_segment_bytes = 0;
     for (const auto * token_info : tokens_to_read)
-        largest_segment_bytes = std::max(largest_segment_bytes, estimateLargestPostingListSegmentBytes(*token_info));
+        largest_segment_bytes = std::max(largest_segment_bytes, estimatePostingListBufferSize(*token_info));
 
     auto postings_stream = makePostingsInputStream(
         part_info,

@@ -959,7 +959,7 @@ void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings
     /// Each list is a single segment read whole after a seek, so the buffer of the stream fits the largest of them.
     size_t largest_segment_bytes = 0;
     for (const auto & [token, token_info] : tokens_to_read)
-        largest_segment_bytes = std::max(largest_segment_bytes, estimateLargestPostingListSegmentBytes(*token_info));
+        largest_segment_bytes = std::max(largest_segment_bytes, estimatePostingListBufferSize(*token_info));
 
     const auto postings_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexPostings);
     auto stream = makePostingsInputStream(
