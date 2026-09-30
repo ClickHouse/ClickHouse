@@ -334,14 +334,24 @@ void PrometheusRemoteWriteProtocol::write(
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
     auto block = makeBlock(time_series, metrics_metadata, *metadata, samples_column_name);
 
-    /// Counted before the insert: an async insert can time out and still be flushed later.
     size_t num_exemplars = 0;
     for (const auto & element : time_series)
         num_exemplars += element.exemplars_size();
+
+    try
+    {
+        insertBlock(std::move(block), *time_series_storage, getContext());
+    }
+    catch (const Exception & e)
+    {
+        /// A timed out async insert stays in the queue and is flushed later, so its exemplars are counted too.
+        if (e.code() == ErrorCodes::ASYNC_INSERT_FLUSH_TIMEOUT && num_exemplars)
+            ProfileEvents::increment(ProfileEvents::PrometheusRemoteWriteDroppedExemplars, num_exemplars);
+        throw;
+    }
+
     if (num_exemplars)
         ProfileEvents::increment(ProfileEvents::PrometheusRemoteWriteDroppedExemplars, num_exemplars);
-
-    insertBlock(std::move(block), *time_series_storage, getContext());
 
     LOG_TRACE(
         log,

@@ -146,6 +146,35 @@ def test_async_insert_no_acknowledgement_on_failure():
     assert node.query("SELECT count() FROM samples") == "0\n"
 
 
+def test_async_insert_failure_counts_no_dropped_exemplars():
+    node.query(
+        "CREATE TABLE samples (id UUID, timestamp DateTime64(3), value Float64, "
+        "CONSTRAINT reject_all CHECK value < 0) ENGINE=MergeTree ORDER BY (id, timestamp)"
+    )
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries DATA samples")
+
+    timestamp = 1724112000
+    write_request = convert_time_series_to_protobuf(
+        [({"__name__": "exemplar_rejected_metric"}, {timestamp: 1.5})]
+    )
+    write_request.timeseries[0].exemplars.append(
+        types_pb2.Exemplar(
+            labels=[types_pb2.Label(name="trace_id", value="abc")],
+            value=1.5,
+            timestamp=timestamp * 1000,
+        )
+    )
+
+    before = get_profile_event("PrometheusRemoteWriteDroppedExemplars")
+    response = get_response_to_remote_write(
+        node.ip_address, 9093, "/write?async_insert=1", write_request
+    )
+
+    # The write is rejected, so its exemplar is not counted as dropped.
+    assert "VIOLATED_CONSTRAINT" in response.text
+    assert get_profile_event("PrometheusRemoteWriteDroppedExemplars") - before == 0
+
+
 def test_async_insert_flush_timeout_returns_503():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
 
