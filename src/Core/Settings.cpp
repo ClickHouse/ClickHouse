@@ -2249,7 +2249,7 @@ Possible values:
         {"26.5", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."}) \
     DECLARE(UInt64, query_plan_max_limit_for_top_k_optimization, 1000, R"(Control maximum limit value that allows to evaluate query plan for TopK optimization by using minmax skip index and dynamic threshold filtering. If zero, there is no limit.
 
-This setting also controls the behavior of [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization).
+This setting also controls the behavior of [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization) and of [query_plan_window_top_k_prefilter](#query_plan_window_top_k_prefilter), which bounds a `rank()` window function by it.
 )", 0, \
         {"25.12", 0, 1000, "New setting."}) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
@@ -7379,6 +7379,19 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"26.6", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."}) \
+    DECLARE(Bool, query_plan_window_top_k_prefilter, true, R"(
+Toggles a query-plan-level optimization for queries that bound a `rank()` or `row_number()` window function, such as `WHERE rk <= 100`. Each stream below the window drops rows whose rank already exceeds the bound before the window's sort, partition reshuffle and merge see them. Rows tying with the bound are always kept, so results are unchanged. Speeds up "top N per group" queries, where the window otherwise sorts every row to compute ranks the filter discards.
+
+The optimization is disabled when the rank bound is higher than [query_plan_max_limit_for_top_k_optimization](#query_plan_max_limit_for_top_k_optimization) or than the hard cap of `100000`, because the memory and CPU cost of the heap grows with the bound. It is also disabled when [max_rows_to_sort](#max_rows_to_sort) or [max_bytes_to_sort](#max_bytes_to_sort) is set, so that a query which exceeds those limits today keeps failing.
+
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.10", false, true, "New setting that lets each stream below a window drop rows whose `rank()`/`row_number()` already exceeds a bound the query filters on, before the window's sort sees them."}) \
     DECLARE(Bool, query_plan_fuse_filter_into_array_join, true, R"(
 Toggles a query-plan-level optimization which fuses a filter on `ARRAY JOIN`ed element columns into the `ARRAY JOIN` step, filtering the arrays in element space before expansion so that filtered-out elements are never expanded or replicated.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.

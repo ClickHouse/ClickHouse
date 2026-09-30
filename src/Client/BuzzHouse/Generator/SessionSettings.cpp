@@ -570,6 +570,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_split_filter", trueOrFalseSetting},
        {"query_plan_top_k_through_join", trueOrFalseSetting},
        {"query_plan_try_use_vector_search", trueOrFalseSetting},
+       {"query_plan_window_top_k_prefilter", trueOrFalseSetting},
        {"read_in_order_two_level_merge_threshold",
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 100)); },
