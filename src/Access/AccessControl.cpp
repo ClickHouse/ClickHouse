@@ -630,30 +630,41 @@ bool AccessControl::insertImpl(
 {
     {
         std::lock_guard lock{access_entities_mutex};
-        if (storage && !replace_if_exists && checkNameCollisionInOtherStorage(*storage, entity, throw_if_exists, conflicting_id))
-            return false;
-
-        auto storage_for_insertion = storage ? storage : getStorageForInsertion(entity);
-        auto existing_id = storage_for_insertion->find(entity->getType(), entity->getName());
-
-        /// A name collision, and in particular a no-op `CREATE ... IF NOT EXISTS`, is not validated as an insertion.
-        if (isAnyFeatureTierRestricted(*this) && (replace_if_exists || !existing_id))
-        {
-            PendingAccessEntities pending;
-            pending[id] = entity;
-            /// A replacement drops the entity that holds the name, which need not be `id`.
-            if (existing_id && *existing_id != id)
-                pending[*existing_id] = nullptr;
-            checkFeatureTierForPendingAccessEntities(
-                *this, pending, /* current= */ {}, isShadowedInsertionUnlocked(*storage_for_insertion, *entity));
-            FailPointInjection::pauseFailPoint(FailPoints::access_control_pause_after_feature_tier_check);
-        }
-
-        if (!storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id))
+        if (!insertUnlocked(storage, id, entity, replace_if_exists, throw_if_exists, conflicting_id))
             return false;
     }
     changes_notifier->sendNotifications();
     return true;
+}
+
+bool AccessControl::insertUnlocked(
+    const StoragePtr & storage,
+    const UUID & id,
+    const AccessEntityPtr & entity,
+    bool replace_if_exists,
+    bool throw_if_exists,
+    UUID * conflicting_id)
+{
+    if (storage && !replace_if_exists && checkNameCollisionInOtherStorage(*storage, entity, throw_if_exists, conflicting_id))
+        return false;
+
+    auto storage_for_insertion = storage ? storage : getStorageForInsertion(entity);
+    auto existing_id = storage_for_insertion->find(entity->getType(), entity->getName());
+
+    /// A name collision, and in particular a no-op `CREATE ... IF NOT EXISTS`, is not validated as an insertion.
+    if (isAnyFeatureTierRestricted(*this) && (replace_if_exists || !existing_id))
+    {
+        PendingAccessEntities pending;
+        pending[id] = entity;
+        /// A replacement drops the entity that holds the name, which need not be `id`.
+        if (existing_id && *existing_id != id)
+            pending[*existing_id] = nullptr;
+        checkFeatureTierForPendingAccessEntities(
+            *this, pending, /* current= */ {}, isShadowedInsertionUnlocked(*storage_for_insertion, *entity));
+        FailPointInjection::pauseFailPoint(FailPoints::access_control_pause_after_feature_tier_check);
+    }
+
+    return storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id);
 }
 
 bool AccessControl::checkNameCollisionInOtherStorage(
@@ -763,18 +774,32 @@ std::vector<UUID> AccessControl::insertInto(
     const String & storage_name, const std::vector<AccessEntityPtr> & entities, bool replace_if_exists, bool throw_if_exists)
 {
     auto storage = getStorageByName(storage_name);
-
-    /// Before inserting anything: an exception must not leave a prefix of a multi-entity `CREATE` in the storage.
-    for (const auto & entity : entities)
-        checkNameCollisionInOtherStorage(*storage, entity, /* throw_if_exists= */ true, /* conflicting_id= */ nullptr);
-
     std::vector<UUID> inserted_ids;
-    for (const auto & entity : entities)
+    try
     {
-        auto id = generateRandomID();
-        if (insertImpl(storage, id, entity, replace_if_exists, throw_if_exists, nullptr))
-            inserted_ids.push_back(id);
+        /// One lock for the check and the inserts, so that no other statement takes a name in between.
+        std::lock_guard lock{access_entities_mutex};
+
+        /// Before inserting anything: a name collision must not leave a prefix of a multi-entity `CREATE` in the storage.
+        for (const auto & entity : entities)
+            checkNameCollisionInOtherStorage(*storage, entity, /* throw_if_exists= */ true, /* conflicting_id= */ nullptr);
+
+        for (const auto & entity : entities)
+        {
+            auto id = generateRandomID();
+            if (insertUnlocked(storage, id, entity, replace_if_exists, throw_if_exists, nullptr))
+                inserted_ids.push_back(id);
+        }
     }
+    catch (...)
+    {
+        if (!inserted_ids.empty())
+            changes_notifier->sendNotifications();
+        throw;
+    }
+
+    if (!inserted_ids.empty())
+        changes_notifier->sendNotifications();
     return inserted_ids;
 }
 
