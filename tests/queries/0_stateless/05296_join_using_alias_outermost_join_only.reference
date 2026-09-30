@@ -1,0 +1,25 @@
+single JOIN: the alias is the key even when the left table has a column with the same name
+2	2	7
+inner JOIN of two: the left column is the key
+2	3	7
+2	0
+outermost JOIN of two: the alias is the key
+2	2	7
+inner USING JOIN below the aliased outermost USING key
+2	2	7
+three JOINs: inner keys from the left tables, the outermost key from the alias
+110	120	2	2	7
+WITH alias follows the same rule
+3
+2
+comma JOIN counts as a level
+2	3
+ARRAY JOIN above the JOIN is not a level: the JOIN stays outermost
+2	2	1
+2	2	2
+2	3	1
+a subquery has its own join tree
+2	2	7
+2	3
+the reported query: the projection refers to the right side of the inner JOIN
+a	x	3	2026-01-01 00:00:00

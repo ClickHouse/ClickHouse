@@ -6026,6 +6026,12 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     else if (join_node_typed.isUsingJoinExpression())
     {
         auto & join_using_list = join_node_typed.getJoinExpression()->as<ListNode &>();
+
+        /// The alias probe in `try_resolve_identifier_from_query_projection` below resolves a query whose join tree is the
+        /// already resolved left side of a JOIN; a USING list inside it holds columns instead of identifiers by then.
+        if (std::ranges::all_of(join_using_list.getNodes(), [](const auto & node) { return node->getNodeType() == QueryTreeNodeType::COLUMN; }))
+            return;
+
         std::unordered_set<std::string> join_using_identifiers;
 
         /// Set below when the identifier matched an alias other than a top-level projection alias
@@ -6131,6 +6137,17 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             return nullptr;
         };
 
+        /// The old analyzer rewrote a query with several JOINs into nested subqueries, so an alias of the query could
+        /// become a USING key only for the outermost JOIN. Inner JOINs resolve the key from the left table.
+        bool is_outermost_join = false;
+        if (const auto * scope_query_node = scope.scope_node ? scope.scope_node->as<QueryNode>() : nullptr)
+        {
+            IQueryTreeNode * join_tree_root = scope_query_node->getJoinTreeNode().get();
+            while (join_tree_root->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+                join_tree_root = join_tree_root->as<ArrayJoinNode &>().getTableExpressionNode().get();
+            is_outermost_join = join_tree_root == join_node.get();
+        }
+
         for (auto & join_using_node : join_using_list.getNodes())
         {
             non_top_level_alias_matched = false;
@@ -6160,9 +6177,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             /** With `analyzer_compatibility_join_using_top_level_identifier` alias in projection has higher priority than column from left table.
               * But if aliased expression cannot be resolved from left table, we get UNKNOW_IDENTIFIER error,
               * despite the fact that column from USING could be resolved from left table.
-              * It's compatible with a default behavior for old analyzer.
+              * It's compatible with a default behavior for old analyzer, which also never used an alias for an inner JOIN.
               */
-            if (settings[Setting::analyzer_compatibility_join_using_top_level_identifier])
+            if (settings[Setting::analyzer_compatibility_join_using_top_level_identifier] && is_outermost_join)
                 result_left_table_expression = try_resolve_identifier_from_query_projection(identifier_full_name, join_node_typed.getLeftTableExpressionNodeTyped(), scope);
 
             /// Such a USING key cannot ship to a remote server (a remote server re-resolves the key only from a top-level
@@ -6218,7 +6235,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             {
                 String extra_message;
                 const QueryNode * query_node = scope.scope_node ? scope.scope_node->as<QueryNode>() : nullptr;
-                if (!settings[Setting::analyzer_compatibility_join_using_top_level_identifier] && query_node)
+                if (!settings[Setting::analyzer_compatibility_join_using_top_level_identifier] && is_outermost_join && query_node)
                 {
                     if (auto matched_node = find_aliased_node_in_query(query_node, identifier_full_name))
                         extra_message = fmt::format(
