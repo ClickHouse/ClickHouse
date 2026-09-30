@@ -75,8 +75,7 @@ enum class MemorySourceColumnList : uint8_t
     Deferred,
 };
 
-/// What the source needs to evaluate the default expressions of the requested columns that a stored block lacks
-/// (the block was written before `ALTER TABLE ... ADD COLUMN`).
+/// What a source needs to evaluate the default expressions of requested columns that a block written before `ADD COLUMN` lacks.
 struct MemorySourceDefaults
 {
     StorageSnapshotPtr storage_snapshot;
@@ -89,7 +88,7 @@ struct MemorySourceDefaults
     };
 
     mutable std::mutex mutex;
-    /// Built on the first block that lacks a requested column with a default, so a read whose blocks all have them does not pay for it.
+    /// Built on the first block that lacks a requested column with a default.
     mutable ContextPtr context TSA_GUARDED_BY(mutex);
     mutable std::optional<NamesAndTypesList> stored_inputs TSA_GUARDED_BY(mutex);
     /// Parallel to `stored_inputs`: whether the column has a default expression.
@@ -284,9 +283,8 @@ private:
         result_columns = readColumns(src, physical_columns, MemorySourceColumnList::Physical, nullptr, src.rows(), read_bytes);
     }
 
-    /// Reads `columns` from the stored block, only the rows selected by `mask` (all rows if it is null), `num_rows` of them.
-    /// A column the block lacks gets its `DEFAULT` or `MATERIALIZED` expression evaluated over those rows, like `MergeTree`
-    /// does for a part without the column, or the default value of its type. Adds the size of what it materializes to `read_bytes`.
+    /// Reads `columns` from the stored block, the `num_rows` rows selected by `mask` (all rows if it is null). A column the
+    /// block lacks gets its `DEFAULT` or `MATERIALIZED` expression evaluated over those rows, or the default value of its type.
     Columns readColumns(
         const Block & src,
         const NamesAndTypesList & columns,
@@ -320,8 +318,7 @@ private:
         return result;
     }
 
-    /// Fills the null entries of `result` with the default expressions of their columns, evaluated over the rows of `src`
-    /// selected by `mask`.
+    /// Fills the null entries of `result` with the default expressions of their columns, evaluated over the rows selected by `mask`.
     void evaluateDefaults(
         const Block & src,
         const NamesAndTypesList & columns,
@@ -371,8 +368,7 @@ private:
                 ++i;
             }
 
-            /// The key determines the header of the evaluation: the column list, which of its columns are read, and which
-            /// stored inputs the header gets.
+            /// The key determines the header: the column list, which of its columns are read, and which stored inputs are provided.
             auto key = std::make_tuple(columns_id, is_missing, is_input_provided);
 
             if (auto cached = cache.evaluations.find(key); cached != cache.evaluations.end())
