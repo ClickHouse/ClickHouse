@@ -1606,7 +1606,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::RABBITMQ,
             .has_builtin_setting_fn = RabbitMQSettings::hasBuiltin,
-            .fill_engine_settings_fn = RabbitMQSettings::fillEngineSettingsColumns,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaults<RabbitMQSettings>,
         },
         Documentation{
             .description = R"DOCS_MD(

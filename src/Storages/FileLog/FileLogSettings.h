@@ -3,7 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
-#include <Columns/IColumn_fwd.h>
+#include <Storages/SettingDescription.h>
 
 namespace DB
 {
@@ -60,7 +60,7 @@ struct FileLogSettings
     void loadFromQuery(ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
-    static void fillEngineSettingsColumns(MutableColumns & columns);
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<FileLogSettingsImpl> impl;

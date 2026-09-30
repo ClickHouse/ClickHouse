@@ -1284,7 +1284,7 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_unique_key = true,
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
-        .fill_engine_settings_fn = MergeTreeSettings::fillEngineSettingsColumns,
+        .enumerate_engine_settings_fn = enumerateCompiledDefaults<MergeTreeSettings>,
     };
 
     factory.registerStorage("MergeTree", create, features, Documentation{

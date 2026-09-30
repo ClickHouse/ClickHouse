@@ -3,9 +3,9 @@
 #include <Core/FormatFactorySettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/FileLog/FileLogSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -83,8 +83,5 @@ bool FileLogSettings::hasBuiltin(std::string_view name)
     return FileLogSettingsImpl::hasBuiltin(name);
 }
 
-void FileLogSettings::fillEngineSettingsColumns(MutableColumns & columns)
-{
-    fillEngineSettingsColumnsFromImpl<FileLogSettingsImpl>(columns);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(FileLogSettings)
 }

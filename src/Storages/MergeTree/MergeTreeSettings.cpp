@@ -8,7 +8,6 @@
 #include <Core/MergeSelectorAlgorithm.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <Core/SettingsEnums.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -18,6 +17,7 @@
 #include <Parsers/isDiskFunction.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/NamePrompter.h>
@@ -3592,8 +3592,5 @@ bool MergeTreeSettings::isPartFormatSetting(const String & name)
     return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part" || name == "min_level_for_wide_part";
 }
 
-void MergeTreeSettings::fillEngineSettingsColumns(MutableColumns & columns)
-{
-    fillEngineSettingsColumnsFromImpl<MergeTreeSettingsImpl>(columns);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(MergeTreeSettings)
 }

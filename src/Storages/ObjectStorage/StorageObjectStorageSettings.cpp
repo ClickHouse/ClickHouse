@@ -5,8 +5,8 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -56,9 +56,6 @@ void StorageObjectStorageSettings::loadFromSettingsChanges(const SettingsChanges
     }
 }
 
-void StorageObjectStorageSettings::fillEngineSettingsColumns(MutableColumns & columns)
-{
-    fillEngineSettingsColumnsFromImpl<StorageObjectStorageSettingsImpl>(columns);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(StorageObjectStorageSettings)
 
 }

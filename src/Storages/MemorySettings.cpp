@@ -3,7 +3,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/MemorySettings.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 
@@ -97,9 +97,6 @@ bool MemorySettings::hasBuiltin(std::string_view name)
     return MemorySettingsImpl::hasBuiltin(name);
 }
 
-void MemorySettings::fillEngineSettingsColumns(MutableColumns & columns)
-{
-    fillEngineSettingsColumnsFromImpl<MemorySettingsImpl>(columns);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(MemorySettings)
 }
 

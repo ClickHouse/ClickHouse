@@ -3,9 +3,9 @@
 #include <Core/FormatFactorySettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/SetSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 
@@ -70,8 +70,5 @@ bool SetSettings::hasBuiltin(std::string_view name)
     return SetSettingsImpl::hasBuiltin(name);
 }
 
-void SetSettings::fillEngineSettingsColumns(MutableColumns & columns)
-{
-    fillEngineSettingsColumnsFromImpl<SetSettingsImpl>(columns);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(SetSettings)
 }

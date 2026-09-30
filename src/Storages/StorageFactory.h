@@ -6,6 +6,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/SettingDescription.h>
 #include <Storages/registerStorages.h>
 #include <Access/Common/AccessType.h>
 #include <unordered_map>
@@ -34,8 +35,8 @@ public:
     /// Used to validate if table settings belong to the engine or the query before the start of the query interpretation
     using HasBuiltinSettingFn = bool(std::string_view);
 
-    /// Function that fills system.engine_settings columns for a given engine
-    using FillEngineSettingsFn = void(*)(MutableColumns &);
+    /// Describes the settings of an engine for `system.engine_settings`
+    using EnumerateEngineSettingsFn = SettingDescriptions();
 
     struct Arguments
     {
@@ -85,7 +86,7 @@ public:
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
-        FillEngineSettingsFn fill_engine_settings_fn = nullptr;
+        EnumerateEngineSettingsFn * enumerate_engine_settings_fn = nullptr;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -124,7 +125,7 @@ public:
         .supports_sql_security = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
-        .fill_engine_settings_fn = nullptr,
+        .enumerate_engine_settings_fn = nullptr,
     }, Documentation documentation = {});
 
     const Storages & getAllStorages() const

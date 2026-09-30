@@ -3,10 +3,10 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/PostgreSQL/PostgreSQLSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
@@ -111,9 +111,6 @@ bool PostgreSQLSettings::hasBuiltin(std::string_view name)
     return PostgreSQLSettingsImpl::hasBuiltin(name);
 }
 
-void PostgreSQLSettings::fillEngineSettingsColumns(MutableColumns & columns)
-{
-    fillEngineSettingsColumnsFromImpl<PostgreSQLSettingsImpl>(columns);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(PostgreSQLSettings)
 
 }

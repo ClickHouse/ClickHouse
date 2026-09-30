@@ -943,7 +943,7 @@ void registerStorageTimeSeries(StorageFactory & factory)
         .supports_settings = true,
         .supports_schema_inference = true,
         .has_builtin_setting_fn = TimeSeriesSettings::hasBuiltin,
-        .fill_engine_settings_fn = TimeSeriesSettings::fillEngineSettingsColumns,
+        .enumerate_engine_settings_fn = enumerateCompiledDefaults<TimeSeriesSettings>,
     },
     Documentation{
         .description = R"DOCS_MD(

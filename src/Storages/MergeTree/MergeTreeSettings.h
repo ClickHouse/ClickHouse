@@ -9,6 +9,7 @@
 #include <Common/SettingsChanges.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn_fwd.h>
+#include <Storages/SettingDescription.h>
 
 #include <optional>
 
@@ -112,7 +113,7 @@ struct MergeTreeSettings
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;
-    static void fillEngineSettingsColumns(MutableColumns & columns);
+    SettingDescriptions enumerateSettings() const;
 
     void addToProgramOptionsIfNotPresent(boost::program_options::options_description & main_options, bool allow_repeated_settings);
 

@@ -5,10 +5,10 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 
 #include <unordered_set>
 
@@ -116,10 +116,7 @@ bool TimeSeriesSettings::hasBuiltin(std::string_view name)
     return TimeSeriesSettingsImpl::hasBuiltin(name);
 }
 
-void TimeSeriesSettings::fillEngineSettingsColumns(MutableColumns & columns)
-{
-    fillEngineSettingsColumnsFromImpl<TimeSeriesSettingsImpl>(columns);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(TimeSeriesSettings)
 
 void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
 {

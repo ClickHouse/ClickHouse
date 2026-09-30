@@ -2,7 +2,7 @@
 
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
-#include <Columns/IColumn_fwd.h>
+#include <Storages/SettingDescription.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -39,7 +39,7 @@ struct MemorySettings
     void applyChanges(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
-    static void fillEngineSettingsColumns(MutableColumns & columns);
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<MemorySettingsImpl> impl;

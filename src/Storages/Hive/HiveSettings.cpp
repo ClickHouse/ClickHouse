@@ -8,7 +8,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -96,9 +96,6 @@ bool HiveSettings::hasBuiltin(std::string_view name)
     return HiveSettingsImpl::hasBuiltin(name);
 }
 
-void HiveSettings::fillEngineSettingsColumns(MutableColumns & columns)
-{
-    fillEngineSettingsColumnsFromImpl<HiveSettingsImpl>(columns);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(HiveSettings)
 }
 #endif

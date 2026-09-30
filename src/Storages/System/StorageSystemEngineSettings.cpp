@@ -46,28 +46,27 @@ development and the expectations one might have when using them:
 
 void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, ContextPtr /*context*/, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    const auto & storages = StorageFactory::instance().getAllStorages();
-
-    for (const auto & [engine_name, creator] : storages)
+    for (const auto & [engine_name, creator] : StorageFactory::instance().getAllStorages())
     {
-        if (!creator.features.fill_engine_settings_fn)
+        if (!creator.features.enumerate_engine_settings_fn)
             continue;
 
-        /// Fill settings for this engine into temporary columns (without engine_name)
-        auto num_columns = res_columns.size();
-        MutableColumns setting_columns;
-        setting_columns.reserve(num_columns - 1);
-        for (size_t i = 1; i < num_columns; ++i)
-            setting_columns.push_back(res_columns[i]->cloneEmpty());
-
-        creator.features.fill_engine_settings_fn(setting_columns);
-
-        size_t num_rows = setting_columns[0]->size();
-        for (size_t row = 0; row < num_rows; ++row)
+        for (const auto & setting : creator.features.enumerate_engine_settings_fn())
         {
-            res_columns[0]->insert(engine_name);
-            for (size_t col = 1; col < num_columns; ++col)
-                res_columns[col]->insertFrom(*setting_columns[col - 1], row);
+            size_t col = 0;
+            res_columns[col++]->insert(engine_name);
+            res_columns[col++]->insert(setting.name);
+            res_columns[col++]->insert(setting.value);
+            res_columns[col++]->insert(setting.default_value);
+            res_columns[col++]->insert(setting.changed);
+            res_columns[col++]->insert(setting.comment);
+            res_columns[col++]->insertDefault(); // min (NULL)
+            res_columns[col++]->insertDefault(); // max (NULL)
+            res_columns[col++]->insert(Array{}); // disallowed_values
+            res_columns[col++]->insert(UInt64(0)); // readonly
+            res_columns[col++]->insert(setting.type);
+            res_columns[col++]->insert(setting.tier == SettingsTierType::OBSOLETE);
+            res_columns[col++]->insert(setting.tier);
         }
     }
 }

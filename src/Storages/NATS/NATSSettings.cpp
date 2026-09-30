@@ -3,9 +3,9 @@
 #include <Core/FormatFactorySettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/NATS/NATSSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
@@ -128,8 +128,5 @@ bool NATSSettings::hasBuiltin(std::string_view name)
     return NATSSettingsImpl::hasBuiltin(name);
 }
 
-void NATSSettings::fillEngineSettingsColumns(MutableColumns & columns)
-{
-    fillEngineSettingsColumnsFromImpl<NATSSettingsImpl>(columns);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(NATSSettings)
 }

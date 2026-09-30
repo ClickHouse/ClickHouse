@@ -2,7 +2,7 @@
 
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
-#include <Columns/IColumn_fwd.h>
+#include <Storages/SettingDescription.h>
 
 namespace DB
 {
@@ -30,7 +30,7 @@ struct RocksDBSettings
     void loadFromQuery(const ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
-    static void fillEngineSettingsColumns(MutableColumns & columns);
+    SettingDescriptions enumerateSettings() const;
     static void checkCanSet(std::string_view name, const Field & value);
 
 private:
