@@ -141,6 +141,7 @@ public:
     static const AtomMap atom_map;
 
     UInt64 getTotalRows() const { return total_rows; }
+    bool hasColumnStatistics() const { return !column_estimators.empty(); }
 
 private:
     friend class ColumnStatistics;
@@ -181,14 +182,20 @@ using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEst
 class ConditionSelectivityEstimatorBuilder
 {
 public:
-    explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
+    /// Require complete coverage only when the caller marks every selected part.
+    explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_, bool require_complete_part_statistics_ = false);
+    /// For data parts, add each part's statistics before marking the next part.
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
     void markDataPart(const DataPartPtr & data_part);
     ConditionSelectivityEstimatorPtr getEstimator() const;
+    /// Preserve an empty estimator as a cache entry for an exact part snapshot.
+    /// Callers must not pass it to the planner when it has no column statistics.
+    ConditionSelectivityEstimatorPtr getEstimatorForCache() const;
 
 private:
-    bool has_data = false;
+    const bool require_complete_part_statistics;
+    UInt64 current_part_rows = 0;
     ConditionSelectivityEstimatorPtr estimator;
 };
 

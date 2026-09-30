@@ -1017,10 +1017,10 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     /// sequence invalidates the full-set cache until a refresh publishes the new active snapshot.
     /// The copied shared pointer keeps the cached snapshot alive after the mutex is released.
     if (cached && !cached->isStale(parts))
-        return cached;
+        return cached->hasColumnStatistics() ? cached : nullptr;
 
     LOG_DEBUG(log, "Loading statistics");
-    ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
+    ConditionSelectivityEstimatorBuilder estimator_builder(local_context, /*require_complete_part_statistics_=*/ true);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
     for (const auto & part : parts)
     {
@@ -3580,7 +3580,7 @@ try
         }
     }
     LOG_DEBUG(log, "Refreshing statistics");
-    ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
+    ConditionSelectivityEstimatorBuilder estimator_builder(getContext(), /*require_complete_part_statistics_=*/ true);
     for (const DataPartPtr & data_part : data_parts)
     {
         auto parts_lock = readLockParts();
@@ -3590,7 +3590,7 @@ try
             estimator_builder.addStatistics(column_name, stat);
     }
     std::lock_guard<std::mutex> lock(stats_mutex);
-    cached_estimator = estimator_builder.getEstimator();
+    cached_estimator = estimator_builder.getEstimatorForCache();
     if (interval_seconds)
         refresh_stats_task->scheduleAfter(interval_seconds * 1000);
 }
