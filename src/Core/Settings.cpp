@@ -10494,8 +10494,8 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
     \
     DECLARE(Bool, promql_push_down_label_matchers, true, R"(
-Copies the label matchers of one side of a PromQL binary operator to the selectors of the other side for the labels the operator matches series by, so `a{job="x"} / on(job) b` reads only the series of `b` with `job="x"`.
-Series filtered out this way are not read, so a duplicate series among them no longer causes an error.
+Copies the label matchers of one side of a PromQL binary operator to the selectors of the other side for the labels the operator matches series by, so `b / on(job) a{job="x"}` reads only the series of `b` with `job="x"`.
+A matcher is not copied where the series it filters out could make Prometheus report duplicate series: into the "one" side of the operator unless it is an aggregation by the matched labels, and through a function or an operator unless its input is one metric selected by name.
 A copied matcher turns a selector of a whole metric into a filtered one, which can be slower on a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table with an `id` clustered by metric (the default) if the matcher keeps most series of the metric. Disable the setting for such queries.
 )", PRIVATE_PREVIEW, \
         {"26.10", false, true, "New setting to copy PromQL label matchers across binary operators."}) \

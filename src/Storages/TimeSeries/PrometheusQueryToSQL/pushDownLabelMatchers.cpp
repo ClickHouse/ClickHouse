@@ -1,11 +1,14 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/pushDownLabelMatchers.h>
 
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperatorCountValues.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperatorQuantile.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorAnd.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorOr.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorUnless.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionPredictLinear.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionQuantileOverTime.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentAggregationOperator.h>
 #include <algorithm>
 
 
@@ -115,6 +118,45 @@ namespace
         }
     }
 
+    /// Whether the series of the node come from one metric, so they stay different after the metric name is dropped.
+    bool hasSingleMetricName(const Node * node)
+    {
+        if (node->node_type == NodeType::InstantSelector)
+        {
+            const auto & matchers = static_cast<const PrometheusQueryTree::InstantSelector *>(node)->matchers;
+            return std::ranges::any_of(matchers, [](const Matcher & matcher)
+            {
+                return matcher.label_name == kMetricName && matcher.matcher_type == PrometheusQueryTree::MatcherType::EQ;
+            });
+        }
+        const auto * argument = getLabelPreservingArgument(node);
+        return argument && hasSingleMetricName(argument);
+    }
+
+    /// Whether filtering this side of the operator can't hide an error Prometheus gives for duplicate series.
+    /// Prometheus checks the "one" side for duplicates in every match group, so it's filtered only if it can't have any.
+    bool canFilterSide(const Node * side, const BinaryOperatorNode & binary_operator)
+    {
+        const auto & operator_name = binary_operator.operator_name;
+        if (isBinaryOperatorAnd(operator_name) || isBinaryOperatorUnless(operator_name))
+            return true;
+        const auto * one_side = binary_operator.group_right ? binary_operator.getLeftArgument() : binary_operator.getRightArgument();
+        if (side != one_side)
+            return true;
+
+        /// An aggregation by labels which are all matched on has one series in each match group.
+        if (side->node_type != NodeType::AggregationOperator)
+            return false;
+        const auto & aggregation = static_cast<const AggregationOperatorNode &>(*side);
+        if (!aggregation.by
+            || !(isOneArgumentAggregationOperator(aggregation.operator_name) || isAggregationOperatorQuantile(aggregation.operator_name)))
+            return false;
+        return std::ranges::all_of(aggregation.labels, [&](const String & label)
+        {
+            return label != kMetricName && contains(binary_operator.labels, label) == binary_operator.on;
+        });
+    }
+
     /// Returns the matchers which every series of the node's result satisfies, except the ones on the metric name.
     MatcherList getCommonMatchers(const Node * node)
     {
@@ -175,13 +217,21 @@ namespace
         {
             const auto & binary_operator = static_cast<const BinaryOperatorNode &>(*node);
             MatcherList matching = keepMatchingLabels(matchers, binary_operator);
-            addMatchers(binary_operator.getLeftArgument(), matching);
-            addMatchers(binary_operator.getRightArgument(), matching);
+            for (const auto * side : binary_operator.children)
+            {
+                if (canFilterSide(side, binary_operator))
+                    addMatchers(side, matching);
+            }
             return;
         }
 
         if (const auto * argument = getLabelPreservingArgument(node))
-            addMatchers(argument, matchers);
+        {
+            /// Functions and operators drop the metric name, and Prometheus fails if two series become the same then.
+            bool can_drop_metric_name = (node->node_type == NodeType::Function) || (node->node_type == NodeType::BinaryOperator);
+            if (!can_drop_metric_name || hasSingleMetricName(argument))
+                addMatchers(argument, matchers);
+        }
     }
 
     size_t countBinaryOperators(const Node * node)
@@ -205,8 +255,9 @@ namespace
         MatcherList left_matchers = keepMatchingLabels(getCommonMatchers(binary_operator.getLeftArgument()), binary_operator);
         MatcherList right_matchers = keepMatchingLabels(getCommonMatchers(binary_operator.getRightArgument()), binary_operator);
 
-        addMatchers(binary_operator.getRightArgument(), left_matchers);
-        if (!isBinaryOperatorUnless(binary_operator.operator_name))
+        if (canFilterSide(binary_operator.getRightArgument(), binary_operator))
+            addMatchers(binary_operator.getRightArgument(), left_matchers);
+        if (!isBinaryOperatorUnless(binary_operator.operator_name) && canFilterSide(binary_operator.getLeftArgument(), binary_operator))
             addMatchers(binary_operator.getLeftArgument(), right_matchers);
     }
 }

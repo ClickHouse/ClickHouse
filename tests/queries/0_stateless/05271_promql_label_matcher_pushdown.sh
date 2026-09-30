@@ -89,9 +89,13 @@ check fusion 'sum by (job) (req{job="api"}) / sum by (job) (req)' "$(b 'sum by (
 echo "-- a duplicate series in a matched group is still an error"
 $CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'req{instance=\"i3\"} / on(instance) lim', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
 
-echo "-- a duplicate series in a group the other side does not have is not read"
-$CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'req{instance=\"i1\"} / on(instance) lim', 100, 130, 10) ORDER BY tags"
-$CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'rate({__name__=~\"m1|m2\"}[30s]) / on(a) m1{a=\"1\"}', 100, 130, 10) ORDER BY tags"
+echo "-- as in Prometheus, a duplicate series on the one side or after dropping the metric name is an error in any group"
+$CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'req{instance=\"i1\"} / on(instance) lim', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
+$CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'req{instance=\"i1\"} / on(instance) group_left lim', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
+$CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'rate({__name__=~\"m1|m2\"}[30s]) / on(a) m1{a=\"1\"}', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
+
+echo "-- as in Prometheus, duplicate left series of a one-to-one match are an error only in a matched group"
+$CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'lim / on(instance) req{instance=\"i1\"}', 100, 130, 10) ORDER BY tags"
 
 # Prints the label values each selector filters by. EXPLAIN keeps the selector filters in the plan only for an empty table.
 function selectors()
@@ -107,6 +111,7 @@ function selectors()
 $CLIENT -n -q "DROP TABLE IF EXISTS prometheus_empty; CREATE TABLE prometheus_empty ENGINE = TimeSeries;"
 
 echo "-- the selectors read"
+selectors 'rate(lim[30s]) / on(instance) rate(req{instance="i1"}[30s])'
 selectors 'rate(req{instance="i1"}[30s]) / on(instance) rate(lim[30s])'
 selectors 'req{job="api"} / on(job, instance) lim{instance="i2"}'
 selectors 'req{job="api"} / ignoring(team) lim{team="t1"}'
@@ -118,13 +123,16 @@ selectors 'req{job="api"} or on(job, instance) lim'
 selectors 'label_replace(req{job="api"}, "job", "db", "", "") / on(job) lim'
 selectors 'count_values("job", req) * on(job) group_left info{job="api"}'
 selectors 'absent(req{instance="i3"}) / ignoring(team) lim{job="api"}'
+selectors 'lim / on(job) group_left sum by (job) (req{job="api"})'
+selectors '(-lim) / on(job) group_left sum by (job) (req{job="api"})'
+selectors 'abs(lim) / on(job) group_left sum by (job) (req{job="api"})'
 
 echo "-- more than 20 binary operators turn the pushdown off"
-selectors "req{job=\"api\"} / on(job) ($(printf 'lim + %.0s' {1..19})lim)"
-selectors "req{job=\"api\"} / on(job) ($(printf 'lim + %.0s' {1..20})lim)"
+selectors "($(printf 'lim + %.0s' {1..19})lim) / on(job) req{job=\"api\"}"
+selectors "($(printf 'lim + %.0s' {1..20})lim) / on(job) req{job=\"api\"}"
 
 echo "-- the setting turns the pushdown off"
-CLIENT="$CLIENT --promql_push_down_label_matchers=0" selectors 'rate(req{instance="i1"}[30s]) / on(instance) rate(lim[30s])'
+CLIENT="$CLIENT --promql_push_down_label_matchers=0" selectors 'rate(lim[30s]) / on(instance) rate(req{instance="i1"}[30s])'
 
 # Prints how many selectors the query reads and how many joins it makes.
 function reads()
