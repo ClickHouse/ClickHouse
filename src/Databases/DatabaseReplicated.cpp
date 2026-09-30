@@ -2636,7 +2636,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
 }
 
 /// Adds the inner tables of `table` that `dropInnerTableIfAny` enumerates, and their own inner tables, to `ids`.
-static void addInnerTableIds(const IStorage & table, const ContextPtr & context, std::vector<StorageID> & ids)
+static void addInnerTableIds(const IStorage & table, const ContextPtr & context, bool add_not_attached, std::vector<StorageID> & ids)
 {
     std::vector<StorageID> inner_ids;
     if (const auto * view = typeid_cast<const StorageMaterializedView *>(&table); view && view->hasInnerTable())
@@ -2661,10 +2661,10 @@ static void addInnerTableIds(const IStorage & table, const ContextPtr & context,
         if (auto inner_table = DatabaseCatalog::instance().tryGetTable(inner_id, context->getGlobalContext()))
         {
             ids.push_back(inner_table->getStorageID());
-            addInnerTableIds(*inner_table, context, ids);
+            addInnerTableIds(*inner_table, context, add_not_attached, ids);
         }
-        /// Not attached, e.g. detached by `SYSTEM RESTART REPLICA`.
-        else if (inner_id.hasUUID())
+        /// Not attached, e.g. after a failed `SYSTEM RESTART REPLICA`.
+        else if (add_not_attached)
             ids.push_back(std::move(inner_id));
     }
 }
@@ -2687,9 +2687,10 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
     waitDatabaseStarted();
 
     /// `CREATE OR REPLACE` drops the replaced table with its inner tables after this transaction is committed.
+    /// While `SYSTEM RESTART REPLICA` runs, a table that is not attached may be attached back, so its node is kept.
     std::vector<StorageID> replaced_inner_tables;
     if (exchange && txn->isInitialQuery() && txn->isCreateOrReplaceQuery())
-        addInnerTableIds(*getTable(to_table_name, local_context), local_context, replaced_inner_tables);
+        addInnerTableIds(*getTable(to_table_name, local_context), local_context, tables_being_restarted.load() == 0, replaced_inner_tables);
 
     std::lock_guard lock{metadata_mutex};
 
@@ -2726,14 +2727,17 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
                 txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, zk_statement_to, zkutil::CreateMode::Persistent));
         }
 
-        /// The node is missing for inner tables created by `CREATE OR REPLACE` before 26.5, and may belong to another table.
+        /// The node is missing for inner tables created by `CREATE OR REPLACE` before 26.5, and may belong to another
+        /// table, unless the id has no UUID: a refreshable view without `APPEND` identifies its target by name.
         for (const auto & inner_id : replaced_inner_tables)
         {
             String inner_metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(inner_id.table_name);
             String inner_statement;
             Coordination::Stat inner_stat;
-            if (zookeeper->tryGet(inner_metadata_zk_path, inner_statement, &inner_stat)
-                && parseQueryFromMetadataInZooKeeper(local_context, getDatabaseName(), zookeeper_path, inner_id.table_name, inner_statement)
+            if (!zookeeper->tryGet(inner_metadata_zk_path, inner_statement, &inner_stat))
+                continue;
+            if (!inner_id.hasUUID()
+                || parseQueryFromMetadataInZooKeeper(local_context, getDatabaseName(), zookeeper_path, inner_id.table_name, inner_statement)
                            ->as<const ASTCreateQuery &>().uuid == inner_id.uuid)
                 txn->addOp(zkutil::makeRemoveRequest(inner_metadata_zk_path, inner_stat.version));
         }
