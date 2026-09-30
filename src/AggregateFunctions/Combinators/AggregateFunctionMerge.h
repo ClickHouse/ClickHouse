@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/typeid_cast.h>
@@ -50,6 +51,14 @@ public:
     size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        /// Older servers write `-Merge` states at version 0 and do not announce it.
+        if (revision < DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION)
+            return 0;
+        return nested_func->getVersionFromRevision(revision);
     }
 
     DataTypePtr getStateType() const override
