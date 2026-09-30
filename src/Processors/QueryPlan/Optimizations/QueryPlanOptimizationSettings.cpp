@@ -6,8 +6,10 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Interpreters/Cluster.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 
@@ -63,6 +65,7 @@ namespace Setting
     extern const SettingsBool query_plan_propagate_predicate_across_join;
     extern const SettingsBool query_plan_fuse_filter_into_array_join;
     extern const SettingsBool query_plan_lower_array_join_function;
+    extern const SettingsBool legacy_array_join_function_nondeterministic_evaluation;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
@@ -191,6 +194,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         && from[Setting::use_primary_key];
     fuse_filter_into_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_fuse_filter_into_array_join];
     lower_array_join_function = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lower_array_join_function];
+    legacy_array_join_function_nondeterministic_evaluation = from[Setting::legacy_array_join_function_nondeterministic_evaluation];
     enable_lazy_columns_replication = from[Setting::enable_lazy_columns_replication];
     short_circuit_function_evaluation_disabled = from[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::DISABLE;
     push_down_volume_reducing_functions
@@ -222,7 +226,14 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     query_plan_optimize_join_order_randomize = from[Setting::query_plan_optimize_join_order_randomize];
     if (query_plan_optimize_join_order_randomize == 1)
     {
-        query_plan_optimize_join_order_randomize = randomSeed();
+        /// This constructor runs once per plan construction and one query builds several plans, one per replica
+        /// among them, so the seed has to come from a value that is stable across them. 0 and 1 are sentinels.
+        if (initial_query_id_.empty())
+            query_plan_optimize_join_order_randomize = randomSeed(); /// Internal or background plan: no query to follow.
+        else
+            query_plan_optimize_join_order_randomize = sipHash64(initial_query_id_);
+        if (query_plan_optimize_join_order_randomize <= 1)
+            query_plan_optimize_join_order_randomize = 2;
     }
     if (query_plan_optimize_join_order_randomize)
     {
@@ -395,6 +406,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
             && from->getSettingsRef()[Setting::parallel_replicas_local_plan]
             && from->getSettingsRef()[Setting::parallel_replicas_support_projection])
 {
+    distributed_plan_local_object = from->getDistributedPlanLocalObject();
     max_parallel_replicas = from->getSettingsRef()[Setting::max_parallel_replicas];
     if (auto cluster_name = from->getSettingsRef()[Setting::cluster_for_parallel_replicas].value; !cluster_name.empty())
     {
@@ -418,7 +430,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
     }
 #endif
 
-    enable_parallel_replicas
-        = from->canUseParallelReplicasOnInitiator() && from->getSettingsRef()[Setting::parallel_replicas_plan_based];
+    /// A foreign shard scope is declined later, in `ClusterProxy::canUseParallelReplicasOnInitiator`,
+    /// so it has to be declined here as well: otherwise the optimizations that only run for a local read
+    /// are skipped for a read that ends up being local anyway. The check is last because it resolves a cluster.
+    enable_parallel_replicas = from->canUseParallelReplicasOnInitiator()
+        && from->getSettingsRef()[Setting::parallel_replicas_plan_based]
+        && !ClusterProxy::hasForeignShardScope(from);
 }
 }
