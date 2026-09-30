@@ -1625,6 +1625,245 @@ TEST_P(CoordinationTest, TestGetChildrenWithStatsAndData)
     }
 }
 
+/// A watch set by a list request that returns children stats or data also fires when the data or ACL of a direct child
+/// changes. A plain list watch does not.
+TEST_P(CoordinationTest, TestListWithStatOrDataWatches)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    int64_t zxid = 0;
+
+    const int64_t watcher = 1;
+    const int64_t writer = 2;
+
+    using Events = std::vector<std::tuple<int64_t, String, Event>>;
+
+    /// Returns the watch notifications the request produced.
+    const auto run = [&](const ZooKeeperRequestPtr & request, int64_t session_id)
+    {
+        storage.preprocessRequest(request, session_id, 0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        Events events;
+        for (const auto & response_for_session : storage.processRequest(request, session_id, zxid))
+        {
+            if (const auto * watch_response = dynamic_cast<const ZooKeeperWatchResponse *>(response_for_session.response.get()))
+                events.emplace_back(response_for_session.session_id, watch_response->path, static_cast<Event>(watch_response->type));
+            else
+                EXPECT_EQ(response_for_session.response->error, Error::ZOK);
+        }
+        return events;
+    };
+
+    const auto create = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        return run(request, writer);
+    };
+
+    const auto remove = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperRemoveRequest>();
+        request->path = path;
+        return run(request, writer);
+    };
+
+    const auto set = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperSetRequest>();
+        request->path = path;
+        request->data = "new data";
+        return run(request, writer);
+    };
+
+    const auto set_acl = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperSetACLRequest>();
+        request->path = path;
+        request->acls = {ACL{.permissions = ACL::All, .scheme = "world", .id = "anyone"}};
+        return run(request, writer);
+    };
+
+    /// `FilteredListWithStatsAndData` with a watch.
+    const auto list_with = [&](const String & path, bool with_stat, bool with_data)
+    {
+        auto request = std::make_shared<ZooKeeperListRequest>();
+        request->path = path;
+        request->has_watch = true;
+        request->list_request_type = ListRequestType::ALL;
+        request->with_stat = with_stat;
+        request->with_data = with_data;
+        EXPECT_TRUE(run(request, watcher).empty());
+    };
+
+    /// `List` with a watch.
+    const auto list = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperListRequest>();
+        request->path = path;
+        request->has_watch = true;
+        EXPECT_TRUE(run(request, watcher).empty());
+    };
+
+    /// `ListWithOptions` with a watch, through the local read path.
+    const auto list_with_options = [&](const String & path, bool with_stat, bool with_data)
+    {
+        auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
+        request->path = path;
+        request->has_watch = true;
+        request->options.with_stat = with_stat;
+        request->options.with_data = with_data;
+        KeeperRequestsForSessions requests{KeeperRequestForSession{.session_id = watcher, .request = request}};
+        const auto responses = storage.processLocalRequests(requests, /*check_acl=*/true);
+        ASSERT_EQ(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Error::ZOK);
+    };
+
+    const Events children_changed{{watcher, "/dir", Event::CHILD}};
+
+    create("/dir");
+    create("/dir/child");
+    create("/dir/child/grandchild");
+
+    for (const auto [with_stat, with_data] : {std::pair{true, false}, std::pair{false, true}, std::pair{true, true}})
+    {
+        SCOPED_TRACE(std::string("with_stat = ") + (with_stat ? "true" : "false") + ", with_data = " + (with_data ? "true" : "false"));
+
+        list_with("/dir", with_stat, with_data);
+        EXPECT_EQ(set("/dir/child"), children_changed);
+        /// Fires once.
+        EXPECT_TRUE(set("/dir/child").empty());
+
+        list_with("/dir", with_stat, with_data);
+        EXPECT_EQ(set_acl("/dir/child"), children_changed);
+
+        list_with_options("/dir", with_stat, with_data);
+        EXPECT_EQ(set("/dir/child"), children_changed);
+    }
+
+    {
+        SCOPED_TRACE("Plain list watches");
+        list("/dir");
+        list_with("/dir", /*with_stat=*/false, /*with_data=*/false);
+        list_with_options("/dir", /*with_stat=*/false, /*with_data=*/false);
+        EXPECT_TRUE(set("/dir/child").empty());
+        EXPECT_TRUE(set_acl("/dir/child").empty());
+        EXPECT_EQ(create("/dir/child2"), children_changed);
+    }
+
+    {
+        SCOPED_TRACE("A list watch and a list watch with data of one session on one path are one watch");
+        list("/dir");
+        list_with("/dir", /*with_stat=*/true, /*with_data=*/true);
+        EXPECT_EQ(storage.getTotalWatchesCount(), 1);
+        EXPECT_EQ(set("/dir/child"), children_changed);
+        EXPECT_EQ(storage.getTotalWatchesCount(), 0);
+        EXPECT_TRUE(create("/dir/child3").empty());
+
+        list_with("/dir", /*with_stat=*/true, /*with_data=*/true);
+        list("/dir");
+        EXPECT_EQ(storage.getTotalWatchesCount(), 1);
+        EXPECT_EQ(create("/dir/child4"), children_changed);
+        EXPECT_EQ(storage.getTotalWatchesCount(), 0);
+    }
+
+    {
+        SCOPED_TRACE("SetWatches does not add a list watch next to a list watch with data");
+        list_with("/dir", /*with_stat=*/true, /*with_data=*/true);
+        auto set_watches = std::make_shared<ZooKeeperSetWatchesRequest>();
+        set_watches->zxid = zxid;
+        set_watches->child_watches = {"/dir"};
+        EXPECT_TRUE(run(set_watches, watcher).empty());
+        EXPECT_EQ(storage.getTotalWatchesCount(), 1);
+        EXPECT_EQ(set("/dir/child"), children_changed);
+        EXPECT_TRUE(create("/dir/child5").empty());
+    }
+
+    {
+        SCOPED_TRACE("Changes of the children set, below the children and of the listed node");
+        list_with("/dir", /*with_stat=*/true, /*with_data=*/true);
+        EXPECT_TRUE(create("/dir/child/grandchild2").empty());
+        EXPECT_TRUE(set("/dir/child/grandchild").empty());
+        EXPECT_TRUE(remove("/dir/child/grandchild2").empty());
+        EXPECT_TRUE(set("/dir").empty());
+        EXPECT_EQ(remove("/dir/child2"), children_changed);
+
+        create("/empty");
+        list_with("/empty", /*with_stat=*/true, /*with_data=*/true);
+        EXPECT_EQ(remove("/empty"), (Events{{watcher, "/empty", Event::DELETED}}));
+    }
+
+    {
+        SCOPED_TRACE("Children of the root");
+        list_with("/", /*with_stat=*/true, /*with_data=*/true);
+        EXPECT_TRUE(set("/").empty());
+        EXPECT_TRUE(set_acl("/").empty());
+        EXPECT_EQ(set("/dir"), (Events{{watcher, "/", Event::CHILD}}));
+    }
+
+    {
+        SCOPED_TRACE("Multi requests");
+        const auto subscription = std::make_shared<WatchCallback>([](const WatchResponse &) {});
+        const auto multi_read = std::make_shared<ZooKeeperMultiRequest>(
+            Requests{zkutil::makeListRequest("/dir", ListRequestType::ALL, /*with_stat=*/true, /*with_data=*/true, subscription)}, ACLs{});
+        EXPECT_TRUE(run(multi_read, watcher).empty());
+        const auto multi_write = std::make_shared<ZooKeeperMultiRequest>(Requests{zkutil::makeSetRequest("/dir/child", "data", -1)}, ACLs{});
+        EXPECT_EQ(run(multi_write, writer), children_changed);
+    }
+
+    {
+        SCOPED_TRACE("CheckWatch and RemoveWatch treat it as a children watch");
+        list_with("/dir", /*with_stat=*/true, /*with_data=*/true);
+
+        auto check_watch = std::make_shared<ZooKeeperCheckWatchRequest>();
+        check_watch->path = "/dir";
+        check_watch->type = CheckWatchRequest::CheckWatchType::CHILDREN;
+        EXPECT_TRUE(run(check_watch, watcher).empty());
+
+        auto remove_watch = std::make_shared<ZooKeeperRemoveWatchRequest>();
+        remove_watch->path = "/dir";
+        remove_watch->type = RemoveWatchRequest::WatchType::CHILDREN;
+        EXPECT_TRUE(run(remove_watch, watcher).empty());
+
+        EXPECT_TRUE(set("/dir/child").empty());
+    }
+
+    {
+        SCOPED_TRACE("A session gets each event once, however many of its watches match it");
+        create("/node");
+        auto exists = std::make_shared<ZooKeeperExistsRequest>();
+        exists->path = "/node";
+        exists->has_watch = true;
+        EXPECT_TRUE(run(exists, watcher).empty());
+        list_with("/node", /*with_stat=*/true, /*with_data=*/true);
+        EXPECT_EQ(remove("/node"), (Events{{watcher, "/node", Event::DELETED}}));
+
+        auto add_watch = std::make_shared<ZooKeeperAddWatchRequest>();
+        add_watch->path = "/dir";
+        add_watch->mode = AddWatchRequest::AddWatchMode::PERSISTENT;
+        EXPECT_TRUE(run(add_watch, watcher).empty());
+        list_with("/dir", /*with_stat=*/true, /*with_data=*/true);
+        EXPECT_EQ(create("/dir/child6"), children_changed);
+
+        auto remove_watch = std::make_shared<ZooKeeperRemoveWatchRequest>();
+        remove_watch->path = "/dir";
+        remove_watch->type = RemoveWatchRequest::WatchType::PERSISTENT;
+        EXPECT_TRUE(run(remove_watch, watcher).empty());
+    }
+
+    {
+        SCOPED_TRACE("Closing the session drops it");
+        list_with("/dir", /*with_stat=*/true, /*with_data=*/true);
+        EXPECT_EQ(storage.getTotalWatchesCount(), 1);
+        EXPECT_EQ(storage.getStorageStats().watched_paths_count, 1);
+        EXPECT_TRUE(run(std::make_shared<ZooKeeperCloseRequest>(), watcher).empty());
+        EXPECT_EQ(storage.getTotalWatchesCount(), 0);
+        EXPECT_TRUE(set("/dir/child").empty());
+    }
+}
+
 TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
 {
     using namespace DB;

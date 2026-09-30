@@ -58,6 +58,7 @@ public:
         PERSISTENT_WATCH,
         PERSISTENT_LIST_WATCH,
         PERSISTENT_RECURSIVE_WATCH,
+        LIST_WITH_DATA_WATCH,
     };
 
     struct WatchInfo
@@ -146,6 +147,8 @@ public:
     /// Currently active watches (node_path -> subscribed sessions)
     Watches watches;
     Watches list_watches; /// Watches for 'list' request (watches on children).
+    /// Watches of list requests that returned children stats or data. They also fire on a change of a child's data or ACL.
+    Watches list_with_data_watches;
     Watches persistent_watches;
     Watches persistent_list_watches;
     Watches persistent_recursive_watches;
@@ -341,6 +344,8 @@ public:
 
     std::pair<KeeperResponsesForSessions, Int64> processWatchesImpl(
         std::string_view path, Coordination::Event event_type);
+
+    std::pair<KeeperResponsesForSessions, Int64> processACLChangeWatchesImpl(std::string_view path);
 
     void prepareAddAuth(std::shared_ptr<KeeperStorage::AuthID> new_auth, int64_t session_id);
 };
