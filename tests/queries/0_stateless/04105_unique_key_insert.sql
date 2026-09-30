@@ -48,7 +48,7 @@ INSERT INTO uk_many_parts SELECT 8 AS id, 'v_8' AS v;
 INSERT INTO uk_many_parts SELECT 9 AS id, 'v_9' AS v;
 
 INSERT INTO uk_many_parts SELECT * FROM values((0, 'new_oldest'), (4, 'new_4'), (9, 'new_9')) SETTINGS log_queries = 1;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT 'oldest_hits', ProfileEvents['UniqueKeyConflictOverwriteRows'] FROM system.query_log
 WHERE event_date >= yesterday()
