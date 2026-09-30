@@ -559,6 +559,22 @@ void DataPartStorageOnDiskPacked::commitTransaction()
     is_precommitted = false;
 }
 
+void DataPartStorageOnDiskPacked::undoTransaction()
+{
+    if (!transaction || (!writer && !is_precommitted))
+        return;
+
+    if (has_shared_transaction)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot undo shared transaction");
+
+    transaction->undo();
+    transaction.reset();
+    /// Release the writer as the commit paths do; otherwise beginTransaction's `transaction || writer`
+    /// guard would reject the next transaction on this same live storage after a non-precommitted undo.
+    writer.reset();
+    is_precommitted = false;
+}
+
 #if CLICKHOUSE_CLOUD
 TransactionCommitOutcomeVariant DataPartStorageOnDiskPacked::tryCommitTransaction(const TransactionCommitOptionsVariant & options)
 {
@@ -588,21 +604,6 @@ TransactionCommitOutcomeVariant DataPartStorageOnDiskPacked::tryCommitTransactio
     return result;
 }
 
-void DataPartStorageOnDiskPacked::undoTransaction()
-{
-    if (!transaction || (!writer && !is_precommitted))
-        return;
-
-    if (has_shared_transaction)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot commit shared transaction");
-
-    transaction->undo();
-    transaction.reset();
-    /// Release the writer as the commit paths do; otherwise beginTransaction's `transaction || writer`
-    /// guard would reject the next transaction on this same live storage after a non-precommitted undo.
-    writer.reset();
-    is_precommitted = false;
-}
 #endif
 
 String DataPartStorageOnDiskPacked::getRelativeDataPath() const

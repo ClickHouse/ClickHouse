@@ -7671,6 +7671,24 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
             source_part->info.isPatch() ? std::optional(source_part->getPatchPartIndex().cloneEmpty()) : std::nullopt);
     }
 
+    /// If anything below throws before the part storage transaction is committed, undo it (best-effort).
+    /// Otherwise, on object storage, the already uploaded blobs would be stranded: the part directory does not exist
+    /// until the commit, so the destructor of the temporary part finds nothing to remove.
+    scope_guard undo_empty_covering_part_guard = [&]
+    {
+        if (!empty_covering_part)
+            return;
+
+        try
+        {
+            empty_covering_part->getDataPartStorage().undoTransaction();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("while undoing the transaction of the empty covering part {}", empty_covering_part->name));
+        }
+    };
+
     /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
     removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
 
@@ -7682,6 +7700,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         renameTempPartAndAdd(empty_covering_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
         empty_covering_part->getDataPartStorage().commitTransaction();
         rollback_tx_guard.reset();
+        undo_empty_covering_part_guard.release();
 
         empty_covering_part->remove_time.store(0, std::memory_order_relaxed);
         /// Such parts are always local, they don't participate in replication, they don't have shared blobs.
