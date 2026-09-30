@@ -18,6 +18,7 @@
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ProjectionMetadataValidation.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
@@ -68,8 +69,6 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsBool use_legacy_to_time;
-    extern const SettingsBool allow_projection_column_list_in_replicated_metadata;
-    extern const SettingsUInt64 distributed_ddl_entry_format_version;
 }
 
 namespace ServerSetting
@@ -91,66 +90,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-void checkProjectionColumnListReplicationCompatibility(
-    const ASTAlterQuery & alter, const StoragePtr & table, const DatabasePtr & database, const ContextPtr & context)
-{
-    if (context->getSettingsRef()[Setting::allow_projection_column_list_in_replicated_metadata]
-        || context->isRecoveryFromStoredMetadata()
-        || context->isDDLOrOnClusterInternal()
-        || context->getClientInfo().is_replicated_database_internal)
-        return;
-
-    if (const auto metadata_txn = context->getZooKeeperMetadataTransaction();
-        metadata_txn && !metadata_txn->isInitialQuery())
-        return;
-#if CLICKHOUSE_CLOUD
-    if (context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context))
-        return;
-#endif
-
-    /// Reject before an ALTER with new syntax enters a replicated or distributed DDL log.
-    if (alter.cluster.empty() && !(table && table->supportsReplication())
-        && !(database && (database->getEngineName() == "Replicated" || database->getEngineName() == "Shared")))
-        return;
-
-    for (const auto & child : alter.command_list->children)
-    {
-        const auto & command = child->as<const ASTAlterCommand &>();
-        /// Even an ADD IF NOT EXISTS that would be a no-op must be screened: the SQL text
-        /// itself is persisted in a replicated/distributed DDL log and older servers cannot parse it.
-        if (command.type == ASTAlterCommand::ADD_PROJECTION || command.type == ASTAlterCommand::MODIFY_PROJECTION)
-        {
-            const auto & declaration = command.projection_decl->as<const ASTProjectionDeclaration &>();
-            if (declaration.columns)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Projection column lists in replicated metadata require setting "
-                    "allow_projection_column_list_in_replicated_metadata = 1. "
-                    "Upgrade every replica before enabling it");
-        }
-    }
-}
-
-void checkProjectionCodecOldDistributedDDLCompatibility(
-    const ASTAlterQuery & alter, const ContextPtr & context)
-{
-    /// Format 1 stores no query settings. Codec validation on the worker would therefore use its
-    /// own defaults, even when the initiator explicitly allowed a suspicious or gated codec.
-    if (context->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value != DDLLogEntry::OLDEST_VERSION)
-        return;
-
-    for (const auto & child : alter.command_list->children)
-    {
-        const auto & command = child->as<const ASTAlterCommand &>();
-        /// MODIFY PROJECTION can only change WITH SETTINGS. Its codec declaration restates
-        /// already accepted metadata and is not validated with the worker's settings.
-        if (command.type == ASTAlterCommand::ADD_PROJECTION && command.projection_decl
-            && hasDeclaredProjectionColumnCodec(command.projection_decl->as<const ASTProjectionDeclaration &>()))
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Projection column CODEC declarations in ON CLUSTER DDL require "
-                "distributed_ddl_entry_format_version >= 2, because version 1 does not carry codec validation settings");
-    }
-}
 
 void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
 {
@@ -547,11 +486,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
         if (!skip_access_check)
             getContext()->checkAccess(getRequiredAccess(table));
-        checkProjectionColumnListReplicationCompatibility(
+        validateProjectionMetadataAdmission(
             alter, table,
             table_id ? DatabaseCatalog::instance().tryGetDatabase(table_id.database_name) : nullptr,
             getContext());
-        checkProjectionCodecOldDistributedDDLCompatibility(alter, getContext());
+        validateProjectionCodecOldDistributedDDLAdmission(alter, getContext());
 
         /// Substitute the database of the altered table into table functions that use the current database
         /// implicitly, e.g. `merge('tables_regexp')` in a mutation, so that they read the same tables
@@ -577,7 +516,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    checkProjectionColumnListReplicationCompatibility(alter, table, database, getContext());
+    validateProjectionMetadataAdmission(alter, table, database, getContext());
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());

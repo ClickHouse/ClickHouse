@@ -1083,6 +1083,41 @@ ASTs ProjectionsDescription::getDefinitionsInDeclarationOrder() const
     return result;
 }
 
+bool hasSameUnavailableProjectionBody(const ASTProjectionDeclaration & old_declaration, const ASTProjectionDeclaration & new_declaration)
+{
+    const auto same_ast = [](const IAST * old_ast, const IAST * new_ast)
+    {
+        if (!old_ast || !new_ast)
+            return old_ast == new_ast;
+        return old_ast->formatIgnoringRedundantParentheses()
+            == new_ast->formatIgnoringRedundantParentheses();
+    };
+
+    return old_declaration.name == new_declaration.name
+        && same_ast(old_declaration.query, new_declaration.query)
+        && same_ast(old_declaration.index, new_declaration.index)
+        && same_ast(old_declaration.type, new_declaration.type)
+        && same_ast(old_declaration.columns, new_declaration.columns);
+}
+
+void validatePreservedUnavailableProjections(const ProjectionsDescription & old_projections, const ProjectionsDescription & new_projections)
+{
+    const auto & old_unavailable = old_projections.getUnavailableDefinitions();
+    for (const auto & definition : new_projections.getUnavailableDefinitions())
+    {
+        const auto & declaration = definition->as<const ASTProjectionDeclaration &>();
+        const bool preserved = std::ranges::any_of(old_unavailable, [&](const ASTPtr & old_definition)
+        {
+            return hasSameUnavailableProjectionBody(old_definition->as<const ASTProjectionDeclaration &>(), declaration);
+        });
+        if (!preserved)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot preserve unavailable projection {} after changing its declaration without analysis",
+                backQuote(declaration.name));
+    }
+}
+
 ProjectionsDescription ProjectionsDescription::parse(
     const String & str,
     const ColumnsDescription & columns,
@@ -1110,23 +1145,12 @@ ProjectionsDescription ProjectionsDescription::parse(
             /// from stored metadata. A settings-only change may alter `WITH SETTINGS`, but the
             /// projection body must be unchanged; a new invalid body must still fail replication.
             const auto & declaration = projection_ast->as<const ASTProjectionDeclaration &>();
-            const auto same_ast = [](const IAST * old_ast, const IAST * new_ast)
-            {
-                if (!old_ast || !new_ast)
-                    return old_ast == new_ast;
-                return old_ast->formatIgnoringRedundantParentheses()
-                    == new_ast->formatIgnoringRedundantParentheses();
-            };
             const bool was_unavailable = known_unavailable && std::ranges::any_of(
                 known_unavailable->unavailable,
                 [&](const ASTPtr & old_definition)
                 {
                     const auto & old = old_definition->as<const ASTProjectionDeclaration &>();
-                    return old.name == declaration.name
-                        && same_ast(old.query, declaration.query)
-                        && same_ast(old.index, declaration.index)
-                        && same_ast(old.type, declaration.type)
-                        && same_ast(old.columns, declaration.columns);
+                    return hasSameUnavailableProjectionBody(old, declaration);
                 });
             if (!was_unavailable)
                 throw;
@@ -1269,6 +1293,14 @@ Names ProjectionsDescription::getUnavailableNames() const
     return names;
 }
 
+bool ProjectionsDescription::isUnavailable(const String & projection_name) const
+{
+    return std::ranges::any_of(unavailable, [&](const ASTPtr & definition_ast)
+    {
+        return definition_ast->as<const ASTProjectionDeclaration &>().name == projection_name;
+    });
+}
+
 void ProjectionsDescription::replace(ProjectionDescription && projection)
 {
     auto it = map.find(projection.name);
@@ -1280,6 +1312,28 @@ void ProjectionsDescription::replace(ProjectionDescription && projection)
             getHintsMessage(projection.name));
 
     *it->second = std::move(projection);
+}
+
+void ProjectionsDescription::replaceUnavailableSettings(const String & projection_name, const ASTPtr & with_settings)
+{
+    const auto it = std::ranges::find_if(unavailable, [&](const ASTPtr & old_definition)
+    {
+        return old_definition->as<const ASTProjectionDeclaration &>().name == projection_name;
+    });
+    if (it == unavailable.end())
+        throw Exception(
+            ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
+            "There is no unavailable projection {} in table{}",
+            projection_name,
+            getHintsMessage(projection_name));
+
+    auto updated_definition = (*it)->clone();
+    auto & updated_declaration = updated_definition->as<ASTProjectionDeclaration &>();
+    if (with_settings)
+        updated_definition->setOrReplace(updated_declaration.with_settings, with_settings->clone());
+    else if (updated_declaration.with_settings)
+        updated_definition->reset(updated_declaration.with_settings);
+    *it = std::move(updated_definition);
 }
 
 VectorWithMemoryTracking<String> ProjectionsDescription::getAllRegisteredNames() const

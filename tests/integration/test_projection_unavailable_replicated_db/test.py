@@ -127,9 +127,19 @@ def test_replay_updates_settings_of_unavailable_projection(started_cluster):
         node2.restart_clickhouse()
         assert node2.query(projection_count).strip() == "0"
 
+        error = node2.query_and_get_error(
+            "ALTER TABLE r_settings.t MODIFY PROJECTION IF EXISTS pp "
+            "(SELECT b, a ORDER BY 1, 2) WITH SETTINGS (index_granularity = 64)"
+        )
+        assert "Cannot modify unavailable projection" in error
+
         node1.query(
             "ALTER TABLE r_settings.t MODIFY PROJECTION pp "
             "(SELECT b, a ORDER BY 1, 2) WITH SETTINGS (index_granularity = 128)"
+        )
+        node1.query(
+            "ALTER TABLE r_settings.t MODIFY PROJECTION IF EXISTS pp "
+            "(SELECT b, a ORDER BY 1, 2) WITH SETTINGS (index_granularity = 256)"
         )
         node1.query("ALTER TABLE r_settings.t MODIFY COMMENT 'settings_replayed'")
         assert_eq_with_retry(
@@ -139,7 +149,7 @@ def test_replay_updates_settings_of_unavailable_projection(started_cluster):
             "settings_replayed",
         )
         assert node2.query(projection_count).strip() == "0"
-        assert "index_granularity = 128" in node2.query(
+        assert "index_granularity = 256" in node2.query(
             "SHOW CREATE TABLE r_settings.t"
         )
     finally:
@@ -147,4 +157,57 @@ def test_replay_updates_settings_of_unavailable_projection(started_cluster):
         node2.restart_clickhouse()
 
     assert node2.query(projection_count).strip() == "1"
-    assert "index_granularity = 128" in node2.query("SHOW CREATE TABLE r_settings.t")
+    assert "index_granularity = 256" in node2.query("SHOW CREATE TABLE r_settings.t")
+
+
+def test_replay_preserves_canonical_codec_body_of_unavailable_projection(started_cluster):
+    for replica in (node1, node2):
+        replica.copy_file_to_container(POSITIONAL_XML_SOURCE, POSITIONAL_XML)
+        replica.restart_clickhouse()
+        replica.query("DROP DATABASE IF EXISTS r_codec_settings SYNC")
+        replica.query(
+            "CREATE DATABASE r_codec_settings ENGINE = Replicated("
+            "'/test/projection_unavailable_codec_settings', 'shard1', '{replica}')"
+        )
+
+    projection_count = (
+        "SELECT count() FROM system.projections "
+        "WHERE database = 'r_codec_settings' AND table = 't'"
+    )
+    node1.query(
+        "CREATE TABLE r_codec_settings.t (a UInt64, "
+        "PROJECTION pp (a UInt64 CODEC(Delta)) AS (SELECT a ORDER BY 1)) "
+        "ENGINE = MergeTree ORDER BY a",
+        settings={"allow_projection_column_list_in_replicated_metadata": 1},
+    )
+    assert_eq_with_retry(node2, projection_count, "1")
+    assert "Delta(8)" in node2.query("SHOW CREATE TABLE r_codec_settings.t")
+
+    node2.exec_in_container(["rm", POSITIONAL_XML])
+    try:
+        node2.restart_clickhouse()
+        assert node2.query(projection_count).strip() == "0"
+
+        node1.query(
+            "ALTER TABLE r_codec_settings.t MODIFY PROJECTION pp "
+            "(a UInt64 CODEC(Delta)) AS (SELECT a ORDER BY 1) "
+            "WITH SETTINGS (index_granularity = 128)",
+            settings={"allow_projection_column_list_in_replicated_metadata": 1},
+        )
+        node1.query("ALTER TABLE r_codec_settings.t MODIFY COMMENT 'codec_settings_replayed'")
+        assert_eq_with_retry(
+            node2,
+            "SELECT comment FROM system.tables "
+            "WHERE database = 'r_codec_settings' AND name = 't'",
+            "codec_settings_replayed",
+        )
+        assert node2.query(projection_count).strip() == "0"
+        restored_definition = node2.query("SHOW CREATE TABLE r_codec_settings.t")
+        assert "Delta(8)" in restored_definition
+        assert "index_granularity = 128" in restored_definition
+    finally:
+        node2.copy_file_to_container(POSITIONAL_XML_SOURCE, POSITIONAL_XML)
+        node2.restart_clickhouse()
+
+    assert node2.query(projection_count).strip() == "1"
+    assert "index_granularity = 128" in node2.query("SHOW CREATE TABLE r_codec_settings.t")

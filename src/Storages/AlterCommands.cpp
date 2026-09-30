@@ -31,6 +31,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProjectionMetadataValidation.h>
 #include <Interpreters/DDLTask.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
@@ -121,23 +122,6 @@ namespace MergeTreeSetting
 
 namespace
 {
-
-bool shouldValidateProjectionCodecs(const ContextPtr & context)
-{
-    /// A `Replicated` database and Shared Catalog execute an `ALTER` again on secondary replicas.
-    /// The initiator already accepted session-gated declarations, and a secondary may not have the
-    /// same session settings.
-    const auto metadata_txn = context->getZooKeeperMetadataTransaction();
-    if (metadata_txn && !metadata_txn->isInitialQuery())
-        return false;
-
-#if CLICKHOUSE_CLOUD
-    if (context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context))
-        return false;
-#endif
-
-    return true;
-}
 
 using ProjectionAliases = std::unordered_multimap<String, const IAST *>;
 
@@ -2059,6 +2043,22 @@ void AlterCommand::apply(
     {
         if (!metadata.projections.has(projection_name))
         {
+            const bool is_unavailable = metadata.projections.isUnavailable(projection_name);
+            /// The initiator validated this settings-only change. A secondary may have retained
+            /// the old declaration as unavailable, so update that AST without analyzing it here.
+            if (is_unavailable && isSecondaryProjectionMetadataReplay(context))
+            {
+                const auto & declaration = projection_decl->as<const ASTProjectionDeclaration &>();
+                metadata.projections.replaceUnavailableSettings(projection_name, declaration.with_settings);
+                return;
+            }
+
+            if (is_unavailable)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot modify unavailable projection {}: restore its analysis or drop it before changing its settings",
+                    backQuote(projection_name));
+
             /// With `IF EXISTS` the whole command must be a no-op
             if (if_exists)
                 return;
@@ -2674,26 +2674,16 @@ bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & met
     return false;
 }
 
-void AlterCommands::apply(
-    StorageInMemoryMetadata & metadata,
-    ContextPtr context,
-    bool share_nested_offsets,
-    const MergeTreeSettings * settings_defaults) const
+namespace
 {
-    if (!prepared)
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Alter commands is not prepared. Cannot apply. It's a bug");
 
-    auto metadata_copy = metadata;
-
-    for (const AlterCommand & command : *this)
-    {
-        if (!command.ignore)
-            command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns, settings_defaults);
-    }
-
-    const bool columns_changed = metadata_copy.columns != metadata.columns;
-
-    if (columns_changed)
+/// Validate the old-to-proposed column transition before the candidate metadata is published.
+/// Unavailable definitions retain their raw AST, so their bindings need independent evidence.
+void validateUnavailableProjectionColumnTransition(
+    const StorageInMemoryMetadata & metadata,
+    const StorageInMemoryMetadata & metadata_copy)
+{
+    if (metadata_copy.columns != metadata.columns)
     {
         /// An unavailable projection cannot be rebuilt here. Reject changes that the stored
         /// query proves will break when it can be analyzed again: a missing referenced column,
@@ -2775,6 +2765,31 @@ void AlterCommands::apply(
         for (const auto & definition_ast : metadata_copy.projections.getUnavailableDefinitions())
             check_projection(definition_ast);
     }
+}
+
+}
+
+void AlterCommands::apply(
+    StorageInMemoryMetadata & metadata,
+    ContextPtr context,
+    bool share_nested_offsets,
+    const MergeTreeSettings * settings_defaults) const
+{
+    if (!prepared)
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Alter commands is not prepared. Cannot apply. It's a bug");
+
+    auto metadata_copy = metadata;
+
+    for (const AlterCommand & command : *this)
+    {
+        if (!command.ignore)
+            command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns, settings_defaults);
+    }
+
+    const bool columns_changed = metadata_copy.columns != metadata.columns;
+
+    validatePreservedUnavailableProjections(metadata.projections, metadata_copy.projections);
+    validateUnavailableProjectionColumnTransition(metadata, metadata_copy);
 
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
@@ -3098,7 +3113,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         projection_names.insert(projection_name);
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
 
-    const bool validate_projection_codecs = shouldValidateProjectionCodecs(context);
+    const bool validate_projection_codecs = shouldValidateProjectionCodecsOnAlter(context);
 
     for (size_t i = 0; i < size(); ++i)
     {

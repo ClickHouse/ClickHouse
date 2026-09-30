@@ -227,6 +227,9 @@ struct ProjectionsDescription : public IHints<>
     /// Replace an existing projection in place, keeping its position (for `ALTER TABLE ... MODIFY PROJECTION`).
     void replace(ProjectionDescription && projection);
 
+    /// Apply a committed settings-only change while retaining the stored declaration body and position.
+    void replaceUnavailableSettings(const String & projection_name, const ASTPtr & with_settings);
+
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     /// Declarations that could not be analyzed when the table was loaded at server startup. They are kept
@@ -236,6 +239,7 @@ struct ProjectionsDescription : public IHints<>
     const ASTs & getUnavailableDefinitions() const { return unavailable; }
     Names getUnavailableNames() const;
     bool hasUnavailable() const { return !unavailable.empty(); }
+    bool isUnavailable(const String & projection_name) const;
 
     /// Preserve the interleaving of analyzed and unavailable declarations after rebuilding the
     /// analyzed descriptions for an ALTER.
@@ -251,5 +255,10 @@ private:
     ASTs unavailable;
     Names declaration_order;
 };
+
+/// A declaration that cannot be analyzed may only be carried across a metadata transition
+/// when its body is the same. Projection settings may change independently.
+bool hasSameUnavailableProjectionBody(const ASTProjectionDeclaration & old_declaration, const ASTProjectionDeclaration & new_declaration);
+void validatePreservedUnavailableProjections(const ProjectionsDescription & old_projections, const ProjectionsDescription & new_projections);
 
 }

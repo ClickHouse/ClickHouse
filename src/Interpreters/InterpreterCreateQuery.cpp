@@ -76,6 +76,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ProjectionMetadataValidation.h>
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -138,7 +139,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
-    extern const SettingsBool allow_projection_column_list_in_replicated_metadata;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
@@ -981,20 +981,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// so include it explicitly. Format 3+ distributed DDL was normalized on the initiator.
         /// Format 2 ships the original query and codec settings, so validate it on the worker.
         /// Format 1 cannot ship codec settings and rejects fresh codec declarations before enqueue.
-        const bool normalized_distributed_replay = !is_restore_from_backup
-            && getContext()->isDDLOrOnClusterInternal()
-            && getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value
-                >= DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION;
-        bool validate_projection_codecs = (isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup)
-            && !getContext()->isRecoveryFromStoredMetadata()
-            && !normalized_distributed_replay
-            && !getContext()->getClientInfo().is_replicated_database_internal;
-        if (const auto metadata_txn = getContext()->getZooKeeperMetadataTransaction())
-            validate_projection_codecs &= metadata_txn->isInitialQuery();
-#if CLICKHOUSE_CLOUD
-        if (getContext()->getClientInfo().is_shared_catalog_internal)
-            validate_projection_codecs &= SharedDatabaseCatalog::isInitialQuery(getContext());
-#endif
+        const bool validate_projection_codecs = shouldValidateProjectionCodecsOnCreate(
+            getContext(), mode, create.attach_short_syntax, is_restore_from_backup);
 
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
@@ -1870,161 +1858,6 @@ void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create,
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies);
 }
 
-bool isReplicated(const ASTStorage & storage)
-{
-    if (!storage.engine)
-        return false;
-    const auto & storage_name = storage.engine->name;
-    return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
-}
-
-bool isStorageReplicated(const ASTCreateQuery & create)
-{
-    if (create.storage && isReplicated(*create.storage))
-        return true;
-
-    if (create.targets)
-    {
-        for (const auto & inner_table_engine : create.targets->getInnerEngines())
-        {
-            if (isReplicated(*inner_table_engine))
-                return true;
-        }
-    }
-
-    return false;
-}
-
-void checkProjectionColumnListReplicationCompatibility(
-    const ASTCreateQuery & create,
-    const ContextPtr & context,
-    const DatabasePtr & database,
-    bool is_fresh_definition,
-    bool copies_source_projections,
-    const ProjectionsDescription * copied_projections = nullptr)
-{
-    /// Workers replay the DDL entry with their own settings when the old entry format is used.
-    /// The initiator must check the syntax before enqueueing it, not the worker during replay.
-    if (!is_fresh_definition
-        || context->isRecoveryFromStoredMetadata()
-        || context->isDDLOrOnClusterInternal()
-        || context->getClientInfo().is_replicated_database_internal)
-        return;
-
-    if (const auto metadata_txn = context->getZooKeeperMetadataTransaction();
-        metadata_txn && !metadata_txn->isInitialQuery())
-        return;
-#if CLICKHOUSE_CLOUD
-    if (context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context))
-        return;
-#endif
-
-    const bool reject_column_list = !context->getSettingsRef()[Setting::allow_projection_column_list_in_replicated_metadata]
-        && (isStorageReplicated(create) || !create.cluster.empty()
-            || (database && (database->getEngineName() == "Replicated" || database->getEngineName() == "Shared")));
-    const bool reject_old_format_codec = !create.cluster.empty()
-        && context->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value == DDLLogEntry::OLDEST_VERSION
-        && !copies_source_projections;
-    /// An old-format worker reads the source table itself. Its unavailable projections cannot
-    /// be copied into a distributed CREATE, even though no codec setting needs to be forwarded.
-    const bool reject_unavailable_copy = copies_source_projections && !create.cluster.empty() && !copied_projections;
-    if (!reject_column_list && !reject_old_format_codec && !reject_unavailable_copy)
-        return;
-
-    bool has_projection_column_list = false;
-    bool has_projection_column_codec = false;
-    bool has_unavailable_source_projection = false;
-    if (create.columns_list && create.columns_list->projections)
-    {
-        for (const auto & projection_ast : create.columns_list->projections->children)
-        {
-            if (const auto * declaration = projection_ast ? projection_ast->as<ASTProjectionDeclaration>() : nullptr;
-                declaration && declaration->columns)
-            {
-                has_projection_column_list = true;
-                has_projection_column_codec |= hasDeclaredProjectionColumnCodec(*declaration);
-            }
-        }
-    }
-    else if (!create.columns_list && !create.as_table.empty() && !create.isView() && !create.is_dictionary
-        && (!create.storage || !create.storage->engine || endsWith(create.storage->engine->name, "MergeTree")))
-    {
-        /// Old `ON CLUSTER` formats expand `AS source_table` on each worker. If the initiator
-        /// cannot inspect a source that may supply projections, reject the copy unless the
-        /// initiator explicitly opted in to projection column lists.
-        bool source_projection_safety_known = false;
-        const String source_database = context->resolveDatabase(create.as_database);
-        if (context->getAccess()->isGranted(AccessType::SHOW_COLUMNS, source_database, create.as_table))
-        {
-            const auto source = DatabaseCatalog::instance().tryGetTable({source_database, create.as_table}, context);
-            const auto * alias = source ? source->as<StorageAlias>() : nullptr;
-            if (source && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {})))
-            {
-                if ((create.storage && create.storage->engine) || endsWith(source->getName(), "MergeTree"))
-                {
-                    /// Without an explicit engine, the destination inherits the source's engine.
-                    /// Only a MergeTree destination copies projections.
-                    const auto source_metadata = source->getInMemoryMetadataPtr(context, false);
-                    has_unavailable_source_projection = source_metadata->getProjections().hasUnavailable();
-                    auto inspect_projection = [&](const ASTPtr & definition)
-                    {
-                        if (const auto * declaration = definition ? definition->as<const ASTProjectionDeclaration>() : nullptr;
-                            declaration && declaration->columns)
-                        {
-                            has_projection_column_list = true;
-                            has_projection_column_codec |= hasDeclaredProjectionColumnCodec(*declaration);
-                        }
-                    };
-
-                    for (const auto & projection : source_metadata->getProjections())
-                        inspect_projection(projection.definition_ast);
-                    /// `ProjectionsDescription::clone` copies unavailable declarations too.
-                    for (const auto & definition : source_metadata->getProjections().getUnavailableDefinitions())
-                        inspect_projection(definition);
-                    source_projection_safety_known = true;
-                }
-                else if (!alias)
-                    source_projection_safety_known = true;
-            }
-        }
-        if (reject_column_list && !source_projection_safety_known)
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Cannot verify projection metadata of the source table for ON CLUSTER AS. "
-                "Make the source visible to the initiator with SHOW COLUMNS access, or enable "
-                "allow_projection_column_list_in_replicated_metadata = 1");
-    }
-    /// `CREATE AS` has already normalized its query at this call site. Unavailable source declarations
-    /// remain in the copied properties, but have not yet been appended to the query for persistence.
-    if (copied_projections)
-    {
-        for (const auto & definition : copied_projections->getUnavailableDefinitions())
-        {
-            if (const auto * declaration = definition->as<const ASTProjectionDeclaration>(); declaration && declaration->columns)
-            {
-                has_projection_column_list = true;
-                has_projection_column_codec |= hasDeclaredProjectionColumnCodec(*declaration);
-            }
-        }
-    }
-
-    if (reject_column_list && has_projection_column_list)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Projection column lists in replicated metadata require setting "
-            "allow_projection_column_list_in_replicated_metadata = 1. "
-            "Upgrade every replica before enabling it");
-
-    if (reject_unavailable_copy && has_unavailable_source_projection)
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Cannot copy unavailable projection declarations into replicated or distributed CREATE metadata. "
-            "Restore projection analysis on the source table or drop the unavailable declaration before copying it");
-
-    if (reject_old_format_codec && has_projection_column_codec)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Projection column CODEC declarations in ON CLUSTER DDL require "
-            "distributed_ddl_entry_format_version >= 2, because version 1 does not carry codec validation settings");
-}
 
 }
 
@@ -2345,30 +2178,24 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         validateMaterializedViewColumnsAndEngine(create, properties);
     }
 
-    const bool is_storage_replicated = isStorageReplicated(create);
+    const bool is_storage_replicated = isProjectionStorageReplicated(create);
 
     /// Older replicas cannot parse the column-list syntax at all. Check before the CREATE
     /// enters a Replicated database or distributed DDL log, or a replicated table's metadata.
     /// RESTORE supplies a fresh definition despite using SECONDARY_CREATE for other checks.
     /// A secondary replay or stored ATTACH must keep accepting metadata already written.
-    checkProjectionColumnListReplicationCompatibility(
+    validateProjectionMetadataAdmission(
         create,
         getContext(),
         database,
-        isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup,
+        getProjectionDefinitionSource(mode, create.attach_short_syntax, is_restore_from_backup),
         copies_source_projections,
         &properties.projections);
 
     /// A normalized distributed CREATE sends its column list rather than the original `AS src` query.
     /// Workers would analyze an appended unavailable declaration as fresh SQL and reject it, while omitting
     /// it would silently publish a different schema. Local copies preserve it after storage construction.
-    bool is_copy_replay = is_restore_from_backup || getContext()->isRecoveryFromStoredMetadata()
-        || is_secondary_query || getContext()->isDDLOrOnClusterInternal()
-        || getContext()->getClientInfo().is_replicated_database_internal;
-#if CLICKHOUSE_CLOUD
-    if (getContext()->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(getContext()))
-        is_copy_replay = true;
-#endif
+    const bool is_copy_replay = is_restore_from_backup || !isInitialProjectionMetadataQuery(getContext());
     if (!is_copy_replay && properties.projections.hasUnavailable()
         && (is_storage_replicated || !create.cluster.empty()
             || (database && (database->getEngineName() == "Replicated" || database->getEngineName() == "Shared"))))
@@ -3984,11 +3811,11 @@ BlockIO InterpreterCreateQuery::execute()
                 /// Old DDL entry formats return from execute() without reaching createTable().
                 auto mode = getLoadingStrictnessLevel(
                     create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_restore_from_backup);
-                checkProjectionColumnListReplicationCompatibility(
+                validateProjectionMetadataAdmission(
                     create,
                     getContext(),
                     nullptr,
-                    isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup,
+                    getProjectionDefinitionSource(mode, create.attach_short_syntax, is_restore_from_backup),
                     !create.columns_list && !create.as_table.empty());
             }
 
