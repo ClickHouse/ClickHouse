@@ -87,6 +87,15 @@ def test_optimize_never_deletes_reachable_files(
     )
     instance.query(f"INSERT INTO {table_name} VALUES (1);", settings=CH_WRITE_SETTINGS)
     instance.query(f"INSERT INTO {table_name} VALUES (2);", settings=CH_WRITE_SETTINGS)
+    # Retained in the table's history after the delete below, so its rows must stay readable.
+    pre_delete_snapshot_id = int(
+        instance.query(
+            f"SELECT snapshot_id FROM system.iceberg_history "
+            f"WHERE database = currentDatabase() AND table = '{table_name}' "
+            f"AND snapshot_id NOT IN (SELECT parent_id FROM system.iceberg_history "
+            f"WHERE database = currentDatabase() AND table = '{table_name}')"
+        )
+    )
     # A position delete file: `plan.need_optimize` is false without one, and then compaction
     # returns before reaching the deletion at all, which would make this test vacuous.
     instance.query(
@@ -98,6 +107,13 @@ def test_optimize_never_deletes_reachable_files(
     instance.query(f"INSERT INTO {table_name} VALUES (99);", settings=CH_WRITE_SETTINGS)
 
     assert instance.query(f"SELECT x FROM {table_name} ORDER BY x") == "1\n99\n"
+    assert (
+        instance.query(
+            f"SELECT x FROM {table_name} ORDER BY x "
+            f"SETTINGS iceberg_snapshot_id = {pre_delete_snapshot_id}"
+        )
+        == "1\n2\n"
+    )
 
     files_before = _list_files(
         started_cluster_iceberg_with_spark, instance, storage_type, table_name
@@ -136,20 +152,29 @@ def test_optimize_never_deletes_reachable_files(
     assert not removed, f"OPTIMIZE deleted pre-existing files: {removed}"
 
     if hint_state == "stale":
-        # Point the hint back at the version it named before it went stale. Reading through a
-        # stale hint legitimately returns the older version, so the hint has to name the newest
-        # one for the row assertion below to be about `OPTIMIZE` rather than about the hint.
+        # Reading through a stale hint legitimately returns an older version, so point it at the
+        # newest version after `OPTIMIZE`, which is the one a published result would be.
         _write_version_hint(
             started_cluster_iceberg_with_spark,
             instance,
             storage_type,
             table_name,
-            newest_before,
+            _newest_metadata_version(files_after),
         )
 
-    # The acked third insert must still be there, and the table must still be readable
-    # through the version it was committed at.
+    # Read from storage rather than from metadata cached before `OPTIMIZE`.
+    instance.query("SYSTEM DROP ICEBERG METADATA CACHE")
+
+    # The acked third insert must still be there, and the snapshot before the delete must still
+    # be readable.
     assert instance.query(f"SELECT x FROM {table_name} ORDER BY x") == "1\n99\n"
     assert int(instance.query(f"SELECT count() FROM {table_name}")) == 2
+    assert (
+        instance.query(
+            f"SELECT x FROM {table_name} ORDER BY x "
+            f"SETTINGS iceberg_snapshot_id = {pre_delete_snapshot_id}"
+        )
+        == "1\n2\n"
+    )
 
     instance.query(f"DROP TABLE {table_name} SYNC;")
