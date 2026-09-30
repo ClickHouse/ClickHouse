@@ -26,6 +26,7 @@ class ReadProgressCallback;
 using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
 
 class StepProfiler;
+using StepProfilerPtr = std::shared_ptr<StepProfiler>;
 struct WorkloadResources;
 
 /// Executes query pipeline.
@@ -104,7 +105,7 @@ private:
     bool trace_processors = false;
     bool trace_cpu_scheduling = false;
     /// EXPLAIN ANALYZE
-    std::shared_ptr<StepProfiler> step_profiler;
+    StepProfilerPtr step_profiler;
 
     std::atomic<ExecutionStatus> execution_status = ExecutionStatus::NotStarted;
     std::atomic_bool cancelled_reading = false;
