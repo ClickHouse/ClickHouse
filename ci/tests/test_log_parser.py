@@ -36,9 +36,7 @@ def test_parse_ast_fuzzer_oracle_mismatch(tmp_path):
     server_log = tmp_path / "clickhouse-server.err.log"
     server_log.write_text(_ORACLE_MISMATCH_LOG, encoding="utf-8")
 
-    parser = FuzzerLogParser(
-        server_log=str(server_log), stderr_log="", fuzzer_log=""
-    )
+    parser = FuzzerLogParser(server_logs=[server_log])
     result_name, info, files = parser.parse_failure()
 
     assert result_name == "AST Fuzzer oracle mismatch: TLP Aggregate"
@@ -82,9 +80,7 @@ def test_oracle_kind_extraction(tmp_path, oracle_line, expected_kind):
         encoding="utf-8",
     )
 
-    parser = FuzzerLogParser(
-        server_log=str(server_log), stderr_log="", fuzzer_log=""
-    )
+    parser = FuzzerLogParser(server_logs=[server_log])
     result_name, _, _ = parser.parse_failure()
 
     assert result_name == f"AST Fuzzer oracle mismatch: {expected_kind}"
@@ -105,9 +101,7 @@ def test_sanitizer_wins_over_oracle_mismatch(tmp_path):
         encoding="utf-8",
     )
 
-    parser = FuzzerLogParser(
-        server_log=str(server_log), stderr_log=str(stderr_log), fuzzer_log=""
-    )
+    parser = FuzzerLogParser(server_logs=[server_log], stderr_logs=[stderr_log])
     result_name, info, _ = parser.parse_failure()
 
     assert result_name.startswith("AddressSanitizer")
@@ -127,9 +121,7 @@ def test_parse_ast_fuzzer_oracle_mismatch_unknown_kind(tmp_path):
         encoding="utf-8",
     )
 
-    parser = FuzzerLogParser(
-        server_log=str(server_log), stderr_log="", fuzzer_log=""
-    )
+    parser = FuzzerLogParser(server_logs=[server_log])
     result_name, info, files = parser.parse_failure()
 
     assert result_name == "AST Fuzzer oracle mismatch"
@@ -149,9 +141,7 @@ def test_generic_fatal_fallback_surfaces_message(tmp_path):
         encoding="utf-8",
     )
 
-    parser = FuzzerLogParser(
-        server_log=str(server_log), stderr_log="", fuzzer_log=""
-    )
+    parser = FuzzerLogParser(server_logs=[server_log])
     result_name, info, files = parser.parse_failure()
 
     assert result_name != FuzzerLogParser.UNKNOWN_ERROR
@@ -179,14 +169,34 @@ def test_quoted_fatal_in_query_text_is_not_a_generic_fatal(tmp_path):
         encoding="utf-8",
     )
 
-    parser = FuzzerLogParser(
-        server_log=str(server_log), stderr_log="", fuzzer_log=""
-    )
+    parser = FuzzerLogParser(server_logs=[server_log])
     result_name, info, _ = parser.parse_failure()
 
     assert result_name == FuzzerLogParser.UNKNOWN_ERROR
     assert parser.is_generic_fatal is False
     assert "not an error" not in result_name
+    # Same anchoring in the unnamed-fatal scan: callers treat anything it returns as
+    # crash evidence, so a quoted "<Fatal>" there fails a run that never failed.
+    assert parser.find_unnamed_fatals() == []
+
+
+def test_find_unnamed_fatals_returns_real_fatal_records(tmp_path):
+    # The counterpart to the anchoring above: a genuine unclassified <Fatal> record must
+    # still be returned, whole line, while the quoted one beside it is left out.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    server_log.write_text(
+        "2026.09.04 00:44:57.900000 [ 1068 ] {q} <Debug> executeQuery: "
+        "(from 127.0.0.1) SELECT '<Fatal> not an error' (stage: Complete)\n"
+        "2026.09.04 00:44:58.000000 [ 1068 ] {q} <Fatal> SomeComponent: "
+        "unexplained fatal\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(server_logs=[server_log])
+    found = parser.find_unnamed_fatals()
+
+    assert len(found) == 1
+    assert found[0].endswith("<Fatal> SomeComponent: unexplained fatal")
 
 
 def test_unknown_error_when_no_fatal(tmp_path):
@@ -199,9 +209,7 @@ def test_unknown_error_when_no_fatal(tmp_path):
         encoding="utf-8",
     )
 
-    parser = FuzzerLogParser(
-        server_log=str(server_log), stderr_log="", fuzzer_log=""
-    )
+    parser = FuzzerLogParser(server_logs=[server_log])
     result_name, info, _ = parser.parse_failure()
 
     assert result_name == FuzzerLogParser.UNKNOWN_ERROR
@@ -216,9 +224,7 @@ def test_generic_fatal_flag_not_set_for_specific_classification(tmp_path):
     server_log = tmp_path / "clickhouse-server.err.log"
     server_log.write_text(_ORACLE_MISMATCH_LOG, encoding="utf-8")
 
-    parser = FuzzerLogParser(
-        server_log=str(server_log), stderr_log="", fuzzer_log=""
-    )
+    parser = FuzzerLogParser(server_logs=[server_log])
     parser.parse_failure()
 
     assert parser.is_generic_fatal is False
@@ -235,9 +241,96 @@ def test_specific_pattern_wins_over_generic_fatal(tmp_path):
         encoding="utf-8",
     )
 
-    parser = FuzzerLogParser(
-        server_log=str(server_log), stderr_log="", fuzzer_log=""
-    )
+    parser = FuzzerLogParser(server_logs=[server_log])
     result_name, _, _ = parser.parse_failure()
 
     assert result_name.startswith("Logical error")
+
+
+_EXPECTED_KILL_LOG = (
+    "2026.09.04 00:44:57.900000 [ 1068 ] {q} <Debug> executeQuery: SELECT 1\n"
+    "2026.09.04 00:44:58.000000 [ 1 ] {} <Fatal> Application: "
+    "Child process was terminated by signal 9 (KILL).\n"
+)
+
+
+def test_expected_kill_is_not_a_generic_fatal(tmp_path):
+    # The end-of-run SIGKILL is a <Fatal> record a healthy node writes too. It is
+    # deferred by the Signal pattern, and the generic fallback must not pick it up
+    # either, or every run would be reported as failed for its own teardown. Only a
+    # caller that already knows the run failed may name it, on the second pass.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    server_log.write_text(_EXPECTED_KILL_LOG, encoding="utf-8")
+
+    parser = FuzzerLogParser(server_logs=[server_log])
+    result_name, _, _ = parser.parse_failure()
+
+    assert result_name == FuzzerLogParser.UNKNOWN_ERROR
+    assert parser.is_generic_fatal is False
+    assert parser.find_unnamed_fatals() == []
+
+    result_name, _, _ = parser.parse_failure(allow_expected_only=True)
+    assert result_name.startswith("Child process was terminated by signal 9")
+    assert parser.is_generic_fatal is False
+
+
+def test_generic_fatal_outranks_expected_only_line(tmp_path):
+    # An unclassified <Fatal> next to the expected kill is crash evidence: it wins
+    # even when the caller opted into naming the run after the expected line.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    server_log.write_text(
+        "2026.09.04 00:44:57.972626 [ 1068 ] {q} <Fatal> SomeComponent: "
+        "unexplained fatal\n" + _EXPECTED_KILL_LOG,
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(server_logs=[server_log])
+    result_name, _, _ = parser.parse_failure(allow_expected_only=True)
+
+    assert result_name == "SomeComponent: unexplained fatal"
+    assert parser.is_generic_fatal is True
+
+
+def test_generic_fatal_found_in_rotated_log(tmp_path):
+    # The fallback scans every server log handed in, the gzipped rotated ones too.
+    import gzip
+
+    rotated = tmp_path / "clickhouse-server.err.log.1.gz"
+    with gzip.open(rotated, "wt", encoding="utf-8") as f:
+        f.write(
+            "2026.09.04 00:44:57.972626 [ 1068 ] {q} <Fatal> SomeComponent: "
+            "rotated away\n"
+            "2026.09.04 00:44:58.000000 [ 1068 ] {} <Information> Application: x\n"
+        )
+    current = tmp_path / "clickhouse-server.err.log"
+    current.write_text(_EXPECTED_KILL_LOG, encoding="utf-8")
+
+    parser = FuzzerLogParser(server_logs=[current, rotated])
+    result_name, _, _ = parser.parse_failure()
+
+    assert result_name == "SomeComponent: rotated away"
+    assert parser.is_generic_fatal is True
+
+
+def test_watchdog_signal_anchored_to_fatal_record(tmp_path):
+    # A live server's ShellCommand logging "<Error> ... terminated by signal 6" is not
+    # the server dying; only the watchdog's <Fatal> Application record is, and its
+    # "<Fatal> Application: " prefix is stripped from the name.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    server_log.write_text(
+        "2026.09.04 00:44:57.900000 [ 1068 ] {q} <Error> ShellCommand: "
+        "Child process was terminated by signal 6.\n",
+        encoding="utf-8",
+    )
+    parser = FuzzerLogParser(server_logs=[server_log])
+    assert parser.parse_failure()[0] == FuzzerLogParser.UNKNOWN_ERROR
+
+    server_log.write_text(
+        "2026.09.04 00:44:58.000000 [ 1 ] {} <Fatal> Application: "
+        "Child process was terminated by signal 6.\n",
+        encoding="utf-8",
+    )
+    parser = FuzzerLogParser(server_logs=[server_log])
+    result_name, _, _ = parser.parse_failure()
+    assert result_name.startswith("Child process was terminated by signal 6")
+    assert "<Fatal>" not in result_name

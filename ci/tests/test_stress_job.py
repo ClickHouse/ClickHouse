@@ -1,10 +1,11 @@
 """
 Tests for `select_replica_failures` (ci/jobs/stress_job.py).
 
-The stress job pairs each replica's server log with its stderr log and must not
-let a failure on one replica hide a (possibly higher-signal) failure on another:
-every pair is scanned, all distinct specific classifications are reported, and a
-generic `<Fatal>` / "Unknown error" is used only when nothing specific was found.
+The stress job hands each replica's server and stderr log families to the parser
+and must not let a failure on one replica hide a (possibly higher-signal) failure
+on another: every replica is scanned, all distinct specific classifications are
+reported, and a generic `<Fatal>` / "Unknown error" is used only when nothing
+specific was found.
 """
 
 import os
@@ -39,15 +40,18 @@ _UNKNOWN_LOG = (
 
 
 def _pair(tmp_path, replica, server_text=None, stderr_text=None):
-    # Build one (replica_name, server_log, stderr_log) pair. Missing logs are
-    # non-existent Paths, matching what the job passes when a file is absent.
+    # Build one (replica_name, server_log_files, stderr_log_files) triple. A missing
+    # log is left out of its list, matching what the job passes when a file is absent.
     server_log = tmp_path / f"clickhouse-server-{replica}.err.log"
     stderr_log = tmp_path / f"stderr-{replica}.log"
+    server_logs, stderr_logs = [], []
     if server_text is not None:
         server_log.write_text(server_text, encoding="utf-8")
+        server_logs.append(server_log)
     if stderr_text is not None:
         stderr_log.write_text(stderr_text, encoding="utf-8")
-    return (replica, server_log, stderr_log)
+        stderr_logs.append(stderr_log)
+    return (replica, server_logs, stderr_logs)
 
 
 def test_specific_failure_on_second_replica_not_hidden_by_first(tmp_path):
@@ -59,7 +63,7 @@ def test_specific_failure_on_second_replica_not_hidden_by_first(tmp_path):
         _pair(tmp_path, "sc1", server_text=_UNKNOWN_LOG, stderr_text=_ASAN_STDERR),
     ]
 
-    results = select_replica_failures(pairs)
+    results = select_replica_failures(pairs).results
     names = [name for name, _, _ in results]
 
     assert any(n.startswith("AST Fuzzer oracle mismatch") for n in names), names
@@ -75,7 +79,7 @@ def test_generic_fatal_does_not_suppress_sanitizer_on_second_replica(tmp_path):
         _pair(tmp_path, "sc1", server_text=_UNKNOWN_LOG, stderr_text=_ASAN_STDERR),
     ]
 
-    results = select_replica_failures(pairs)
+    results = select_replica_failures(pairs).results
     names = [name for name, _, _ in results]
 
     assert len(results) == 1
@@ -91,7 +95,7 @@ def test_same_specific_failure_across_replicas_reported_once(tmp_path):
         _pair(tmp_path, "sc1", server_text=_ORACLE_MISMATCH_LOG),
     ]
 
-    results = select_replica_failures(pairs)
+    results = select_replica_failures(pairs).results
 
     assert len(results) == 1
     assert results[0][0].startswith("AST Fuzzer oracle mismatch")
@@ -105,7 +109,7 @@ def test_generic_fatal_used_when_no_specific_failure(tmp_path):
         _pair(tmp_path, "sc1", server_text=_UNKNOWN_LOG),
     ]
 
-    results = select_replica_failures(pairs)
+    results = select_replica_failures(pairs).results
 
     assert len(results) == 1
     assert results[0][0] == "SomeComponent: transient generic fatal"
@@ -118,7 +122,7 @@ def test_unknown_error_when_nothing_classified(tmp_path):
         _pair(tmp_path, "sc1", server_text=_UNKNOWN_LOG),
     ]
 
-    results = select_replica_failures(pairs)
+    results = select_replica_failures(pairs).results
 
     assert len(results) == 1
     assert results[0][0] == FuzzerLogParser.UNKNOWN_ERROR
