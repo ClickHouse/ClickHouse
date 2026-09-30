@@ -96,7 +96,7 @@ public:
     const FatalErrorCallback fatal_error_callback;
 
     /// False for work deliberately accounted in the server total rather than the query's user, see
-    /// `createForWorkNotChargedToTheQuery`; kept even if that work runs a query of its own.
+    /// `createWithoutQueryMemoryTracker`; kept even if that work runs a query of its own.
     const bool charge_memory_to_query_user = true;
 
     const Int32 os_threads_nice_value;
@@ -151,7 +151,7 @@ public:
 
     /// For work a query only triggers (e.g. loading a dictionary) that outlives it and can't be uncharged from
     /// the query: memory is accounted globally, covering spawned threads too, unlike `MemoryTrackerBlockerInThread`.
-    static ThreadGroupPtr createForWorkNotChargedToTheQuery(ThreadGroupPtr parent);
+    static ThreadGroupPtr createWithoutQueryMemoryTracker(ThreadGroupPtr parent);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;

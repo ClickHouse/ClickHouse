@@ -19,9 +19,7 @@ namespace DB
 {
 
 
-/// Allocates the cache entry itself the way its data is allocated. The cache owns the entry, so creating it must
-/// not be charged to whichever query filled it, and dropping the last reference must not credit whichever query
-/// happened to hold it last. Covers the control block too, which `std::allocate_shared` puts in the same block.
+/// Covers the control block too, which `std::allocate_shared` puts in the same block.
 template <typename T>
 struct ServerOwnedCacheEntryAllocator
 {
@@ -33,13 +31,13 @@ struct ServerOwnedCacheEntryAllocator
 
     T * allocate(size_t n)
     {
-        MemoryTrackerBlockerInThread cache_entry_not_charged_to_the_query;
+        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
         return static_cast<T *>(::operator new(n * sizeof(T)));
     }
 
     void deallocate(T * p, size_t n) noexcept
     {
-        MemoryTrackerBlockerInThread cache_entry_not_charged_to_the_query;
+        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
         ::operator delete(p, n * sizeof(T));
     }
 
@@ -53,11 +51,9 @@ struct UncompressedCacheCell
     size_t compressed_size{};
     UInt32 additional_bytes{};
 
-    /// `data` was allocated without charging the query, see `CachedCompressedReadBuffer::nextImpl`; release it
-    /// the same way so eviction never gets credited to whichever query triggers it.
     ~UncompressedCacheCell()
     {
-        MemoryTrackerBlockerInThread cached_bytes_not_charged_to_the_query;
+        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
         data = {};
     }
 };

@@ -1076,7 +1076,7 @@ private:
         /// The blocker below only covers this thread, while loading runs a query of its own whose pipeline
         /// threads inherit the group. Loading in a group that accounts memory globally covers them too.
         if (thread_group)
-            thread_group = ThreadGroup::createForWorkNotChargedToTheQuery(std::move(thread_group));
+            thread_group = ThreadGroup::createWithoutQueryMemoryTracker(std::move(thread_group));
 
         ThreadGroupSwitcher switcher(thread_group, ThreadName::EXTERNAL_LOADER);
 

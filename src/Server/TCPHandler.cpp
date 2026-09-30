@@ -1455,7 +1455,13 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     /// The block being assembled here outlives this query once queued, but it sits under the query's own tracker
     /// while buffering: an exception anywhere in this loop (timeout, disconnect, parse failure) then leaves the
     /// buffered bytes charged to the query and settles nothing off the user.
-    auto queued_data_tracker = createTrackerForDataTheQueryMayHandOver();
+    auto queued_data_tracker = tryCreateMemoryTrackerUnderCurrentQuery(VariableContext::Process);
+    if (queued_data_tracker)
+        queued_data_tracker->setDriftExpected();
+
+    /// The reader lives as long as the query, so it must not be counted as queued data.
+    initBlockInput(state);
+
     std::optional<MemoryTrackerSwitcher> switcher;
     if (queued_data_tracker)
         switcher.emplace(queued_data_tracker.get());
@@ -1468,7 +1474,8 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
         auto result_chunk = Squashing::squash(squashing.generate(/*flush_if_enough_size*/ true), squashing.getHeader());
 
         {
-            /// Sending logs/profile events is the query's own work, not part of the data being queued.
+            /// Sending frees log rows the query allocated and creates writers that live as long as the query, so
+            /// keep it off the tracker, which must hold exactly the queued data.
             switcher.reset();
             std::lock_guard lock(*callback_mutex);
             /// Data upload can take a long time, so send logs and profile events without waiting for it to finish.

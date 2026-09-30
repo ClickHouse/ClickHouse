@@ -46,7 +46,6 @@ bool CachedCompressedReadBuffer::nextImpl()
         initInput();
         file_in->seek(file_pos, SEEK_SET);
 
-        /// Owned by the cache, not by this query; see `ServerOwnedCacheEntryAllocator`.
         auto cell = std::allocate_shared<UncompressedCacheCell>(ServerOwnedCacheEntryAllocator<UncompressedCacheCell>());
 
         size_t size_decompressed = 0;
@@ -57,9 +56,7 @@ bool CachedCompressedReadBuffer::nextImpl()
         {
             cell->additional_bytes = codec->getAdditionalSizeAtTheEndOfBuffer();
             {
-                /// The cache owns this data and frees it later (whichever insertion evicts it), so don't charge
-                /// it to this query; the reader's own buffers above stay charged to it.
-                MemoryTrackerBlockerInThread cached_bytes_not_charged_to_the_query;
+                MemoryTrackerBlockerInThread not_charged_to_query_or_user;
                 cell->data.resize(size_decompressed + cell->additional_bytes);
             }
             decompressTo(cell->data.data(), size_decompressed, size_compressed_without_checksum);

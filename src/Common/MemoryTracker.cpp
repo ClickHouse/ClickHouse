@@ -172,6 +172,8 @@ MemoryTracker::MemoryTracker(VariableContext level_) : parent(&total_memory_trac
 
 MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : parent(parent_), level(level_)
 {
+    if (parent_ && level == VariableContext::Process)
+        parent_->attachChild();
     if (this == &total_memory_tracker)
         total_memory_tracker_initialized.store(true, std::memory_order_release);
 }
@@ -179,6 +181,8 @@ MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : 
 MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_, bool log_peak_memory_usage_in_destructor_)
     : parent(parent_), log_peak_memory_usage_in_destructor(log_peak_memory_usage_in_destructor_), level(level_)
 {
+    if (parent_ && level == VariableContext::Process)
+        parent_->attachChild();
     if (this == &total_memory_tracker)
         total_memory_tracker_initialized.store(true, std::memory_order_release);
 }
@@ -197,6 +201,19 @@ MemoryTracker::~MemoryTracker()
         try
         {
             settleDriftOnQueryEnd();
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+            /// Exception in Logger, intentionally swallow, as for the peak usage log below.
+        }
+    }
+
+    auto * loaded_parent = parent.load(std::memory_order_relaxed);
+    if (loaded_parent && level == VariableContext::Process)
+    {
+        try
+        {
+            loaded_parent->detachChild();
         }
         catch (...) // NOLINT(bugprone-empty-catch)
         {
@@ -677,10 +694,13 @@ void MemoryTracker::adjustWithUntrackedMemory(Int64 untracked_memory)
 }
 
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+/// A starting point, lowered as flagged sites get fixed.
+static constexpr Int64 drift_warn_threshold = 1024 * 1024;
+#endif
+
 void MemoryTracker::settleDriftOnQueryEnd()
 {
-    /// Drift is memory accounted globally already (allocated here but freed elsewhere, or vice versa); hand it
-    /// to the global tracker instead of letting it pile up on the user. Safety net, not a fix for each site.
     Int64 drift = amount.load(std::memory_order_relaxed);
     if (drift == 0)
         return;
@@ -705,9 +725,8 @@ void MemoryTracker::settleDriftOnQueryEnd()
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// A leftover charge usually means the query allocated something that outlives it, hinting it wants a
-    /// longer-lived arena instead of the query's. Threshold is a starting point, lowered as flagged sites get fixed.
-    static constexpr Int64 warn_threshold = 1024 * 1024;
-    if ((drift > warn_threshold || drift < -warn_threshold) && !drift_expected.load(std::memory_order_relaxed))
+    /// longer-lived arena instead of the query's.
+    if ((drift > drift_warn_threshold || drift < -drift_warn_threshold) && !drift_expected.load(std::memory_order_relaxed))
     {
         const auto * description = description_ptr.load(std::memory_order_relaxed);
         LOG_WARNING(
@@ -735,8 +754,47 @@ void MemoryTracker::settleDriftOnQueryEnd()
     else
     {
         /// Giving bytes back cannot push anything below zero.
-        transferToGlobal(drift);
+        transferUpTo(nullptr, drift);
     }
+}
+
+
+void MemoryTracker::attachChild()
+{
+    if (level == VariableContext::User)
+        children_count.fetch_add(1);
+}
+
+
+void MemoryTracker::detachChild()
+{
+    if (level != VariableContext::User || children_count.fetch_sub(1) != 1)
+        return;
+
+    /// Read before checking again: a child attached meanwhile is either seen below or charges after the read, and
+    /// subtracting what was read leaves its bytes in place.
+    Int64 residual = amount.load();
+    if (residual == 0 || children_count.load() != 0)
+        return;
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    if (residual > drift_warn_threshold || residual < -drift_warn_threshold)
+    {
+        const auto * description = description_ptr.load(std::memory_order_relaxed);
+        LOG_WARNING(
+            getLogger("MemoryTracker"),
+            "{} has no queries or tasks left but is {} {}. Some memory was charged to it or freed against it"
+            " outside of any query or task; settling it to zero.",
+            description ? std::string(description) : "A user",
+            residual > 0 ? "still holding" : "over-credited by",
+            ReadableSize(residual > 0 ? residual : -residual));
+    }
+#endif
+
+    amount.fetch_sub(residual);
+    auto metric_loaded = metric.load(std::memory_order_relaxed);
+    if (metric_loaded != CurrentMetrics::end())
+        CurrentMetrics::sub(metric_loaded, residual);
 }
 
 
@@ -764,9 +822,63 @@ Int64 MemoryTracker::subtractAtMostWhatIsThere(Int64 size)
 }
 
 
-void MemoryTracker::transferUpTo(VariableContext up_to_level, Int64 size)
+void MemoryTracker::reparent(MemoryTracker * new_parent)
 {
-    for (auto * tracker = this; tracker && tracker->level != up_to_level;
+    auto * old_parent = parent.load(std::memory_order_acquire);
+
+    /// The closest ancestor both chains share: the bytes stay charged to it and above.
+    const MemoryTracker * common = nullptr;
+    for (const auto * candidate = new_parent; candidate && !common; candidate = candidate->parent.load(std::memory_order_relaxed))
+    {
+        for (const auto * tracker = old_parent; tracker; tracker = tracker->parent.load(std::memory_order_relaxed))
+        {
+            if (tracker == candidate)
+            {
+                common = candidate;
+                break;
+            }
+        }
+    }
+
+    const Int64 size = amount.load(std::memory_order_relaxed);
+    if (size > 0)
+    {
+        /// Moving is not an allocation, so nothing checks the limits on the way in; check them here, before the
+        /// move, so a refusal leaves everything as it was.
+        for (const auto * tracker = new_parent; tracker && tracker != common; tracker = tracker->parent.load(std::memory_order_relaxed))
+        {
+            Int64 limit = tracker->hard_limit.load(std::memory_order_relaxed);
+            Int64 will_be = tracker->amount.load(std::memory_order_relaxed) + size;
+            if (limit && will_be > limit)
+            {
+                const auto * description = tracker->description_ptr.load(std::memory_order_relaxed);
+                throw DB::Exception(
+                    DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                    "{}{}exceeded: would use {} (attempt to move {} already allocated), maximum: {}",
+                    description ? description : "",
+                    description ? " memory limit " : "Memory limit ",
+                    ReadableSize(will_be),
+                    ReadableSize(size),
+                    ReadableSize(limit));
+            }
+        }
+    }
+
+    setParent(new_parent);
+
+    if (size != 0)
+    {
+        if (old_parent)
+            old_parent->transferUpTo(common, size);
+        if (new_parent)
+            new_parent->transferUpTo(common, -size);
+    }
+}
+
+
+void MemoryTracker::transferUpTo(const MemoryTracker * until, Int64 size)
+{
+    for (auto * tracker = this; tracker && tracker != until && tracker->level != VariableContext::Global;
          tracker = tracker->parent.load(std::memory_order_relaxed))
     {
         Int64 new_amount = tracker->amount.fetch_sub(size, std::memory_order_relaxed) - size;
@@ -1054,7 +1166,12 @@ void MemoryTracker::setParent(MemoryTracker * elem)
     if (level == VariableContext::Thread && DB::current_thread)
         DB::current_thread->flushUntrackedMemory();
 
-    parent.store(elem, std::memory_order_release);
+    /// Attach before publishing, so the new parent counts this child before any of its bytes arrive.
+    if (elem && level == VariableContext::Process)
+        elem->attachChild();
+    auto * old_parent = parent.exchange(elem, std::memory_order_acq_rel);
+    if (old_parent && level == VariableContext::Process)
+        old_parent->detachChild();
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     bool found_total_memory_tracker = false;

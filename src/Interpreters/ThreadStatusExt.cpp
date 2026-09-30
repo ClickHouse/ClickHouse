@@ -132,7 +132,7 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
     };
 }
 
-// c-tor for methods createForMaterializedView, createForExplainAnalyze and createForWorkNotChargedToTheQuery
+// c-tor for methods createForMaterializedView, createForExplainAnalyze and createWithoutQueryMemoryTracker
 ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group, bool charge_memory_to_parent)
     : parent(std::move(parent_thread_group))
     , master_thread_id(parent->master_thread_id)
@@ -273,7 +273,7 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     return res_group;
 }
 
-ThreadGroupPtr ThreadGroup::createForWorkNotChargedToTheQuery(ThreadGroupPtr parent_thread_group)
+ThreadGroupPtr ThreadGroup::createWithoutQueryMemoryTracker(ThreadGroupPtr parent_thread_group)
 {
     return ThreadGroupPtr(new ThreadGroup(std::move(parent_thread_group), /*charge_memory_to_parent=*/ false));
 }
@@ -445,7 +445,7 @@ void ThreadStatus::detachFromGroup()
 
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
-    /// flush untracked memory before resetting memory_tracker parent
+    /// So that `system.query_thread_log` written below sees all of this thread's memory.
     flushUntrackedMemory();
 
     if (boundToOSThread())

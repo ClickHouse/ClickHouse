@@ -336,8 +336,10 @@ ProcessList::EntryPtr ProcessList::insert(
         {
             thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
 
-            /// The group gets a user here, so hand it what the query allocated before that. Groups accounting
-            /// globally on purpose, and nested ones already on a user, keep the parent they have.
+            /// The group gets a user here, so hand it what the query allocated before that. Keep the parent for groups
+            /// that account globally on purpose (a dictionary loaded on behalf of a query), and for nested ones that
+            /// already reach a user through the query above them (a materialized view, or a flush started by
+            /// `SYSTEM FLUSH ASYNC INSERT QUEUE`), which would otherwise be charged to the user twice.
             bool already_on_a_user = false;
             for (auto * tracker = thread_group->memory_tracker.getParent(); tracker && !already_on_a_user;
                  tracker = tracker->getParent())
@@ -345,29 +347,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
             if (thread_group->charge_memory_to_query_user && !already_on_a_user)
             {
-                const Int64 allocated = thread_group->memory_tracker.get();
-                if (allocated > 0)
-                {
-                    /// Moving them is not an allocation, so nothing checks the user's limit on the way in.
-                    /// Check it here, or a query that allocated more than its own limit before it had a user
-                    /// would start already above it and only be stopped by whatever it allocates next.
-                    /// Before the re-parent below, so a refusal does not leave the query freeing these bytes
-                    /// against a user that was never charged for them.
-                    Int64 hard_limit = user_process_list.user_memory_tracker.getHardLimit();
-                    Int64 will_be = user_process_list.user_memory_tracker.get() + allocated;
-                    if (hard_limit && will_be > hard_limit)
-                        throw Exception(
-                            ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                            "User memory limit exceeded: would use {} (attempt to hand over {} allocated before"
-                            " the query had a user), maximum: {}",
-                            ReadableSize(will_be),
-                            ReadableSize(allocated),
-                            ReadableSize(hard_limit));
-                }
-
-                thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
-                if (allocated > 0)
-                    user_process_list.user_memory_tracker.transferToGlobal(-allocated);
+                thread_group->memory_tracker.reparent(&user_process_list.user_memory_tracker);
 
                 /// Mirror the tracker parent, so the query's monitor escalates against the user it joined.
                 thread_group->memory_pressure_monitor.setParent(user_process_list.user_memory_pressure_monitor);
@@ -551,8 +531,9 @@ ProcessListEntry::~ProcessListEntry()
     parent.have_space.notify_all();
 
     /// The `user_to_queries` entry is intentionally kept (do not erase it here): `getUserInfo`
-    /// reads entries lock-free via raw pointers and relies on them never being erased. Its trackers are reset
-    /// when the user's next query arrives, see `ProcessList::insert`.
+    /// reads entries lock-free via raw pointers and relies on them never being erased. Its limits and peak are reset
+    /// when the user's next query arrives, see `ProcessList::insert`; its memory tracker settles to zero by itself
+    /// once no query or task is attached to it, see `MemoryTracker::detachChild`.
 }
 
 

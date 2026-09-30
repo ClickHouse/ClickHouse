@@ -155,7 +155,24 @@ private:
     /// actually removed.
     Int64 subtractAtMostWhatIsThere(Int64 size);
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
     std::atomic_bool drift_expected = false;
+#endif
+
+    /// `Process` trackers (queries, tasks, queued data) whose parent is this one, counted only for a `User` tracker.
+    std::atomic<Int64> children_count = 0;
+
+    void attachChild();
+    /// When the last child goes, nothing should be charged here any more, so whatever is left is settled.
+    void detachChild();
+
+    /// Moves `size` bytes off this tracker and its ancestors, stopping before `until`: still allocated and counted
+    /// from `until` up, just no longer charged below it. Not alloc/free, which would change the total.
+    void transferUpTo(const MemoryTracker * until, Int64 size);
+
+    /// Settle whatever is left on a query's tracker when the query ends, so that the per-user tracker ends at
+    /// zero for that query. Warns in debug builds when the amount is large enough to be a real bug.
+    void settleDriftOnQueryEnd();
 
     /// Helper fields for analyzing the global memory tracker. Both are touched only by the
     /// background memory worker (see `updateAllocated` and `updateUncorrected`), so they need
@@ -200,22 +217,18 @@ public:
     /// the settle at query end isn't reported as a bug. Propagates up through the task trackers too.
     void setDriftExpected()
     {
+#ifdef DEBUG_OR_SANITIZER_BUILD
         for (auto * tracker = this; tracker; tracker = tracker->parent.load(std::memory_order_relaxed))
         {
             if (tracker->level == VariableContext::Process)
                 tracker->drift_expected.store(true, std::memory_order_relaxed);
         }
+#endif
     }
 
-    /// Settle whatever is left on a query's tracker when the query ends, so that the per-user tracker ends at
-    /// zero for that query. Warns in debug builds when the amount is large enough to be a real bug.
-    void settleDriftOnQueryEnd();
-
-    /// Moves `size` bytes off this chain, up to but excluding the first tracker at `up_to_level`: still
-    /// allocated and counted there, just no longer charged below it. Not alloc/free, which would change the total.
-    void transferUpTo(VariableContext up_to_level, Int64 size);
-
-    void transferToGlobal(Int64 size) { transferUpTo(VariableContext::Global, size); }
+    /// Moves this tracker under `new_parent` together with what it holds: the bytes leave the old ancestors that
+    /// are not ancestors of `new_parent` and are charged to the new ones, whose hard limits are checked first.
+    void reparent(MemoryTracker * new_parent);
 
     Int64 getPeak() const
     {
