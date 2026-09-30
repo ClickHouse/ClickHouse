@@ -154,6 +154,59 @@ def test_restore_unavailable_projection_validates_codec_output_type(started_clus
     assert "CODEC(Gorilla)" in node.query("SHOW CREATE TABLE codec_restore.restored")
 
 
+def test_restore_codec_projection_with_missing_dictionary(started_cluster):
+    node.query("DROP DATABASE IF EXISTS codec_restore_missing_dict SYNC")
+    node.query("CREATE DATABASE codec_restore_missing_dict")
+    node.query(
+        "CREATE TABLE codec_restore_missing_dict.lookup_source "
+        "(id UInt64, value UInt64) ENGINE = Memory"
+    )
+    node.query(
+        "CREATE DICTIONARY codec_restore_missing_dict.lookup "
+        "(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id "
+        "SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() "
+        "DB 'codec_restore_missing_dict' TABLE 'lookup_source')) "
+        "LAYOUT(FLAT()) LIFETIME(0)"
+    )
+    node.query(
+        "CREATE TABLE codec_restore_missing_dict.source "
+        "(a UInt64, PROJECTION pp (a CODEC(ZSTD)) AS "
+        "(SELECT a, dictGet('codec_restore_missing_dict.lookup', 'value', a) AS d ORDER BY a)) "
+        "ENGINE = MergeTree ORDER BY a"
+    )
+    node.query(
+        "DROP DICTIONARY codec_restore_missing_dict.lookup "
+        "SETTINGS check_table_dependencies = 0"
+    )
+    node.restart_clickhouse()
+    assert (
+        node.query(
+            "SELECT count() FROM system.projections "
+            "WHERE database = 'codec_restore_missing_dict' AND table = 'source'"
+        ).strip()
+        == "0"
+    )
+
+    backup = f"unavailable_projection_missing_dict_{uuid.uuid4().hex}"
+    node.query(
+        f"BACKUP TABLE codec_restore_missing_dict.source TO Disk('backups', '{backup}')"
+    )
+    node.query(
+        "RESTORE TABLE codec_restore_missing_dict.source "
+        f"AS codec_restore_missing_dict.restored FROM Disk('backups', '{backup}')"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM system.projections "
+            "WHERE database = 'codec_restore_missing_dict' AND table = 'restored'"
+        ).strip()
+        == "0"
+    )
+    assert "CODEC(ZSTD(" in node.query(
+        "SHOW CREATE TABLE codec_restore_missing_dict.restored"
+    )
+
+
 def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     node.query("DROP DATABASE IF EXISTS dl SYNC")
     node.query("CREATE DATABASE dl")

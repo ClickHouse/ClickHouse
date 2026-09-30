@@ -29,6 +29,8 @@
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 
+#include <Compression/CompressionFactory.h>
+
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
@@ -1016,10 +1018,25 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     {
                         auto analysis_context = Context::createCopy(getContext());
                         analysis_context->setSetting("enable_positional_arguments_for_projections", 1);
-                        auto checked_projection = ProjectionDescription::getProjectionFromAST(
-                            projection_ast, properties.columns, nullptr, analysis_context, mode, create.attach_short_syntax);
-                        ProjectionDescription::validateDeclaredColumnCodecs(
-                            checked_projection, getContext(), mode, create.attach_short_syntax, is_restore_from_backup);
+                        std::optional<ProjectionDescription> checked_projection;
+                        try
+                        {
+                            checked_projection.emplace(ProjectionDescription::getProjectionFromAST(
+                                projection_ast, properties.columns, nullptr, analysis_context, mode, create.attach_short_syntax));
+                        }
+                        catch (const Exception &)
+                        {
+                            /// A missing dependency can still prevent analysis. Check codec settings
+                            /// without output types before preserving the unavailable declaration.
+                            for (const auto & child : declaration.columns->children)
+                                if (const auto * column = child ? child->as<const ASTColumnDeclaration>() : nullptr;
+                                    column && column->getCodec())
+                                    CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                                        column->getCodec(), {}, CodecValidationSettings(getContext()->getSettingsRef()));
+                        }
+                        if (checked_projection)
+                            ProjectionDescription::validateDeclaredColumnCodecs(
+                                *checked_projection, getContext(), mode, create.attach_short_syntax, is_restore_from_backup);
                     }
                     /// Keep the declaration so it can be analyzed after the missing setting or
                     /// dependency is restored.
