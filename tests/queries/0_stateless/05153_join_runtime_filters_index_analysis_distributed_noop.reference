@@ -4,5 +4,5 @@ parallel_replicas	64	2016
 parallel_replicas_plan_based	64	2016
 05153_distributed_plan	0	0
 05153_local	1	1
-05153_parallel_replicas	0	0
-05153_parallel_replicas_plan_based	0	0
+05153_parallel_replicas	1	1
+05153_parallel_replicas_plan_based	1	1

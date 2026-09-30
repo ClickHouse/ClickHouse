@@ -1,13 +1,14 @@
--- `enable_join_runtime_filters_index_analysis` is a Production tier setting, but the second-pass
--- granule pruning it asks for only happens for a left side that is read locally: the descriptors
--- driving it are attached to `ReadFromMergeTree` during query plan optimization and are not carried
--- over when that step is rebuilt for remote execution (they are neither cloned nor serialized, and
--- `initializePipeline` skips the pruning outright under parallel replicas).
+-- `enable_join_runtime_filters_index_analysis` asks for a second-pass granule pruning driven by
+-- descriptors that are attached to `ReadFromMergeTree` while a plan is optimized. They are not
+-- serialized, so a read that arrives as a plan packet has none and reads its share unpruned.
 --
--- This test pins the documented no-op contract of those unsupported modes: the query is accepted and
--- returns exactly the same result as a local read, only the granule pruning does not happen. It is a
--- regression test for the promotion, so that the modes in which the setting does nothing stay the
--- ones listed in its description.
+-- Parallel replicas DO prune: each replica prunes its own assigned granules with its own filter, which is
+-- built from the whole build side (that side is broadcast, read in full on every replica), so a granule it
+-- drops cannot hold a row that should have matched. `make_distributed_plan` remains a no-op.
+--
+-- So this test pins two things: every mode returns exactly the result of a local read, and which modes
+-- prune. TODO: the file name still says `noop`, which now describes only the `make_distributed_plan` row -
+-- rename it and restructure the assertions as a follow-up.
 
 DROP TABLE IF EXISTS rf_idx_fact SYNC;
 DROP TABLE IF EXISTS rf_idx_dim SYNC;
