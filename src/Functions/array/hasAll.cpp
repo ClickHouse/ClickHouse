@@ -39,7 +39,11 @@ Raises a `NO_COMMON_TYPE` exception if the set and subset elements do not share 
         {"Arrays containing NULL values", "SELECT hasAll([1, Null], [Null])", "1"},
         {"Arrays containing values of a different type", "SELECT hasAll([1.0, 2, 3, 4], [1, 3])", "1"},
         {"Arrays containing String values", "SELECT hasAll(['a', 'b'], ['a'])", "1"},
-        {"Arrays without a common type", "SELECT hasAll([1], ['a'])", "Raises a NO_COMMON_TYPE exception"},
+        {"Arrays without a common type", "SELECT hasAll([1], ['a'])",
+         R"(
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString/Enum and some of them are not. (NO_COMMON_TYPE)
+        )"},
         {"Array of arrays", "SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])", "0"},
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

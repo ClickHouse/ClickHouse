@@ -1,0 +1,118 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-08-15
+title: 'Demo days - 2026-08-15'
+sidebarTitle: '2026-08-15'
+description: 'Demo days ClickStack du 15-08-2026'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="dashboard-variables">
+  ## Variables de tableau de bord
+</div>
+
+*Démo par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/gY2Kej-EYx4" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Les variables de tableau de bord constituent la principale nouveauté de cette semaine. Elles s&#39;appuient sur le modèle de filtres déjà utilisé par les tableaux de bord : tout filtre existant ou nouveau peut être mis à disposition sous forme de variable.
+
+Par défaut, une variable utilise le nom d&#39;affichage du filtre. Si ce nom contient des caractères spéciaux ou si deux filtres partagent le même nom d&#39;affichage, vous pouvez attribuer un nom de variable personnalisé. Ce nom reste inchangé si le filtre est renommé par la suite. La page de configuration affiche le nom à utiliser pour la référence et, une fois la variable activée, il apparaît également dans l&#39;infobulle du filtre.
+
+Les graphiques en SQL brut prennent en charge plusieurs façons d&#39;utiliser les variables. `$__filter($var)` développe la sélection actuelle pour une variable. C&#39;est l&#39;équivalent, pour une seule variable, de la macro existante `$__filters`, qui développe tous les filtres.
+
+L&#39;ajout le plus intéressant est `$__conditionalAll(condition, $var)`. Son premier argument est une condition et le second, une variable. Lorsque la variable a une sélection, la condition est incluse dans la requête. En l&#39;absence de sélection, l&#39;expression entière devient `1 = 1` et n&#39;a aucun effet sur le filtrage.
+
+Cela permet d&#39;effectuer des mappages entre sources. Un tableau de bord peut mapper les codes d’état des traces vers `error` ou `info`, ce qui permet à un filtre de niveau de gravité défini sur une table de logs de filtrer une table de traces. Sélectionnez `error` au niveau du tableau de bord pour que la requête de traces filtre les statuts d&#39;erreur.
+
+L&#39;autocomplétion suggère toutes les variables disponibles et les formats qu&#39;elles prennent en charge. À la suite d&#39;une suggestion de Brandon, elle affiche désormais le développement réel en ligne à partir de la sélection actuelle. Les suggestions de macros incluent également leur développement, et une nouvelle section de documentation explique le rôle de chaque macro. La validation détecte les références à des variables inexistantes et les macros appelées avec des arguments incorrects.
+
+Les graphiques créés avec le builder utilisent la même substitution de variables dans la plupart des champs modifiables, pour les entrées SQL comme Lucene. Les variables fonctionnent dans `WHERE`, `GROUP BY`, `HAVING` et `ORDER BY`, avec la même autocomplétion et la même validation. Les champs Lucene prennent en charge les variables, mais pas les macros. Les champs du builder SQL proposent les macros liées aux variables plutôt que l&#39;ensemble complet disponible en SQL brut.
+
+Les alertes ont une règle stricte : chaque variable est évaluée avec sa valeur vide. Si une requête d&#39;alerte référence des variables, l&#39;éditeur vous avertit avant de l&#39;enregistrer. L&#39;aperçu et le SQL généré affichent le développement vide, y compris sur la page de détail de l&#39;alerte, et la tâche d&#39;alerte applique ces valeurs vides lors de son exécution.
+
+La configuration des variables reste conditionnée par `NEXT_PUBLIC_ENABLE_DASHBOARD_VARIABLES`. Lorsqu&#39;aucune variable n&#39;est configurée, le comportement du tableau de bord reste inchangé.
+
+**PR associés :** [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) ajoute la configuration des variables de filtre, [#2873](https://github.com/hyperdxio/hyperdx/pull/2873) substitue les variables dans les graphiques en SQL brut, [#2874](https://github.com/hyperdxio/hyperdx/pull/2874) autocomplétion et validation des variables SQL de tableau de bord, [#2901](https://github.com/hyperdxio/hyperdx/pull/2901) prend en charge les variables de tableau de bord dans les tuiles du builder de graphiques, [#2910](https://github.com/hyperdxio/hyperdx/pull/2910) développe les variables en valeurs vides dans les requêtes d&#39;alerte, [#2923](https://github.com/hyperdxio/hyperdx/pull/2923) prend en charge les requêtes de valeurs de variables dépendantes, [#2937](https://github.com/hyperdxio/hyperdx/pull/2937) prend en charge les macros imbriquées et les références à des variables dans les macros, [#2944](https://github.com/hyperdxio/hyperdx/pull/2944) ajoute les variables de tableau de bord à l&#39;API externe
+
+<div id="alert-detail-page-with-evaluation-history">
+  ## Page de détail d’une alerte avec historique des évaluations
+</div>
+
+*Démo par [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Y0entaRF-R8" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Jusqu’à présent, une alerte n’offrait qu’une bande d’historique. Il n’y avait pas grand-chose à examiner pour comprendre ce qu’elle faisait réellement.
+
+La nouvelle page de détail affiche chaque évaluation. Pour les alertes groupées, elle indique quel groupe s’est déclenché et quelle valeur a franchi le seuil. Chaque entrée inclut également la durée de la requête ClickHouse, ainsi que la configuration de l’alerte.
+
+La colonne des buckets remplis a posteriori mérite quelques explications. Lorsqu’une évaluation est manquée, l’exécution suivante comble cette lacune en traitant le bucket manquant. La présence de buckets remplis a posteriori signifie donc que l’alerte est en retard. Une requête ClickHouse lente laisse désormais une trace visible au lieu de retarder discrètement les évaluations suivantes.
+
+Les marqueurs du graphique s’alignent sur le début du bucket évalué, ce qui permet de mieux voir quand l’alerte s’est déclenchée et quand elle est revenue à l’état OK.
+
+Vous pouvez également modifier ou supprimer une alerte directement depuis la page de détail. Il n’est plus nécessaire de revenir à la fenêtre modale de recherche enregistrée ou à l’éditeur de tuile du tableau de bord. L’ajout d’une plus grande partie de la configuration de l’alerte à cette page est encore à l’étude.
+
+La page reste derrière `NEXT_PUBLIC_ENABLE_ALERT_DETAILS`.
+
+**PR associés :** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) modèle de lecture des évaluations d’alerte et `GET /alerts/:id/evaluations`, [#2834](https://github.com/hyperdxio/hyperdx/pull/2834) persistance des erreurs d’évaluation des alertes et des analytics dans AlertHistory, [#2835](https://github.com/hyperdxio/hyperdx/pull/2835) page de détail d’une alerte avec historique des évaluations, [#2928](https://github.com/hyperdxio/hyperdx/pull/2928) alignement des marqueurs du graphique d’alerte sur le début du bucket évalué, [#2931](https://github.com/hyperdxio/hyperdx/pull/2931) possibilité de modifier et supprimer des alertes depuis la page de détail de l’alerte
+
+<div id="investigating-alerts-and-mcp-tool-annotations">
+  ## Investigation des alertes et annotations des outils MCP
+</div>
+
+*Démo par [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/942yeJitK4Q" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Les alertes déclenchées disposent désormais d&#39;un bouton Investiguer. Cliquez dessus pour lancer une investigation dans un notebook depuis la page des alertes ou la page de détail d&#39;une alerte.
+
+L&#39;objectif à terme est de lancer automatiquement ces investigations lorsqu&#39;une alerte se déclenche. Le bouton constitue une étape intermédiaire utile, et non la forme finale envisagée.
+
+Chaque outil du serveur MCP ClickStack inclut désormais des indications d&#39;annotation. Auparavant, le serveur ne signalait pas qu&#39;un outil était en lecture seule tandis qu&#39;un autre modifiait ou supprimait des données.
+
+L&#39;ajout de `readOnlyHint` et `destructiveHint` fournit aux clients suffisamment d&#39;informations pour traiter ces outils différemment. Les opérations de lecture peuvent se poursuivre sans interruption, tandis que les actions destructrices peuvent attendre une approbation explicite. La suppression d&#39;une alerte en est l&#39;exemple évident. Vous devriez être invité à confirmer avant qu&#39;elle ne soit effectuée.
+
+La dernière modification concerne les outils que les agents choisissent en premier lieu. L&#39;utilisation de `clickstack_sql` avait augmenté à mesure que l&#39;ensemble d&#39;outils s&#39;élargissait, faute de politique de sélection claire. Les agents recouraient au SQL brut même lorsque les outils de création étaient mieux adaptés.
+
+Cela a des implications qui vont au-delà de l&#39;exactitude des requêtes. Le SQL brut crée des tuiles de résultats statiques. Les outils de création, `clickstack_table`, `clickstack_timeseries` et `clickstack_search`, produisent des tuiles que vous pouvez explorer et à partir desquelles vous pouvez pivoter.
+
+Le MCP oriente désormais les agents en priorité vers ces outils de création et réserve le SQL brut aux requêtes qu&#39;ils ne peuvent véritablement pas exprimer. Les scores d&#39;évaluation se sont sensiblement améliorés après cette modification.
+
+**PR associés :** [#2838](https://github.com/hyperdxio/hyperdx/pull/2838) ajoute des annotations aux outils MCP (`readOnlyHint`, etc.), [#2840](https://github.com/hyperdxio/hyperdx/pull/2840) oriente les agents vers les outils de création de requêtes plutôt que vers le SQL brut, [#2870](https://github.com/hyperdxio/hyperdx/pull/2870) oriente les agents de tableau de bord vers des filtres de tuiles par série. Le bouton Investiguer lui-même n&#39;a pas de PR publique associée.
+
+<div id="multi-series-metric-charts-in-a-single-query">
+  ## Graphiques de métriques à plusieurs séries dans une seule requête
+</div>
+
+*Démo par [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/jJKgFrMfGjU" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Auparavant, afficher plusieurs métriques sur un même graphique nécessitait d&#39;exécuter une requête ClickHouse par série, puis de fusionner les jeux de résultats dans Node ou dans le navigateur. Un graphique comportant N séries générait N requêtes.
+
+Les graphiques à plusieurs séries sont désormais compilés en une seule requête SQL. Chaque série devient une CTE, puis ClickHouse les fusionne à la fin. Les ratios suivent le même principe : les deux séries sont produites dans une seule requête et le ratio est calculé dans la projection finale.
+
+La réduction du nombre de requêtes constitue le bénéfice immédiat. Cette même structure de requête pose également les bases des formules de métriques. Une formule nécessite que chaque série soit disponible sous forme de colonnes dans une même relation afin de pouvoir être exprimée dans le `SELECT` final. C&#39;est désormais exactement ce que produit le compilateur, et les travaux sur les formules suivent déjà.
+
+Cette modification a révélé une régression. Les tuiles à plusieurs séries ne s&#39;affichaient pas lorsqu&#39;elles combinaient des agrégations produisant des flottants et des entiers. Il suffisait de combiner un `quantile` d&#39;histogramme, qui renvoie un `Float64`, avec un `count` d&#39;histogramme, qui renvoie un `Int64`, pour la déclencher.
+
+Le `UNION ALL` composé et le pivot faisaient passer chaque série par la même colonne, ce qui amenait ClickHouse à élargir le type en `Variant(Float64, Int64)`. Ce cas est désormais corrigé.
+
+**PR associées :** [#2858](https://github.com/hyperdxio/hyperdx/pull/2858) étendre la couverture des tests d&#39;entiers pour la fusion de métriques à plusieurs séries, [#2859](https://github.com/hyperdxio/hyperdx/pull/2859) déplacer vers ClickHouse le calcul de fusion des métriques à plusieurs séries, [#2907](https://github.com/hyperdxio/hyperdx/pull/2907) couverture des tâches d&#39;alerte pour les tuiles de métriques à plusieurs séries, [#2916](https://github.com/hyperdxio/hyperdx/pull/2916) corriger les graphiques de métriques à plusieurs séries mélangeant des agrégations de flottants et d&#39;entiers, [#2872](https://github.com/hyperdxio/hyperdx/pull/2872) modèle d&#39;expression de formule, [#2908](https://github.com/hyperdxio/hyperdx/pull/2908) afficher les formules dans la requête de métriques composée, [#2909](https://github.com/hyperdxio/hyperdx/pull/2909) interface de l&#39;éditeur de graphiques pour les formules de métriques
+
+<div id="lucene-autocomplete-and-password-requirement-fixes">
+  ## Correctifs de l’autocomplétion Lucene et des exigences de mot de passe
+</div>
+
+*Démo par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/8MODmM5RT6Q" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Les tests des variables de tableau de bord ont révélé une régression distincte : l’autocomplétion Lucene avait discrètement cessé de fonctionner presque partout. La page de recherche était le seul endroit où elle fonctionnait encore.
+
+L’autre modification concerne la page Join Team, où les utilisateurs invités définissent leur mot de passe. La page n’affichait pas les exigences de mot de passe, alors que le backend les appliquait. La saisie d’une valeur non valide affichait un message générique « Le mot de passe n’est pas valide » et laissait l’utilisateur deviner la politique appliquée.
+
+Ces exigences sont désormais visibles. L’examen du composant partagé qui les affiche a également révélé deux divergences avec le backend : les caractères spéciaux pris en compte et la longueur maximale du mot de passe. Les deux ont été corrigées.
+
+**PR associés :** [#2902](https://github.com/hyperdxio/hyperdx/pull/2902) rétablit l’autocomplétion Lucene, [#2904](https://github.com/hyperdxio/hyperdx/pull/2904) affiche les exigences de mot de passe sur la page Join Team

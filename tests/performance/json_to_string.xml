@@ -1,0 +1,42 @@
+<test>
+    <create_query>
+        CREATE TABLE json_to_string (id UInt64, payload JSON) ENGINE = MergeTree ORDER BY id
+    </create_query>
+    <create_query>
+        CREATE TABLE json_to_string_shared_data (id UInt64, payload JSON(max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY id
+    </create_query>
+    <create_query>
+        CREATE TABLE json_to_string_dynamic (id UInt64, payload Dynamic) ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <fill_query>
+        INSERT INTO json_to_string
+        SELECT
+            number,
+            CAST((
+                number,
+                ['info', 'warn', 'error', 'debug'][(number % 4) + 1],
+                map('user', randomPrintableASCII(8), 'session', randomPrintableASCII(12)),
+                [randomPrintableASCII(5), randomPrintableASCII(6)],
+                CAST((randomPrintableASCII(6), rand64() / 1000000.0) AS Tuple(country String, lat Float64)),
+                (number % 2) = 0
+            ) AS Tuple(user_id UInt64, event String, props Map(String, String),
+                       tags Array(String), geo Tuple(country String, lat Float64), active Bool))::JSON
+        FROM numbers(500000)
+    </fill_query>
+    <fill_query>INSERT INTO json_to_string_shared_data SELECT * FROM json_to_string</fill_query>
+    <fill_query>INSERT INTO json_to_string_dynamic SELECT * FROM json_to_string</fill_query>
+    <fill_query>OPTIMIZE TABLE json_to_string FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE json_to_string_shared_data FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE json_to_string_dynamic FINAL</fill_query>
+
+    <query>SELECT sum(length(toString(payload))) FROM json_to_string</query>
+    <query>SELECT sum(length(toString(payload))) FROM json_to_string_shared_data</query>
+    <!-- Dynamic(JSON): exercises SerializationDynamic's text fast path resolving a
+         non-poolable SerializationJSON through DataTypesCache, not just plain JSON. -->
+    <query>SELECT sum(length(toString(payload))) FROM json_to_string_dynamic</query>
+
+    <drop_query>DROP TABLE IF EXISTS json_to_string</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_to_string_shared_data</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_to_string_dynamic</drop_query>
+</test>

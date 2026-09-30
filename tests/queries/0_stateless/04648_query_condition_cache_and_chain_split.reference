@@ -1,0 +1,10 @@
+--- two conjuncts, numeric only
+0
+0	1
+0
+0	1
+--- three conjuncts, including a String column
+0
+0	1
+0
+0	1

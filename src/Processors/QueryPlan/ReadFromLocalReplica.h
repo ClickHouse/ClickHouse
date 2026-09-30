@@ -19,6 +19,10 @@ public:
 
     QueryPlanPtr extractQueryPlan();
 
+    /// The local plan is held inside this step rather than as a child node, so plan-wide walks must
+    /// descend through here explicitly to reach it.
+    const QueryPlan * getQueryPlan() const { return query_plan.get(); }
+
     /// Context of the subquery this local plan reads, carrying the same per-subquery
     /// SETTINGS that are shipped to remote replicas.
     ContextPtr getContext() const { return context; }

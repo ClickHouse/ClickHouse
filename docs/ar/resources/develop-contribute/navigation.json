@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "مقدمة",
+      "group": "المقدمة",
       "pages": [
         "ar/resources/develop-contribute/introduction/developer-instruction",
         "ar/resources/develop-contribute/introduction/architecture"
       ]
     },
     {
-      "group": "الإنشاء",
+      "group": "البناء",
       "pages": [
         "ar/resources/develop-contribute/build/build",
         "ar/resources/develop-contribute/build/build-osx",
@@ -46,14 +46,14 @@
     {
       "group": "تطوير التكاملات",
       "pages": [
+        "ar/resources/develop-contribute/integrations/index",
         "ar/resources/develop-contribute/integrations/building-integrations",
         "ar/resources/develop-contribute/integrations/testing-your-integration",
         "ar/resources/develop-contribute/integrations/documenting-your-integration"
-      ],
-      "root": "ar/resources/develop-contribute/integrations/index"
+      ]
     },
     {
-      "group": "خريطة الطريق",
+      "group": "خارطة الطريق",
       "pages": [
         "ar/resources/develop-contribute/roadmap"
       ]

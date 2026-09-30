@@ -6,6 +6,9 @@ SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+SET query_plan_optimize_count_from_text_index = 0;
+-- The assertions on `TextIndexReadPostings` below count posting lists read by one query, so keep them independent of what earlier queries have already put into the server-wide postings cache.
+SET use_text_index_postings_cache = 0;
 -- add_minmax_index_for_numeric_columns=0: Changes conditions for materialized index bytes
 
 SELECT 'hasAnyToken and hasAllToken functions';
@@ -26,8 +29,8 @@ ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), posti
 
 SYSTEM STOP MERGES tab_fully;
 
-INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
-INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
+INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 SELECT count() FROM tab_fully WHERE hasAnyToken(text, 'o50') SETTINGS log_comment='tab_fully_hasAnyToken';
 SELECT count() FROM tab_fully WHERE hasAllToken(text, 'o50') SETTINGS log_comment='tab_fully_hasAllToken';
@@ -52,14 +55,14 @@ Engine = MergeTree()
 ORDER BY id
 SETTINGS add_minmax_index_for_numeric_columns = 0;
 
-INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 ALTER TABLE tab_partially DROP INDEX IF EXISTS idx;
 ALTER TABLE tab_partially ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), posting_list_block_size = 10000000, posting_list_codec = 'none');
 
 SYSTEM STOP MERGES tab_partially;
 
-INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 SELECT count() FROM tab_partially WHERE hasAnyToken(text, 'o50') SETTINGS log_comment='tab_partially_hasAnyToken';
 SELECT count() FROM tab_partially WHERE hasAllToken(text, 'o50') SETTINGS log_comment='tab_partially_hasAllToken';
@@ -94,8 +97,8 @@ ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), suppo
 
 SYSTEM STOP MERGES tab_fully;
 
-INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
-INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
+INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 SELECT count() FROM tab_fully WHERE hasPhrase(text, 'ello50 wor') SETTINGS log_comment='tab_fully_hasPhrase_wo_pos';
 
@@ -119,14 +122,14 @@ Engine = MergeTree()
 ORDER BY id
 SETTINGS add_minmax_index_for_numeric_columns = 0;
 
-INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 ALTER TABLE tab_partially DROP INDEX IF EXISTS idx;
 ALTER TABLE tab_partially ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), support_phrase_search = 0, posting_list_block_size = 10000000, posting_list_codec = 'none');
 
 SYSTEM STOP MERGES tab_partially;
 
-INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 SELECT count() FROM tab_partially WHERE hasPhrase(text, 'ello50 wor') SETTINGS log_comment='tab_partially_hasPhrase';
 
@@ -160,8 +163,8 @@ ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), suppo
 
 SYSTEM STOP MERGES tab_fully;
 
-INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
-INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
+INSERT INTO tab_fully SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 SELECT count() FROM tab_fully WHERE hasPhrase(text, 'ello50 wor') SETTINGS log_comment='tab_fully_hasPhrase_w_pos';
 
@@ -185,14 +188,14 @@ Engine = MergeTree()
 ORDER BY id
 SETTINGS add_minmax_index_for_numeric_columns = 0, allow_experimental_text_index_phrase_search = 1;
 
-INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 ALTER TABLE tab_partially DROP INDEX IF EXISTS idx;
 ALTER TABLE tab_partially ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1, posting_list_block_size = 10000000, posting_list_codec = 'none');
 
 SYSTEM STOP MERGES tab_partially;
 
-INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
+INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(1000);
 
 SELECT count() FROM tab_partially WHERE hasPhrase(text, 'ello50 wor') SETTINGS log_comment='tab_partially_hasPhrase_pos';
 

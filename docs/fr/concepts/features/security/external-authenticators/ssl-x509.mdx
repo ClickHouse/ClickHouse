@@ -9,7 +9,7 @@ import SelfManaged from '/snippets/fr/_self_managed_only_no_roadmap.mdx';
 
 <SelfManaged />
 
-L’[option SSL &#39;strict&#39;](/fr/reference/settings/server-settings/settings#openssl) active la validation obligatoire des certificats pour les connexions entrantes. Dans ce cas, seules les connexions avec des certificats de confiance peuvent être établies. Les connexions avec des certificats non approuvés seront rejetées. Ainsi, la validation des certificats permet d’authentifier de manière univoque une connexion entrante. Le champ `Common Name` ou `subjectAltName extension` du certificat est utilisé pour identifier l’utilisateur connecté. `subjectAltName extension` prend en charge l’utilisation d’un caractère générique &#39;*&#39; dans la configuration du serveur. Cela permet d’associer plusieurs certificats à un même utilisateur. De plus, la réémission et la révocation des certificats n’affectent pas la configuration de ClickHouse.
+L’[option SSL &#39;strict&#39;](/fr/reference/settings/server-settings/settings/other#openssl) active la validation obligatoire des certificats pour les connexions entrantes. Dans ce cas, seules les connexions avec des certificats de confiance peuvent être établies. Les connexions avec des certificats non approuvés seront rejetées. Ainsi, la validation des certificats permet d’authentifier de manière univoque une connexion entrante. Le champ `Common Name` ou `subjectAltName extension` du certificat est utilisé pour identifier l’utilisateur connecté. `subjectAltName extension` prend en charge l’utilisation d’un caractère générique &#39;*&#39; dans la configuration du serveur. Cela permet d’associer plusieurs certificats à un même utilisateur. De plus, la réémission et la révocation des certificats n’affectent pas la configuration de ClickHouse.
 
 Pour activer l’authentification par certificat SSL, une liste de `Common Name` ou de `Subject Alt Name` pour chaque utilisateur ClickHouse doit être spécifiée dans le fichier de paramètres `users.xml ` :
 
@@ -44,4 +44,4 @@ Pour activer l’authentification par certificat SSL, une liste de `Common Name`
 </clickhouse>
 ```
 
-Pour que la [`chaîne de confiance`](https://en.wikipedia.org/wiki/Chain_of_trust) SSL fonctionne correctement, il est également important de s&#39;assurer que le paramètre [`caConfig`](/fr/reference/settings/server-settings/settings#openssl) est bien configuré.
+Pour que la [`chaîne de confiance`](https://en.wikipedia.org/wiki/Chain_of_trust) SSL fonctionne correctement, il est également important de s&#39;assurer que le paramètre [`caConfig`](/fr/reference/settings/server-settings/settings/other#openssl) est bien configuré.

@@ -39,12 +39,23 @@ struct Tok
 
 std::vector<Tok> tokenize(const std::string & query)
 {
-    DB::Lexer lexer(query.data(), query.data() + query.size(), 65536);
+    /// `max_query_size = 0` means no limit, exactly like the browser's `tokenize`: the page lexes
+    /// whatever the editor holds (the server applies its own limits), and a cap here would flag every
+    /// token crossing it as an error and silently truncate the token stream of a big query.
+    DB::Lexer lexer(query.data(), query.data() + query.size(), 0);
     std::vector<Tok> tokens;
     while (true)
     {
         DB::Token token = lexer.nextToken();
-        if (token.isError() || token.isEnd())
+        if (token.isError())
+        {
+            /// The browser's `tokenize` also stops at an error token, but a port that stopped
+            /// silently would analyze a prefix of the query and report the result as if it were
+            /// complete - so a truncated analysis fails the test loudly instead.
+            ADD_FAILURE() << "the SQL lexer reported an error token: " << DB::getErrorTokenDescription(token.type);
+            break;
+        }
+        if (token.isEnd())
             break;
         tokens.push_back({token.type});
     }
