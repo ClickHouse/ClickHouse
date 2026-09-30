@@ -955,6 +955,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
     std::unordered_map<BitSet, RelationEstimateInfo> relation_infos;
     Strings relations_without_statistics;
+    Strings relations_estimated_from_data_lake_metadata;
     std::vector<UInt8> leaf_imprecise(query_graph.relation_stats.size());
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
@@ -969,7 +970,18 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
         if (isMissingStatisticsSource(rel.source))
             relations_without_statistics.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
+        else if (rel.source == RowEstimateSource::DataLakeMetadata && rel.imprecise_estimate)
+            relations_estimated_from_data_lake_metadata.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
     }
+
+    /// `ALTER TABLE ... MATERIALIZE STATISTICS` does not apply to data lake tables, so they get their own message.
+    if (!relations_estimated_from_data_lake_metadata.empty())
+        LOG_DEBUG(
+            getLogger("optimizeJoin"),
+            "Join order optimization uses imprecise row count estimates derived from data lake metadata "
+            "(for example Iceberg manifest files) for the following relation(s): {}. They have no column statistics "
+            "for join reordering, so the chosen join order may be suboptimal",
+            fmt::join(relations_estimated_from_data_lake_metadata, ", "));
 
     /// The listed names can be aliases or subquery labels, so no concrete `ALTER` command is suggested.
     if (!relations_without_statistics.empty())

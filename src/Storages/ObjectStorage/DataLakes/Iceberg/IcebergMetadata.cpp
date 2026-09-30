@@ -75,6 +75,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestListPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
@@ -134,6 +135,7 @@ extern const SettingsInt64 iceberg_timestamp_ms;
 extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
+extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
@@ -1303,6 +1305,96 @@ bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_met
             return false;
     }
     return true;
+}
+
+std::optional<DataLakeReadEstimate>
+IcebergMetadata::estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, ContextPtr context) const
+{
+    auto table_state_snapshot = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);
+    if (table_state_snapshot == nullptr)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Can't extract iceberg table state from storage snapshot for table location {}",
+            persistent_components.table_location);
+    }
+
+    DataLakeReadEstimate estimate;
+    estimate.rows = 0;
+
+    /// A table that was never written has no snapshot and no rows.
+    auto data_snapshot = getRelevantDataSnapshotFromTableStateSnapshot(*table_state_snapshot, context);
+    if (!data_snapshot)
+        return estimate;
+
+    /// Prune as the read does (`IcebergIterator`), but never build an `IN` set: planning must not run a subquery.
+    const auto & settings = context->getSettingsRef();
+    const ActionsDAG * pruning_filter = settings[Setting::use_iceberg_partition_pruning] ? filter : nullptr;
+
+    std::unique_ptr<ManifestListPruner> manifest_list_pruner;
+    if (pruning_filter && data_snapshot->partition_specs && settings[Setting::use_iceberg_manifest_list_partition_pruning])
+        manifest_list_pruner = std::make_unique<ManifestListPruner>(
+            *persistent_components.schema_processor,
+            table_state_snapshot->schema_id,
+            data_snapshot->schema_id_on_snapshot_commit,
+            data_snapshot->partition_specs,
+            pruning_filter,
+            context,
+            /* require_ready_sets */ true);
+
+    for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
+    {
+        if (manifest_list_entry.content_type == ManifestFileContentType::DATA && manifest_list_pruner
+            && manifest_list_pruner->canBePruned(manifest_list_entry.partition_spec_id, manifest_list_entry.partition_summaries))
+        {
+            estimate.pruned_data_files = true;
+            continue;
+        }
+
+        auto files_handle = getManifestFileEntriesHandle(
+            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
+
+        if (!files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty()
+            || !files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
+            estimate.has_delete_files = true;
+
+        /// The pruners refer to the partition key of this manifest, so they live as long as its handle.
+        std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> file_pruners_by_schema_id;
+        for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
+        {
+            if (pruning_filter)
+            {
+                /// Keyed by the file's schema: a pruner is bound to one schema, and a merged manifest can hold files of several.
+                auto & pruner = file_pruners_by_schema_id[data_file->resolved_schema_id];
+                if (!pruner)
+                    pruner = std::make_unique<ManifestFilesPruner>(
+                        *persistent_components.schema_processor,
+                        table_state_snapshot->schema_id,
+                        data_file->resolved_schema_id,
+                        pruning_filter,
+                        files_handle.getPartitionKeyDescription(),
+                        context,
+                        /* require_ready_sets */ true);
+
+                const auto hyperrectangles
+                    = getDataFileHyperrectangles(*data_file, pruner->getMinMaxColumnTypes(), manifest_list_entry.manifest_file_path);
+                if (pruner->canBePruned(data_file, hyperrectangles) != PruningReturnStatus::NOT_PRUNED)
+                {
+                    estimate.pruned_data_files = true;
+                    continue;
+                }
+            }
+
+            /// A negative count comes from a corrupted manifest, as in `totalRows`.
+            if (data_file->parsed_entry->record_count < 0)
+            {
+                estimate.rows.reset();
+                return estimate;
+            }
+            *estimate.rows += static_cast<UInt64>(data_file->parsed_entry->record_count);
+        }
+    }
+    return estimate;
 }
 
 std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const

@@ -78,6 +78,7 @@ QueryPlanStepPtr ReadFromObjectStorageStep::clone() const
 void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+    data_lake_read_estimate.reset();
     if (!filter_actions_dag)
         return;
 
@@ -101,6 +102,18 @@ void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
     info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
+    data_lake_read_estimate.reset();
+}
+
+std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimateReadFromDataLakeMetadata() const
+{
+    /// The initiator assigns the files of this replica, so its own metadata may describe other files.
+    if (distributed_processing)
+        return std::nullopt;
+
+    if (!data_lake_read_estimate)
+        data_lake_read_estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), getContext());
+    return *data_lake_read_estimate;
 }
 
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)

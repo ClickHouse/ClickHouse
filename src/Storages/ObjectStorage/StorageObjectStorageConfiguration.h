@@ -330,6 +330,13 @@ public:
         return true;
     }
 
+    /// See `IDataLakeMetadata::estimateRead`. Plain object storage has no metadata to estimate from.
+    virtual std::optional<DataLakeReadEstimate>
+    estimateRead(StorageMetadataPtr /*storage_metadata_snapshot*/, const ActionsDAG * /*filter*/, ContextPtr /*context*/) const
+    {
+        return std::nullopt;
+    }
+
     /// Whether the data files that back this configuration are immutable, i.e. an existing data
     /// file is never overwritten in place (a change writes a new file). This holds for data lakes
     /// (a new snapshot references new files) but not for plain object storage, where the object at
