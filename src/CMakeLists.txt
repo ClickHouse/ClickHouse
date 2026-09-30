@@ -437,6 +437,7 @@ endif()
 
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
+add_object_library(clickhouse_server_iceberg_rest_catalog Server/IcebergRESTCatalog)
 
 # Track dependencies for #embed directives so that changes to embedded files trigger recompilation.
 set_source_files_properties(Server/WebUIRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
@@ -512,6 +513,7 @@ add_object_library(clickhouse_processors_formats Processors/Formats)
 add_object_library(clickhouse_processors_formats_framing Processors/Formats/Framing)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
 add_object_library(clickhouse_processors_transforms Processors/Transforms)
+add_object_library(clickhouse_processors_transforms_window Processors/Transforms/Window)
 add_object_library(clickhouse_window_functions WindowFunctions)
 add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_sinks Processors/Sinks)
@@ -547,6 +549,7 @@ add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 set_property(SOURCE
     Columns/IColumn.cpp                        # hashjoin_with_large_output
     Processors/Transforms/WindowTransform.cpp  # window functions
+    Processors/Transforms/Window/WindowTransformParams.cpp  # window functions
     WindowFunctions/WindowFunctionRank.cpp                   # window functions
     WindowFunctions/WindowFunctionDenseRank.cpp              # window functions
     WindowFunctions/WindowFunctionRowNumber.cpp              # window functions
