@@ -2635,30 +2635,34 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     assertDigest(local_context);
 }
 
-/// Adds the inner tables that `dropInnerTableIfAny` of `table` drops, and their own inner tables, to `names`.
-static void addInnerTableNames(const IDatabase & database, const IStorage & table, const ContextPtr & context, Strings & names)
+/// Adds the inner tables of `table` that `dropInnerTableIfAny` enumerates, and their own inner tables, to `ids`.
+static void addInnerTableIds(const IStorage & table, const ContextPtr & context, std::vector<StorageID> & ids)
 {
-    Strings inner_names;
+    std::vector<StorageID> inner_ids;
     if (const auto * view = typeid_cast<const StorageMaterializedView *>(&table); view && view->hasInnerTable())
     {
-        inner_names.push_back(view->getTargetTableId().table_name);
+        inner_ids.push_back(view->getTargetTableId());
         if (view->isRefreshable() && !view->isAppendRefreshStrategy())
-            inner_names.push_back(".tmp" + inner_names.front());
+            inner_ids.emplace_back(inner_ids.front().getDatabaseName(), ".tmp" + inner_ids.front().getTableName());
     }
     else if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(&table); time_series && time_series->hasInnerTables())
     {
         for (auto kind : StorageTimeSeries::getTargetKinds())
             if (time_series->isInnerTable(kind))
-                inner_names.push_back(time_series->tryGetTargetTableID(kind, context).table_name);
+                if (auto inner_table_id = time_series->tryGetTargetTableID(kind, context))
+                    inner_ids.push_back(std::move(inner_table_id));
     }
 
-    for (auto & name : inner_names)
+    for (auto & inner_id : inner_ids)
     {
-        if (auto inner_table = database.tryGetTable(name, context))
+        if (auto inner_table = DatabaseCatalog::instance().tryGetTable(inner_id, context->getGlobalContext()))
         {
-            names.push_back(std::move(name));
-            addInnerTableNames(database, *inner_table, context, names);
+            ids.push_back(inner_table->getStorageID());
+            addInnerTableIds(*inner_table, context, ids);
         }
+        /// Not attached, e.g. detached by `SYSTEM RESTART REPLICA`.
+        else if (inner_id.hasUUID())
+            ids.push_back(std::move(inner_id));
     }
 }
 
@@ -2680,9 +2684,9 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
     waitDatabaseStarted();
 
     /// `CREATE OR REPLACE` drops the replaced table with its inner tables after this transaction is committed.
-    Strings replaced_inner_tables;
+    std::vector<StorageID> replaced_inner_tables;
     if (exchange && txn->isInitialQuery() && txn->isCreateOrReplaceQuery())
-        addInnerTableNames(*this, *getTable(to_table_name, local_context), local_context, replaced_inner_tables);
+        addInnerTableIds(*getTable(to_table_name, local_context), local_context, replaced_inner_tables);
 
     std::lock_guard lock{metadata_mutex};
 
@@ -2719,12 +2723,17 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
                 txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, zk_statement_to, zkutil::CreateMode::Persistent));
         }
 
-        /// Inner tables of a table created by `CREATE OR REPLACE` before 26.5 have no metadata node.
-        for (const auto & name : replaced_inner_tables)
+        /// Inner tables of a table created by `CREATE OR REPLACE` before 26.5 have no metadata node,
+        /// and the node under the name of a detached inner table may belong to another table.
+        for (const auto & inner_id : replaced_inner_tables)
         {
-            String inner_metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(name);
-            if (zookeeper->exists(inner_metadata_zk_path))
-                txn->addOp(zkutil::makeRemoveRequest(inner_metadata_zk_path, -1));
+            String inner_metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(inner_id.table_name);
+            String inner_statement;
+            Coordination::Stat inner_stat;
+            if (zookeeper->tryGet(inner_metadata_zk_path, inner_statement, &inner_stat)
+                && parseQueryFromMetadataInZooKeeper(local_context, getDatabaseName(), zookeeper_path, inner_id.table_name, inner_statement)
+                           ->as<const ASTCreateQuery &>().uuid == inner_id.uuid)
+                txn->addOp(zkutil::makeRemoveRequest(inner_metadata_zk_path, inner_stat.version));
         }
 
         /// In case of CREATE OR REPLACE there is no statement for the temporary table in ZK, so we use the local definition
