@@ -985,6 +985,9 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
         auto result_constant_node = std::make_shared<ConstantNode>(
             ConstantValue(ConstantValue::wrapToColumnConst(converted), result_type));
         result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
+        /// Carried like the source expression: this is the same value. Without it a
+        /// `LIMIT (SELECT ...)` loses the link to the subquery that produced the bound.
+        result_constant_node->addScalarSubqueryIds(limit_offset_constant_node->getScalarSubqueryIds());
         expression_node = std::move(result_constant_node);
     };
 

@@ -360,6 +360,9 @@ private:
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_global;
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_type_only;
 
+    /// Ids of the scalar subqueries already executed, keyed like the caches above.
+    std::unordered_map<QueryTreeNodePtrWithHash, size_t> scalar_subquery_to_subquery_id;
+
     std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;
 
     /// Deduplicates the built `FunctionBase` for non-deterministic functions (e.g. `randConstant`)

@@ -646,8 +646,21 @@ public:
     }
 
     const ActionsDAG::Node * addConstantIfNecessary(
-        const std::string & node_name, ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic, bool is_masked_secret = false)
+        const std::string & node_name,
+        ColumnConstPtr column,
+        DataTypePtr type,
+        std::string name,
+        bool is_deterministic,
+        bool is_masked_secret = false,
+        const std::vector<size_t> & scalar_subquery_ids = {})
     {
+        /// Recorded here as well as on the node below, because different plan rewrites lose
+        /// different halves: splitting a DAG moves nodes into a fresh one that has no list of its
+        /// own, while projecting a constant under an alias rebuilds the node and loses what was on
+        /// it. Both are read back onto the consuming step.
+        for (size_t id : scalar_subquery_ids)
+            actions_dag.addScalarSubqueryId(id);
+
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
         {
@@ -661,7 +674,10 @@ public:
                 return it->second;
         }
 
-        const auto * node = &actions_dag.addColumn(std::move(column), std::move(type), std::move(name), is_deterministic, is_masked_secret);
+        const auto * node = &actions_dag.addColumn(
+            std::move(column), std::move(type), std::move(name), is_deterministic, is_masked_secret,
+            /*is_runtime_filter_id=*/false, scalar_subquery_ids);
+
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -1019,7 +1035,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     actions_stack[0].addConstantIfNecessary(
         constant_node_name, constant_node.getColumn(), constant_type, constant_node_name, constant_node.isDeterministic(),
-        /* is_masked_secret= */ constant_node.isMasked());
+        /* is_masked_secret= */ constant_node.isMasked(),
+        /* scalar_subquery_ids= */ constant_node.getScalarSubqueryIds());
 
     size_t actions_stack_size = actions_stack.size();
     if (actions_stack_size > 1)

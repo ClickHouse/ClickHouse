@@ -252,7 +252,11 @@ public:
     /// set that fills that table or through the table stored next to the set itself.
     bool hasExternalTable() const;
 
+    /// Identifies this subquery
+    size_t getSubqueryId() const { return subquery_id; }
+
 private:
+    const size_t subquery_id;
     Hash hash;
     ASTPtr ast;
     SetAndKeyPtr set_and_key;

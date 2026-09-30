@@ -67,6 +67,7 @@ public:
     QueryPlanStepPtr clone() const override;
 
     bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
+    void forEachActionsDAG(const ActionsDAGVisitor & visitor) const override { visitor(actions_dag); }
     void decorrelateActions() { actions_dag.decorrelate(); }
 
     bool canRemoveUnusedColumns() const override;

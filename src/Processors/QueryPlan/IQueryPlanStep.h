@@ -1,5 +1,8 @@
 #pragma once
 
+#include <algorithm>
+#include <functional>
+
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
@@ -41,11 +44,33 @@ struct ExplainFormatSettings;
 
 using StepProcessors = std::span<IProcessor * const>;
 
+/// Identity of a plan step, unique within a query.
+class PlanStepIndex
+{
+public:
+    PlanStepIndex();
+
+    /// A copy of a step is a different step -- `clone` is `make_unique<Step>(*this)` and both
+    /// copies can end up in the same plan -- so copying takes a fresh index instead of
+    /// duplicating the source's.
+    PlanStepIndex(const PlanStepIndex &) : PlanStepIndex() {}
+    PlanStepIndex & operator=(const PlanStepIndex &) { return *this; } // NOLINT(cert-oop54-cpp) - keeping our own index is self-assignment safe
+
+    /// Moving is the same step changing hands, so the index travels with it.
+    PlanStepIndex(PlanStepIndex &&) noexcept = default;
+    PlanStepIndex & operator=(PlanStepIndex &&) noexcept = default;
+
+    size_t get() const { return value; }
+
+private:
+    size_t value = 0;
+};
+
 /// Single step of query plan.
 class IQueryPlanStep
 {
 public:
-    IQueryPlanStep();
+    IQueryPlanStep() = default;
 
     IQueryPlanStep(const IQueryPlanStep &) = default;
     IQueryPlanStep(IQueryPlanStep &&) = default;
@@ -111,7 +136,14 @@ public:
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
     /// Get child plans contained inside some steps (e.g ReadFromMerge) so that they are visible when doing EXPLAIN.
+    /// Some steps build their child plans here rather than handing over plans they already hold, so this
+    /// changes what the query has done by the time it returns. Callers that only observe a plan must use
+    /// `getBuiltChildPlans` instead.
     virtual QueryPlanRawPtrs getChildPlans() { return {}; }
+
+    /// The child plans this step has already built. A step that builds them on demand reports none until
+    /// something else has asked for them, which keeps observing a plan from changing the work a query does.
+    virtual QueryPlanRawPtrs getBuiltChildPlans() { return {}; }
 
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);
@@ -119,6 +151,16 @@ public:
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
     String getUniqID() const;
+
+    /// Ids of the subqueries whose results this step consumes.
+    const std::vector<size_t> & getConsumedSubqueryIds() const { return consumed_subquery_ids; }
+    void addConsumedSubqueryId(size_t id)
+    {
+        /// A step can reach the same set twice -- the index-analysis filter and the PREWHERE hold
+        /// the same condition -- and it consumes it once.
+        if (std::find(consumed_subquery_ids.begin(), consumed_subquery_ids.end(), id) == consumed_subquery_ids.end())
+            consumed_subquery_ids.push_back(id);
+    }
 
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(SharedHeaders input_headers_);
@@ -132,6 +174,15 @@ public:
     /// silently bypass the guards in `FutureSetFromSubquery::buildSetInplace` and
     /// `buildOrderedSetInplace`, and trigger `Trying to execute PLACEHOLDER action`.
     virtual bool hasCorrelatedExpressions() const;
+
+    /// Calls `visitor` for every `ActionsDAG` this step owns, so a caller can inspect the
+    /// expressions of a plan without knowing the step types. Most steps own none and inherit this.
+    ///
+    /// A step that holds an expression and does not override this reports nothing rather than
+    /// failing, which is how the DAGs of `TotalsHavingStep`, `FillingStep` and `IEJoinStep` went
+    /// unnoticed: the subqueries they consume were captured but never attributed to them.
+    using ActionsDAGVisitor = std::function<void(const ActionsDAG &)>;
+    virtual void forEachActionsDAG(const ActionsDAGVisitor & /*visitor*/) const {}
 
     /// `considerEnablingParallelReplicas` gates on the whole plan: one step returning false rejects it
     /// and no statistics are collected. A step that returns true must also attach a
@@ -214,7 +265,11 @@ protected:
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 
 private:
-    size_t step_index = 0;
+    PlanStepIndex step_index;
+
+    /// See `getConsumedSubqueryIds`. Not copied with the step: a copy is a different step, and the
+    /// walk that fills this runs once per plan, after any copying is done.
+    std::vector<size_t> consumed_subquery_ids;
 };
 
 }

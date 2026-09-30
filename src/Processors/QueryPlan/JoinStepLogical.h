@@ -117,6 +117,12 @@ public:
         return expression_actions.getActionsDAG()->hasCorrelatedColumns();
     }
 
+    void forEachActionsDAG(const ActionsDAGVisitor & visitor) const override
+    {
+        if (const auto dag = expression_actions.getActionsDAG())
+            visitor(*dag);
+    }
+
     void addConditions(ActionsDAG actions_dag);
 
     /// Extract the part of the JOIN ON expression that can be evaluated on `side` alone, to be applied
@@ -281,6 +287,7 @@ public:
     String getName() const override { return "JoinStepLogicalLookup"; }
 
     QueryPlanRawPtrs getChildPlans() override;
+    QueryPlanRawPtrs getBuiltChildPlans() override;
 
     PreparedJoinStorage & getPreparedJoinStorage() { return prepared_join_storage; }
 

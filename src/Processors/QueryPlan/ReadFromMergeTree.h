@@ -1,4 +1,6 @@
 #pragma once
+
+#include <Processors/QueryPlan/PlanIndexStats.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
@@ -126,64 +128,15 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 class ReadFromMergeTree final : public SourceStepWithFilter
 {
 public:
-    enum class IndexType : uint8_t
-    {
-        None,
-        MinMax,
-        Partition,
-        PrimaryKey,
-        Skip,
-        PrimaryKeyExpand,
-        Statistics,
-        NonIntersectingSplit,
-    };
-
-    struct DistributedIndexStat
-    {
-        std::string address;
-        size_t num_parts_send;
-        size_t num_parts_received;
-        size_t num_granules_send;
-        size_t num_granules_received;
-        /// Note, probably need to include the following as well:
-        /// - search_algorithm
-    };
-
-    /// This is a struct with information about applied indexes.
-    /// Is used for introspection only, in EXPLAIN query.
-    struct IndexStat
-    {
-        IndexType type;
-        std::string name = {};
-        std::string part_name = {};
-        std::string description = {};
-        std::string condition = {};
-        std::vector<std::string> used_keys = {};
-        size_t num_parts_after;
-        size_t num_granules_after;
-        MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
-
-        std::vector<DistributedIndexStat> distributed = {};
-    };
-
-    using IndexStats = std::vector<IndexStat>;
+    using IndexType = PlanIndexType;
+    using DistributedIndexStat = PlanDistributedIndexStat;
+    using IndexStat = PlanIndexStat;
+    using IndexStats = PlanIndexStats;
 
     /// Information about used projections.
-    struct ProjectionStat
-    {
-        std::string name = {};
-        std::string description = {};
-        std::string condition = {};
-        MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
-        UInt64 selected_parts = 0;
-        UInt64 selected_ranges = 0;
-        UInt64 selected_marks = 0;
-        UInt64 selected_rows = 0;
-        UInt64 filtered_parts = 0;
-    };
+    using ProjectionStat = PlanProjectionStat;
 
-    /// `deque` is used to ensure stable addresses during projection analysis stats building.
-    using ProjectionStats = std::deque<ProjectionStat>;
+    using ProjectionStats = PlanProjectionStats;
 
     using ReadType = MergeTreeReadType;
 
@@ -303,6 +256,9 @@ public:
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
+
+    IndexStats getIndexStats() const;
+    ProjectionStats getProjectionStats() const;
     void describeProjections(JSONBuilder::JSONMap & map) const override;
 
     const Names & getAllColumnNames() const { return all_column_names; }
@@ -628,6 +584,18 @@ public:
 
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
+
+    void forEachActionsDAG(const ActionsDAGVisitor & visitor) const override
+    {
+        SourceStepWithFilter::forEachActionsDAG(visitor);
+
+        /// Set only when PREWHERE is deferred after FINAL, in which case it is the filter that
+        /// actually runs.
+        if (const auto & prewhere = getDeferredPrewhereInfo())
+            visitor(prewhere->prewhere_actions);
+        if (const auto & row_level = getDeferredRowLevelFilter())
+            visitor(row_level->actions);
+    }
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
     /// The task-parameter key under which this read's bucket marks travel. Unique per read so several
     /// bucketed reads can share one worker fragment (e.g. a broadcast join's partitioned probe side and

@@ -119,6 +119,9 @@ public:
         std::shared_ptr<std::atomic_size_t> plan_step_index = std::make_shared<std::atomic_size_t>(0);
         std::shared_ptr<std::atomic_size_t> pipeline_processor_index = std::make_shared<std::atomic_size_t>(0);
 
+        /// Subquery unique identifier counter, within the scope of a query
+        std::shared_ptr<std::atomic_size_t> subquery_index = std::make_shared<std::atomic_size_t>(0);
+
         QueryIsCanceledPredicate query_is_canceled_predicate = {};
         ThrowIfQueryCanceledPredicate throw_if_query_canceled_predicate = {};
     };
@@ -342,6 +345,8 @@ public:
 
     size_t getNextPlanStepIndex() const;
     size_t getNextPipelineProcessorIndex() const;
+
+    size_t getNextSubqueryIndex() const;
 
     double getEffectiveSampleProbability(UInt64 size) const
     {
