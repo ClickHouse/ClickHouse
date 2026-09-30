@@ -1,0 +1,72 @@
+-- MVTEncodeGeom: project a known point into tile-local pixel space
+(124,3384)
+-- MVTEncodeGeom: the return type is Geometry
+Geometry
+-- MVTEncodeGeom: ST_AsMVTGeom is an alias
+1
+-- MVTEncodeGeom: out-of-range longitude/latitude are clamped to the projection limits
+1
+1
+-- MVTEncodeGeom: a larger extent yields proportionally larger pixel coordinates
+(248,6767)
+-- MVTEncodeGeom: (0,0) projects to pixel (0,0) at the centre tile for every zoom (no Web Mercator drift)
+1	(0,0)	(0,0)
+16	(0,0)	(0,0)
+20	(0,0)	(0,0)
+24	(0,0)	(0,0)
+32	(0,0)	(0,0)
+-- MVTEncodeGeom: a line is projected and returned as a MultiLineString
+[[(473,3767),(1638,1850),(2803,2809)]]
+-- MVTEncodeGeom: a polygon is projected and returned as a MultiPolygon
+[[[(473,3767),(3386,3767),(3386,891),(473,891),(473,3767)]]]
+-- MVTEncodeGeom: out-of-range zoom and zero extent are errors
+-- MVTEncode: a single point feature with one uint attribute is a valid single-layer tile
+1A2F78020A06706F696E7473120D180112020000220509F801F0341A0D636C75737465725F636F756E7422022803288020
+-- MVTEncode: ST_AsMVT is an alias
+1
+-- MVTEncode: geometry only, no properties
+1A1A78020A06706F696E7473120B18011200220509F801F034288020
+-- MVTEncode: a line feature
+1A1F78020A06736861706573121018021200220A09B207EE3A0A9A12F91D288020
+-- MVTEncode: a polygon feature
+1A2578020A06736861706573121618031200221009B207F60D1AC22D0000F82CC12D000F288020
+-- MVTEncode: a degenerate (collinear, zero-area) polygon ring is dropped, producing an empty tile
+0
+-- MVTEncode: BFloat16 properties are encoded as float values (same as Float32)
+1
+-- MVTEncode: a FixedString property trims its trailing NUL padding (matches the String value)
+1
+-- MVTEncode: feature_id_name emits the named element as the Feature id and drops it from the tags
+1A2278020A0174120D082A18011202000022030900001A046E616D6522030A0178288020
+-- MVTEncode: a NULL feature id is omitted, encoding identically to declaring no id
+1A2078020A0174120B18011202000022030900001A046E616D6522030A0178288020
+-- MVTEncode: feature_id_name must name an existing unsigned-integer element (signed integers are rejected)
+-- MVTEncode: stringify_unsupported encodes otherwise-unsupported types (e.g. Int128) as their decimal text value
+1A4578020A0174120B18011202000022030900001A0362696722290A27313730313431313833343630343639323331373331363837333033373135383834313035373237288020
+-- MVTEncode: a sub-pixel line whose vertices round to one point is dropped (no zero-delta command)
+0
+-- MVTEncode: adjacent duplicate vertices are pruned, but a line with two distinct vertices still encodes
+1
+-- MVTEncode: a tiny polygon near Int32::max keeps its area (exact integer shoelace, no double cancellation)
+1
+-- MVTEncode: an empty group produces an empty tile
+0
+-- MVTEncode: NULL (clipped-out) geometry rows are skipped, so they do not change the tile
+1
+-- MVTEncode: clustering is expressed in SQL by grouping on the pixel geometry and counting
+(124,3384)	2
+(473,3767)	1
+-- MVTEncode: a shared attribute value is interned once, so a tile with one distinct value is smaller
+1
+-- MVTEncode: each supported property type maps to its vector tile value type
+1A7278020A01741219180112100000010102020303040405050606070722030900001A037374721A036633321A036636341A01691A01751A01641A036433321A016222030A01732205150000C03F22091900000000000004402202300D22022808220428D68E01220430AC9D0222023801288020
+-- MVTEncode: a NULL property omits that attribute for the feature
+1A2178020A0174120B18011202010022030900001A037374721A017522022808288020
+-- MVTEncode: LowCardinality property types are accepted
+1A1F78020A0174120B18011202000022030900001A0373747222030A0178288020
+-- MVTEncode: the -State / -Merge combinators round-trip the aggregate state to the same tile
+1A2F78020A06706F696E7473120D180112020000220509F801F0341A0D636C75737465725F636F756E7422022803288020
+-- MVTEncode: the geometry argument must be of type Geometry
+-- MVTEncode: a non-named properties tuple is rejected
+-- MVTEncode: an unsupported property type is rejected
+-- MVTEncode: the layer name parameter is required

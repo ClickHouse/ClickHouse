@@ -2,6 +2,8 @@
 
 #include <Parsers/IAST.h>
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -16,16 +18,20 @@ public:
     static constexpr auto DEFAULT_TEXT_INDEX_GRANULARITY = 100'000'000uz;
     static constexpr auto DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY = 100'000'000uz;
 
+    ASTIndexDeclaration() : granularity(0) {}
     ASTIndexDeclaration(ASTPtr expression, ASTPtr type, const String & name_);
 
     String name;
-    UInt64 granularity;
+    UInt64 granularity = DEFAULT_INDEX_GRANULARITY;
     bool part_of_create_index_query = false;
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Index"; }
 
     ASTPtr clone() const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr getExpression() const;
     boost::intrusive_ptr<ASTFunction> getType() const;

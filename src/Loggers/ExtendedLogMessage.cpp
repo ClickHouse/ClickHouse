@@ -18,7 +18,7 @@ ExtendedLogMessage ExtendedLogMessage::getFrom(const Poco::Message & base)
 {
     ExtendedLogMessage msg_ext(base);
 
-    ::timeval tv;
+    ::timeval tv{};
     if (0 != gettimeofday(&tv, nullptr))
         throw ErrnoException(ErrorCodes::CANNOT_GETTIMEOFDAY, "Cannot gettimeofday");
 

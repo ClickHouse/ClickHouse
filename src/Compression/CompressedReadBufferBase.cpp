@@ -2,7 +2,6 @@
 
 #include <bit>
 #include <cstring>
-#include <cassert>
 #include <city.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
@@ -159,11 +158,15 @@ static void readHeaderAndGetCodecAndSize(
     size_decompressed = codec->readDecompressedBlockSize(compressed_buffer);
 
     /// This is for clang static analyzer.
-    assert(size_decompressed > 0);
+    chassert(size_decompressed > 0);
 
     if (size_compressed_without_checksum > DBMS_MAX_COMPRESSED_SIZE)
         throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_compressed_without_checksum: {}. "
                         "Most likely corrupted data.", size_compressed_without_checksum);
+
+    if (size_decompressed > DBMS_MAX_DECOMPRESSED_SIZE)
+        throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_decompressed: {}. "
+                        "Most likely corrupted data.", size_decompressed);
 
     if (size_compressed_without_checksum < header_size)
         throw Exception(external_data ? ErrorCodes::CANNOT_DECOMPRESS : ErrorCodes::CORRUPTED_DATA, "Can't decompress data: "
@@ -306,6 +309,12 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
             throw Exception(external_data ? ErrorCodes::CANNOT_DECOMPRESS : ErrorCodes::CORRUPTED_DATA,
                 "Can't decompress data: the compressed data size ({}, this should include header size) is less than the header size ({})",
                     size_compressed_without_checksum, static_cast<size_t>(header_size));
+
+        if (size_compressed_without_checksum - header_size != size_decompressed)
+            throw Exception(external_data ? ErrorCodes::CANNOT_DECOMPRESS : ErrorCodes::CORRUPTED_DATA,
+                "Can't decompress data: the compressed data size without header ({}) does not match size_decompressed ({}) "
+                "for a codec that stores data uncompressed",
+                    size_compressed_without_checksum - header_size, size_decompressed);
 
         to = BufferBase::Buffer(compressed_buffer + header_size, compressed_buffer + size_compressed_without_checksum);
     }

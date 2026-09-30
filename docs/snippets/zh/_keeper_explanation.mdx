@@ -1,0 +1,36 @@
+---
+title: Keeper 说明
+---
+
+每个配置文件都应包含以下唯一配置 (如下所示) 。
+所使用的 `server_id` 对于集群中的对应 ClickHouse Keeper 节点必须是唯一的，
+并且要与 `<raft_configuration>` 部分中定义的服务器 `<id>` 一致。
+`tcp_port` 是 ClickHouse Keeper *客户端* 使用的端口。
+
+```xml
+<tcp_port>9181</tcp_port>
+<server_id>{id}</server_id>
+```
+
+以下部分用于配置参与 [Raft 共识算法](https://en.wikipedia.org/wiki/Raft_\(algorithm\)) 仲裁的服务器：
+
+```xml highlight={6}
+<raft_configuration>
+    <server>
+        <id>1</id>
+        <hostname>clickhouse-keeper-01</hostname>
+        <!-- ClickHouse Keeper 节点间通信使用的 TCP 端口 -->
+        <port>9234</port>
+    </server>
+    <server>
+        <id>2</id>
+        <hostname>clickhouse-keeper-02</hostname>
+        <port>9234</port>
+    </server>
+    <server>
+        <id>3</id>
+        <hostname>clickhouse-keeper-03</hostname>
+        <port>9234</port>
+    </server>
+</raft_configuration>
+```

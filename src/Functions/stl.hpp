@@ -24,6 +24,15 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 
+/// This file is a verbatim port from https://github.com/ankane/stl-cpp; the
+/// numerical kernels routinely mix `float` accumulators with `double` literals
+/// (`0.999`, `0.001`, `1.0`, ...) and `double`-returning libm calls (`pow`,
+/// `sqrt`, `fabs`). Re-typing these expressions case-by-case would diverge
+/// the file from upstream and complicate future merges, so we keep the
+/// suppression file-scoped.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
+
 namespace stl {
 
 using DB::VectorWithMemoryTracking;
@@ -522,3 +531,5 @@ inline StlResult StlParams::fit(const VectorWithMemoryTracking<float>& y, size_t
 }
 
 }
+
+#pragma clang diagnostic pop

@@ -2,12 +2,15 @@
 
 #include <Core/Types.h>
 
+#include <map>
+
 
 namespace DB
 {
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
+class ReadBuffer;
 class SeekableReadBuffer;
 class ReadBufferFromFileBase;
 class WriteBuffer;
@@ -34,9 +37,20 @@ public:
     virtual void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                                 DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) = 0;
 
+    /// Copies exactly `[offset, offset + size)` of `path_in_backup`, whose full size is `file_size`.
+    /// Separate from copyFileToDisk() because the whole-object fast paths (a server-side copy, fs::copy) carry
+    /// no byte range and would copy the entire file. `file_size` lets an implementation choose a route the
+    /// storage allows for that source (see copyS3FileRange) without an extra metadata request.
+    virtual void copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t file_size,
+                                     bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
+                                     WriteMode write_mode) = 0;
+
     virtual const ReadSettings & getReadSettings() const = 0;
     virtual const WriteSettings & getWriteSettings() const = 0;
     virtual size_t getWriteBufferSize() const = 0;
+
+    /// Settings effectively used by this reader (e.g. S3 request settings). Empty if none.
+    virtual std::map<String, String> getSerializedSettings() const { return {}; }
 };
 
 /// Represents operations of storing to disk or uploading for writing a backup.
@@ -49,8 +63,11 @@ public:
     virtual bool fileExists(const String & file_name) = 0;
     virtual UInt64 getFileSize(const String & file_name) = 0;
     virtual bool fileContentsEqual(const String & file_name, const String & expected_file_contents, String & actual_file_contents) = 0;
+    virtual std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) = 0;
 
     virtual std::unique_ptr<WriteBuffer> writeFile(const String & file_name) = 0;
+    /// Object-storage writers override this to create a file atomically without replacing an existing one.
+    virtual std::unique_ptr<WriteBuffer> writeFileIfNotExists(const String & file_name);
 
     using CreateReadBufferFunction = std::function<std::unique_ptr<SeekableReadBuffer>()>;
     virtual void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) = 0;
@@ -76,6 +93,9 @@ public:
     virtual const ReadSettings & getReadSettings() const = 0;
     virtual const WriteSettings & getWriteSettings() const = 0;
     virtual size_t getWriteBufferSize() const = 0;
+
+    /// Settings effectively used by this writer (e.g. S3 request settings). Empty if none.
+    virtual std::map<String, String> getSerializedSettings() const { return {}; }
 };
 
 }

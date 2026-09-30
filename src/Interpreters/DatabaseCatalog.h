@@ -72,9 +72,11 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     StoragePtr getTable() const;
 
+    std::shared_ptr<IDatabase> getDatabase() const;
+
     operator bool () const { return id != UUIDHelpers::Nil; } /// NOLINT
 
-    IDatabase * temporary_tables = nullptr;
+    std::weak_ptr<IDatabase> temporary_tables;
     UUID id = UUIDHelpers::Nil;
     FutureSetFromSubqueryPtr future_set;
 };
@@ -89,6 +91,7 @@ class BackgroundSchedulePoolTaskHolder;
 struct GetDatabasesOptions
 {
     bool with_datalake_catalogs{false};
+    bool with_remote_databases{true};
 };
 
 /// For some reason Context is required to get Storage from Database object.
@@ -128,6 +131,17 @@ public:
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     DDLGuardPtr getDDLGuard(const String & database, const String & table, const IDatabase * expected_database);
+
+    /// Guards the storage under its current name, following a concurrent RENAME. Waits without
+    /// polling sleeps. Returns nullptr on timeout, when `is_alive()` turns false, or right away
+    /// when an exclusive database DDL holds the database lock.
+    DDLGuardPtr tryGetDDLGuardForStorage(
+        const StoragePtr & storage,
+        const Poco::Timespan & timeout,
+        std::function<bool()> is_alive = [] { return true; });
+
+    /// Same, but throws TIMEOUT_EXCEEDED instead of returning nullptr.
+    DDLGuardPtr getDDLGuardForStorage(const StoragePtr & storage, const Poco::Timespan & timeout);
     /// Get an object that protects the database from concurrent DDL queries all tables in the database
     std::unique_lock<SharedMutex> getExclusiveDDLGuardForDatabase(const String & database);
 
@@ -153,14 +167,15 @@ public:
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(std::string_view database_name) const;
-    /// Datalake catalogs are implement at IDatabase level in ClickHouse.
-    /// In general case Datalake catalog is a some remote service which contains iceberg/delta tables.
-    /// Sometimes this service charges money for requests. With this flag we explicitly protect ourself
+    /// Datalake catalogs are implemented at `IDatabase` level in ClickHouse.
+    /// In general case Datalake catalog is a remote service which contains iceberg/delta tables.
+    /// Sometimes this service charges money for requests. With this flag we explicitly protect ourselves
     /// to not accidentally query external non-free service for some trivial things like
-    /// autocompletion hints or system.tables / system.columns queries. We have a setting which allow to show
+    /// autocompletion hints or `system.tables` / `system.columns` queries. We have a setting which allows showing
     /// these databases everywhere, but user must explicitly specify it.
-    /// Note: system.databases always passes with_datalake_catalogs = true because listing a database name
-    /// is purely local metadata and never requires calls to an external catalog service.
+    /// Remote databases such as `MySQL`/`PostgreSQL` are controlled separately by `GetDatabasesOptions::with_remote_databases`.
+    /// Note: `system.databases` always passes both flags as true because listing a database name
+    /// is purely local metadata and never requires calls to an external service.
     Databases getDatabases(GetDatabasesOptions options) const;
 
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
@@ -227,7 +242,7 @@ public:
     String getPathForMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(
         StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay = false);
-    void undropTable(StorageID table_id);
+    void undropTable(StorageID table_id, std::function<void()> throw_if_cancelled = {});
 
     void waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled = {});
 
@@ -278,6 +293,8 @@ public:
     void updateMetadataFile(const String & database_name, const ASTPtr & create_query);
     bool hasDatalakeCatalogs() const;
     bool isDatalakeCatalog(const String & database_name) const;
+    bool hasRemoteDatabases() const;
+    bool isRemoteDatabase(const String & database_name) const;
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
@@ -287,6 +304,11 @@ private:
 
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
+
+    /// Waits on the table lock at most `table_lock_timeout`, single attempt on the database lock.
+    /// Always returns a guard, check `ownsTableLock` for the outcome.
+    DDLGuardPtr tryGetDDLGuard(
+        const String & database, const String & table, const IDatabase * expected_database, std::chrono::milliseconds table_lock_timeout);
 
     void shutdownImpl(std::function<void()> shutdown_system_logs);
 
@@ -326,6 +348,7 @@ private:
 
     Databases databases TSA_GUARDED_BY(databases_mutex);
     Databases databases_without_datalake_catalogs TSA_GUARDED_BY(databases_mutex);
+    Databases databases_without_remote TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
     /// Referential dependencies between tables: table "A" depends on table "B"
@@ -364,7 +387,9 @@ private:
 
     TablesMarkedAsDropped tables_marked_dropped TSA_GUARDED_BY(tables_marked_dropped_mutex);
     TablesMarkedAsDropped::iterator first_async_drop_in_queue TSA_GUARDED_BY(tables_marked_dropped_mutex);
-    std::unordered_set<UUID> tables_marked_dropped_ids TSA_GUARDED_BY(tables_marked_dropped_mutex);
+    /// A multiset: the same UUID may appear more than once when a fixed explicit UUID is reused across
+    /// CREATE OR REPLACE TABLE, which enqueues several intermediate tables sharing that UUID for drop.
+    std::unordered_multiset<UUID> tables_marked_dropped_ids TSA_GUARDED_BY(tables_marked_dropped_mutex);
     mutable std::mutex tables_marked_dropped_mutex;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;

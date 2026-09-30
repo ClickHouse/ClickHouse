@@ -31,7 +31,7 @@ bool replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * sel
     if (which != Field::Types::UInt64 && which != Field::Types::Int64)
         return false;
 
-    UInt64 pos;
+    UInt64 pos = 0;
 
     if (which == Field::Types::UInt64)
     {

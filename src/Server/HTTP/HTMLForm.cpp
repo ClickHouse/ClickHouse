@@ -100,7 +100,10 @@ void HTMLForm::load(const Poco::Net::HTTPRequest & request, ReadBuffer & request
         readQuery(istr);
     }
 
-    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST || request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT)
+    /// The body-carrying methods. SQL-defined HTTP handlers (CREATE HANDLER) accept form bodies over DELETE as
+    /// well, matching the set of methods the HTTP layer treats as carrying a body (see `HTTPHandler`).
+    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST || request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT
+        || request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE)
     {
         std::string media_type;
         NameValueCollection params;
@@ -191,7 +194,7 @@ void HTMLForm::readQuery(ReadBuffer & in)
 void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
 {
     /// Assume there is always a boundary provided.
-    assert(!boundary.empty());
+    chassert(!boundary.empty());
 
     size_t fields = 0;
     MultipartReadBuffer in(in_, boundary);
@@ -222,7 +225,7 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
         {
             std::string name = params["name"];
             std::string value;
-            char ch;
+            char ch = 0;
 
             while (in.read(ch))
             {
@@ -302,7 +305,7 @@ std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
 
         if (in.eof()) break;
 
-        assert(ch == '\r');
+        chassert(ch == '\r');
 
         if (in.peek(ch) && ch == '\n')
         {
@@ -322,7 +325,7 @@ bool HTMLForm::MultipartReadBuffer::nextImpl()
     if (boundary_hit)
         return false;
 
-    assert(position() >= in.position());
+    chassert(position() >= in.position());
 
     in.position() = position();
 

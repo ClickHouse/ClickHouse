@@ -4,7 +4,7 @@
 
 namespace DB
 {
-struct ReadSettings;
+struct FilesystemCacheSettings;
 class FileSegment;
 
 class FileCacheQueryLimit
@@ -13,14 +13,19 @@ public:
     class QueryContext;
     using QueryContextPtr = std::shared_ptr<QueryContext>;
 
-    QueryContextPtr tryGetQueryContext(const CacheStateGuard::Lock & lock);
+    /// `mutex` protects `query_map` and each `QueryContext`'s `records`. It is separate from
+    /// any priority's `priority_guard`, so per-query bookkeeping does not serialize on those.
+    using Lock = std::unique_lock<std::mutex>;
+    Lock lock() { return Lock(mutex); }
+
+    QueryContextPtr tryGetQueryContext();
 
     QueryContextPtr getOrSetQueryContext(
         const std::string & query_id,
-        const ReadSettings & settings,
-        const CachePriorityGuard::WriteLock &);
+        const FilesystemCacheSettings & settings,
+        const Lock &);
 
-    void removeQueryContext(const std::string & query_id, const CachePriorityGuard::WriteLock &);
+    void removeQueryContext(const std::string & query_id, const Lock &);
 
     class QueryContext
     {
@@ -38,18 +43,18 @@ public:
         Priority::IteratorPtr tryGet(
             const Key & key,
             size_t offset,
-            const CachePriorityGuard::WriteLock &);
+            const Lock &);
 
         void add(
             KeyMetadataPtr key_metadata,
             size_t offset,
             size_t size,
-            const CachePriorityGuard::WriteLock &);
+            const Lock &);
 
         void remove(
             const Key & key,
             size_t offset,
-            const CachePriorityGuard::WriteLock &);
+            const Lock &);
 
     private:
         using Records = std::unordered_map<FileCacheKeyAndOffset, Priority::IteratorPtr, FileCacheKeyAndOffsetHash>;
@@ -67,13 +72,14 @@ public:
         ~QueryContextHolder();
 
         String query_id;
-        FileCache * cache;
-        FileCacheQueryLimit * query_limit;
+        FileCache * cache{};
+        FileCacheQueryLimit * query_limit{};
         QueryContextPtr context;
     };
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
 
 private:
+    std::mutex mutex;
     using QueryContextMap = std::unordered_map<String, QueryContextPtr>;
     QueryContextMap query_map;
 };

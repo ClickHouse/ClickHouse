@@ -28,9 +28,17 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Incorrect number of arguments for aggregate function with {} suffix", getName());
 
+        /** The last argument is the condition, and saying only that its type is illegal helps nobody: the
+          * most common way to get here is forgetting the condition altogether - `sumIf(x)` - where the
+          * argument being blamed is a perfectly good argument of `sum`. Name what the argument is for and
+          * what it has to be.
+          */
         if (!isUInt8(arguments.back()) && !arguments.back()->onlyNull())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of last argument for "
-                            "aggregate function with {} suffix", arguments.back()->getName(), getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of the last argument of an aggregate function with the {} "
+                            "suffix: the last argument is the condition and must be UInt8. If the condition "
+                            "is missing, it goes after the arguments of the aggregate function",
+                            arguments.back()->getName(), getName());
 
         return DataTypes(arguments.begin(), std::prev(arguments.end()));
     }
@@ -170,17 +178,29 @@ public:
 
         filter_values = assert_cast<const ColumnUInt8 *>(filter_column)->getData().data();
 
+        if (!filter_null_map)
+        {
+            /// The nested function skips the rows that are NULL or fail the condition at position 1.
+            const IColumn * columns_with_filter[] = {columns_param[0], filter_column};
+            if constexpr (result_is_nullable)
+            {
+                if (!countBytesInFilterWithNull(assert_cast<const ColumnUInt8 &>(*filter_column).getData(), null_map, row_begin, row_end))
+                    return;
+                this->setFlag(place);
+            }
+            this->nested_function->addBatchSinglePlaceNotNull(
+                row_begin, row_end, this->nestedPlace(place), columns_with_filter, null_map, arena, 1);
+            return;
+        }
+
         /// Combine the 2 flag arrays so we can call a simplified version (one check vs 2)
         /// Note that now the null map will contain 0 if not null and not filtered, or 1 for null or filtered (or both)
 
-        auto final_nulls = std::make_unique<UInt8[]>(row_end);
+        /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
+        auto final_nulls = std::make_unique_for_overwrite<UInt8[]>(row_end);
 
-        if (filter_null_map)
-            for (size_t i = row_begin; i < row_end; ++i)
-                final_nulls[i] = (!!null_map[i]) | (!filter_values[i]) | (!!filter_null_map[i]);
-        else
-            for (size_t i = row_begin; i < row_end; ++i)
-                final_nulls[i] = (!!null_map[i]) | (!filter_values[i]);
+        for (size_t i = row_begin; i < row_end; ++i)
+            final_nulls[i] = (!!null_map[i]) | (!filter_values[i]) | (!!filter_null_map[i]);
 
         if constexpr (result_is_nullable)
         {
@@ -275,7 +295,11 @@ public:
                 "Maximum number of arguments for aggregate function with Nullable types is {}", toString(MAX_ARGS));
 
         for (size_t i = 0; i < number_of_arguments; ++i)
+        {
             is_nullable[i] = arguments[i]->isNullable();
+            if (is_nullable[i])
+                ++num_nullable_arguments;
+        }
 
         filter_is_only_null = arguments.back()->onlyNull();
     }
@@ -320,7 +344,35 @@ public:
         if (filter_is_only_null)
             return;
 
-        std::unique_ptr<UInt8[]> final_null_flags = std::make_unique<UInt8[]>(row_end);
+        if (num_nullable_arguments == 1)
+        {
+            absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
+            const UInt8 * null_map = nullptr;
+            for (size_t arg = 0; arg < number_of_arguments; ++arg)
+            {
+                if (is_nullable[arg])
+                {
+                    const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[arg]);
+                    null_map = nullable_col.getNullMapData().data();
+                    nested_columns[arg] = &nullable_col.getNestedColumn();
+                }
+                else
+                    nested_columns[arg] = columns[arg];
+            }
+
+            const auto & condition = assert_cast<const ColumnUInt8 &>(*nested_columns[number_of_arguments - 1]).getData();
+            if (!countBytesInFilterWithNull(condition, null_map, row_begin, row_end))
+                return;
+
+            /// `nested_function` is the -If function, which applies the condition itself.
+            this->setFlag(place);
+            this->nested_function->addBatchSinglePlaceNotNull(
+                row_begin, row_end, this->nestedPlace(place), nested_columns.data(), null_map, arena, -1);
+            return;
+        }
+
+        /// Default-init: the loops below fill [row_begin, row_end) and nothing reads the rest.
+        std::unique_ptr<UInt8[]> final_null_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
         const size_t filter_column_num = number_of_arguments - 1;
 
         if (is_nullable[filter_column_num])
@@ -458,7 +510,8 @@ private:
 
     static constexpr size_t MAX_ARGS = 8;
     size_t number_of_arguments = 0;
-    std::array<char, MAX_ARGS> is_nullable;    /// Plain array is better than std::vector due to one indirection less.
+    std::array<char, MAX_ARGS> is_nullable{};    /// Plain array is better than std::vector due to one indirection less.
+    size_t num_nullable_arguments = 0;
 };
 
 
@@ -466,7 +519,7 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
     const AggregateFunctionPtr & nested_function, const DataTypes & arguments,
     const Array & params, const AggregateFunctionProperties & properties) const
 {
-    assert(!arguments.empty());
+    chassert(!arguments.empty());
 
     /// Nullability of the last argument (condition) does not affect the nullability of the result (NULL is processed as false).
     /// For other arguments it is as usual (at least one is NULL then the result is NULL if possible).
@@ -510,9 +563,13 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
     return std::make_shared<AggregateFunctionIfNullVariadic<false, false>>(nested_function, arguments, params);
 }
 
+void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorIf>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorIf>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumIf`), it adds an extra `UInt8` condition argument; only rows for which the condition is non-zero are aggregated.",
+        .syntax = "<aggregate_function>If",
+        .related = {"Array", "Map"}});
 }
 
 }

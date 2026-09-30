@@ -1,0 +1,298 @@
+---
+title: تعيين مجموعات الأمان في Windows Active Directory إلى أدوار ClickHouse
+description: "مثال على تعيين مجموعات الأمان في Windows Active Directory إلى أدوار ClickHouse"
+date: 2024-05-20
+tags: ['الأدوات والبرامج المساعدة']
+keywords: ['Windows']
+---
+
+<div id="example">
+  ## مثال
+</div>
+
+يوضح هذا المثال كيف يمكن منح مستخدمي AD الذين ينتمون إلى مجموعات أمان AD مختلفة إمكانية الوصول إلى الأدوار في ClickHouse. كما يوضح أيضًا كيف يمكن إضافة مستخدم إلى عدة مجموعات مستخدمين في AD، بحيث يحصل على صلاحيات الوصول التي توفرها أدوار متعددة.
+
+في هذه البيئة، لدينا ما يلي:
+
+* نطاق Windows Active Directory: `marsnet2.local`
+* عنقود ClickHouse، `cluster_1S_3R`، يضم 3 عُقد ضمن تهيئة عنقود تتكوّن من 1 shard و3 replicas
+* 3 مستخدمين في AD
+
+| AD User                     | الوصف                                                      |
+| --------------------------- | ---------------------------------------------------------- |
+| clickhouse&#95;ad&#95;admin | مستخدم ClickHouse Admin                                    |
+| clickhouse&#95;db1&#95;user | مستخدم لديه صلاحية الوصول إلى db1.table1                   |
+| clickhouse&#95;db2&#95;user | مستخدم لديه صلاحية الوصول إلى db2.table1                   |
+| ch&#95;db1&#95;db2&#95;user | مستخدم لديه صلاحية الوصول إلى كل من db1.table1 وdb2.table1 |
+
+* 3 مجموعات أمان AD
+
+| AD Group                            | الوصف                                      |
+| ----------------------------------- | ------------------------------------------ |
+| clickhouse&#95;ad&#95;admins        | مجموعة ClickHouse Admins                   |
+| clickhouse&#95;ad&#95;db1&#95;users | مجموعة للربط بصلاحية الوصول إلى db1.table1 |
+| clickhouse&#95;ad&#95;db2&#95;users | مجموعة للربط بصلاحية الوصول إلى db2.table1 |
+
+* مثال على بيئة AD وبنية UO:
+
+<Image img={ad_env} size="md" alt="مثال على بيئة AD وبنية UO" />
+
+* مثال على تهيئة مجموعة أمان AD:
+
+<Image img={ad_group} size="md" alt="مثال على تهيئة مجموعة أمان AD" />
+
+* مثال على تهيئة مستخدم AD:
+
+<Image img={ad_user} size="md" alt="مثال على تهيئة مستخدم AD" />
+
+1. في Windows AD Users and Groups، أضف كل مستخدم إلى مجموعته المناسبة (أو مجموعاته المناسبة)، وسيتم ربطه بأدوار ClickHouse (كما في المثال في الخطوة التالية).
+
+| AD Security Group           | ClickHouse Role                                                             |
+| --------------------------- | --------------------------------------------------------------------------- |
+| clickhouse&#95;ad&#95;admin | clickhouse&#95;ad&#95;admins                                                |
+| clickhouse&#95;db1&#95;user | clickhouse&#95;ad&#95;db1&#95;users                                         |
+| clickhouse&#95;db2&#95;user | clickhouse&#95;ad&#95;db2&#95;users                                         |
+| ch&#95;db1&#95;db2&#95;user | clickhouse&#95;ad&#95;db1&#95;users and clickhouse&#95;ad&#95;db2&#95;users |
+
+* مثال على عضوية مجموعات المستخدمين:
+
+<Image img={ad_user_group} size="md" alt="مثال على عضوية مجموعات المستخدمين" />
+
+2. في `config.xml` الخاص بـ ClickHouse، أضف تهيئة `ldap_servers` إلى كل عقدة من عُقد ClickHouse.
+
+```
+<ldap_servers>
+	<marsnet2_ad>
+		<host>marsdc1.marsnet2.local</host>
+		<port>389</port>
+		<bind_dn>{user_name}@marsnet2.local</bind_dn>
+		<user_dn_detection>
+			<base_dn>OU=Users,OU=ClickHouse,DC=marsnet2,DC=local</base_dn>
+			<search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+		</user_dn_detection>
+		<enable_tls>no</enable_tls>
+	</marsnet2_ad>
+</ldap_servers>
+```
+
+| xml tag                   | الوصف                                                                                                                | قيمة المثال                                         |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| ldap&#95;servers          | وسم يُستخدم لتعريف خوادم LDAP التي سيستخدمها ClickHouse                                                              | غير متوفر                                           |
+| marsnet&#95;ad            | هذا الوسم اعتباطي، وهو مجرد تسمية تُستخدم لتمييز الخادم في قسم `<user_directories>`                                  | غير متوفر                                           |
+| host                      | اسم النطاق المؤهل بالكامل (FQDN) أو عنوان IP لخادم Active Directory أو للنطاق                                        | marsdc1.marsnet2.local                              |
+| port                      | منفذ Active Directory، ويكون عادةً 389 لغير SSL أو 636 لـ SSL                                                        | 389                                                 |
+| bind&#95;dn               | المستخدم الذي سيُستخدم لإجراء عملية bind إلى AD، ويمكن أن يكون مستخدمًا مخصصًا إذا لم يُسمح للمستخدمين العاديين بذلك | `{user_name}@marsnet2.local`                        |
+| user&#95;dn&#95;detection | إعدادات كيفية عثور ClickHouse على مستخدمي AD                                                                         | غير متوفر                                           |
+| base&#95;dn               | مسار OU في AD الذي يبدأ منه البحث عن المستخدمين                                                                      | OU=Users,OU=ClickHouse,DC=marsnet2,DC=local         |
+| search&#95;filter         | عامل تصفية بحث LDAP للعثور على مستخدم AD                                                                             | `(&(objectClass=user)(sAMAccountName={user_name}))` |
+
+راجع الوثائق للاطلاع على المجموعة الكاملة من الخيارات:
+[https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition](https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition)
+
+3. في `config.xml` الخاص بـ ClickHouse، أضف configuration `<user_directories>` مع إدخالات `<ldap>` إلى كل عقدة ClickHouse.
+
+```
+<user_directories>
+	<users_xml>
+		<path>users.xml</path>
+	</users_xml>
+	<local_directory>
+		<path>/var/lib/clickhouse/access/</path>
+	</local_directory>
+	<ldap>
+		<server>marsnet2_ad</server>
+		<role_mapping>
+			<base_dn>OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local</base_dn>
+			<search_filter>(&amp;(objectClass=group)(member={user_dn}))</search_filter>
+			<attribute>CN</attribute>
+			<scope>subtree</scope>
+			<prefix>clickhouse_</prefix>
+		</role_mapping>
+	</ldap>
+</user_directories>
+```
+
+| وسم XML              | الوصف                                                                                               | قيمة مثال                                    |
+| -------------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| user&#95;directories | يحدّد أدوات المصادقة التي ستُستخدم                                                                  | NA                                           |
+| ldap                 | يحتوي هذا على إعدادات خوادم LDAP، وفي هذا المثال سيكون المقصود بها خوادم Active Directory المستخدمة | NA                                           |
+| server               | هذا هو الوسم الذي جرى تعريفه في قسم `<ldap_servers>`                                                | marsnet2&#95;ad                              |
+| role&#95;mapping     | تعريف لكيفية ربط المستخدمين الذين تمت مصادقتهم بين مجموعات AD وأدوار ClickHouse                     | NA                                           |
+| base&#95;dn          | مسار AD الذي سيستخدمه النظام لبدء البحث عن مجموعات AD                                               | OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local |
+| search&#95;filter    | عامل تصفية بحث LDAP للعثور على مجموعات AD                                                           | `(&(objectClass=group)(member={user_dn}))`   |
+| attribute            | حقل السمة في AD الذي ينبغي استخدامه لتحديد هوية المستخدم                                            | CN                                           |
+| scope                | المستويات ضمن `base DN` التي ينبغي للنظام البحث فيها عن المجموعات                                   | subtree                                      |
+| prefix               | البادئة لأسماء المجموعات في AD، وستُزال هذه البادئة للعثور على الأدوار في ClickHouse                | clickhouse&#95;                              |
+
+راجع الوثائق للاطلاع على المجموعة الكاملة من الخيارات:
+[https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-external-user-directory](https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-external-user-directory)
+
+**ملاحظة:::**
+بما أن مجموعات أمان AD في المثال تبدأ بالبادئة `clickhouse_` — أي `clickhouse_ad_db1_users` — فعندما يسترجعها النظام، ستُزال البادئة، وسيبحث النظام عن دور في ClickHouse باسم `ad_db1_users` لربطه بـ `clickhouse_ad_db1_users`.
+**:::**
+
+4. أنشئ قواعد بيانات تجريبية.
+
+```
+create database db1 on cluster 'cluster_1S_3R';
+create database db2 on cluster 'cluster_1S_3R';
+```
+
+5. أنشئ جداول تجريبية.
+
+```
+create table db1.table1 on cluster 'cluster_1S_3R'
+(
+  id Int32,
+  column1 String
+)
+engine = MergeTree()
+order by id;
+
+create table db2.table1 on cluster 'cluster_1S_3R
+(
+  id Int32,
+  column1 String
+)
+engine = MergeTree()
+order by id;
+```
+
+6. أدرِج بيانات نموذجية.
+
+```
+insert into db1.table1
+values
+(1, 'a');
+
+insert into db2.table1
+values
+(2, 'b');
+```
+
+7. أنشئ أدوارًا في ClickHouse.
+
+```
+create role ad_admins on cluster 'cluster_1S_3R';
+create role ad_db1_users on cluster 'cluster_1S_3R';
+create role ad_db2_users on cluster 'cluster_1S_3R';
+```
+
+8. امنح الامتيازات للأدوار.
+
+```
+GRANT SHOW, SELECT, INSERT, ALTER, CREATE, DROP, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, KILL QUERY, KILL TRANSACTION, MOVE PARTITION BETWEEN SHARDS, ACCESS MANAGEMENT, SYSTEM, dictGet, displaySecretsInShowAndSelect, INTROSPECTION, SOURCES, CLUSTER ON *.* on cluster 'cluster_1S_3R' TO ad_admins WITH GRANT OPTION;
+
+GRANT SELECT ON db1.table1 on cluster 'cluster_1S_3R' TO ad_db1_users;
+
+GRANT SELECT ON db2.table1 on cluster 'cluster_1S_3R' TO ad_db2_users;
+```
+
+9. اختبر الوصول باستخدام المستخدم المقيّد `db1`.
+   على سبيل المثال:
+
+```
+root@chnode1:/etc/clickhouse-server# clickhouse-client --user clickhouse_db1_user --password MyPassword123  --secure --port 9440 --host chnode1.marsnet.local
+ClickHouse client version 24.1.3.31 (official build).
+Connecting to chnode1.marsnet.local:9440 as user clickhouse_db1_user.
+Connected to ClickHouse server version 24.1.3.
+
+clickhouse :) select * from db1.table1;
+
+SELECT *
+FROM db1.table1
+
+Query id: b04b92d6-5b8b-40a2-a92a-f06f15774930
+
+┌─id─┬─column1─┐
+│  1 │ a       │
+└────┴─────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+
+clickhouse :) select * from db2.table1;
+
+SELECT *
+FROM db2.table1
+
+Query id: 7f7eaa44-7b47-4184-807a-6968a56057ad
+
+Elapsed: 0.115 sec.
+
+Received exception from server (version 24.1.3):
+Code: 497. DB::Exception: Received from chnode1.marsnet.local:9440. DB::Exception: clickhouse_db1_user: Not enough privileges. To execute this query, it's necessary to have the grant SELECT(id, column1) ON db2.table1. (ACCESS_DENIED)
+```
+
+10. اختبر إمكانية الوصول للمستخدم الذي لديه صلاحية الوصول إلى كلتا قاعدتي البيانات، db1 وdb2.
+    على سبيل المثال:
+
+```
+root@chnode1:/etc/clickhouse-server# clickhouse-client --user ch_db1_db2_user --password MyPassword123  --secure --port 9440 --host chnode1.marsnet.local
+ClickHouse client version 24.1.3.31 (official build).
+Connecting to chnode1.marsnet.local:9440 as user ch_db1_db2_user.
+Connected to ClickHouse server version 24.1.3.
+
+clickhouse :) select * from db1.table1;
+
+SELECT *
+FROM db1.table1
+
+Query id: 23084744-08c2-48bd-8635-a23438812026
+
+┌─id─┬─column1─┐
+│  1 │ a       │
+└────┴─────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+
+clickhouse :) select * from db2.table1;
+
+SELECT *
+FROM db2.table1
+
+Query id: f9954ec4-d8d9-4b5a-9f68-a7aa79a1bb4a
+
+┌─id─┬─column1─┐
+│  2 │ b       │
+└────┴─────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+11. اختبر وصول المستخدم Admin.
+    على سبيل المثال:
+
+```
+root@chnode1:/etc/clickhouse-server# clickhouse-client --user clickhouse_ad_admin --password MyPassword123  --secure --port 9440 --host chnode1.marsnet.local
+ClickHouse client version 24.1.3.31 (official build).
+Connecting to chnode1.marsnet.local:9440 as user clickhouse_ad_admin.
+Connected to ClickHouse server version 24.1.3.
+
+clickhouse :) create table db1.table2 on cluster 'cluster_1S_3R'
+(
+  id Int32,
+  column1 String
+)
+engine = MergeTree()
+order by id;
+
+CREATE TABLE db1.table2 ON CLUSTER cluster_1S_3R
+(
+    `id` Int32,
+    `column1` String
+)
+ENGINE = MergeTree
+ORDER BY id
+
+Query id: 6041fd32-4294-44bd-b442-3fdd41333e6f
+
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode1.marsnet.local │ 9440 │      0 │       │                   2 │                2 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                1 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode3.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+```

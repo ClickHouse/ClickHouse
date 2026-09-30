@@ -17,7 +17,7 @@ struct RegionEntry
 
 struct RegionNameEntry
 {
-    RegionID id;
+    RegionID id{};
     std::string name;
 };
 

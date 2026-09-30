@@ -4,6 +4,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -29,6 +30,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
+    extern const MergeTreeSettingsBool always_fetch_mutated_part;
     extern const MergeTreeSettingsBool detach_not_byte_identical_parts;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 prefer_fetch_merged_part_size_threshold;
@@ -38,6 +40,20 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char rmt_mutate_task_pause_in_prepare[];
+    extern const char rmt_mutate_task_pause_before_rename_part[];
+    extern const char rmt_mutate_task_pause_after_temporary_part_released[];
+    extern const char rmt_mutate_task_pause_after_zero_copy_lock[];
+}
+
+MutateFromLogEntryTask::~MutateFromLogEntryTask()
+{
+    /// zero_copy_lock's destructor can perform a real ZooKeeper request (releasing the exclusive
+    /// lock's ephemeral node) if the task is destroyed while still holding the lock, e.g. on
+    /// cancellation before the explicit unlock in prepare()/finalize() is reached. That request
+    /// has no component scope by default when this destructor runs from generic background-task
+    /// cleanup (MergeTreeBackgroundExecutor::routine), so set one explicitly here.
+    auto component_guard = Coordination::setCurrentComponent("MutateFromLogEntryTask::~MutateFromLogEntryTask");
+    zero_copy_lock.reset();
 }
 
 ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
@@ -65,6 +81,26 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
             mutation_ids_for_log, {});
     };
+
+    if ((*storage_settings_ptr)[MergeTreeSetting::always_fetch_mutated_part])
+    {
+        LOG_INFO(log, "Will fetch part {} because setting 'always_fetch_mutated_part' is true", entry.new_part_name);
+        /// No replica may have produced the mutated part yet, so a missing part is not an error
+        /// here: `executeFetch` must quietly return and let the entry be retried later instead of
+        /// throwing `NO_REPLICA_HAS_PART`. Otherwise the exception would be recorded as
+        /// `latest_fail_reason` in `system.mutations`, and a synchronous wait
+        /// (`mutations_sync` = 1/2) issued on this replica could fail for a long-running mutation
+        /// that another replica is still executing.
+        /// Because no exception is thrown, the queue's exponential backoff is not armed, so request
+        /// a postponed retry explicitly - otherwise the same entry would be re-scheduled immediately
+        /// in a loop while another replica is still mutating the part.
+        return PrepareResult{
+            .prepared_successfully = false,
+            .need_to_check_missing_part_in_fetch = false,
+            .part_log_writer = part_log_writer,
+            .postpone_next_attempt = true,
+        };
+    }
 
     MergeTreeData::DataPartPtr source_part = storage.getActiveContainingPart(source_part_name);
     if (!source_part)
@@ -156,7 +192,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     table_lock_holder = storage.lockForShare(
             RWLockImpl::NO_QUERY, (*storage_settings_ptr)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
-    StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
 
@@ -216,6 +252,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             }
 
             LOG_DEBUG(log, "Zero copy lock taken, will mutate part {}", entry.new_part_name);
+
+            /// Pause here with the zero-copy exclusive lock held, so a test can tear the task
+            /// down (e.g. via DROP TABLE) while ~ZooKeeperLock still has to release the lock.
+            FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_after_zero_copy_lock);
         }
     }
 
@@ -263,6 +303,18 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
         data_part_storage.precommitTransaction();
 
     storage.renameTempPartAndReplace(new_part, *transaction_ptr, /*rename_in_transaction=*/ true);
+    new_part->getDataPartStorage().commitTransaction();
+
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_before_rename_part);
+
+    /// Explicitly rename the part while `mutate_task` is still alive, because it owns the RAII guard
+    /// that keeps `clearOldTemporaryDirectories` away from the `tmp_mut_<part>` directory. Releasing
+    /// the guard before the rename opens a window in which the cleanup thread starts removing the
+    /// directory while the rename is moving it to the persistent name: the part becomes active with
+    /// some of its files already deleted, so reads of it fail with `No such file or directory` and
+    /// the next mutation of it fails with `CANNOT_LINK` forever. `renameMergedTemporaryPart` renames
+    /// under the same guard for the same reason.
+    transaction_ptr->renameParts();
 
     /// We must reset the task here, similarly to MergeFromLogEntryTask::finalize.
     /// The task holds RAII guards for temporary part directories (TemporaryParts).
@@ -276,11 +328,15 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     mutate_task->updateProfileEvents();
     mutate_task.reset();
 
+    /// The temporary directory of the part is no longer protected by `TemporaryParts` here.
+    /// This failpoint lets a test observe that window: with the rename above it is already gone,
+    /// while with the old ordering it is still on disk and the cleanup thread removes it.
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_after_temporary_part_released);
+
     Stopwatch commit_watch;
 
     try
     {
-        transaction_ptr->renameParts();
         storage.checkPartChecksumsAndCommit(*transaction_ptr, new_part, hardlinked_files);
     }
     catch (const Exception & e)

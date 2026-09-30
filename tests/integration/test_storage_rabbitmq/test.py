@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 import random
 import threading
@@ -13,6 +14,7 @@ import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+from . import poll_direct_select_result
 
 pytestmark = pytest.mark.timeout(1200)
 
@@ -26,6 +28,7 @@ instance = cluster.add_instance(
         "configs/macros.xml",
         "configs/named_collection.xml",
         "configs/dead_letter_queue.xml",
+        "configs/disable_insertion.xml",
     ],
     user_configs=["configs/users.xml"],
     with_rabbitmq=True,
@@ -62,6 +65,19 @@ def rabbitmq_check_result(result, check=False, reference=None):
         return TSV(result) == TSV(reference)
 
 
+def check_direct_select_result_polling(query, reference=None, timeout=DEFAULT_TIMEOUT_SEC):
+    if reference is None:
+        reference = "\n".join([f"{i}\t{i}" for i in range(50)])
+
+    result = poll_direct_select_result(
+        instance,
+        query,
+        lambda current_result: rabbitmq_check_result(current_result, reference=reference),
+        timeout,
+    )
+    rabbitmq_check_result(result, True, reference=reference)
+
+
 # Fixtures
 
 
@@ -92,17 +108,22 @@ def unique(request):
 
 
 def check_expected_result_polling(expected, query, instance=instance, timeout=DEFAULT_TIMEOUT_SEC):
+    # Fail only if consumption from RabbitMQ stalls, i.e. there is no progress for `timeout`
+    # seconds. As long as the result keeps increasing, consumption is still in progress, so we
+    # keep waiting regardless of how long the whole consumption takes. This matters for heavy
+    # tests (e.g. consuming many large messages on a slow remote-disk configuration): a fixed
+    # deadline would abandon a test that is still steadily consuming.
     deadline = time.monotonic() + timeout
     prev_result = 0
     result = None
     while time.monotonic() < deadline:
         result = int(instance.query(query))
-        # In case it's consuming successfully from RabbitMQ in latest iteration, extend the deadline
-        if result > prev_result:
-            deadline += 1
-        prev_result = result
         if result == expected:
             break
+        # Progress was made since the previous iteration: reset the no-progress deadline.
+        if result > prev_result:
+            deadline = time.monotonic() + timeout
+        prev_result = result
         logging.debug(f"Result: {result} / {expected}. Now {time.monotonic()}, deadline {deadline}")
         time.sleep(1)
     else:
@@ -113,6 +134,24 @@ def check_expected_result_polling(expected, query, instance=instance, timeout=DE
 
 
 # Tests
+
+
+def test_rabbitmq_broker_log_is_collected(rabbitmq_cluster):
+    logs_dir = rabbitmq_cluster.rabbitmq_logs_dir
+    path = os.path.join(logs_dir, "rabbit.log")
+
+    deadline = time.monotonic() + 30
+    size = 0
+    while time.monotonic() < deadline:
+        if os.path.exists(path):
+            size = os.path.getsize(path)
+            if size > 0:
+                break
+        time.sleep(1)
+
+    listing = sorted(os.listdir(logs_dir)) if os.path.isdir(logs_dir) else "<no such directory>"
+    assert os.path.exists(path), f"{path} is absent, {logs_dir} contains {listing}"
+    assert size > 0, f"{path} is empty, {logs_dir} contains {listing}"
 
 
 @pytest.mark.parametrize(
@@ -169,21 +208,7 @@ def test_rabbitmq_select(rabbitmq_cluster, secure, db, unique):
     # The order of messages in select * from {db}.rabbitmq is not guaranteed, so sleep to collect everything in one select
     time.sleep(1)
 
-    result = ""
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result += instance.query(
-            f"SELECT * FROM {db}.rabbitmq ORDER BY key", ignore_error=True
-        )
-        if rabbitmq_check_result(result):
-            break
-        time.sleep(0.05)
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
-
-    rabbitmq_check_result(result, True)
+    check_direct_select_result_polling(f"SELECT * FROM {db}.rabbitmq ORDER BY key")
 
 
 def test_rabbitmq_select_empty(rabbitmq_cluster, db, unique):
@@ -242,22 +267,7 @@ def test_rabbitmq_json_without_delimiter(rabbitmq_cluster, db, unique):
     connection.close()
     time.sleep(1)
 
-    result = ""
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result += instance.query(
-            f"SELECT * FROM {db}.rabbitmq ORDER BY key", ignore_error=True
-        )
-        if rabbitmq_check_result(result):
-            break
-
-        time.sleep(0.05)
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
-
-    rabbitmq_check_result(result, True)
+    check_direct_select_result_polling(f"SELECT * FROM {db}.rabbitmq ORDER BY key")
 
 
 def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster, db, unique):
@@ -292,22 +302,7 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster, db, unique):
     connection.close()
     time.sleep(1)
 
-    result = ""
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result += instance.query(
-            f"SELECT * FROM {db}.rabbitmq ORDER BY key", ignore_error=True
-        )
-        if rabbitmq_check_result(result):
-            break
-
-        time.sleep(0.05)
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
-
-    rabbitmq_check_result(result, True)
+    check_direct_select_result_polling(f"SELECT * FROM {db}.rabbitmq ORDER BY key")
 
 
 def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster, db, unique):
@@ -392,21 +387,7 @@ def test_rabbitmq_macros(rabbitmq_cluster, db, unique):
     connection.close()
     time.sleep(1)
 
-    result = ""
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result += instance.query(
-            f"SELECT * FROM {db}.rabbitmq ORDER BY key", ignore_error=True
-        )
-        if rabbitmq_check_result(result):
-            break
-        time.sleep(0.05)
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
-
-    rabbitmq_check_result(result, True)
+    check_direct_select_result_polling(f"SELECT * FROM {db}.rabbitmq ORDER BY key")
 
 
 def test_rabbitmq_materialized_view(rabbitmq_cluster, db, unique):
@@ -443,7 +424,6 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster, db, unique):
 
     instance.wait_for_log_line("Started streaming to 2 attached views")
 
-    messages = []
     for i in range(50):
         message = json.dumps({"key": i, "value": i})
         channel.basic_publish(exchange=f"{unique}_mv", routing_key="", body=message)
@@ -580,6 +560,9 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster, db, unique):
         channel.basic_publish(exchange=f"{unique}_mmv", routing_key="", body=message)
 
     is_check_passed = False
+    result1 = ""
+    result2 = ""
+    result3 = ""
     deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
     while time.monotonic() < deadline:
         result1 = instance.query(f"SELECT * FROM {db}.view1 ORDER BY key")
@@ -654,7 +637,11 @@ def test_rabbitmq_big_message(rabbitmq_cluster, db, unique):
     for message in messages:
         channel.basic_publish(exchange=f"{unique}_big", routing_key="", body=message)
 
-    check_expected_result_polling(batch_messages * rabbitmq_messages, f"SELECT count() FROM {db}.view")
+    # 1M rows (5x any other polling test here) over many small parts: the default
+    # 60s budget is too tight under sanitizer builds + contended CI runners.
+    check_expected_result_polling(
+        batch_messages * rabbitmq_messages, f"SELECT count() FROM {db}.view", timeout=180
+    )
     connection.close()
 
 
@@ -741,7 +728,7 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster, db, unique):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = '{unique}_combo',
                      rabbitmq_queue_base = '{unique}_combo',
-                     rabbitmq_max_block_size = 100,
+                     rabbitmq_max_block_size = 10000,
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_num_consumers = 2,
                      rabbitmq_num_queues = 5,
@@ -804,18 +791,16 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster, db, unique):
     deadline = time.monotonic() + 180
     expected = messages_num * threads_num * NUM_MV
     while time.monotonic() < deadline:
-        result = 0
-        for mv_id in range(NUM_MV):
-            result += int(
-                instance.query(f"SELECT count() FROM {db}.combo_{mv_id}")
-            )
+        # Every instance.query() spawns a clickhouse-client, so poll all NUM_MV targets at once.
+        # The anchor keeps the combo_N_mv views out: reading a view counts its combo_N target again.
+        result = int(instance.query(f"SELECT count() FROM merge({db!r}, '^combo_[0-9]+$')"))
         if int(result) == expected:
             break
         logging.debug(f"Result: {result} / {expected}")
         time.sleep(1)
     else:
         pytest.fail(
-            f"Time limit of 180 seconds reached. The result did not match the expected value."
+            "Time limit of 180 seconds reached. The result did not match the expected value."
         )
 
     for thread in threads:
@@ -884,7 +869,6 @@ def test_rabbitmq_insert(rabbitmq_cluster, db, unique):
     insert_messages = []
 
     def onReceived(channel, method, properties, body):
-        i = 0
         insert_messages.append(body.decode())
         if len(insert_messages) == 50:
             channel.stop_consuming()
@@ -952,7 +936,6 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster, db, unique):
     insert_messages = []
 
     def onReceived(channel, method, properties, body):
-        i = 0
         insert_messages.append(body.decode())
         if len(insert_messages) == 50:
             channel.stop_consuming()
@@ -1035,6 +1018,12 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster, db, unique):
         CREATE MATERIALIZED VIEW {db}.consumer_many TO {db}.view_many AS
             SELECT * FROM {db}.rabbitmq_consume;
     """
+    )
+
+    # db is per-test unique, so scoping to it avoids matching a stale
+    # "Started streaming" line from an earlier RabbitMQ test in the tail buffer.
+    instance.wait_for_log_line(
+        rf"StorageRabbitMQ \({db}\.rabbitmq_consume\).*Started streaming to 1 attached views"
     )
 
     for thread in threads:
@@ -2160,14 +2149,187 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster, db, unique):
     assert exists
 
     instance.query(f"DROP TABLE {db}.rabbitmq_drop")
-    time.sleep(30)
 
+    # Only a 404 means the queue is gone. A successful passive declare leaves the channel
+    # usable, and the 404 path breaks out at once, so the channel is never used after the
+    # broker closes it.
+    queue_removal_timeout_sec = 30
+    deadline = time.monotonic() + queue_removal_timeout_sec
+    while True:
+        try:
+            channel.queue_declare(queue=f"{unique}_rabbit_queue_drop", passive=True)
+        except pika.exceptions.ChannelClosedByBroker as e:
+            assert e.reply_code == 404, f"unexpected channel close: {e}"
+            break
+        # The last declare lands at the deadline, so the accepted window is exactly
+        # queue_removal_timeout_sec.
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            pytest.fail(
+                f"Queue {unique}_rabbit_queue_drop still exists "
+                f"{queue_removal_timeout_sec} seconds after DROP TABLE."
+            )
+        time.sleep(min(0.5, remaining))
+
+
+def test_rabbitmq_drop_table_waits_for_consumer_channels(rabbitmq_cluster, db, unique):
+    # A queue.delete carries AMQP::ifunused, and AMQP orders method completion per channel only,
+    # so the delete is issued on a fresh channel while the consumer may still be registered on
+    # its own one, and a classic queue then refuses it. The broker deregisters a channel's
+    # consumers while handling its channel.close, before answering it, so DROP TABLE must see
+    # that answer before it asks for the deletion.
+    table = f"{db}.rabbitmq_drop_awaits"
+    queue = f"{unique}_rabbit_queue_drop_awaits"
+    instance.query(
+        f"""
+        CREATE TABLE {table} (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_exchange_name = '{unique}_drop_awaits',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{queue}'
+        """
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.basic_publish(
+        exchange=f"{unique}_drop_awaits", routing_key="", body=json.dumps({"key": 1, "value": 2})
+    )
+
+    # Reading attaches the consumer whose channel the deletion has to wait for.
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while time.monotonic() < deadline:
+        if instance.query(f"SELECT * FROM {table} ORDER BY key", ignore_error=True) == "1\t2\n":
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail(f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached before reading a message.")
+
+    assert channel.queue_declare(queue=queue, passive=True)
+
+    # All three patterns are scoped to this table's own logger, so no other test in this module can
+    # satisfy them, and the close they match is this table's own consumer channel. The bound in the
+    # wait pattern is what distinguishes the awaiting wait from the unrelated 30000ms ones: the
+    # remaining time shrinks across iterations, so any value below the four-digit ceiling matches
+    # while 30000 cannot.
+    closed_pattern = f"StorageRabbitMQ ({table}): Consumer channel .* is closed"
+    deleted_pattern = f"StorageRabbitMQ ({table}): Successfully deleted queue {queue}"
+    wait_pattern = (
+        f"StorageRabbitMQ ({table}): "
+        r"Started blocking loop with [0-9]\{1,4\}ms timeout"
+    )
+
+    def first_timestamp(lines):
+        match = re.search(r"\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.\d+", lines)
+        assert match, f"no timestamp in matched log lines: {lines}"
+        return match.group(0)
+
+    assert not instance.grep_in_log(closed_pattern), "consumer channel closed before DROP TABLE"
+    assert not instance.grep_in_log(wait_pattern), "consumer channels awaited before DROP TABLE"
+
+    instance.query(f"DROP TABLE {table}")
+
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while time.monotonic() < deadline:
+        deleted = instance.grep_in_log(deleted_pattern, only_latest=True)
+        if deleted:
+            break
+        time.sleep(0.5)
+    else:
+        pytest.fail(f"Queue {queue} was not deleted within {DEFAULT_TIMEOUT_SEC} seconds.")
+
+    closed = instance.grep_in_log(closed_pattern, only_latest=True)
+    assert closed, "DROP TABLE deleted the queue without awaiting the consumer channel close"
+    assert first_timestamp(closed) <= first_timestamp(deleted), (
+        f"consumer channel closed after the queue was deleted:\n{closed}\n{deleted}"
+    )
+
+    # The close alone can be ordered first by the reply merely arriving early, so require the wait
+    # itself to have run before the deletion. That edge exists only when the queues are deleted
+    # after awaiting the channels, rather than concurrently with them.
+    waited = instance.grep_in_log(wait_pattern, only_latest=True)
+    assert waited, "DROP TABLE deleted the queue without waiting for the consumer channels"
+    assert first_timestamp(waited) <= first_timestamp(deleted), (
+        f"consumer channels awaited after the queue was deleted:\n{waited}\n{deleted}"
+    )
+
+    # The queue must be really gone, not merely reported as deleted. Only a 404 means that.
     try:
-        exists = channel.queue_declare(queue=f"{unique}_rabbit_queue_drop", passive=True)
-    except Exception as e:
-        exists = False
+        channel.queue_declare(queue=queue, passive=True)
+    except pika.exceptions.ChannelClosedByBroker as e:
+        assert e.reply_code == 404, f"unexpected channel close: {e}"
+    else:
+        pytest.fail(f"Queue {queue} still exists after DROP TABLE.")
 
-    assert not exists
+
+def test_rabbitmq_detach_after_failed_truncate_keeps_queue(rabbitmq_cluster, db, unique):
+    # checkTableCanBeDropped() marks the table before the statement it guards can fail, and nothing
+    # ever unmarks it, so a table whose TRUNCATE threw stays marked while remaining fully alive. A
+    # later DETACH is not a drop, so it must leave the queue and its unconsumed messages alone.
+    table = f"{db}.rabbitmq_detach_keeps_queue"
+    queue = f"{unique}_rabbit_queue_detach_keeps"
+    instance.query(
+        f"""
+        CREATE TABLE {table} (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_exchange_name = '{unique}_detach_keeps',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{queue}'
+        """
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.basic_publish(
+        exchange=f"{unique}_detach_keeps", routing_key="", body=json.dumps({"key": 1, "value": 2})
+    )
+
+    # Reading attaches the consumer, so the shutdown below takes the same path a drop would.
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while time.monotonic() < deadline:
+        if instance.query(f"SELECT * FROM {table} ORDER BY key", ignore_error=True) == "1\t2\n":
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail(f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached before reading a message.")
+
+    assert channel.queue_declare(queue=queue, passive=True)
+
+    # RabbitMQ does not implement truncate, so this throws after the table was already marked.
+    error = instance.query_and_get_error(f"TRUNCATE TABLE {table}")
+    assert "NOT_IMPLEMENTED" in error, f"TRUNCATE failed for another reason: {error}"
+
+    # The table is still alive, so the mark it now carries must not turn this into a queue deletion.
+    instance.query(f"DETACH TABLE {table}")
+
+    # Both patterns are scoped to this table's own logger, so no other test can satisfy them. The
+    # refusal line is checked as well, so a delete that was attempted and refused cannot pass for
+    # one that was never attempted.
+    deleted_pattern = f"StorageRabbitMQ ({table}): Successfully deleted queue {queue}"
+    failed_pattern = f"StorageRabbitMQ ({table}): Failed to delete queue {queue}"
+    assert not instance.grep_in_log(deleted_pattern), "DETACH TABLE deleted the queue"
+    assert not instance.grep_in_log(failed_pattern), "DETACH TABLE tried to delete the queue"
+
+    # A passive declare that 404s closes the channel, so ask on a channel nothing else has used.
+    check_channel = connection.channel()
+    assert check_channel.queue_declare(queue=queue, passive=True), (
+        f"Queue {queue} is gone after DETACH TABLE."
+    )
+
+    instance.query(f"ATTACH TABLE {table}")
+    instance.query(f"DROP TABLE {table}")
 
 
 def test_rabbitmq_queue_settings(rabbitmq_cluster, db, unique):
@@ -2231,7 +2393,6 @@ def test_rabbitmq_queue_consume(rabbitmq_cluster, db, unique):
     def produce():
         connection = pika.BlockingConnection(parameters)
         channel = connection.channel()
-        messages = []
         for _ in range(messages_num):
             message = json.dumps({"key": i[0], "value": i[0]})
             channel.basic_publish(exchange="", routing_key=queue_name, body=message)
@@ -2482,7 +2643,7 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster, db, unique):
             break
         time.sleep(0.05)
     else:
-        pytest.fail(f"Time limit of 30 seconds reached. The count is still 0.")
+        pytest.fail("Time limit of 30 seconds reached. The count is still 0.")
 
     instance.query(f"DROP TABLE {db}.drop_mv")
     assert count > 0
@@ -3384,7 +3545,7 @@ def view_test(expected_num_messages, _exchange_name, db):
 
 
 def dead_letter_queue_test(expected_num_messages, exchange_name, _db):
-    result = instance.query(f"SELECT * FROM system.dead_letter_queue FORMAT Vertical")
+    result = instance.query("SELECT * FROM system.dead_letter_queue FORMAT Vertical")
 
     logging.debug(f"system.dead_letter_queue content is {result}")
 
@@ -3601,7 +3762,7 @@ def test_hiding_credentials(rabbitmq_cluster, db, unique):
     instance.query("SYSTEM FLUSH LOGS")
     message = instance.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE {db}.{table_name}%'")
     assert "rabbitmq_password = \\'[HIDDEN]\\'" in  message
-    assert "rabbitmq_address = \\'amqp://root:[HIDDEN]@rabbitmq1:5672/\\'" in  message
+    assert "rabbitmq_address = \\'[HIDDEN]\\'" in  message
 
 
 def test_rabbitmq_default_mode_nack_on_parse_error(rabbitmq_cluster, db, unique):
@@ -3689,3 +3850,119 @@ def test_rabbitmq_default_mode_nack_on_parse_error(rabbitmq_cluster, db, unique)
     channel.queue_delete(deadletter_queue)
     channel.exchange_delete(deadletter_exchange)
     connection.close()
+
+
+@pytest.mark.parametrize(
+    "setting_name",
+    ["message_queue_disable_insertion", "disable_insertion_and_mutation"],
+)
+def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_name):
+    assert (
+        "false"
+        == instance.query(f"SELECT getServerSetting('{setting_name}')").strip()
+    )
+
+    try:
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            f"<{setting_name}>0</{setting_name}>",
+            f"<{setting_name}>1</{setting_name}>",
+        )
+        instance.restart_clickhouse()
+
+        assert (
+            "true"
+            == instance.query(f"SELECT getServerSetting('{setting_name}')").strip()
+        )
+
+        # Create RabbitMQ table, destination table, and MV
+        exchange = f"{unique}_disable_insertion"
+        instance.query(
+            f"""
+            CREATE TABLE {db}.rabbitmq (key UInt64, value UInt64)
+                ENGINE = RabbitMQ
+                SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_exchange_name = '{exchange}',
+                         rabbitmq_format = 'JSONEachRow',
+                         rabbitmq_flush_interval_ms = 1000,
+                         rabbitmq_queue_base = '{exchange}',
+                         rabbitmq_queue_consume = 1;
+            CREATE TABLE {db}.view (key UInt64, value UInt64)
+                ENGINE = MergeTree()
+                ORDER BY key;
+            CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS
+                SELECT * FROM {db}.rabbitmq;
+        """
+        )
+
+        # Disabled streaming storages must remain registered so they can be renamed.
+        instance.query(f"RENAME TABLE {db}.rabbitmq TO {db}.rabbitmq_renamed")
+        instance.query(f"RENAME TABLE {db}.rabbitmq_renamed TO {db}.rabbitmq")
+
+        # Produce messages while insertion is disabled
+        credentials = pika.PlainCredentials("root", "clickhouse")
+        parameters = pika.ConnectionParameters(
+            rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+        )
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+        channel.exchange_declare(exchange=exchange, exchange_type="fanout", durable=True)
+        channel.queue_declare(queue=exchange, durable=True)
+        channel.queue_bind(exchange=exchange, queue=exchange)
+
+        error_patterns = [
+            "Insert queries are prohibited",
+            "Message queue insertion is disabled",
+            "Error while streaming to views",
+            "Failed to process data",
+        ]
+        error_counts = {
+            pattern: int(instance.count_in_log(pattern)) for pattern in error_patterns
+        }
+
+        for i in range(10):
+            channel.basic_publish(
+                exchange=exchange, routing_key="",
+                body=json.dumps({"key": i, "value": i}),
+            )
+
+        # Wait — no rows should appear
+        time.sleep(10)
+        assert 0 == int(instance.query(f"SELECT count() FROM {db}.view"))
+        queue_state = channel.queue_declare(queue=exchange, passive=True).method
+        assert 10 == queue_state.message_count
+        assert 0 == queue_state.consumer_count
+
+        for pattern, count in error_counts.items():
+            assert count == int(instance.count_in_log(pattern))
+
+        # Direct INSERT INTO the RabbitMQ table (producer write) must still work
+        instance.query(
+            f"INSERT INTO {db}.rabbitmq FORMAT JSONEachRow"
+            ' {"key": 999, "value": 999}'
+        )
+
+        # Re-enable insertion
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            f"<{setting_name}>1</{setting_name}>",
+            f"<{setting_name}>0</{setting_name}>",
+        )
+        instance.restart_clickhouse()
+
+        assert (
+            "false"
+            == instance.query(f"SELECT getServerSetting('{setting_name}')").strip()
+        )
+
+        # Rows should flow through now (10 original + 1 from direct INSERT)
+        check_expected_result_polling(11, f"SELECT count() FROM {db}.view")
+
+        connection.close()
+    finally:
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            f"<{setting_name}>1</{setting_name}>",
+            f"<{setting_name}>0</{setting_name}>",
+        )
+        instance.restart_clickhouse()

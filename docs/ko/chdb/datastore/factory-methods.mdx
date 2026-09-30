@@ -1,0 +1,562 @@
+---
+title: 'DataStore 팩터리 메서드'
+sidebarTitle: '팩터리 메서드'
+slug: /chdb/datastore/factory-methods
+description: '파일, 데이터베이스, 클라우드 스토리지, 데이터 레이크에서 DataStore 인스턴스를 생성합니다'
+keywords: ['chdb', 'datastore', 'factory', 'from_file', 'from_s3', 'uri', 'mysql', 'postgresql']
+doc_type: 'reference'
+---
+
+DataStore는 로컬 파일, 데이터베이스, 클라우드 스토리지, 데이터 레이크를 비롯한 다양한 데이터 소스에서 인스턴스를 생성할 수 있는 20개 이상의 팩터리 메서드를 제공합니다.
+
+<div id="uri">
+  ## 범용 URI 인터페이스
+</div>
+
+`uri()` 메서드는 소스 유형을 자동으로 감지하는 권장되는 범용 진입점입니다:
+
+```python
+from chdb.datastore import DataStore
+
+# 로컬 파일
+ds = DataStore.uri("data.csv")
+ds = DataStore.uri("/path/to/data.parquet")
+
+# 클라우드 스토리지
+ds = DataStore.uri("s3://bucket/data.parquet?nosign=true")
+ds = DataStore.uri("https://example.com/data.csv")
+
+# 데이터베이스
+ds = DataStore.uri("mysql://user:pass@host:3306/db/table")
+ds = DataStore.uri("postgresql://user:pass@host:5432/db/table")
+```
+
+<div id="uri-syntax">
+  ### URI 구문 참고
+</div>
+
+| 소스 유형      | URI 형식                                      | 예시                                                     |
+| ---------- | ------------------------------------------- | ------------------------------------------------------ |
+| 로컬 파일      | `path/to/file`                              | `data.csv`, `/abs/path/data.parquet`                   |
+| S3         | `s3://bucket/path`                          | `s3://mybucket/data.parquet?nosign=true`               |
+| GCS        | `gs://bucket/path`                          | `gs://mybucket/data.csv`                               |
+| Azure      | `az://container/path`                       | `az://mycontainer/data.parquet`                        |
+| HTTP/HTTPS | `https://url`                               | `https://example.com/data.csv`                         |
+| MySQL      | `mysql://user:pass@host:port/db/table`      | `mysql://root:pass@localhost:3306/mydb/users`          |
+| PostgreSQL | `postgresql://user:pass@host:port/db/table` | `postgresql://postgres:pass@localhost:5432/mydb/users` |
+| SQLite     | `sqlite:///path?table=name`                 | `sqlite:///data.db?table=users`                        |
+| ClickHouse | `clickhouse://host:port/db/table`           | `clickhouse://localhost:9000/default/hits`             |
+
+***
+
+<div id="file-sources">
+  ## 파일 SOURCES
+</div>
+
+<div id="from-file">
+  ### `from_file`
+</div>
+
+포맷을 자동으로 감지하여 로컬 또는 원격 파일에서 DataStore를 생성합니다.
+
+```python
+DataStore.from_file(path, format=None, compression=None, **kwargs)
+```
+
+**매개변수:**
+
+| 매개변수          | 유형  | 기본값        | 설명                      |
+| ------------- | --- | ---------- | ----------------------- |
+| `path`        | str | *required* | 파일 경로(로컬 또는 URL)        |
+| `format`      | str | `None`     | 파일 포맷(`None`인 경우 자동 감지) |
+| `compression` | str | `None`     | 압축 방식(`None`인 경우 자동 감지) |
+
+**지원 포맷:** CSV, TSV, Parquet, JSON, JSONLines, ORC, Avro, Arrow
+
+**예시:**
+
+```python
+from chdb.datastore import DataStore
+
+# 확장자에서 포맷 자동 감지
+ds = DataStore.from_file("data.csv")
+ds = DataStore.from_file("data.parquet")
+ds = DataStore.from_file("data.json")
+
+# 포맷 명시
+ds = DataStore.from_file("data.txt", format="CSV")
+
+# 압축 사용
+ds = DataStore.from_file("data.csv.gz", compression="gzip")
+```
+
+<div id="pandas-read">
+  ### Pandas와 호환되는 읽기 함수
+</div>
+
+```python
+from chdb import datastore as pd
+
+# CSV 파일
+ds = pd.read_csv("data.csv")
+ds = pd.read_csv("data.csv", sep=";", header=0, nrows=1000)
+
+# Parquet 파일 (대용량 데이터셋에 권장)
+ds = pd.read_parquet("data.parquet")
+ds = pd.read_parquet("data.parquet", columns=['col1', 'col2'])
+
+# JSON 파일
+ds = pd.read_json("data.json")
+ds = pd.read_json("data.jsonl", lines=True)
+
+# Excel 파일
+ds = pd.read_excel("data.xlsx", sheet_name="Sheet1")
+```
+
+***
+
+<div id="cloud-storage">
+  ## 클라우드 스토리지
+</div>
+
+<div id="from-s3">
+  ### `from_s3`
+</div>
+
+Amazon S3에서 DataStore를 생성합니다.
+
+```python
+DataStore.from_s3(url, access_key_id=None, secret_access_key=None, format=None, **kwargs)
+```
+
+**매개변수:**
+
+| 매개변수                | 유형  | 기본값    | 설명                  |
+| ------------------- | --- | ------ | ------------------- |
+| `url`               | str | *필수*   | S3 URL (s3://버킷/경로) |
+| `access_key_id`     | str | `None` | AWS 액세스 키 ID        |
+| `secret_access_key` | str | `None` | AWS 시크릿 액세스 키       |
+| `format`            | str | `None` | 파일 포맷(자동 감지됨)       |
+
+**예시:**
+
+```python
+from chdb.datastore import DataStore
+
+# 익명 접근 (공개 버킷)
+ds = DataStore.from_s3("s3://bucket/data.parquet")
+
+# 자격 증명 사용
+ds = DataStore.from_s3(
+    "s3://bucket/data.parquet",
+    access_key_id="AKIAIOSFODNN7EXAMPLE",
+    secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+)
+
+# 쿼리 매개변수를 포함한 URI 사용
+ds = DataStore.uri("s3://bucket/data.parquet?nosign=true")
+ds = DataStore.uri("s3://bucket/data.parquet?access_key_id=KEY&secret_access_key=SECRET")
+```
+
+<div id="from-gcs">
+  ### `from_gcs`
+</div>
+
+Google Cloud Storage의 데이터로 DataStore를 생성합니다.
+
+```python
+DataStore.from_gcs(url, credentials_path=None, **kwargs)
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_gcs("gs://bucket/data.parquet")
+ds = DataStore.from_gcs("gs://bucket/data.parquet", credentials_path="/path/to/creds.json")
+```
+
+<div id="from-azure">
+  ### `from_azure`
+</div>
+
+Azure Blob Storage로부터 DataStore를 생성합니다.
+
+```python
+DataStore.from_azure(url, account_name=None, account_key=None, **kwargs)
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_azure(
+    "az://container/data.parquet",
+    account_name="myaccount",
+    account_key="mykey"
+)
+```
+
+<div id="from-hdfs">
+  ### `from_hdfs`
+</div>
+
+HDFS에서 DataStore를 생성합니다.
+
+```python
+DataStore.from_hdfs(url, **kwargs)
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_hdfs("hdfs://namenode:8020/path/data.parquet")
+```
+
+<div id="from-url">
+  ### `from_url`
+</div>
+
+HTTP/HTTPS URL로부터 DataStore를 생성합니다.
+
+```python
+DataStore.from_url(url, format=None, **kwargs)
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_url("https://example.com/data.csv")
+ds = DataStore.from_url("https://raw.githubusercontent.com/user/repo/main/data.parquet")
+```
+
+***
+
+<div id="databases">
+  ## 데이터베이스
+</div>
+
+<div id="from-mysql">
+  ### `from_mysql`
+</div>
+
+MySQL 데이터베이스에서 DataStore를 생성합니다.
+
+```python
+DataStore.from_mysql(host, database, table, user, password, port=3306, **kwargs)
+```
+
+**매개변수:**
+
+| 매개변수       | 유형  | 기본값    | 설명        |
+| ---------- | --- | ------ | --------- |
+| `host`     | str | *필수*   | MySQL 호스트 |
+| `database` | str | *필수*   | 데이터베이스 이름 |
+| `table`    | str | *필수*   | 테이블 이름    |
+| `user`     | str | *필수*   | 사용자 이름    |
+| `password` | str | *필수*   | 비밀번호      |
+| `port`     | int | `3306` | 포트 번호     |
+
+**예시:**
+
+```python
+ds = DataStore.from_mysql(
+    host="localhost",
+    database="mydb",
+    table="users",
+    user="root",
+    password="password"
+)
+
+# URI 사용
+ds = DataStore.uri("mysql://root:password@localhost:3306/mydb/users")
+```
+
+<div id="from-postgresql">
+  ### `from_postgresql`
+</div>
+
+PostgreSQL 데이터베이스로부터 DataStore를 생성합니다.
+
+```python
+DataStore.from_postgresql(host, database, table, user, password, port=5432, **kwargs)
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_postgresql(
+    host="localhost",
+    database="mydb",
+    table="users",
+    user="postgres",
+    password="password"
+)
+
+# URI 사용
+ds = DataStore.uri("postgresql://postgres:password@localhost:5432/mydb/users")
+```
+
+<div id="from-clickhouse">
+  ### `from_clickhouse`
+</div>
+
+ClickHouse 서버에서 DataStore를 생성합니다.
+
+```python
+DataStore.from_clickhouse(host, database, table, user=None, password=None, port=9000, **kwargs)
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_clickhouse(
+    host="localhost",
+    database="default",
+    table="hits",
+    user="default",
+    password=""
+)
+
+# 연결 수준 모드 (데이터베이스 탐색)
+ds = DataStore.from_clickhouse(
+    host="analytics.company.com",
+    user="analyst",
+    password="secret"
+)
+ds.databases()                  # 데이터베이스 목록 조회
+ds.tables("production")         # 테이블 목록 조회
+result = ds.sql("SELECT * FROM production.users LIMIT 10")
+```
+
+<div id="from-mongodb">
+  ### `from_mongodb`
+</div>
+
+MongoDB에서 DataStore를 생성합니다.
+
+```python
+DataStore.from_mongodb(uri, database, collection, **kwargs)
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_mongodb(
+    uri="mongodb://localhost:27017",
+    database="mydb",
+    collection="users"
+)
+```
+
+<div id="from-sqlite">
+  ### `from_sqlite`
+</div>
+
+SQLite 데이터베이스로부터 DataStore를 생성합니다.
+
+```python
+DataStore.from_sqlite(database_path, table, **kwargs)
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_sqlite("data.db", table="users")
+
+# URI 사용
+ds = DataStore.uri("sqlite:///data.db?table=users")
+```
+
+***
+
+<div id="data-lakes">
+  ## 데이터 레이크
+</div>
+
+<div id="from-iceberg">
+  ### `from_iceberg`
+</div>
+
+Apache Iceberg 테이블에서 DataStore를 생성합니다.
+
+```python
+DataStore.from_iceberg(path, **kwargs)
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_iceberg("/path/to/iceberg_table")
+ds = DataStore.uri("iceberg://catalog/namespace/table")
+```
+
+<div id="from-delta">
+  ### `from_delta`
+</div>
+
+Delta Lake 테이블에서 DataStore를 생성합니다.
+
+```python
+DataStore.from_delta(path, **kwargs)
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_delta("/path/to/delta_table")
+ds = DataStore.uri("deltalake:///path/to/delta_table")
+```
+
+<div id="from-hudi">
+  ### `from_hudi`
+</div>
+
+Apache Hudi 테이블로부터 DataStore를 생성합니다.
+
+```python
+DataStore.from_hudi(path, **kwargs)
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_hudi("/path/to/hudi_table")
+ds = DataStore.uri("hudi:///path/to/hudi_table")
+```
+
+***
+
+<div id="in-memory">
+  ## 인메모리 SOURCES
+</div>
+
+<div id="from-df">
+  ### `from_df` / `from_dataframe`
+</div>
+
+pandas DataFrame으로부터 DataStore를 생성합니다.
+
+```python
+DataStore.from_df(df, name=None)
+DataStore.from_dataframe(df, name=None)  # 별칭
+```
+
+**예시:**
+
+```python
+import pandas
+from chdb.datastore import DataStore
+
+pdf = pandas.DataFrame({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})
+ds = DataStore.from_df(pdf)
+```
+
+<div id="dataframe-constructor">
+  ### `DataFrame` 생성자
+</div>
+
+pandas 스타일 생성자를 사용해 DataStore를 생성합니다.
+
+```python
+from chdb import datastore as pd
+
+# 딕셔너리에서 생성
+ds = pd.DataFrame({
+    'name': ['Alice', 'Bob'],
+    'age': [25, 30]
+})
+
+# pandas DataFrame에서 생성
+import pandas
+pdf = pandas.DataFrame({'a': [1, 2, 3]})
+ds = pd.DataFrame(pdf)
+```
+
+***
+
+<div id="special-sources">
+  ## 특수 데이터 SOURCES
+</div>
+
+<div id="from-numbers">
+  ### `from_numbers`
+</div>
+
+연속된 숫자로 DataStore를 생성합니다(테스트용으로 유용합니다).
+
+```python
+DataStore.from_numbers(count, **kwargs)
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_numbers(1000000)  # 'number' 컬럼을 가진 100만 행
+result = ds.filter(ds['number'] % 2 == 0).head(10)  # 짝수
+```
+
+<div id="from-random">
+  ### `from_random`
+</div>
+
+무작위 데이터를 사용해 DataStore를 생성합니다.
+
+```python
+DataStore.from_random(rows, columns, **kwargs)
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_random(rows=1000, columns=5)
+```
+
+<div id="run-sql">
+  ### `run_sql`
+</div>
+
+Raw SQL 쿼리로부터 DataStore를 생성합니다.
+
+```python
+DataStore.run_sql(query)
+```
+
+**예시:**
+
+```python
+ds = DataStore.run_sql("""
+    SELECT number, number * 2 as doubled
+    FROM numbers(100)
+    WHERE number % 10 = 0
+""")
+```
+
+***
+
+<div id="summary">
+  ## 요약 표
+</div>
+
+| 메서드                 | 소스 유형                | 예시                                                       |
+| ------------------- | -------------------- | -------------------------------------------------------- |
+| `uri()`             | 범용                   | `DataStore.uri("s3://bucket/data.parquet")`              |
+| `from_file()`       | 로컬/원격 파일             | `DataStore.from_file("data.csv")`                        |
+| `read_csv()`        | CSV 파일               | `pd.read_csv("data.csv")`                                |
+| `read_parquet()`    | Parquet 파일           | `pd.read_parquet("data.parquet")`                        |
+| `from_s3()`         | Amazon S3            | `DataStore.from_s3("s3://bucket/path")`                  |
+| `from_gcs()`        | Google Cloud Storage | `DataStore.from_gcs("gs://bucket/path")`                 |
+| `from_azure()`      | Azure Blob           | `DataStore.from_azure("az://container/path")`            |
+| `from_hdfs()`       | HDFS                 | `DataStore.from_hdfs("hdfs://host/path")`                |
+| `from_url()`        | HTTP/HTTPS           | `DataStore.from_url("https://example.com/data.csv")`     |
+| `from_mysql()`      | MySQL                | `DataStore.from_mysql(host, db, table, user, pass)`      |
+| `from_postgresql()` | PostgreSQL           | `DataStore.from_postgresql(host, db, table, user, pass)` |
+| `from_clickhouse()` | ClickHouse           | `DataStore.from_clickhouse(host, db, table)`             |
+| `from_mongodb()`    | MongoDB              | `DataStore.from_mongodb(uri, db, collection)`            |
+| `from_sqlite()`     | SQLite               | `DataStore.from_sqlite("data.db", table)`                |
+| `from_iceberg()`    | Apache Iceberg       | `DataStore.from_iceberg("/path/to/table")`               |
+| `from_delta()`      | Delta Lake           | `DataStore.from_delta("/path/to/table")`                 |
+| `from_hudi()`       | Apache Hudi          | `DataStore.from_hudi("/path/to/table")`                  |
+| `from_df()`         | pandas DataFrame     | `DataStore.from_df(pandas_df)`                           |
+| `DataFrame()`       | 딕셔너리/DataFrame       | `pd.DataFrame({'a': [1, 2, 3]})`                         |
+| `from_numbers()`    | 연속 숫자                | `DataStore.from_numbers(1000000)`                        |
+| `from_random()`     | 무작위 데이터              | `DataStore.from_random(rows=1000, columns=5)`            |
+| `run_sql()`         | Raw SQL              | `DataStore.run_sql("SELECT * FROM ...")`                 |

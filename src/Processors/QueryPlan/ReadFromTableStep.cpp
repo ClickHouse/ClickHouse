@@ -29,20 +29,6 @@ void ReadFromTableStep::initializePipeline(QueryPipelineBuilder &, const BuildQu
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "initializePipeline is not implementad for ReadFromTableStep");
 }
 
-static void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out)
-{
-    writeIntBinary(val.numerator, out);
-    writeIntBinary(val.denominator, out);
-}
-
-static TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in)
-{
-    TableExpressionModifiers::Rational val;
-    readIntBinary(val.numerator, in);
-    readIntBinary(val.denominator, in);
-    return val;
-}
-
 void ReadFromTableStep::serialize(Serialization & ctx) const
 {
     writeStringBinary(table_name, ctx.out);
@@ -102,6 +88,7 @@ QueryPlanStepPtr ReadFromTableStep::clone() const
     return std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas);
 }
 
+void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ReadFromTable", &ReadFromTableStep::deserialize);

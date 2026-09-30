@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Decimal.h"
+#include "Decimal_fwd.h"
 #include "UUID.h"
 #include "IPv4andIPv6.h"
 

@@ -1,0 +1,116 @@
+---
+description: 'Documentação para Funções Regulares'
+sidebarTitle: 'Visão geral'
+slug: /sql-reference/functions/overview
+title: 'Funções Regulares'
+doc_type: 'reference'
+---
+
+Há pelo menos* dois tipos de funções: funções regulares (chamadas simplesmente de &quot;funções&quot;) e funções de agregação. Esses são conceitos completamente diferentes. As funções regulares funcionam como se fossem aplicadas a cada linha separadamente (para cada linha, o resultado da função não depende das demais linhas). As funções de agregação acumulam um conjunto de valores de várias linhas (ou seja, dependem do conjunto completo de linhas).
+
+Nesta seção, tratamos das funções regulares. Para funções de agregação, consulte a seção &quot;Funções de agregação&quot;.
+
+<Note>
+  Há um terceiro tipo de função, ao qual a [função &#39;arrayJoin&#39;](/pt-BR/reference/functions/regular-functions/array-join) pertence. E as [funções de tabela](/pt-BR/reference/functions/table-functions/index) também podem ser mencionadas separadamente.
+</Note>
+
+<div id="strong-typing">
+  ## Tipagem forte
+</div>
+
+Ao contrário do SQL padrão, o ClickHouse tem tipagem forte. Em outras palavras, ele não faz conversões implícitas entre tipos. Cada função opera sobre um conjunto específico de tipos. Isso significa que, às vezes, é necessário usar funções de conversão.
+
+<div id="common-subexpression-elimination">
+  ## Eliminação de subexpressões comuns
+</div>
+
+Todas as expressões em uma consulta que têm a mesma AST (o mesmo registro ou o mesmo resultado da análise sintática) são consideradas como tendo valores idênticos. Essas expressões são unificadas e executadas uma única vez. Subconsultas idênticas também são eliminadas dessa forma.
+
+<div id="types-of-results">
+  ## Tipos de resultados
+</div>
+
+Todas as funções retornam um único valor como resultado (não vários, nem nenhum). O tipo do resultado normalmente é definido apenas pelos tipos dos argumentos, e não pelos valores. As exceções são a função tupleElement (o operador a.N) e a função toFixedString.
+
+<div id="constants">
+  ## Constantes
+</div>
+
+Para simplificar, determinadas funções só funcionam com constantes em alguns argumentos. Por exemplo, o argumento à direita do operador LIKE deve ser uma constante.
+Quase todas as funções retornam uma constante para argumentos constantes. A exceção são as funções que geram números aleatórios.
+A função &#39;now&#39; retorna valores diferentes para consultas executadas em momentos diferentes, mas o resultado é considerado constante, já que a constância só é importante dentro de uma única consulta.
+Uma expressão constante também é considerada constante (por exemplo, a metade direita do operador LIKE pode ser construída a partir de várias constantes).
+
+As funções podem ser implementadas de maneiras diferentes para argumentos constantes e não constantes (códigos diferentes são executados). Mas os resultados de uma constante e de uma coluna real que contenha apenas o mesmo valor devem corresponder entre si.
+
+<div id="null-processing">
+  ## Processamento de NULL
+</div>
+
+As funções têm os seguintes comportamentos:
+
+* Se pelo menos um dos argumentos da função for `NULL`, o resultado da função também será `NULL`.
+* Comportamento especial, especificado individualmente na descrição de cada função. No código-fonte do ClickHouse, essas funções têm `UseDefaultImplementationForNulls=false`.
+
+<div id="constancy">
+  ## Constância
+</div>
+
+As funções não podem alterar os valores de seus argumentos — qualquer alteração é retornada como resultado. Assim, o resultado do cálculo de funções distintas não depende da ordem em que elas são escritas na consulta.
+
+<div id="higher-order-functions">
+  ## Funções de ordem superior
+</div>
+
+<div id="arrow-operator-and-lambda">
+  ### Operador `->` e funções lambda(params, expr)
+</div>
+
+Funções de ordem superior só podem aceitar funções lambda como argumento funcional. Para passar uma função lambda para uma função de ordem superior, use o operador `->`. O lado esquerdo da seta contém um parâmetro formal, que pode ser qualquer ID, ou vários parâmetros formais — quaisquer IDs em uma tupla. O lado direito da seta contém uma expressão que pode usar esses parâmetros formais, bem como quaisquer colunas da tabela.
+
+Exemplos:
+
+```python
+x -> 2 * x
+str -> str != Referer
+```
+
+Uma função lambda que aceita vários argumentos também pode ser passada para uma função de ordem superior. Nesse caso, a função de ordem superior recebe vários arrays de mesmo comprimento, aos quais esses argumentos corresponderão.
+
+Para algumas funções, o primeiro argumento (a função lambda) pode ser omitido. Nesse caso, assume-se o mapeamento identidade.
+
+<div id="bare-function-names-as-lambdas">
+  ### Nomes de funções simples como lambdas
+</div>
+
+Em vez de escrever uma expressão lambda completa, você pode passar diretamente o nome de uma função para uma função de ordem superior. O nome da função é convertido automaticamente em uma expressão lambda equivalente.
+
+Por exemplo, os pares a seguir são equivalentes:
+
+```sql
+SELECT arrayMap(negate, [1, 2, 3]);            -- [-1, -2, -3]
+SELECT arrayMap(x -> negate(x), [1, 2, 3]);    -- [-1, -2, -3]
+
+SELECT arrayMap(plus, [1, 2, 3], [10, 20, 30]);            -- [11, 22, 33]
+SELECT arrayMap((x, y) -> plus(x, y), [1, 2, 3], [10, 20, 30]); -- [11, 22, 33]
+
+SELECT arrayFilter(isNotNull, [1, NULL, 3, NULL, 5]);            -- [1, 3, 5]
+SELECT arrayFilter(x -> isNotNull(x), [1, NULL, 3, NULL, 5]);    -- [1, 3, 5]
+
+SELECT arrayFold(plus, [1, 2, 3, 4, 5], toUInt64(0));                      -- 15
+SELECT arrayFold((acc, x) -> plus(acc, x), [1, 2, 3, 4, 5], toUInt64(0));  -- 15
+```
+
+Isso funciona com funções nativas, UDFs SQL, UDFs executáveis e UDFs em WebAssembly. Nomes de coluna e alias têm prioridade sobre nomes de função quando há ambiguidade.
+
+A aridade da lambda é determinada pela função interna. Por exemplo, `arrayMap(plus, ...)` usa aridade 2 porque `plus` recebe dois argumentos, então também funciona com entradas em tupla, como `arrayMap(plus, [(1, 10), (2, 20)])`, em que os elementos da tupla são desempacotados nos argumentos da lambda.
+
+Para funções internas variádicas (como `concat`, que aceita qualquer número de argumentos), a aridade da lambda passa a ser o número de argumentos de array. Isso está correto para funções de ordem superior como `arrayMap`, `arrayFilter` e `arrayFold`. Para funções de ordem superior que aceitam parâmetros fixos que não são arrays além dos arrays — por exemplo, `arrayPartialSort(f, limit, arr)` — nomes de funções variádicas sem lambda explícita podem produzir a aridade errada; nesse caso, é necessária uma lambda explícita.
+
+Funções internas variádicas também não desempacotam automaticamente entradas em tupla. Por exemplo, `arrayMap(concat, [('a', 'b'), ('c', 'd')])` é reescrito como uma lambda unária e não é equivalente a `arrayMap((x, y) -> concat(x, y), [('a', 'b'), ('c', 'd')])`. Use uma lambda explícita quando quiser desestruturar elementos da tupla em uma chamada variádica.
+
+<div id="user-defined-functions-udfs">
+  ## Funções Definidas pelo Usuário (UDFs)
+</div>
+
+O ClickHouse oferece suporte a funções definidas pelo usuário. Consulte [UDFs](/pt-BR/reference/functions/regular-functions/udf).

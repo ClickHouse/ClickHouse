@@ -1,0 +1,33 @@
+=== all rows ===
+1
+2
+3
+4
+=== south texas ===
+1
+2
+=== north texas ===
+3
+4
+=== no match (atlantic) ===
+0
+=== pruned_row_groups (pruning enabled) ===
+ParquetPrunedRowGroups: 1 (increment)
+=== pruned_row_groups (pruning disabled) ===
+no pruning
+=== or-safety (ids 1, 2, 3 expected, row group 1 not pruned) ===
+1
+2
+3
+=== or-safety no pruning expected ===
+no pruning
+=== user-selected bbox column with spatial filter ===
+1	-98
+2	-97.5
+=== user-selected bbox column pruning count ===
+ParquetPrunedRowGroups: 1 (increment)
+=== bbox col in WHERE filter only ===
+1
+2
+=== bbox col in WHERE filter only - pruning count ===
+ParquetPrunedRowGroups: 1 (increment)

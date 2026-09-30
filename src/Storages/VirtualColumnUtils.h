@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -49,7 +50,10 @@ ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context);
 void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block);
 
 /// Builds sets used by ActionsDAG inplace.
-void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
+/// Returns false if some set could not be built and is still not ready. Executing the DAG then throws
+/// "Not-ready Set is passed as the second argument", so a caller that executes the DAG right away must
+/// check the result.
+bool buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
 /// Builds sets used by ActionsDAG inplace, but skips sets that are arguments to
 /// GLOBAL IN functions (globalIn, globalNotIn, globalNullIn, globalNotNullIn).
@@ -61,6 +65,20 @@ void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
 /// Checks if all functions used in DAG are deterministic.
 bool isDeterministic(const ActionsDAG::Node * node);
+
+/// Like `isDeterministic`, but treats the internal `__topKFilter` function as deterministic.
+///
+/// `__topKFilter` is the dynamic filter that `installTopKDynamicFilter` merges into the PREWHERE of
+/// the read of an `ORDER BY ... LIMIT n` query. Its non-determinism is bounded: for a fixed plan and data, the
+/// running threshold only tightens, so any row whose sort-column value lies in the final top-N
+/// passes the filter at every point during execution. Consequently a granule none of whose rows
+/// survive the filter is one that has no row that could have reached the final result, regardless
+/// of the threshold's exact trajectory through the run — such granules may be recorded in the
+/// query condition cache, provided the cache key is salted with the TopK plan parameters
+/// (`TopKFilterInfo::condition_hash`) so the entries are only reused under the same TopK plan.
+/// All query condition cache write and read sites for TopK reads must use this same gate,
+/// otherwise their keys diverge.
+bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node);
 
 /// Checks recursively if all functions used in DAG are deterministic in scope of query.
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
@@ -109,12 +127,17 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
 /// Extracts constant values expected for `_path` input from the query filter DAG.
 std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit);
 
+/// `file_names`, if provided, must be parallel to `paths` and supplies the `_file` value for each path.
+/// Otherwise `_file` is derived from the path as the substring after the last '/'. It is needed when
+/// the user-visible `_file` differs from the path suffix, e.g. web paths with a query/fragment part.
 ColumnPtr getFilterByPathAndFileIndexes(
     const std::vector<String> & paths,
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context);
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt,
+    const std::vector<String> * file_names = nullptr);
 
 template <typename T>
 void filterByPathOrFile(
@@ -123,9 +146,11 @@ void filterByPathOrFile(
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt,
+    const std::vector<String> * file_names = nullptr)
 {
-    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context);
+    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context, format_settings, file_names);
     const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
     if (indexes.size() == sources.size())
         return;
@@ -150,11 +175,16 @@ struct VirtualsForFileLikeStorage
     /// Original file path as stored in Iceberg metadata (before resolution to storage path).
     /// Used by Iceberg position deletes to reference data files in the metadata path format.
     const String * iceberg_metadata_file_path { nullptr };
+    std::optional<UInt64> last_updated_sequence_number = std::nullopt;
+    std::optional<UInt64> first_row_id = std::nullopt;
+    ColumnPtr materialized_row_ids = {};
+    ColumnPtr materialized_last_updated_sequence_numbers = {};
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values, ContextPtr context);
+    VirtualsForFileLikeStorage virtual_values, ContextPtr context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt);
 
 /// Returns true if the requested virtual columns contain columns that depend on
 /// per-row information (e.g. _row_number). Such columns are incompatible with

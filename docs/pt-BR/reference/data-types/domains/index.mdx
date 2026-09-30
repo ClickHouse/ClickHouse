@@ -1,0 +1,34 @@
+---
+description: 'Visão geral dos tipos de domínio no ClickHouse, que estendem tipos básicos com
+  recursos adicionais'
+sidebarTitle: 'Domínios'
+slug: /sql-reference/data-types/domains/
+title: 'Domínios'
+doc_type: 'reference'
+---
+
+Domínios são tipos de uso específico que adicionam recursos extras aos tipos básicos existentes, mantendo intacto o formato em trânsito e em disco do tipo de dado subjacente. Atualmente, o ClickHouse não oferece suporte a domínios definidos pelo usuário.
+
+Você pode usar domínios em qualquer lugar em que o tipo básico correspondente possa ser usado, por exemplo:
+
+* Criar uma coluna de tipo de domínio
+* Ler/gravar valores de/em uma coluna de domínio
+* Usá-lo como índice, se um tipo básico puder ser usado como índice
+* Chamar funções com valores de uma coluna de domínio
+
+<div id="extra-features-of-domains">
+  ### Recursos extras de Domínio
+</div>
+
+* Nome explícito do tipo da coluna em `SHOW CREATE TABLE` ou `DESCRIBE TABLE`
+* Entrada em um formato legível por humanos com `INSERT INTO domain_table(domain_column) VALUES(...)`
+* Saída em um formato legível por humanos para `SELECT domain_column FROM domain_table`
+* Carregamento de dados de uma fonte externa em um formato legível por humanos: `INSERT INTO domain_table FORMAT CSV ...`
+
+<div id="limitations">
+  ### Limitações
+</div>
+
+* Não é possível converter a coluna de índice do tipo básico para o tipo de domínio via `ALTER TABLE`.
+* Não é possível converter implicitamente valores de string em valores de domínio ao inserir dados de outra coluna ou tabela.
+* O domínio não adiciona restrições aos valores armazenados.

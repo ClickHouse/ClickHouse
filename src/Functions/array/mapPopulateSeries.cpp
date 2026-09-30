@@ -195,7 +195,13 @@ private:
                 continue;
             }
 
-            ::sort(sorted_keys_values.begin(), sorted_keys_values.end());
+            ::stableSort(
+                sorted_keys_values.begin(),
+                sorted_keys_values.end(),
+                [](const auto & lhs, const auto & rhs)
+                {
+                    return lhs.first < rhs.first;
+                });
 
             KeyType min_key = sorted_keys_values.front().first;
             KeyType max_key = sorted_keys_values.back().first;
@@ -394,7 +400,7 @@ private:
         MutableColumnPtr result_key_column;
         MutableColumnPtr result_value_column;
         MutableColumnPtr result_offset_column;
-        IColumn * result_offset_column_raw;
+        IColumn * result_offset_column_raw{};
         /// If we return tuple of two arrays, this offset need to be the same as result_offset_column
         MutableColumnPtr result_array_additional_offset_column;
     };
@@ -521,8 +527,8 @@ In case keys repeat, only the first value (in order of appearance) is associated
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a map or a tuple of two arrays where the first has keys in sorted order, and the second values for the corresponding keys.", {"Map(K, V)", "Tuple(Array(UInt*), Array(Any))"}};
     FunctionDocumentation::Examples examples = {
-        {"With Map type", "SELECT mapPopulateSeries(map(1, 10, 5, 20), 6)", "{1:10, 2:0, 3:0, 4:0, 5:20, 6:0}"},
-        {"With mapped arrays", "SELECT mapPopulateSeries([1, 2, 4], [11, 22, 44], 5)", "([1, 2, 3, 4, 5], [11, 22, 0, 44, 0])"}
+        {"With Map type", "SELECT mapPopulateSeries(map(1, 10, 5, 20), 6)", "{1:10,2:0,3:0,4:0,5:20,6:0}"},
+        {"With mapped arrays", "SELECT mapPopulateSeries([1, 2, 4], [11, 22, 44], 5)", "([1,2,3,4,5],[11,22,0,44,0])"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Map;

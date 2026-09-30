@@ -25,6 +25,12 @@ class IFactoryWithAliases : public IHints<2>
 protected:
     using Value = ValueType;
 
+    std::unordered_map<String, String> case_insensitive_name_mapping{};
+
+public:
+    /// Resolve an alias to the name its target was registered under, or return `name`
+    /// unchanged when it is not an alias. Both alias maps are consulted, so a
+    /// case-insensitive alias resolves through any spelling of it.
     String getAliasToOrName(const String & name) const
     {
         if (aliases.contains(name))
@@ -34,9 +40,6 @@ protected:
         return name;
     }
 
-    std::unordered_map<String, String> case_insensitive_name_mapping;
-
-public:
     /// For compatibility with SQL, it's possible to specify that certain function name is case insensitive.
     enum Case
     {
@@ -82,9 +85,9 @@ public:
     }
 
 
-    std::vector<String> getAllRegisteredNames() const override
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
-        std::vector<String> result;
+        VectorWithMemoryTracking<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
         std::transform(getMap().begin(), getMap().end(), std::back_inserter(result), getter);
         std::transform(aliases.begin(), aliases.end(), std::back_inserter(result), getter);
@@ -134,10 +137,10 @@ private:
     virtual String getFactoryName() const = 0;
 
     /// Alias map to data_types from previous two maps
-    AliasMap aliases;
+    AliasMap aliases{};
 
     /// Case insensitive aliases
-    AliasMap case_insensitive_aliases;
+    AliasMap case_insensitive_aliases{};
 };
 
 }

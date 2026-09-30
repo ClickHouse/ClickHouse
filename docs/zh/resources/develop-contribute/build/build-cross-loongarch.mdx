@@ -1,0 +1,24 @@
+---
+description: '为 LoongArch64 架构从源码构建 ClickHouse 的指南'
+sidebarTitle: '在 Linux 上为 LoongArch64 构建'
+slug: /development/build-cross-loongarch
+title: '在 Linux 上为 LoongArch64 构建'
+doc_type: 'guide'
+---
+
+ClickHouse 已为 LoongArch64 提供 Experimental 支持
+
+<div id="build-clickhouse">
+  ## 构建 ClickHouse
+</div>
+
+构建所需的 llvm 版本必须为 21.1.0 或更高版本。
+
+```bash
+cd ClickHouse
+mkdir build-loongarch64
+cmake . -Bbuild-loongarch64 -DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-loongarch64.cmake
+ninja -C build-loongarch64
+```
+
+生成的二进制文件只能在采用 LoongArch64 CPU 架构的 Linux 系统上运行。

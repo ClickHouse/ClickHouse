@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -39,7 +40,7 @@ struct SortingProperty
     SortScope sort_scope = SortScope::Stream;
 };
 
-SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
+static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(parent->step.get()))
         return {read_from_merge_tree->getSortDescription(), SortingProperty::SortScope::Stream};
@@ -71,24 +72,20 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
             (properties->sort_scope == SortingProperty::SortScope::Global
             || (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)))
         {
-            SortDescription prefix_sort_description;
-            const auto & column_names = distinct_step->getColumnNames();
-            std::unordered_set<std::string_view> columns(column_names.begin(), column_names.end());
-
-            for (auto & sort_column_desc : properties->sort_description)
-            {
-                if (!columns.contains(sort_column_desc.column_name))
-                    break;
-
-                prefix_sort_description.emplace_back(sort_column_desc);
-            }
-
-            distinct_step->applyOrder(std::move(prefix_sort_description));
+            distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(
+                properties->sort_description, distinct_step->getColumnNames(), *distinct_step->getInputHeaders().front()));
         }
 
-        /// Distinct never breaks global order
+        /// Distinct never breaks global order: the steps above may rely on it, so the final `DISTINCT`,
+        /// which may spill, has to restore the order after the spill (see
+        /// `DistinctStep::preserveInputOrder`). The preliminary `DISTINCT` never spills, and an empty
+        /// description carries no order to preserve.
         if (properties->sort_scope == SortingProperty::SortScope::Global)
+        {
+            if (!distinct_step->isPreliminary() && !properties->sort_description.empty())
+                distinct_step->preserveInputOrder();
             return *properties;
+        }
 
         /// Preliminary Distinct also does not break stream order
         if (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)
@@ -137,14 +134,38 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
 
     if (auto * limit_by_step = typeid_cast<LimitByStep *>(parent->step.get()))
     {
-        if (properties->sort_scope == SortingProperty::SortScope::Global)
-            limit_by_step->applyOrder(properties->sort_description);
+        if (properties->sort_scope != SortingProperty::SortScope::Global)
+            return {};
+
+        auto prefix = getCollationAwareSortPrefixInColumns(
+            properties->sort_description, limit_by_step->getColumns(), *limit_by_step->getInputHeaders().front());
+        if (prefix.size() == limit_by_step->getColumns().size())
+            limit_by_step->applyOrder(prefix);
+
+        return std::move(*properties);
     }
 
     if (auto * negative_limit_by_step = typeid_cast<NegativeLimitByStep *>(parent->step.get()))
     {
-        if (properties->sort_scope == SortingProperty::SortScope::Global)
-            negative_limit_by_step->applyOrder(properties->sort_description);
+        if (properties->sort_scope != SortingProperty::SortScope::Global)
+            return {};
+
+        auto prefix = getCollationAwareSortPrefixInColumns(
+            properties->sort_description, negative_limit_by_step->getColumns(), *negative_limit_by_step->getInputHeaders().front());
+        if (prefix.size() == negative_limit_by_step->getColumns().size())
+            negative_limit_by_step->applyOrder(prefix);
+
+        return std::move(*properties);
+    }
+
+    if (typeid_cast<LimitRangeStep *>(parent->step.get()))
+    {
+        /// The range is evaluated over a single stream, so several per-stream-sorted inputs are
+        /// concatenated without a merge and only a global order survives the step.
+        if (properties->sort_scope != SortingProperty::SortScope::Global)
+            return {};
+
+        return std::move(*properties);
     }
 
     if (auto * transforming = dynamic_cast<ITransformingStep *>(parent->step.get()))
@@ -153,7 +174,7 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
             return std::move(*properties);
     }
 
-    if (auto * /*union_step*/ _ = typeid_cast<UnionStep *>(parent->step.get()))
+    if (auto * union_step = typeid_cast<UnionStep *>(parent->step.get()))
     {
         SortDescription common_sort_description = std::move(properties->sort_description);
 
@@ -162,6 +183,12 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
 
         if (!common_sort_description.empty())
         {
+            /// We are about to advertise per-stream sortedness to steps above the union
+            /// (which may convert Sorting to FinishSorting or enable DISTINCT-in-order).
+            /// Narrowing the union pipeline would concatenate sorted streams and silently
+            /// invalidate this property, so forbid it.
+            union_step->disableNarrowing();
+
             /// `UnionStep` concatenates child pipelines without a sorted merge, so with multiple
             /// children each stream stays sorted by the common prefix.
             auto sort_scope = parent->children.size() == 1 ? properties->sort_scope : SortingProperty::SortScope::Stream;

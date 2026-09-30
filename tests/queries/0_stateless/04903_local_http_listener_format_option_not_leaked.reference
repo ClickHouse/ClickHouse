@@ -1,0 +1,2 @@
+"the request default_format wins over the local --output-format"
+"the local display default is still the fallback"

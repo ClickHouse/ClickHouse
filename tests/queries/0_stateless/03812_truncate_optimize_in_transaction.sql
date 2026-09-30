@@ -1,6 +1,3 @@
--- Tags: no-encrypted-storage
--- Tag: no-encrypted-storage: not support transactions
-
 DROP TABLE IF EXISTS test_table;
 DROP TABLE IF EXISTS t2;
 

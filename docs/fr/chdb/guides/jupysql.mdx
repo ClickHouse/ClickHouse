@@ -1,0 +1,400 @@
+---
+title: 'JupySQL et chDB'
+sidebarTitle: 'JupySQL'
+slug: /chdb/guides/jupysql
+description: 'Comment interroger chDB avec JupySQL dans les notebooks Jupyter et IPython'
+keywords: ['chdb', 'JupySQL']
+doc_type: 'guide'
+---
+
+[JupySQL](https://github.com/ploomber/jupysql) est une bibliothèque Python qui permet d’exécuter du SQL dans les notebooks Jupyter et le shell IPython.
+Dans ce guide, nous allons apprendre à interroger des données avec chDB et JupySQL.
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe src="https://www.youtube.com/embed/2wjl3OijCto?si=EVf2JhjS5fe4j6Cy" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  </Frame>
+</div>
+
+<div id="setup">
+  ## Préparation
+</div>
+
+Créons d&#39;abord un environnement virtuel :
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+Nous allons ensuite installer JupySQL, IPython et Jupyter Lab :
+
+```bash
+pip install jupysql ipython jupyterlab
+```
+
+Nous pouvons utiliser JupySQL dans IPython, que nous pouvons démarrer en exécutant :
+
+```bash
+ipython
+```
+
+Ou, dans Jupyter Lab, en exécutant :
+
+```bash
+jupyter lab
+```
+
+<Note>
+  Si vous utilisez Jupyter Lab, vous devrez créer un notebook avant de poursuivre le guide.
+</Note>
+
+<div id="downloading-a-dataset">
+  ## Téléchargement d’un jeu de données
+</div>
+
+Nous allons utiliser le jeu de données des taxis de New York, qui contient environ 3 millions de courses, ainsi que le tarif, le pourboire et le quartier de prise en charge pour chacune d’elles.
+Les trajets sont répartis dans plusieurs fichiers TSV. Commençons donc par les télécharger :
+
+```python
+from urllib.request import urlretrieve
+```
+
+```python
+base = "https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi"
+for n in range(3):
+  _ = urlretrieve(
+    f"{base}/trips_{n}.gz",
+    f"trips_{n}.gz",
+  )
+```
+
+<div id="configuring-chdb-and-jupysql">
+  ## Configurer chDB et JupySQL
+</div>
+
+Ensuite, importons le module `dbapi` pour chDB :
+
+```python
+from chdb import dbapi
+```
+
+Et nous allons créer une connexion à chDB.
+Toutes les données que nous conserverons seront enregistrées dans le répertoire `taxi.chdb` :
+
+```python
+conn = dbapi.connect(path="taxi.chdb")
+```
+
+Chargeons maintenant la commande magique `sql` et créons une connexion à chDB :
+
+```python
+%load_ext sql
+%sql conn --alias chdb
+```
+
+Ensuite, nous allons afficher la limite d’affichage pour éviter que les résultats des requêtes ne soient tronqués :
+
+```python
+%config SqlMagic.displaylimit = None
+```
+
+<div id="querying-data-in-tsv-files">
+  ## Interroger des données dans des fichiers TSV
+</div>
+
+Nous avons téléchargé plusieurs fichiers avec le préfixe `trips_`.
+Utilisons la clause `DESCRIBE` pour connaître le schéma :
+
+```python
+%%sql
+DESCRIBE file('trips_*.gz')
+SETTINGS describe_compact_output=1,
+         schema_inference_make_columns_nullable=0
+```
+
+```text
++--------------------+----------+
+|        name        |   type   |
++--------------------+----------+
+|      trip_id       |  Int64   |
+|     vendor_id      |  Int64   |
+|    pickup_date     |   Date   |
+|  pickup_datetime   | DateTime |
+|    dropoff_date    |   Date   |
+|  dropoff_datetime  | DateTime |
+| store_and_fwd_flag |  Int64   |
+|    rate_code_id    |  Int64   |
++--------------------+----------+
+(40 more rows)
+```
+
+Nous pouvons également exécuter une requête `SELECT` directement sur ces fichiers pour voir à quoi ressemblent les données :
+
+```python
+%%sql
+SELECT trip_id, pickup_datetime, pickup_ntaname,
+       trip_distance, fare_amount, tip_amount
+FROM file('trips_*.gz')
+LIMIT 3
+SETTINGS schema_inference_make_columns_nullable=0
+```
+
+```text
++------------+---------------------+----------------------------------------+---------------+-------------+------------+
+|  trip_id   |   pickup_datetime   |             pickup_ntaname             | trip_distance | fare_amount | tip_amount |
++------------+---------------------+----------------------------------------+---------------+-------------+------------+
+| 1199999902 | 2015-07-07 19:45:07 |      Lenox Hill-Roosevelt Island       |      2.59     |     14.5    |    3.26    |
+| 1199999919 | 2015-07-07 20:26:29 |                Airport                 |      2.4      |      9      |     0      |
+| 1199999944 | 2015-07-07 21:25:09 | SoHo-TriBeCa-Civic Center-Little Italy |      5.13     |      20     |     3      |
++------------+---------------------+----------------------------------------+---------------+-------------+------------+
+```
+
+Si l’on revient au schéma, certaines colonnes liées aux montants — `trip_distance`, `fare_amount` et `tip_amount` — ont été inférées comme `String` plutôt que comme un type numérique.
+Nous corrigerons cela lors de l’importation des données dans une table.
+
+<div id="importing-tsv-files-into-chdb">
+  ## Importer des fichiers TSV dans chDB
+</div>
+
+Nous allons maintenant stocker les données de ces fichiers TSV dans une table.
+La base de données default ne persiste pas les données sur disque ; nous devons donc d’abord créer une autre base de données :
+
+```python
+%sql CREATE DATABASE taxi
+```
+
+Nous allons maintenant créer une table appelée `trips`, dont le schéma sera dérivé de la structure des données des fichiers TSV.
+Nous utiliserons la clause `REPLACE` pour convertir les colonnes liées aux montants en `Float64`, ainsi que la fonction [`transform`](/fr/reference/functions/regular-functions/other-functions#transform) pour convertir la colonne numérique `pickup_borocode` en un nom de borough compréhensible :
+
+```python
+%%sql
+CREATE TABLE taxi.trips
+ENGINE = MergeTree
+ORDER BY pickup_datetime AS
+SELECT * REPLACE (
+    toFloat64OrZero(trip_distance) AS trip_distance,
+    toFloat64OrZero(fare_amount) AS fare_amount,
+    toFloat64OrZero(tip_amount) AS tip_amount,
+    toFloat64OrZero(total_amount) AS total_amount
+  ),
+  transform(pickup_borocode, [1, 2, 3, 4, 5],
+            ['Manhattan', 'Bronx', 'Brooklyn', 'Queens', 'Staten Island'],
+            'Unknown') AS pickup_borough
+FROM file('trips_*.gz')
+SETTINGS schema_inference_make_columns_nullable=0
+```
+
+Vérifions rapidement les données de notre table :
+
+```python
+%sql SELECT count() AS trips FROM taxi.trips
+```
+
+```text
++---------+
+|  trips  |
++---------+
+| 3000317 |
++---------+
+```
+
+Un peu plus de 3 millions de trajets ; importons également une deuxième table.
+La Taxi &amp; Limousine Commission de la ville de New York divise la ville en zones de taxis, et un fichier de correspondance associe chaque zone à son borough.
+Téléchargeons ce fichier :
+
+```python
+_ = urlretrieve(
+    f"{base}/taxi_zone_lookup.csv",
+    "taxi_zone_lookup.csv",
+)
+```
+
+Créez ensuite une table nommée `zones` à partir du contenu du fichier CSV :
+
+```python
+%%sql
+CREATE TABLE taxi.zones
+ENGINE = MergeTree
+ORDER BY LocationID AS
+SELECT * FROM file('taxi_zone_lookup.csv')
+SETTINGS schema_inference_make_columns_nullable=0
+```
+
+Une fois l’exécution terminée, nous pouvons examiner les données ingérées :
+
+```python
+%sql SELECT * FROM taxi.zones LIMIT 5
+```
+
+```text
++------------+---------------+-------------------------+--------------+
+| LocationID |    Borough    |           Zone          | service_zone |
++------------+---------------+-------------------------+--------------+
+|     1      |      EWR      |      Newark Airport     |     EWR      |
+|     2      |     Queens    |       Jamaica Bay       |  Boro Zone   |
+|     3      |     Bronx     | Allerton/Pelham Gardens |  Boro Zone   |
+|     4      |   Manhattan   |      Alphabet City      | Yellow Zone  |
+|     5      | Staten Island |      Arden Heights      |  Boro Zone   |
++------------+---------------+-------------------------+--------------+
+```
+
+<div id="querying-chdb">
+  ## Interroger chDB
+</div>
+
+L’ingestion des données est terminée ; passons maintenant à la partie amusante : interroger les données !
+
+Chaque borough est divisé en un nombre différent de zones de taxis.
+Nous allons écrire une requête qui joint les deux tables pour déterminer le nombre de trajets pris en charge dans chaque borough, ainsi que le nombre de trajets par zone de taxis :
+
+```python
+%%sql
+SELECT pickup_borough AS borough,
+       zone_count,
+       count() AS trips,
+       round(count() / zone_count) AS trips_per_zone
+FROM taxi.trips
+JOIN (
+    SELECT Borough, count() AS zone_count
+    FROM taxi.zones
+    GROUP BY Borough
+) AS zones ON pickup_borough = zones.Borough
+GROUP BY borough, zone_count
+ORDER BY trips DESC
+```
+
+```text
++---------------+------------+---------+----------------+
+|    borough    | zone_count |  trips  | trips_per_zone |
++---------------+------------+---------+----------------+
+|   Manhattan   |     69     | 2713990 |    39333.0     |
+|     Queens    |     69     |  187737 |     2721.0     |
+|    Brooklyn   |     61     |  52445  |     860.0      |
+|    Unknown    |     2      |  43802  |    21901.0     |
+|     Bronx     |     43     |   2300  |      53.0      |
+| Staten Island |     20     |    43   |      2.0       |
++---------------+------------+---------+----------------+
+```
+
+Manhattan et Queens comptent le même nombre de zones de taxis, mais Manhattan enregistre plus de 14 fois plus de courses.
+
+<div id="saving-queries">
+  ## Enregistrement de requêtes
+</div>
+
+Vous pouvez enregistrer des requêtes à l’aide du paramètre `--save`, sur la même ligne que la commande magique `%%sql`.
+Le paramètre `--no-execute` permet d’ignorer l’exécution de la requête.
+
+```python
+%%sql --save tips_by_neighborhood --no-execute
+SELECT pickup_ntaname AS neighborhood,
+       count() AS trips,
+       round(avg(tip_amount), 2) AS avg_tip
+FROM taxi.trips
+WHERE fare_amount > 0 AND pickup_ntaname != ''
+GROUP BY neighborhood
+ORDER BY avg_tip DESC
+```
+
+Lorsqu’on exécute une requête enregistrée, celle-ci est convertie en expression de table commune (CTE) avant d’être exécutée.
+Dans la requête suivante, nous calculons les quartiers où le pourboire moyen est le plus élevé :
+
+```python
+%sql SELECT * FROM tips_by_neighborhood ORDER BY avg_tip DESC LIMIT 5
+```
+
+```text
++-----------------------------------+-------+---------+
+|            neighborhood           | trips | avg_tip |
++-----------------------------------+-------+---------+
+| New Springville-Bloomfield-Travis |   2   |   35.0  |
+|       New Dorp-Midland Beach      |   2   |  23.74  |
+|      New Brighton-Silver Lake     |   3   |  16.67  |
+|           Newark Airport          |  201  |  11.89  |
+|   Grymes Hill-Clifton-Fox Hills   |   1   |   11.3  |
++-----------------------------------+-------+---------+
+```
+
+Les premiers résultats concernent des quartiers ne comptant qu’une poignée de trajets, de sorte qu’une seule course généreuse fausse la moyenne.
+Excluons-les.
+
+<div id="querying-with-parameters">
+  ## Requêtes avec paramètres
+</div>
+
+Vous pouvez également utiliser des paramètres dans vos requêtes.
+Les paramètres sont simplement des variables ordinaires :
+
+```python
+min_trips = 10000
+```
+
+Nous pouvons ensuite utiliser la syntaxe `{{variable}}` dans notre requête.
+La requête suivante identifie les quartiers où le pourboire moyen est le plus élevé parmi ceux comptant plus de 10 000 trajets :
+
+```python
+%%sql
+SELECT * FROM tips_by_neighborhood
+WHERE trips >= {{min_trips}}
+ORDER BY avg_tip DESC
+LIMIT 10
+```
+
+```text
++----------------------------------------+--------+---------+
+|              neighborhood              | trips  | avg_tip |
++----------------------------------------+--------+---------+
+|                Airport                 | 151171 |   4.92  |
+|   Battery Park City-Lower Manhattan    | 89110  |   2.16  |
+|         North Side-South Side          | 11152  |   1.79  |
+| SoHo-TriBeCa-Civic Center-Little Italy | 144887 |   1.65  |
+|               Chinatown                | 54780  |   1.65  |
+|            Lower East Side             | 15753  |   1.64  |
+|              East Village              | 99881  |   1.61  |
+|  Hunters Point-Sunnyside-West Maspeth  | 10054  |   1.58  |
+|        Turtle Bay-East Midtown         | 197035 |   1.57  |
+|              West Village              | 210369 |   1.54  |
++----------------------------------------+--------+---------+
+```
+
+Les courses au départ de l’aéroport génèrent de loin les pourboires les plus élevés — ces longs trajets jusqu’en ville font vite grimper la note.
+
+<div id="plotting-histograms">
+  ## Créer des histogrammes
+</div>
+
+JupySQL propose également des fonctionnalités de création de graphiques limitées.
+Nous pouvons créer des boîtes à moustaches ou des histogrammes.
+
+Nous allons créer un histogramme, mais commençons par écrire (et enregistrer) une requête qui renvoie la distance de chaque trajet de moins de 20 miles.
+Nous pourrons nous en servir pour créer un histogramme qui compte combien de trajets se situent dans chaque plage de distance :
+
+```python
+%%sql --save trip_distances --no-execute
+SELECT trip_distance
+FROM taxi.trips
+WHERE trip_distance > 0 AND trip_distance < 20
+```
+
+Nous pouvons ensuite créer un histogramme en exécutant la commande suivante :
+
+```python
+from sql.ggplot import ggplot, geom_histogram, aes
+
+plot = (
+  ggplot(
+    table="trip_distances",
+    with_="trip_distances",
+    mapping=aes(x="trip_distance", fill="#69f0ae", color="#fff"),
+  ) + geom_histogram(bins=50)
+)
+```
+
+La plupart des trajets sont courts, d’un à trois miles, avec une longue traîne de trajets vers l’aéroport.
+
+<div id="related">
+  ## Articles connexes
+</div>
+
+* [Introduction à JupySQL avec chDB (YouTube)](https://www.youtube.com/watch?v=2wjl3OijCto)

@@ -1,0 +1,22 @@
+one link
+6
+two links
+8
+a chain next to its own base
+6	6
+the whole chain, plain and aggregated and filtered
+3	3	4
+3	3	4
+6	6	8
+a chain whose body coincides with an explicit expression
+4	3	3	4
+4	3	3	4
+a chain used only in a clause
+x
+x
+x
+declared on both tables
+6
+8
+3	3	4
+3	3	4

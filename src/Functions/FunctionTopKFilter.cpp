@@ -1,5 +1,8 @@
+#include <Functions/FunctionTopKFilter.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -12,6 +15,32 @@
 
 namespace DB
 {
+
+namespace
+{
+
+/// `Tuple` comparison functions reject an empty `Tuple` nested inside another `Tuple`,
+/// while the column comparison path supports it. Other composite types have their
+/// own comparison implementations, so only descend through `Tuple` and `Nullable`.
+bool hasEmptyTuple(const DataTypePtr & type)
+{
+    const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get());
+    const auto & nested_type = nullable_type ? nullable_type->getNestedType() : type;
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(nested_type.get());
+    if (!tuple_type)
+        return false;
+
+    if (tuple_type->getElements().empty())
+        return true;
+
+    for (const auto & element_type : tuple_type->getElements())
+        if (hasEmptyTuple(element_type))
+            return true;
+
+    return false;
+}
+
+}
 
 namespace ErrorCodes
 {
@@ -81,7 +110,7 @@ public:
             auto current_threshold = threshold_tracker->getValue();
             auto data_type = arguments[0].type;
 
-            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type))
+            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type) || hasEmptyTuple(data_type))
                 return executeGeneral(arguments[0], current_threshold, data_type, input_rows_count);
 
             return executeVectorized(arguments[0], current_threshold, data_type, input_rows_count);
@@ -100,13 +129,15 @@ private:
         const DataTypePtr & data_type,
         size_t input_rows_count) const
     {
-        ColumnPtr threshold_column = data_type->createColumnConst(input_rows_count, convertFieldToType(current_threshold, *data_type));
+        /// The threshold is a value of the same type, so pass the type as the source type: e.g. the value of
+        /// FixedString(N, 'representation') holds bytes and must not be parsed as its text representation.
+        ColumnPtr threshold_column = data_type->createColumnConst(input_rows_count, convertFieldToType(current_threshold, *data_type, data_type.get()));
         ColumnsWithTypeAndName args{argument, {threshold_column, data_type, {}}};
         auto elem_compare = compare_function->build(args);
         return elem_compare->execute(args, elem_compare->getResultType(), input_rows_count, false);
     }
 
-    /// General path for Nullable and/or collation-aware types.
+    /// General path for `Nullable`, collation-aware, and non-vectorizable `Tuple` types.
     ColumnPtr executeGeneral(
         const ColumnWithTypeAndName & argument,
         const Field & current_threshold,
@@ -115,7 +146,7 @@ private:
     {
         const auto & col = *argument.column;
 
-        auto threshold_field = convertFieldToType(current_threshold, *data_type);
+        auto threshold_field = convertFieldToType(current_threshold, *data_type, data_type.get());
         auto threshold_col = data_type->createColumn();
         threshold_col->insert(threshold_field);
 

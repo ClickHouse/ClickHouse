@@ -143,7 +143,7 @@ struct CodeURLComponentImpl
         {
             const char * src_data = reinterpret_cast<const char *>(&data[prev_offset]);
             size_t src_size = offsets[i] - prev_offset;
-            size_t dst_size;
+            size_t dst_size = 0;
 
             if constexpr (code_strategy == encode)
             {

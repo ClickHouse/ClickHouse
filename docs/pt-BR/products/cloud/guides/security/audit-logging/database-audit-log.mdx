@@ -1,0 +1,68 @@
+---
+sidebarTitle: 'Log de auditoria do banco de dados'
+slug: /cloud/security/audit-logging/database-audit-log
+title: 'Log de auditoria do banco de dados'
+description: 'Esta página descreve como consultar o log de auditoria do banco de dados'
+doc_type: 'guide'
+keywords: ['registro de auditoria', 'logs do banco de dados', 'conformidade', 'segurança', 'monitoramento']
+---
+
+O ClickHouse fornece logs de auditoria do banco de dados por padrão. Esta página se concentra em logs relevantes para a segurança. Para mais informações sobre os dados registrados pelo sistema, consulte a documentação sobre [tabelas de sistema](/pt-BR/reference/system-tables/overview).
+
+<Tip>
+  **Retenção de logs**
+
+  As informações são registradas diretamente nas tabelas de sistema e, por padrão, ficam retidas por até 30 dias. Esse período pode ser maior ou menor, dependendo da frequência dos merges no sistema. Os clientes podem adotar medidas adicionais para armazenar logs por mais tempo ou exportá-los para um sistema de gerenciamento de informações e eventos de segurança (SIEM) para armazenamento de longo prazo. Veja os detalhes abaixo.
+</Tip>
+
+<div id="security-relevant-logs">
+  ## Logs relevantes para a segurança
+</div>
+
+O ClickHouse registra eventos do banco de dados relevantes para a segurança principalmente nos logs de sessão e de consulta.
+
+O [system.session&#95;log](/pt-BR/reference/system-tables/session_log) registra tentativas de login bem-sucedidas e malsucedidas, bem como a origem da tentativa de autenticação. Essas informações podem ser usadas para identificar ataques de preenchimento de credenciais ou de força bruta contra uma instância do ClickHouse.
+
+Exemplo de consulta que mostra falhas de login
+
+```sql
+select event_time
+    ,type
+    ,user
+    ,auth_type
+    ,client_address 
+FROM clusterAllReplicas('default',system.session_log) 
+WHERE type='LoginFailure' 
+LIMIT 100
+```
+
+O [system.query&#95;log](/pt-BR/reference/system-tables/query_log) registra a atividade de consultas executadas em uma instância do ClickHouse. Essas informações podem ser úteis para determinar quais consultas um agente malicioso executou.
+
+Exemplo de consulta para buscar atividades do usuário &quot;compromised&#95;account&quot;
+
+```sql
+SELECT event_time
+    ,address
+    ,initial_user
+    ,initial_address
+    ,forwarded_for
+    ,query 
+FROM clusterAllReplicas('default', system.query_log) 
+WHERE user=’compromised_account’
+```
+
+<div id="reatining-log-data-within-services">
+  ## Retenção de dados de log nos serviços
+</div>
+
+Clientes que precisam de retenção por mais tempo ou de maior durabilidade dos logs podem usar visões materializadas para alcançar esses objetivos. Para mais informações sobre visões materializadas — o que são, seus benefícios e como implementá-las — consulte nossos vídeos e a documentação sobre [visões materializadas](/pt-BR/concepts/features/materialized-views/index).
+
+<div id="exporting-logs">
+  ## Exportando logs
+</div>
+
+Os logs do sistema podem ser gravados ou exportados para um local de armazenamento em vários formatos compatíveis com sistemas SIEM. Para mais informações, consulte a documentação sobre [funções de tabela](/pt-BR/reference/functions/table-functions/index). Os métodos mais comuns são:
+
+* [Gravar no S3](/pt-BR/reference/functions/table-functions/s3)
+* [Gravar no GCS](/pt-BR/reference/functions/table-functions/gcs)
+* [Gravar no Azure Blob Storage](/pt-BR/reference/functions/table-functions/azureBlobStorage)

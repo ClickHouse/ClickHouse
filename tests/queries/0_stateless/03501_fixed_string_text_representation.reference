@@ -1,8 +1,172 @@
-FixedString(3)	FixedString(32, 'Base58')	Array(FixedString(32, 'Base58'))	FixedString(32, 'Base64')	Array(FixedString(32, 'Base64'))	FixedString(32, 'Base64URL')	FixedString(4, 'Hex')
-11111111111111111111111111111111	AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=	AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	01020304
+-- type names
+FixedString(3)	FixedString(3)
+FixedString(2, \'Hex\')	FixedString(2, \'Base64\')	FixedString(2, \'Base64URL\')	FixedString(2, \'Base58\')
+-- output in the declared representation, sorted by bytes
+11111111111111111111111111111111	AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=	AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	0000000000000000000000000000000000000000000000000000000000000000	zero
+TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j	BsEcIJDS6gpswmM/wXDlsI65Mb/jv5MjvMSpJnd0xEA=	BsEcIJDS6gpswmM_wXDlsI65Mb_jv5MjvMSpJnd0xEA	06c11c2090d2ea0a6cc2633fc170e5b08eb931bfe3bf9323bcc4a9267774c440	alpha
+V8r5WP8Hq5HN6PN1kAXYUcskoSgvSVoYAqqjwsXQNtw	BzUiZFjh70Q/BrZgavltv01UgJCY5Himgw3rc5DmMPA=	BzUiZFjh70Q_BrZgavltv01UgJCY5Himgw3rc5DmMPA	0735226458e1ef443f06b6606af96dbf4d54809098e478a6830deb7390e630f0	beta
+ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF	CKHvUv5vk6+0ShxA+/8b8r6x3Dr9SlaZcR6t6Kw7zQI=	CKHvUv5vk6-0ShxA-_8b8r6x3Dr9SlaZcR6t6Kw7zQI	08a1ef52fe6f93afb44a1c40fbff1bf2beb1dc3afd4a5699711eade8ac3bcd02	delta
+EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y	xnoO/WwfBo+ye0zSkAoUMz07UIgt1RE28npxtsYGGCU=	xnoO_WwfBo-ye0zSkAoUMz07UIgt1RE28npxtsYGGCU	c67a0efd6c1f068fb27b4cd2900a14333d3b50882dd51136f27a71b6c6061825	gamma
+-- output formats
+EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y	xnoO/WwfBo+ye0zSkAoUMz07UIgt1RE28npxtsYGGCU=
+"EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y","xnoO/WwfBo+ye0zSkAoUMz07UIgt1RE28npxtsYGGCU="
+{"id":"EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y","id64":"xnoO\/WwfBo+ye0zSkAoUMz07UIgt1RE28npxtsYGGCU="}
+('EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y','xnoO/WwfBo+ye0zSkAoUMz07UIgt1RE28npxtsYGGCU=')
+{"id64":"BsEcIJDS6gpswmM\/wXDlsI65Mb\/jv5MjvMSpJnd0xEA=","id64url":"BsEcIJDS6gpswmM_wXDlsI65Mb_jv5MjvMSpJnd0xEA","idhex":"06c11c2090d2ea0a6cc2633fc170e5b08eb931bfe3bf9323bcc4a9267774c440"}
+{"id64":"BsEcIJDS6gpswmM/wXDlsI65Mb/jv5MjvMSpJnd0xEA="}
+"BsEcIJDS6gpswmM/wXDlsI65Mb/jv5MjvMSpJnd0xEA=","06c11c2090d2ea0a6cc2633fc170e5b08eb931bfe3bf9323bcc4a9267774c440"
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>id64</name>
+				<type>FixedString(32, 'Base64')</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+		<row>
+			<id64>BsEcIJDS6gpswmM/wXDlsI65Mb/jv5MjvMSpJnd0xEA=</id64>
+		</row>
+	</data>
+	<rows>1</rows>
+</result>
+
+-- stored bytes
+32	1	1	1
+-- toString and CAST to String return the text representation
+TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j	TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j	BsEcIJDS6gpswmM/wXDlsI65Mb/jv5MjvMSpJnd0xEA=	BsEcIJDS6gpswmM_wXDlsI65Mb_jv5MjvMSpJnd0xEA	06c11c2090d2ea0a6cc2633fc170e5b08eb931bfe3bf9323bcc4a9267774c440
+String	1
+-- equality with string constants uses the primary key
+gamma
+gamma
+alpha
+beta
+delta
+zero
 1
+-- comparison with FixedString(32) holding the same bytes
+gamma
+5
+-- comparison with a String column
 1
-1	1
+-- toString is not monotonic for Base58 and Base64: neither the primary key nor reading in order must rely on it
+gamma
+alpha
+beta
+delta
+['11111111111111111111111111111111','EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y','TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j','V8r5WP8Hq5HN6PN1kAXYUcskoSgvSVoYAqqjwsXQNtw','ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF']
+['ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF','V8r5WP8Hq5HN6PN1kAXYUcskoSgvSVoYAqqjwsXQNtw']
+-- top-K filtering uses the stored bytes as the threshold
+11111111111111111111111111111111
+TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j
+EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y
+ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF
+11111111111111111111111111111111
+TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j
+-- IN
+delta
+gamma
+alpha
+gamma
+beta
+delta
+zero
+beta
+delta
+delta
 1
+-- arrays
+1	1	1	1
+alpha	1	1	1
+beta	0	0	1
+delta	0	0	1
+gamma	1	2	1
+zero	0	0	1
+delta
+gamma
+Array(FixedString(32, \'Base58\'))	['EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y','TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j']
+['TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j','EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y']
+Array(Variant(FixedString(32, \'Base58\'), FixedString(32, \'Base64\')))	['EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y','xnoO/WwfBo+ye0zSkAoUMz07UIgt1RE28npxtsYGGCU=']
+-- common type with String
+FixedString(32, \'Base58\')	TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j
+FixedString(32, \'Base58\')	EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y
+V8r5WP8Hq5HN6PN1kAXYUcskoSgvSVoYAqqjwsXQNtw
+ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF
+-- JOIN
+alpha	1	2
+beta	1	2
+delta	1	2
+zero	1	2
+alpha	2
+beta	2
+delta	2
+zero	2
+alpha	2
+beta	2
+delta	2
+zero	2
+11111111111111111111111111111111	zero
+TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j	alpha
+V8r5WP8Hq5HN6PN1kAXYUcskoSgvSVoYAqqjwsXQNtw	beta
+ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF	delta
+-- skipping indexes
+2
+4
+2
+2
+-- GROUP BY, DISTINCT, ORDER BY, aggregate functions
+11111111111111111111111111111111	2
+TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j	2
+V8r5WP8Hq5HN6PN1kAXYUcskoSgvSVoYAqqjwsXQNtw	2
+ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF	2
+EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y
+4	11111111111111111111111111111111	ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF	ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF	EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y
+FixedString(32, \'Base58\')	Array(FixedString(32, \'Base58\'))
+-- Nullable, LowCardinality, Map, Tuple
+\N	TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j
+\N	\N	TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j
+TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j	LowCardinality(FixedString(32, \'Base58\'))	1
+{'TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j':'AQI='}	Map(FixedString(32, \'Base58\'), FixedString(2, \'Base64\'))	AQI=	1	0
+('TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j','0102')	1	1
+TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j
+-- Dynamic and Variant keep the representation
+TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j	FixedString(32, \'Base58\')
+TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j	FixedString(32, \'Base58\')
+0102	FixedString(2, \'Hex\')
+TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j	FixedString(32, \'Base58\')
+TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j	FixedString(32, \'Base58\')	true
+42	UInt64	false
+['TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j',42]
+-- input formats
+TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j	0aff
+TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j	_w
+TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j	/w==
+TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j
+-- invalid values in INSERT
+5
+-- persisted type
+FixedString(32, \'Base58\')
+FixedString(32, \'Base64\')
+FixedString(32, \'Base64URL\')
+FixedString(32, \'Hex\')
+String
+V8r5WP8Hq5HN6PN1kAXYUcskoSgvSVoYAqqjwsXQNtw
+-- migration from FixedString(32)
+V8r5WP8Hq5HN6PN1kAXYUcskoSgvSVoYAqqjwsXQNtw	FixedString(32, \'Base58\')
+-- Base58 of other sizes
+2g	00	0000
+11NVSVezva3bAQdzTQGD	00000102030405060708090A0B0C0D0E
+4ZrjxJnU1LA5xSyrWMNuXTvSYKwt	28
+67rpwLCuS5DGA8KGZXKsVQ7dnPb9goRLoKfgGbLfQg9WoLUgNY77E2jT11fem3coV9nAkguBACzrU1iyZM4B8roQ	88
 1
-1
+-- Hex
+0aff	0aff	0AFF
+10
+ff
+-- Base64 and Base64URL
+/w==	_w	_w	_w
+010203	010203
+-- Raw is the default
+1	Array(FixedString(3))

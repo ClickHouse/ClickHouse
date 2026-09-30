@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteBuffer.h>
 
 #include <vector>
@@ -15,7 +16,7 @@ namespace DB
 class ForkWriteBuffer : public WriteBuffer
 {
 public:
-    using WriteBufferPtrs = std::vector<WriteBufferPtr>;
+    using WriteBufferPtrs = VectorWithMemoryTracking<WriteBufferPtr>;
     explicit ForkWriteBuffer(WriteBufferPtrs && sources_);
 
 protected:

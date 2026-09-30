@@ -2,6 +2,7 @@
 #include <memory>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/ISimpleTransform.h>
+#include <Processors/QueryPlan/RuntimeFilterBuildOptions.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 namespace DB
@@ -21,14 +22,10 @@ public:
         String filter_column_name_,
         const DataTypePtr & filter_column_type_,
         String filter_name_,
+        String filter_key_,
         size_t filters_to_merge_,
-        UInt64 exact_values_limit_,
-        UInt64 bloom_filter_bytes_,
-        UInt64 bloom_filter_hash_functions_,
-        Float64 pass_ratio_threshold_for_disabling_,
-        UInt64 blocks_to_skip_before_reenabling_,
-        Float64 max_ratio_of_set_bits_in_bloom_filter_,
-        bool allow_to_use_not_exact_filter_,
+        const RuntimeFilterBuildOptions & build_options_,
+        const RuntimeFilterConfig & runtime_filter_config_,
         ContextPtr query_context_);
 
     String getName() const override { return "BuildRuntimeFilterTransform"; }
@@ -43,6 +40,8 @@ private:
     const DataTypePtr filter_column_original_type;
     const DataTypePtr filter_column_target_type;
     const String filter_name;
+    /// Random per-plan-build key the built filter is registered under (matches `__applyFilter`).
+    const String filter_key;
 
     FunctionBasePtr cast_to_target_type;
 

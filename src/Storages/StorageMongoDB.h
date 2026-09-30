@@ -34,11 +34,9 @@ public:
     MongoDBInstanceHolder(MongoDBInstanceHolder const &) = delete;
     void operator=(MongoDBInstanceHolder const &) = delete;
 
-    static MongoDBInstanceHolder & instance()
-    {
-        static MongoDBInstanceHolder instance;
-        return instance;
-    }
+    /// Defined out of line: a static local in a header-defined function gives every shared
+    /// object its own copy.
+    static MongoDBInstanceHolder & instance();
 
     ~MongoDBInstanceHolder()
     {
@@ -67,6 +65,7 @@ struct MongoDBConfiguration
     std::unordered_set<String> oid_fields = {"_id"};
 
     void checkHosts(const ContextPtr & context) const;
+    void checkCollection() const;
 
     bool isOidColumn(const std::string & name) const
     {

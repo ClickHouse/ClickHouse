@@ -1,0 +1,51 @@
+---
+title: 'Compatibilidad con la propagación de cambios de esquema'
+slug: /integrations/clickpipes/mysql/schema-changes
+description: 'Página que describe los tipos de cambios de esquema que ClickPipes puede detectar en las tablas de origen'
+doc_type: 'reference'
+keywords: ['clickpipes', 'mysql', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+ClickPipes para MySQL puede detectar cambios de esquema en las tablas de origen y, en algunos casos, propagarlos automáticamente a las tablas de destino. A continuación se documenta cómo se maneja cada operación DDL:
+
+[//]: # "TODO Ampliar esta página con el comportamiento para rename, cambios de tipo de dato y TRUNCATE, además de orientación sobre cómo manejar cambios de esquema incompatibles."
+
+| Tipo de cambio de esquema                                                                       | Comportamiento                                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Añadir una nueva columna (`ALTER TABLE ADD COLUMN ...`)                                         | Se propaga automáticamente. Las nuevas columnas se completarán para todas las filas replicadas después del cambio de esquema                                                                                                                                                         |
+| Añadir una nueva columna con un valor predeterminado (`ALTER TABLE ADD COLUMN ... DEFAULT ...`) | Se propaga automáticamente. Los [valores predeterminados compatibles](#default-values-for-added-columns) también se añaden a la columna de ClickHouse, por lo que se aplican tanto a las filas que ya están en ClickHouse como a las filas replicadas después del cambio de esquema. |
+| Eliminar una columna existente (`ALTER TABLE DROP COLUMN ...`)                                  | Se detecta, pero **no** se propaga. Las columnas eliminadas se completarán con `NULL` para todas las filas replicadas después del cambio de esquema                                                                                                                                  |
+
+<Note>
+  Actualmente no se admite la adición de columnas durante la instantánea. La solución alternativa recomendada es realizar las instantáneas antes o después de los cambios de esquema planificados o, si el ClickPipe ya está fallando, añadir manualmente una columna del tipo adecuado a la tabla de destino.
+</Note>
+
+<div id="default-values-for-added-columns">
+  ## Valores predeterminados de las columnas añadidas
+</div>
+
+Para una columna añadida, ClickPipes propaga un valor predeterminado solo cuando puede traducirlo de forma segura a ClickHouse. Cuando se propaga un valor predeterminado, ClickHouse lo utiliza al leer partes de datos anteriores a la nueva columna. Como resultado, las filas ya presentes en ClickHouse reciben el valor predeterminado de origen sin necesidad de actualizar toda la tabla.
+
+ClickPipes propaga valores literales enteros, decimales y de coma flotante; booleanos; valores simples de cadenas y fechas; y valores enum o set cuando el servidor MySQL proporciona metadatos completos de filas del binlog. Reescribe los literales de cadena con comillas compatibles con ClickHouse.
+
+ClickPipes omite deliberadamente los valores predeterminados que no son literales portables, incluidos `NULL`, literales de bits, llamadas a funciones como `CURRENT_TIMESTAMP`, `NOW()` o `UUID()`, y valores de cadena que contienen barras invertidas o caracteres de control. La columna se añade de todos modos, pero ClickHouse utiliza el valor predeterminado habitual de su tipo para las partes anteriores a la columna. Es necesario actualizar toda la tabla si esas filas existentes deben contener el valor predeterminado de origen.
+
+ClickPipes propaga valores predeterminados solo como parte de `ALTER TABLE ADD COLUMN`. Las operaciones posteriores que cambien o eliminen un valor predeterminado de columna no se propagan a ClickHouse.
+
+<div id="mysql-5-limitations">
+  ### Limitaciones de MySQL 5.x
+</div>
+
+Las versiones de MySQL anteriores a [8.0.1](https://dev.mysql.com/blog-archive/more-metadata-is-written-into-binary-log/) no incluyen metadatos completos de las columnas en el binlog (`binlog_row_metadata=FULL`), por lo que ClickPipes realiza el seguimiento de las columnas por su posición ordinal. Esto significa lo siguiente:
+
+* **Se admite agregar una columna al final** (`ALTER TABLE ADD COLUMN ...`).
+* **Cualquier DDL que desplace la posición de las columnas** hará que el pipe genere un error, ya que las posiciones ordinales dejan de poder mapearse de forma fiable. Esto incluye:
+  * `ALTER TABLE DROP COLUMN ...`
+  * `ALTER TABLE ADD COLUMN ... AFTER ...` / `FIRST`
+  * `ALTER TABLE MODIFY COLUMN ... AFTER ...` / `FIRST`
+  * `ALTER TABLE CHANGE COLUMN ... AFTER ...` / `FIRST`
+
+Si aparece este error, tendrás que volver a sincronizar el pipe.

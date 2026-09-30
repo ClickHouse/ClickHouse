@@ -13,7 +13,7 @@ openSSL:
     certificateFile: '/etc/clickhouse-server/config.d/WithoutPassPhrase.crt'
     caConfig: '/etc/clickhouse-server/config.d/rootCA.pem'
     loadDefaultCAFile: true
-    verificationMode: 'none'
+    verificationMode: 'relaxed'
     cacheSessions: true
     disableProtocols: 'sslv2,sslv3'
     preferServerCiphers: true
