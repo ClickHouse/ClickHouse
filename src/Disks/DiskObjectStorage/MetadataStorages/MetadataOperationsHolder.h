@@ -6,6 +6,11 @@
 
 #include <deque>
 
+namespace ProfileEvents
+{
+class Counters;
+}
+
 namespace DB
 {
 
@@ -16,7 +21,7 @@ namespace DB
  */
 class MetadataOperationsHolder
 {
-    void rollback(size_t until_pos, Exception & rollback_reason) noexcept;
+    void rollback(size_t until_pos, Exception & rollback_reason, ProfileEvents::Counters & counters) noexcept;
 
 public:
     void prependOperation(MetadataOperationPtr && operation);

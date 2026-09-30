@@ -17,6 +17,7 @@
 #include <cerrno>
 #include <cstdlib>
 #include <limits>
+#include <thread>
 
 namespace DB::ErrorCodes
 {
@@ -25,6 +26,7 @@ namespace DB::ErrorCodes
 
 namespace ProfileEvents
 {
+    extern const Event AdaptiveAggregationSpillBacklogSheds;
     extern const Event GlobalMemoryLimitExceeded;
     extern const Event QueryMemoryLimitExceeded;
 }
@@ -98,6 +100,38 @@ TEST(AllocationInterceptors, NewDeleteIncreasesTheMemoryTracker)
         *ptr = 'a';
         return ptr;
     }, [&](const char * ptr) { delete[] ptr; });
+}
+
+/// Counter backing uses intercepted `new`, which is unavailable in sanitizer builds.
+TEST(AllocationInterceptors, SharedColdBackingDoesNotChargeTheTriggeringQuery)
+{
+    std::thread worker([]
+    {
+        DB::ThreadStatus status;
+        MemoryTracker query(VariableContext::Process);
+        status.memory_tracker.setParent(&query);
+        status.untracked_memory_limit = 0;
+        const auto before = query.get();
+        {
+            ProfileEvents::Counters user(VariableContext::User, nullptr);
+            ProfileEvents::Counters thread(VariableContext::Thread, &user);
+            thread.preallocate(ProfileEvents::AdaptiveAggregationSpillBacklogSheds);
+            status.flushUntrackedMemory();
+            EXPECT_EQ(query.get(), before);
+        }
+        status.flushUntrackedMemory();
+        EXPECT_EQ(query.get(), before);
+        {
+            ProfileEvents::Counters process(VariableContext::Process, nullptr);
+            process.preallocate(ProfileEvents::AdaptiveAggregationSpillBacklogSheds);
+            status.flushUntrackedMemory();
+            EXPECT_GT(query.get(), before);
+        }
+        status.flushUntrackedMemory();
+        EXPECT_EQ(query.get(), before);
+        status.memory_tracker.setParent(&total_memory_tracker);
+    });
+    worker.join();
 }
 
 TEST(AllocationInterceptors, FailedReallocPreservesOldAllocationAccounting)

@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ProfileEventsNonAllocatingEvents.h>
 #include <Common/StackTrace.h>
 #include <Common/TraceSender.h>
 #include <Common/logger_useful.h>
@@ -69,7 +70,7 @@ namespace
         SCOPE_EXIT({ concurrent_invocations.fetch_sub(1, std::memory_order_relaxed); });
         if (concurrent_invocations.fetch_add(1, std::memory_order_relaxed) > 100)
         {
-            ProfileEvents::incrementSignalSafe(ProfileEvents::QueryProfilerConcurrencyOverruns);
+            ProfileEvents::incrementSignalSafe(ProfileEvents::nonAllocatingEvent<ProfileEvents::QueryProfilerConcurrencyOverruns>());
             return;
         }
 
@@ -91,11 +92,11 @@ namespace
                 /// But pass with some frequency to avoid drop of all traces.
                 if (overrun_count > 0 && write_trace_iteration % (overrun_count + 1) == 0)
                 {
-                    ProfileEvents::incrementSignalSafe(ProfileEvents::QueryProfilerSignalOverruns, overrun_count);
+                    ProfileEvents::incrementSignalSafe(ProfileEvents::nonAllocatingEvent<ProfileEvents::QueryProfilerSignalOverruns>(), overrun_count);
                 }
                 else
                 {
-                    ProfileEvents::incrementSignalSafe(ProfileEvents::QueryProfilerSignalOverruns, std::max(0, overrun_count) + 1);
+                    ProfileEvents::incrementSignalSafe(ProfileEvents::nonAllocatingEvent<ProfileEvents::QueryProfilerSignalOverruns>(), std::max(0, overrun_count) + 1);
                     return;
                 }
             }
@@ -120,7 +121,7 @@ namespace
         /// (e.g. off a fiber stack) and yields an empty trace in that case.
         stack_trace.emplace(signal_context);
         if (stack_trace->getSize() == 0)
-            ProfileEvents::incrementSignalSafe(ProfileEvents::QueryProfilerErrors);
+            ProfileEvents::incrementSignalSafe(ProfileEvents::nonAllocatingEvent<ProfileEvents::QueryProfilerErrors>());
 #endif
 
         /// Skip empty captures: StackTrace(ucontext) recovers from an unwind fault by returning a
@@ -129,7 +130,7 @@ namespace
         if (stack_trace && stack_trace->getSize() != 0)
             TraceSender::send(trace_type, *stack_trace, {});
 
-        ProfileEvents::incrementSignalSafe(ProfileEvents::QueryProfilerRuns);
+        ProfileEvents::incrementSignalSafe(ProfileEvents::nonAllocatingEvent<ProfileEvents::QueryProfilerRuns>());
         errno = saved_errno;
     }
 

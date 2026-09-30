@@ -812,7 +812,7 @@ public:
     {
         SCOPE_EXIT({
             group->releaseStoredConnections(expired_connections.size());
-            ProfileEvents::increment(getMetrics().expired, expired_connections.size());
+            ProfileEvents::incrementNonAllocating(getMetrics().expired, expired_connections.size());
         });
 
         auto is_soft_limit_reached = group->isSoftLimitReached();
@@ -1118,13 +1118,13 @@ private:
     {
         if (connection.getKeepAliveRequest() >= connection.getKeepAliveMaxRequests())
         {
-            ProfileEvents::increment(getMetrics().expired, 1);
+            ProfileEvents::incrementNonAllocating(getMetrics().expired, 1);
             return;
         }
 
         if (!connection.connected() || connection.mustReconnect() || !connection.isCompleted() || connection.buffered())
         {
-            ProfileEvents::increment(getMetrics().reset, 1);
+            ProfileEvents::incrementNonAllocating(getMetrics().reset, 1);
             return;
         }
 
@@ -1132,7 +1132,7 @@ private:
         /// that store connections concurrently cannot overshoot the limit together.
         if (!group->tryReserveStoredConnection())
         {
-            ProfileEvents::increment(getMetrics().reset, 1);
+            ProfileEvents::incrementNonAllocating(getMetrics().reset, 1);
             return;
         }
 
@@ -1148,12 +1148,12 @@ private:
                 stored_connections.push(connection_to_store);
             }
 
-            ProfileEvents::increment(getMetrics().preserved, 1);
+            ProfileEvents::incrementNonAllocating(getMetrics().preserved, 1);
         }
         catch (...)
         {
             group->releaseStoredConnections(1);
-            ProfileEvents::increment(getMetrics().reset, 1);
+            ProfileEvents::incrementNonAllocating(getMetrics().reset, 1);
             tryLogCurrentException("HTTPConnectionPool", "Failed to preserve connection for reuse");
         }
     }

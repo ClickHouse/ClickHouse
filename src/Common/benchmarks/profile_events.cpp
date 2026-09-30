@@ -393,6 +393,132 @@ void BM_ProfileEventsReadAll(benchmark::State & state)
     state.counters["ncpus"] = static_cast<double>(PerCPU::getNumCPUs());
 }
 
+/// Actual single-row objects: keep these cases independent of any storage implementation so the
+/// same benchmark source can be compiled against a baseline and a candidate. Object size and
+/// logical event capacity are reported separately; neither is an estimate of allocator usable size.
+void reportCountersMetadata(benchmark::State & state, size_t hierarchy_depth, size_t operations_per_iteration)
+{
+    state.counters["counter_object_bytes"] = sizeof(ProfileEvents::Counters);
+    state.counters["events"] = static_cast<double>(ProfileEvents::end());
+    state.counters["logical_counter_bytes"] = static_cast<double>(ProfileEvents::end() * sizeof(ProfileEvents::Count));
+    state.counters["hierarchy_depth"] = static_cast<double>(hierarchy_depth);
+    state.counters["operations_per_iteration"] = static_cast<double>(operations_per_iteration);
+    state.counters["ncpus"] = static_cast<double>(PerCPU::getNumCPUs());
+    state.SetItemsProcessed(state.iterations() * static_cast<int64_t>(operations_per_iteration));
+}
+
+VariableContext singleRowLevel(benchmark::State & state)
+{
+    return static_cast<VariableContext>(state.range(0));
+}
+
+void BM_ProfileEventsCountersConstruct(benchmark::State & state)
+{
+    const auto level = singleRowLevel(state);
+    for (auto _ [[maybe_unused]] : state)
+    {
+        ProfileEvents::Counters counters(level, nullptr);
+        auto * pointer = &counters;
+        benchmark::DoNotOptimize(pointer);
+        benchmark::ClobberMemory();
+    }
+    reportCountersMetadata(state, 1, 1);
+}
+
+ProfileEvents::Count sumCounters(const ProfileEvents::Counters & counters)
+{
+    ProfileEvents::Count sum = 0;
+    for (ProfileEvents::Event event(0); event < ProfileEvents::end(); ++event)
+        sum += counters[event];
+    return sum;
+}
+
+/// Batch only the update operation. The runtime event stream and its indexing work are identical
+/// for prefix and last-event cases. Setup, the final count check, and object destruction are outside
+/// the timed loop. One reported benchmark iteration contains `batch_size` updates.
+void runCountersUpdates(benchmark::State & state, ProfileEvents::Counters & counters, bool last_event, size_t hierarchy_depth)
+{
+    constexpr size_t batch_size = 256;
+    std::array<ProfileEvents::Event, batch_size> events;
+    const size_t event_count = ProfileEvents::end();
+    const size_t prefix_events = std::min<size_t>(32, event_count);
+    for (size_t i = 0; i < events.size(); ++i)
+        events[i] = ProfileEvents::Event(last_event ? event_count - 1 : i % prefix_events);
+    auto * event_data = events.data();
+    benchmark::DoNotOptimize(event_data);
+    benchmark::ClobberMemory();
+
+    for (auto _ [[maybe_unused]] : state)
+    {
+        for (size_t i = 0; i < batch_size; ++i)
+            counters.incrementNoTrace(event_data[i], 1);
+    }
+
+    const auto expected = static_cast<ProfileEvents::Count>(state.iterations()) * batch_size;
+    const auto observed = sumCounters(counters);
+    if (observed != expected)
+        state.SkipWithError("counter update total differs from completed operations");
+    benchmark::DoNotOptimize(observed);
+    reportCountersMetadata(state, hierarchy_depth, batch_size);
+    state.counters["last_event"] = last_event ? 1 : 0;
+    state.counters["distinct_events"] = static_cast<double>(last_event ? 1 : prefix_events);
+}
+
+void BM_ProfileEventsCountersUpdate(benchmark::State & state)
+{
+    ProfileEvents::Counters counters(singleRowLevel(state), nullptr);
+    runCountersUpdates(state, counters, state.range(1) != 0, 1);
+}
+
+/// The four actual levels, with the existing per-CPU user/global layouts and no other writers.
+/// This isolates propagation cost; it does not model contention or query-thread attachment.
+void BM_ProfileEventsCountersChainUpdate(benchmark::State & state)
+{
+    ProfileEvents::Counters user(VariableContext::User, &ProfileEvents::global_counters);
+    ProfileEvents::Counters process(VariableContext::Process, &user);
+    ProfileEvents::Counters thread(VariableContext::Thread, &process);
+    runCountersUpdates(state, thread, state.range(0) != 0, 4);
+    const auto expected = static_cast<ProfileEvents::Count>(state.iterations()) * 256;
+    if (sumCounters(process) != expected || sumCounters(user) != expected)
+        state.SkipWithError("parent update total differs from completed operations");
+}
+
+void seedCounters(ProfileEvents::Counters & counters)
+{
+    for (ProfileEvents::Event event(0); event < ProfileEvents::end(); ++event)
+        counters.incrementNoTrace(event, 1);
+}
+
+/// Includes construction and destruction of the dense snapshot destination, as the actual API does.
+void BM_ProfileEventsCountersSnapshot(benchmark::State & state)
+{
+    ProfileEvents::Counters counters(singleRowLevel(state), nullptr);
+    seedCounters(counters);
+    for (auto _ [[maybe_unused]] : state)
+    {
+        auto snapshot = counters.getPartiallyAtomicSnapshot();
+        benchmark::DoNotOptimize(snapshot);
+        benchmark::ClobberMemory();
+    }
+    reportCountersMetadata(state, 1, 1);
+}
+
+/// Repeatedly clear already allocated storage. After the first iteration the cells are zero, but
+/// every reset must still perform atomic stores. There is no reseeding or allocation inside the loop.
+void BM_ProfileEventsCountersReset(benchmark::State & state)
+{
+    ProfileEvents::Counters counters(singleRowLevel(state), nullptr);
+    seedCounters(counters);
+    for (auto _ [[maybe_unused]] : state)
+    {
+        counters.resetCounters();
+        benchmark::ClobberMemory();
+    }
+    if (sumCounters(counters) != 0)
+        state.SkipWithError("reset left nonzero counters");
+    reportCountersMetadata(state, 1, 1);
+}
+
 }
 
 BENCHMARK(BM_ProfileEvents)
@@ -439,6 +565,45 @@ BENCHMARK(BM_ProfileEventsReadAll)
     ->Arg(1)
     ->ArgNames({"per_cpu"})
     ->Unit(benchmark::kMicrosecond)
+    ->UseRealTime();
+
+/// `VariableContext`: Process = 2, Thread = 3. `last_event` = 0 rotates the first 32 events;
+/// `last_event` = 1 repeatedly updates the final compiled event. No catalogue size is hard-coded.
+BENCHMARK(BM_ProfileEventsCountersConstruct)
+    ->Arg(static_cast<int64_t>(VariableContext::Process))
+    ->Arg(static_cast<int64_t>(VariableContext::Thread))
+    ->ArgNames({"level"})
+    ->Unit(benchmark::kNanosecond)
+    ->UseRealTime();
+
+BENCHMARK(BM_ProfileEventsCountersUpdate)
+    ->Args({static_cast<int64_t>(VariableContext::Process), 0})
+    ->Args({static_cast<int64_t>(VariableContext::Process), 1})
+    ->Args({static_cast<int64_t>(VariableContext::Thread), 0})
+    ->Args({static_cast<int64_t>(VariableContext::Thread), 1})
+    ->ArgNames({"level", "last_event"})
+    ->Unit(benchmark::kNanosecond)
+    ->UseRealTime();
+
+BENCHMARK(BM_ProfileEventsCountersChainUpdate)
+    ->Arg(0)
+    ->Arg(1)
+    ->ArgNames({"last_event"})
+    ->Unit(benchmark::kNanosecond)
+    ->UseRealTime();
+
+BENCHMARK(BM_ProfileEventsCountersSnapshot)
+    ->Arg(static_cast<int64_t>(VariableContext::Process))
+    ->Arg(static_cast<int64_t>(VariableContext::Thread))
+    ->ArgNames({"level"})
+    ->Unit(benchmark::kNanosecond)
+    ->UseRealTime();
+
+BENCHMARK(BM_ProfileEventsCountersReset)
+    ->Arg(static_cast<int64_t>(VariableContext::Process))
+    ->Arg(static_cast<int64_t>(VariableContext::Thread))
+    ->ArgNames({"level"})
+    ->Unit(benchmark::kNanosecond)
     ->UseRealTime();
 
 BENCHMARK_MAIN();

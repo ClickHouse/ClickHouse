@@ -38,7 +38,7 @@ LocalDirectorySyncGuard::LocalDirectorySyncGuard(const String & full_path)
 
 LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
 {
-    ProfileEvents::increment(ProfileEvents::DirectorySync);
+    ProfileEvents::incrementNonAllocating(ProfileEvents::DirectorySync);
 
     try
     {
@@ -57,7 +57,7 @@ LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
         if (-1 == ::close(fd))
             throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
 
-        ProfileEvents::increment(ProfileEvents::DirectorySyncElapsedMicroseconds, watch.elapsedMicroseconds());
+        ProfileEvents::incrementNonAllocating(ProfileEvents::DirectorySyncElapsedMicroseconds, watch.elapsedMicroseconds());
     }
     catch (...)
     {

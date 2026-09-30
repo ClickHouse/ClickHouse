@@ -1,6 +1,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 
 #include <Common/Exception.h>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 
 #include <exception>
@@ -19,9 +20,9 @@ namespace ErrorCodes
 extern const int FS_METADATA_ERROR;
 }
 
-void MetadataOperationsHolder::rollback(size_t until_pos, Exception & rollback_reason) noexcept
+void MetadataOperationsHolder::rollback(size_t until_pos, Exception & rollback_reason, ProfileEvents::Counters & counters) noexcept
 {
-    ProfileEvents::increment(ProfileEvents::MetadataTransactionRollbacks);
+    counters.incrementNonAllocating(ProfileEvents::MetadataTransactionRollbacks);
 
     for (int64_t i = until_pos; i >= 0; --i)
     {
@@ -31,7 +32,7 @@ void MetadataOperationsHolder::rollback(size_t until_pos, Exception & rollback_r
         }
         catch (...)
         {
-            ProfileEvents::increment(ProfileEvents::MetadataTransactionRollbacksFailed);
+            counters.incrementNonAllocating(ProfileEvents::MetadataTransactionRollbacksFailed);
 
             state = MetadataStorageTransactionState::PARTIALLY_ROLLED_BACK;
 
@@ -79,6 +80,13 @@ void MetadataOperationsHolder::commit()
             toString(state),
             toString(MetadataStorageTransactionState::PREPARING));
 
+    auto & counters = CurrentThread::getProfileEvents();
+    if (!operations.empty())
+    {
+        counters.preallocate(ProfileEvents::MetadataTransactionRollbacks);
+        counters.preallocate(ProfileEvents::MetadataTransactionRollbacksFailed);
+    }
+
     for (size_t i = 0; i < operations.size(); ++i)
     {
         try
@@ -90,7 +98,7 @@ void MetadataOperationsHolder::commit()
             state = MetadataStorageTransactionState::FAILED;
 
             error.addMessage(fmt::format("While committing metadata operation #{}", i));
-            rollback(i, error);
+            rollback(i, error, counters);
 
             tryLogCurrentException(__PRETTY_FUNCTION__);
             error.rethrow();

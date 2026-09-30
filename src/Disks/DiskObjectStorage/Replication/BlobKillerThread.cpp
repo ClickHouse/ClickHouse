@@ -96,13 +96,13 @@ IMetadataStorage::BlobsToRemove findBlobsToRemove(
     try
     {
         auto blobs_to_remove = metadata_storage->getBlobsToRemove(cluster, request_batch);
-        ProfileEvents::increment(ProfileEvents::BlobKillerThreadLockedBlobs, blobs_to_remove.size());
+        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::BlobKillerThreadLockedBlobs, blobs_to_remove.size());
         return blobs_to_remove;
     }
     catch (...)
     {
         tryLogCurrentException(log);
-        ProfileEvents::increment(ProfileEvents::BlobKillerThreadLockBlobsErrors);
+        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::BlobKillerThreadLockBlobsErrors);
         return {};
     }
 }
@@ -144,14 +144,14 @@ bool removeBlobsBatch(
         LOG_TRACE(log, "Removing {} blobs from '{}' location", remove_batch.size(), location);
 
         object_storages->takePointingTo(location)->removeObjectsIfExist(remove_batch);
-        ProfileEvents::increment(ProfileEvents::BlobKillerThreadRemovedBlobs, remove_batch.size());
+        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::BlobKillerThreadRemovedBlobs, remove_batch.size());
 
         return true;
     }
     catch (...)
     {
         tryLogCurrentException(log);
-        ProfileEvents::increment(ProfileEvents::BlobKillerThreadRemoveBlobsErrors);
+        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::BlobKillerThreadRemoveBlobsErrors);
         return false;
     }
 }
@@ -188,12 +188,12 @@ void recordBlobsRemoval(
     try
     {
         int64_t recorded_count = metadata_storage->recordAsRemoved(removed_blobs);
-        ProfileEvents::increment(ProfileEvents::BlobKillerThreadRecordedBlobs, recorded_count);
+        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::BlobKillerThreadRecordedBlobs, recorded_count);
     }
     catch (...)
     {
         tryLogCurrentException(log);
-        ProfileEvents::increment(ProfileEvents::BlobKillerThreadRecordBlobsErrors);
+        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::BlobKillerThreadRecordBlobsErrors);
     }
 }
 
@@ -209,7 +209,7 @@ int64_t removeBlobs(
         return 0;
 
     auto tasks = sliceIntoRemoveTasks(blobs_to_remove, blobs_in_task);
-    ProfileEvents::increment(ProfileEvents::BlobKillerThreadRemoveTasks, tasks.size());
+    ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::BlobKillerThreadRemoveTasks, tasks.size());
     LOG_TRACE(log, "Distributed removal of {} blobs into {} tasks", blobs_to_remove.size(), tasks.size());
 
     auto removals = scheduleRemovalTasks(remove_tasks_runner, tasks, object_storages, log);
@@ -243,7 +243,7 @@ int64_t executeBlobsCleanup(
     const ObjectStorageRouterPtr & object_storages,
     const LoggerPtr & log) noexcept
 {
-    ProfileEvents::increment(ProfileEvents::BlobKillerThreadRuns);
+    ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::BlobKillerThreadRuns);
     auto blobs_to_remove = findBlobsToRemove(max_to_remove, cluster, metadata, log);
     return removeBlobs(std::move(blobs_to_remove), blobs_in_task, remove_tasks_runner, metadata, object_storages, log);
 }
@@ -266,6 +266,17 @@ BlobKillerThread::BlobKillerThread(
     , remove_tasks_pool(CurrentMetrics::BlobKillerThreads, CurrentMetrics::BlobKillerThreadsActive, CurrentMetrics::BlobKillerThreadsScheduled, 0, 0, 0)
     , remove_tasks_runner(remove_tasks_pool, ThreadName::BLOB_KILLER_TASK)
 {
+    /// These server-level metrics can be published by fresh workers and during shutdown.
+    /// Reserve once for this configured feature, independently of any worker counter scope.
+    ProfileEvents::global_counters.preallocate(ProfileEvents::BlobKillerThreadRuns);
+    ProfileEvents::global_counters.preallocate(ProfileEvents::BlobKillerThreadLockedBlobs);
+    ProfileEvents::global_counters.preallocate(ProfileEvents::BlobKillerThreadRemoveTasks);
+    ProfileEvents::global_counters.preallocate(ProfileEvents::BlobKillerThreadRemovedBlobs);
+    ProfileEvents::global_counters.preallocate(ProfileEvents::BlobKillerThreadRecordedBlobs);
+    ProfileEvents::global_counters.preallocate(ProfileEvents::BlobKillerThreadLockBlobsErrors);
+    ProfileEvents::global_counters.preallocate(ProfileEvents::BlobKillerThreadRemoveBlobsErrors);
+    ProfileEvents::global_counters.preallocate(ProfileEvents::BlobKillerThreadRecordBlobsErrors);
+
     task = context->getSchedulePool()->createTask(StorageID::createEmpty(), log->name(), [this]() { run(); });
     task->deactivate();
 }
