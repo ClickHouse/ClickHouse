@@ -590,6 +590,44 @@ def test_merge_table_over_materialized_postgresql(started_cluster):
         instance.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
 
+def test_materialized_postgresql_primary_key_alias_without_order_by(started_cluster):
+    """
+    A table with an aliased PRIMARY KEY and no ORDER BY, and its nested table, can be read back from their definitions
+    """
+    table_name = "postgresql_pk_alias"
+    pg_manager.create_postgres_table(table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(3)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+    instance.query(
+        f"""
+        CREATE TABLE {table_name} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table_name}', 'postgres', '{pg_pass}') PRIMARY KEY (key AS k)
+        """
+    )
+
+    try:
+        check_tables_are_synchronized(
+            instance, table_name, materialized_database="default"
+        )
+
+        uuid = instance.query(
+            f"SELECT uuid FROM system.tables WHERE database = 'default' AND name = '{table_name}'"
+        ).strip()
+        instance.query(f"SHOW CREATE TABLE {table_name}")
+        instance.query(f"SHOW CREATE TABLE `{uuid}_nested`")
+
+        instance.query(f"DETACH TABLE {table_name}")
+        instance.query(f"ATTACH TABLE {table_name}")
+        check_tables_are_synchronized(
+            instance, table_name, materialized_database="default"
+        )
+    finally:
+        instance.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
 def test_merge_table_over_materialized_postgresql_database(started_cluster):
     """
     Reading a MaterializedPostgreSQL database through Merge forces FINAL on the child read:

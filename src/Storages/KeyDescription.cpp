@@ -232,6 +232,14 @@ ASTPtr KeyDescription::getOriginalExpressionList() const
     return expr_list;
 }
 
+ASTPtr KeyDescription::getSortingKeyASTFromPrimaryKey(const IAST & primary_key_ast)
+{
+    auto sorting_key_ast = primary_key_ast.clone();
+    if (!sorting_key_ast->tryGetAlias().empty())
+        sorting_key_ast->setAlias({});
+    return sorting_key_ast;
+}
+
 KeyDescription KeyDescription::getPrimaryKeyFromAST(
     const ASTPtr & definition_ast,
     const KeyDescription & sorting_key,
