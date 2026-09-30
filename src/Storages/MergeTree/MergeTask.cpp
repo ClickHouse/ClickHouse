@@ -32,7 +32,6 @@
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ExtractColumnsStep.h>
@@ -170,8 +169,6 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int TIMEOUT_EXCEEDED;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 /// Transform that builds statistics for columns and doesn't change the chunk.
@@ -240,18 +237,6 @@ private:
 
     std::shared_ptr<BuildStatisticsTransform> transform;
 };
-
-static void throwIfPipelineCancelled(const QueryPipeline & pipeline)
-{
-    const auto process_list_element = pipeline.getProcessListElement();
-    if (!process_list_element || process_list_element->checkTimeLimitSoft())
-        return;
-
-    if (process_list_element->isKilled() && process_list_element->getCancelReason() != CancelReason::TIMEOUT)
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-
-    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded");
-}
 
 /// Manages the "rows_sources" temporary file that is used during vertical merge.
 class RowsSourcesTemporaryFile : public ITemporaryFileLookup
@@ -1893,7 +1878,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
             if (cancelled)
                 global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
             else
-                throwIfPipelineCancelled(global_ctx->merged_pipeline);
+                global_ctx->merging_executor->throwIfCancelled();
             finalize();
             return false;
         }
@@ -2271,7 +2256,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
             if (cancelled)
                 global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
             else
-                throwIfPipelineCancelled(ctx->column_parts_pipeline);
+                ctx->executor->throwIfCancelled();
             return false;
         }
 

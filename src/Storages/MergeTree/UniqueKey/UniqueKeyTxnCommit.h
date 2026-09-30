@@ -4,13 +4,11 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
-#include <Storages/MergeTree/MergeTreeCommittingBlock.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
 
 #include <base/scope_guard.h>
 
 #include <string>
-#include <functional>
 #include <vector>
 
 namespace DB
@@ -75,9 +73,6 @@ public:
         MergeTreeTransactionHolder & transaction;
         String partition_id;
         const DeleteRowsByPart & rows_by_part;
-        /// A closure and not a holder because only `executeUniqueKeyDelete` is a friend of
-        /// `StorageMergeTree`: the caller supplies the means, the commit picks the moment.
-        std::function<std::unique_ptr<PlainCommittingBlockHolder>()> allocate_marker_block;
     };
 
     /// DELETE: Stages a 0-row marker part to carry the commit's csn, and installs one delta

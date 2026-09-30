@@ -104,6 +104,11 @@ BlockIO InterpreterDeleteQuery::execute()
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
+        /// TODO(unique-key): support DELETE in a Replicated database.
+        if (table->hasUniqueKey())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "DELETE on UNIQUE KEY tables is not supported inside a Replicated database");
+
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
@@ -115,6 +120,23 @@ BlockIO InterpreterDeleteQuery::execute()
     /// supportsDelete() and subsequent mutation checks see valid metadata.
     table->updateExternalDynamicMetadataIfExists(getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
+
+    /// Dispatched to the storage's synchronous marker-part path, bypassing both the
+    /// `supportsDelete` mutation route and the default `_row_exists = 0` lightweight path.
+    if (table->hasUniqueKey())
+    {
+        if (!delete_query.cluster.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE ... ON CLUSTER is not supported on UNIQUE KEY tables");
+
+        auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get());
+        if (!merge_tree)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "DELETE on UNIQUE KEY tables is only supported on MergeTree engines (got {})",
+                table->getName());
+
+        merge_tree->deleteByUniqueKey(query_ptr, getContext());
+        return {};
+    }
 
     if (table->supportsDelete())
     {

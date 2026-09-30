@@ -3,6 +3,7 @@
 --   1. partitions: the same key in two partitions coexists
 --   2. oldest part: one INSERT kills rows in three of 10 parts, the oldest included
 --   3. one INSERT, many parts: keys repeating across its own blocks keep the last value
+--   4. DELETE marker: the probe skips the 0-row marker; a deleted key inserts and deletes again
 -- no-async-insert: one part per INSERT is asserted. `ignore` is 04168's, `abort` 04174's.
 
 SET enable_unique_key = 1;
@@ -13,6 +14,7 @@ SET optimize_use_implicit_projections = 0;
 DROP TABLE IF EXISTS uk_dedup_part;
 DROP TABLE IF EXISTS uk_many_parts;
 DROP TABLE IF EXISTS uk_mp_ow;
+DROP TABLE IF EXISTS uk_marker_skip;
 
 -- 1. partitions: red if the INSERT probes every partition for its keys (`1 42 part1` goes).
 CREATE TABLE uk_dedup_part (part_key UInt32, id UInt32, v String)
@@ -84,6 +86,26 @@ SELECT 'many_parts_last_value', v FROM uk_mp_ow WHERE id = 5;  -- 1805
 
 SET max_threads = DEFAULT;
 
+-- 4. DELETE marker: red if the probe fails closed on a 0-row part (the
+-- INSERT after the DELETE throws).
+CREATE TABLE uk_marker_skip (id UInt32, v String)
+ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES uk_marker_skip;
+
+INSERT INTO uk_marker_skip VALUES (1, 'a'), (2, 'b');
+DELETE FROM uk_marker_skip WHERE id = 1;
+SELECT 'marker_count', count() FROM uk_marker_skip;  -- 1
+SELECT 'marker_survivors', id, v FROM uk_marker_skip ORDER BY id;  -- 2 b
+
+INSERT INTO uk_marker_skip VALUES (1, 'c');               -- probe skips marker; id=1 was all-dead
+SELECT 'reinsert_count', count() FROM uk_marker_skip;  -- 2
+SELECT 'reinsert_rows', id, v FROM uk_marker_skip ORDER BY id;  -- 1 c / 2 b
+
+DELETE FROM uk_marker_skip WHERE id = 1;                  -- kills the re-inserted copy
+SELECT 'redelete_rows', id, v FROM uk_marker_skip ORDER BY id;  -- 2 b
+
 DROP TABLE uk_dedup_part;
 DROP TABLE uk_many_parts;
 DROP TABLE uk_mp_ow;
+DROP TABLE uk_marker_skip;

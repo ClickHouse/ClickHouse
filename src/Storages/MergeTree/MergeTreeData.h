@@ -1092,6 +1092,9 @@ public:
 
     UniqueKeyTxnManager & uniqueKeyTxnManager() const;
 
+    /// A synchronous `DELETE FROM` on a unique-key table; the base throws.
+    virtual void deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr context);
+
     /// Whether `part` holds the only copy of some other part's kills, in which case no removal
     /// path may take it. The overload taking a lock is for a caller that already holds one.
     bool isPinnedByDeleteBitmap(const IMergeTreeDataPart & part) const;
@@ -1470,14 +1473,11 @@ public:
     /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
     /// For a part in a patch partition, `patch_part_index` must be seeded from a covered or
     /// sibling part (see `PatchPartIndex::cloneEmpty`) to keep the partition uniform.
-    /// With `precommit_storage = false` the returned part's storage transaction is still open, so
-    /// the caller can add files to the part; it then owns the `precommitTransaction()` that seals it.
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeTransactionPtr & txn,
-        std::optional<PatchPartIndex> patch_part_index,
-        bool precommit_storage = true) const;
+        std::optional<PatchPartIndex> patch_part_index) const;
 
     MergeTreeDataFormatVersion format_version;
 

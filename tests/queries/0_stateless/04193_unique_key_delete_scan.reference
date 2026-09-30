@@ -1,0 +1,17 @@
+delete_without_select 1
+subquery_refused 1
+rights_survivors	[3,4,5,6,7,8,9]
+one_partition	0	10
+one_partition	1	3
+one_partition	2	10
+two_partitions	0	6
+two_partitions	1	3
+two_partitions	2	7
+first	10
+second	10
+skip_index_prunes	1	like_plain_read	1
+skip_index_survivors	992	0
+read_limit_survivors	2500	1	4999
+time_parts	6
+timeout_fails_delete 1
+time_after_timeout	300

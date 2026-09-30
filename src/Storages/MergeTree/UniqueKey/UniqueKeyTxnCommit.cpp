@@ -7,6 +7,7 @@
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/TransactionManager.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeCommittingBlock.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -658,12 +659,6 @@ protected:
         const PartitionWriteGuard &, const MergeTreeTransactionPtr & commit_txn, const StagedWrite &) override;
 
 private:
-    struct MarkerPartHandle
-    {
-        MergeTreeMutableDataPartPtr data_part;
-        scope_guard tmp_dir_holder;
-    };
-
     /// A matched part resolved to a live `DataPartPtr`, with the rows this DELETE kills in it.
     struct ResolvedTarget
     {
@@ -676,13 +671,6 @@ private:
 
     /// Create a marker part to carry this commit's csn, and stage the bitmaps for all the target parts.
     void stageOwnerMarkerPart();
-
-    static MarkerPartHandle createMarkerPart(
-        MergeTreeData & data,
-        const String & partition_id,
-        Int64 block_number,
-        const MergeTreePartition & partition,
-        const MergeTreeTransactionPtr & txn);
 
     StorageMergeTree & storage;
     DeleteRequest & request;
@@ -714,7 +702,6 @@ bool UniqueKeyTxnCommit::DeleteCommit::resolveConflicts()
 const IMergeTreeDataPart & UniqueKeyTxnCommit::DeleteCommit::publish(
     const PartitionWriteGuard &, const MergeTreeTransactionPtr & commit_txn, const StagedWrite &)
 {
-    own_part->getDataPartStorage().precommitTransaction();
     addPartToActiveSet(storage, own_part, commit_txn);
     return *own_part;
 }
@@ -742,41 +729,20 @@ void UniqueKeyTxnCommit::DeleteCommit::checkPartExistence()
 
 void UniqueKeyTxnCommit::DeleteCommit::stageOwnerMarkerPart()
 {
-    marker_block_holder = request.allocate_marker_block();
-    auto partition_id = request.partition_id;
-    auto block_number = marker_block_holder->block.number;
-
-    auto marker = createMarkerPart(
-        storage, partition_id, block_number,
-        target_parts.front().part->partition, request.transaction.getTransaction());
-    own_part = std::move(marker.data_part);
-    marker_tmp_dir_holder = std::move(marker.tmp_dir_holder);
-
-    LOG_TRACE(log, "UNIQUE KEY DELETE (partition {}): staged the 0-row marker part {} at block {}",
-        partition_id, own_part->name, block_number);
-}
-
-UniqueKeyTxnCommit::DeleteCommit::MarkerPartHandle UniqueKeyTxnCommit::DeleteCommit::createMarkerPart(
-    MergeTreeData & data,
-    const String & partition_id,
-    Int64 block_number,
-    const MergeTreePartition & partition,
-    const MergeTreeTransactionPtr & txn)
-{
+    marker_block_holder = storage.allocateBlockNumber(CommittingBlock::Op::NewPart);
+    const Int64 block_number = marker_block_holder->block.number;
     chassert(block_number >= 0);
 
-    MergeTreePartInfo new_part_info{partition_id, block_number, block_number, /*level=*/0};
-    String new_part_name = new_part_info.getPartNameAndCheckFormat(data.format_version);
+    MergeTreePartInfo new_part_info{request.partition_id, block_number, block_number, /*level=*/0};
+    String new_part_name = new_part_info.getPartNameAndCheckFormat(storage.format_version);
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), /*bypass_metadata_cache=*/false);
 
-    auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), /*bypass_metadata_cache=*/false);
+    std::tie(own_part, marker_tmp_dir_holder) = storage.createEmptyPart(
+        new_part_info, target_parts.front().part->partition, new_part_name, metadata_snapshot,
+        request.transaction.getTransaction(), /*patch_part_index=*/std::nullopt);
 
-    /// `precommit_storage=false` leaves the storage transaction open for `publish` to
-    /// precommit, so the bitmaps `stage` writes into this directory land inside it.
-    auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(
-        new_part_info, partition, new_part_name, metadata_snapshot,
-        txn, /*patch_part_index=*/std::nullopt, /*precommit_storage=*/false);
-
-    return MarkerPartHandle{std::move(new_data_part), std::move(tmp_dir_holder)};
+    LOG_TRACE(log, "UNIQUE KEY DELETE (partition {}): staged the 0-row marker part {} at block {}",
+        request.partition_id, own_part->name, block_number);
 }
 
 

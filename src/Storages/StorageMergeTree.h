@@ -129,6 +129,8 @@ public:
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
+    void deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr context) override;
+
 private:
 
     /// Mutex and condvar for synchronous mutations wait

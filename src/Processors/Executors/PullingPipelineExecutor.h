@@ -40,6 +40,9 @@ public:
     /// Stop execution. It is not necessary, but helps to stop execution before executor is destroyed.
     void cancel();
 
+    /// `pull` also returns false when the query was killed or ran out of time; throws in that case.
+    void throwIfCancelled() const;
+
     /// Get totals and extremes. Returns empty chunk if doesn't have any.
     Chunk getTotals();
     Chunk getExtremes();
