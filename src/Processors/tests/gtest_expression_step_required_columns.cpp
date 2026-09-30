@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
@@ -12,6 +14,16 @@ using namespace DB;
 
 namespace
 {
+
+/// The sorted positions in `[0, count)` that are not in the sorted `positions`.
+std::vector<size_t> complementPositions(size_t count, const std::vector<size_t> & positions)
+{
+    std::vector<size_t> complement;
+    for (size_t position = 0; position < count; ++position)
+        if (!std::ranges::binary_search(positions, position))
+            complement.push_back(position);
+    return complement;
+}
 
 ColumnWithTypeAndName column(const String & name)
 {
@@ -69,7 +81,7 @@ IQueryPlanStep::PrunedInput prunedChild(const Block & header, const std::vector<
         pruned_header.insert(header.getByPosition(position));
     for (const auto & column : appended)
         pruned_header.insert(column);
-    return {IQueryPlanStep::complementPositions(header.columns(), positions), std::make_shared<const Block>(std::move(pruned_header))};
+    return {complementPositions(header.columns(), positions), std::make_shared<const Block>(std::move(pruned_header))};
 }
 
 /// The columns at `positions` of `header`, by name.
@@ -92,7 +104,7 @@ void checkPruning(const std::function<std::unique_ptr<Step>()> & make_step, cons
     const auto dag_before = step->getExpression().dumpDAG();
     const auto output_before = *step->getOutputHeader();
     const auto input_header = *step->getInputHeaders().front();
-    const auto unneeded_output_positions = IQueryPlanStep::complementPositions(output_before.columns(), required_output_positions);
+    const auto unneeded_output_positions = complementPositions(output_before.columns(), required_output_positions);
 
     const auto unneeded = step->getUnneededColumns(unneeded_output_positions);
 
@@ -101,7 +113,7 @@ void checkPruning(const std::function<std::unique_ptr<Step>()> & make_step, cons
     EXPECT_EQ(step->getExpression().dumpDAG(), dag_before);
     ASSERT_EQ(unneeded.size(), 1u);
 
-    const auto required_inputs = IQueryPlanStep::complementPositions(input_header.columns(), unneeded.front());
+    const auto required_inputs = complementPositions(input_header.columns(), unneeded.front());
     const auto applied = step->removeUnusedColumns(unneeded_output_positions, {prunedChild(input_header, required_inputs)});
 
     EXPECT_EQ(applied.dropped_output_positions, unneeded_output_positions);

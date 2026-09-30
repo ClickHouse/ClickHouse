@@ -52,27 +52,6 @@ void IQueryPlanStep::setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowSta
     dataflow_cache_updater = std::move(updater);
 }
 
-std::vector<size_t> IQueryPlanStep::complementPositions(size_t count, const std::vector<size_t> & positions)
-{
-    std::vector<size_t> complement;
-    complement.reserve(count - std::min(count, positions.size()));
-
-    size_t next = 0;
-    for (size_t position = 0; position < count; ++position)
-    {
-        if (next < positions.size() && positions[next] == position)
-            ++next;
-        else
-            complement.push_back(position);
-    }
-
-    if (next != positions.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Position {} is out of range or not sorted, the header has {} columns", positions[next], count);
-
-    return complement;
-}
-
 IQueryPlanStep::PrunedInput IQueryPlanStep::PrunedInput::unchanged(const SharedHeader & header)
 {
     return {.dropped_positions = {}, .header = header};

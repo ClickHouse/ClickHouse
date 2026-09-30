@@ -10,8 +10,8 @@ namespace DB
 struct FilterDAGOutputPruningResult
 {
     bool changed = false;
-    bool input_positions_changed = false;
-    std::vector<size_t> required_input_positions;
+    /// The positions of the input header that the remaining outputs and the filter do not need, sorted.
+    std::vector<size_t> unneeded_input_positions;
 };
 
 /// Implements WHERE, HAVING operations. See FilterTransform.
@@ -67,15 +67,15 @@ public:
 
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
-    /// Prunes the outputs of a filter DAG to the columns at `required_output_positions` of its output header, and says
-    /// which input positions the remaining outputs and the filter need. For a caller that counts what it keeps, as
-    /// `ReadFromMergeTree` does for PREWHERE and the row policy filter.
+    /// Removes the outputs of a filter DAG at `unneeded_output_positions` of its output header, and says which input
+    /// positions the remaining outputs and the filter do not need. For a filter that is not a step of its own, as
+    /// PREWHERE and the row policy filter of `ReadFromMergeTree` are.
     static FilterDAGOutputPruningResult pruneDAGOutputsByPosition(
         ActionsDAG & dag,
         const String & filter_column_name,
         bool & remove_filter_column,
         const Block & input_header,
-        const std::vector<size_t> & required_output_positions);
+        const std::vector<size_t> & unneeded_output_positions);
 
 private:
     void updateOutputHeader() override;
@@ -111,6 +111,9 @@ private:
         /// The part of the pruning that concerns the outputs: the fold of the predicate, the outputs that remain, and
         /// the filter column flag.
         void applyToOutputs(ActionsDAG & dag, bool & remove_filter_column_) const;
+
+        /// The positions of the input header nothing needs any more: the columns neither read nor passed on.
+        std::vector<size_t> unneededInputPositions() const;
 
         /// What the pruning did, once the outputs are pruned and removeUnusedActions has said whether it erased a node.
         FilterDAGOutputPruningResult toResult(bool removed_any_action) const;

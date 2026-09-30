@@ -165,10 +165,6 @@ public:
     /// of that child.
     using UnneededInputPositions = std::vector<std::vector<size_t>>;
 
-    /// The sorted positions in `[0, count)` that are not in `positions`, which is sorted too: the dropped
-    /// positions of the kept ones, and the other way round.
-    static std::vector<size_t> complementPositions(size_t count, const std::vector<size_t> & positions);
-
     /// What one column of a step's input header is to the step once the unused columns are gone.
     enum class InputColumnUsage : uint8_t
     {

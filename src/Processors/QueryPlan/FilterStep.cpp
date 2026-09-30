@@ -212,19 +212,21 @@ ActionsDAG::NodeRawConstPtrs FilterStep::UnneededColumnsPlan::neededDAGOutputs(c
     return needed;
 }
 
+std::vector<size_t> FilterStep::UnneededColumnsPlan::unneededInputPositions() const
+{
+    std::vector<size_t> positions;
+    for (size_t position = 0; position < input_columns.size(); ++position)
+        if (input_columns[position] == InputColumnUsage::ReadDropped || input_columns[position] == InputColumnUsage::PassesThroughDropped)
+            positions.push_back(position);
+
+    return positions;
+}
+
 FilterDAGOutputPruningResult FilterStep::UnneededColumnsPlan::toResult(bool removed_any_action) const
 {
-    const bool drops_a_passthrough = std::ranges::contains(input_columns, InputColumnUsage::PassesThroughDropped);
-    const bool drops_an_input = std::ranges::contains(input_columns, InputColumnUsage::ReadDropped);
-
     FilterDAGOutputPruningResult result;
-    result.input_positions_changed = drops_an_input || drops_a_passthrough;
-    result.changed = changes_output_header || fold_filter_predicate || removed_any_action || result.input_positions_changed;
-
-    for (size_t position = 0; position < input_columns.size(); ++position)
-        if (input_columns[position] == InputColumnUsage::ReadNeeded || input_columns[position] == InputColumnUsage::PassesThroughNeeded)
-            result.required_input_positions.push_back(position);
-
+    result.unneeded_input_positions = unneededInputPositions();
+    result.changed = changes_output_header || fold_filter_predicate || removed_any_action || !result.unneeded_input_positions.empty();
     return result;
 }
 
@@ -242,16 +244,9 @@ FilterDAGOutputPruningResult FilterStep::pruneDAGOutputsByPosition(
     const String & filter_column_name,
     bool & remove_filter_column,
     const Block & input_header,
-    const std::vector<size_t> & required_output_positions)
+    const std::vector<size_t> & unneeded_output_positions)
 {
-    /// The output header holds the DAG outputs, then the columns of the input header no input reads, without the
-    /// filter column where it is removed. Every input reads a column of the header of its own.
-    const size_t output_count = dag.getOutputs().size() + input_header.columns() - dag.getInputs().size()
-        - (remove_filter_column ? 1 : 0);
-    chassert(output_count == FilterTransform::transformHeader(input_header, &dag, filter_column_name, remove_filter_column).columns());
-
-    const auto plan = analyzeUnneededColumns(
-        dag, filter_column_name, remove_filter_column, input_header, complementPositions(output_count, required_output_positions));
+    const auto plan = analyzeUnneededColumns(dag, filter_column_name, remove_filter_column, input_header, unneeded_output_positions);
 
     plan.applyToOutputs(dag, remove_filter_column);
     const bool removed_any_action = dag.removeUnusedActions();
@@ -559,14 +554,7 @@ FilterStep::UnneededColumnsPlan FilterStep::analyzeUnneededColumns(const std::ve
 
 FilterStep::UnneededInputPositions FilterStep::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
 {
-    const auto plan = analyzeUnneededColumns(unneeded_output_positions);
-
-    std::vector<size_t> positions;
-    for (size_t position = 0; position < plan.input_columns.size(); ++position)
-        if (plan.input_columns[position] == InputColumnUsage::ReadDropped || plan.input_columns[position] == InputColumnUsage::PassesThroughDropped)
-            positions.push_back(position);
-
-    return {std::move(positions)};
+    return {analyzeUnneededColumns(unneeded_output_positions).unneededInputPositions()};
 }
 
 FilterStep::RemoveUnusedColumnsResult
