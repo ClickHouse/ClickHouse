@@ -19,6 +19,15 @@ node = cluster.add_instance(
     stay_alive=True,
 )
 
+node_aux = cluster.add_instance(
+    "node_aux",
+    main_configs=[
+        "configs/iceberg_rest_catalog_aux.xml",
+        "configs/auxiliary_zookeeper.xml",
+    ],
+    with_zookeeper=True,
+)
+
 DEFAULT_AUTH = ("default", "")
 
 CATALOG_PORT = 8182
@@ -26,11 +35,11 @@ KEEPER_ROOT = "/clickhouse/iceberg_rest_catalog/my_warehouse"
 FORMAT_MARKER = b"IcebergRESTCatalog\nformat_version: 1"
 
 
-def wait_catalog_ready(timeout=60):
+def wait_catalog_ready(timeout=60, instance=None):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            requests.get(catalog_url("/v1/config"), timeout=1)
+            requests.get(catalog_url("/v1/config", instance), timeout=1)
             return
         except requests.exceptions.ConnectionError:
             time.sleep(0.1)
@@ -41,14 +50,17 @@ def wait_catalog_ready(timeout=60):
 def started_cluster():
     try:
         cluster.start()
+        get_keeper().ensure_path("/aux_root")
         wait_catalog_ready()
+        wait_catalog_ready(instance=node_aux)
         yield cluster
     finally:
         cluster.shutdown()
 
 
-def catalog_url(path):
-    return f"http://{node.ip_address}:{CATALOG_PORT}{path}"
+def catalog_url(path, instance=None):
+    instance = instance or node
+    return f"http://{instance.ip_address}:{CATALOG_PORT}{path}"
 
 
 def get_keeper():
@@ -268,6 +280,24 @@ def test_stop_start_listen(started_cluster):
     assert [ns] in list_namespaces()
 
 
+def test_survives_server_restart(started_cluster):
+    ns = f"restart_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns], properties={"owner": "asya"})
+    create_namespace([ns, "eu"])
+
+    # A full restart drops all server state, so the namespaces must come back from Keeper.
+    restart_node()
+
+    assert [ns] in list_namespaces()
+    assert list_namespaces(parent=ns) == [[ns, "eu"]]
+
+    response = requests.head(catalog_url(f"/v1/my_warehouse/namespaces/{ns}%1Feu"))
+    assert response.status_code == 204, response.text
+
+    zk = get_keeper()
+    assert zk.get(f"{KEEPER_ROOT}/namespaces/{ns}")[0] == b'{"owner":"asya"}'
+
+
 def test_authentication(started_cluster):
     # (basic auth, headers, is_ok)
     cases = [
@@ -411,3 +441,14 @@ def test_unsupported_format_is_refused(started_cluster):
         restart_node()
 
     list_namespaces()
+
+
+def test_auxiliary_keeper(started_cluster):
+    # node_aux stores its state in the aux Keeper, which is chrooted to /aux_root.
+    url = catalog_url("/v1/my_warehouse/namespaces", node_aux)
+    assert requests.post(url, json={"namespace": ["aux_ns"]}).status_code == 200
+    assert requests.get(url).json()["namespaces"] == [["aux_ns"]]
+
+    zk = get_keeper()
+    assert zk.exists(f"/aux_root{KEEPER_ROOT}/namespaces/aux_ns")
+    assert not zk.exists(f"{KEEPER_ROOT}/namespaces/aux_ns")

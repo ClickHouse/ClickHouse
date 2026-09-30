@@ -103,27 +103,31 @@ bool KeeperIcebergRESTCatalogStore::createNamespace(const IcebergNamespaceName &
     auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::createNamespace");
     auto zookeeper = getZooKeeper();
 
+    /// Each namespace is three nodes. Create them atomically so a crash cannot leave a partial namespace.
+    const auto try_create = [&](const String & path, const std::map<String, String> & props)
+    {
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeCreateRequest(path, propertiesToJSON(props), zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(path + "/namespaces", "", zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(path + "/tables", "", zkutil::CreateMode::Persistent));
+        Coordination::Responses responses;
+        const auto code = zookeeper->tryMulti(ops, responses);
+        if (code == Coordination::Error::ZNODEEXISTS)
+            return false;
+
+        zkutil::KeeperMultiException::check(code, ops, responses);
+        return true;
+    };
+
     /// Keep the tree walkable from the root.
     for (size_t level = 1; level < name.size(); ++level)
     {
         const auto parent_path = namespacePath(IcebergNamespaceName(name.begin(), name.begin() + level));
-        zookeeper->createIfNotExists(parent_path, propertiesToJSON({}));
-        zookeeper->createIfNotExists(parent_path + "/namespaces", "");
-        zookeeper->createIfNotExists(parent_path + "/tables", "");
+        if (!zookeeper->exists(parent_path))
+            try_create(parent_path, {});
     }
 
-    const auto path = namespacePath(name);
-    Coordination::Requests ops;
-    ops.emplace_back(zkutil::makeCreateRequest(path, propertiesToJSON(properties), zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(path + "/namespaces", "", zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(path + "/tables", "", zkutil::CreateMode::Persistent));
-    Coordination::Responses responses;
-    const auto code = zookeeper->tryMulti(ops, responses);
-    if (code == Coordination::Error::ZNODEEXISTS)
-        return false;
-
-    zkutil::KeeperMultiException::check(code, ops, responses);
-    return true;
+    return try_create(namespacePath(name), properties);
 }
 
 bool KeeperIcebergRESTCatalogStore::namespaceExists(const IcebergNamespaceName & name) const

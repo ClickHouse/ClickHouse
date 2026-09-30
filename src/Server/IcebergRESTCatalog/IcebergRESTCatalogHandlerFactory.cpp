@@ -6,6 +6,7 @@
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogHandler.h>
 #include <Server/IcebergRESTCatalog/KeeperIcebergRESTCatalogStore.h>
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/escapeForFileName.h>
 
 #include <filesystem>
@@ -42,14 +43,29 @@ HTTPRequestHandlerFactoryPtr createIcebergRESTCatalogHandlerFactory(IServer & se
     };
     const auto warehouse = get_required("warehouse");
     auto base_location = get_required("base_location");
-    const auto zookeeper_path = config.getString("iceberg_rest_catalog.zookeeper_path", "/clickhouse/iceberg_rest_catalog");
+    const auto zookeeper_path_with_name = config.getString("iceberg_rest_catalog.zookeeper_path", "/clickhouse/iceberg_rest_catalog");
 
-    if (!server.context()->hasZooKeeper())
-        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "The catalog state is stored in Keeper, but no <zookeeper> section is configured");
+    /// The path may select an auxiliary Keeper with a `name:/path` prefix, like other Keeper path settings.
+    const auto zookeeper_name = zkutil::extractZooKeeperName(zookeeper_path_with_name);
+    const auto zookeeper_path = zkutil::extractZooKeeperPath(zookeeper_path_with_name, /*check_starts_with_slash*/ true);
+
+    if (zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME)
+    {
+        if (!server.context()->hasZooKeeper())
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "The catalog state is stored in Keeper, but no <zookeeper> section is configured");
+    }
+    else if (!server.context()->hasAuxiliaryZooKeeper(zookeeper_name))
+    {
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "The catalog state is stored in auxiliary Keeper '{}', but it is not configured in <auxiliary_zookeepers>",
+            zookeeper_name);
+    }
 
     auto root_path = std::filesystem::path(zookeeper_path) / escapeForFileName(warehouse);
     auto store = std::make_shared<KeeperIcebergRESTCatalogStore>(
-        [context = server.context()] { return context->getZooKeeper(); }, root_path.string());
+        [context = server.context(), zookeeper_name] { return context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name); },
+        root_path.string());
 
     IcebergRESTCatalogWarehouses::Map warehouses;
     warehouses.emplace(
