@@ -85,11 +85,6 @@ public:
             return {};
         }
 
-        /// Only when this write installs a bitmap of its own: a write that touches no target
-        /// derives nothing from the physical set and so cannot shadow anything.
-        if (!kills_per_part.empty())
-            rejectUndeterminedTransactions("delete bitmap");
-
         auto kills = ownKills();
         auto carried = selectCarriedBitmaps();
 
@@ -385,8 +380,13 @@ std::vector<ProbeResult> UniqueKeyTxnCommit::InsertCommit::probeActiveParts(cons
     ProbeTargetsSnapshot targets;
     targets.reserve(active_parts.size());
     for (const auto & part : active_parts)
+    {
+        /// Rolled back after the part list was read.
+        if (part->version->getInfo().creation_csn == Tx::RolledBackCSN)
+            continue;
         if (auto probe_target = makeSSTProbeTarget(part))
             targets.push_back(std::move(probe_target));
+    }
 
     auto columns = metadata_snapshot->getUniqueKeyColumns();
     auto probe = makeUniqueKeyProbe(
