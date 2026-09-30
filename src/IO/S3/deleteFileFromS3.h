@@ -5,7 +5,6 @@
 #if USE_AWS_S3
 
 #include <Common/ProfileEvents.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
 #include <memory>
 
@@ -44,9 +43,8 @@ void deleteFilesFromS3(
     size_t batch_size = 1000,
     BlobStorageLogWriterPtr blob_storage_log = nullptr,
     const Strings & local_paths_for_blob_storage_log = {},
-    const VectorWithMemoryTracking<size_t> & file_sizes_for_blob_storage_log = {},
-    std::optional<ProfileEvents::Event> profile_event = std::nullopt,
-    Strings * successful_keys = nullptr);
+    const std::vector<size_t> & file_sizes_for_blob_storage_log = {},
+    std::optional<ProfileEvents::Event> profile_event = std::nullopt);
 
 }
 
