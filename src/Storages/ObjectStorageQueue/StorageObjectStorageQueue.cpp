@@ -1520,10 +1520,8 @@ static const std::unordered_set<std::string_view> changeable_settings_exclusive_
 
 static std::string normalizeSetting(const std::string & name)
 {
-    /// We support this prefix for compatibility.
-    if (name.starts_with("s3queue_"))
-        return name.substr(std::strlen("s3queue_"));
-    return name;
+    /// We support the `s3queue_` prefix and the old setting names for compatibility.
+    return ObjectStorageQueueSettings::resolveName(name);
 }
 
 static void checkNormalizedSetting(const std::string & name)
