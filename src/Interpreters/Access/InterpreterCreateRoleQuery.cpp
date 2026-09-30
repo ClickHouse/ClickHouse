@@ -8,6 +8,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 
 
 namespace DB
@@ -23,10 +24,10 @@ namespace
     {
         if (!override_name.empty())
             role.setName(override_name);
-        else if (!query.new_name.empty())
-            role.setName(query.new_name);
-        else if (query.names.size() == 1)
-            role.setName(query.names.front());
+        else if (query.new_name)
+            role.setName(query.new_name->toString());
+        else if (query.names->size() == 1)
+            role.setName(query.names->toStrings().at(0));
 
         if (override_settings)
             role.settings.applyChanges(*override_settings);
@@ -42,6 +43,7 @@ BlockIO InterpreterCreateRoleQuery::execute()
 {
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     const auto & query = updated_query_ptr->as<const ASTCreateRoleQuery &>();
+    const Strings names = query.names->toStrings();
 
     auto & access_control = getContext()->getAccessControl();
 
@@ -53,11 +55,11 @@ BlockIO InterpreterCreateRoleQuery::execute()
     if (query.or_replace)
         access_type |= AccessType::DROP_ROLE;
 
-    for (const auto & name : query.names)
+    for (const auto & name : names)
         getContext()->checkAccess(access_type, name);
 
-    if (!query.new_name.empty() && !query.alter)
-        getContext()->checkAccess(AccessType::CREATE_ROLE, query.new_name);
+    if (query.new_name && !query.alter)
+        getContext()->checkAccess(AccessType::CREATE_ROLE, query.new_name->toString());
 
     std::optional<AlterSettingsProfileElements> settings_from_query;
     if (query.alter_settings)
@@ -90,16 +92,16 @@ BlockIO InterpreterCreateRoleQuery::execute()
         };
         if (query.if_exists)
         {
-            auto ids = storage->find<Role>(query.names);
+            auto ids = storage->find<Role>(names);
             access_control.tryUpdate(ids, update_func);
         }
         else
-            access_control.update(storage->getIDs<Role>(query.names), update_func);
+            access_control.update(storage->getIDs<Role>(names), update_func);
     }
     else
     {
         std::vector<AccessEntityPtr> new_roles;
-        for (const auto & name : query.names)
+        for (const auto & name : names)
         {
             auto new_role = std::make_shared<Role>();
             updateRoleFromQueryImpl(*new_role, query, name, settings_from_query);

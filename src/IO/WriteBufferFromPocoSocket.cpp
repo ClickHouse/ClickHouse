@@ -106,11 +106,13 @@ void WriteBufferFromPocoSocket::socketSendBytes(const char * ptr, size_t size)
             throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while writing to socket ({} -> {})", e.displayText(),
                                our_address.toString(), peer_address.toString());
         }
-        catch (const Poco::TimeoutException &)
+        catch (const Poco::TimeoutException & e)
         {
-            throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while writing to socket ({}, {} ms)",
+            /// Carries what timed out, e.g. the TLS handshake rather than an ordinary write.
+            const std::string detail = e.message().empty() ? "" : ": " + e.message();
+            throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while writing to socket ({}, {} ms){}",
                 peer_address.toString(),
-                socket.impl()->getSendTimeout().totalMilliseconds());
+                socket.impl()->getSendTimeout().totalMilliseconds(), detail);
         }
         catch (const Poco::IOException & e)
         {
@@ -161,11 +163,13 @@ void WriteBufferFromPocoSocket::nextImpl()
             throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while writing to socket ({} -> {})", e.displayText(),
                                our_address.toString(), peer_address.toString());
         }
-        catch (const Poco::TimeoutException &)
+        catch (const Poco::TimeoutException & e)
         {
-            throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while writing to socket ({}, {} ms)",
+            /// Carries what timed out, e.g. the TLS handshake rather than an ordinary write.
+            const std::string detail = e.message().empty() ? "" : ": " + e.message();
+            throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while writing to socket ({}, {} ms){}",
                 peer_address.toString(),
-                socket.impl()->getSendTimeout().totalMilliseconds());
+                socket.impl()->getSendTimeout().totalMilliseconds(), detail);
         }
         catch (const Poco::IOException & e)
         {
