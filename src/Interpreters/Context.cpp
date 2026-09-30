@@ -2608,7 +2608,10 @@ void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_i
             }
             applySettingsQuirks(resolved);
             adjustSettingsForMakeDistributedPlan(resolved);
-            cached = profiles_info.cacheSettings(*settings, resolved, sanity_clamp);
+            /// Profiles can introduce custom values whose allocations belong to a query.
+            /// Apply those through the ordinary path outside the server allocation scope.
+            if (resolved.hasServerOwnedStorage())
+                cached = profiles_info.cacheSettings(*settings, resolved, sanity_clamp);
         }
         if (cached)
         {
