@@ -61,11 +61,6 @@ public:
     /// Cancel processors which only read data from source. May be called from another thread.
     void cancelReading();
 
-    /// Checks the query time limits (cancelled or timeout). Throws on cancellation or when time limit is reached and the query uses "break"
-    bool checkTimeLimit();
-    /// Same as checkTimeLimit but it never throws. It returns false on cancellation or time limit reached
-    [[nodiscard]] bool checkTimeLimitSoft();
-
     /// Set callback for read progress.
     /// It would be called every time when processor reports read progress.
     void setReadProgressCallback(ReadProgressCallbackPtr callback);
