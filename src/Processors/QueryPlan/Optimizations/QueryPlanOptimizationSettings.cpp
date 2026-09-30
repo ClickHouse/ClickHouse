@@ -49,7 +49,6 @@ namespace Setting
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_use_implicit_projections;
     extern const SettingsBool optimize_use_projections;
-    extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool query_plan_aggregation_bucket_top_k;
     extern const SettingsBool query_plan_aggregation_in_order;
@@ -403,7 +402,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
         ExpressionActionsSettings(from),
         from->getPreparedSetsCache(),
         from->canUseParallelReplicasOnInitiator()
-            && from->getSettingsRef()[Setting::parallel_replicas_local_plan]
             && from->getSettingsRef()[Setting::parallel_replicas_support_projection])
 {
     distributed_plan_local_object = from->getDistributedPlanLocalObject();

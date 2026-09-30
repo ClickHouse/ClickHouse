@@ -1875,7 +1875,6 @@ class SettingsRandomizer:
         "min_external_table_block_size_bytes": lambda: random.choice([0, 1, 100000000]),
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
-        "parallel_replicas_local_plan": lambda: random.randint(0, 1),
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false"]), # true forces swap, which is harmful for some tests
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
@@ -2033,7 +2032,6 @@ class SettingsRandomizer:
             # seem to throw us over the memory limit in flaky checks with sanitizers
             random_settings["parallel_distributed_insert_select"] = 0
             random_settings["cluster_for_parallel_replicas"] = "parallel_replicas"
-            random_settings["parallel_replicas_local_plan"] = 1
             random_settings["parallel_replicas_for_non_replicated_merge_tree"] = 1
 
     @staticmethod

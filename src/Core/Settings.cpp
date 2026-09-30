@@ -9116,7 +9116,7 @@ Use up to `max_parallel_replicas` the number of replicas from each shard for SEL
 )", 0, enable_parallel_replicas, \
         {"24.10", false, false, "Parallel replicas with read tasks became the Beta tier feature. The setting is also known by its alias `enable_parallel_replicas`."}) \
     DECLARE(UInt64, automatic_parallel_replicas_mode, 0, R"(
-Enable automatic switching to execution with parallel replicas based on collected statistics. Requires `enable_parallel_replicas != 0`, `parallel_replicas_local_plan = 1` and providing `cluster_for_parallel_replicas`.
+Enable automatic switching to execution with parallel replicas based on collected statistics. Requires `enable_parallel_replicas != 0` and providing `cluster_for_parallel_replicas`.
 0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
 )", EXPERIMENTAL, \
         {"25.12", 0, 0, "New setting"}) \
@@ -9212,12 +9212,6 @@ Parts virtually divided into segments to be distributed between replicas for par
 )", 0, \
         {"24.9", 128, 0, "Value for this setting now determined automatically"}, \
         {"24.1", 128, 128, "Add new setting to control segment size in new parallel replicas coordinator implementation"}) \
-    DECLARE(Bool, parallel_replicas_local_plan, true, R"(
-Build local plan for local replica
-)", 0, \
-        {"24.11", false, true, "Use local plan for local replica in a query with parallel replicas"}, \
-        {"24.10", false, true, "Use local plan for local replica in a query with parallel replicas"}, \
-        {"24.9", false, false, "Use local plan for local replica in a query with parallel replicas"}) \
     DECLARE(Bool, parallel_replicas_plan_based, false, R"(
 Decide whether and where to use parallel replicas by analyzing the query plan, as opposed to the query-tree-based analysis. As a result, a plan fragment is sent to the remote replicas instead of a SQL query. Experimental.
 
@@ -9235,12 +9229,12 @@ This allows queries with `max_parallel_replicas = 1` to be directed to another h
 )", 0, \
         {"26.5", true, true, "New setting. When disabled, replicas for parallel reading are selected purely by the load balancing algorithm without forcing the local replica into the set."}) \
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
-Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
+Index analysis done only on replica-coordinator and skipped on other replicas.
 )", 0, \
         {"24.12", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, \
         {"24.10", false, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}) \
     DECLARE(Bool, parallel_replicas_support_projection, true, R"(
-Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive.
+Optimization of projections can be applied in parallel replicas. Effective only when aggregation_in_order is inactive.
 )", 0, \
         {"25.8", false, true, "New setting. Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive."}) \
     DECLARE(Milliseconds, parallel_replicas_connect_timeout_ms, 300, R"(
@@ -10801,6 +10795,11 @@ Enable experimental table function `eval`.
         {"26.10", true, true, "Obsolete setting: whether the initiator runs the local pipeline of a distributed `INSERT SELECT` is decided by `parallel_replicas_local_plan` and `parallel_replicas_prefer_local_replica` alone, and it is still skipped when `max_execution_time_leaf` imposes a different timeout contract. Set `parallel_replicas_local_plan = 0` to leave all the reading to the remote replicas."}, \
         {"25.5", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}, \
         {"25.4", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}) \
+    MAKE_OBSOLETE(M, Bool, parallel_replicas_local_plan, true, \
+        {"26.10", true, true, "Obsolete setting: queries with parallel replicas always build a local plan for the local replica. The other way, reading the local replica like a remote one, is still used internally where the local plan is not possible (a query over a `Distributed` table, a stricter `max_execution_time_leaf`), but cannot be selected with this setting any more."}, \
+        {"24.11", false, true, "Use local plan for local replica in a query with parallel replicas"}, \
+        {"24.10", false, true, "Use local plan for local replica in a query with parallel replicas"}, \
+        {"24.9", false, false, "Use local plan for local replica in a query with parallel replicas"}) \
     MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1, \
         {"26.6", 1, 1, "Obsolete setting, the database engine in Cloud no longer depends on it."}, \
         {"24.10", 1, 1, "A setting for ClickHouse Cloud"}) \

@@ -66,7 +66,6 @@ extern const SettingsUInt64 automatic_parallel_replicas_mode;
 extern const SettingsBool inject_random_order_for_select_without_order_by;
 extern const SettingsParallelReplicasMode parallel_replicas_mode;
 extern const SettingsBool use_concurrency_control;
-extern const SettingsBool parallel_replicas_local_plan;
 extern const SettingsString cluster_for_parallel_replicas;
 extern const SettingsBool make_distributed_plan;
 }
@@ -192,11 +191,6 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
             logger,
             "Setting 'enable_parallel_replicas' is disabled. Skipping building query plan with parallel "
             "replicas.");
-        return QueryPlanPtr{};
-    }
-    if (!ctx->getSettingsRef()[Setting::parallel_replicas_local_plan])
-    {
-        LOG_TRACE(logger, "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
         return QueryPlanPtr{};
     }
     if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())

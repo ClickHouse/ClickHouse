@@ -106,7 +106,6 @@ namespace Setting
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
-    extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsMilliseconds queue_max_wait_ms;
@@ -812,17 +811,24 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
         /// The local replica, however, executes inside the initiator's pipeline and shares the initiator's
         /// 'QueryStatus', whose limits come from the original (outer) query and are not bounded by the leaf
         /// timeout. As a result, with a local plan the leaf reading would not use the leaf timeout contract.
-        /// Disable the local plan when that contract is stricter than, or differs from, the initiator's timeout
+        /// Do not use the local plan when that contract is stricter than, or differs from, the initiator's timeout
         /// contract so that all leaf reading happens on remote replicas where it is honored (see
-        /// 'leafTimeoutRequiresRemoteOnlyLeafReading').
-        if (settings[Setting::parallel_replicas_local_plan] && leafTimeoutRequiresRemoteOnlyLeafReading(settings))
+        /// 'leafTimeoutRequiresRemoteOnlyLeafReading'). The local replica is then read over a connection like the
+        /// others, which is what `parallel_replicas_prefer_local_replica = 0` does (see
+        /// `canUseLocalPlanForParallelReplicas`). Without a local plan the coordinator does not analyze the
+        /// indexes and cannot agree on projections with the replicas, so the replicas must analyze the indexes
+        /// themselves and not use projections - the same as for a query over a `Distributed` table above. These
+        /// settings are shipped to the replicas, so they see the same decision.
+        if (leafTimeoutRequiresRemoteOnlyLeafReading(settings))
         {
             LOG_TRACE(
                 logger,
-                "Disabling 'parallel_replicas_local_plan' because the leaf timeout contract differs from the "
+                "Not using the local plan for the local replica because the leaf timeout contract differs from the "
                 "initiator's: the local replica shares the initiator's query status and cannot use the leaf "
                 "timeout separately");
-            context_mutable->setSetting("parallel_replicas_local_plan", Field{false});
+            context_mutable->setSetting("parallel_replicas_prefer_local_replica", Field{false});
+            context_mutable->setSetting("parallel_replicas_index_analysis_only_on_coordinator", Field{false});
+            context_mutable->setSetting("parallel_replicas_support_projection", Field{false});
         }
     }
 
@@ -1479,7 +1485,7 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
 bool canUseLocalPlanForParallelReplicas(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::parallel_replicas_local_plan] || !settings[Setting::parallel_replicas_prefer_local_replica])
+    if (!settings[Setting::parallel_replicas_prefer_local_replica])
         return false;
 
     /// Inside a Distributed sub-query the initiator can't use local plan (see comment in
