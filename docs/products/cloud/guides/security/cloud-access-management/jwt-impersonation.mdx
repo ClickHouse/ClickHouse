@@ -13,6 +13,12 @@ Use delegated JWT access when an application needs to run a ClickHouse Cloud que
 `EXECUTE AS` is not supported in ClickHouse Cloud, including BYOC. Do not use `IMPERSONATE` grants or create a target database user for this pattern. The identity provider, not ClickHouse, decides which identities an application may act on behalf of.
 </Note>
 
+## How this differs from `EXECUTE AS` {#how-this-differs-from-execute-as}
+
+`EXECUTE AS` is database-side impersonation: a connection authenticated as one ClickHouse user uses SQL to switch query execution to another existing database user. The connection user needs the `IMPERSONATE` privilege, and ClickHouse evaluates the target user's grants and row policies.
+
+Delegated JWT access does not switch database users. The application connects with a newly issued JWT that represents the intended subject, and ClickHouse applies the roles or grants in that token to its ephemeral `JWT::` identity. Your identity provider or application must decide whether a caller may receive a token for a particular subject and role; ClickHouse enforces the permissions carried by the valid token.
+
 ## Before you begin {#before-you-begin}
 
 You need:
