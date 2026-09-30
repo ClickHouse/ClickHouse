@@ -357,7 +357,7 @@ SELECT mad(x) FROM (SELECT arrayJoin([0, 10, 20, 30]) AS x);
         )",
             R"(
 ┌─mad(x)─┐
-│      10 │
+│     10 │
 └────────┘
         )"},
            {"Using the alias",
@@ -366,7 +366,7 @@ SELECT medianAbsoluteDeviation(number) FROM numbers(10);
         )",
             R"(
 ┌─medianAbsoluteDeviation(number)─┐
-│                              2.5 │
+│                             2.5 │
 └─────────────────────────────────┘
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
