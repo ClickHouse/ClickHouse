@@ -19,6 +19,8 @@ in query: SET url_base = '[HIDDEN]'
 0
 in query: SET s3_base = '[HIDDEN]'
 0
+in query: SET s3queue_format_avro_schema_registry_url = '[HIDDEN]'
+0
 in query: SET url_base = '[HIDDEN]'
 to value of type Map
 0

@@ -47,7 +47,7 @@ echo "$LOGGED"
 MAP_CANARY="c05153mapvalue"
 for setting in nats_url rabbitmq_address after_processing_move_connection_string \
     s3queue_after_processing_move_connection_string s3queue_after_processing_move_secret_access_key \
-    format_avro_schema_registry_url url_base s3_base; do
+    format_avro_schema_registry_url url_base s3_base s3queue_format_avro_schema_registry_url; do
     LOGGED=$($CLICKHOUSE_CLIENT --send_logs_level=error -q "SET $setting = {'u':'u:$MAP_CANARY@h'}" 2>&1 |
         grep -F '<Error> executeQuery')
     echo "$LOGGED" | grep -oE "in query: [^)]*" | head -1
