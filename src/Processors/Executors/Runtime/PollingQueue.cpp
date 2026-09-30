@@ -147,11 +147,7 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
         }
         else
         {
-            /// A blocking wait with the tasks mutex released is a non-CPU wait: park the current
-            /// thread's CPU lease (if any) to free its slot for other work while we block, and unpark
-            /// before the mutex is re-acquired below. The lease mutex is taken with no tasks mutex
-            /// held, so parking adds no lock-order edge (a guard placed while holding the tasks mutex
-            /// would invert against renew()'s resume path).
+            /// Non-CPU wait (tasks mutex released): park the CPU lease to free the slot while we block.
             CPULeaseParkGuard cpu_park;
             num_events = epoll.getManyReady(1, &event, timeout);
         }

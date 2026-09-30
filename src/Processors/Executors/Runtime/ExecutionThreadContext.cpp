@@ -36,11 +36,7 @@ void ExecutionThreadContext::wait(std::atomic_bool & finished)
         return;
     }
 
-    /// We are about to actually block, so park the CPU lease (if any) to free the slot while this
-    /// worker sleeps -- a sleeping worker never renews, so without parking it would hold its slot
-    /// idle. The lease is parked/unparked with the context mutex released, so no lock-order edge is
-    /// added: a guard held across the mutex would invert against the tasks->context wakeup path that
-    /// runs while the tasks mutex is held.
+    /// About to block: park the CPU lease (context mutex released) so a sleeping worker frees its slot.
     lock.unlock();
     CPULeaseParkGuard park_guard;
     lock.lock();

@@ -671,8 +671,7 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
                 }
 
                 {
-                    /// Waiting for another reader to download this segment is a non-CPU wait,
-                    /// so park the CPU lease to let the slot serve other work while we block.
+                    /// Non-CPU wait for a concurrent download: park the CPU lease.
                     CPULeaseParkGuard cpu_park;
                     download_state = file_segment.wait(
                         offset, info_.cache_settings.wait_for_concurrent_download_timeout_milliseconds);
@@ -1534,10 +1533,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
     const auto & current_read_range = file_segment.range();
     chassert(current_read_range.contains(offset));
 
-    /// Park the CPU lease for the whole blocking read (predownload + the cache-file or remote
-    /// fetch) so the slot is freed while this thread waits on I/O. Placed here so every caller
-    /// (nextImplStep and the positioned readBigAt) is covered; a cache hit parks only briefly.
-    /// No-op when the thread holds no CPU lease.
+    /// Park the CPU lease for the blocking read (predownload + cache-file/remote fetch) at every
+    /// caller (nextImplStep, readBigAt); a cache hit parks only briefly.
     CPULeaseParkGuard cpu_park;
 
     size_t size = 0;

@@ -300,8 +300,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
         if (thread_task->isValidReadersFuture())
         {
             {
-                /// Waiting for the prefetch job (resolved outside the pool mutex, see above) is a
-                /// non-CPU wait: park the CPU lease so the slot serves other work while we block.
+                /// Non-CPU wait for the prefetch job (outside the pool mutex): park the CPU lease.
                 CPULeaseParkGuard cpu_park;
                 thread_task->readers_future->wait();
             }

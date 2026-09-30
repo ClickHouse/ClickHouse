@@ -71,10 +71,7 @@ void Throttler::sleep(UInt64 nanoseconds)
         return;
     }
 #endif
-    /// A real thread sleep to enforce a rate limit: the thread is not using CPU, so park its CPU
-    /// lease (release the slot) for the duration, like a blocking I/O or an idle wait. The fiber
-    /// path above yields cooperatively — the carrier thread keeps running other work — so it must
-    /// not park. No-op when the thread holds no CPU lease.
+    /// A real (non-fiber) sleep uses no CPU: park the CPU lease to free the slot for its duration.
     CPULeaseParkGuard park_guard;
     sleepForNanoseconds(nanoseconds);
 }
