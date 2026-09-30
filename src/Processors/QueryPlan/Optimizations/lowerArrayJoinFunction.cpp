@@ -26,7 +26,7 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     if (!dag.hasArrayJoin())
         return 0;
 
-    /// A stateful function sees other blocks after the step (its windows, a LIMIT pushed below it); the legacy setting keeps the function form.
+    /// a stateful function sees other blocks after the step
     if (settings.legacy_array_join_function_nondeterministic_evaluation && dag.hasStatefulFunctions())
         return 0;
 

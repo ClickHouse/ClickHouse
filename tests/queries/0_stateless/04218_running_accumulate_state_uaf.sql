@@ -85,7 +85,7 @@ ORDER BY number;
 -- per-element state into the inner column via the nested
 -- `insertMergeResultInto`, which keeps the per-row states independent of
 -- the stack-local accumulator.
--- the accumulation runs after the sort only with the arrayJoin evaluated as before
+-- accumulates after the sort only with the old arrayJoin evaluation
 SELECT number, finalizeAggregation(finalizeAggregation(arrayJoin(runningAccumulate(sumStateOrDefaultStateForEachState([number, number + 1])))))
 FROM numbers(5)
 GROUP BY 1

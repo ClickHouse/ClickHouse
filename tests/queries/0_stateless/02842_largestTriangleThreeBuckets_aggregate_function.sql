@@ -55,7 +55,7 @@ CREATE TABLE largestTriangleTreeBucketsBucketSizeTest
 
 INSERT INTO largestTriangleTreeBucketsBucketSizeTest (x, y) SELECT (number + 1) AS x, (x % 1000) AS y FROM numbers(9999);
 
--- neighbor has to see the whole expansion, not the rows left by the LIMIT
+-- neighbor needs the whole expansion
 SELECT
   arrayJoin(lttb(1000)(x, y)) AS point,
   tupleElement(point, 1) AS point_x,
