@@ -75,3 +75,52 @@ ALTER TABLE nested_drop_buffer DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_I
 DROP VIEW nested_drop_buffer_mv;
 DROP TABLE nested_drop_buffer;
 DROP TABLE nested_drop_buffer_dest;
+
+DROP TABLE IF EXISTS nested_drop_merge_source;
+DROP TABLE IF EXISTS nested_drop_merge;
+
+CREATE TABLE nested_drop_merge_source
+(
+    `n.a` UInt64,
+    `n.b` UInt64,
+    x UInt64
+)
+ENGINE = Null;
+
+CREATE TABLE nested_drop_merge AS nested_drop_merge_source
+ENGINE = Merge(currentDatabase(), '^nested_drop_merge_source$');
+
+CREATE MATERIALIZED VIEW nested_drop_merge_mv
+ENGINE = Null
+AS SELECT `n.a` FROM nested_drop_merge;
+
+ALTER TABLE nested_drop_merge DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP VIEW nested_drop_merge_mv;
+DROP TABLE nested_drop_merge;
+DROP TABLE nested_drop_merge_source;
+
+DROP TABLE IF EXISTS nested_drop_dist_source;
+DROP TABLE IF EXISTS nested_drop_dist;
+
+CREATE TABLE nested_drop_dist_source
+(
+    `n.a` UInt64,
+    `n.b` UInt64,
+    x UInt64
+)
+ENGINE = Null;
+
+CREATE TABLE nested_drop_dist AS nested_drop_dist_source
+ENGINE = Distributed(test_shard_localhost, currentDatabase(), nested_drop_dist_source);
+
+CREATE MATERIALIZED VIEW nested_drop_dist_mv
+ENGINE = Null
+AS SELECT `n.a` FROM nested_drop_dist;
+
+ALTER TABLE nested_drop_dist DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP VIEW nested_drop_dist_mv;
+DROP TABLE nested_drop_dist;
+DROP TABLE nested_drop_dist_source;
+
