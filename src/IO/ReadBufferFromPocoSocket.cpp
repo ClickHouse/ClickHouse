@@ -19,8 +19,6 @@ namespace
     /// How much the last read of a handshake deadline may overdraw it, to catch late bytes.
     constexpr size_t MIN_HANDSHAKE_READ_WINDOW_MILLISECONDS = 100;
 
-    /// Not `getReceiveTimeout`/`getSendTimeout`: they return Poco's cache, which is zero on an accepted
-    /// socket, while the kernel holds the timeouts the socket inherited from the listener.
     Poco::Timespan getSocketTimeoutFromKernel(const Poco::Net::Socket & socket, int option)
     {
         Poco::Timespan timeout;
