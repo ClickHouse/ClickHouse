@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <Core/UUID.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/SettingConstraintWritability.h>
 #include <Common/SettingSource.h>
 #include <Core/SettingsTierType.h>
 
+#include <boost/container/flat_set.hpp>
 #include <optional>
 #include <unordered_map>
 
@@ -22,6 +24,7 @@ struct SettingChange;
 class SettingsChanges;
 class AccessControl;
 struct AlterSettingsProfileElements;
+struct SettingsProfileElement;
 class SettingsProfileElements;
 
 
@@ -93,9 +96,20 @@ public:
     void check(const Settings & current_settings, const SettingChange & change, SettingSource source) const;
     void check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
-    void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const;
+    /// `skip_config_defined_profiles` is a compatibility tolerance used only when applying a user's
+    /// already-stored profiles at login: config-defined profiles in the chain are not re-validated.
+    /// We cannot distinguish a legitimate user that references a config profile (e.g. `sql-console`)
+    /// from one that was escalated via SQL before constraints were enforced, so we tolerate both
+    /// rather than break the former. It is NOT a trust guarantee. Defaults to false (full enforcement).
+    ///
+    /// `actor_is_config_defined` is set when the identity managing settings/profiles (DDL, `SET profile`)
+    /// is defined in the server config and is therefore a trusted admin: its own min/max/const/disallowed/
+    /// writability constraints are not enforced against the change (it may create looser configurations).
+    /// Structural rules still apply to everyone: the readonly mode, source restrictions (e.g.
+    /// `max_sessions_for_user` is profile-only) and the server-wide `allow_feature_tier` policy.
+    void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source, bool skip_config_defined_profiles = false, bool actor_is_config_defined = false) const;
 
-    void check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
+    void check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source, bool actor_is_config_defined = false) const;
 
     /// Checks whether resetting the specified settings to their defaults violates these constraints.
     void checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const;
@@ -142,6 +156,9 @@ private:
         PreformattedMessage explain;
         int code = 0;
 
+        PreformattedMessage tier_explain;
+        int tier_code = 0;
+
         // Allows everything
         explicit Checker(NameResolver setting_name_resolver_)
             : setting_name_resolver(std::move(setting_name_resolver_))
@@ -160,11 +177,13 @@ private:
             , setting_name_resolver(std::move(setting_name_resolver_))
         {}
 
-        // Perform checking
+        // Perform checking. `actor_is_config_defined` skips the value constraints (CONST/min/max/disallowed)
+        // for a trusted config-defined admin, while keeping the readonly mode, feature-tier and source restriction checks.
         bool check(SettingChange & change,
                    const Field & new_value,
                    ReactionOnViolation reaction,
-                   SettingSource source) const;
+                   SettingSource source,
+                   bool actor_is_config_defined = false) const;
     };
 
     struct StringHash
@@ -187,11 +206,29 @@ private:
         ReactionOnViolation reaction,
         SettingSource source,
         bool ignore_unchanged_settings = false,
-        bool check_feature_tier = true) const;
+        bool actor_is_config_defined = false) const;
+
+    void checkProfileElements(const Settings & current_settings,
+                              const SettingsProfileElements & profile_elements,
+                              SettingSource source,
+                              boost::container::flat_set<UUID> & visited_profiles,
+                              bool skip_config_defined_profiles,
+                              bool actor_is_config_defined) const;
+
+    void checkProfileElementValues(const Settings & current_settings,
+                                   const SettingsProfileElement & element,
+                                   SettingSource source,
+                                   bool actor_is_config_defined) const;
+
+    void checkProfileElementWritability(const SettingsProfileElement & element,
+                                        const std::unordered_map<String, SettingConstraintWritability> & writability_map) const;
+
+    /// True if the settings profile is defined in the server config (`users.xml`) rather than via SQL.
+    bool isProfileConfigDefined(const UUID & profile_id) const;
 
     bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
-    Checker getChecker(const Settings & current_settings, std::string_view setting_name, bool check_feature_tier = true) const;
+    Checker getChecker(const Settings & current_settings, std::string_view setting_name) const;
 
     Checker getMergeTreeChecker(std::string_view short_name) const;
 

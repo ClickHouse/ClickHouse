@@ -1,9 +1,12 @@
 #include <Access/SettingsConstraints.h>
+#include <Access/SettingsProfile.h>
 #include <Access/SettingsProfileElement.h>
 #include <Access/resolveSetting.h>
 #include <Access/AccessControl.h>
+#include <Access/UsersConfigAccessStorage.h>
 #include <Core/Settings.h>
 #include <Core/SettingsFields.h>
+#include <Core/SettingsTierType.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
@@ -13,6 +16,7 @@
 #include <bitset>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -196,63 +200,139 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
 }
 
 
-void SettingsConstraints::check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const
+void SettingsConstraints::check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source, bool actor_is_config_defined) const
 {
-    check(current_settings, profile_elements.add_settings, source);
-    check(current_settings, profile_elements.modify_settings, source);
-    /// We don't check `drop_settings` here.
+    check(current_settings, profile_elements.add_settings, source, /*skip_config_defined_profiles=*/false, actor_is_config_defined);
+    check(current_settings, profile_elements.modify_settings, source, /*skip_config_defined_profiles=*/false, actor_is_config_defined);
+
+    /// Dropping a setting from a profile/user removes both its value and any constraint it declared.
+    /// That must not be used to weaken a constraint the actor is currently bound by, so reject dropping
+    /// a setting the actor is constrained on (CONST, or a min/max/disallowed bound). A trusted
+    /// config-defined admin may drop constraints freely.
+    if (actor_is_config_defined)
+        return;
+    for (const auto & element : profile_elements.drop_settings)
+    {
+        if (element.setting_name.empty())
+            continue;
+        auto setting_name = resolveSettingName(element.setting_name);
+        auto it = constraints.find(setting_name);
+        if (it != constraints.end() && it->second != Constraint{})
+            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
+    }
 }
 
-void SettingsConstraints::check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const
+void SettingsConstraints::check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source, bool skip_config_defined_profiles, bool actor_is_config_defined) const
 {
+    boost::container::flat_set<UUID> visited_profiles;
+    checkProfileElements(current_settings, profile_elements, source, visited_profiles, skip_config_defined_profiles, actor_is_config_defined);
+}
+
+void SettingsConstraints::checkProfileElements(
+    const Settings & current_settings,
+    const SettingsProfileElements & profile_elements,
+    SettingSource source,
+    boost::container::flat_set<UUID> & visited_profiles,
+    bool skip_config_defined_profiles,
+    bool actor_is_config_defined) const
+{
+    /// An XML config profile may define a value and a writability constraint for the same setting
+    /// as two separate elements (e.g. `<setting>false</setting>` and `<constraints><setting><readonly/></setting></constraints>`).
+    /// Collect the writability map first so we can use it as the single source of truth below.
+    std::unordered_map<String, SettingConstraintWritability> writability_map;
     for (const auto & element : profile_elements)
     {
+        if (element.parent_profile)
+            continue;
+        if (element.writability)
+            writability_map[element.setting_name] = *element.writability;
+    }
+
+    for (const auto & element : profile_elements)
+    {
+        if (element.parent_profile)
+        {
+            auto profile_id = *element.parent_profile;
+            if (!visited_profiles.insert(profile_id).second)
+                continue;
+            /// Compatibility tolerance (login only): we don't re-validate config-defined profiles when
+            /// applying a user's stored profiles, because we cannot distinguish a legitimate user that
+            /// references a config profile (e.g. `sql-console`) from one escalated via SQL before
+            /// constraints were enforced. This is not a trust guarantee — new references are still
+            /// checked at DDL/`SET profile` time.
+            if (skip_config_defined_profiles && isProfileConfigDefined(profile_id))
+                continue;
+            auto profile = access_control->tryRead<SettingsProfile>(profile_id);
+            if (profile)
+                checkProfileElements(current_settings, profile->elements, SettingSource::PROFILE, visited_profiles, skip_config_defined_profiles, actor_is_config_defined);
+            continue;
+        }
+
         if (SettingsProfileElements::isAllowBackupSetting(element.setting_name))
             continue;
 
-        /// Everything but the feature tier: what a statement writes into a user, a role or a settings
-        /// profile is compared here against the session of the administrator running it, which says
-        /// nothing about whether the target's value changes. `allow_feature_tier` is decided instead by
-        /// `checkFeatureTierForPendingAccessEntities`, from the settings every user ends up with.
-        auto check_element_value = [&](const Field & value)
-        {
-            SettingChange change(element.setting_name, value);
-            checkImpl(current_settings, change, THROW_ON_VIOLATION, source, /* ignore_unchanged_settings= */ false,
-                      /* check_feature_tier= */ false);
-        };
-
-        if (element.value)
-            check_element_value(*element.value);
-
-        if (element.min_value)
-            check_element_value(*element.min_value);
-
-        if (element.max_value)
-            check_element_value(*element.max_value);
-
-        /// Don't check disallowed_values here in the profile elements because they make constrains more restrictive
-        /// and don't allow to bypass constraints from config by creating a user with custom constraints. The check
-        /// for disallowed values are instead implemented in SettingsConstraints::Checker::check.
-
-        SettingConstraintWritability new_value = SettingConstraintWritability::WRITABLE;
-        SettingConstraintWritability old_value = SettingConstraintWritability::WRITABLE;
-
-        if (element.writability)
-            new_value = *element.writability;
-
-        /// `set` stores a constraint under the canonical name of the setting, so look it up by that name.
-        /// `Settings::resolveName` would not do: it does not know the `merge_tree_` prefix.
-        auto setting_name = resolveSettingName(element.setting_name);
-        auto it = constraints.find(setting_name);
-        if (it != constraints.end())
-            old_value = it->second.writability;
-
-        if (new_value != old_value)
-        {
-            if (old_value == SettingConstraintWritability::CONST)
-                throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
-        }
+        checkProfileElementValues(current_settings, element, source, actor_is_config_defined);
+        /// A trusted config-defined admin may declare looser writability than the current constraints.
+        if (!actor_is_config_defined)
+            checkProfileElementWritability(element, writability_map);
     }
+}
+
+bool SettingsConstraints::isProfileConfigDefined(const UUID & profile_id) const
+{
+    if (!access_control)
+        return false;
+    auto storage = access_control->findStorage(profile_id);
+    return storage && storage->getStorageType() == UsersConfigAccessStorage::STORAGE_TYPE;
+}
+
+void SettingsConstraints::checkProfileElementValues(
+    const Settings & current_settings,
+    const SettingsProfileElement & element,
+    SettingSource source,
+    bool actor_is_config_defined) const
+{
+    if (element.value)
+    {
+        SettingChange value(element.setting_name, *element.value);
+        checkImpl(current_settings, value, THROW_ON_VIOLATION, source, /*ignore_unchanged_settings=*/false, actor_is_config_defined);
+    }
+
+    if (element.min_value)
+    {
+        SettingChange value(element.setting_name, *element.min_value);
+        checkImpl(current_settings, value, THROW_ON_VIOLATION, source, /*ignore_unchanged_settings=*/false, actor_is_config_defined);
+    }
+
+    if (element.max_value)
+    {
+        SettingChange value(element.setting_name, *element.max_value);
+        checkImpl(current_settings, value, THROW_ON_VIOLATION, source, /*ignore_unchanged_settings=*/false, actor_is_config_defined);
+    }
+}
+
+void SettingsConstraints::checkProfileElementWritability(
+    const SettingsProfileElement & element,
+    const std::unordered_map<String, SettingConstraintWritability> & writability_map) const
+{
+    /// Determine the effective writability for this setting in this profile.
+    /// The writability_map is the single source of truth — it was built from all elements
+    /// that explicitly define writability for a setting in this profile.
+    auto iter = writability_map.find(element.setting_name);
+    SettingConstraintWritability effective_writability = SettingConstraintWritability::WRITABLE;
+    if (iter != writability_map.end())
+        effective_writability = iter->second;
+    else if (!element.value && !element.min_value && !element.max_value)
+        return;
+
+    /// `set` stores a constraint under the canonical name of the setting, so look it up by that name.
+    /// `Settings::resolveName` would not do: it does not know the `merge_tree_` prefix.
+    auto setting_name = resolveSettingName(element.setting_name);
+    auto it = constraints.find(setting_name);
+    if (it != constraints.end()
+        && it->second.writability == SettingConstraintWritability::CONST
+        && effective_writability != SettingConstraintWritability::CONST)
+        throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
 }
 
 void SettingsConstraints::check(const Settings & current_settings, const SettingChange & change, SettingSource source) const
@@ -422,7 +502,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
                                     ReactionOnViolation reaction,
                                     SettingSource source,
                                     bool ignore_unchanged_settings,
-                                    bool check_feature_tier) const
+                                    bool actor_is_config_defined) const
 {
     std::string_view setting_name = Settings::resolveName(change.name);
 
@@ -475,7 +555,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
         return true;
     }
 
-    return getChecker(current_settings, setting_name, check_feature_tier).check(change, new_value, reaction, source);
+    return getChecker(current_settings, setting_name).check(change, new_value, reaction, source, actor_is_config_defined);
 }
 
 bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
@@ -502,12 +582,23 @@ bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, 
 bool SettingsConstraints::Checker::check(SettingChange & change,
                                          const Field & new_value,
                                          ReactionOnViolation reaction,
-                                         SettingSource source) const
+                                         SettingSource source,
+                                         bool actor_is_config_defined) const
 {
     if (!explain.text.empty())
     {
         if (reaction == THROW_ON_VIOLATION)
             throw Exception(explain, code);
+        return false;
+    }
+
+    /// `allow_feature_tier` is enforced for every SQL query that introduces or manages settings/profiles
+    /// (SET, SET profile, CREATE/ALTER USER/ROLE/PROFILE). Config-defined experimental settings keep
+    /// working because config-defined profiles/users are not checked when applied at login.
+    if (!tier_explain.text.empty())
+    {
+        if (reaction == THROW_ON_VIOLATION)
+            throw Exception(tier_explain, tier_code);
         return false;
     }
 
@@ -542,68 +633,74 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
     };
 
 
-    if (constraint.writability == SettingConstraintWritability::CONST)
+    /// A trusted config-defined admin may create looser configurations, so its own value constraints
+    /// (CONST / min / max / disallowed) are not enforced against it. The readonly mode (handled in
+    /// `getChecker`), the feature-tier policy (above) and source restrictions (below) still apply.
+    if (!actor_is_config_defined)
     {
-        if (reaction == THROW_ON_VIOLATION)
-            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
-        return false;
-    }
-
-    const auto & min_value = constraint.min_value;
-    const auto & max_value = constraint.max_value;
-    const auto & disallowed_values = constraint.disallowed_values;
-
-    if (!min_value.isNull() && !max_value.isNull() && less_or_cannot_compare(max_value, min_value))
-    {
-        if (reaction == THROW_ON_VIOLATION)
-            throw Exception(
-                ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
-                "The maximum ({}) value is less than the minimum ({}) value for setting {}",
-                max_value,
-                min_value,
-                setting_name);
-        return false;
-    }
-
-    /// Track the effective value through clamping so that the disallowed-values loop below
-    /// compares against the post-clamp value. Otherwise an overlap between a clamp target and
-    /// a disallowed entry (e.g. min == disallowed) would let the clamped value through.
-    Field effective_value = new_value;
-
-    if (!min_value.isNull() && less_or_cannot_compare(effective_value, min_value))
-    {
-        if (reaction == THROW_ON_VIOLATION)
-        {
-            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be less than {}",
-                setting_name, applyVisitor(FieldVisitorToString(), min_value));
-        }
-        change.value = min_value;
-        effective_value = min_value;
-    }
-
-    if (!max_value.isNull() && less_or_cannot_compare(max_value, effective_value))
-    {
-        if (reaction == THROW_ON_VIOLATION)
-        {
-            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be greater than {}",
-                setting_name, applyVisitor(FieldVisitorToString(), max_value));
-        }
-        change.value = max_value;
-        effective_value = max_value;
-    }
-
-    for (const auto & value : disallowed_values)
-    {
-        bool equals = equals_or_cannot_compare(value, effective_value);
-        if (equals)
+        if (constraint.writability == SettingConstraintWritability::CONST)
         {
             if (reaction == THROW_ON_VIOLATION)
-                throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be {}",
-                    setting_name, applyVisitor(FieldVisitorToString(), value));
-            /// On clamp paths there is no sensible value to clamp to — disallowed entries are a
-            /// deny-list, not a range. Drop the change and let the caller proceed with the
-            /// existing value rather than failing the query.
+                throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
             return false;
+        }
+
+        const auto & min_value = constraint.min_value;
+        const auto & max_value = constraint.max_value;
+        const auto & disallowed_values = constraint.disallowed_values;
+
+        if (!min_value.isNull() && !max_value.isNull() && less_or_cannot_compare(max_value, min_value))
+        {
+            if (reaction == THROW_ON_VIOLATION)
+                throw Exception(
+                    ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
+                    "The maximum ({}) value is less than the minimum ({}) value for setting {}",
+                    max_value,
+                    min_value,
+                    setting_name);
+            return false;
+        }
+
+        /// Track the effective value through clamping so that the disallowed-values loop below
+        /// compares against the post-clamp value. Otherwise an overlap between a clamp target and
+        /// a disallowed entry (e.g. min == disallowed) would let the clamped value through.
+        Field effective_value = new_value;
+
+        if (!min_value.isNull() && less_or_cannot_compare(effective_value, min_value))
+        {
+            if (reaction == THROW_ON_VIOLATION)
+            {
+                throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be less than {}",
+                    setting_name, applyVisitor(FieldVisitorToString(), min_value));
+            }
+            change.value = min_value;
+            effective_value = min_value;
+        }
+
+        if (!max_value.isNull() && less_or_cannot_compare(max_value, effective_value))
+        {
+            if (reaction == THROW_ON_VIOLATION)
+            {
+                throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be greater than {}",
+                    setting_name, applyVisitor(FieldVisitorToString(), max_value));
+            }
+            change.value = max_value;
+            effective_value = max_value;
+        }
+
+        for (const auto & value : disallowed_values)
+        {
+            bool equals = equals_or_cannot_compare(value, effective_value);
+            if (equals)
+            {
+                if (reaction == THROW_ON_VIOLATION)
+                    throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be {}",
+                        setting_name, applyVisitor(FieldVisitorToString(), value));
+                /// On clamp paths there is no sensible value to clamp to — disallowed entries are a
+                /// deny-list, not a range. Drop the change and let the caller proceed with the
+                /// existing value rather than failing the query.
+                return false;
+            }
         }
     }
 
@@ -624,7 +721,7 @@ std::string_view SettingsConstraints::resolveSettingNameWithCache(std::string_vi
     return name;
 }
 
-SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & current_settings, std::string_view setting_name, bool check_feature_tier) const
+SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & current_settings, std::string_view setting_name) const
 {
     /// The cache only knows the names constraints were declared with, which need not be the name a query
     /// uses. The caller has applied `Settings::resolveName` already, and that leaves a `merge_tree_`-prefixed
@@ -649,11 +746,18 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     if (current_settings[Setting::readonly] > 1 && resolved_name == "readonly")
         return Checker(PreformattedMessage::create("Cannot modify 'readonly' setting in readonly mode"), ErrorCodes::READONLY);
 
+    /// A tier violation is not reported right here: `allow_feature_tier` must also be enforced for a
+    /// trusted config-defined actor, which skips the value constraints below, so the Checker carries it.
     /// Not `current_settings.getTier`: a `merge_tree_`-prefixed name is a `MergeTreeSettings` setting.
-    if (check_feature_tier && access_control && isAnyFeatureTierRestricted(*access_control))
+    PreformattedMessage tier_explain;
+    int tier_code = 0;
+    if (access_control && isAnyFeatureTierRestricted(*access_control))
     {
         if (auto reason = getFeatureTierRestriction(*access_control, setting_name, settingGetTier(resolved_name)))
-            return Checker(*reason, ErrorCodes::READONLY);
+        {
+            tier_explain = *reason;
+            tier_code = ErrorCodes::READONLY;
+        }
     }
 
     auto it = constraints.find(resolved_name);
@@ -667,8 +771,18 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
                            ErrorCodes::READONLY);
     }
     if (it == constraints.end())
-        return Checker(Settings::resolveName); // Allowed — no stored Constraint, do not dereference end().
-    return Checker(it->second, Settings::resolveName);
+    {
+        // Allowed — no stored Constraint, do not dereference end().
+        Checker checker(Settings::resolveName);
+        checker.tier_explain = std::move(tier_explain);
+        checker.tier_code = tier_code;
+        return checker;
+    }
+
+    Checker checker(it->second, Settings::resolveName);
+    checker.tier_explain = std::move(tier_explain);
+    checker.tier_code = tier_code;
+    return checker;
 }
 
 bool isAnyFeatureTierRestricted(const AccessControl & access_control)

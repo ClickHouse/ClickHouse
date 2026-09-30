@@ -193,6 +193,13 @@ def assert_experimental_change_is_blocked(node, statement, **kwargs):
     assert EXPERIMENTAL_BLOCKED in error, statement + ": " + error
 
 
+def assert_login_is_refused(node, user):
+    query = f"SELECT value FROM system.settings WHERE name = '{EXPERIMENTAL_SETTING}'"
+    output, error = node.query_and_get_answer_with_error(query, user=user)
+    assert output == ""
+    assert EXPERIMENTAL_BLOCKED in error, user + ": " + error
+
+
 def test_allow_feature_tier_in_general_settings(start_cluster):
     query_with_experimental_setting = f"SELECT 1 SETTINGS {EXPERIMENTAL_SETTING}=1"
     query_with_beta_setting = f"SELECT 1 SETTINGS {BETA_SETTING}=1"
@@ -398,7 +405,8 @@ def test_allow_feature_tier_in_user(start_cluster):
     # New user = 1
     assert read_experimental_setting(instance, "user_experimental") == "1"
 
-    # Change back to block experimental features and restart to confirm everything is working as expected (only new changes are blocked)
+    # Change back to block experimental features and restart to confirm retroactive enforcement:
+    # the user with an experimental setting can no longer log in.
     set_feature_tier(instance, "0", "1")
 
     instance.restart_clickhouse()
@@ -406,23 +414,13 @@ def test_allow_feature_tier_in_user(start_cluster):
     # Default user = 0
     assert read_experimental_setting(instance) == "0"
 
-    # New user = 1
-    assert read_experimental_setting(instance, "user_experimental") == "1"
-
-    # But note that they can't change the value either
-    # 1 - 1 => OK
+    # The user with the experimental setting can no longer log in
     output, error = instance.query_and_get_answer_with_error(
-        f"SELECT 1 SETTINGS {EXPERIMENTAL_SETTING}=1",
+        f"SELECT value FROM system.settings WHERE name = '{EXPERIMENTAL_SETTING}'",
         user="user_experimental",
     )
-    assert output.strip() == "1"
-    assert error == ""
-    # 1 - 0 => KO
-    assert_experimental_change_is_blocked(
-        instance,
-        f"SELECT 1 SETTINGS {EXPERIMENTAL_SETTING}=0",
-        user="user_experimental",
-    )
+    assert output == ""
+    assert EXPERIMENTAL_BLOCKED in error
 
     set_feature_tier(instance, "1", "0")
     drop_entities(instance, users=["user_experimental"])
@@ -1183,7 +1181,8 @@ def test_dropping_a_role_that_carries_a_setting(start_cluster):
             assert_experimental_change_is_blocked(
                 instance, "DROP ROLE tier_droppable_role"
             )
-            assert read_experimental_setting(instance, "tier_g4") == "1"
+            assert_login_is_refused(instance, "tier_g4")
+        assert read_experimental_setting(instance, "tier_g4") == "1"
 
 
 def test_replacing_a_user_discarding_a_granted_role(start_cluster):
@@ -1201,7 +1200,8 @@ def test_replacing_a_user_discarding_a_granted_role(start_cluster):
                 instance,
                 "CREATE USER OR REPLACE tier_g5 IDENTIFIED WITH no_password",
             )
-            assert read_experimental_setting(instance, "tier_g5") == "1"
+            assert_login_is_refused(instance, "tier_g5")
+        assert read_experimental_setting(instance, "tier_g5") == "1"
 
 
 def test_dropping_a_setting_from_a_user(start_cluster):
@@ -1220,7 +1220,8 @@ def test_dropping_a_setting_from_a_user(start_cluster):
                 "CREATE USER OR REPLACE tier_g6 IDENTIFIED WITH no_password",
             ]:
                 assert_experimental_change_is_blocked(instance, statement)
-                assert read_experimental_setting(instance, "tier_g6") == "1"
+                assert_login_is_refused(instance, "tier_g6")
+        assert read_experimental_setting(instance, "tier_g6") == "1"
 
 
 def test_revoking_a_role_that_carries_a_setting(start_cluster):
@@ -1237,7 +1238,8 @@ def test_revoking_a_role_that_carries_a_setting(start_cluster):
             assert_experimental_change_is_blocked(
                 instance, "REVOKE tier_revocable_role FROM tier_g7"
             )
-            assert read_experimental_setting(instance, "tier_g7") == "1"
+            assert_login_is_refused(instance, "tier_g7")
+        assert read_experimental_setting(instance, "tier_g7") == "1"
 
 
 def test_making_a_granted_role_default(start_cluster):
@@ -1295,12 +1297,12 @@ def test_a_setting_shadowed_by_a_dependent_role(start_cluster):
                 instance,
                 f"ALTER ROLE tier_child DROP SETTING {EXPERIMENTAL_SETTING}",
             )
-            assert read_experimental_setting(instance, "tier_g10") == "0"
+            assert_login_is_refused(instance, "tier_g10")
+        assert read_experimental_setting(instance, "tier_g10") == "0"
 
 
-def test_restating_the_value_a_user_already_has(start_cluster):
-    # The statement changes no setting for `tier_target`, so it is allowed even though the administrator
-    # running it has a different value in their own session
+def test_restating_the_value_a_user_already_has_is_refused(start_cluster):
+    # Restating a value of a disabled tier is refused even when the user already holds it
     assert "0" == get_current_tier_value(instance)
     with entities(instance, users=["tier_admin", "tier_target"]):
         instance.query("CREATE USER tier_admin IDENTIFIED WITH no_password")
@@ -1312,12 +1314,13 @@ def test_restating_the_value_a_user_already_has(start_cluster):
         assert read_experimental_setting(instance, "tier_target") == "1"
 
         with feature_tier(instance, "1"):
-            output, error = instance.query_and_get_answer_with_error(
+            assert_experimental_change_is_blocked(
+                instance,
                 f"ALTER USER tier_target SETTINGS {EXPERIMENTAL_SETTING} = 1",
                 user="tier_admin",
             )
-            assert error == "", error
-            assert read_experimental_setting(instance, "tier_target") == "1"
+
+        assert read_experimental_setting(instance, "tier_target") == "1"
 
 
 def test_unrelated_access_entity_statements_are_allowed(start_cluster):
@@ -1388,8 +1391,11 @@ def test_feature_tier_is_enforced_in_named_access_storage(start_cluster):
                 ).strip()
                 == "0"
             )
-            assert read_experimental_setting(instance, "tier_storage_alter") == "1"
-            assert read_experimental_setting(instance, "tier_storage_role_user") == "1"
+            assert_login_is_refused(instance, "tier_storage_alter")
+            assert_login_is_refused(instance, "tier_storage_role_user")
+
+        assert read_experimental_setting(instance, "tier_storage_alter") == "1"
+        assert read_experimental_setting(instance, "tier_storage_role_user") == "1"
 
 
 def test_renaming_a_user_does_not_hide_a_settings_change(start_cluster):
@@ -1407,13 +1413,15 @@ def test_renaming_a_user_does_not_hide_a_settings_change(start_cluster):
                 f"ALTER USER {old_name} RENAME TO {new_name} "
                 f"DROP SETTING {EXPERIMENTAL_SETTING}",
             )
-            assert read_experimental_setting(instance, old_name) == "1"
+            assert_login_is_refused(instance, old_name)
             assert (
                 instance.query(
                     f"SELECT count() FROM system.users WHERE name = '{new_name}'"
                 ).strip()
                 == "0"
             )
+
+        assert read_experimental_setting(instance, old_name) == "1"
 
 
 def test_dropping_an_explicit_default_value_is_allowed(start_cluster):
@@ -1447,7 +1455,9 @@ def test_create_user_if_not_exists_is_a_no_op(start_cluster):
             )
             assert output == ""
             assert error == "", error
-            assert read_experimental_setting(instance, user) == "1"
+            assert_login_is_refused(instance, user)
+
+        assert read_experimental_setting(instance, user) == "1"
 
 
 def test_overlapping_settings_profiles_use_the_effective_precedence(start_cluster):
@@ -1554,13 +1564,15 @@ def test_moving_a_role_preserves_the_effective_setting(start_cluster):
                 )
                 assert output == ""
                 assert error == "", error
-                assert read_experimental_setting(instance, user) == "1"
+                assert_login_is_refused(instance, user)
                 assert (
                     instance.query(
                         f"SELECT storage FROM system.roles WHERE name = '{role}'"
                     ).strip()
                     == "local_directory"
                 )
+
+            assert read_experimental_setting(instance, user) == "1"
 
 
 def test_move_rolls_back_entities_removed_before_failure(start_cluster):

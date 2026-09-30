@@ -99,6 +99,7 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
+#include <Access/UsersConfigAccessStorage.h>
 #include <Access/Role.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsProfilesInfo.h>
@@ -2272,8 +2273,21 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
 
     setUserIDWithLock(user_id_, lock);
 
-    /// A profile can specify a value and a readonly constraint for same setting at the same time,
-    /// so we shouldn't check constraints here.
+    /// Retroactively enforce constraints when applying a user's stored profiles at login: a user whose
+    /// SQL-defined settings or SQL-defined profiles violate the constraints (or `allow_feature_tier`)
+    /// must not be able to log in. Config-defined users are the admin's root configuration and are
+    /// trusted. For SQL-defined users we check the raw profile elements (so min/max-only and
+    /// writability-only elements are seen), but tolerate config-defined profiles in the chain for
+    /// compatibility (see `SettingsConstraints::check`).
+    if (!isUserDefinedInConfigWithLock(user_id_))
+    {
+        auto current_constraints = getSettingsConstraintsAndCurrentProfilesWithLock();
+        current_constraints->constraints.check(
+            *settings, user->settings, SettingSource::USER, /* skip_config_defined_profiles= */ true);
+        current_constraints->constraints.check(
+            *settings, enabled_roles->settings_from_enabled_roles, SettingSource::ROLE, /* skip_config_defined_profiles= */ true);
+    }
+
     setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
     setCurrentRolesWithLock(default_roles, lock);
@@ -2300,6 +2314,20 @@ void Context::setUserIDWithLock(const UUID & user_id_, const std::lock_guard<Con
 {
     user_id = user_id_;
     need_recalculate_access = true;
+}
+
+bool Context::isUserDefinedInConfigWithLock(const UUID & user_id_) const
+{
+    auto storage = getAccessControl().findStorage(user_id_);
+    return storage && storage->getStorageType() == UsersConfigAccessStorage::STORAGE_TYPE;
+}
+
+bool Context::isCurrentUserDefinedInConfigWithLock() const
+{
+    /// No acting user means an internal/server-initiated operation, which is trusted.
+    if (!user_id)
+        return true;
+    return isUserDefinedInConfigWithLock(*user_id);
 }
 
 void Context::setUserID(const UUID & user_id_)
@@ -2582,8 +2610,20 @@ void Context::setCurrentProfileWithLock(const String & profile_name, bool check_
 
 void Context::setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
 {
+    if (check_constraints)
+    {
+        /// Check the profile's settings against current constraints before resolving, because after
+        /// resolving the parent_profile references are already expanded and checkSettingsConstraints
+        /// would not see them. A config-defined admin is trusted to apply looser profiles (structural
+        /// rules still apply); a SQL-defined user must satisfy the constraints it is bound by.
+        SettingsProfileElements elements;
+        elements.emplace_back().parent_profile = profile_id;
+        getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(
+            *settings, elements, SettingSource::PROFILE, /* skip_config_defined_profiles= */ false,
+            /* actor_is_config_defined= */ isCurrentUserDefinedInConfigWithLock());
+    }
     auto profile_info = getAccessControl().getSettingsProfileInfo(profile_id);
-    setCurrentProfilesWithLock(*profile_info, check_constraints, lock);
+    setCurrentProfilesWithLock(*profile_info, /* check_constraints= */ false, lock);
 }
 
 void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
@@ -3726,7 +3766,11 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 
 void Context::checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source)
 {
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, profile_elements, source);
+    /// `CREATE/ALTER USER/ROLE/PROFILE` by a config-defined admin is trusted to create looser configurations,
+    /// but structural rules (readonly mode, source restrictions, `allow_feature_tier`) still apply; a
+    /// SQL-defined actor must additionally satisfy the constraints it is bound by.
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(
+        *settings, profile_elements, source, /* actor_is_config_defined= */ isCurrentUserDefinedInConfigWithLock());
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }

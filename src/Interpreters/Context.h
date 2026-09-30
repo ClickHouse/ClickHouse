@@ -2149,6 +2149,11 @@ private:
 
     void setUserIDWithLock(const UUID & user_id_, const std::lock_guard<ContextSharedMutex> & lock);
 
+    /// Whether the given / current user is defined in the server config (`users.xml`) rather than via SQL.
+    /// Config-defined identities are the admin's root configuration and are trusted to manage settings/profiles.
+    bool isUserDefinedInConfigWithLock(const UUID & user_id_) const;
+    bool isCurrentUserDefinedInConfigWithLock() const;
+
     void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);
 
     /// Keep the `database` setting in sync with an out-of-band change of the current database.
