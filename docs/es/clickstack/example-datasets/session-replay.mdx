@@ -43,20 +43,26 @@ Para obtener más contexto sobre qué es Session Replay y cómo encaja en ClickS
 </div>
 
 <Steps>
-  <Step title="Clonar el repositorio" id="clone-repository">
+  <Step>
+    ### Clonar el repositorio
+
     ```shell
     git clone https://github.com/ClickHouse/clickstack-session-replay-demo
     cd clickstack-session-replay-demo
     ```
   </Step>
 
-  <Step title="Iniciar ClickStack" id="start-clickstack">
+  <Step>
+    ### Iniciar ClickStack
+
     ```shell
     docker-compose up -d clickstack
     ```
   </Step>
 
-  <Step title="Obtener tu API key" id="get-api-key">
+  <Step>
+    ### Obtener tu API key
+
     1. Abre HyperDX en [http://localhost:8080](http://localhost:8080)
     2. Crea una cuenta o inicia sesión si es necesario
     3. Ve a **Team Settings → API Keys**
@@ -71,7 +77,9 @@ Para obtener más contexto sobre qué es Session Replay y cómo encaja en ClickS
     ```
   </Step>
 
-  <Step title="Iniciar la aplicación de demostración" id="start-demo-app">
+  <Step>
+    ### Iniciar la aplicación de demostración
+
     ```shell
     docker-compose --profile demo up demo-app
     ```
@@ -87,7 +95,9 @@ Para obtener más contexto sobre qué es Session Replay y cómo encaja en ClickS
     Todas las interacciones se capturan automáticamente con el SDK para navegador de ClickStack.
   </Step>
 
-  <Step title="Ver tu session replay" id="view-session-replay">
+  <Step>
+    ### Ver tu session replay
+
     Vuelve a HyperDX en [http://localhost:8080](http://localhost:8080) y ve a **Client Sessions** en la barra lateral izquierda.
 
     <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Búsqueda de session replay" />
@@ -182,7 +192,7 @@ docker-compose down -v
   ## Más información
 </div>
 
-* [Session Replay](/es/clickstack/features/session-replay) — descripción general de la funcionalidad, opciones del SDK y controles de privacidad
+* [Session Replay](/es/clickstack/features/session-replay) — descripción general de la funcionalidad, opciones de SDK y controles de privacidad
 * [Referencia del SDK para navegador](/es/clickstack/ingesting-data/sdks/browser) — opciones completas del SDK y configuración avanzada
-* [Primeros pasos con ClickStack](/es/clickstack/getting-started/index) — despliega ClickStack y realiza tu primera ingesta de datos
+* [Primeros pasos con ClickStack](/es/clickstack/getting-started/index) — despliegue ClickStack e ingeste sus primeros datos
 * [Todos los conjuntos de datos de ejemplo](/es/clickstack/example-datasets/index) — otros conjuntos de datos de ejemplo y guías

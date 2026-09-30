@@ -1,13 +1,15 @@
 ---
-title: "TPC-H (1999)"
-description: "TPC-H ベンチマークのデータセットとクエリ。"
-sidebarTitle: "TPC-H"
-slug: "/getting-started/example-datasets/tpch"
-doc_type: "guide"
-keywords: ["example dataset", "tpch", "benchmark", "sample data", "performance testing"]
+description: 'TPC-H ベンチマークのデータセットとクエリ。'
+sidebarTitle: 'TPC-H'
+slug: /getting-started/example-datasets/tpch
+title: 'TPC-H (1999)'
+doc_type: 'guide'
+keywords: ['example dataset', 'tpch', 'benchmark', 'sample data', 'performance testing']
 ---
 
-卸売業者の内部データウェアハウスをモデル化した、代表的なベンチマークです。データは第3正規形で格納されているため、クエリ実行時には多数のJOINが必要になります。古典的なベンチマークではあるものの、データが一様かつ独立に分布しているという非現実的な前提にもかかわらず、TPC-Hは現在でも最も広く使われているOLAPベンチマークです。
+卸売業者の内部データウェアハウスをモデル化した、代表的なベンチマークです。
+データは第3正規形で格納されているため、クエリ実行時には多数のJOINが必要になります。
+古典的なベンチマークではあるものの、データが一様かつ独立に分布しているという非現実的な前提にもかかわらず、TPC-Hは現在でも最も広く使われているOLAPベンチマークです。
 
 **参考文献**
 
@@ -56,7 +58,7 @@ wait
 | orders   | 150.000.000    | 6.15 GB                         |
 | lineitem | 600.000.000    | 26.69 GB                        |
 
-(ClickHouse での圧縮サイズは `system.tables.total_bytes` から取得したもので、以下のテーブル定義に基づいています。)
+ (ClickHouse での圧縮サイズは `system.tables.total_bytes` から取得したもので、以下のテーブル定義に基づいています。) 
 
 次に、ClickHouse でテーブルを作成します。テーブル定義は、ClickHouse リポジトリ内の [`init.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/init.sql) にあります。
 
@@ -74,10 +76,10 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMA
 ```
 
 <Note>
-  tpch-kitを使用して自分でテーブルを生成する代わりに、公開のS3バケットからデータをインポートすることもできます。まず[`init.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/init.sql)を使って空のテーブルを作成してください。
+  tpch-kitを使用して自分でテーブルを生成する代わりに、公開S3バケットからデータをインポートすることもできます。その場合は、[`init.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/init.sql)を使用して、事前に空のテーブルを作成しておいてください。
 
   ```sql
-  -- Scale factor 1
+  -- スケール係数 1
   INSERT INTO nation SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/nation.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO region SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/region.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO part SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/part.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
@@ -87,7 +89,7 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMA
   INSERT INTO orders SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/orders.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO lineitem SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/lineitem.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
 
-  -- Scale factor 10
+  -- スケール係数 10
   INSERT INTO nation SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/nation.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO region SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/region.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO part SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/part.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
@@ -97,7 +99,7 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMA
   INSERT INTO orders SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/orders.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO lineitem SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/lineitem.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
 
-  -- Scale factor 100
+  -- スケール係数 100
   INSERT INTO nation SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/nation.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO region SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/region.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO part SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/part.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
@@ -115,14 +117,9 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMA
 
 22 個の TPC-H クエリは、ClickHouse リポジトリの[こちら](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/tpc-h/queries)にあります。
 
-SQL 標準互換の動作と期待される結果を得るには、[`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/settings.json) の設定を適用してください。既知の問題や特定のクエリに関する注意事項については、[README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/README.md) を参照してください。
+SQL 標準互換の動作と期待される結果を得るには、[`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/settings.json) の設定を適用してください。
+既知の問題や特定のクエリに関する注意事項については、[README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/README.md) を参照してください。
 
 **正確性**
 
 特に明記がない限り、クエリの結果は公式の結果と一致します。確認するには、スケール係数 = 1 の TPC-H データベース (`dbgen`、上記参照) を生成し、[tpch-kit の期待される結果](https://github.com/gregrahn/tpch-kit/tree/master/dbgen/answers)と比較してください。
-
-<div id="performance-benchmark">
-  ## パフォーマンスベンチマーク
-</div>
-
-ClickHouse は、リリースされたすべてのバージョンの TPC-H クエリパフォーマンスを追跡しています。[ClickHouse versions benchmark](https://benchmark.clickhouse.com/versions/#version=+s\&dataset=+ph\&metric=hot\&queries=-) ページでは、全 22 種類の TPC-H クエリ (スケール係数 40) の実行時間を確認し、パフォーマンスが時とともにどのように変化してきたかを確認できます。
