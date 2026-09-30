@@ -138,8 +138,9 @@ def test_query_timeout_with_zk_down(started_cluster, engine, storage_policy):
 
         start_time = time.time()
         with pytest.raises(QueryRuntimeException):
+            # async_insert=0: max_execution_time must stop this query's own Keeper retries.
             node1.query(
-                "INSERT INTO zk_down SELECT number, toString(number) FROM numbers(10) SETTINGS insert_keeper_max_retries=10000, insert_keeper_retry_max_backoff_ms=1000, max_execution_time=1"
+                "INSERT INTO zk_down SELECT number, toString(number) FROM numbers(10) SETTINGS insert_keeper_max_retries=10000, insert_keeper_retry_max_backoff_ms=1000, max_execution_time=1, async_insert=0"
             )
         finish_time = time.time()
         assert finish_time - start_time < 10
@@ -209,12 +210,13 @@ def test_ambiguous_zk_commit_query_timeout_preserves_data(started_cluster):
             "SYSTEM ENABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
         )
 
+        # async_insert=0: the timeout must interrupt this query's own commit recovery.
         job = pool.apply_async(
             node1.query_and_get_error,
             (
                 "INSERT INTO amb_timeout SELECT number, toString(number) FROM numbers(10) ORDER BY ALL "
                 "SETTINGS insert_keeper_max_retries=10000, insert_keeper_retry_initial_backoff_ms=50, "
-                "insert_keeper_retry_max_backoff_ms=100, max_execution_time=2",
+                "insert_keeper_retry_max_backoff_ms=100, max_execution_time=2, async_insert=0",
             ),
             {"query_id": query_id},
         )
@@ -245,7 +247,7 @@ def test_ambiguous_zk_commit_query_timeout_preserves_data(started_cluster):
         # part must remain readable and retrying the insert must be deduplicated.
         assert node1.query("SELECT count() FROM amb_timeout") == "10\n"
         node1.query(
-            "INSERT INTO amb_timeout SELECT number, toString(number) FROM numbers(10) ORDER BY ALL"
+            "INSERT INTO amb_timeout SELECT number, toString(number) FROM numbers(10) ORDER BY ALL SETTINGS async_insert=0"
         )
         assert node1.query("SELECT count() FROM amb_timeout") == "10\n"
         assert (
@@ -290,12 +292,13 @@ def test_ambiguous_zk_commit_kill_preserves_data(started_cluster):
             "SYSTEM ENABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
         )
 
+        # async_insert=0: KILL QUERY must interrupt this query's own commit recovery.
         job = pool.apply_async(
             node1.query_and_get_error,
             (
                 "INSERT INTO amb_kill SELECT number, toString(number) FROM numbers(10) ORDER BY ALL "
                 "SETTINGS insert_keeper_max_retries=10000, insert_keeper_retry_initial_backoff_ms=100, "
-                "insert_keeper_retry_max_backoff_ms=200",
+                "insert_keeper_retry_max_backoff_ms=200, async_insert=0",
             ),
             {"query_id": query_id},
         )
@@ -323,7 +326,7 @@ def test_ambiguous_zk_commit_kill_preserves_data(started_cluster):
 
         assert node1.query("SELECT count() FROM amb_kill") == "10\n"
         node1.query(
-            "INSERT INTO amb_kill SELECT number, toString(number) FROM numbers(10) ORDER BY ALL"
+            "INSERT INTO amb_kill SELECT number, toString(number) FROM numbers(10) ORDER BY ALL SETTINGS async_insert=0"
         )
         assert node1.query("SELECT count() FROM amb_kill") == "10\n"
         assert (
