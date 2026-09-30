@@ -2123,7 +2123,7 @@ still assigned when this setting is enabled. Such a merge rewrites the part
 anyway, and therefore also removes the rows that have expired in it.
 )", 0) \
     DECLARE(Bool, materialize_ttl_recalculate_only, false, R"(
-When enabled, `MATERIALIZE TTL` recalculates the stored `TTL` metadata for each data part without removing expired data during that operation. When disabled, normal TTL materialization applies the configured row, column, or `GROUP BY` TTL actions.
+When enabled, `MATERIALIZE TTL` recalculates the stored `TTL` metadata for each data part without removing expired data during that operation. When disabled, normal TTL materialization usually applies the configured row, column, or `GROUP BY` TTL actions. For tables with only row TTL and `ttl_only_drop_parts` enabled, it instead recalculates `TTL` metadata and drops only fully expired parts.
 )", 0) \
     DECLARE(Bool, enable_mixed_granularity_parts, true, R"(
 Enables or disables transitioning to control the granule size with the
