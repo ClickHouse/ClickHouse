@@ -237,11 +237,11 @@ Listening on http://localhost:3106/
 In another terminal, add a row:
 
 ```bash
-curl -X POST http://localhost:3106/todos -H 'Content-Type: application/json' -d '{"title": "Take a screenshot"}'
+curl -X POST http://localhost:3106/todos -H 'Content-Type: application/json' -d '{"title": "Ship to production"}'
 ```
 
 ```json
-{"id":5,"title":"Take a screenshot","done":false,"created_at":"2026-09-30T16:51:30.372Z"}
+{"id":5,"title":"Ship to production","done":false,"created_at":"2026-09-30T16:51:30.372Z"}
 ```
 
 ## Verify {#verify}
@@ -254,7 +254,7 @@ Open [http://localhost:3106/todos](http://localhost:3106/todos) in your browser 
   {"id":2,"title":"Connect with Bun.sql","done":false,"created_at":"2026-09-30T16:51:23.136Z"},
   {"id":3,"title":"Serve rows with Bun.serve","done":false,"created_at":"2026-09-30T16:51:23.136Z"},
   {"id":4,"title":"Write a transaction","done":true,"created_at":"2026-09-30T16:51:23.184Z"},
-  {"id":5,"title":"Take a screenshot","done":false,"created_at":"2026-09-30T16:51:30.372Z"}
+  {"id":5,"title":"Ship to production","done":false,"created_at":"2026-09-30T16:51:30.372Z"}
 ]
 ```
 
@@ -266,7 +266,7 @@ In the console, open **SQL console** and expand **guide_bun**, then **public**, 
 | 2 | Connect with Bun.sql | false | 2026-09-30 16:51:23.136975+00 |
 | 3 | Serve rows with Bun.serve | false | 2026-09-30 16:51:23.136975+00 |
 | 4 | Write a transaction | true | 2026-09-30 16:51:23.184716+00 |
-| 5 | Take a screenshot | false | 2026-09-30 16:51:30.372292+00 |
+| 5 | Ship to production | false | 2026-09-30 16:51:30.372292+00 |
 
 ## Connect through PgBouncer {#pgbouncer}
 
