@@ -2,6 +2,7 @@
 /// structured results (`ch_parse` / `ch_format_json`).
 import { readFile } from 'node:fs/promises';
 import { WASI } from 'node:wasi';
+import { Worker } from 'node:worker_threads';
 
 const wasi = new WASI({ version: 'preview1', args: [], env: {}, returnOnExit: true });
 const bytes = await readFile(process.argv[2] ?? 'tmp/wasmexp/parser_stripped.wasm');
@@ -235,6 +236,28 @@ if (hasAstJson) {
         check(`...and ch_format_json round-trips it`, back.ok && back.out === format(sql, 1).out);
     }
 
+    /// Real queries of the depth that the stack size is about: a sum over many columns, a
+    /// chain of `if`, and a pipeline of derived tables. All of them had a null "ast" with a 64 KiB
+    /// stack.
+    const sum = n => `SELECT ${Array.from({ length: n }, (_, i) => `revenue_${i + 1}`).join(' + ')} AS total FROM sales`;
+    const ifs = n => `SELECT ${'if(x = 0, 0, '.repeat(n)}x${')'.repeat(n)} FROM t`;
+    const pipeline = n => {
+        let sql = 'SELECT id FROM t0';
+        for (let i = 1; i <= n; ++i)
+            sql = `SELECT id FROM (${sql}) AS s${i} WHERE id > ${i}`;
+        return sql;
+    };
+    for (const [name, sql] of [
+        ['a sum of 30 columns', sum(30)],
+        ['25 nested if', ifs(25)],
+        ['8 nested derived tables', pipeline(8)],
+    ]) {
+        const r = parsed(sql);
+        check(`${name} has an ast`, r.ok && !!r.doc?.ast);
+        const back = call(JSON.stringify(r.doc?.ast), (ptr, len) => ch_format_json(ptr, len, 1));
+        check(`...and ch_format_json round-trips it`, back.ok && back.out === format(sql, 1).out);
+    }
+
     /// A longer chain still has its JSON. A much longer one runs into the stack check, which must
     /// answer a null "ast" with the reason - not stop the module - and a tree past the depth limit
     /// is a parse error.
@@ -269,6 +292,83 @@ if (hasAstJson) {
             : null;
         check(`${name}: null with a reason, or readable back`,
             !r.ok || (r.doc?.ast === null ? /too big|limit/i.test(r.doc?.ast_error ?? '') : back === true));
+    }
+}
+
+/// --- The engine's stack -----------------------------------------------------------------------
+///
+/// WebAssembly frames also take the engine's own stack, which `checkStackSize` cannot see, and
+/// running out of it is a `RangeError` that leaves the instance unusable. That stack is smallest
+/// in a Web Worker in Chrome, where both the stack size in CMakeLists.txt and
+/// `MAX_AST_JSON_NESTING` in wasm_parser.cpp were measured. Node's main thread has more of it than
+/// that, so the deepest inputs are driven here again in a worker whose V8 stack is limited to
+/// about what a Chrome worker has: every one must come back as a result or an error. Each runs in
+/// a fresh worker on a freshly compiled module - the extra custom section keeps V8 from reusing
+/// code optimized by an earlier run - because a cold run takes the most stack.
+
+const WORKER_STACK_MB = 0.75;
+
+function inWorker(entry, text) {
+    const nonce = Buffer.from(`n${Math.random()}`);
+    const section = Buffer.concat([Buffer.from([1]), Buffer.from('n'), nonce]);
+    const module = Buffer.concat([bytes, Buffer.from([0, section.length]), section]);
+    const source = `
+        const { parentPort, workerData } = require('node:worker_threads');
+        const { WASI } = require('node:wasi');
+        const wasi = new WASI({ version: 'preview1', args: [], env: {}, returnOnExit: true });
+        const instance = new WebAssembly.Instance(new WebAssembly.Module(workerData.module), wasi.getImportObject());
+        wasi.initialize(instance);
+        const x = instance.exports;
+        const input = new TextEncoder().encode(workerData.text);
+        const ptr = x.ch_alloc(input.length);
+        new Uint8Array(x.memory.buffer, ptr, input.length).set(input);
+        try {
+            const ok = workerData.entry === 'ch_parse' ? x.ch_parse(ptr, input.length) : x[workerData.entry](ptr, input.length, 1);
+            const out = new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.ch_result_data(), x.ch_result_size()).slice());
+            parentPort.postMessage({ ok: !!ok, out });
+        } catch (e) {
+            parentPort.postMessage({ trap: e.constructor.name + ': ' + e.message });
+        }`;
+    return new Promise(resolve => {
+        const worker = new Worker(source, { eval: true, workerData: { module, entry, text }, resourceLimits: { stackSizeMb: WORKER_STACK_MB } });
+        worker.on('message', m => { resolve(m); worker.terminate(); });
+        worker.on('error', e => resolve({ trap: e.message }));
+    });
+}
+
+console.log(`\n--- with a ${WORKER_STACK_MB} MB engine stack ---`);
+{
+    /// The deepest SQL each of these shapes admits, from `MAX_PARSER_DEPTH` and the AST depth
+    /// limit, and one level past it.
+    const deep = [
+        ['197 nested parentheses', `SELECT ${'('.repeat(197)}1${')'.repeat(197)}`],
+        ['109 nested IN subqueries', `SELECT * FROM t WHERE ${'x IN (SELECT y FROM u WHERE '.repeat(109)}1${')'.repeat(109)}`],
+        ['a CAST to an Array nested 984 levels', `SELECT CAST(1 AS ${'Array('.repeat(984)}UInt8${')'.repeat(984)})`],
+        ['an array literal nested 983 levels', `SELECT ${'['.repeat(983)}1${']'.repeat(983)}`],
+        ['a chain of 498 terms', `SELECT ${Array(498).fill('1').join(' + ')}`],
+        ['a chain of 499 terms', `SELECT ${Array(499).fill('1').join(' + ')}`],
+    ];
+    for (const [name, sql] of deep) {
+        const r = await inWorker('ch_parse', sql);
+        check(`ch_parse of ${name} answers`, !r.trap);
+        if (canFormat) {
+            const f = await inWorker('ch_format', sql);
+            check(`ch_format of ${name} answers`, !f.trap);
+        }
+    }
+
+    if (hasAstJson) {
+        /// Documents no query produces, which `createFromJSON` alone would admit.
+        for (const n of [2001, 4520, 7999]) {
+            for (const [kind, json] of [
+                ['arrays', `{"type":"Function","children":${'['.repeat(n)}${']'.repeat(n)}}`],
+                ['objects', `{"type":"Function","children":${'{"a":'.repeat(n)}1${'}'.repeat(n)}}`],
+            ]) {
+                const r = await inWorker('ch_format_json', json);
+                check(`ch_format_json of ${kind} nested ${n} levels is an error`,
+                    !r.trap && !r.ok && /nested too deeply/.test(r.out));
+            }
+        }
     }
 }
 
