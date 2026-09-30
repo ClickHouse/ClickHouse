@@ -860,7 +860,7 @@ void WindowTransform::writeOutCurrentRow()
             // insertRangeFrom appends via resize + memcpy from a disjoint source range, which is
             // self-safe even if the append reallocates and even for nested columns (Array, Variant,
             // Dynamic, JSON) whose sub-columns are not covered by the top-level reserve.
-            chassert(result_column->size() == current_row.row);
+            chassert(std::cmp_equal(result_column->size(), current_row.row));
             result_column->insertRangeFrom(*result_column, current_row.row - 1, 1);
         }
         else if (ws.is_aggregate_function_state)
