@@ -57,7 +57,10 @@ SETTINGS log_comment = '05153_distributed_plan', enable_parallel_replicas = 0, m
 SELECT 'parallel_replicas', count(), sum(f.v)
 FROM rf_idx_fact AS f INNER JOIN rf_idx_dim AS d ON f.id = d.id
 WHERE d.tag = 'hot'
-SETTINGS log_comment = '05153_parallel_replicas', enable_parallel_replicas = 1, parallel_replicas_plan_based = 0;
+-- `parallel_replicas_local_plan` is pinned so that the initiator really does read its own share here,
+-- which is what makes `initiator_never_reads_unpruned` below say something about this mode.
+SETTINGS log_comment = '05153_parallel_replicas', enable_parallel_replicas = 1, parallel_replicas_plan_based = 0,
+    parallel_replicas_local_plan = 1;
 
 -- Parallel replicas where the replicas receive a serialized plan instead of the query text: the
 -- descriptors are not serialized with it, but the replica's own optimization of that plan attaches them.
@@ -65,13 +68,24 @@ SELECT 'parallel_replicas_serialized_plan', count(), sum(f.v)
 FROM rf_idx_fact AS f INNER JOIN rf_idx_dim AS d ON f.id = d.id
 WHERE d.tag = 'hot'
 SETTINGS log_comment = '05153_parallel_replicas_serialized_plan', enable_parallel_replicas = 1,
-    parallel_replicas_plan_based = 0, serialize_query_plan = 1;
+    parallel_replicas_plan_based = 0, serialize_query_plan = 1, parallel_replicas_local_plan = 1;
 
 SELECT 'parallel_replicas_plan_based', count(), sum(f.v)
 FROM rf_idx_fact AS f INNER JOIN rf_idx_dim AS d ON f.id = d.id
 WHERE d.tag = 'hot'
 SETTINGS log_comment = '05153_parallel_replicas_plan_based', enable_parallel_replicas = 1,
     parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 0;
+
+-- Plan-based with a local plan: the initiator reads its own share through a cloned fragment. That fragment
+-- is optimized with the runtime filters already in it, so the optimization that attaches the descriptors
+-- does not run and cannot re-attach them - they have to survive the clone and the read-step rebuild. The
+-- `initiator_never_reads_unpruned` column below is what pins it; a total over all replicas would be
+-- satisfied by the remote replicas alone.
+SELECT 'parallel_replicas_plan_based_local_plan', count(), sum(f.v)
+FROM rf_idx_fact AS f INNER JOIN rf_idx_dim AS d ON f.id = d.id
+WHERE d.tag = 'hot'
+SETTINGS log_comment = '05153_parallel_replicas_plan_based_local_plan', enable_parallel_replicas = 1,
+    parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 1;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -80,7 +94,13 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     initiator.log_comment AS mode,
     sum(part.ProfileEvents['RuntimeFilterGranulesConsidered']) > 0 AS granules_considered,
-    sum(part.ProfileEvents['RuntimeFilterGranulesDropped']) > 0 AS granules_dropped
+    sum(part.ProfileEvents['RuntimeFilterGranulesDropped']) > 0 AS granules_dropped,
+    -- The initiator must never read marks locally without pruning them. Asserting that it *did* prune
+    -- would be non-deterministic: with this few granules the coordinator can leave the initiator's share
+    -- empty, and then there is nothing to consider. Before the descriptors were carried through the clone
+    -- and the read-step rebuild, the plan-based local plan read every mark with this at 0.
+    sumIf(part.ProfileEvents['RuntimeFilterGranulesConsidered'], part.is_initial_query) > 0
+        OR sumIf(part.ProfileEvents['SelectedMarks'], part.is_initial_query) = 0 AS initiator_never_reads_unpruned
 FROM system.query_log AS part
 INNER JOIN
 (
@@ -88,7 +108,8 @@ INNER JOIN
     FROM system.query_log
     WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish'
         AND log_comment IN ('05153_local', '05153_distributed_plan', '05153_parallel_replicas',
-            '05153_parallel_replicas_serialized_plan', '05153_parallel_replicas_plan_based')
+            '05153_parallel_replicas_serialized_plan', '05153_parallel_replicas_plan_based',
+            '05153_parallel_replicas_plan_based_local_plan')
         AND event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR
 ) AS initiator ON part.initial_query_id = initiator.query_id
 WHERE part.type = 'QueryFinish' AND part.event_date >= yesterday() AND part.event_time > now() - INTERVAL 1 HOUR
