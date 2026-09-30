@@ -290,7 +290,13 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
             else if (name == "max_memory_before_spill")
                 max_memory_before_spill = getNotNegativeInt64(name, value);
             else if (name == "max_memory_to_spill_ratio")
-                max_memory_to_spill_ratio = getNotNegativeFloat64(name, value);
+            {
+                Float64 ratio = getNotNegativeFloat64(name, value);
+                if (ratio > 1.0)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Workload setting '{}' must be in the range [0, 1], got {}", name, ratio);
+                max_memory_to_spill_ratio = ratio;
+            }
             else if (throw_on_unknown_setting)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown workload setting '{}'", name);
         }
