@@ -25,6 +25,9 @@ using ExecutingGraphPtr = std::unique_ptr<ExecutingGraph>;
 class ReadProgressCallback;
 using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
 
+class StepProfiler;
+using StepProfilerPtr = std::shared_ptr<StepProfiler>;
+
 struct WorkloadResources;
 
 /// Executes query pipeline.
@@ -69,6 +72,9 @@ public:
     /// It would be called every time when processor reports read progress.
     void setReadProgressCallback(ReadProgressCallbackPtr callback);
 
+    /// Set the profiler of EXPLAIN ANALYZE.
+    void setStepProfiler(StepProfilerPtr step_profiler_);
+
 private:
     ExecutingGraphPtr graph;
 
@@ -111,6 +117,7 @@ private:
     QueryStatusPtr process_list_element;
 
     ReadProgressCallbackPtr read_progress_callback;
+    StepProfilerPtr step_profiler;
 
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new

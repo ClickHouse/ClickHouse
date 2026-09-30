@@ -23,9 +23,9 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
-ExecutionThreadContext::ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback)
+ExecutionThreadContext::ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback, StepProfiler * step_profiler_)
     : read_progress_callback(callback)
-    , step_profiler(CurrentThread::getGroup() ? CurrentThread::getGroup()->step_profiler : nullptr)
+    , step_profiler(step_profiler_)
     , thread_number(thread_number_)
     , profile_processors(profile_processors_)
     , trace_processors(trace_processors_)

@@ -280,6 +280,11 @@ void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
     read_progress_callback = std::move(callback);
 }
 
+void PipelineExecutor::setStepProfiler(StepProfilerPtr step_profiler_)
+{
+    step_profiler = std::move(step_profiler_);
+}
+
 void PipelineExecutor::finalizeExecution()
 {
     single_thread_cpu_slot.reset();
@@ -622,7 +627,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// Starting from 1 instead of 0 is to tackle the single thread scenario, where no upscale() will
     /// be invoked but actually 1 thread used.
 
-    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, read_progress_callback.get());
+    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, read_progress_callback.get(), step_profiler.get());
     const size_t initial_parallel = tasks.fill(queue, async_queue);
 
     /// Initial queued parallelism never routes through `pushTasks`, so size setMax here to

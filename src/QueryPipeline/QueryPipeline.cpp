@@ -686,6 +686,11 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
     progress_callback = callback;
 }
 
+void QueryPipeline::setStepProfiler(StepProfilerPtr step_profiler_)
+{
+    step_profiler = std::move(step_profiler_);
+}
+
 void QueryPipeline::setProcessListElement(QueryStatusPtr elem)
 {
     process_list_element = elem;

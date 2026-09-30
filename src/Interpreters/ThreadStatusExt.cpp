@@ -267,11 +267,9 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     return res_group;
 }
 
-ThreadGroupPtr ThreadGroup::createForExplainAnalyze(ThreadGroupPtr parent_thread_group, StepProfilerPtr step_profiler_)
+ThreadGroupPtr ThreadGroup::createForExplainAnalyze(ThreadGroupPtr parent_thread_group)
 {
-    auto res_group = ThreadGroupPtr(new ThreadGroup(parent_thread_group));
-    res_group->step_profiler = std::move(step_profiler_);
-    return res_group;
+    return ThreadGroupPtr(new ThreadGroup(parent_thread_group));
 }
 
 ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group)

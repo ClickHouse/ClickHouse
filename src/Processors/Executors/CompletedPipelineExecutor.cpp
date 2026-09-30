@@ -72,6 +72,7 @@ void CompletedPipelineExecutor::initialize()
     data = std::make_unique<Data>();
     data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
     data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+    data->executor->setStepProfiler(pipeline.getStepProfiler());
 }
 
 void CompletedPipelineExecutor::execute()

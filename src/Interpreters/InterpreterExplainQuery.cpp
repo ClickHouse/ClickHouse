@@ -1443,6 +1443,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             planning_ns += watch.elapsed();
 
+            auto step_profiler = std::make_shared<StepProfiler>(plan, analyzed.time);
+            pipeline.setStepProfiler(step_profiler);
+
             CompletedPipelineExecutor executor(pipeline);
 
             if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
@@ -1454,8 +1457,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!outer_thread_group)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN ANALYZE: current thread is not attached to a thread group");
 
-            auto step_profiler = std::make_shared<StepProfiler>(plan, analyzed.time);
-            auto analyze_thread_group = ThreadGroup::createForExplainAnalyze(outer_thread_group, step_profiler);
+            auto analyze_thread_group = ThreadGroup::createForExplainAnalyze(outer_thread_group);
             analyze_thread_group->memory_tracker.setDescription("EXPLAIN ANALYZE");
 
             watch.restart();

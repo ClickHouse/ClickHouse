@@ -23,6 +23,8 @@ using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class QueryStatus;
+class StepProfiler;
+using StepProfilerPtr = std::shared_ptr<StepProfiler>;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
 struct Progress;
@@ -149,6 +151,10 @@ public:
     /// Create progress callback from limits and quotas.
     std::unique_ptr<ReadProgressCallback> getReadProgressCallback() const;
 
+    /// EXPLAIN ANALYZE: the executor of this pipeline records step timings into it.
+    void setStepProfiler(StepProfilerPtr step_profiler_);
+    StepProfilerPtr getStepProfiler() const { return step_profiler; }
+
     /// Add processors and resources from other pipeline. Other pipeline should be completed.
     void addCompletedPipeline(QueryPipeline && other);
     void addCompletedPipeline(const QueryPipeline & other);
@@ -170,6 +176,7 @@ private:
     UInt64 normalized_query_hash = 0;
     bool update_profile_events = true;
     bool report_read_progress = true;
+    StepProfilerPtr step_profiler;
 
     std::shared_ptr<Processors> processors;
 

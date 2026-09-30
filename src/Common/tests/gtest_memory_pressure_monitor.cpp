@@ -194,7 +194,7 @@ TEST(MemoryPressureMonitor, NestedThreadGroupInheritsParentPressure)
     /// `createForExplainAnalyze` is the public factory over the nested `ThreadGroup(parent)`
     /// constructor. The nested group's own tracker has no limit, so on its own it is `Normal`; only
     /// the parent link can lift it.
-    ThreadGroupPtr nested_group = ThreadGroup::createForExplainAnalyze(query_group, nullptr);
+    ThreadGroupPtr nested_group = ThreadGroup::createForExplainAnalyze(query_group);
     {
         ThreadGroupSwitcher switcher(nested_group, ThreadName::UNKNOWN, /*allow_existing_group=*/true);
         EXPECT_EQ(CurrentThread::getMemoryPressureMonitor().currentLevel(), MemoryPressureLevel::High);
