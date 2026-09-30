@@ -504,7 +504,7 @@ ClickHouse reads columns stored in the Parquet [`VARIANT`](https://github.com/ap
 
 Each value keeps its own type. Variant primitive types are read as the matching ClickHouse types (for example, `int32` as `Int32`, `decimal8` as `Decimal(18, S)`, `timestamp` as `DateTime64(6, 'UTC')`, `timestamp_ntz` as `DateTime64(6)`, `binary` and `string` as `String`, `uuid` as `UUID`), the variant `null` is read as `NULL`, variant objects are read as `Map(String, Dynamic)` and variant arrays are read as `Array(Dynamic)`.
 
-Shredded variants are supported when `typed_value` is a primitive type. Variants whose `typed_value` is a group (a shredded object or array) are not supported yet.
+For shredded variants only the `value` field is read and `typed_value` is ignored, so values stored only in `typed_value` are read as `NULL`. Shredded variants without a `value` field are not supported.
 
 ## Geo types (GeoParquet) {#geo-types}
 

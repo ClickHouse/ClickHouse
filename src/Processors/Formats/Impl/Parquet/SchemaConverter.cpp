@@ -769,12 +769,10 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     if (node.type_hint && !WhichDataType(node.type_hint->getTypeId()).isDynamic())
         return false;
 
-    if (schema_idx_of_role[TypedValue].has_value()
-        && !isPrimitiveNode(file_metadata.schema[*schema_idx_of_role[TypedValue]]))
+    if (!schema_idx_of_role[Value].has_value())
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Parquet column {} is a variant whose `typed_value` is a group, i.e. an object or array "
-            "shredded into separate columns. Only shredding into a primitive type is supported.",
+            "Parquet column {} is a shredded variant without a `value` field, which is not supported",
             node.getNameForLogging());
 
     size_t primitive_start = primitive_columns.size();
@@ -784,7 +782,7 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     for (size_t i = 0; i < num_children; ++i)
     {
         TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
-        subnode.requested = node.requested;
+        subnode.requested = node.requested && role_of_child[i] != TypedValue;
         processSubtree(subnode);
         output_idx_of_role[role_of_child[i]] = subnode.output_idx;
     }
@@ -792,11 +790,7 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     if (!node.requested)
         return true;
 
-    bool all_children_read = true;
-    for (size_t i = 0; i < num_children; ++i)
-        all_children_read &= output_idx_of_role[role_of_child[i]].has_value();
-
-    if (!all_children_read)
+    if (!output_idx_of_role[Metadata].has_value() || !output_idx_of_role[Value].has_value())
     {
         primitive_columns.resize(primitive_start);
         output_columns.resize(output_start);
@@ -810,13 +804,7 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     output.primitive_end = primitive_columns.size();
     output.input_type = std::make_shared<DataTypeDynamic>();
     output.output_type = output.input_type;
-    output.nested_columns = {output_idx_of_role[Metadata].value()};
-    output.variant_has_value = output_idx_of_role[Value].has_value();
-    if (output.variant_has_value)
-        output.nested_columns.push_back(output_idx_of_role[Value].value());
-    output.variant_has_typed_value = output_idx_of_role[TypedValue].has_value();
-    if (output.variant_has_typed_value)
-        output.nested_columns.push_back(output_idx_of_role[TypedValue].value());
+    output.nested_columns = {output_idx_of_role[Metadata].value(), output_idx_of_role[Value].value()};
     return true;
 }
 

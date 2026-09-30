@@ -15,7 +15,6 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -493,26 +492,6 @@ void decodeValueIntoDynamic(std::string_view data, size_t pos, const DecodeConte
     target.insertValueIntoSharedVariant(*single_value_column, entry->type, entry->name, 0);
 }
 
-void insertDynamicValueFrom(ColumnDynamic & column, const DataTypePtr & type, const IColumn & src, size_t n)
-{
-    const String type_name = type->getName();
-
-    auto & variant_column = column.getVariantColumn();
-
-    if (column.getVariantInfo().variant_name_to_discriminator.contains(type_name)
-        || column.addNewVariant(type, type_name))
-    {
-        const ColumnVariant::Discriminator discriminator = column.getVariantInfo().variant_name_to_discriminator.at(type_name);
-        auto & variant = variant_column.getVariantByGlobalDiscriminator(discriminator);
-        variant.insertFrom(src, n);
-        variant_column.getOffsets().push_back(variant.size() - 1);
-        variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(discriminator));
-        return;
-    }
-
-    column.insertValueIntoSharedVariant(src, type, type_name, n);
-}
-
 const ColumnString & unwrapLeaf(const IColumn & column, const NullMap *& out_null_map)
 {
     const IColumn * inner = &column;
@@ -528,9 +507,7 @@ const ColumnString & unwrapLeaf(const IColumn & column, const NullMap *& out_nul
 
 void decodeVariantColumn(
     const IColumn & metadata,
-    const IColumn * value,
-    const IColumn * typed_value,
-    const DataTypePtr & typed_value_type,
+    const IColumn & value,
     ColumnDynamic & output,
     size_t num_rows,
     size_t max_parser_depth)
@@ -539,54 +516,18 @@ void decodeVariantColumn(
     const ColumnString & metadata_strings = unwrapLeaf(metadata, metadata_nulls);
 
     const NullMap * value_nulls = nullptr;
-    const ColumnString * value_strings = nullptr;
-    if (value)
-        value_strings = &unwrapLeaf(*value, value_nulls);
-
-    const NullMap * typed_value_nulls = nullptr;
-    const IColumn * typed_value_values = typed_value;
-    DataTypePtr typed_value_inner_type;
-    if (typed_value)
-    {
-        if (const auto * nullable = typeid_cast<const ColumnNullable *>(typed_value))
-        {
-            typed_value_nulls = &nullable->getNullMapData();
-            typed_value_values = &nullable->getNestedColumn();
-        }
-        typed_value_inner_type = removeNullable(typed_value_type);
-    }
+    const ColumnString & value_strings = unwrapLeaf(value, value_nulls);
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        if (metadata_nulls && (*metadata_nulls)[row])
-        {
-            output.insertDefault();
-            continue;
-        }
-
-        const bool has_typed_value = typed_value_values && !(typed_value_nulls && (*typed_value_nulls)[row]);
-        const bool has_value = value_strings && !(value_nulls && (*value_nulls)[row]);
-
-        if (has_typed_value && has_value)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Malformed Parquet variant: row {} has both `value` and `typed_value` set, but a shredded "
-                "value must be stored in exactly one of them", row);
-
-        if (has_typed_value)
-        {
-            insertDynamicValueFrom(output, typed_value_inner_type, *typed_value_values, row);
-            continue;
-        }
-
-        if (!has_value)
+        if ((metadata_nulls && (*metadata_nulls)[row]) || (value_nulls && (*value_nulls)[row]))
         {
             output.insertDefault();
             continue;
         }
 
         const std::string_view metadata_blob = metadata_strings.getDataAt(row);
-        const std::string_view value_blob = value_strings->getDataAt(row);
+        const std::string_view value_blob = value_strings.getDataAt(row);
 
         const Metadata parsed_metadata = parseMetadata(metadata_blob);
         const DecodeContext context{.metadata = parsed_metadata, .max_depth = max_parser_depth};

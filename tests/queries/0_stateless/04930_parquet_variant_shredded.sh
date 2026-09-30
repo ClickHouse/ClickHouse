@@ -8,8 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # A shredded variant column: the group has a `typed_value` leaf next to `metadata` and `value`.
 # Row 1 fits the shredded type and lives in `typed_value`; row 2 does not, so it falls back to the
-# variant-encoded `value`. For any row exactly one of the two is non-null, so reading only `value`
-# would silently lose row 1.
+# variant-encoded `value`. Only `value` is read, so row 1 is read as NULL.
 #
 #   required group v {
 #     required binary metadata;
