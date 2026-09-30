@@ -278,6 +278,31 @@ def test_remote_write_skips_time_series_without_metric_name():
     assert int(node.query(skipped_series_sql)) == skipped_before + 1
 
 
+def test_remote_write_rejects_time_series_without_metric_name_with_bad_labels():
+    """
+    A timeseries without __name__ is skipped only if its other labels are valid:
+    an empty label name or one label name with two values still fails the request.
+    """
+    for labels, error in [
+        ([("", "x")], "Tag name must not be empty"),
+        ([("job", "a"), ("job", "b")], "Found two tags with the same name job"),
+    ]:
+        write_request = remote_pb2.WriteRequest()
+        timeseries = types_pb2.TimeSeries()
+        for name, value in labels:
+            timeseries.labels.append(types_pb2.Label(name=name, value=value))
+        timeseries.samples.append(
+            types_pb2.Sample(timestamp=1753176722 * 1000, value=1)
+        )
+        write_request.timeseries.append(timeseries)
+
+        response = get_response_to_remote_write(
+            node.ip_address, 9093, "/write", write_request
+        )
+        assert response.status_code != requests.codes.no_content
+        assert error in response.text
+
+
 def test_remote_write_accepts_empty_then_nonempty_metric_name():
     """
     An empty __name__ label before a non-empty one must still be accepted: the

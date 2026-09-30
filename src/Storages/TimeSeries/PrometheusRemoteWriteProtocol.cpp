@@ -27,6 +27,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
@@ -139,6 +140,12 @@ Block makeTimeSeriesBlock(
         /// A series without a metric name gets an empty row, which `TimeSeriesSink` ignores.
         if (metric_name_it == labels.end())
         {
+            /// Other label errors still fail the request, so check the labels with a stand-in metric name.
+            std::vector<std::pair<std::string_view, std::string_view>> tags{{TimeSeriesTagNames::MetricName, "_"}};
+            for (const auto & label : labels)
+                tags.emplace_back(label.name(), label.value());
+            TimeSeriesSink::sortTagsAndRemoveDuplicates(tags);
+
             if (!num_skipped_series)
                 first_skipped_labels = formatLabels(labels);
             metric_name_column->insertDefault();
