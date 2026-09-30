@@ -287,6 +287,22 @@ bool ConditionSelectivityEstimator::isStale(const RangesInDataParts & parts) con
     return false;
 }
 
+/// `<col>.null` names the stored NULL map of a Nullable `<col>`. Returns `<col>` when the name has
+/// that shape and the parent column is Nullable in storage.
+static std::optional<String> tryGetNullMapParentColumn(const String & column_name, const StorageInMemoryMetadata & metadata)
+{
+    auto dot_pos = column_name.rfind('.');
+    if (dot_pos == std::string::npos || column_name.compare(dot_pos + 1, std::string::npos, "null") != 0)
+        return {};
+
+    String parent_name = column_name.substr(0, dot_pos);
+    const ColumnDescription * parent_col = metadata.getColumns().tryGet(parent_name);
+    if (!parent_col || !isNullableOrLowCardinalityNullable(parent_col->type))
+        return {};
+
+    return parent_name;
+}
+
 bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     const auto * node_dag = node.getDAGNode();
@@ -442,6 +458,34 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
             else
                 return false;
 
+            /// `<col>.null != 0` is a truthiness test of the stored NULL map, so it selects exactly
+            /// the rows `IS NULL` does, and `= 0` the rows `IS NOT NULL` does. Recognising them keeps
+            /// the parent column's NULL count available instead of falling through to the flat default
+            /// below, which the subcolumn name would otherwise get for want of statistics of its own.
+            /// Only 0 qualifies: a NULL map byte only has to be non-zero to mean NULL, so `= 1` does
+            /// not select every NULL row.
+            const bool const_is_zero
+                = (const_value.getType() == Field::Types::UInt64 && const_value.safeGet<UInt64>() == 0)
+                || (const_value.getType() == Field::Types::Int64 && const_value.safeGet<Int64>() == 0);
+
+            if (metadata && const_is_zero && (func_name == "equals" || func_name == "notEquals"))
+            {
+                if (auto parent_name = tryGetNullMapParentColumn(column_name, *metadata))
+                {
+                    if (func_name == "notEquals")
+                    {
+                        out.function = RPNElement::FUNCTION_IS_NULL;
+                        out.null_check_columns.insert(*parent_name);
+                    }
+                    else
+                    {
+                        out.function = RPNElement::FUNCTION_IS_NOT_NULL;
+                        out.not_null_check_columns.insert(*parent_name);
+                    }
+                    return true;
+                }
+            }
+
             if (metadata)
             {
                 const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
@@ -576,19 +620,11 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     /// Bare `<col>.null` UInt8 subcolumn reference, e.g. `SELECT … WHERE x.null`. Treat it as `IS NULL`.
     if (!node.isFunction() && !node.isConstant() && metadata)
     {
-        String bare_column_name = node.getColumnName();
-
-        auto dot_pos = bare_column_name.rfind('.');
-        if (dot_pos != std::string::npos && bare_column_name.compare(dot_pos + 1, std::string::npos, "null") == 0)
+        if (auto parent_name = tryGetNullMapParentColumn(node.getColumnName(), *metadata))
         {
-            String parent_name = bare_column_name.substr(0, dot_pos);
-            const ColumnDescription * parent_col = metadata->getColumns().tryGet(parent_name);
-            if (parent_col && isNullableOrLowCardinalityNullable(parent_col->type))
-            {
-                out.function = RPNElement::FUNCTION_IS_NULL;
-                out.null_check_columns.insert(parent_name);
-                return true;
-            }
+            out.function = RPNElement::FUNCTION_IS_NULL;
+            out.null_check_columns.insert(*parent_name);
+            return true;
         }
     }
 

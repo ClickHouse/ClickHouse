@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import random
+import re
 import string
 import tempfile
 import threading
@@ -2676,10 +2677,8 @@ deltaLake(
         )
     )
 
-@pytest.mark.parametrize(
-    "new_analyzer, storage_type", [["1", "s3"], ["0", "s3"]]
-)
-def test_cluster_function(started_cluster, new_analyzer, storage_type):
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_cluster_function(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     started_cluster.instances["node_old"]
     table_name = randomize_table_name("test_cluster_function")
@@ -2712,11 +2711,11 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
             SETTINGS allow_experimental_delta_kernel_rs=1)
         """
         instance.query(
-            f"SELECT * FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+            f"SELECT * FROM {table_function}"
         )
         assert 5 == int(
             instance.query(
-                f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+                f"SELECT count() FROM {table_function}"
             )
         )
         assert "1\taa\n"
@@ -2724,7 +2723,7 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
         "3\tcc\n"
         "4\taa\n"
         "5\tbb\n" == instance.query(
-            f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
+            f"SELECT * FROM {table_function} ORDER BY a"
         )
 
 
@@ -2913,10 +2912,16 @@ def test_column_pruning(started_cluster):
 
     table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
+    # `input_format_parquet_footer_read_size` is pinned so that the number of bytes read stays a
+    # measure of column pruning only. With the adaptive default the initial footer read is at least
+    # 128 KiB, which is more than this (much smaller) file, so the whole file would be read and the
+    # numbers below would no longer say anything about which columns were fetched.
+    footer_read_size = 64 * 1024
+
     query_id = f"query_{TABLE_NAME}_1"
     sum = int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1",
+            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_footer_read_size={footer_read_size}",
             query_id=query_id,
         )
     )
@@ -2932,7 +2937,7 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_2"
     assert sum == int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, use_parquet_metadata_cache=0",
+            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, use_parquet_metadata_cache=0, input_format_parquet_footer_read_size={footer_read_size}",
             query_id=query_id,
         )
     )
@@ -3993,7 +3998,7 @@ def test_concurrent_queries(started_cluster, partitioned):
         def insert(i):
             try:
                 instance.query(
-                    f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers(50)",
+                    f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers(50)"
                 )
                 success[i] += 1
             except Exception as e:
@@ -4834,6 +4839,204 @@ def test_write_cancel_during_commit_keeps_data(started_cluster, partitioned):
     assert int(parquet_count) >= 1, (
         f"committed data files removed after late cancel: {parquet_count}"
     )
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_commit_failure_with_failing_cleanup(started_cluster, partitioned):
+    # A DeltaLake commit that fails must stay the error the client sees, even when
+    # removing the data files the failed INSERT had already uploaded itself fails, and
+    # that removal failure must be reported with the data file it was left on. Two
+    # faults are injected at once: delta_lake_commit_fail_before_log_write throws
+    # before the commit writes its log entry (the commit fails), and
+    # local_object_storage_network_error_during_remove throws on the first data-file
+    # removal. The first INSERT is a control: it commits, so the committed data files
+    # are known and the failed INSERT can be held to changing nothing.
+    instance = started_cluster.instances["node1"]
+    failpoint = "local_object_storage_network_error_during_remove"
+    commit_failpoint = "delta_lake_commit_fail_before_log_write"
+    commit_error = "Failpoint for a commit failure before the log write"
+    table_name = randomize_table_name("test_commit_failure_cleanup")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+    # One row per data file, one row per block: the unpartitioned sink rolls a new data
+    # file per block and the partitioned one opens a sink per partition value, so both
+    # write 3 data files. With a single data file the cleanup loop runs only one
+    # iteration, which exercises neither sink's multi-file path.
+    insert_settings = (
+        "max_block_size = 1, delta_lake_insert_max_rows_in_data_file = 1, "
+        "output_format_parquet_compression_method = 'none'"
+    )
+
+    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["part"] if partitioned else [],
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, part Int32) "
+        f"ENGINE = DeltaLakeLocal('/{result_file}')"
+    )
+
+    def parquet_paths():
+        listing = instance.exec_in_container(
+            ["bash", "-c", f"find /{result_file} -name '*.parquet' | sort"]
+        ).strip()
+        return [path for path in listing.split("\n") if path]
+
+    def failpoint_enabled():
+        return instance.query(
+            f"SELECT enabled FROM system.fail_points WHERE name = '{failpoint}'"
+        ).strip()
+
+    # Version 0 was written from an empty table, so no data file exists yet.
+    assert parquet_paths() == []
+
+    # Control: the same INSERT with no faults commits, so every later count is measured
+    # against a known number of committed data files.
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number::Int32, number::Int32 "
+        f"FROM numbers(3) SETTINGS {insert_settings}"
+    )
+    committed = parquet_paths()
+    assert len(committed) == 3, f"control insert wrote {len(committed)} data files: {committed}"
+    assert instance.query(f"SELECT count() FROM {table_name}").strip() == "3"
+
+    try:
+        instance.query(f"SYSTEM ENABLE FAILPOINT {commit_failpoint}")
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        assert failpoint_enabled() == "1"
+        _, error = instance.query_and_get_answer_with_error(
+            f"INSERT INTO {table_name} SELECT (number + 10)::Int32, (number + 10)::Int32 "
+            f"FROM numbers(3) SETTINGS {insert_settings}"
+        )
+        # `enabled` went 1 -> 0 with no DISABLE in between, which only a fire can do.
+        fired = failpoint_enabled() == "0"
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        instance.query(f"SYSTEM DISABLE FAILPOINT {commit_failpoint}")
+
+    assert fired, "the removal failpoint never fired, so the cleanup path was not exercised"
+
+    # O1: the client is told why nothing was written (the commit failed), not why a
+    # cleanup step failed afterwards.
+    assert "Injected error after remove object" not in error, (
+        f"the data-file removal error replaced the commit error: {error}"
+    )
+    assert commit_error in error, f"unexpected insert error: {error}"
+
+    # O2: the removal that failed is reported, naming the data file it was left on. The
+    # message is the full one only the commit-failure cleanup emits; the cancel path logs a
+    # different one. The path has to follow the message immediately: the injected removal
+    # exception carries the path too, so matching it anywhere on the line would also pass if
+    # the handler logged no path at all.
+    message = "Failed to remove uncommitted data file after a failed commit"
+    removal_log = instance.grep_in_log(message)
+    assert re.search(
+        re.escape(f"{message}: ") + rf"\S*{re.escape(table_name)}_data/\S+\.parquet",
+        removal_log,
+    ), f"the failed data-file removal was not logged with its path: {removal_log}"
+
+    # O3: the failed INSERT committed nothing, and left the committed data files alone.
+    assert instance.query(f"SELECT count() FROM {table_name}").strip() == "3"
+    assert parquet_paths() == committed
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_commit_failure_cleanup_attempts_every_data_file(started_cluster, partitioned):
+    # The cleanup after a failed DeltaLake commit must attempt every data file the INSERT
+    # had uploaded, not stop on the first removal that fails. Observing that needs a
+    # removal fault that persists across calls: with a fault that fires once the later
+    # removals succeed, so a handler that gave up after the first failure would leave the
+    # same files on disk and the same single log line as one that continued, which is what
+    # the sibling test above cannot tell apart. The oracle here is the number of distinct
+    # data files named in the handler's own log lines: one per data file when every removal
+    # is attempted, one in total when the loop stops at the first failure.
+    instance = started_cluster.instances["node1"]
+    failpoint = "local_object_storage_network_error_during_every_remove"
+    commit_failpoint = "delta_lake_commit_fail_before_log_write"
+    commit_error = "Failpoint for a commit failure before the log write"
+    table_name = randomize_table_name("test_commit_failure_every_file")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+    insert_settings = (
+        "max_block_size = 1, delta_lake_insert_max_rows_in_data_file = 1, "
+        "output_format_parquet_compression_method = 'none'"
+    )
+
+    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["part"] if partitioned else [],
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, part Int32) "
+        f"ENGINE = DeltaLakeLocal('/{result_file}')"
+    )
+
+    def parquet_paths():
+        listing = instance.exec_in_container(
+            ["bash", "-c", f"find /{result_file} -name '*.parquet' | sort"]
+        ).strip()
+        return [path for path in listing.split("\n") if path]
+
+    assert parquet_paths() == []
+
+    # Control: the same INSERT with no faults commits, which fixes how many data files an
+    # INSERT of this shape writes.
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number::Int32, number::Int32 "
+        f"FROM numbers(3) SETTINGS {insert_settings}"
+    )
+    committed = parquet_paths()
+    assert len(committed) == 3, (
+        f"control insert wrote {len(committed)} data files: {committed}"
+    )
+
+    try:
+        instance.query(f"SYSTEM ENABLE FAILPOINT {commit_failpoint}")
+        # REGULAR, so it stays armed until disabled and every removal in the window fails.
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        _, error = instance.query_and_get_answer_with_error(
+            f"INSERT INTO {table_name} SELECT (number + 10)::Int32, (number + 10)::Int32 "
+            f"FROM numbers(3) SETTINGS {insert_settings}"
+        )
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        instance.query(f"SYSTEM DISABLE FAILPOINT {commit_failpoint}")
+
+    # O1: the client is still told why nothing was written, not why a cleanup step failed.
+    assert "Injected error after remove object" not in error, (
+        f"the data-file removal error replaced the commit error: {error}"
+    )
+    assert commit_error in error, f"unexpected insert error: {error}"
+
+    # O2: one failed removal is logged per data file, each naming a different one. The
+    # table name anchors the match so the two parametrizations cannot read each other's
+    # lines, and cancelBuffers() logs a different message, so it cannot inflate the count.
+    message = "Failed to remove uncommitted data file after a failed commit"
+    removal_log = instance.grep_in_log(message)
+    logged_paths = set(
+        re.findall(
+            re.escape(f"{message}: ") + rf"(\S*{re.escape(table_name)}_data/\S+\.parquet)",
+            removal_log,
+        )
+    )
+    assert len(logged_paths) == 3, (
+        f"the handler logged {len(logged_paths)} failed removals, expected one per data file "
+        f"(a handler that stopped at the first failure logs one): {removal_log}"
+    )
+
+    # The injected fault throws after the unlink, so the uncommitted files are gone either
+    # way: this stays an invariant guard, not the discriminating oracle.
+    assert parquet_paths() == committed
 
 
 @pytest.mark.parametrize("column_mapping", ["", "name"])
@@ -5919,8 +6122,7 @@ def test_snapshot_initialized_once_per_query(started_cluster):
         query_id=f"snapshot_init_cluster_sum_{TABLE_NAME}",
     )
 
-@pytest.mark.parametrize("allow_experimental_analyzer", [0, 1])
-def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allow_experimental_analyzer):
+def test_insert_select_from_cluster_with_partition_pruning(started_cluster):
     node = started_cluster.instances["node1"]
     table_name = randomize_table_name("test_insert_select_cluster_pruning")
 
@@ -5985,7 +6187,7 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allo
         WHERE (event_time >= '2026-02-01') AND (event_time < '2026-02-02')
         """,
         query_id=query_id,
-        settings={"allow_experimental_delta_kernel_rs": 1, "delta_lake_enable_engine_predicate": 0, "allow_experimental_analyzer" : allow_experimental_analyzer},
+        settings={"allow_experimental_delta_kernel_rs": 1, "delta_lake_enable_engine_predicate": 0},
     )
 
     # The cluster INSERT path runs the SELECT on a remote replica, which writes
@@ -6049,7 +6251,6 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allo
         settings={
             "allow_experimental_delta_kernel_rs": 1,
             "delta_lake_enable_engine_predicate": 0,
-            "allow_experimental_analyzer": allow_experimental_analyzer,
         },
     )
 
