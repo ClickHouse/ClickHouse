@@ -43,6 +43,19 @@
       ]
     },
     {
+      "group": "ガイド",
+      "pages": [
+        "ja/products/managed-postgres/guides/bun",
+        "ja/products/managed-postgres/guides/cloudflare-workers",
+        "ja/products/managed-postgres/guides/drizzle",
+        "ja/products/managed-postgres/guides/kysely",
+        "ja/products/managed-postgres/guides/laravel",
+        "ja/products/managed-postgres/guides/nodejs",
+        "ja/products/managed-postgres/guides/prisma",
+        "ja/products/managed-postgres/guides/ruby-on-rails"
+      ]
+    },
+    {
       "group": "料金",
       "pages": [
         "ja/products/managed-postgres/pricing"

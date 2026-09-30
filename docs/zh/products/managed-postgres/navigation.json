@@ -43,6 +43,19 @@
       ]
     },
     {
+      "group": "指南",
+      "pages": [
+        "zh/products/managed-postgres/guides/bun",
+        "zh/products/managed-postgres/guides/cloudflare-workers",
+        "zh/products/managed-postgres/guides/drizzle",
+        "zh/products/managed-postgres/guides/kysely",
+        "zh/products/managed-postgres/guides/laravel",
+        "zh/products/managed-postgres/guides/nodejs",
+        "zh/products/managed-postgres/guides/prisma",
+        "zh/products/managed-postgres/guides/ruby-on-rails"
+      ]
+    },
+    {
       "group": "定价",
       "pages": [
         "zh/products/managed-postgres/pricing"

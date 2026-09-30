@@ -43,6 +43,19 @@
       ]
     },
     {
+      "group": "가이드",
+      "pages": [
+        "ko/products/managed-postgres/guides/bun",
+        "ko/products/managed-postgres/guides/cloudflare-workers",
+        "ko/products/managed-postgres/guides/drizzle",
+        "ko/products/managed-postgres/guides/kysely",
+        "ko/products/managed-postgres/guides/laravel",
+        "ko/products/managed-postgres/guides/nodejs",
+        "ko/products/managed-postgres/guides/prisma",
+        "ko/products/managed-postgres/guides/ruby-on-rails"
+      ]
+    },
+    {
       "group": "요금",
       "pages": [
         "ko/products/managed-postgres/pricing"

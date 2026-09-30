@@ -53,34 +53,42 @@ Sí, puedes modificar los parámetros de configuración de PostgreSQL y PgBounce
 
 ## Pool de conexiones {#connection-pooling}
 
-### ¿Por qué veo errores de `prepared statement does not exist` al usar PgBouncer? {#prepared-statement-errors}
+### ¿Por qué veo errores `prepared statement does not exist` a través de PgBouncer? {#prepared-statement-errors}
 
-ClickHouse Managed Postgres ejecuta PgBouncer en modo de **pooling por transacciones**. En este modo, una conexión backend de Postgres solo se asigna al cliente durante una única transacción y luego se devuelve al pool; la siguiente transacción del mismo cliente puede terminar en un backend distinto.
+ClickHouse Managed Postgres ejecuta PgBouncer en modo de **agrupación por transacción** (transaction pooling). En este modo, una conexión de backend de Postgres solo se asigna a su cliente mientras dura una única transacción y, después, se devuelve al grupo; la siguiente transacción del mismo cliente puede acabar en un backend distinto.
 
-Esto rompe las **sentencias preparadas del lado del servidor**, ya que están vinculadas al backend concreto que ejecutó `PREPARE` (o `Parse` en la consulta extendida). Cuando el `EXECUTE` correspondiente termina en un backend distinto, aparecen errores como:
+PgBouncer realiza un seguimiento de las **sentencias preparadas a nivel de protocolo**, que la mayoría de los controladores envían mediante el protocolo de consulta extendido (mensajes `Parse`, `Bind` y `Execute`). Cuando una sentencia se ejecuta en un backend que todavía no la conoce, PgBouncer primero la prepara allí. Cada conexión de backend conserva hasta `max_prepared_statements` sentencias, `200` de forma predeterminada. Por lo tanto, las sentencias preparadas con nombre y sin nombre funcionan a través de PgBouncer sin necesidad de modificar el controlador.
+
+Lo que no funciona a través de PgBouncer:
+
+* **Sentencias preparadas a nivel de SQL.** PgBouncer no realiza un seguimiento de `PREPARE` y `EXECUTE` cuando se envían como SQL, por lo que un `EXECUTE` puede acabar en un backend que nunca ejecutó el `PREPARE`.
+* **Liberar sentencias con `DEALLOCATE` de SQL.** PgBouncer cambia el nombre de las sentencias en el backend, por lo que un `DEALLOCATE` que use el nombre de sentencia del cliente falla. Dentro de una transacción, esto aborta la transacción, y las sentencias posteriores fallan con `current transaction is aborted`. Los controladores basados en libpq 17 o posterior liberan las sentencias mediante un mensaje `Close` a nivel de protocolo, que PgBouncer sí gestiona.
+
+En ambos casos se producen errores como los siguientes:
 
 ```text
 ERROR:  prepared statement "..." does not exist
 ERROR:  unnamed prepared statement does not exist
 ```
 
-Síntomas que suelen deberse a esta misma causa raíz:
+Síntomas que suelen tener esta misma causa raíz:
 
 * Ráfagas de errores `prepared statement does not exist`, especialmente durante backfills o escrituras con alta concurrencia
-* Inserciones que parecen &quot;fallar en silencio&quot;: la sentencia da error, el driver reintenta y un lote puede terminar aplicándose solo parcialmente o descartándose
-* Valores devueltos con el tipo incorrecto (por ejemplo, una columna `BIGINT` decodificada como un patrón de bits `float64`): esto sucede cuando un plan del lado del cliente almacenado en caché reutiliza códigos de tipo o formato obsoletos frente a un backend al que nunca se le envió el `Parse` correspondiente
+* Inserciones que parecen &quot;fallar silenciosamente&quot;: la sentencia devuelve un error, el controlador reintenta y un lote puede acabar aplicándose parcialmente o descartándose
+* Transacciones que fallan con `current transaction is aborted` después de que se libera una sentencia
 
-**Solución: desactive las sentencias preparadas del lado del servidor en su driver.** La opción exacta depende de su biblioteca cliente:
+**Solución: actualice su controlador o desactive en él las sentencias preparadas del lado del servidor.** Entre los controladores que liberan sentencias con `DEALLOCATE` de SQL se encuentran Ruby on Rails con una gema `pg` anterior a la 1.6 o libpq anterior a la 17, y PHP `pdo_pgsql` compilado con libpq anterior a la 17. Si no puede actualizar, el ajuste concreto depende de su biblioteca cliente:
 
-| Driver                           | Configuración                                                                       |
-| -------------------------------- | ----------------------------------------------------------------------------------- |
-| **pgx** (Go)                     | `statement_cache_capacity=0` y `default_query_exec_mode=exec` (o `simple_protocol`) |
-| **psycopg3** (Python)            | `prepare_threshold=None`                                                            |
-| **asyncpg** (Python)             | `statement_cache_size=0`                                                            |
-| **JDBC** (Java)                  | `prepareThreshold=0`                                                                |
-| **node-postgres / pg** (Node.js) | No pase un `name` a `query()` (las consultas con nombre se preparan en el servidor) |
+| Controlador                       | Configuración                                                                       |
+| --------------------------------- | ----------------------------------------------------------------------------------- |
+| **pgx** (Go)                      | `statement_cache_capacity=0` y `default_query_exec_mode=exec` (o `simple_protocol`) |
+| **psycopg3** (Python)             | `prepare_threshold=None`                                                            |
+| **asyncpg** (Python)              | `statement_cache_size=0`                                                            |
+| **JDBC** (Java)                   | `prepareThreshold=0`                                                                |
+| **Active Record** (Ruby on Rails) | `prepared_statements: false` en `config/database.yml`                               |
+| **PDO** (PHP, Laravel)            | `PDO::ATTR_EMULATE_PREPARES => true`                                                |
 
-Si su carga de trabajo depende de sentencias preparadas, conéctese **directamente a PostgreSQL** (puerto 5432) en lugar del pooler PgBouncer: las conexiones directas admiten sentencias preparadas con normalidad. Consulte [Conexión](/es/products/managed-postgres/connection) para obtener más información sobre cómo elegir entre los endpoints agrupados y directos.
+Si su workload depende de `PREPARE` a nivel de SQL, conéctese **directamente a PostgreSQL** (puerto 5432) en lugar de hacerlo a través del pooler de PgBouncer. Consulte [Conexión](/es/products/managed-postgres/connection) para obtener más información sobre cómo elegir entre el endpoint con pooling y el directo.
 
 ### ¿Qué significa el parámetro `max_client_conn` en PgBouncer y cómo se relaciona con `max_connections` en Postgres? {#pgbouncer-vs-pg-connections}
 
@@ -89,7 +97,13 @@ Controlan cosas distintas:
 * **Postgres `max_connections`** limita la cantidad de conexiones de **backend** a PostgreSQL. Este es el número costoso: cada backend consume memoria y un slot de proceso.
 * **PgBouncer `max_client_conn`** limita la cantidad de conexiones de **cliente** que pueden estar abiertas al mismo tiempo en el pooler. PgBouncer multiplexa esa gran cantidad de conexiones de cliente sobre un conjunto mucho más pequeño de conexiones de backend.
 
-Una instancia típica de ClickHouse Managed Postgres está configurada para que PgBouncer acepte aproximadamente **10× más conexiones de cliente que backends de Postgres** (por ejemplo, 5000 clientes / 500 backends). Si ve errores de conexión en el pooler, es mucho más probable que esté alcanzando un límite de backend por pool (`default_pool_size`) que el límite general de clientes.
+PgBouncer acepta varias veces más conexiones de cliente que backends de Postgres. Por ejemplo, una instancia con `max_connections` establecido en `500` acepta `2500` conexiones de cliente en el pooler. Si ve errores de conexión en el pooler, es mucho más probable que esté alcanzando un límite de backend por grupo (`default_pool_size`, o `max_db_connections` por base de datos) que el límite general de clientes.
+
+Para ver los valores de su instancia, conéctese a la base de datos especial `pgbouncer` a través de PgBouncer (puerto `6432`) y ejecute `SHOW CONFIG`:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/pgbouncer?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "SHOW CONFIG;"
+```
 
 ## Capacidades de la base de datos {#database-capabilities}
 
