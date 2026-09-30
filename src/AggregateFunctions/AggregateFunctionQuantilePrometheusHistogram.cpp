@@ -265,7 +265,7 @@ struct QuantilePrometheusHistogramArrayData
         bool contains(size_t index) const
         {
             if (dense)
-                return present[index] != 0;
+                return index < present.size() && present[index] != 0;
 
             const UInt32 index_uint32 = static_cast<UInt32>(index);
             auto it = std::lower_bound(sparse_values.begin(), sparse_values.end(), index_uint32,
@@ -821,6 +821,8 @@ public:
     }
 
     String getName() const override { return NameQuantilePrometheusHistogramArray::name; }
+
+    bool shouldPrintParametersWithTypes() const override { return true; }
 
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
