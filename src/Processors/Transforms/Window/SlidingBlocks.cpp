@@ -2,6 +2,8 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
+#include <base/arithmeticOverflow.h>
+
 #include <ranges>
 
 namespace DB
@@ -74,7 +76,9 @@ RowNumber SlidingBlocks::prev(RowNumber row) const
 std::optional<RowNumber> SlidingBlocks::move(RowNumber row, int64_t offset) const
 {
     /// The target row counted from the start of the row's block
-    int64_t target = row.row + offset;
+    int64_t target = 0;
+    if (common::addOverflow(row.row, offset, target))
+        return std::nullopt;
 
     while (target < 0 && row.block > begin().block)
     {
