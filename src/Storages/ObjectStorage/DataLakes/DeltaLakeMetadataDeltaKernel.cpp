@@ -19,6 +19,8 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/transformTypesRecursively.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -399,6 +401,36 @@ static DataTypePtr replaceTypeNamesToPhysicalRecursively(
     const std::string & parent_physical_name,
     const NameToNameMap & physical_names_map)
 {
+    if (physical_names_map.empty())
+        return type;
+
+    /// Fields below an array or a map are keyed through the `array_element`, `map_key` and `map_value`
+    /// path components, which add nothing to the physical path.
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        auto nested_type = replaceTypeNamesToPhysicalRecursively(
+            array_type->getNestedType(), parent_logical_name + ".array_element", parent_physical_name, physical_names_map);
+        return nested_type == array_type->getNestedType() ? type : std::make_shared<DataTypeArray>(nested_type);
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        auto key_type = replaceTypeNamesToPhysicalRecursively(
+            map_type->getKeyType(), parent_logical_name + ".map_key", parent_physical_name, physical_names_map);
+        auto value_type = replaceTypeNamesToPhysicalRecursively(
+            map_type->getValueType(), parent_logical_name + ".map_value", parent_physical_name, physical_names_map);
+        if (key_type == map_type->getKeyType() && value_type == map_type->getValueType())
+            return type;
+        return std::make_shared<DataTypeMap>(key_type, value_type);
+    }
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        auto nested_type = replaceTypeNamesToPhysicalRecursively(
+            nullable_type->getNestedType(), parent_logical_name, parent_physical_name, physical_names_map);
+        return nested_type == nullable_type->getNestedType() ? type : std::make_shared<DataTypeNullable>(nested_type);
+    }
+
     const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
     if (!tuple_type || !tuple_type->hasExplicitNames())
         return type;
