@@ -63,6 +63,7 @@ protected:
     virtual bool readyForNextChunk() const { return true; }
     virtual int commitWaitFD() const { return -1; }
     virtual void drainCommitWait() {}
+    virtual void signalCommitWait() {}
     virtual GenerateResult getRemaining() { return {};}
 
 public:

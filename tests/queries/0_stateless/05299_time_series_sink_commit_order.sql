@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- A sink throws after TimeSeriesCommitGate has released the block.
 
 SET allow_experimental_time_series_table = 1;

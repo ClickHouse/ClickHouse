@@ -254,15 +254,21 @@ void ExceptionKeepingTransform::work()
 
 int ExceptionKeepingTransform::schedule()
 {
-    if (stage == Stage::WaitCommit || stage == Stage::WaitFinish || (stage == Stage::Consume && !readyForNextChunk()))
-    {
-        const int descriptor = commitWaitFD();
-        if (descriptor < 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Commit wait has no file descriptor in {}", getName());
-        return descriptor;
-    }
+    if (stage != Stage::WaitCommit && stage != Stage::WaitFinish && stage != Stage::Consume)
+        return IProcessor::schedule();
 
-    return IProcessor::schedule();
+    const int descriptor = commitWaitFD();
+    if (descriptor < 0)
+        return IProcessor::schedule();
+
+    /// The wait can finish between `prepare` and `schedule`.
+    const bool still_waiting = stage == Stage::WaitCommit || stage == Stage::WaitFinish
+        ? !readyForCommit()
+        : !readyForNextChunk();
+    if (!still_waiting)
+        signalCommitWait();
+
+    return descriptor;
 }
 
 void ExceptionKeepingTransform::setRuntimeData(ThreadGroupPtr thread_group_)

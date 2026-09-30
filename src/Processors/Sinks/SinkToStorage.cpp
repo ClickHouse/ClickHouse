@@ -12,7 +12,8 @@ void SinkToStorage::setCommitOrder(
     std::function<void()> fail,
     std::function<bool(size_t)> epoch_done,
     std::function<int()> schedule_fd,
-    std::function<void()> drain)
+    std::function<void()> drain,
+    std::function<void()> signal)
 {
     commit_order.emplace(CommitOrder{
         std::move(allowed),
@@ -22,6 +23,7 @@ void SinkToStorage::setCommitOrder(
         std::move(epoch_done),
         std::move(schedule_fd),
         std::move(drain),
+        std::move(signal),
         0});
 }
 
@@ -63,6 +65,12 @@ void SinkToStorage::drainCommitWait()
 {
     if (commit_order)
         commit_order->drain();
+}
+
+void SinkToStorage::signalCommitWait()
+{
+    if (commit_order)
+        commit_order->signal();
 }
 
 void SinkToStorage::finishCommitStep()

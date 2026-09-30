@@ -368,7 +368,8 @@ void attachCommitOrder(IProcessor & processor, const std::shared_ptr<TimeSeriesC
         [barrier] { barrier->failCommit(); },
         [barrier](size_t epoch) { return barrier->commitEpochDone(epoch); },
         [wake] { return wake->fd; },
-        [wake] { wake->read(); });
+        [wake] { wake->read(); },
+        [wake] { wake->write(); });
 #else
     (void)rank;
     sink->setCommitOrder(
@@ -378,6 +379,7 @@ void attachCommitOrder(IProcessor & processor, const std::shared_ptr<TimeSeriesC
         [] {},
         [](size_t) { return true; },
         [] { return -1; },
+        [] {},
         [] {});
 #endif
 }

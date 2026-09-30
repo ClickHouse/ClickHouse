@@ -32,7 +32,8 @@ public:
         std::function<void()> fail,
         std::function<bool(size_t)> epoch_done,
         std::function<int()> schedule_fd,
-        std::function<void()> drain);
+        std::function<void()> drain,
+        std::function<void()> signal);
 
 protected:
     virtual void consume(Chunk & chunk) = 0;
@@ -44,6 +45,7 @@ protected:
     bool readyForNextChunk() const override;
     int commitWaitFD() const override;
     void drainCommitWait() override;
+    void signalCommitWait() override;
 
     void finishCommitStep();
     void failCommitOrder();
@@ -58,6 +60,7 @@ protected:
         std::function<bool(size_t)> epoch_done;
         std::function<int()> schedule_fd;
         std::function<void()> drain;
+        std::function<void()> signal;
         size_t epoch = 0;
         mutable bool hold_next = false;
     };
