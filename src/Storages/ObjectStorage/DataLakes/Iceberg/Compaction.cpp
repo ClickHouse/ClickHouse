@@ -1358,16 +1358,14 @@ static void writeMetadataFiles(
 
     {
         std::string json_representation = stringifyJSON(metadata_object, 4);
-
-        auto buffer_metadata = object_storage->writeObject(
-            StoredObject(path_resolver.resolve(generated_metadata_info.path)),
-            WriteMode::Rewrite,
-            std::nullopt,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            context->getWriteSettings());
-
-        buffer_metadata->write(json_representation.data(), json_representation.size());
-        buffer_metadata->finalize();
+        writeMessageToFile(
+            json_representation,
+            path_resolver.resolve(generated_metadata_info.path),
+            object_storage,
+            context,
+            /* write_if_none_match */ "",
+            /* write_if_match */ "",
+            generated_metadata_info.compression_method);
     }
 }
 
