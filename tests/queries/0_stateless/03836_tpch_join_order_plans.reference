@@ -271,7 +271,7 @@ Expression (Project names)
           Aggregating
             Expression ((Before GROUP BY + ))
               JoinLogical (Shuffle HashJoin )
-                Filter ((WHERE + Change column names to column identifiers))
+                Expression (Change column names to column identifiers)
                   ShuffleExchange
                     ReadFromMergeTree (ParallelRead default.orders)
                 Filter ((WHERE + Change column names to column identifiers))
