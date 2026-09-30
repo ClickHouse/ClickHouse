@@ -54,7 +54,8 @@ else
     echo "FAIL: expected the setting gate to report the setting: $out"
 fi
 
-# With the table-level setting enabled, Cloud must compact, and the open-source build still refuses.
+# With the table-level setting enabled, Cloud must compact without the query-level one,
+# and the open-source build still refuses with both.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${ENABLED_TABLE} (c0 Int32)
     ENGINE = IcebergLocal('${ENABLED_TABLE_PATH}', 'Parquet')
@@ -62,8 +63,12 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${ENABLED_TABLE} VALUES (1)"
 
-out=$(${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 \
-    --query "OPTIMIZE TABLE ${ENABLED_TABLE}" 2>&1)
+if [ "$is_cloud" = 1 ]; then
+    out=$(${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE ${ENABLED_TABLE}" 2>&1)
+else
+    out=$(${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 \
+        --query "OPTIMIZE TABLE ${ENABLED_TABLE}" 2>&1)
+fi
 
 if grep -qF 'Logical error' <<< "$out"; then
     echo "FAIL: logical error: $out"
