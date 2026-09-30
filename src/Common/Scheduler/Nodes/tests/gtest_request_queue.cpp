@@ -451,8 +451,7 @@ TEST(RequestQueue, SwapSchedulerKeepsRequests)
 /// The swap hook runs on the scheduler thread in response to SQL, so it must not fail halfway.
 static_assert(noexcept(std::declval<RequestQueue &>().setScheduler(SchedulerAlgorithm::Fair)));
 
-/// Switching through every algorithm and back reuses the queue's algorithm instances: the pending
-/// requests are kept, in order, across all switches.
+/// Switching through every algorithm and back again (reusing the instances) keeps the requests in order.
 TEST(RequestQueue, SwapThroughAllSchedulersKeepsRequests)
 {
     Fixture f(SchedulerAlgorithm::Fifo);

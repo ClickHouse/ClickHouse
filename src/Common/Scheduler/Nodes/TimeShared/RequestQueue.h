@@ -74,13 +74,11 @@ public:
     /// Used to trim to `max_waiting_queries`.
     virtual ResourceRequest * popWorst() = 0;
 
-    /// Move all pending requests, in order, to the back of `out` (for purge and for the scheduler-swap
-    /// hook). Does not allocate: `out` links the requests through `enqueued_hook`, which is free once a
-    /// request is out of an algorithm.
+    /// Move all pending requests, in order, to the back of `out`. Never allocates: `out` links them
+    /// through `enqueued_hook`, which is free once a request leaves an algorithm.
     virtual void pullAll(ResourceRequest::EnqueuedList & out) noexcept = 0;
 
-    /// Restart the ordering state (virtual time, arrival sequence) of an empty algorithm, as if it
-    /// were new. Called when the queue switches to it.
+    /// Restart the ordering state (virtual time, arrival sequence) of the empty algorithm, as if new.
     virtual void reset() noexcept = 0;
 
     virtual bool empty() const = 0;
@@ -143,7 +141,7 @@ public:
 
     void push(ResourceRequest * request) override
     {
-        chassert(request->scheduling.context); // stamped by the classifier that produced the request's link
+        chassert(request->scheduling.context); // set by the classifier that issued the link
         // A request arriving to an empty queue starts a new busy period: roll system virtual time to
         // the max finish tag reached so far, so a query idle across the boundary (or a fresh query)
         // does not start behind a stale system time and monopolise the resource until it catches up.
@@ -447,7 +445,7 @@ public:
         // Order by the query's `workload_priority`: lower value = higher precedence, so a negative
         // value sorts ahead of the default `0` and a positive value behind it. Ties break FIFO by
         // arrival sequence.
-        chassert(request->scheduling.context); // stamped by the classifier that produced the request's link
+        chassert(request->scheduling.context); // set by the classifier that issued the link
         request->scheduling.priority = request->scheduling.context->priority;
         request->scheduling.key = {0.0, next_seq++};
         requests.insert(*request);
@@ -522,12 +520,11 @@ private:
  * workload leaf. The leaf owns the cross-cutting concerns (mutex, budget via `ISchedulerQueue`,
  * `max_waiting_queries`, counters, activation) and delegates ordering to an `ISchedulingAlgorithm`.
  *
- * `setScheduler()` switches the algorithm in place, moving all pending requests from the old one to
+ * `setScheduler` switches the algorithm in place, moving all pending requests from the old one to
  * the new one, so a `CREATE OR REPLACE WORKLOAD` that changes `scheduler` neither rebuilds the
  * hierarchy nor invalidates the `ResourceLink` cached by classifiers, and loses no pending requests.
- * Moving requests between algorithms, or out of one for eviction and purge, does not allocate: the
- * queue holds one instance of each algorithm and links the moved requests into an intrusive list.
- * These paths run on the scheduler thread in response to SQL, so they must not fail halfway.
+ * Moving requests (switch, eviction, purge) never allocates: these paths run on the scheduler thread
+ * in response to SQL and must not fail halfway.
  */
 class RequestQueue final : public ISchedulerQueue
 {
@@ -677,9 +674,8 @@ public:
         });
     }
 
-    /// Switch the scheduling algorithm in place, moving all pending requests to the new one (swap hook
-    /// called by `WorkloadResourceManager` when the workload `scheduler` setting changes). No effect on
-    /// the node identity, `ResourceLink`, activation state, or the pending-request count.
+    /// Switch the algorithm in place, moving all pending requests to the new one. Called when the
+    /// workload `scheduler` setting changes; keeps the node, its `ResourceLink` and activation state.
     void setScheduler(SchedulerAlgorithm new_algorithm) noexcept
     {
         std::lock_guard lock(mutex);
@@ -690,9 +686,8 @@ public:
         algorithm = new_algorithm;
         algo = &algorithmFor(new_algorithm);
         algo->reset();
-        // When switching to `fair`, reset each migrated query's vruntime — `reset` restarts system
-        // virtual time at 0, so a stale projection would be double-counted. attained_cost is real
-        // accrued service and is kept.
+        // `reset` restarts the `fair` system virtual time at 0, so the moved queries' vruntime restarts
+        // too; a stale projection would be counted twice. `attained_cost` is real service and is kept.
         if (new_algorithm == SchedulerAlgorithm::Fair)
             for (ResourceRequest & request : pending)
                 request.scheduling.state->fair.vruntime = 0.0;
@@ -751,10 +746,8 @@ private:
         UNREACHABLE();
     }
 
-    /// Fail the requests collected in `requests` (called outside the queue mutex). If building the
-    /// exception fails, e.g. out of memory, the requests are failed with that error instead, so they
-    /// are always released. Each request is unlinked before `failed()`, because its owner may reuse
-    /// or destroy it right after.
+    /// Unlink each request, then fail it: its owner may destroy it in `failed`. If building the
+    /// exception throws, that error fails the requests instead, so none is left pending.
     template <typename MakeException>
     static void failRequests(ResourceRequest::EnqueuedList & requests, const MakeException & make_exception)
     {
@@ -778,8 +771,7 @@ private:
     }
 
     mutable std::mutex mutex;
-    /// One instance of each algorithm, so switching between them never allocates; `algo` points at
-    /// the active one, the others are empty.
+    /// One instance of each algorithm, so switching never allocates; `algo` points at the active one.
     FifoAlgorithm fifo_algorithm;
     FairAlgorithm fair_algorithm;
     LasAlgorithm las_algorithm;
