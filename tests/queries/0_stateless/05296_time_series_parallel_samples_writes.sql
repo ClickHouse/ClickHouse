@@ -1,5 +1,5 @@
 -- A TimeSeries insert writes tags, samples, and recent samples on the insert executor.
--- Each inner table commits when its own flush returns.
+-- No inner table commits until every inner flush has finished. Tags commit first.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -34,7 +34,13 @@ CREATE TABLE ext_tags
 ) ENGINE = MergeTree ORDER BY (metric_name, id);
 
 CREATE TABLE ext_samples (id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
-CREATE TABLE ext_recent (id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
+CREATE TABLE ext_recent
+(
+    id Tuple(UInt64, UUID),
+    timestamp DateTime64(3),
+    value Float64,
+    CONSTRAINT c CHECK value != 2000
+) ENGINE = MergeTree ORDER BY (id, timestamp);
 
 CREATE TABLE ts_ext ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
     DATA ext_samples TAGS ext_tags RECENT SAMPLES ext_recent;
@@ -50,6 +56,16 @@ SELECT '--- a failed tags write rejects the bad metric name ---';
 INSERT INTO ts_ext (metric_name, tags, samples) VALUES ('bad_tags', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 10.)]); -- { serverError VIOLATED_CONSTRAINT }
 
 SELECT count() FROM ext_tags WHERE metric_name = 'bad_tags';
+SELECT count() FROM ext_samples WHERE value = 10;
+SELECT count() FROM ext_recent WHERE value = 10;
+
+SELECT '--- a failed recent samples write rejects the bad value ---';
+
+INSERT INTO ts_ext (metric_name, tags, samples) VALUES ('bad_recent', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 2000.)]); -- { serverError VIOLATED_CONSTRAINT }
+
+SELECT count() FROM ext_tags WHERE metric_name = 'bad_recent';
+SELECT count() FROM ext_samples WHERE value = 2000;
+SELECT count() FROM ext_recent WHERE value = 2000;
 
 SELECT '--- an insert after a failure still writes all three tables ---';
 

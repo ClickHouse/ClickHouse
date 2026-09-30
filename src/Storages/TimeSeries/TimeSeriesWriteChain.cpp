@@ -2,16 +2,23 @@
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 
 #include <Core/Block.h>
+#include <Common/EventFD.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISink.h>
 #include <Processors/Port.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/StorageTimeSeries.h>
 
+#include <atomic>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -113,6 +120,172 @@ private:
 };
 
 
+struct TimeSeriesCommitBarrier
+{
+    explicit TimeSeriesCommitBarrier(size_t expected_) : expected(expected_) {}
+
+    void addWaiter(EventFD * event_fd) { waiters.push_back(event_fd); }
+
+    void markFlushed()
+    {
+        if (flushed.fetch_add(1) + 1 == expected)
+            wake();
+    }
+
+    void fail()
+    {
+        failed.store(true);
+        wake();
+    }
+
+    void leaderFinished()
+    {
+        leader_done.store(true);
+        wake();
+    }
+
+    bool isFailed() const { return failed.load(); }
+
+    bool mayRelease(bool is_leader) const
+    {
+        if (failed.load())
+            return false;
+        if (is_leader)
+            return flushed.load() == expected;
+        return leader_done.load();
+    }
+
+private:
+    void wake()
+    {
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        for (auto * event_fd : waiters)
+            event_fd->write();
+#else
+        (void)waiters;
+#endif
+    }
+
+    size_t expected = 0;
+    std::atomic<size_t> flushed{0};
+    std::atomic<bool> failed{false};
+    std::atomic<bool> leader_done{false};
+    std::vector<EventFD *> waiters;
+};
+
+
+class TimeSeriesCommitGate final : public IProcessor
+{
+public:
+    TimeSeriesCommitGate(SharedHeader header, std::shared_ptr<TimeSeriesCommitBarrier> barrier_, bool is_leader_)
+        : IProcessor({header}, {header})
+        , input(inputs.front())
+        , output(outputs.front())
+        , barrier(std::move(barrier_))
+        , is_leader(is_leader_)
+    {
+        barrier->addWaiter(&event);
+    }
+
+    String getName() const override { return "TimeSeriesCommitGate"; }
+
+    Status prepare() override
+    {
+        if (isCancelled())
+            return Status::Finished;
+
+        if (!output.canPush())
+            return Status::PortFull;
+
+        if (!flush_observed)
+        {
+            if (!input.hasData() && !input.isFinished())
+            {
+                input.setNeeded();
+                return Status::NeedData;
+            }
+
+            if (input.hasData() && input.getOutputPort().getProcessor().isCancelled())
+            {
+                auto data = input.pullData(true);
+                barrier->fail();
+                if (data.exception)
+                    output.pushException(std::move(data.exception));
+                return Status::PortFull;
+            }
+
+            barrier->markFlushed();
+            flush_observed = true;
+        }
+
+        if (barrier->isFailed())
+            return Status::Finished;
+
+        if (!barrier->mayRelease(is_leader))
+        {
+            waiting = true;
+            return Status::Async;
+        }
+
+        if (input.hasData())
+        {
+            auto data = input.pullData(true);
+            if (data.exception)
+            {
+                barrier->fail();
+                output.pushException(std::move(data.exception));
+                return Status::PortFull;
+            }
+            output.push(std::move(data.chunk));
+            return Status::PortFull;
+        }
+
+        if (input.isFinished())
+        {
+            if (is_leader && !leader_signaled)
+            {
+                leader_signaled = true;
+                barrier->leaderFinished();
+            }
+            output.finish();
+            return Status::Finished;
+        }
+
+        input.setNeeded();
+        return Status::NeedData;
+    }
+
+    void work() override
+    {
+        if (!waiting)
+            return;
+        waiting = false;
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        event.read();
+#endif
+    }
+
+    int schedule() override
+    {
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        return event.fd;
+#else
+        return -1;
+#endif
+    }
+
+private:
+    InputPort & input;
+    OutputPort & output;
+    std::shared_ptr<TimeSeriesCommitBarrier> barrier;
+    bool is_leader = false;
+    bool flush_observed = false;
+    bool waiting = false;
+    bool leader_signaled = false;
+    EventFD event;
+};
+
+
 /// Ends one target chain. `onFinish` runs only after the target sink finished without an exception.
 class TimeSeriesBranchSink final : public ISink
 {
@@ -176,23 +349,39 @@ Chain buildTimeSeriesWriteChain(
     QueryPlanResourceHolder resources;
     processors.push_back(split);
 
-    auto split_output = std::next(split->getOutputs().begin());
-    for (auto & target : sink->getTargets())
+    auto & targets = sink->getTargets();
+    auto barrier = std::make_shared<TimeSeriesCommitBarrier>(targets.size());
+    size_t leader_index = 0;
+    for (size_t i = 0; i < targets.size(); ++i)
     {
+        if (targets[i].is_tags)
+        {
+            leader_index = i;
+            break;
+        }
+    }
+
+    auto split_output = std::next(split->getOutputs().begin());
+    for (size_t i = 0; i < targets.size(); ++i)
+    {
+        auto & target = targets[i];
         std::function<void()> on_finish;
         if (target.is_tags)
             on_finish = [sink] { sink->markTagsWritten(); };
         else if (target.is_metric_families)
             on_finish = [sink] { sink->markMetricFamiliesWritten(); };
 
+        auto gate = std::make_shared<TimeSeriesCommitGate>(target.chain.getOutputSharedHeader(), barrier, i == leader_index);
         auto branch_sink = std::make_shared<TimeSeriesBranchSink>(target.chain.getOutputSharedHeader(), std::move(on_finish));
         connect(*split_output, target.chain.getInputPort());
-        connect(target.chain.getOutputPort(), branch_sink->getPort());
+        connect(target.chain.getOutputPort(), gate->getInputs().front());
+        connect(gate->getOutputs().front(), branch_sink->getPort());
         ++split_output;
 
-        resources = target.chain.detachResources();
+        resources.append(target.chain.detachResources());
         for (const auto & processor : target.chain.getProcessors())
             processors.push_back(processor);
+        processors.push_back(std::move(gate));
         processors.push_back(std::move(branch_sink));
     }
     processors.push_back(tail);
@@ -201,6 +390,61 @@ Chain buildTimeSeriesWriteChain(
     result.attachResources(std::move(resources));
     result.setNumThreads(0);
     return result;
+}
+
+
+namespace
+{
+
+class TimeSeriesWriteSink final : public SinkToStorage
+{
+public:
+    explicit TimeSeriesWriteSink(Chain chain)
+        : SinkToStorage(chain.getInputSharedHeader())
+        , pipeline(std::move(chain))
+    {
+        executor = std::make_unique<PushingAsyncPipelineExecutor>(pipeline);
+    }
+
+    String getName() const override { return "TimeSeriesWriteSink"; }
+
+    ~TimeSeriesWriteSink() override
+    {
+        if (finished)
+            return;
+        try
+        {
+            executor->cancel();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("TimeSeriesWriteSink");
+        }
+    }
+
+protected:
+    void onStart() override { executor->start(); }
+
+    void consume(Chunk & chunk) override { executor->push(std::move(chunk)); }
+
+    void onFinish() override
+    {
+        finished = true;
+        executor->finish();
+    }
+
+private:
+    QueryPipeline pipeline;
+    std::unique_ptr<PushingAsyncPipelineExecutor> executor;
+    bool finished = false;
+};
+
+}
+
+
+SinkToStoragePtr wrapTimeSeriesWriteChain(Chain chain)
+{
+    return std::make_shared<TimeSeriesWriteSink>(std::move(chain));
 }
 
 }

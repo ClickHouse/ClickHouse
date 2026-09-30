@@ -11,6 +11,12 @@ m	prod
 1
 --- a failed tags write rejects the bad metric name ---
 0
+0
+0
+--- a failed recent samples write rejects the bad value ---
+0
+0
+0
 --- an insert after a failure still writes all three tables ---
 m	dev	1
 5

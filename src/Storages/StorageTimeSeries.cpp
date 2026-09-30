@@ -32,6 +32,7 @@
 #include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <base/insertAtEnd.h>
+#include <algorithm>
 #include <filesystem>
 #include <mutex>
 #include <boost/algorithm/string.hpp>
@@ -59,6 +60,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_time_series_table;
+    extern const SettingsMaxThreads max_threads;
 }
 
 namespace TimeSeriesSetting
@@ -890,9 +892,13 @@ void StorageTimeSeries::readImpl(
 
 
 SinkToStoragePtr StorageTimeSeries::write(
-    const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*local_context*/, bool /*async_insert*/)
+    const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "TimeSeries inserts are built in the insert pipeline");
+    auto header = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+    auto chain = buildTimeSeriesWriteChain(*this, header, query, local_context, async_insert);
+    size_t threads = std::max<size_t>(local_context->getSettingsRef()[Setting::max_threads], 1);
+    chain.setNumThreads(threads);
+    return wrapTimeSeriesWriteChain(std::move(chain));
 }
 
 

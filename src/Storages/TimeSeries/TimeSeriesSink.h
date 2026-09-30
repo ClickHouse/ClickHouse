@@ -7,6 +7,7 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Chain.h>
 #include <Storages/TimeSeries/TimeSeriesDeduplicationCache.h>
 
@@ -32,6 +33,8 @@ Chain buildTimeSeriesWriteChain(
     const ASTPtr & query,
     ContextPtr context,
     bool async_insert);
+
+SinkToStoragePtr wrapTimeSeriesWriteChain(Chain chain);
 
 /// Builds blocks for the TimeSeries target tables and the insert chains that write them.
 class TimeSeriesSink : public WithContext
