@@ -3556,14 +3556,11 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
     auto atom_set_columns = set_columns;
     auto atom_set_types = set_types;
 
-    /// Special case: ORDER BY key_tuple (a single Tuple-typed key column) with predicate
-    /// `key_tuple IN ((a, b), (c, d), ...)`.
-    ///
-    /// The prepared set for `IN` can come as "unpacked" columns (one column per tuple element),
-    /// but for a packed tuple key we must keep it as a single ColumnTuple so it can be cast to
-    /// the key column type when preparing index conditions. (For a single-column set, such as
-    /// the array elements of `has`, this branch is never taken.)
-    if (candidate.args_count == 1 && candidate.key_expr_types.size() == 1 && atom_set_columns.size() > 1)
+    /// Special case: a single key expression computed from the whole predicate tuple, such as
+    /// ORDER BY key_tuple (a single Tuple-typed key column) with predicate
+    /// `key_tuple IN ((a, b), (c, d), ...)`, or a key-side transform of the tuple, such as
+    /// `ORDER BY toString(tuple(a, b))`.
+    if (candidate.args_count == 1 && candidate.key_expr_types.size() == 1)
     {
         /// The transformed set must match the key expression's input layout.
         const bool key_is_transformed = candidate.set_transforming_dags[0].has_value();
@@ -3571,23 +3568,30 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
             key_is_transformed ? candidate.set_transforming_dags[0]->input_type : candidate.key_expr_types[0]);
         if (const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get()))
         {
-            if (key_tuple_type->getElements().size() == atom_set_types.size())
+            const size_t tuple_size = key_tuple_type->getElements().size();
+            const auto * result_tuple_type
+                = typeid_cast<const DataTypeTuple *>(removeNullable(candidate.key_expr_types[0]).get());
+            const bool transform_consumes_whole_tuple
+                = key_is_transformed && !(result_tuple_type && result_tuple_type->getElements().size() == tuple_size);
+
+            /// A transform such as `toString` may claim injectivity while collapsing NaN
+            /// payloads or repeated local hours. When it consumes the whole tuple without keeping
+            /// its shape, the transformed set therefore provides only a relaxed positive membership
+            /// condition. This holds for the unpacked columns of an `IN` set, which are packed
+            /// below for the transform input, and equally for a set that is packed already, such
+            /// as the array elements of `has`.
+            if (transform_consumes_whole_tuple)
             {
-                const auto * result_tuple_type
-                    = typeid_cast<const DataTypeTuple *>(removeNullable(candidate.key_expr_types[0]).get());
-                const bool repacked_only_by_transform_input = key_is_transformed
-                    && !(result_tuple_type && result_tuple_type->getElements().size() == atom_set_types.size());
+                if (!allow_relaxed_pruning)
+                    return std::nullopt;
+                candidate.is_relaxed = true;
+            }
 
-                /// A transform such as `toString` may claim injectivity while collapsing NaN
-                /// payloads or repeated local hours. Repacking solely for its input therefore
-                /// provides only a relaxed positive membership condition.
-                if (repacked_only_by_transform_input)
-                {
-                    if (!allow_relaxed_pruning)
-                        return std::nullopt;
-                    candidate.is_relaxed = true;
-                }
-
+            /// The prepared set for `IN` can come as "unpacked" columns (one column per tuple element),
+            /// but for a packed tuple key we must keep it as a single ColumnTuple so it can be cast to
+            /// the key column type when preparing index conditions.
+            if (atom_set_columns.size() > 1 && tuple_size == atom_set_types.size())
+            {
                 atom_set_columns = {ColumnTuple::create(atom_set_columns)};
                 atom_set_types = {std::make_shared<DataTypeTuple>(atom_set_types)};
             }
