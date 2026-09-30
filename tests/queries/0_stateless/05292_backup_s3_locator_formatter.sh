@@ -34,13 +34,22 @@ JSON_URL="${CLICKHOUSE_URL}&enable_json_ast_dialect=1&dialect=clickhouse_json&lo
 ${CLICKHOUSE_CURL} -sS --max-time 10 "${JSON_URL}&query_id=${QUERY_ID_PREFIX}tagged" --data-binary "$JSON" > /dev/null
 ${CLICKHOUSE_CURL} -sS --max-time 10 "${JSON_URL}&query_id=${QUERY_ID_PREFIX}untagged" --data-binary "$UNTAGGED_JSON" > /dev/null
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log" > /dev/null
+LOG_FILTER="current_database = currentDatabase()
+  AND query_id LIKE '${QUERY_ID_PREFIX}%'
+  AND type != 'QueryStart'
+  AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE"
+
+# The query_log row of an HTTP query is written after its response (#84364): flush until all 12 have landed.
+for _ in {1..60}; do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log" > /dev/null
+    [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE ${LOG_FILTER}") -ge 12 ]] && break
+    sleep 0.5
+done
+
 $CLICKHOUSE_CLIENT -q "SELECT count() >= 12,
     countIf(query NOT LIKE '%[HIDDEN]%'),
     countIf(position(concat(query, formatted_query, exception), 'SEKRIT_05292') > 0),
     countIf(position(query, '925292') > 0),
     countIf(position(query, 'concat(''file'', ''name'')') > 0)
 FROM system.query_log
-WHERE query_id LIKE '${QUERY_ID_PREFIX}%'
-  AND type != 'QueryStart'
-  AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE"
+WHERE ${LOG_FILTER}"
