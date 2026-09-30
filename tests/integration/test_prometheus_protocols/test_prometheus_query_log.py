@@ -278,16 +278,24 @@ def test_remote_write_skips_time_series_without_metric_name():
     assert int(node.query(skipped_series_sql)) == skipped_before + 1
 
 
-def test_remote_write_rejects_time_series_without_metric_name_with_bad_labels():
+def test_remote_write_skips_time_series_without_metric_name_with_bad_labels():
     """
-    A timeseries without __name__ is skipped only if its other labels are valid:
-    an empty label name or one label name with two values still fails the request.
+    As in Prometheus, a timeseries without __name__ is skipped even if its other
+    labels are invalid: an empty label name or one label name given twice.
     """
-    for labels, error in [
-        ([("", "x")], "Tag name must not be empty"),
-        ([("job", "a"), ("job", "b")], "Found two tags with the same name job"),
+    metric_name = "skip_nameless_bad_labels_test"
+    skipped_series_sql = (
+        "SELECT sum(value) FROM system.events "
+        "WHERE event = 'PrometheusRemoteWriteSkippedSeries'"
+    )
+    skipped_before = int(node.query(skipped_series_sql))
+
+    write_request = remote_pb2.WriteRequest()
+    for labels in [
+        [("", "x")],
+        [("job", "a"), ("job", "b")],
+        [("__name__", metric_name), ("job", metric_name)],
     ]:
-        write_request = remote_pb2.WriteRequest()
         timeseries = types_pb2.TimeSeries()
         for name, value in labels:
             timeseries.labels.append(types_pb2.Label(name=name, value=value))
@@ -296,11 +304,17 @@ def test_remote_write_rejects_time_series_without_metric_name_with_bad_labels():
         )
         write_request.timeseries.append(timeseries)
 
-        response = get_response_to_remote_write(
-            node.ip_address, 9093, "/write", write_request
-        )
-        assert response.status_code != requests.codes.no_content
-        assert error in response.text
+    response = get_response_to_remote_write(
+        node.ip_address, 9093, "/write", write_request
+    )
+    assert response.status_code == requests.codes.no_content
+
+    assert_eq_with_retry(
+        node,
+        timeseries_data_has_metric_sql("prometheus", metric_name),
+        "1\n",
+    )
+    assert int(node.query(skipped_series_sql)) == skipped_before + 2
 
 
 def test_remote_write_accepts_empty_then_nonempty_metric_name():
