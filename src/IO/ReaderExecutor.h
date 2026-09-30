@@ -244,7 +244,8 @@ private:
     bool reached_eof = false;
     /// Hard upper bound on the logical read position; `nullopt` = read to end.
     std::optional<size_t> read_until;
-    ByteRangeSet request_map;
+    /// `nullopt` = no map was announced, the caller may read the whole file.
+    std::optional<ByteRangeSet> request_map;
 
     std::optional<LongConnection> long_conn;
     ReadContinuityTracker fetch_tracker;

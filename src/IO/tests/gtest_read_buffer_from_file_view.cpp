@@ -57,10 +57,25 @@ TEST(ReadBufferFromFileView, RequestMapIsTheSliceByDefault)
     ByteRangeSet map;
     ReadBufferFromFileView view(std::make_unique<MapRecordingBuffer>(map), "file", 100, 200);
     expectRanges(map, {{100, 100}});
+}
+
+TEST(ReadBufferFromFileView, EmptyRequestMapIsNothing)
+{
+    ByteRangeSet map;
+    ReadBufferFromFileView view(std::make_unique<MapRecordingBuffer>(map), "file", 100, 200);
 
     view.setRequestMap(makeSet({{0, 10}}));
     view.setRequestMap({});
-    expectRanges(map, {{100, 100}});
+    expectRanges(map, {});
+}
+
+TEST(ReadBufferFromFileView, RequestMapOutsideTheSliceIsNothing)
+{
+    ByteRangeSet map;
+    ReadBufferFromFileView view(std::make_unique<MapRecordingBuffer>(map), "file", 100, 200);
+
+    view.setRequestMap(makeSet({{150, 5}}));
+    expectRanges(map, {});
 }
 
 TEST(ReadBufferFromFileView, RequestMapIsShiftedIntoTheSliceAndClipped)

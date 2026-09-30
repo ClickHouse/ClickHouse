@@ -793,12 +793,12 @@ void ReaderExecutor::seek(size_t new_position)
 void ReaderExecutor::setRequestMap(ByteRangeSet ranges)
 {
     request_map = std::move(ranges);
-    if (request_map.empty())
+    if (request_map->empty())
     {
-        LOG_TEST(log, "Request map of {}: the whole file", log_file_path);
+        LOG_TEST(log, "Request map of {}: nothing", log_file_path);
         return;
     }
-    LOG_TEST(log, "Request map of {}: {} bytes in {}", log_file_path, request_map.totalBytes(), request_map.describe());
+    LOG_TEST(log, "Request map of {}: {} bytes in {}", log_file_path, request_map->totalBytes(), request_map->describe());
 }
 
 }

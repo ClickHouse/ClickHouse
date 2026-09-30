@@ -25,7 +25,9 @@ ReadBufferFromFileView::ReadBufferFromFileView(
     if (right_bound > left_bound)
     {
         impl->setReadUntilPosition(right_bound);
-        impl->setRequestMap(toArchiveRanges({}));
+        ByteRangeSet slice;
+        slice.add({left_bound, right_bound - left_bound});
+        impl->setRequestMap(std::move(slice));
     }
 
     /// Seek to the begin of file.
@@ -69,12 +71,7 @@ void ReadBufferFromFileView::setRequestMap(ByteRangeSet ranges)
 
 ByteRangeSet ReadBufferFromFileView::toArchiveRanges(const ByteRangeSet & ranges) const
 {
-    const ByteRange file{0, right_bound - left_bound};
-    ByteRangeSet result;
-    if (ranges.empty())
-        result.add(file);
-    else
-        result = ranges.intersect(file);
+    auto result = ranges.intersect({0, right_bound - left_bound});
     result.shift(left_bound);
     return result;
 }

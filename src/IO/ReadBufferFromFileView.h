@@ -41,7 +41,7 @@ public:
 private:
     size_t getRightBound() const;
 
-    /// Clips the map to the view's slice and moves it into the archive; an empty map is the whole slice.
+    /// Clips the map to the view's slice and moves it into the archive.
     ByteRangeSet toArchiveRanges(const ByteRangeSet & ranges) const;
 
     /// Resizes working buffer if it exceeds the right bound.
