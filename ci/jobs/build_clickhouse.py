@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -101,7 +102,48 @@ def parse_args():
         help="Build `clickhouse-examples` in addition to the regular targets",
         action="store_true",
     )
+    parser.add_argument(
+        "--shard",
+        help="Build only the `i`-th of `N` shards of the object files, given as `i/N` (clang-tidy builds only)",
+        default=None,
+    )
     return parser.parse_args()
+
+
+def parse_shard(shard):
+    index, count = (int(x) for x in shard.split("/"))
+    assert 1 <= index <= count, f"Invalid shard [{shard}]"
+    return index, count
+
+
+def write_tidy_shard_targets(index, count, targets_file):
+    """Write the object files of the `index`-th of `count` shards to `targets_file`.
+
+    Tidy builds use dummy compiler and linker launchers (see `cmake/clang_tidy.cmake`),
+    so each object file is an independent clang-tidy invocation and nothing is linked.
+    The object files are split by a stable hash of their path, so a file stays in the same
+    shard across runs. Third-party code under `contrib/` is not checked, so it is skipped;
+    whatever an object file needs (generated headers, `protoc`) is still built by ninja
+    as its dependency.
+    """
+    output = Shell.get_output_or_raise(
+        f"ninja -C {build_dir} -t targets all", verbose=False
+    )
+    # A few targets are listed with absolute paths, so look at every path component.
+    objects = [
+        target
+        for target in (line.split(":", 1)[0] for line in output.splitlines())
+        if target.endswith(".o") and "contrib" not in target.split("/")
+    ]
+    assert objects, "No object file targets found"
+    selected = [
+        o
+        for o in objects
+        if int(hashlib.md5(o.encode()).hexdigest(), 16) % count == index - 1
+    ]
+    with open(targets_file, "w") as f:
+        f.write("\n".join(selected) + "\n")
+    print(f"Shard {index}/{count}: {len(selected)} of {len(objects)} object files")
 
 
 def run_shell_with_output(name, command, **kwargs):
@@ -207,6 +249,12 @@ def main():
         BuildTypes.ARM_RELEASE,
         BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
     ), "--build-examples is only supported for ARM release builds"
+
+    shard = parse_shard(args.shard) if args.shard else None
+    assert not shard or build_type in (
+        BuildTypes.AMD_TIDY,
+        BuildTypes.ARM_TIDY,
+    ), "--shard is only supported for clang-tidy builds"
 
     cmake_cmd = BUILD_TYPE_TO_CMAKE[build_type]
     if args.build_examples:
@@ -319,7 +367,8 @@ def main():
         # Validate `.gitmodules` (no recursive submodules, valid URLs, name == path).
         # Run it only in the arm_tidy build to avoid adding overhead to every build
         # and to the style check (which does not have submodules available).
-        if res and build_type == BuildTypes.ARM_TIDY:
+        # A sharded tidy build runs it in the first shard only.
+        if res and build_type == BuildTypes.ARM_TIDY and (not shard or shard[0] == 1):
             results.append(
                 Result.from_commands_run(
                     name="Check Submodules",
@@ -452,6 +501,10 @@ def main():
                 "ninja -t targets all | cut -d: -f1 | grep -E '[.]o$' "
                 "| xargs --no-run-if-empty ninja"
             )
+        elif shard:
+            write_tidy_shard_targets(*shard, f"{build_dir}/tidy_shard_targets.txt")
+            # The command runs in the build directory.
+            build_command = "command time -v ninja -k0 $(cat tidy_shard_targets.txt)"
         else:
             build_command = f"command time -v ninja {targets}"
 
