@@ -32,10 +32,6 @@ This check requires the privilege alone; it does not depend on the settings that
 
 Dictionary sources may add parameters but cannot override stored parameters. Define a separate named collection with the required values when a dictionary needs a different configuration.
 
-<Warning>
-Overriding a destination can send the collection's credentials to a different server. Grant `SHOW NAMED COLLECTIONS SECRETS` only to users trusted with those credentials.
-</Warning>
-
 ## Storing named collections in the system database {#storing-named-collections-in-the-system-database}
 
 ### DDL example {#ddl-example}
