@@ -225,12 +225,12 @@ bool isUnknownEnumElement(const IDataType & type, const Field & value)
     const auto & name = value.safeGet<String>();
     if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(&type))
     {
-        Int8 res;
+        Int8 res = 0;
         return !enum8->tryGetValue(res, name);
     }
     if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(&type))
     {
-        Int16 res;
+        Int16 res = 0;
         return !enum16->tryGetValue(res, name);
     }
     return false;
