@@ -67,12 +67,20 @@ for shape in main steps; do
         "
     done
 
-    # Include main-reader work: the full String may be read after PREWHERE.
-    # Compare with the control rather than assuming a particular granule size.
+    # Include main-reader work rather than assuming a particular granule size.
+    # In the main shape, size queries intentionally leave the output-only String
+    # for the main reader. Compare rewritten and explicit size queries, not the
+    # control that already reads the String in PREWHERE.
+    # In the steps shape, the String is needed by PREWHERE, so legacy co-reading
+    # must keep reader work equal to the control as well.
     ${CLICKHOUSE_CLIENT} -q "
         SYSTEM FLUSH LOGS query_log;
-        WITH ProfileEvents['RowsReadByPrewhereReaders'] + ProfileEvents['RowsReadByMainReader'] AS reader_rows
-        SELECT '${shape} read work', count() = 3, min(reader_rows) > 0 AND min(reader_rows) = max(reader_rows)
+        WITH ProfileEvents['RowsReadByPrewhereReaders'] + ProfileEvents['RowsReadByMainReader'] AS reader_rows,
+            query_id != '${prefix}_${shape}_control' AS size_query
+        SELECT '${shape} read work', count() = 3,
+            min(reader_rows) > 0 AND if('${shape}' = 'main',
+                minIf(reader_rows, size_query) = maxIf(reader_rows, size_query),
+                min(reader_rows) = max(reader_rows))
         FROM system.query_log
         WHERE current_database = currentDatabase() AND type = 'QueryFinish'
             AND query_id IN ('${prefix}_${shape}_control', '${prefix}_${shape}_rewritten', '${prefix}_${shape}_explicit');
