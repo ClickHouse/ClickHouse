@@ -1,6 +1,12 @@
+#include <Common/Exception.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Selectors.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
 
 namespace DB::GatherUtils
 {
@@ -55,17 +61,14 @@ void NO_INLINE insertImpl(Source && array_source, ValueSource && value_source, S
     }
 }
 
-struct ArrayInsertConstant : public ArrayAndValueSourceSelectorBySink<ArrayInsertConstant>
+struct ArrayInsert : public ArrayAndValueSourceSelectorBySink<ArrayInsert>
 {
     template <typename ArraySource, typename ValueSource, typename Sink, typename Position>
     static void selectArrayAndValueSourceBySink(ArraySource && array_source, ValueSource && value_source, Sink && sink, Position position)
     {
         insertImpl(array_source, value_source, sink, [position](size_t) { return position; });
     }
-};
 
-struct ArrayInsertDynamic : public ArrayAndValueSourceSelectorBySink<ArrayInsertDynamic>
-{
     template <typename ArraySource, typename ValueSource, typename Sink>
     static void selectArrayAndValueSourceBySink(
         ArraySource && array_source, ValueSource && value_source, Sink && sink, const IColumn & position_column, bool position_is_unsigned)
@@ -81,18 +84,18 @@ struct ArrayInsertDynamic : public ArrayAndValueSourceSelectorBySink<ArrayInsert
 
 void insertConstantPosition(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, Int64 position)
 {
-    ArrayInsertConstant::select(sink, array_source, value_source, position);
+    ArrayInsert::select(sink, array_source, value_source, position);
 }
 
 void insertConstantPosition(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, UInt64 position)
 {
-    ArrayInsertConstant::select(sink, array_source, value_source, position);
+    ArrayInsert::select(sink, array_source, value_source, position);
 }
 
 void insertDynamicPosition(
     IArraySource & array_source, IValueSource & value_source, IArraySink & sink, const IColumn & position_column, bool position_is_unsigned)
 {
-    ArrayInsertDynamic::select(sink, array_source, value_source, position_column, position_is_unsigned);
+    ArrayInsert::select(sink, array_source, value_source, position_column, position_is_unsigned);
 }
 
 }
