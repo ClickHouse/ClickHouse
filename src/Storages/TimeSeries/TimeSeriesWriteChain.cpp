@@ -539,7 +539,7 @@ public:
 protected:
     void onStart() override { executor->start(); }
 
-    void consume(Chunk & chunk) override { executor->push(std::move(chunk)); }
+    void consume(Chunk & chunk) override { executor->push(chunk.clone()); }
 
     void onFinish() override
     {

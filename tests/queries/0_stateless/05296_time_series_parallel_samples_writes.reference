@@ -30,3 +30,5 @@ m	dev	1
 0
 0
 0
+--- a materialized view on the time series table receives the inserted rows ---
+mv

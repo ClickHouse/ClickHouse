@@ -102,5 +102,16 @@ SELECT count() FROM ext_samples WHERE value = 12;
 SELECT count() FROM ext_recent WHERE value = 12;
 SELECT count() FROM ext_samples_dest WHERE value = 12;
 
+SELECT '--- a materialized view on the time series table receives the inserted rows ---';
+
+CREATE TABLE ts_outer ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000;
+CREATE TABLE ts_outer_dest (metric_name String) ENGINE = MergeTree ORDER BY metric_name;
+CREATE MATERIALIZED VIEW ts_outer_mv TO ts_outer_dest AS SELECT metric_name FROM ts_outer;
+
+INSERT INTO ts_outer (metric_name, tags, samples) VALUES ('mv', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 7.)]);
+
+SELECT metric_name FROM ts_outer_dest;
+
 DROP VIEW ext_samples_mv;
-DROP TABLE ts_ext, ts_after, ext_tags, ext_samples, ext_recent, ext_samples_dest;
+DROP VIEW ts_outer_mv;
+DROP TABLE ts_ext, ts_after, ext_tags, ext_samples, ext_recent, ext_samples_dest, ts_outer, ts_outer_dest;

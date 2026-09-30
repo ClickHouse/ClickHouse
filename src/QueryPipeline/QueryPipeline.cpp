@@ -470,6 +470,7 @@ QueryPipeline::QueryPipeline(Chain chain)
     , processors(std::make_shared<Processors>())
     , input(&chain.getInputPort())
     , num_threads(chain.getNumThreads())
+    , concurrency_control(chain.getConcurrencyControl())
 {
     for (auto processor : chain.getProcessors())
         processors->emplace_back(std::move(processor));

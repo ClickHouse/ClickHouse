@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -61,6 +62,10 @@ namespace Setting
 {
     extern const SettingsBool enable_time_series_table;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsMaxThreads max_insert_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
+    extern const SettingsUInt64 max_insert_threads_min_free_memory_per_thread;
+    extern const SettingsBool use_concurrency_control;
 }
 
 namespace TimeSeriesSetting
@@ -896,8 +901,15 @@ SinkToStoragePtr StorageTimeSeries::write(
 {
     auto header = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     auto chain = buildTimeSeriesWriteChain(*this, header, query, local_context, async_insert);
-    size_t threads = std::max<size_t>(local_context->getSettingsRef()[Setting::max_threads], 1);
-    chain.setNumThreads(threads);
+    const Settings & settings = local_context->getSettingsRef();
+    size_t max_threads = getMaxThreadsForAvailableMemory(
+        std::max<size_t>(1, settings[Setting::max_threads]),
+        settings[Setting::max_threads_min_free_memory_per_thread]);
+    size_t max_insert_threads = getMaxThreadsForAvailableMemory(
+        std::min(std::max<size_t>(1, settings[Setting::max_insert_threads]), max_threads),
+        settings[Setting::max_insert_threads_min_free_memory_per_thread]);
+    chain.setNumThreads(max_insert_threads);
+    chain.setConcurrencyControl(settings[Setting::use_concurrency_control]);
     return wrapTimeSeriesWriteChain(std::move(chain));
 }
 
