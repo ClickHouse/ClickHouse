@@ -2568,8 +2568,18 @@ public:
         LocalObjectStorage::copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
     }
 
+    void removeObjectIfExists(const StoredObject & object) override
+    {
+        if (object.remote_path == fail_remove_of)
+            throw std::runtime_error("Injected foreign error");
+        LocalObjectStorage::removeObjectIfExists(object);
+    }
+
     /// The copy of this existing key fails after it wrote a part of the blob.
     std::string fail_copy_of;
+
+    /// The removal of this key fails.
+    std::string fail_remove_of;
 
     /// Runs before the copy of this key, as an outside deleter does.
     std::string before_copy_of;
@@ -2704,6 +2714,53 @@ TEST_F(MetadataPlainRewritableDiskTest, PrefixRemovedDuringTransaction)
     {
         EXPECT_EQ(e.code(), ErrorCodes::CORRUPTED_DATA) << e.message();
         EXPECT_THAT(e.message(), testing::HasSubstr("Cannot restore the blob of the file '/A/a'"));
+        EXPECT_THAT(e.message(), testing::HasSubstr("(CORRUPTED_DATA)"));
+        EXPECT_THAT(e.message(), testing::HasSubstr("did not complete"));
+    }
+}
+
+/// The move has overwritten the target, and its backup is gone, so the rollback cannot report success.
+TEST_F(MetadataPlainRewritableDiskTest, MoveTargetBackupRemovedDuringTransaction)
+{
+    thread_local_rng.seed(42);
+
+    const std::string key_prefix = "MoveTargetBackupRemoved";
+    fs::remove_all("./" + key_prefix);
+    SCOPE_EXIT(fs::remove_all("./" + key_prefix));
+
+    auto object_storage = std::make_shared<LocalObjectStorageWithForeignErrors>(
+        LocalObjectStorageSettings("test", "./" + key_prefix, /*read_only_=*/false));
+    auto metadata = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
+    SCOPE_EXIT(object_storage->shutdown());
+    SCOPE_EXIT(metadata->shutdown());
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto source_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/source").serialize(), "the source file");
+        tx->createMetadataFile("/A/source", {StoredObject("/A/source", "source", source_size)});
+        auto target_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/target").serialize(), "the target file");
+        tx->createMetadataFile("/A/target", {StoredObject("/A/target", "target", target_size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// The source is copied first to its temporary key and then over the target; before the second copy the temporary
+    /// keys are deleted. The removal of the source then fails.
+    const auto source_blob = metadata->getStorageObjects("/A/source").front().remote_path;
+    object_storage->before_copy_of = source_blob;
+    object_storage->before_copy = [&] { for (const auto & blob : listAllBlobs(key_prefix + "/__root")) fs::remove(blob); };
+    object_storage->fail_remove_of = source_blob;
+
+    auto tx = metadata->createTransaction();
+    tx->replaceFile("/A/source", "/A/target");
+    try
+    {
+        tx->commit(DB::NoCommitOptions{});
+        ADD_FAILURE() << "The commit of a transaction with a failed removal succeeded";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_THAT(e.message(), testing::HasSubstr("Cannot restore the blob of the file '/A/target'"));
         EXPECT_THAT(e.message(), testing::HasSubstr("(CORRUPTED_DATA)"));
         EXPECT_THAT(e.message(), testing::HasSubstr("did not complete"));
     }

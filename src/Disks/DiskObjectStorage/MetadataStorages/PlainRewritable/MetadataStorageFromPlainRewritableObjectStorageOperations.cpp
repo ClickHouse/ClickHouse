@@ -698,14 +698,24 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
             return;
         }
 
-        if (target_saved && object_storage->exists(StoredObject(tmp_remote_path_to)))
-            object_storage->copyObject(
-                /*object_from=*/StoredObject(tmp_remote_path_to),
-                /*object_to=*/StoredObject(remote_path_to),
-                read_settings,
-                write_settings);
+        /// Nothing overwrites or removes the target before its backup completes.
+        if (!target_saved)
+            return;
 
-        /// Otherwise there is nothing to restore: nothing overwrites or removes the target before its backup completes.
+        if (!object_storage->exists(StoredObject(tmp_remote_path_to)))
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Cannot restore the blob of the file '{}': its temporary copy '{}' is gone, and the move may have removed "
+                "or overwritten its own key '{}'",
+                path_to,
+                tmp_remote_path_to,
+                remote_path_to);
+
+        object_storage->copyObject(
+            /*object_from=*/StoredObject(tmp_remote_path_to),
+            /*object_to=*/StoredObject(remote_path_to),
+            read_settings,
+            write_settings);
     });
 
     /// The temporary copies go last, so a stage that fails never leaves the reversal without a copy it still needs.
