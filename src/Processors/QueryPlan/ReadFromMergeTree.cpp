@@ -5304,10 +5304,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         /// matched, exactly as in a single-node read. A granule skipped this way is reported to the
         /// coordinator as read, so the work is not handed to another replica instead.
         ///
-        /// A read that never got a descriptor - they are attached while a plan is optimized and are not
-        /// serialized - leaves `runtime_prune_primary_key` and `runtime_skip_indexes` empty below and reads
-        /// its share unpruned. That is a loss of coverage, not of correctness, and it is what still happens
-        /// for a plan shipped with `make_distributed_plan`.
+        /// Descriptors are attached by a plan optimization, so a replica has them whether it planned the
+        /// query itself or optimized a plan it deserialized. A read that has none leaves
+        /// `runtime_prune_primary_key` and `runtime_skip_indexes` empty below and reads its share unpruned,
+        /// which costs coverage, not correctness; `make_distributed_plan` still reads that way.
         && indexes.has_value())
     {
         /// The PK path only needs the data-read safety checks above; only the secondary skip-index

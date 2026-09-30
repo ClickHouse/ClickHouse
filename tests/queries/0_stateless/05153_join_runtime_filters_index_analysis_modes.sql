@@ -1,14 +1,16 @@
--- `enable_join_runtime_filters_index_analysis` asks for a second-pass granule pruning driven by
--- descriptors that are attached to `ReadFromMergeTree` while a plan is optimized. They are not
--- serialized, so a read that arrives as a plan packet has none and reads its share unpruned.
+-- `enable_join_runtime_filters_index_analysis` asks for a granule pruning that happens on data read,
+-- driven by descriptors attached to the read step while a query plan is optimized.
 --
--- Parallel replicas DO prune: each replica prunes its own assigned granules with its own filter, which is
--- built from the whole build side (that side is broadcast, read in full on every replica), so a granule it
--- drops cannot hold a row that should have matched. `make_distributed_plan` remains a no-op.
+-- This test pins which execution modes prune. Parallel replicas do: each replica prunes its own assigned
+-- granules with its own filter, which is built from the whole build side (that side is broadcast, read in
+-- full on every replica), so a granule it drops cannot hold a row that should have matched. That holds
+-- however the replica got its plan - planning the query itself or optimizing one it deserialized - because
+-- the descriptors are attached by an optimization that runs in both cases. A distributed query plan
+-- (`make_distributed_plan = 1`) does not prune, which is the one no-op the setting's description still
+-- claims.
 --
--- So this test pins two things: every mode returns exactly the result of a local read, and which modes
--- prune. TODO: the file name still says `noop`, which now describes only the `make_distributed_plan` row -
--- rename it and restructure the assertions as a follow-up.
+-- Every mode must return exactly the result of a local read, which is what makes the pruning safe rather
+-- than merely faster.
 
 DROP TABLE IF EXISTS rf_idx_fact SYNC;
 DROP TABLE IF EXISTS rf_idx_dim SYNC;
@@ -57,6 +59,14 @@ FROM rf_idx_fact AS f INNER JOIN rf_idx_dim AS d ON f.id = d.id
 WHERE d.tag = 'hot'
 SETTINGS log_comment = '05153_parallel_replicas', enable_parallel_replicas = 1, parallel_replicas_plan_based = 0;
 
+-- Parallel replicas where the replicas receive a serialized plan instead of the query text: the
+-- descriptors are not serialized with it, but the replica's own optimization of that plan attaches them.
+SELECT 'parallel_replicas_serialized_plan', count(), sum(f.v)
+FROM rf_idx_fact AS f INNER JOIN rf_idx_dim AS d ON f.id = d.id
+WHERE d.tag = 'hot'
+SETTINGS log_comment = '05153_parallel_replicas_serialized_plan', enable_parallel_replicas = 1,
+    parallel_replicas_plan_based = 0, serialize_query_plan = 1;
+
 SELECT 'parallel_replicas_plan_based', count(), sum(f.v)
 FROM rf_idx_fact AS f INNER JOIN rf_idx_dim AS d ON f.id = d.id
 WHERE d.tag = 'hot'
@@ -77,7 +87,8 @@ INNER JOIN
     SELECT query_id, log_comment
     FROM system.query_log
     WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish'
-        AND log_comment IN ('05153_local', '05153_distributed_plan', '05153_parallel_replicas', '05153_parallel_replicas_plan_based')
+        AND log_comment IN ('05153_local', '05153_distributed_plan', '05153_parallel_replicas',
+            '05153_parallel_replicas_serialized_plan', '05153_parallel_replicas_plan_based')
         AND event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR
 ) AS initiator ON part.initial_query_id = initiator.query_id
 WHERE part.type = 'QueryFinish' AND part.event_date >= yesterday() AND part.event_time > now() - INTERVAL 1 HOUR
