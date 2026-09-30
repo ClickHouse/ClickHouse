@@ -20,8 +20,11 @@ prompt rules:
     GitHub rejects the whole review when a single comment misses, so an
     unattachable finding is moved into the summary instead of losing them all.
   * Nits are never posted inline; they stay in the summary.
-  * A new comment on a line that already has an open thread of ours is dropped
-    as a duplicate.
+  * A new comment that repeats an open thread of ours (same line, or the same
+    file and mostly the same words) is dropped as a duplicate.
+  * At most MAX_INLINE_COMMENTS are posted per run, Blockers first; the rest
+    stay in the summary. A review that posts a dozen comments at once is
+    read as noise, and the summary already lists every finding.
   * Only threads the review created may be resolved; a thread is re-opened only
     when the review resolved it itself, or together with a reply in the same
     run. At most one reply per thread per run.
@@ -34,6 +37,24 @@ import re
 from ci.jobs.scripts.ai_review.context import thread_is_ours, is_bot
 
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+MAX_INLINE_COMMENTS = 6
+
+# Two comments on the same file whose word sets overlap this much (Jaccard)
+# say the same thing.
+_DUPLICATE_SIMILARITY = 0.5
+_WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_:]{2,}")
+
+
+def _words(text):
+    return {w.lower() for w in _WORD_RE.findall(text or "")}
+
+
+def _similar(a, b):
+    wa, wb = _words(a), _words(b)
+    if not wa or not wb:
+        return False
+    return len(wa & wb) / len(wa | wb) >= _DUPLICATE_SIMILARITY
 
 
 def commentable_lines(patch):
@@ -89,9 +110,13 @@ def validate_comments(entries, files, threads, base_dir):
     are (entry, body, reason) to be listed in the summary instead."""
     lines_by_path = {f["filename"]: commentable_lines(f.get("patch")) for f in files}
     open_ours = set()
+    open_texts = {}
     for t in threads or []:
-        if thread_is_ours(t) and not t.get("isResolved") and t.get("line"):
-            open_ours.add((t.get("path"), int(t["line"])))
+        if thread_is_ours(t) and not t.get("isResolved"):
+            if t.get("line"):
+                open_ours.add((t.get("path"), int(t["line"])))
+            first = ((t.get("comments") or {}).get("nodes") or [{}])[0]
+            open_texts.setdefault(t.get("path"), []).append(first.get("body") or "")
 
     postable, moved = [], []
     seen = set()
@@ -123,15 +148,26 @@ def validate_comments(entries, files, threads, base_dir):
             start_side = (e.get("start_side") or side).upper()
             if start >= line or start_side != side or side_lines.get(start) != side_lines[line]:
                 start = None  # keep the comment, anchored on its last line only
-        if (path, line) in open_ours or (path, line, side) in seen:
+        if (path, line) in open_ours or (path, line, side) in seen or any(
+                _similar(body, other) for other in open_texts.get(path, [])):
             print(f"Skipping duplicate inline comment on {path}:{line}")
             continue
         seen.add((path, line, side))
-        comment = {"path": path, "line": line, "side": side, "body_file": body_file}
+        open_texts.setdefault(path, []).append(body)
+        comment = {"path": path, "line": line, "side": side, "body_file": body_file,
+                   "_blocker": (e.get("severity") or "").lower() == "blocker"}
         if start is not None:
             comment["start_line"] = start
             comment["start_side"] = side
         postable.append(comment)
+    # Blockers first, then in the agent's order; the overflow stays in the summary.
+    postable.sort(key=lambda c: not c["_blocker"])
+    for c in postable[MAX_INLINE_COMMENTS:]:
+        body, _ = _read_body(c, base_dir)
+        moved.append((c, body, f"more than {MAX_INLINE_COMMENTS} inline comments in one review"))
+    postable = postable[:MAX_INLINE_COMMENTS]
+    for c in postable:
+        del c["_blocker"]
     return postable, moved
 
 

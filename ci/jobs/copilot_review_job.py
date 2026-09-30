@@ -53,8 +53,19 @@ SUMMARY_FILE = f"{OUTPUT_DIR}/summary.md"
 PROMPT_FILE = f"{WORK_DIR}/prompt.md"
 LOOM_CALL_LOG = f"{WORK_DIR}/loom_calls.jsonl"
 
-MODEL = "gpt-5.4"
-REASONING_EFFORT = "xhigh"
+# Primary model, and the known-good model the job falls back to. GPT-6.1 Sol
+# needs Codex CLI 0.159.1 or newer, and OpenAI's cyber classifiers can block a
+# run on memory-safety reviews; either failure makes the next attempt use the
+# fallback instead of repeating the same failure. OpenAI's guidance for this
+# model family is to start one effort level below the previous baseline and
+# move up only when evaluations show a gain.
+MODEL = "gpt-6.1-sol"
+REASONING_EFFORT = "high"
+FALLBACK_MODEL = "gpt-5.4"
+FALLBACK_REASONING_EFFORT = "xhigh"
+# An attempt that fails this fast without output is a configuration or
+# model-availability failure, not a transient one: switch to the fallback.
+_FAST_FAILURE_SECONDS = 180
 
 # Number of attempts at a full agent run. The agents make model-provider API
 # calls during execution, which can hit transient 5xx errors that no single
@@ -119,7 +130,7 @@ def _agent_env(loom_config, extra=None):
     return env
 
 
-def _run_copilot_once(loom_config, robot_name):
+def _run_copilot_once(loom_config, robot_name, model, effort):
     """One attempt: `gh auth login` with a robot token (the Copilot CLI's own
     authentication) + `copilot`."""
     with tempfile.TemporaryDirectory() as gh_config_dir:
@@ -143,13 +154,13 @@ def _run_copilot_once(loom_config, robot_name):
         # </dev/null: ensure stdin is definitively non-interactive
         return Shell.run(
             f"copilot -p {prompt_arg} --allow-all --no-ask-user --add-dir . "
-            f"--model {MODEL} --effort {REASONING_EFFORT} < /dev/null",
+            f"--model {shlex.quote(model)} --effort {shlex.quote(effort)} < /dev/null",
             timeout=ATTEMPT_TIMEOUT_SECONDS,
             env=_agent_env(loom_config, {"GH_CONFIG_DIR": gh_config_dir}),
         )
 
 
-def _run_codex_once(loom_config, _robot_name):
+def _run_codex_once(loom_config, _robot_name, model, effort):
     """One attempt: `codex login` + `codex exec`.
 
     Codex stores credentials in `$CODEX_HOME/auth.json` and does NOT consult
@@ -182,7 +193,7 @@ def _run_codex_once(loom_config, _robot_name):
         # --color never: no ANSI codes in the job log.
         # `-` reads the prompt from stdin, which has no argument size limit.
         return Shell.run(
-            f"codex exec -m {MODEL} -c 'model_reasoning_effort={REASONING_EFFORT}' "
+            f"codex exec -m {shlex.quote(model)} -c model_reasoning_effort={shlex.quote(effort)} "
             f"-s workspace-write -c sandbox_workspace_write.network_access=true "
             f"-c approval_policy=never --color never - < {shlex.quote(PROMPT_FILE)}",
             timeout=ATTEMPT_TIMEOUT_SECONDS,
@@ -212,18 +223,24 @@ def _outputs_problem():
 
 
 def _run_agent(run_once, agent_name, loom_config):
-    """Run the agent until it produces publishable output. Raises otherwise."""
+    """Run the agent until it produces publishable output. Returns the model
+    that produced it. Raises otherwise."""
     started = time.time()
     last_error = None
     robots = ROBOT_NAMES.copy()
     random.shuffle(robots)
+    model, effort = MODEL, REASONING_EFFORT
     for attempt in range(1, MAX_ATTEMPTS + 1):
         if attempt > 1 and time.time() - started > NO_NEW_ATTEMPT_AFTER_SECONDS:
             print(f"Not starting attempt {attempt}: {int(time.time() - started)}s already spent")
             break
+        if attempt == MAX_ATTEMPTS and model != FALLBACK_MODEL:
+            model, effort = FALLBACK_MODEL, FALLBACK_REASONING_EFFORT
         _reset_output_dir()
+        attempt_started = time.time()
+        print(f"{agent_name} attempt {attempt}/{MAX_ATTEMPTS} with {model} ({effort})")
         try:
-            exit_code = run_once(loom_config, robots[(attempt - 1) % len(robots)])
+            exit_code = run_once(loom_config, robots[(attempt - 1) % len(robots)], model, effort)
             problem = _outputs_problem()
             if exit_code != 0 and problem:
                 last_error = f"{agent_name} exited with code {exit_code}: {problem}"
@@ -235,11 +252,14 @@ def _run_agent(run_once, agent_name, loom_config):
                     # so the run finished; a non-zero exit after that is a CLI
                     # shutdown issue.
                     print(f"WARNING: {agent_name} exited with code {exit_code} after writing complete output")
-                return
+                return model
         except Exception as e:  # noqa: BLE001 — broad catch: any exception is retryable here
             last_error = f"{type(e).__name__}: {e}"
             traceback.print_exc()
         print(f"WARNING: {agent_name} attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
+        if model != FALLBACK_MODEL and time.time() - attempt_started < _FAST_FAILURE_SECONDS:
+            print(f"Attempt failed within {_FAST_FAILURE_SECONDS}s: switching to {FALLBACK_MODEL}")
+            model, effort = FALLBACK_MODEL, FALLBACK_REASONING_EFFORT
         if attempt < MAX_ATTEMPTS:
             delay = min(2 ** attempt, 60)
             print(f"Retrying {agent_name} in {delay}s ...")
@@ -247,10 +267,12 @@ def _run_agent(run_once, agent_name, loom_config):
     raise RuntimeError(f"{agent_name} review failed: {last_error}")
 
 
-def _post_summary(summary, head_sha):
+def _post_summary(summary, head_sha, model):
     """Post the summary as the updateable `review` comment. Raises on failure,
-    failing the job."""
-    body = summary.rstrip() + "\n\n" + review_context.REVIEWED_SHA_MARKER.format(sha=head_sha) + "\n"
+    failing the job. The hidden markers tell the next run which commit this
+    review saw, and let reviews be compared by model."""
+    body = (summary.rstrip() + "\n\n" + review_context.REVIEWED_SHA_MARKER.format(sha=head_sha)
+            + f"\n<!-- ai-review-model: {model} -->\n")
     path = f"{WORK_DIR}/summary_to_post.md"
     with open(path, "w", encoding="utf-8") as f:
         f.write(body)
@@ -290,7 +312,9 @@ def review(run_once, agent_name):
     with open(PROMPT_FILE, "w", encoding="utf-8") as f:
         f.write(text)
 
-    _run_agent(run_once, agent_name, loom_config)
+    if run_once is _run_codex_once:
+        Shell.check("codex --version", verbose=True)
+    model = _run_agent(run_once, agent_name, loom_config)
 
     # Re-read the threads: the author may have replied or resolved while the
     # agent ran, and thread actions are checked against the current state.
@@ -303,7 +327,16 @@ def review(run_once, agent_name):
     with open(SUMMARY_FILE, "r", encoding="utf-8") as f:
         summary = f.read()
     summary = publish.publish(GH, repo, info.pr_number, ctx.head_sha, ctx.files, threads, OUTPUT_DIR, summary)
-    _post_summary(summary, ctx.head_sha)
+    _post_summary(summary, ctx.head_sha, model)
+
+    # Record every review thread of ours, with its current state and replies,
+    # in the review's Loom memory. Best effort: the review is already posted.
+    try:
+        threads = GH.list_pr_review_threads(pr=info.pr_number, repo=repo)
+        written = loom.record_threads(loom_config, repo, info.pr_number, threads, review_context.thread_is_ours)
+        print(f"Loom memory: {written} review thread record(s) written")
+    except Exception as e:  # noqa: BLE001
+        print(f"WARNING: recording review threads in Loom failed: {e}")
 
     return [p for p in (PROMPT_FILE, SUMMARY_FILE, LOOM_CALL_LOG) if os.path.exists(p)]
 

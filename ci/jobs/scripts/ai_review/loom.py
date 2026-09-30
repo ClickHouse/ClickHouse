@@ -58,6 +58,8 @@ REPO_CONFIG = {
         "base_url_secret": "/ci/loom/base_url",
         "token_secret": "/ci/loom/api_key",
         "namespace": PUBLIC_NAMESPACE,
+        # The review's own memory: one record per review thread and its outcome.
+        "memory_namespace": "clickhouse-gh",
         "private": False,
         "pr_overlay": True,
     },
@@ -89,10 +91,12 @@ _MAX_FILES = 50
 
 
 class Config:
-    def __init__(self, base_url="", token="", namespace="", repo="", pr_number=0, private=False, pr_overlay=False):
+    def __init__(self, base_url="", token="", namespace="", repo="", pr_number=0, private=False, pr_overlay=False,
+                 memory_namespace=""):
         self.base_url = (base_url or "").rstrip("/")
         self.token = token or ""
         self.namespace = namespace or ""
+        self.memory_namespace = memory_namespace or ""
         self.repo = repo or ""
         self.pr_number = int(pr_number or 0)
         self.private = bool(private)
@@ -149,6 +153,7 @@ class Config:
             pr_number=pr_number,
             private=entry["private"],
             pr_overlay=entry["pr_overlay"],
+            memory_namespace=entry.get("memory_namespace", ""),
         )
 
 
@@ -167,17 +172,18 @@ def _log_call(op, status, ms):
         pass
 
 
-def call(config, op, body):
+def call(config, op, body, namespace=None):
     """POST /v1/<op>. Returns the parsed answer, or None on any failure.
     A 404 (name not found) returns the answer with `_not_found` set, because
-    "this symbol does not exist on master" is itself useful."""
+    "this symbol does not exist on master" is itself useful. `namespace`
+    overrides the code namespace (the memory ops use the memory namespace)."""
     if not config.available():
         return None
     if _refuse_cross_boundary(config):
         print(f"Loom: REFUSED {op}: private repository configured with the public namespace")
         _log_call(op, "refused_cross_boundary", 0)
         return None
-    payload = {**body, "org": ORG, "namespace": config.namespace, "consumer": CONSUMER, "agent": CONSUMER}
+    payload = {**body, "org": ORG, "namespace": namespace or config.namespace, "consumer": CONSUMER, "agent": CONSUMER}
     request = urllib.request.Request(
         f"{config.base_url}/v1/{op}",
         data=json.dumps(payload).encode(),
@@ -467,6 +473,65 @@ def write_brief(config, pr, files, out_dir):
     with open(os.path.join(out_dir, "brief.md"), "w", encoding="utf-8") as f:
         f.write(brief)
     return brief
+
+
+# ── Review memory ────────────────────────────────────────────────────────────
+
+
+def _thread_state(thread):
+    if not thread.get("isResolved"):
+        return "open"
+    resolved_by = ((thread.get("resolvedBy") or {}).get("login") or "")
+    return "resolved_by_review" if resolved_by.startswith("clickhouse-gh") else "resolved_by_author"
+
+
+def thread_record(repo, pr_number, thread, is_ours):
+    """The memory row for one review thread of ours, or None. Keyed by the
+    thread's first comment, so each run upserts the same row as the thread's
+    state and replies change (the server skips an unchanged row)."""
+    comments = (thread.get("comments") or {}).get("nodes") or []
+    if not comments or not is_ours(thread) or not comments[0].get("databaseId"):
+        return None
+    first = comments[0]
+    replies = [c for c in comments[1:] if (c.get("body") or "").strip()]
+    others = [c for c in replies if not (c.get("viewerDidAuthor") or ((c.get("author") or {}).get("login") or "").startswith("clickhouse-gh"))]
+    state = _thread_state(thread)
+    lines = [
+        f"Review finding on {repo}#{pr_number} at {thread.get('path')}:{thread.get('line') or first.get('originalLine') or '?'} "
+        f"(state: {state}{', outdated' if thread.get('isOutdated') else ''}).",
+        "",
+        (first.get("body") or "").strip(),
+    ]
+    for c in replies:
+        lines += ["", f"Reply by {(c.get('author') or {}).get('login')}:", (c.get("body") or "").strip()]
+    tags = [f"pr:{pr_number}", f"state:{state}", "kind:review_thread"]
+    if others:
+        tags.append("author_replied")
+    if thread.get("path"):
+        tags.append(f"path:{thread['path']}")
+    return {
+        "memory_key": f"review-thread:{repo}:{pr_number}:{first['databaseId']}",
+        "value": "\n".join(lines)[:20000],
+        "memory_type": "episodic",
+        "tags": tags,
+        **({"files": [thread["path"]]} if thread.get("path") else {}),
+    }
+
+
+def record_threads(config, repo, pr_number, threads, is_ours):
+    """Upsert one memory row per review thread of ours: what was found, what
+    the author answered, and how the thread ended. This is the record later
+    reviews can learn from (which findings authors fixed, which they
+    dismissed and why). Write-only for now; nothing reads it into the prompt
+    until that has been evaluated. Returns the number of rows written."""
+    if not (config.available() and config.memory_namespace):
+        return 0
+    rows = [r for r in (thread_record(repo, pr_number, t, is_ours) for t in threads or []) if r]
+    if not rows:
+        return 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(rows))) as pool:
+        results = list(pool.map(lambda r: call(config, "memory.set", r, namespace=config.memory_namespace), rows))
+    return sum(1 for r in results if r is not None)
 
 
 # ── CLI used by the agent ─────────────────────────────────────────────────────

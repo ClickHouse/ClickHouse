@@ -57,21 +57,28 @@ def test_commentable_lines():
     assert lines["RIGHT"][42] == 1
 
 
+_TOPICS = ["overflow in the size computation", "lock order inversion with the merge thread",
+           "missing access check on the new table function", "cache key ignores the setting",
+           "exception leaves the part half registered", "test asserts weaker behavior than promised",
+           "wrong column type after the rename", "leak of the file descriptor on retry",
+           "deleted metadata is never logged", "unversioned serialization change", "unbounded memory in the loop"]
+
+
 def test_validate_comments():
     with tempfile.TemporaryDirectory() as d:
-        b = _body(d, "b.md")
+        b = [_body(d, f"b{i}.md", t) for i, t in enumerate(_TOPICS)]
         entries = [
-            {"path": "src/Foo.cpp", "line": 12, "side": "RIGHT", "severity": "blocker", "body_file": b},
-            {"path": "src/Foo.cpp", "line": 11, "side": "LEFT", "severity": "major", "body_file": b},
-            {"path": "src/Foo.cpp", "start_line": 10, "line": 13, "severity": "major", "body_file": b},
-            {"path": "src/Foo.cpp", "start_line": 12, "line": 42, "severity": "major", "body_file": b},  # crosses hunks
-            {"path": "src/Foo.cpp", "line": 30, "severity": "major", "body_file": b},  # outside the hunks
-            {"path": "src/Other.cpp", "line": 1, "severity": "major", "body_file": b},  # not in the PR
-            {"path": "big.bin", "line": 1, "severity": "major", "body_file": b},  # no patch
-            {"path": "src/Foo.cpp", "line": 42, "severity": "nit", "body_file": b},
+            {"path": "src/Foo.cpp", "line": 12, "side": "RIGHT", "severity": "blocker", "body_file": b[0]},
+            {"path": "src/Foo.cpp", "line": 11, "side": "LEFT", "severity": "major", "body_file": b[1]},
+            {"path": "src/Foo.cpp", "start_line": 10, "line": 13, "severity": "major", "body_file": b[2]},
+            {"path": "src/Foo.cpp", "start_line": 12, "line": 42, "severity": "major", "body_file": b[3]},  # crosses hunks
+            {"path": "src/Foo.cpp", "line": 30, "severity": "major", "body_file": b[4]},  # outside the hunks
+            {"path": "src/Other.cpp", "line": 1, "severity": "major", "body_file": b[5]},  # not in the PR
+            {"path": "big.bin", "line": 1, "severity": "major", "body_file": b[6]},  # no patch
+            {"path": "src/Foo.cpp", "line": 42, "severity": "nit", "body_file": b[7]},
             {"path": "src/Foo.cpp", "line": 41, "severity": "major", "body_file": os.path.join(d, "missing.md")},
-            {"path": "src/Foo.cpp", "line": 12, "side": "RIGHT", "severity": "major", "body_file": b},  # repeat
-            {"path": "src/Foo.cpp", "line": "x", "body_file": b},
+            {"path": "src/Foo.cpp", "line": 12, "side": "RIGHT", "severity": "major", "body_file": b[8]},  # same line
+            {"path": "src/Foo.cpp", "line": "x", "body_file": b[9]},
         ]
         postable, moved = publish.validate_comments(entries, FILES, [], d)
         assert [(c["line"], c["side"], c.get("start_line")) for c in postable] == [
@@ -90,8 +97,31 @@ def test_validate_comments_skips_lines_with_an_open_thread_of_ours():
         entries = [{"path": "src/Foo.cpp", "line": 11, "severity": "major", "body_file": b},
                    {"path": "src/Foo.cpp", "line": 12, "severity": "major", "body_file": b}]
         threads = [_thread("T1", line=11), _thread("T2", ours=False, line=12)]
+        threads[0]["comments"]["nodes"][0]["body"] = "unrelated earlier point about locking"
         postable, moved = publish.validate_comments(entries, FILES, threads, d)
         assert [c["line"] for c in postable] == [12] and not moved
+
+
+def test_validate_comments_skips_a_repeat_of_an_open_thread_on_another_line():
+    with tempfile.TemporaryDirectory() as d:
+        b = _body(d, "b.md", "The `cache_key` ignores `use_uncompressed_cache`, so two plans share one entry.")
+        threads = [_thread("T1", line=41)]
+        threads[0]["comments"]["nodes"][0]["body"] = "`cache_key` ignores `use_uncompressed_cache`: two plans can share one entry."
+        postable, _ = publish.validate_comments(
+            [{"path": "src/Foo.cpp", "line": 12, "severity": "major", "body_file": b}], FILES, threads, d)
+        assert postable == []
+
+
+def test_inline_comments_are_capped_blockers_first():
+    with tempfile.TemporaryDirectory() as d:
+        entries = []
+        for i, line in enumerate([10, 11, 12, 13, 41, 42, 43]):
+            entries.append({"path": "src/Foo.cpp", "line": line, "severity": "blocker" if line == 43 else "major",
+                            "body_file": _body(d, f"c{i}.md", _TOPICS[i])})
+        with mock.patch.object(publish, "MAX_INLINE_COMMENTS", 3):
+            postable, moved = publish.validate_comments(entries, FILES, [], d)
+        assert [c["line"] for c in postable] == [43, 10, 11]
+        assert len(moved) == 4 and all("more than 3" in r for _, _, r in moved)
 
 
 def test_thread_action_policy():
@@ -276,3 +306,36 @@ def test_outputs_require_every_file():
             assert "not a JSON array" in job._outputs_problem()
             _body(d, "thread_actions.json", "[]")
             assert job._outputs_problem() == ""
+
+
+def test_agent_falls_back_after_a_fast_failure():
+    from ci.jobs import copilot_review_job as job
+
+    calls = []
+
+    def run_once(_cfg, _robot, model, effort):
+        calls.append((model, effort))
+        if model == job.MODEL:
+            return 1  # e.g. the CLI does not know the model yet
+        for name in ("comments.json", "thread_actions.json"):
+            _body(job.OUTPUT_DIR, name, "[]")
+        _body(job.OUTPUT_DIR, "summary.md", "---\n#### AI Review\n")
+        return 0
+
+    with tempfile.TemporaryDirectory() as d:
+        with mock.patch.object(job, "OUTPUT_DIR", d), mock.patch.object(job, "SUMMARY_FILE", os.path.join(d, "summary.md")), \
+                mock.patch.object(job, "_reset_output_dir"), mock.patch.object(job.time, "sleep"):
+            assert job._run_agent(run_once, "Codex", loom.Config()) == job.FALLBACK_MODEL
+    assert calls == [(job.MODEL, job.REASONING_EFFORT), (job.FALLBACK_MODEL, job.FALLBACK_REASONING_EFFORT)]
+
+
+def test_thread_record():
+    t = _thread("T", resolved=True, resolved_by="author")
+    t["comments"]["nodes"].append({"databaseId": 8, "author": {"login": "author"}, "body": "By design, see the comment above."})
+    rec = loom.thread_record("ClickHouse/ClickHouse", 5, t, context.thread_is_ours)
+    assert rec["memory_key"] == "review-thread:ClickHouse/ClickHouse:5:7"
+    assert {"pr:5", "state:resolved_by_author", "author_replied", "path:src/Foo.cpp"} <= set(rec["tags"])
+    assert "Reply by author:\nBy design" in rec["value"] and rec["files"] == ["src/Foo.cpp"]
+    assert loom.thread_record("ClickHouse/ClickHouse", 5, _thread("X", ours=False), context.thread_is_ours) is None
+    # No memory namespace or no Loom: nothing is written.
+    assert loom.record_threads(loom.Config(), "r", 5, [t], context.thread_is_ours) == 0
