@@ -1,0 +1,39 @@
+<test>
+    <settings><max_threads>1</max_threads></settings>
+
+    <!-- The GROUP BY key extends past the sorting key, so the in-order transform builds one hashing
+         state per run of equal `a`, and `a` is unique. The table is small on purpose: the per-block
+         cost this measures used to be quadratic in the block size, and even one run of the first
+         query has to stay inside the harness's 15-second per-query budget. That budget is what bounds
+         the fill: on the master side the first query measures 4.7 s and the DISTINCT one 3.5 s here,
+         and the cost is the product of the row count and the block size, which granule alignment caps
+         near 65k rows, so halving the fill buys about 2x on both. -->
+    <create_query>CREATE TABLE agg_in_order_partial_key (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a</create_query>
+    <fill_query>INSERT INTO agg_in_order_partial_key SELECT number, number * 7, number * 11 FROM numbers_mt(100000)</fill_query>
+    <fill_query>OPTIMIZE TABLE agg_in_order_partial_key FINAL</fill_query>
+
+    <query>SELECT a, b, count() FROM agg_in_order_partial_key GROUP BY a, b SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
+
+    <!-- DISTINCT in order builds a state per run of equal `a` in the same way, over the two columns
+         outside the sorting key. Unlike aggregation in order, it is on by default. -->
+    <query>SELECT DISTINCT a, b, c FROM agg_in_order_partial_key SETTINGS optimize_distinct_in_order = 1 FORMAT Null</query>
+
+    <!-- Control: GROUP BY is the whole sorting key, so the transform never builds a state per run. -->
+    <query>SELECT a, count() FROM agg_in_order_partial_key GROUP BY a SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
+
+    <!-- Control: the whole-block batched key pack, which keeps its batching and must not regress. -->
+    <query>WITH number % 4000000 AS k1, (number * 7) % 4000000 AS k2 SELECT k1, k2, count() FROM numbers_mt(10000000) GROUP BY k1, k2 SETTINGS optimize_aggregation_in_order = 0 FORMAT Null</query>
+
+    <!-- The other end of the same trade: runs of 65536 equal `a`, so a block holds one or two of them
+         and a state covers nearly all of it. Packing such a state's keys one row at a time is slower
+         than the whole-block batch it replaces, which is what these two queries hold to parity. -->
+    <create_query>CREATE TABLE agg_in_order_long_runs (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a</create_query>
+    <fill_query>INSERT INTO agg_in_order_long_runs SELECT intDiv(number, 65536), number * 7, number * 11 FROM numbers_mt(2000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE agg_in_order_long_runs FINAL</fill_query>
+
+    <query>SELECT a, b, count() FROM agg_in_order_long_runs GROUP BY a, b SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
+    <query>SELECT DISTINCT a, b, c FROM agg_in_order_long_runs SETTINGS optimize_distinct_in_order = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS agg_in_order_partial_key</drop_query>
+    <drop_query>DROP TABLE IF EXISTS agg_in_order_long_runs</drop_query>
+</test>
