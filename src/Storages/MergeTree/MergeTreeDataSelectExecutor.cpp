@@ -2176,9 +2176,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     if (!key_condition_useful && !part_offset_condition_useful && !total_offset_condition_useful)
         return part_ranges;
 
-    /// Exact ranges require exactness support from the key condition and non-relaxed offset conditions.
-    /// Covered relaxed siblings can still contribute pruning without disabling the key's exactness checks.
-    if (!key_condition.canCheckExactness() || (part_offset_condition && part_offset_condition->isRelaxed())
+    /// If conditions are relaxed, don't fill exact ranges.
+    if (key_condition.isRelaxed() || (part_offset_condition && part_offset_condition->isRelaxed())
         || (total_offset_condition && total_offset_condition->isRelaxed()))
         exact_ranges = nullptr;
 
@@ -2402,13 +2401,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> part_offset_left(2);
     std::vector<FieldRef> part_offset_right(2);
 
-    const auto evaluate_key_condition = [&](const auto &... arguments)
-    {
-        if (exact_ranges)
-            return key_condition.checkInRangeWithExactness(arguments...);
-        return key_condition.checkInRange(arguments...);
-    };
-
     auto check_in_range = [&](const MarkRange & range, BoolMask initial_mask = {})
     {
         auto check_key_condition = [&]() -> BoolMask
@@ -2513,8 +2505,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                 }
             }
-            return evaluate_key_condition(
-                used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
+            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
         };
 
         auto check_part_offset_condition = [&]()

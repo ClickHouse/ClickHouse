@@ -1635,8 +1635,6 @@ KeyCondition::KeyCondition(
     /// atom, which can put a relaxed atom back into a negated multi-atom group. Run the cleanup
     /// once more so such a group keeps pruning through its exact atoms.
     dropCoveredRelaxedAtomsFromNegatedGroups();
-
-    updateExactnessCondition();
 }
 
 KeyCondition::KeyCondition(
@@ -1648,11 +1646,6 @@ KeyCondition::KeyCondition(
     : KeyCondition(filter_dag, context, key_description.column_names, key_description.expression, single_point_, skip_analysis_)
 {
     key_order = KeyOrder(key_description.reverse_flags);
-
-    /// The exactness condition is evaluated with the same key ranges, so it must decompose them
-    /// with the same per-column sort directions.
-    if (exactness_condition)
-        exactness_condition->key_order = key_order;
 }
 
 KeyCondition KeyCondition::createForPrimaryKey(
@@ -1675,31 +1668,6 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(date_time_overflow_behavior_ignore_)
 {}
-
-void KeyCondition::updateExactnessCondition()
-{
-    /// When a multi-atom group mixes an exact atom with relaxed siblings, the siblings make the
-    /// whole condition relaxed and force `can_be_false` to `true`, although the exact atom
-    /// already represents the predicate leaf exactly. Derive the exactness condition without
-    /// them, so that `checkInRangeWithExactness` can recover the falsity information lost to atoms
-    /// that exist only for extra pruning.
-    if (auto exactness_rpn = dropCoveredRelaxedAtoms(rpn, /*only_negated_groups*/ false))
-    {
-        auto candidate = std::make_shared<KeyCondition>(
-            ThisIsPrivate{}, key_columns, num_key_columns, single_point, date_time_overflow_behavior_ignore);
-        candidate->rpn = std::move(*exactness_rpn);
-        candidate->key_order = key_order;
-
-        /// Eligibility changes only with the RPN. Retaining only eligible derivatives avoids
-        /// rescanning them during every range check; unrelated relaxed leaves still prevent exactness.
-        if (candidate->isRelaxed())
-            exactness_condition.reset();
-        else
-            exactness_condition = std::move(candidate);
-    }
-    else
-        exactness_condition.reset();
-}
 
 void KeyCondition::dropCoveredRelaxedAtomsFromNegatedGroups()
 {
@@ -1908,9 +1876,6 @@ void KeyCondition::relaxAtomsOverNaNHidingColumns(const DataTypes & key_types)
                 break;
         }
     }
-
-    /// The derived condition must reflect the updated exactness of the atoms.
-    updateExactnessCondition();
 }
 
 /// A NaN inside a `Tuple` orders above only the values that share its prefix, so it can sit strictly
@@ -1933,9 +1898,6 @@ void KeyCondition::relaxRangeAtomsForTupleNaNs(const DataTypes & key_types)
         if (isTuple(key_type) && typeMayHideNaN(key_type))
             element.relaxed = true;
     }
-
-    /// The derived condition must reflect the updated exactness of the range atoms.
-    updateExactnessCondition();
 }
 
 bool KeyCondition::addCondition(const String & column, const Range & range)
@@ -1946,7 +1908,6 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
     /// The bound is an independent leaf, so its outer `AND` does not continue the preceding group.
     rpn.emplace_back(RPNElement::FUNCTION_IN_RANGE, std::vector<size_t>{key_columns[column]}, range);
     rpn.emplace_back(RPNElement::FUNCTION_AND);
-    updateExactnessCondition();
     return true;
 }
 
@@ -6552,51 +6513,6 @@ BoolMask KeyCondition::checkInRange(
         });
 }
 
-template <typename Evaluate>
-BoolMask KeyCondition::checkWithExactness(const Evaluate & evaluate, BoolMask initial_mask) const
-{
-    if (!exactness_condition || initial_mask.can_be_false)
-        return evaluate(*this, initial_mask);
-
-    /// The full condition supplies pruning and the derivative supplies falsity. Saturated mask
-    /// components are ignored by the caller, so they need no separate evaluation.
-    BoolMask result = initial_mask.can_be_true
-        ? initial_mask
-        : evaluate(*this, BoolMask::consider_only_can_be_true);
-    result.can_be_false = evaluate(*exactness_condition, BoolMask::consider_only_can_be_false).can_be_false;
-    return result;
-}
-
-BoolMask KeyCondition::checkInRangeWithExactness(
-    size_t used_key_size,
-    const FieldRef * left_keys,
-    const FieldRef * right_keys,
-    const DataTypes & data_types,
-    BoolMask initial_mask,
-    const Hyperrectangle * key_bounds) const
-{
-    return checkWithExactness([&](const KeyCondition & condition, BoolMask mask)
-    {
-        return condition.checkInRange(used_key_size, left_keys, right_keys, data_types, mask, key_bounds);
-    }, initial_mask);
-}
-
-BoolMask KeyCondition::checkInRangeWithExactness(
-    const std::vector<size_t> & sparse_key_indices,
-    const FieldRef * sparse_left_keys,
-    const FieldRef * sparse_right_keys,
-    const DataTypes & sparse_data_types,
-    const std::vector<UInt8> & equal_boundaries_mask,
-    BoolMask initial_mask,
-    const Hyperrectangle * key_bounds) const
-{
-    return checkWithExactness([&](const KeyCondition & condition, BoolMask mask)
-    {
-        return condition.checkInRange(
-            sparse_key_indices, sparse_left_keys, sparse_right_keys, sparse_data_types, equal_boundaries_mask, mask, key_bounds);
-    }, initial_mask);
-}
-
 /// Check if a type conversion function preserves the Field value when it's monotonic on the given range.
 /// For example, CAST between UInt8/16/32/64 types all store as UInt64 in Field, so when the CAST is
 /// monotonic (value fits in the target type), the Field value doesn't change.
@@ -8655,7 +8571,6 @@ void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, s
             if (j > 0)
                 target.rpn.emplace_back(RPNElement::FUNCTION_AND);
         }
-        target.updateExactnessCondition();
     };
 
     if (!all_complex)
