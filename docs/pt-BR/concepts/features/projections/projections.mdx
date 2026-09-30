@@ -210,9 +210,7 @@ WHERE query_id='<query_id>'
    └───────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────┘
 ```
 
-<div id="using-projections-to-speed-up-UK-price-paid">
-  ### Usando projeções para acelerar consultas do UK Price Paid
-</div>
+### Usando projeções para acelerar consultas do UK Price Paid {#using-projections-to-speed-up-UK-price-paid}
 
 Para demonstrar como as projeções podem ser usadas para acelerar o desempenho das consultas, vamos
 analisar um exemplo com um conjunto de dados real. Neste exemplo, vamos
@@ -435,25 +433,30 @@ CREATE TABLE uk.uk_price_paid_with_projections_v2 AS uk.uk_price_paid;
 INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
 ```
 
-<div id="build-projection">
-  #### Criar uma projeção
-</div>
+#### Criar uma projeção {#build-projection}
 
-Vamos criar uma projeção agregada com base nas dimensões `toYear(date)`, `district` e `town`:
+Vamos criar uma projeção agregada com base nas dimensões `year`, `district` e `town`.
+A projeção agrupa as vendas pelo ano de cada venda, portanto materializamos essa
+expressão como uma coluna para que ela possa ser referenciada por filtros:
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections_v2
+    ADD COLUMN year UInt16 MATERIALIZED toYear(date)
+```
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
     ADD PROJECTION projection_by_year_district_town
     (
         SELECT
-            toYear(date),
+            year,
             district,
             town,
             avg(price),
             sum(price),
             count()
         GROUP BY
-            toYear(date),
+            year,
             district,
             town
     )
@@ -476,7 +479,7 @@ As consultas a seguir comparam o desempenho com e sem projeções. Para desativa
 <RunnableCode>
   ```sql
   SELECT
-      toYear(date) AS year,
+      year,
       round(avg(price)) AS price,
       bar(price, 0, 1000000, 80)
   FROM uk.uk_price_paid_with_projections_v2
@@ -489,7 +492,7 @@ As consultas a seguir comparam o desempenho com e sem projeções. Para desativa
 <RunnableCode>
   ```sql
   SELECT
-      toYear(date) AS year,
+      year,
       round(avg(price)) AS price,
       bar(price, 0, 1000000, 80)
   FROM uk.uk_price_paid_with_projections_v2
@@ -508,7 +511,7 @@ Os resultados devem ser os mesmos, mas o desempenho deve ser melhor no último e
 <RunnableCode>
   ```sql
   SELECT
-      toYear(date) AS year,
+      year,
       round(avg(price)) AS price,
       bar(price, 0, 2000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
@@ -522,7 +525,7 @@ Os resultados devem ser os mesmos, mas o desempenho deve ser melhor no último e
 <RunnableCode>
   ```sql
   SELECT
-      toYear(date) AS year,
+      year,
       round(avg(price)) AS price,
       bar(price, 0, 2000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
@@ -536,7 +539,7 @@ Os resultados devem ser os mesmos, mas o desempenho deve ser melhor no último e
   #### Consulta 3. Os bairros mais caros
 </div>
 
-A condição (date &gt;= &#39;2020-01-01&#39;) precisa ser modificada para corresponder à dimensão da projeção (`toYear(date) >= 2020)`:
+O filtro para linhas de 2020 em diante referencia diretamente a dimensão `year` armazenada na projeção:
 
 <RunnableCode>
   ```sql
@@ -547,7 +550,7 @@ A condição (date &gt;= &#39;2020-01-01&#39;) precisa ser modificada para corre
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
-  WHERE toYear(date) >= 2020
+  WHERE year >= 2020
   GROUP BY
       town,
       district
@@ -567,7 +570,7 @@ A condição (date &gt;= &#39;2020-01-01&#39;) precisa ser modificada para corre
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
-  WHERE toYear(date) >= 2020
+  WHERE year >= 2020
   GROUP BY
       town,
       district
@@ -578,6 +581,13 @@ A condição (date &gt;= &#39;2020-01-01&#39;) precisa ser modificada para corre
 </RunnableCode>
 
 Novamente, o resultado é o mesmo, mas observe a melhora no desempenho da consulta na 2ª consulta.
+
+<Note>
+  O filtro deve referenciar diretamente a dimensão `year` armazenada. Escrever
+  `WHERE toYear(date) >= 2020` não utiliza a projeção: o otimizador reescreve
+  a condição como um range sobre `date`, e a projeção não armazena uma coluna `date`,
+  de modo que o ClickHouse recorre à leitura completa da tabela base.
+</Note>
 
 <div id="combining-projections">
   ### Combinando projeções em uma consulta
@@ -702,9 +712,7 @@ No fim, apenas **1 de 5 partes** é lida da tabela base.
 Ao combinar a análise de índices de várias projeções, o ClickHouse reduz significativamente a quantidade de dados examinados,
 melhorando o desempenho e mantendo baixa a sobrecarga de armazenamento.
 
-<div id="related-content">
-  ## Conteúdo relacionado
-</div>
+## Conteúdo relacionado {#related-content}
 
 * [Uma introdução prática aos índices primários no ClickHouse](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
 * [Visões materializadas](/pt-BR/concepts/features/materialized-views/index)

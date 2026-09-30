@@ -429,7 +429,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
     DatabasePtr database = DatabaseFactory::instance().get(
-        create, metadata_path / "", getContext(), mode, internal, is_metadata_replay);
+        create, metadata_path / "", getContext(), mode, internal, is_metadata_replay, is_restore_from_backup);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -1201,13 +1201,17 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         create.set(create.columns_list, make_intrusive<ASTColumns>());
 
     /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside it
-    /// checks a row against another row's value, or reads past the end of a shorter column. Screened for
+    /// checks a row against another row's value, or reads past the end of a shorter column. And a second
+    /// declaration of a name is reachable only once the first one has been dropped. Screened for
     /// every definition the user supplies now - an explicit column list, a full-definition `ATTACH`, and
     /// the `AS src` / `CLONE AS src` copy of the constraints of another table, which may have been stored
-    /// by a version without this check. A replay of stored metadata is not screened, so such a table
+    /// by a version without these checks. A replay of stored metadata is not screened, so such a table
     /// still attaches.
     if (isFreshTableDefinition(mode, create.attach_short_syntax))
+    {
         properties.constraints.checkExpressionsPreserveRowCount();
+        properties.constraints.checkNamesAreUnique();
+    }
 
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
@@ -3240,7 +3244,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
             /// own check on the temporary name. A `CREATE TABLE ... CLONE AS` that populates the final table
             /// directly requires exactly these grants, so the contract is the same either way.
             getContext()->checkAccess(InterpreterAlterQuery::getRequiredAccessForCommand(
-                *command, create.getDatabase(), published_table_name, /*row_exists_is_lightweight_marker=*/false));
+                *command, create.getDatabase(), published_table_name, InterpreterAlterQuery::RowExistsColumnKind::Regular));
             interpreter_alter.setSkipAccessCheck(true);
         }
         return interpreter_alter.execute();
