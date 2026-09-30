@@ -159,6 +159,26 @@ const char * skipPosixNamedClass(const char * pos, const char * end)
     return pos + 1;
 }
 
+/// The lower bound of the repetition at `pos` (`{n}`, `{n,}` or `{n,m}`): that many copies of the quantified
+/// character are mandatory. 0 for a malformed body, which re2 reads as literal text; that only drops a
+/// character from the prefilter.
+size_t repetitionLowerBound(const char * pos, const char * end)
+{
+    const char * p = pos + 1;
+    size_t min_count = 0;
+    for (; p != end && isNumericASCII(*p); ++p)
+    {
+        min_count = min_count * 10 + (*p - '0');
+        if (min_count > 1000)
+            return 0;
+    }
+    if (p == pos + 1)
+        return 0;
+    if (p != end && *p == ',')
+        for (++p; p != end && isNumericASCII(*p); ++p);
+    return p != end && *p == '}' ? min_count : 0;
+}
+
 /// re2 resolves `\<non-alphanumeric>` to that character itself, unlike a sequence such as `\d` or `\x41`.
 bool isEscapedLiteral(char c)
 {
@@ -404,6 +424,8 @@ const char * analyzeImpl(
                 if (!in_square_braces)
                 {
                     bool is_non_capturing_group = false;
+                    /// `(?i:...)` folds case inside the group only; its literal is unusable, the ones around it stay.
+                    bool group_is_case_insensitive = false;
 
                     /// it means flag negation
                     /// there are various possible flags
@@ -416,13 +438,14 @@ const char * analyzeImpl(
                     if (pos + 2 < end && pos[1] == '?' && is_flag_char(pos[2]))
                     {
                         size_t offset = 2;
+                        bool negated = false;
+                        bool sets_case_insensitive = false;
                         for (; pos + offset < end; ++offset)
                         {
-                            if (pos[offset] == 'i')
-                            {
-                                /// Actually it can be negated case-insensitive flag. But we don't care.
-                                has_case_insensitive_flag = true;
-                            }
+                            if (pos[offset] == '-')
+                                negated = true;
+                            else if (pos[offset] == 'i')
+                                sets_case_insensitive = !negated;
                             else if (!is_flag_char(pos[offset]))
                                 break;
                         }
@@ -434,6 +457,7 @@ const char * analyzeImpl(
                         {
                             /// A flag group captures nothing - RE2 counts no capture group for
                             /// `(?i)` - and `extract` returns the whole match for such a pattern.
+                            has_case_insensitive_flag = has_case_insensitive_flag || sets_case_insensitive;
                             ++pos;
                             break;
                         }
@@ -441,7 +465,12 @@ const char * analyzeImpl(
                         /// `(?flags:regex)` sets the flags for the group it opens, and captures
                         /// nothing either.
                         if (*pos == ':')
+                        {
                             is_non_capturing_group = true;
+                            group_is_case_insensitive = sets_case_insensitive;
+                        }
+                        else
+                            has_case_insensitive_flag = has_case_insensitive_flag || sets_case_insensitive;
                     }
                     /// (?:regex) means non-capturing parentheses group
                     else if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
@@ -468,7 +497,7 @@ const char * analyzeImpl(
                     has_capture = has_capture || group_has_capture || !is_non_capturing_group;
 
                     /// For ()? or ()* or (){0,1}, we can just ignore the whole group.
-                    if ((pos + 1 < end && (pos[1] == '?' || pos[1] == '*')) ||
+                    if (group_is_case_insensitive || (pos + 1 < end && (pos[1] == '?' || pos[1] == '*')) ||
                         (pos + 2 < end && pos[1] == '{' && pos[2] == '0'))
                     {
                         finish_non_trivial_char();
@@ -540,6 +569,14 @@ const char * analyzeImpl(
             /// Quantifiers that allow a zero number of occurrences.
             case '{':
                 in_curly_braces = true;
+                if (size_t min_count = in_square_braces ? 0 : repetitionLowerBound(pos, end); min_count >= 1)
+                {
+                    if (depth == 0 && !last_substring->first.empty())
+                        last_substring->first.append(min_count - 1, last_substring->first.back());
+                    finish_non_trivial_char();
+                    ++pos;
+                    break;
+                }
                 [[fallthrough]];
             case '?':
                 [[fallthrough]];
