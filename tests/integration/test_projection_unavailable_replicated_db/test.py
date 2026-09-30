@@ -9,6 +9,8 @@ Both nodes boot with `enable_positional_arguments_for_projections` in the defaul
 shared DDL can be analyzed on both; taking the file away from one of them is what makes them disagree.
 """
 
+import os
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -16,6 +18,9 @@ from helpers.test_tools import assert_eq_with_retry
 
 POSITIONAL_XML = "/etc/clickhouse-server/users.d/positional.xml"
 POSITIONAL_XML_BACKUP = "/tmp/positional.xml.bak"
+POSITIONAL_XML_SOURCE = os.path.join(
+    os.path.dirname(__file__), "configs/users.d/positional.xml"
+)
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -94,3 +99,52 @@ def test_replay_on_replica_keeps_the_declaration(started_cluster):
     node2.exec_in_container(["cp", POSITIONAL_XML_BACKUP, POSITIONAL_XML])
     node2.restart_clickhouse()
     assert node2.query(PROJECTION_COUNT).strip() == "1"
+
+
+def test_replay_updates_settings_of_unavailable_projection(started_cluster):
+    for replica in (node1, node2):
+        replica.copy_file_to_container(POSITIONAL_XML_SOURCE, POSITIONAL_XML)
+        replica.restart_clickhouse()
+        replica.query("DROP DATABASE IF EXISTS r_settings SYNC")
+        replica.query(
+            "CREATE DATABASE r_settings ENGINE = Replicated("
+            "'/test/projection_unavailable_settings', 'shard1', '{replica}')"
+        )
+
+    projection_count = (
+        "SELECT count() FROM system.projections "
+        "WHERE database = 'r_settings' AND table = 't'"
+    )
+    node1.query(
+        "CREATE TABLE r_settings.t (a UInt64, b String, "
+        "PROJECTION pp (SELECT b, a ORDER BY 1, 2)) "
+        "ENGINE = MergeTree ORDER BY a"
+    )
+    assert_eq_with_retry(node2, projection_count, "1")
+
+    node2.exec_in_container(["rm", POSITIONAL_XML])
+    try:
+        node2.restart_clickhouse()
+        assert node2.query(projection_count).strip() == "0"
+
+        node1.query(
+            "ALTER TABLE r_settings.t MODIFY PROJECTION pp "
+            "(SELECT b, a ORDER BY 1, 2) WITH SETTINGS (index_granularity = 128)"
+        )
+        node1.query("ALTER TABLE r_settings.t MODIFY COMMENT 'settings_replayed'")
+        assert_eq_with_retry(
+            node2,
+            "SELECT comment FROM system.tables "
+            "WHERE database = 'r_settings' AND name = 't'",
+            "settings_replayed",
+        )
+        assert node2.query(projection_count).strip() == "0"
+        assert "index_granularity = 128" in node2.query(
+            "SHOW CREATE TABLE r_settings.t"
+        )
+    finally:
+        node2.copy_file_to_container(POSITIONAL_XML_SOURCE, POSITIONAL_XML)
+        node2.restart_clickhouse()
+
+    assert node2.query(projection_count).strip() == "1"
+    assert "index_granularity = 128" in node2.query("SHOW CREATE TABLE r_settings.t")

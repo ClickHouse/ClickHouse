@@ -1107,14 +1107,26 @@ ProjectionsDescription ProjectionsDescription::parse(
         catch (const Exception &)
         {
             /// A replica may still be unable to analyze a declaration that it already loaded
-            /// from stored metadata. Only that same declaration may remain unavailable here;
-            /// a newly introduced invalid projection must still fail replication.
+            /// from stored metadata. A settings-only change may alter `WITH SETTINGS`, but the
+            /// projection body must be unchanged; a new invalid body must still fail replication.
+            const auto & declaration = projection_ast->as<const ASTProjectionDeclaration &>();
+            const auto same_ast = [](const IAST * old_ast, const IAST * new_ast)
+            {
+                if (!old_ast || !new_ast)
+                    return old_ast == new_ast;
+                return old_ast->formatIgnoringRedundantParentheses()
+                    == new_ast->formatIgnoringRedundantParentheses();
+            };
             const bool was_unavailable = known_unavailable && std::ranges::any_of(
                 known_unavailable->unavailable,
                 [&](const ASTPtr & old_definition)
                 {
-                    return old_definition->formatIgnoringRedundantParentheses()
-                        == projection_ast->formatIgnoringRedundantParentheses();
+                    const auto & old = old_definition->as<const ASTProjectionDeclaration &>();
+                    return old.name == declaration.name
+                        && same_ast(old.query, declaration.query)
+                        && same_ast(old.index, declaration.index)
+                        && same_ast(old.type, declaration.type)
+                        && same_ast(old.columns, declaration.columns);
                 });
             if (!was_unavailable)
                 throw;
