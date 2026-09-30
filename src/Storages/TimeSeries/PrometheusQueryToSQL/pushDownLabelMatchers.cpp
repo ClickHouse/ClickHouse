@@ -215,13 +215,13 @@ namespace
 
         if (isVectorMatching(node))
         {
+            /// Other operators fail on duplicate series in a match group, so removing their groups could hide that error.
             const auto & binary_operator = static_cast<const BinaryOperatorNode &>(*node);
+            if (!isBinaryOperatorAnd(binary_operator.operator_name) && !isBinaryOperatorUnless(binary_operator.operator_name))
+                return;
             MatcherList matching = keepMatchingLabels(matchers, binary_operator);
             for (const auto * side : binary_operator.children)
-            {
-                if (canFilterSide(side, binary_operator))
-                    addMatchers(side, matching);
-            }
+                addMatchers(side, matching);
             return;
         }
 

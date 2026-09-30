@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, long
 # Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+# Tag long: about 70 PromQL queries, which take more than 180s in the flaky check.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -88,6 +89,7 @@ check fusion 'sum by (job) (req{job="api"}) / sum by (job) (req)' "$(b 'sum by (
 
 echo "-- a duplicate series in a matched group is still an error"
 $CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'req{instance=\"i3\"} / on(instance) lim', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
+$CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', '(lim / on(instance) req) / on(instance) req{instance=\"i1\"}', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
 
 echo "-- as in Prometheus, a duplicate series on the one side or after dropping the metric name is an error in any group"
 $CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'req{instance=\"i1\"} / on(instance) lim', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
@@ -127,9 +129,16 @@ selectors 'lim / on(job) group_left sum by (job) (req{job="api"})'
 selectors '(-lim) / on(job) group_left sum by (job) (req{job="api"})'
 selectors 'abs(lim) / on(job) group_left sum by (job) (req{job="api"})'
 
+# Prints $1 `lim` selectors joined by `and` as a balanced tree, so the SQL is not nested too deep for TSan.
+function and_of_lim()
+{
+    if [ "$1" -eq 1 ]; then echo "lim"; return; fi
+    echo "($(and_of_lim $(($1 / 2))) and $(and_of_lim $(($1 - $1 / 2))))"
+}
+
 echo "-- more than 20 binary operators turn the pushdown off"
-selectors "($(printf 'lim + %.0s' {1..19})lim) / on(job) req{job=\"api\"}"
-selectors "($(printf 'lim + %.0s' {1..20})lim) / on(job) req{job=\"api\"}"
+selectors "$(and_of_lim 20) / on(job) req{job=\"api\"}"
+selectors "$(and_of_lim 21) / on(job) req{job=\"api\"}"
 
 echo "-- the setting turns the pushdown off"
 CLIENT="$CLIENT --promql_push_down_label_matchers=0" selectors 'rate(lim[30s]) / on(instance) rate(req{instance="i1"}[30s])'
@@ -138,7 +147,7 @@ CLIENT="$CLIENT --promql_push_down_label_matchers=0" selectors 'rate(lim[30s]) /
 function reads()
 {
     $CLIENT -q "
-        SELECT countIf(explain LIKE '%metric_name = %'), countIf(explain LIKE '%Join%')
+        SELECT countIf(explain LIKE '%metric_name = %'), countIf(explain LIKE '%Join (%')
         FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus_empty', '$1', 100, 130, 10))"
 }
 

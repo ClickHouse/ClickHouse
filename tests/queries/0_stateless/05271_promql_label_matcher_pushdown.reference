@@ -37,6 +37,7 @@ absent	1	0
 fusion	1	1
 -- a duplicate series in a matched group is still an error
 CANNOT_EXECUTE_PROMQL_QUERY
+CANNOT_EXECUTE_PROMQL_QUERY
 -- as in Prometheus, a duplicate series on the one side or after dropping the metric name is an error in any group
 CANNOT_EXECUTE_PROMQL_QUERY
 CANNOT_EXECUTE_PROMQL_QUERY
@@ -90,11 +91,10 @@ abs(lim) / on(job) group_left sum by (job) (req{job="api"})
 lim
 req api
 -- more than 20 binary operators turn the pushdown off
-(lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim) / on(job) req{job="api"}
-lim
+((((lim and lim) and (lim and (lim and lim))) and ((lim and lim) and (lim and (lim and lim)))) and (((lim and lim) and (lim and (lim and lim))) and ((lim and lim) and (lim and (lim and lim))))) / on(job) req{job="api"}
 lim api
 req api
-(lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim + lim) / on(job) req{job="api"}
+((((lim and lim) and (lim and (lim and lim))) and ((lim and lim) and (lim and (lim and lim)))) and (((lim and lim) and (lim and (lim and lim))) and ((lim and (lim and lim)) and (lim and (lim and lim))))) / on(job) req{job="api"}
 lim
 req api
 -- the setting turns the pushdown off
@@ -103,4 +103,4 @@ lim
 req i1
 -- the two sides become the same, so they are read once
 1	0
-2	4
+2	1
