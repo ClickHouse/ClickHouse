@@ -2039,7 +2039,7 @@ class SettingsRandomizer:
             random_settings["parallel_replicas_for_non_replicated_merge_tree"] = 1
         # With parallel replicas, `optimize_aggregation_in_order` rejects every projection, including the implicit
         # `_minmax_count_projection` behind trivial `count()`, so tests asserting on projections, exact counts
-        # or read limits break under the `ParallelReplicas` configuration without finding anything.
+        # or read limits break under the `ParallelReplicas` configuration: https://github.com/ClickHouse/ClickHouse/issues/123061
         if args.no_parallel_replicas:
             random_settings["optimize_aggregation_in_order"] = 0
 
