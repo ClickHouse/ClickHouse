@@ -129,7 +129,9 @@ private:
         const DataTypePtr & data_type,
         size_t input_rows_count) const
     {
-        ColumnPtr threshold_column = data_type->createColumnConst(input_rows_count, convertFieldToType(current_threshold, *data_type));
+        /// The threshold is a value of the same type, so pass the type as the source type: e.g. the value of
+        /// FixedString(N, 'representation') holds bytes and must not be parsed as its text representation.
+        ColumnPtr threshold_column = data_type->createColumnConst(input_rows_count, convertFieldToType(current_threshold, *data_type, data_type.get()));
         ColumnsWithTypeAndName args{argument, {threshold_column, data_type, {}}};
         auto elem_compare = compare_function->build(args);
         return elem_compare->execute(args, elem_compare->getResultType(), input_rows_count, false);
@@ -144,7 +146,7 @@ private:
     {
         const auto & col = *argument.column;
 
-        auto threshold_field = convertFieldToType(current_threshold, *data_type);
+        auto threshold_field = convertFieldToType(current_threshold, *data_type, data_type.get());
         auto threshold_col = data_type->createColumn();
         threshold_col->insert(threshold_field);
 

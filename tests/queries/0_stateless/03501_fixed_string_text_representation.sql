@@ -73,7 +73,13 @@ SELECT name FROM fs_accounts WHERE toString(id) >= 'T' ORDER BY name;
 SELECT groupArray(s) FROM (SELECT toString(id) AS s FROM fs_accounts ORDER BY toString(id));
 SELECT groupArray(s) FROM (SELECT toString(id) AS s FROM fs_accounts ORDER BY toString(id) DESC LIMIT 2);
 
+SELECT '-- top-K filtering uses the stored bytes as the threshold';
+SELECT id FROM fs_accounts ORDER BY id LIMIT 2 SETTINGS use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100;
+SELECT id FROM fs_accounts ORDER BY id DESC LIMIT 2 SETTINGS use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100;
+SELECT id FROM fs_accounts ORDER BY id LIMIT 2 SETTINGS use_top_k_dynamic_filtering = 0;
+
 SELECT '-- IN';
+SELECT name FROM fs_accounts WHERE (id, name) IN ((toFixedString(base58Decode('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'), 32), 'usdc'), ('Vote111111111111111111111111111111111111111', 'vote')) ORDER BY name;
 SELECT name FROM fs_accounts WHERE id IN ('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'So11111111111111111111111111111111111111112') ORDER BY name SETTINGS force_primary_key = 1;
 SELECT name FROM fs_accounts WHERE id NOT IN ('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'So11111111111111111111111111111111111111112') ORDER BY name;
 SELECT name FROM fs_accounts WHERE id IN (SELECT id FROM fs_accounts WHERE name IN ('token', 'vote')) ORDER BY name;
@@ -142,6 +148,14 @@ CREATE TABLE fs_dynamic (d Dynamic) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO fs_dynamic SELECT CAST('So11111111111111111111111111111111111111112' AS FixedString(32, 'Base58'));
 INSERT INTO fs_dynamic SELECT CAST('0x0102' AS FixedString(2, 'Hex'));
 SELECT d, dynamicType(d) FROM fs_dynamic ORDER BY dynamicType(d);
+DROP TABLE fs_dynamic;
+-- With max_types = 1, the second type is stored in the shared variant.
+CREATE TABLE fs_dynamic (d Dynamic(max_types = 1)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO fs_dynamic VALUES (42::UInt64);
+INSERT INTO fs_dynamic SELECT CAST('So11111111111111111111111111111111111111112' AS FixedString(32, 'Base58'));
+OPTIMIZE TABLE fs_dynamic FINAL;
+SELECT d, dynamicType(d), isDynamicElementInSharedData(d) FROM fs_dynamic ORDER BY dynamicType(d);
+SELECT groupArray(d) FROM (SELECT d FROM fs_dynamic ORDER BY dynamicType(d));
 DROP TABLE fs_dynamic;
 
 SELECT '-- input formats';

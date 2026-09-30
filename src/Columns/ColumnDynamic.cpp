@@ -327,7 +327,11 @@ void ColumnDynamic::get(size_t n, Field & res) const
     {
         variant_col.get(n, res);
         if (!res.isNull())
-            res = convertFieldToType(res, *getTypeAt(n));
+        {
+            /// A value of FixedString(N, 'representation') holds bytes, which must not be parsed as its text representation.
+            auto type = getTypeAt(n);
+            res = convertFieldToType(res, *type, isFixedString(type) ? type.get() : nullptr);
+        }
         return;
     }
 
