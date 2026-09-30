@@ -73,6 +73,9 @@ using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class MemorySpillScheduler;
 using MemorySpillSchedulerPtr = std::shared_ptr<MemorySpillScheduler>;
 
+class StepProfiler;
+using StepProfilerPtr = std::shared_ptr<StepProfiler>;
+
 class ThreadGroup
 {
     /// Stores parent ThreadGroup for e.g. async INSERTs/MVs/EXPLAIN ANALYZE (those creates nested ThreadGroup's):
@@ -98,6 +101,7 @@ public:
     const Int32 os_threads_nice_value;
 
     MemorySpillSchedulerPtr memory_spill_scheduler;
+    StepProfilerPtr step_profiler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
@@ -144,7 +148,7 @@ public:
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
     static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group);
-    static ThreadGroupPtr createForExplainAnalyze(ThreadGroupPtr parent_thread_group);
+    static ThreadGroupPtr createForExplainAnalyze(ThreadGroupPtr parent_thread_group, StepProfilerPtr step_profiler_);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
