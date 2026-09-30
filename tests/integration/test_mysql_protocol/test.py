@@ -1515,6 +1515,71 @@ def test_mysql_metadata_commands_access_control(started_cluster):
     node.query("DROP TABLE default.mysql_acl_employees", settings=creds)
 
 
+def test_mysql_field_list_alias_target_access_control(started_cluster):
+    # COM_FIELD_LIST on an `Alias` table forwards the target table's metadata, so the alias-level
+    # SHOW COLUMNS grant is not enough: it used to leak the target's column names and types to a user
+    # who holds no grant on the target, while the SQL `DESCRIBE` of the same alias already denies it.
+    # The wire path must apply the same target-side check as InterpreterDescribeQuery.
+    node = cluster.instances["node"]
+    creds = {"password": "123"}
+    node.query("DROP USER IF EXISTS mysql_alias_lowpriv", settings=creds)
+    node.query("DROP TABLE IF EXISTS default.mysql_alias_al", settings=creds)
+    node.query("DROP TABLE IF EXISTS default.mysql_alias_tgt", settings=creds)
+    node.query(
+        "CREATE TABLE default.mysql_alias_tgt "
+        "(user_id UInt64, password_hash String, mfa_secret String) ENGINE=MergeTree ORDER BY user_id",
+        settings=creds,
+    )
+    node.query(
+        "CREATE TABLE default.mysql_alias_al ENGINE=Alias('default', 'mysql_alias_tgt')",
+        settings=creds,
+    )
+    node.query(
+        "CREATE USER mysql_alias_lowpriv IDENTIFIED WITH no_password", settings=creds
+    )
+    # Granted on the alias only, nothing on the target.
+    node.query(
+        "GRANT SHOW COLUMNS ON default.mysql_alias_al TO mysql_alias_lowpriv",
+        settings=creds,
+    )
+
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="mysql_alias_lowpriv",
+        password="",
+        database="default",
+        port=server_port,
+    )
+    # COM_FIELD_LIST on the alias must be rejected because the user cannot see the target.
+    with pytest.raises(pymysql.err.MySQLError) as exc_info:
+        _com_field_list(client, "mysql_alias_al")
+    assert "ACCESS_DENIED" in str(exc_info.value), str(exc_info.value)
+    client.close()
+
+    # Once granted SHOW COLUMNS on the target too, the alias exposes the target columns as expected.
+    node.query(
+        "GRANT SHOW COLUMNS ON default.mysql_alias_tgt TO mysql_alias_lowpriv",
+        settings=creds,
+    )
+    granted = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="mysql_alias_lowpriv",
+        password="",
+        database="default",
+        port=server_port,
+    )
+    assert sorted(_com_field_list(granted, "mysql_alias_al")) == [
+        "mfa_secret",
+        "password_hash",
+        "user_id",
+    ]
+    granted.close()
+
+    node.query("DROP USER mysql_alias_lowpriv", settings=creds)
+    node.query("DROP TABLE default.mysql_alias_al", settings=creds)
+    node.query("DROP TABLE default.mysql_alias_tgt", settings=creds)
+
+
 def _mysql_recv_packet(sock):
     header = b""
     while len(header) < 4:
