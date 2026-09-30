@@ -770,7 +770,9 @@ private:
     /// `multiple_key_columns_per_condition`), but through arbitrary deterministic
     /// key-expression DAGs. It is only valid for equality predicates (see the caller),
     /// because `x = c` implies `f(x) = f(c)` for any deterministic `f`, while order
-    /// comparisons are not preserved.
+    /// comparisons are not preserved. The implication fails for a float zero, which equals
+    /// the zero of the other sign although `f` can tell them apart, so a constant holding
+    /// one produces no candidate.
     std::vector<TransformedConstant> transformConstantByDeterministicKeyFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,

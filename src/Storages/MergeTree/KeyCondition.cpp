@@ -2951,6 +2951,14 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
         const bool transform_input_has_nan
             = !transform_applied && anyFieldSatisfies((*transform_input_column)[0], isNaNField);
 
+        /// A float zero equals the zero of the other sign, which a key function can tell apart
+        /// (`toString(-0.0)` is `'-0'`, and `cityHash64` differs). The transformed constant then
+        /// describes only one of the two zeros, so `x = 0` does not imply `f(x) = f(0)`, and not
+        /// even a relaxed atom would be a superset of the matching rows. The transform cannot
+        /// constrain this key column; skip the candidate.
+        if (!transform_applied && anyFieldSatisfies((*transform_input_column)[0], isFloatZeroField))
+            continue;
+
         ColumnPtr transformed_const_column = transform_input_column;
         DataTypePtr transformed_const_type = transform_input_type;
         if (!transform_applied
@@ -5390,10 +5398,11 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
     /// candidate from this source is considered before a relaxed monotonic one from source 2.
     /// Equality (in both polarities) is the only comparison that an arbitrary
     /// deterministic `f` translates: `x = c` implies `f(x) = f(c)`, but order
-    /// comparisons are not preserved. `notEquals` is tolerable even though the
-    /// transform may relax the atom (when the transform is not injective), because
-    /// evaluation forces `can_be_false = true` for relaxed elements, so such an atom
-    /// never prunes.
+    /// comparisons are not preserved. A float zero `c` is the exception to the
+    /// implication (see `transformConstantByDeterministicKeyFunctions`). `notEquals`
+    /// is tolerable even though the transform may relax the atom (when the transform
+    /// is not injective), because evaluation forces `can_be_false = true` for relaxed
+    /// elements, so such an atom never prunes.
     /// `isNotDistinctFrom` with a non-NULL constant matches the same rows as `equals` (the NULL
     /// constant case never reaches here), so it translates the same way.
     if ((func_name == "equals" || func_name == "notEquals" || func_name == "isNotDistinctFrom")
