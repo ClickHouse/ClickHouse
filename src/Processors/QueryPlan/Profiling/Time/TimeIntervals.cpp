@@ -1,4 +1,4 @@
-#include <Processors/QueryPlan/TimeIntervals.h>
+#include <Processors/QueryPlan/Profiling/Time/TimeIntervals.h>
 #include <functional>
 #include <queue>
 #include <algorithm>

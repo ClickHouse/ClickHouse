@@ -7,8 +7,8 @@
 #include <unordered_map>
 #include <vector>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/StepStatsModel.h>
-#include <Processors/QueryPlan/StepIntervalTimings.h>
+#include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
+#include <Processors/QueryPlan/Profiling/Time/StepIntervalTimings.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/IProcessor.h>
 #include <IO/WriteBuffer.h>
@@ -20,6 +20,8 @@
 
 namespace DB
 {
+
+class StepProfiler;
 
 class AnalyzeStepsStats
 {
@@ -36,7 +38,7 @@ class AnalyzeStepsStats
     using ReportsByStep = std::unordered_map<const IQueryPlanStep *, StepAnalysisReport>;
 
 public:
-    AnalyzeStepsStats(QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
+    AnalyzeStepsStats(const QueryPipeline & pipeline, const QueryPlan & plan, StepProfiler & step_profiler, UInt64 execution_query_time_ns_);
 
     void printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & detail_prefix, bool processors_info = false) const;
 
@@ -45,7 +47,7 @@ public:
 
 private:
     void collectIOStats(const Processors & processors);
-    ElapsedTimesPerStepGroup collectTimingStats(const QueryPipeline & pipeline, const Processors & processors);
+    ElapsedTimesPerStepGroup collectTimingStats(const StepProfiler & step_profiler, const Processors & processors);
     void computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group);
     void computeJoinBranchCosts(const QueryPlan & plan);
 

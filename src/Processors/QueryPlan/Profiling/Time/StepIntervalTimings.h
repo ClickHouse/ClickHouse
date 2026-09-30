@@ -1,11 +1,11 @@
 #pragma once
 
 #include <unordered_map>
-#include <Processors/QueryPlan/StepStatsModel.h>
-#include <Processors/Executors/WorkInterval.h>
-#include <Processors/QueryPlan/ConcurrencyProfile.h>
+#include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
+#include <Processors/QueryPlan/Profiling/Execution/WorkInterval.h>
+#include <Processors/QueryPlan/Profiling/Time/ConcurrencyProfile.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/TimeIntervals.h>
+#include <Processors/QueryPlan/Profiling/Time/TimeIntervals.h>
 #include <base/types.h>
 
 namespace DB

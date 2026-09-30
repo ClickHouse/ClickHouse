@@ -1,9 +1,9 @@
 #include <Core/Types.h>
 #include <base/defines.h>
-#include <Processors/QueryPlan/StepIntervalTimings.h>
+#include <Processors/QueryPlan/Profiling/Time/StepIntervalTimings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/TimeIntervals.h>
+#include <Processors/QueryPlan/Profiling/Time/TimeIntervals.h>
 
 #include <deque>
 #include <limits>

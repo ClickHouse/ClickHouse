@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Joins.h>
-#include <Processors/QueryPlan/StepStatsModel.h>
+#include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
 
 namespace DB
 {
