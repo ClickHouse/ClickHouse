@@ -2,8 +2,8 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/Runtime/ExecutionThreadContext.h>
 #include <Processors/IProcessor.h>
-#include <Processors/StepWallClock.h>
-#include <Processors/StepWallClockRegistry.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <base/types.h>
 #include <base/defines.h>
@@ -21,6 +21,18 @@ namespace ErrorCodes
     extern const int QUOTA_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+}
+
+ExecutionThreadContext::ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, StepProfiler * step_profiler_, ReadProgressCallback * callback)
+    : read_progress_callback(callback)
+    , step_profiler(step_profiler_)
+    , thread_number(thread_number_)
+    , profile_processors(profile_processors_)
+    , trace_processors(trace_processors_)
+    , collect_work_intervals(step_profiler && step_profiler->needCollectWorkIntervals())
+{
+    if (collect_work_intervals)
+        work_intervals.reserve(1024ul);
 }
 
 void ExecutionThreadContext::wait(std::atomic_bool & finished)
@@ -112,15 +124,13 @@ bool ExecutionThreadContext::executeTask()
     const auto * step = processor->getQueryPlanStep();
 
     StepWallClock * clock = nullptr;
-    if (step_to_wall_clock_registry && step)
+    if (step_profiler && step)
     {
         auto & cached_clock = processor->query_plan_step_wall_clock_ptr;
-        /// We will search in the registry only initially or when the group of the processor changed
         if (!cached_clock)
-            cached_clock = step_to_wall_clock_registry->find(step, group);
+            cached_clock = step_profiler->findClock(step, group);
 
         clock = cached_clock;
-        chassert(clock);
         if (clock)
             clock->onEnter();
     }
@@ -128,7 +138,7 @@ bool ExecutionThreadContext::executeTask()
 #ifndef NDEBUG
     execution_time_watch.emplace();
 #else
-    if (profile_processors || step_to_wall_clock_registry || collect_work_intervals)
+    if (profile_processors || step_profiler)
         execution_time_watch.emplace();
 #endif
 
@@ -146,7 +156,7 @@ bool ExecutionThreadContext::executeTask()
 
     UInt64 elapsed_ns = 0;
 
-    if (profile_processors || step_to_wall_clock_registry || collect_work_intervals)
+    if (profile_processors || step_profiler)
     {
         elapsed_ns = execution_time_watch->elapsedNanoseconds();
         processor->elapsed_ns += elapsed_ns;
