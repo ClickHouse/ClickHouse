@@ -1058,6 +1058,9 @@ struct FormatImpl<DataTypeDecimal<FieldType>>
 
 ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col);
 
+/// Conversion of FixedString(N, 'representation') to String: the values are encoded in the representation.
+ColumnPtr convertFixedStringWithTextRepresentationToString(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type);
+
 
 /// Generic conversion of any type to String or FixedString via serialization to text.
 template <typename StringColumnType>
@@ -3947,7 +3950,7 @@ private:
             /// FixedString(N, 'representation') is converted to its text representation, like it is formatted on output.
             if (const auto * from_fixed_string = typeid_cast<const DataTypeFixedString *>(from_type.get());
                 from_fixed_string && from_fixed_string->hasCustomTextRepresentation())
-                return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count, settings.format_settings);
+                return convertFixedStringWithTextRepresentationToString(arguments, result_type);
         }
 
         bool done = false;

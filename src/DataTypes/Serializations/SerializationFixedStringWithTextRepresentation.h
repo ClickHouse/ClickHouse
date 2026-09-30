@@ -8,6 +8,8 @@
 namespace DB
 {
 
+class ColumnFixedString;
+
 /** Serialization of FixedString(N, 'representation') where representation is not 'Raw'.
   *
   * The value is always stored as exactly N raw bytes, so all binary serializations
@@ -31,6 +33,9 @@ private:
     template <typename Callback>
     void withEncodedValue(const IColumn & column, size_t row_num, Callback && callback) const;
 
+    /// Writes the encoded value as is, directly into the buffer if it has enough space.
+    void writeEncodedValue(const IColumn & column, size_t row_num, WriteBuffer & ostr) const;
+
     /// Decodes `encoded` and appends it to the column. Returns false if the text is not a valid
     /// representation of exactly N bytes; in this case the column is left unchanged.
     bool tryDecodeAndAppend(IColumn & column, std::string_view encoded) const;
@@ -49,6 +54,9 @@ public:
 
     /// Encodes `n` bytes from `src` into `dst` which must have at least maxEncodedSize() bytes. Returns the encoded length.
     static size_t encode(FixedStringTextRepresentation text_representation, size_t n, const UInt8 * src, char * dst);
+
+    /// Encodes all values of the column into a ColumnString, e.g. for toString.
+    static MutableColumnPtr encodeColumn(FixedStringTextRepresentation text_representation, const ColumnFixedString & column);
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;

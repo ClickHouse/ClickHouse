@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationFixedStringWithTextRepresentation.h>
 
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
 #include <Common/Base58.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
@@ -204,6 +205,30 @@ size_t SerializationFixedStringWithTextRepresentation::encode(FixedStringTextRep
     }
 }
 
+MutableColumnPtr SerializationFixedStringWithTextRepresentation::encodeColumn(FixedStringTextRepresentation text_representation, const ColumnFixedString & column)
+{
+    const size_t n = column.getN();
+    const size_t rows = column.size();
+    const auto * src = column.getChars().data();
+
+    auto result = ColumnString::create();
+    auto & chars = result->getChars();
+    auto & offsets = result->getOffsets();
+
+    chars.resize(rows * maxEncodedSize(text_representation, n));
+    offsets.resize(rows);
+
+    size_t pos = 0;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        pos += encode(text_representation, n, src + i * n, reinterpret_cast<char *>(chars.data() + pos));
+        offsets[i] = pos;
+    }
+    chars.resize(pos);
+
+    return result;
+}
+
 bool SerializationFixedStringWithTextRepresentation::tryDecode(FixedStringTextRepresentation text_representation, size_t n, std::string_view encoded, UInt8 * dst)
 {
     switch (text_representation)
@@ -234,6 +259,20 @@ void SerializationFixedStringWithTextRepresentation::withEncodedValue(const ICol
     PODArrayWithStackMemory<char, STACK_BUFFER_SIZE> buffer(maxEncodedSize(text_representation, n));
     const size_t size = encode(text_representation, n, src, buffer.data());
     callback(std::string_view(buffer.data(), size));
+}
+
+void SerializationFixedStringWithTextRepresentation::writeEncodedValue(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    const size_t max_size = maxEncodedSize(text_representation, n);
+    ostr.nextIfAtEnd();
+    if (ostr.available() < max_size)
+    {
+        withEncodedValue(column, row_num, [&](std::string_view encoded) { writeString(encoded, ostr); });
+        return;
+    }
+
+    const auto * src = assert_cast<const ColumnFixedString &>(column).getChars().data() + n * row_num;
+    ostr.position() += encode(text_representation, n, src, ostr.position());
 }
 
 bool SerializationFixedStringWithTextRepresentation::tryDecodeAndAppend(IColumn & column, std::string_view encoded) const
@@ -294,7 +333,7 @@ void SerializationFixedStringWithTextRepresentation::deserializeBinaryBulk(IColu
 
 void SerializationFixedStringWithTextRepresentation::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    withEncodedValue(column, row_num, [&](std::string_view encoded) { writeString(encoded, ostr); });
+    writeEncodedValue(column, row_num, ostr);
 }
 
 void SerializationFixedStringWithTextRepresentation::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
@@ -313,7 +352,7 @@ bool SerializationFixedStringWithTextRepresentation::tryDeserializeWholeText(ICo
 
 void SerializationFixedStringWithTextRepresentation::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    withEncodedValue(column, row_num, [&](std::string_view encoded) { writeString(encoded, ostr); });
+    writeEncodedValue(column, row_num, ostr);
 }
 
 void SerializationFixedStringWithTextRepresentation::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -338,12 +377,9 @@ bool SerializationFixedStringWithTextRepresentation::tryDeserializeTextEscaped(I
 
 void SerializationFixedStringWithTextRepresentation::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    withEncodedValue(column, row_num, [&](std::string_view encoded)
-    {
-        writeChar('\'', ostr);
-        writeString(encoded, ostr);
-        writeChar('\'', ostr);
-    });
+    writeChar('\'', ostr);
+    writeEncodedValue(column, row_num, ostr);
+    writeChar('\'', ostr);
 }
 
 void SerializationFixedStringWithTextRepresentation::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
@@ -361,8 +397,16 @@ bool SerializationFixedStringWithTextRepresentation::tryDeserializeTextQuoted(IC
 
 void SerializationFixedStringWithTextRepresentation::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    /// Base64 contains '/', which is escaped depending on output_format_json_escape_forward_slashes.
-    withEncodedValue(column, row_num, [&](std::string_view encoded) { writeJSONString(encoded, ostr, settings); });
+    /// Only '/' of Base64 may need escaping, depending on output_format_json_escape_forward_slashes.
+    if (text_representation == FixedStringTextRepresentation::Base64 && settings.json.escape_forward_slashes)
+    {
+        withEncodedValue(column, row_num, [&](std::string_view encoded) { writeJSONString(encoded, ostr, settings); });
+        return;
+    }
+
+    writeChar('"', ostr);
+    writeEncodedValue(column, row_num, ostr);
+    writeChar('"', ostr);
 }
 
 void SerializationFixedStringWithTextRepresentation::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -380,13 +424,15 @@ bool SerializationFixedStringWithTextRepresentation::tryDeserializeTextJSON(ICol
 
 void SerializationFixedStringWithTextRepresentation::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    withEncodedValue(column, row_num, [&](std::string_view encoded) { writeString(encoded, ostr); });
+    writeEncodedValue(column, row_num, ostr);
 }
 
 void SerializationFixedStringWithTextRepresentation::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    /// Quoted like String and FixedString values.
-    withEncodedValue(column, row_num, [&](std::string_view encoded) { writeCSVString(encoded, ostr); });
+    /// Quoted like String and FixedString values. The encoded alphabets do not contain '"'.
+    writeChar('"', ostr);
+    writeEncodedValue(column, row_num, ostr);
+    writeChar('"', ostr);
 }
 
 void SerializationFixedStringWithTextRepresentation::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

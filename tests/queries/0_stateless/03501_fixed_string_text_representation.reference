@@ -12,6 +12,27 @@ EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v	xvp6877brTo9ZfNqq8l0MbG75MLS9uDkfKY
 "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v","xvp6877brTo9ZfNqq8l0MbG75MLS9uDkfKYCA0UvXWE="
 {"id":"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v","id64":"xvp6877brTo9ZfNqq8l0MbG75MLS9uDkfKYCA0UvXWE="}
 ('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','xvp6877brTo9ZfNqq8l0MbG75MLS9uDkfKYCA0UvXWE=')
+{"id64":"BpuIV\/6rgYT7aH9jRhjANdrEOdwa6ztVmKDwAAAAAAE=","id64url":"BpuIV_6rgYT7aH9jRhjANdrEOdwa6ztVmKDwAAAAAAE","idhex":"069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f00000000001"}
+{"id64":"BpuIV/6rgYT7aH9jRhjANdrEOdwa6ztVmKDwAAAAAAE="}
+"BpuIV/6rgYT7aH9jRhjANdrEOdwa6ztVmKDwAAAAAAE=","069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f00000000001"
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>id64</name>
+				<type>FixedString(32, 'Base64')</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+		<row>
+			<id64>BpuIV/6rgYT7aH9jRhjANdrEOdwa6ztVmKDwAAAAAAE=</id64>
+		</row>
+	</data>
+	<rows>1</rows>
+</result>
+
 -- stored bytes
 32	1	1	1
 -- toString and CAST to String return the text representation

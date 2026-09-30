@@ -41,6 +41,11 @@ SELECT id, id64 FROM fs_accounts WHERE name = 'usdc' FORMAT CSV;
 SELECT id, id64 FROM fs_accounts WHERE name = 'usdc' FORMAT JSONEachRow;
 SELECT id, id64 FROM fs_accounts WHERE name = 'usdc' FORMAT Values;
 SELECT '';
+SELECT id64, id64url, idhex FROM fs_accounts WHERE name = 'wsol' FORMAT JSONEachRow;
+SELECT id64 FROM fs_accounts WHERE name = 'wsol' FORMAT JSONEachRow SETTINGS output_format_json_escape_forward_slashes = 0;
+SELECT id64, idhex FROM fs_accounts WHERE name = 'wsol' FORMAT CSV;
+SELECT id64 FROM fs_accounts WHERE name = 'wsol' FORMAT XML SETTINGS output_format_write_statistics = 0;
+SELECT '';
 
 SELECT '-- stored bytes';
 SELECT length(id), hex(id) = idhex, base58Encode(id) = toString(id), base64Encode(id64) = toString(id64) FROM fs_accounts WHERE name = 'usdc';

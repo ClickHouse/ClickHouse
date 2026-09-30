@@ -2240,6 +2240,21 @@ ColumnPtr FunctionCast::createVariantFromDescriptorsAndOneNonEmptyVariant(const 
     return ColumnVariant::create(discriminators, variants);
 }
 
+ColumnPtr convertFixedStringWithTextRepresentationToString(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
+{
+    ColumnUInt8::MutablePtr null_map = copyNullMap(arguments[0].column);
+    const auto & nested = columnGetNested(arguments[0]);
+    const auto & fixed_string_type = assert_cast<const DataTypeFixedString &>(*nested.type);
+    const auto * fixed_string_column = checkAndGetColumn<ColumnFixedString>(nested.column.get());
+    if (!fixed_string_column)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} of type {}", nested.column->getName(), nested.type->getName());
+
+    auto result = SerializationFixedStringWithTextRepresentation::encodeColumn(fixed_string_type.getTextRepresentation(), *fixed_string_column);
+    if (result_type->isNullable() && null_map)
+        return ColumnNullable::create(std::move(result), std::move(null_map));
+    return result;
+}
+
 /// Whether the values of the type are text that can be parsed when cast to Variant or Dynamic.
 /// FixedString(N, 'representation') holds raw bytes, which are converted to its own type instead.
 static bool isStringTypeWithTextValues(const DataTypePtr & type)
