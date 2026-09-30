@@ -181,6 +181,27 @@ SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(tags, 'brown fox'
 
 DROP TABLE tab;
 
+SELECT '-- Array(String) input columns with positions';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tags Array(String),
+    INDEX idx_tags(tags) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)
+)
+ENGINE = MergeTree()
+ORDER BY (id)
+SETTINGS allow_experimental_text_index_phrase_search = 1;
+
+INSERT INTO tab VALUES (1, ['quick brown', 'fox']), (2, ['zz']);
+
+-- Positions restart for every element, so the index must not answer a phrase spanning two of them.
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'brown fox') SETTINGS query_plan_direct_read_from_text_index = 1, text_index_hint_max_selectivity = 1.;
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'brown fox') SETTINGS query_plan_direct_read_from_text_index = 1;
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'brown fox') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
 SELECT '-- the array tokenizer makes each element one token';
 
 CREATE TABLE tab

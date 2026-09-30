@@ -224,6 +224,8 @@ private:
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
+    /// Whether the index is defined over an `Array` column, whose positions restart for every element.
+    bool indexed_column_is_array = false;
     /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;

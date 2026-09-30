@@ -55,6 +55,10 @@
 [1]
 [1]
 [1]
+-- Array(String) input columns with positions
+[1]
+[1]
+[1]
 -- the array tokenizer makes each element one token
 -- an element matches as a whole token, and the index answers it
 [1]
