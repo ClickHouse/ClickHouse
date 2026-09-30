@@ -25,6 +25,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/geometryConverters.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/RegexpUtils.h>
 #include <Common/HilbertUtils.h>
@@ -2214,9 +2215,62 @@ static bool fixedStringConstantLosesPadding(
     return !fixed_string_input_type || fixed_string_input_type->getN() < constant_bytes.size();
 }
 
+/// Over a type of consecutive integers (the integers, `Date`, `Date32` and `DateTime`), the strict
+/// comparison `x < c` matches the same rows as `x <= c - 1`, and `x > c` the same as `x >= c + 1`. This
+/// replaces the constant `c` of such a comparison with that inclusive bound, where `x` has the type
+/// `transform_input_type`. An atom built from a transformed constant is relaxed and compares non-strictly,
+/// so only the inclusive bound leaves out a key bucket that `c` starts, for `x < c`, or ends, for `x > c`:
+/// for `ts < '2026-01-11 00:00:00'`, the bound `'2026-01-10 23:59:59'` gives `toDate(ts) <= '2026-01-10'`,
+/// while `c` gives `toDate(ts) <= '2026-01-11'` and keeps a whole day without matches.
+///
+/// The bound is exact only for a constant that is a value of the type of `x`. The comparison converts a
+/// text constant to that type with `convertFieldToType`, so the converted text is the value it compares
+/// against. Any other constant must convert without loss: `d < toDateTime('2026-01-11 12:00:00')` holds
+/// for the `Date` `d = '2026-01-11'`, which the bound next to the truncated `'2026-01-11'` would exclude.
+/// A constant without a neighbour in the type, as in `x < 0` for an unsigned `x`, stays unchanged.
+static void makeStrictBoundInclusive(
+    const std::string & func_name, const DataTypePtr & transform_input_type, ColumnWithTypeAndName & constant)
+{
+    const bool is_upper_bound = func_name == "less";
+    if (!is_upper_bound && func_name != "greater")
+        return;
+
+    const auto input_type = removeLowCardinalityAndNullable(transform_input_type);
+    if (!isNativeInteger(input_type) && !isDateOrDate32(input_type) && !isDateTime(input_type))
+        return;
+
+    const Field value = (*constant.column)[0];
+    const auto constant_type = removeLowCardinalityAndNullable(constant.type);
+    const Field converted = tryConvertFieldToType(value, *input_type, constant_type.get());
+    if (converted.isNull())
+        return;
+
+    if (!isStringOrFixedString(constant_type)
+        && !accurateEquals(tryConvertFieldToType(converted, *constant_type, input_type.get()), value))
+        return;
+
+    /// `Range` closes an open integer bound on its neighbour, where the `Field` type has one.
+    const Range range = is_upper_bound
+        ? Range::createRightBounded(converted, /*right_included*/ false)
+        : Range::createLeftBounded(converted, /*left_included*/ false);
+    if (!(is_upper_bound ? range.right_included : range.left_included))
+        return;
+
+    /// The bound must be a value of the input type. A column of the type stores exactly such a value and
+    /// truncates any other, such as the neighbour of the smallest or the largest value of a narrow type.
+    const Field & bound = is_upper_bound ? range.right : range.left;
+    auto bound_column = input_type->createColumnConst(1, bound);
+    if (!accurateEquals((*bound_column)[0], bound))
+        return;
+
+    constant.column = std::move(bound_column);
+    constant.type = input_type;
+}
+
 std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantByMonotonicKeyFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
+    const std::string & func_name,
     const ColumnWithTypeAndName & constant,
     std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const
 {
@@ -2254,6 +2308,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             if (fixedStringConstantLosesPadding(value, is_fixed_string, transform_input_type)
                 || !tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
                 continue;
+            makeStrictBoundInclusive(func_name, transform_input_type, normalized_constant);
         }
 
         ColumnPtr transformed_const_column;
@@ -5206,6 +5261,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
         auto transformed_candidates = transformConstantByMonotonicKeyFunctions(
             key_arg,
             info,
+            func_name,
             constant_for_transform,
             [this](const IFunctionBase & func_base, const IDataType & type) -> bool
             {
@@ -5476,6 +5532,9 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
         return std::nullopt;
 
     /// A transformed constant must weaken the condition, for example `x > 5` becomes `round(x) >= 5`.
+    /// For a strict bound over consecutive integers, the monotonic transform has pushed the inclusive bound
+    /// next to the constant instead (see `transformConstantByMonotonicKeyFunctions`), which this non-strict
+    /// comparison needs: `ts < '2026-01-11 00:00:00'` becomes `toDate(ts) <= '2026-01-10'`.
     if (is_relaxed)
         makeComparisonNonStrict(func_name);
 

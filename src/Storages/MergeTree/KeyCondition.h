@@ -743,9 +743,14 @@ private:
     /// always relaxed, because monotonicity preserves order rather than exact
     /// membership. With `multiple_key_columns_per_condition` disabled, only the first
     /// such key column is considered.
+    /// `func_name` is the comparison `node <func_name> constant`. Where the predicate
+    /// expression has consecutive integer values, a strict bound goes through the chain
+    /// as the inclusive bound next to it, so that the non-strict relaxed atom leaves out
+    /// a key bucket that the constant starts or ends.
     std::vector<TransformedConstant> transformConstantByMonotonicKeyFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
+        const std::string & func_name,
         const ColumnWithTypeAndName & constant,
         std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const;
 
