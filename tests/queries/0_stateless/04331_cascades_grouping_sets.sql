@@ -1,5 +1,3 @@
--- Tags: no-darwin
--- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- Shuffle and two-phase aggregation strategies must not be applied to
 -- `GROUPING SETS` aggregations: `params.keys` is the union of all sets' keys,
