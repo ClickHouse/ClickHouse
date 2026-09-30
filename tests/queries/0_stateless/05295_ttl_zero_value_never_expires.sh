@@ -82,6 +82,22 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE t_reload;
 "
 
+echo "-- the same with a second TTL rule, whose TTL information must survive the reload too"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_reload_two_rules (id UInt64, delete_at DateTime DEFAULT 0) ENGINE = MergeTree ORDER BY id
+    TTL delete_at DELETE, delete_at + INTERVAL 1 DAY RECOMPRESS CODEC(LZ4HC)
+    SETTINGS merge_with_ttl_timeout = 0, max_number_of_merges_with_ttl_in_pool = 0;
+    INSERT INTO t_reload_two_rules SELECT number, toDateTime(0) FROM numbers(5);
+    DETACH TABLE t_reload_two_rules;
+    ATTACH TABLE t_reload_two_rules;
+    SELECT length(recompression_ttl_info.expression) FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_reload_two_rules' AND active;
+    INSERT INTO t_reload_two_rules SELECT number + 100, now() - INTERVAL 5 DAY FROM numbers(5);
+    OPTIMIZE TABLE t_reload_two_rules FINAL;
+    SELECT count(), countIf(delete_at = 0) FROM t_reload_two_rules;
+    DROP TABLE t_reload_two_rules;
+"
+
 echo "-- merged twice"
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_twice (id UInt64, delete_at DateTime DEFAULT 0) ENGINE = MergeTree ORDER BY id TTL delete_at DELETE

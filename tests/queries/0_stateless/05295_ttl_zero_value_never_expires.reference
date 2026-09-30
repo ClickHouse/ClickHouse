@@ -12,6 +12,9 @@
 1
 -- part with only TTL 0 rows, reloaded, then merged with an expired part
 5	5
+-- the same with a second TTL rule, whose TTL information must survive the reload too
+1
+5	5
 -- merged twice
 5	5
 5	5
