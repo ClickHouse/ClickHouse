@@ -124,11 +124,13 @@ protected:
     /// May block (see IMergeTreeReadRangesRefiner), do not call under the pool scheduling mutex.
     MarkRanges refineReadRanges(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const;
 
-    /// `read_request_map`, or the part's map, without the ranges the refiner has dropped from the part so far.
-    MarkRangesPtr mapWithoutDroppedRanges(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & read_request_map) const;
+    /// The initial map without the ranges that the refiner has dropped so far. The initial map is `replica_map`
+    /// for a parallel replica's task, or the part's map from the index analysis when `replica_map` is null.
+    MarkRangesPtr getActualReadRequestMap(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & replica_map) const;
 
-    /// The patch maps matching a narrowed `map`; empty when the part's own patch maps apply.
-    std::vector<MarkRangesPtr> patchMapsFor(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & map) const;
+    /// The read request maps of the patch parts for `actual_map`. Empty when `actual_map` is the part's map
+    /// from the index analysis, because the task info already holds the patch maps for it.
+    std::vector<MarkRangesPtr> getActualPatchReadRequestMaps(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & actual_map) const;
 
     MergeTreeReadRangesRefinerPtr ranges_refiner;
 
@@ -140,24 +142,24 @@ protected:
 
 private:
     /// Cached narrowed maps of a part, so that its tasks share one map until it changes.
-    struct PartMaps
+    struct PartReadRequestMaps
     {
         /// Held, not only compared, so that a new assignment cannot reuse its address.
-        MarkRangesPtr map_base;
-        /// In the order the refiner dropped them.
+        MarkRangesPtr initial_map;
+        /// Appended as the refiner drops them; each new batch is sorted in place when it is applied.
         MarkRanges dropped;
-        /// `map` is `map_base` without the first `dropped_in_map` entries of `dropped`.
+        /// `actual_map` is `initial_map` without the first `dropped_in_map` entries of `dropped`.
         size_t dropped_in_map = 0;
-        MarkRangesPtr map;
-        /// `patch_maps` come from `patch_maps_source`.
+        MarkRangesPtr actual_map;
+        /// `actual_patch_maps` come from `patch_maps_source`.
         MarkRangesPtr patch_maps_source;
-        std::vector<MarkRangesPtr> patch_maps;
+        std::vector<MarkRangesPtr> actual_patch_maps;
     };
 
     void recordDroppedRanges(const MergeTreeReadTaskInfo & info, MarkRanges cut, MarkRanges refined) const;
 
-    mutable std::mutex part_maps_mutex;
-    mutable std::unordered_map<const MergeTreeReadTaskInfo *, PartMaps> part_maps TSA_GUARDED_BY(part_maps_mutex);
+    mutable std::mutex part_read_request_maps_mutex;
+    mutable std::unordered_map<const MergeTreeReadTaskInfo *, PartReadRequestMaps> part_read_request_maps TSA_GUARDED_BY(part_read_request_maps_mutex);
 };
 
 }

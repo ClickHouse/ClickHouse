@@ -78,12 +78,12 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
 }
 
-void MergeTreeReaderWide::updateRequestMap(MarkRangesPtr request_map)
+void MergeTreeReaderWide::updateReadRequestMap(MarkRangesPtr request_map)
 {
-    IMergeTreeReader::updateRequestMap(request_map);
+    IMergeTreeReader::updateReadRequestMap(request_map);
     /// Announcing the map can load marks, which never happens under the `FileStreams` mutex.
     for (auto * stream : streams.getAll())
-        stream->updateRequestMap(request_map);
+        stream->updateReadRequestMap(request_map);
 }
 
 void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)

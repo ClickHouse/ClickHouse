@@ -101,7 +101,7 @@ public:
     virtual void updateAllMarkRanges(const MarkRanges & ranges);
 
     /// For a reader reused by the next task; readers with streams also announce it on them.
-    virtual void updateRequestMap(MarkRangesPtr request_map);
+    virtual void updateReadRequestMap(MarkRangesPtr request_map);
 
     StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
 

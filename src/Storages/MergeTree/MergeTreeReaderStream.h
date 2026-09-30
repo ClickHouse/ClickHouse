@@ -62,7 +62,7 @@ public:
     size_t getFileSize() const { return file_size; }
 
     /// Announces the new map if the buffer exists.
-    void updateRequestMap(MarkRangesPtr request_map_);
+    void updateReadRequestMap(MarkRangesPtr request_map_);
 
 private:
     /// Returns offset in file up to which it's needed to read file to read all rows up to @right_mark mark.
@@ -71,7 +71,7 @@ private:
     /// Offset of the first byte of @mark, or `nullopt` when marks do not delimit what the stream reads.
     virtual std::optional<size_t> getLeftOffset(size_t /* mark */) { return std::nullopt; }
 
-    void announceRequestMap();
+    void announceReadRequestMap();
 
     /// Returns estimated max amount of bytes to read among mark ranges (which is used as size for read buffer)
     /// and total amount of bytes to read in all mark ranges.

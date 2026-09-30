@@ -148,22 +148,22 @@ void MergeTreeReaderStream::init()
         compressed_data_buffer = static_cast<CompressedReadBufferFromFile *>(read_buffer_holder.get());
     }
 
-    announceRequestMap();
+    announceReadRequestMap();
 
     initialized = true;
 }
 
-void MergeTreeReaderStream::updateRequestMap(MarkRangesPtr request_map_)
+void MergeTreeReaderStream::updateReadRequestMap(MarkRangesPtr request_map_)
 {
     if (request_map_ == request_map)
         return;
 
     request_map = std::move(request_map_);
     if (initialized)
-        announceRequestMap();
+        announceReadRequestMap();
 }
 
-void MergeTreeReaderStream::announceRequestMap()
+void MergeTreeReaderStream::announceReadRequestMap()
 {
     if (!request_map)
         return;

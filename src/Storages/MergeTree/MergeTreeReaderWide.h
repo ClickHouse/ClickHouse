@@ -41,7 +41,7 @@ public:
 
     void prefetchBeginOfRange(Priority priority) override;
 
-    void updateRequestMap(MarkRangesPtr request_map) override;
+    void updateReadRequestMap(MarkRangesPtr request_map) override;
 
     /// Return map (column to read) -> (list of all streams required to read this column).
     std::unordered_map<String, std::vector<String>> getAllColumnsSubstreams();

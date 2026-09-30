@@ -543,7 +543,7 @@ void IMergeTreeReader::updateAllMarkRanges(const MarkRanges & ranges)
     last_mark_to_read = getLastMark(all_mark_ranges);
 }
 
-void IMergeTreeReader::updateRequestMap(MarkRangesPtr request_map)
+void IMergeTreeReader::updateReadRequestMap(MarkRangesPtr request_map)
 {
     settings.request_map = std::move(request_map);
 }

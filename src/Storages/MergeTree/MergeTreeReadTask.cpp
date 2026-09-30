@@ -114,15 +114,15 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, 
         patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
 }
 
-void MergeTreeReadTask::Readers::updateRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps)
+void MergeTreeReadTask::Readers::updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps)
 {
-    main->updateRequestMap(request_map);
+    main->updateReadRequestMap(request_map);
 
     for (auto & reader : prewhere)
-        reader->updateRequestMap(request_map);
+        reader->updateReadRequestMap(request_map);
 
     for (size_t i = 0; i < patch_request_maps.size(); ++i)
-        patches[i]->getReader()->updateRequestMap(patch_request_maps[i]);
+        patches[i]->getReader()->updateReadRequestMap(patch_request_maps[i]);
 }
 
 MergeTreeReadTask::MergeTreeReadTask(
