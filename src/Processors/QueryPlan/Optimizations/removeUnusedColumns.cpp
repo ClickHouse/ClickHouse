@@ -25,8 +25,7 @@ IQueryPlanStep::PrunedInput pruneNode(QueryPlan::Node & node, const std::vector<
 
     /// A step that cannot drop columns needs all its children produce, and outputs all it did. So does a
     /// sink, which has no output at all, such as the root of a distributed plan fragment.
-    const bool can_prune = step.hasOutputHeader() && step.canRemoveUnusedColumns()
-        && (node.children.empty() || step.canGetUnneededColumns());
+    const bool can_prune = step.hasOutputHeader() && step.canRemoveUnusedColumns();
     if (!can_prune)
     {
         for (size_t child = 0; child < node.children.size(); ++child)

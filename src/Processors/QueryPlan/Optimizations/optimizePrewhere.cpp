@@ -353,7 +353,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         return;
 
     auto & parent_step = parent_node.step;
-    if (source_step_with_filter->canRemoveUnusedColumns() && parent_step->canGetUnneededColumns())
+    if (source_step_with_filter->canRemoveUnusedColumns() && parent_step->canRemoveUnusedColumns())
     {
         /// Keep the outputs as they are, and prune what the new step and the read below it no longer need. A
         /// column the read keeps anyway - `ReadFromMergeTree` with FINAL keeps the sorting key for the merge -

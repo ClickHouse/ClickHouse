@@ -59,7 +59,6 @@ public:
     /// Passes every column through, so it drops what its child drops and needs nothing more, except the
     /// columns `WITH TIES` compares rows by.
     bool canRemoveUnusedColumns() const override { return true; }
-    bool canGetUnneededColumns() const override { return true; }
     UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
     RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
 

@@ -142,7 +142,8 @@ public:
 
     void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater);
 
-    /// Returns true if the step has implemented removeUnusedColumns.
+    /// Returns true if the step can take part in removing unused columns: it implements removeUnusedColumns,
+    /// and getUnneededColumns unless it has no children to ask about.
     virtual bool canRemoveUnusedColumns() const { return false; }
 
     /// What removeUnusedColumns did. The default is the answer when nothing changes.
@@ -201,12 +202,9 @@ public:
         const std::vector<size_t> & /*unneeded_output_positions*/, const std::vector<PrunedInput> & /*inputs*/);
 
     /// What removeUnusedColumns would not need of each child once nobody needs these outputs, leaving the
-    /// step untouched. The children are to be pruned by that before the step itself is. Requires
-    /// canGetUnneededColumns.
+    /// step untouched. The children are to be pruned by that before the step itself is. Can be used only if
+    /// canRemoveUnusedColumns returns true, for a step with children.
     virtual UnneededInputPositions getUnneededColumns(const std::vector<size_t> & /*unneeded_output_positions*/) const;
-
-    /// Returns true if the step has implemented getUnneededColumns.
-    virtual bool canGetUnneededColumns() const { return false; }
 
     /// Different Steps have different stages of execution.
     /// For example JoinStep has build and probe stages.

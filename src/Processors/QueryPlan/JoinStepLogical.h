@@ -202,7 +202,6 @@ public:
     bool canRemoveUnusedColumns() const override;
     RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
 
-    bool canGetUnneededColumns() const override { return true; }
     UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
 
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
