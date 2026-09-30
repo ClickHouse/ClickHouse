@@ -1,5 +1,4 @@
--- Tags: no-darwin, zookeeper
--- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
+-- Tags: zookeeper
 -- zookeeper: the estimated table is ReplicatedMergeTree.
 
 SET enable_analyzer = 1;

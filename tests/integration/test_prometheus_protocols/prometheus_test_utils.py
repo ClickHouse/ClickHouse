@@ -162,17 +162,20 @@ def check_remote_write_response(response):
 
 # Prepares a protobuf of type remote_pb2.ReadRequest to read time series via the RemoteRead protocol.
 def convert_read_request_to_protobuf(
-    metric_name_regexp, start_timestamp, end_timestamp
+    metric_name_regexp, start_timestamp, end_timestamp, matchers=None
 ):
     read_request = remote_pb2.ReadRequest()
     query = remote_pb2.Query()
     query.start_timestamp_ms = int(round(float(start_timestamp) * 1000))
     query.end_timestamp_ms = int(round(float(end_timestamp) * 1000))
-    matcher = types_pb2.LabelMatcher()
-    matcher.type = types_pb2.LabelMatcher.Type.RE
-    matcher.name = "__name__"
-    matcher.value = metric_name_regexp
-    query.matchers.append(matcher)
+    if matchers is None:
+        matchers = [(types_pb2.LabelMatcher.Type.RE, "__name__", metric_name_regexp)]
+    for matcher_type, name, value in matchers:
+        matcher = types_pb2.LabelMatcher()
+        matcher.type = matcher_type
+        matcher.name = name
+        matcher.value = value
+        query.matchers.append(matcher)
     read_request.queries.append(query)
     return read_request
 
