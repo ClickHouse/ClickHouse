@@ -25,8 +25,7 @@ SET make_distributed_plan = 0;
 --
 -- Nothing here asserts on the receiving side. The merge -> probe broadcast is best-effort by
 -- design: a probe task cancels its receive branch once its data work is done, so the filter may
--- never arrive. And with `distributed_plan_execute_locally` every task logs under the initiator's
--- `query_id`, so a `system.text_log` line cannot be attributed to the probe tasks.
+-- never arrive, so a check on the probe side would depend on timing.
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 SELECT countIf(name = 'BuildRuntimeFilterPartialTransform' AND output_rows > input_rows) >= 2
 FROM system.processors_profile_log

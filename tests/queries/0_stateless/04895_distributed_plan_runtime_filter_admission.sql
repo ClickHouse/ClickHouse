@@ -84,8 +84,11 @@ FROM system.text_log
 WHERE event_date >= yesterday() AND logger_name = 'RuntimeFilter'
   AND query_id IN (
       SELECT query_id FROM system.query_log
-      WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
-        AND current_database = currentDatabase() AND log_comment = '04895_refused');
+      WHERE type = 'QueryFinish' AND event_date >= yesterday()
+        AND initial_query_id IN (
+            SELECT query_id FROM system.query_log
+            WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+              AND current_database = currentDatabase() AND log_comment = '04895_refused'));
 
 SELECT '-- admitted: admission trace and states sent';
 SELECT

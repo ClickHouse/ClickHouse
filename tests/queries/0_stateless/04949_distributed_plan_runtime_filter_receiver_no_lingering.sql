@@ -41,15 +41,15 @@ SYSTEM FLUSH LOGS query_log;
 -- returns 0 and would let a check pass with no tasks, so each check also requires its stage to
 -- have rows.
 --
--- With local execution every task fragment shares the root query's `query_id`, so the fragments
--- are selected through the root query, which carries the current database.
+-- The fragments are selected through the root query, which carries the current database: every
+-- task row carries the root query's id as `initial_query_id`.
 SELECT countIf(query LIKE 'stage_1_%') > 0 AND maxIf(query_duration_ms, query LIKE 'stage_1_%') > 5000,
        countIf(query LIKE 'rf_merge_%') > 0,
        countIf(query LIKE 'stage_0_%') > 0
            AND maxIf(query_duration_ms, query LIKE 'stage_0_%') * 2 < maxIf(query_duration_ms, query LIKE 'stage_1_%')
 FROM system.query_log
 WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query NOT LIKE 'SELECT%'
-    AND query_id IN (
+    AND initial_query_id IN (
         SELECT query_id FROM system.query_log
         WHERE type = 'QueryFinish' AND is_initial_query AND log_comment = '04949_no_lingering'
             AND current_database = currentDatabase() AND event_date >= yesterday());

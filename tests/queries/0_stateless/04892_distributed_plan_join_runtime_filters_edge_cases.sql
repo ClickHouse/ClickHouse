@@ -45,8 +45,9 @@ SELECT count() FROM huge AS h INNER JOIN mid AS t1 ON h.hid = t1.tid INNER JOIN 
 SET make_distributed_plan = 0;
 SYSTEM FLUSH LOGS query_log, text_log, processors_profile_log;
 
--- Local distributed-plan tasks inherit `log_comment`, log as `stage_%` / `rf_merge_%` in
--- `system.query_log`, and record their pipeline processors under the initiator's `query_id`.
+-- Local distributed-plan tasks inherit `log_comment` and log as `stage_%` / `rf_merge_%` in
+-- `system.query_log`, each under a `query_id` of its own with the initiator's id as
+-- `initial_query_id`; their pipeline processors are recorded under those task ids.
 -- Two things exist only on the transported path and are the transport signal here:
 --
 --   `BuildRuntimeFilterPartialTransform` serializes a build task's partial and appends it to the
@@ -103,8 +104,11 @@ FROM system.text_log
 WHERE event_date >= yesterday() AND logger_name = 'RuntimeFilter'
   AND query_id IN (
       SELECT query_id FROM system.query_log
-      WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
-        AND current_database = currentDatabase() AND log_comment = '04892_nullable');
+      WHERE type = 'QueryFinish' AND event_date >= yesterday()
+        AND initial_query_id IN (
+            SELECT query_id FROM system.query_log
+            WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+              AND current_database = currentDatabase() AND log_comment = '04892_nullable'));
 
 SELECT '-- two joins, each with a transported filter';
 -- Two joins means two filters, each with its own merge tree and its own serialized partials: two

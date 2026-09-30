@@ -34,8 +34,9 @@ SELECT count() FROM big LEFT ANTI JOIN small ON bid = sid SETTINGS log_comment =
 
 SET make_distributed_plan = 0;
 
--- Local distributed-plan tasks inherit `log_comment`, log as `stage_%` / `rf_merge_%` in
--- `system.query_log`, and record their pipeline processors under the initiator's `query_id`.
+-- Local distributed-plan tasks inherit `log_comment` and log as `stage_%` / `rf_merge_%` in
+-- `system.query_log`, each under a `query_id` of its own with the initiator's id as
+-- `initial_query_id`; their pipeline processors are recorded under those task ids.
 -- Two signals exist only on the transported path:
 --
 --   `BuildRuntimeFilterPartialTransform` serializes a build task's partial and appends it to the
@@ -144,5 +145,8 @@ FROM system.text_log
 WHERE event_date >= yesterday() AND logger_name = 'RuntimeFilter'
   AND query_id IN (
       SELECT query_id FROM system.query_log
-      WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
-        AND current_database = currentDatabase() AND log_comment = '04891_anti_join');
+      WHERE type = 'QueryFinish' AND event_date >= yesterday()
+        AND initial_query_id IN (
+            SELECT query_id FROM system.query_log
+            WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+              AND current_database = currentDatabase() AND log_comment = '04891_anti_join'));

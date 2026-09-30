@@ -40,8 +40,8 @@ QUERY="SELECT count() FROM big, small WHERE bid = sid SETTINGS
     distributed_plan_default_reader_bucket_count = 4, distributed_plan_default_shuffle_join_bucket_count = 4,
     max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0"
 
-# Every task of a local run logs under the initiator's `query_id` and database, with the task id
-# as the query text.
+# Every task of a local run logs under a `query_id` of its own, with the initiator's id as
+# `initial_query_id`, the initiator's database, and the task id as the query text.
 # Prints the finished data tasks, the finished merge tasks and the failed tasks.
 function task_counts()
 {
@@ -52,7 +52,9 @@ function task_counts()
             countIf(type = 'QueryFinish' AND startsWith(query, 'rf_merge_')),
             countIf(type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing'))
         FROM system.query_log
-        WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '$1'"
+        WHERE event_date >= yesterday() AND initial_query_id IN (
+            SELECT query_id FROM system.query_log
+            WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '$1')"
 }
 
 # A run without fail points counts the data tasks to wait for and checks that there is exactly

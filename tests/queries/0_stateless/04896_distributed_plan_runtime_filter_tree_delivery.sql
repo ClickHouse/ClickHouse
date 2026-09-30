@@ -49,10 +49,8 @@ FROM
     FROM system.query_log AS tasks
     INNER JOIN
     (
-        -- One row per variant: with `distributed_plan_execute_locally` every task of a query is
-        -- logged under the initiator's own `query_id` and is also marked `is_initial_query`, so
-        -- without `DISTINCT` this side of the join would repeat once per task and multiply both
-        -- counts below.
+        -- One row per variant: the initiator's own row. The task rows join to it through
+        -- `initial_query_id`.
         SELECT DISTINCT query_id, log_comment FROM system.query_log
         WHERE type = 'QueryFinish' AND is_initial_query AND log_comment LIKE '04516_tree_%'
             AND current_database = currentDatabase() AND event_date >= yesterday()
@@ -64,10 +62,17 @@ FROM
     FROM system.processors_profile_log AS partials
     INNER JOIN
     (
-        -- `DISTINCT` for the same reason as above.
-        SELECT DISTINCT query_id, log_comment FROM system.query_log
-        WHERE type = 'QueryFinish' AND is_initial_query AND log_comment LIKE '04516_tree_%'
-            AND current_database = currentDatabase() AND event_date >= yesterday()
+        -- The partials are recorded under the build tasks' own `query_id`s; the tasks' rows tie
+        -- them to the variant through `initial_query_id`.
+        SELECT DISTINCT tasks.query_id AS query_id, roots.log_comment AS log_comment
+        FROM system.query_log AS tasks
+        INNER JOIN
+        (
+            SELECT DISTINCT query_id, log_comment FROM system.query_log
+            WHERE type = 'QueryFinish' AND is_initial_query AND log_comment LIKE '04516_tree_%'
+                AND current_database = currentDatabase() AND event_date >= yesterday()
+        ) AS roots ON tasks.initial_query_id = roots.query_id
+        WHERE tasks.type = 'QueryFinish' AND tasks.event_date >= yesterday()
     ) AS initiators ON partials.query_id = initiators.query_id
     WHERE partials.event_date >= yesterday()
         AND partials.name = 'BuildRuntimeFilterPartialTransform'

@@ -69,8 +69,11 @@ WITH
           AND startsWith(message, 'Task \'rf_merge_')
           AND query_id IN (
               SELECT query_id FROM system.query_log
-              WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
-                AND current_database = currentDatabase() AND log_comment = '04894_nested_placement')
+              WHERE type = 'QueryFinish' AND event_date >= yesterday()
+                AND initial_query_id IN (
+                    SELECT query_id FROM system.query_log
+                    WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+                      AND current_database = currentDatabase() AND log_comment = '04894_nested_placement'))
     ) AS filter_exchanges,
     extractAll(extract(message, 'input exchange streams: \\[([^\\]]*)\\]'), '(exchange_\\d+)__') AS input_exchanges
 SELECT length(filter_exchanges) = 2 AND count() >= 1
@@ -82,5 +85,8 @@ WHERE event_date >= yesterday() AND logger_name = 'executeDistributedQuery'
   AND hasAny(input_exchanges, filter_exchanges)
   AND query_id IN (
       SELECT query_id FROM system.query_log
-      WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
-        AND current_database = currentDatabase() AND log_comment = '04894_nested_placement');
+      WHERE type = 'QueryFinish' AND event_date >= yesterday()
+        AND initial_query_id IN (
+            SELECT query_id FROM system.query_log
+            WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+              AND current_database = currentDatabase() AND log_comment = '04894_nested_placement'));
