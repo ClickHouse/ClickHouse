@@ -33,6 +33,7 @@
 #include <Storages/MergeTree/Backup.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
@@ -1476,8 +1477,17 @@ Estimates IMergeTreeDataPart::getEstimates() const
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
 {
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
+    /// Statistics are built from table metadata, which can name columns this part does not store:
+    /// an expired column `TTL` removes a column from the part after the statistics set is decided.
+    const auto & part_columns = getColumnsDescription();
+    Estimates stored_estimates;
+    for (const auto & [column_name, estimate] : new_estimates)
+        if (part_columns.tryGet(column_name))
+            stored_estimates.emplace(column_name, estimate);
+
     std::lock_guard lock(estimates_mutex);
-    estimates = new_estimates;
+    estimates = std::move(stored_estimates);
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)
@@ -1854,6 +1864,16 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
     if (getDataPartStorage().existsFile(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME))
         result.emplace(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
+
+    if (storage.hasUniqueKey())
+    {
+        for (const auto & file : DeleteBitmapFileOps::enumerateFiles(getDataPartStorage()))
+        {
+            auto file_name = file.fileName();
+            if (!checksums.files.contains(file_name))
+                result.emplace(std::move(file_name));
+        }
+    }
 
     return result;
 }
