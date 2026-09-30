@@ -9,8 +9,6 @@ MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5
 43
 100
 143
--- a query outside the TTL window reads from the main samples table
-0	1
 -- disabling the preference reads from the main samples table
 0	1
 43
@@ -18,6 +16,8 @@ MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5
 -- the table survives DETACH/ATTACH: the preference and the write path keep working
 1
 4	4
+-- a query outside the TTL window reads from the main samples table
+0	1
 -- custom partitioning and index granularity of the recent samples table
 MergeTree PARTITION BY toStartOfHour(timestamp) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(259200) SETTINGS index_granularity = 4096, ttl_only_drop_parts = 1
 -- the TTL of a user-declared recent samples engine is derived from the setting
