@@ -1123,8 +1123,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         InputOrderInfoPtr input_sorting_info;
         for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
         {
-            auto storage_ptr = std::get<1>(*it);
-            auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
+            const auto & storage_metadata_snapshot = std::get<StorageMetadataPtr>(*it);
             auto current_info = query_info.order_optimizer->getInputOrder(storage_metadata_snapshot, context);
             if (it == selected_tables.begin())
                 input_sorting_info = current_info;
@@ -1220,7 +1219,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Aliases aliases;
             RowPolicyDataOpt row_policy_data_opt;
-            auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+            const auto & storage_metadata_snapshot = std::get<StorageMetadataPtr>(table);
 
             if (storage_metadata_snapshot->getColumns().empty())
             {
@@ -1616,7 +1615,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     bool & is_smallest_column_requested,
     Aliases & aliases) const
 {
-    const auto & [database_name, storage, storage_lock, table_name] = storage_with_lock_and_name;
+    const auto & [database_name, storage, storage_lock, table_name, _] = storage_with_lock_and_name;
     const StorageID current_storage_id = storage->getStorageID();
 
     SelectQueryInfo modified_query_info = query_info;
@@ -1836,7 +1835,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
     ContextMutablePtr modified_context,
     size_t streams_num) const
 {
-    const auto & [database_name, storage, _, table_name] = storage_with_lock;
+    const auto & [database_name, storage, _, table_name, metadata_snapshot] = storage_with_lock;
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
 
     if (!InterpreterSelectQuery::isQueryWithFinal(modified_query_info) && storage->needRewriteQueryWithFinal(real_column_names_read_from_the_source_table))
@@ -2086,6 +2085,11 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                 if (!table_filter || storage->readsFromOtherTables() || table_filter(iterator->databaseName(), iterator->name()))
                     if (granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName(), iterator->name()))
                     {
+                        /// The read of this child uses this snapshot too (see `createChildrenPlans`), so a concurrent
+                        /// `ALTER` cannot change how a dotted name resolves between the access check and the read.
+                        const auto child_metadata_handle = storage->getInMemoryMetadataPtr(query_context, false);
+                        StorageMetadataPtr child_metadata_snapshot = child_metadata_handle;
+
                         if  (!granted_select_on_all_tables)
                         {
                             const auto columns_to_check = VirtualColumnUtils::filterVirtualColumns(all_column_names, storage_snapshot->metadata, VirtualsKind::All, VirtualsMaterializationPlace::All);
@@ -2096,14 +2100,13 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                             /// not the merge table's: children may have different layouts, so the
                             /// same dotted identifier can be a subcolumn of a `Tuple` column in one child and a
                             /// real column named `a.b` in another, and the check is against the child table.
-                            auto child_metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
                             const auto columns_in_storage = child_metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(
                                 columns_to_check, query_context, StorageID(iterator->databaseName(), iterator->name()));
                             access->checkAccess(AccessType::SELECT, iterator->databaseName(), iterator->name(), columns_in_storage);
                         }
 
                         auto table_lock = storage->lockForShare(query_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
-                        res.emplace_back(iterator->databaseName(), storage, std::move(table_lock), iterator->name());
+                        res.emplace_back(iterator->databaseName(), storage, std::move(table_lock), iterator->name(), std::move(child_metadata_snapshot));
                     }
             iterator->next();
         }

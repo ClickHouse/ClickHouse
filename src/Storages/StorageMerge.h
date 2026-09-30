@@ -112,8 +112,9 @@ public:
         size_t max_tables_to_look);
 
 private:
-    /// (Database, Table, Lock, TableName)
-    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
+    /// (Database, Table, Lock, TableName, Metadata). The metadata is the snapshot the column-level access check
+    /// resolved subcolumns against, so the read uses it too and both see the same schema.
+    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String, StorageMetadataPtr>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
 
     struct DatabaseNameOrRegexp
@@ -178,7 +179,7 @@ public:
     static constexpr auto name = "ReadFromMerge";
     String getName() const override { return name; }
 
-    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
+    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String, StorageMetadataPtr>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
 

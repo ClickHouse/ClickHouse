@@ -17,6 +17,7 @@ public:
     StorageMergeTreeTextIndex(
         const StorageID & table_id_,
         const StoragePtr & source_table_,
+        StorageMetadataPtr source_metadata_,
         MergeTreeIndexPtr text_index_,
         const ColumnsDescription & columns);
 
@@ -34,13 +35,17 @@ public:
 
     static VirtualColumnsDescription createVirtuals();
 
-    /// Throws if the user may not read the tokens of the index of the table `source_storage_id`.
-    static void checkAccess(const ContextPtr & context, const IStorage & source_table, const IMergeTreeIndex & index);
+    /// Throws if the user may not read the tokens of `index` of `source_table`. `source_metadata` must be the metadata
+    /// the index was built from, so the columns the check authorizes are the ones the index is computed over.
+    static void checkAccess(
+        const ContextPtr & context, const IStorage & source_table, const StorageInMemoryMetadata & source_metadata, const IMergeTreeIndex & index);
 
 private:
     friend class ReadFromMergeTreeTextIndex;
 
     StoragePtr source_table;
+    /// The source metadata `text_index` was built from.
+    StorageMetadataPtr source_metadata;
     MergeTreeIndexPtr text_index;
 };
 
