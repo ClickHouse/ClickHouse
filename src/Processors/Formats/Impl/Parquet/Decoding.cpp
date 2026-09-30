@@ -1119,10 +1119,10 @@ bool PageDecoderInfo::canReadDirectlyIntoColumn(parq::Encoding::type encoding, s
     return false;
 }
 
-void PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, const IDataType & decoded_type, const IDataType & final_output_type, Field & out) const
+bool PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, const IDataType & decoded_type, const IDataType & final_output_type, Field & out) const
 {
     if (!allow_stats)
-        return;
+        return true;
 
     std::optional<Field> field;
     if (fixed_size_converter)
@@ -1134,7 +1134,10 @@ void PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, const
 
     /// The converter couldn't produce a usable bound (e.g. NaN); leave `out` unchanged.
     if (!field.has_value())
-        return;
+        return true;
+
+    if (field->isNull())
+        return false;
 
     if (cast_stats_to_output_type)
     {
@@ -1146,10 +1149,11 @@ void PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, const
         /// Conversion failed, e.g. the value overflows the output type. Leaving the bound at
         /// infinity is always safe.
         if (field->isNull())
-            return;
+            return true;
     }
 
     out = std::move(*field);
+    return true;
 }
 
 std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
@@ -1676,15 +1680,8 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
     if (input_signed && input_size < 8 && (val >> (input_size * 8 - 1)) != 0)
         val |= 0 - (1ul << (input_size * 8));
 
-    /// Check for overflow in signed <-> unsigned conversion.
-    if (input_signed && !field_signed && Int64(val) < 0)
-        return std::nullopt;
-    if (!input_signed && field_signed && val > UInt64(INT64_MAX))
-        return std::nullopt;
-
-    /// A day number outside the requested date type's window is saturated or rejected in the column,
-    /// so it is not a bound for the values that do arrive. `field_signed` is false for a `Date` target,
-    /// hence this cannot live in the signed branch below.
+    /// A day outside the requested date type's window is saturated or rejected by the read: the former bounds
+    /// nothing, the latter makes the chunk unreadable. Before the sign check, as a negative day is outside `Date` too.
     if (date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore)
     {
         const auto [min_day, max_day] = dateTargetDayRange();
@@ -1692,8 +1689,18 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
             ? Int64(val) > Int64(max_day) || Int64(val) < Int64(min_day)
             : val > UInt64(max_day);
         if (out_of_window)
+        {
+            if (date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                return Field();
             return std::nullopt;
+        }
     }
+
+    /// Check for overflow in signed <-> unsigned conversion.
+    if (input_signed && !field_signed && Int64(val) < 0)
+        return std::nullopt;
+    if (!input_signed && field_signed && val > UInt64(INT64_MAX))
+        return std::nullopt;
 
     if (field_ipv4)
     {
@@ -1710,6 +1717,12 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
         ///  seconds by castColumn, with the same rounding. So the rounded min/max stats
         ///  accurately represent min/max among the rounded values.)
         val /= 1000;
+        if (val > UInt64(UINT32_MAX))
+            return std::nullopt;
+        return Field(val);
+    }
+    else if (field_datetime)
+    {
         if (val > UInt64(UINT32_MAX))
             return std::nullopt;
         return Field(val);

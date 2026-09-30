@@ -133,6 +133,58 @@ select count() from file(currentDatabase() || '_05230_dsat.parquet', Parquet, 'x
              input_format_parquet_dictionary_filter_push_down = 0,
              input_format_parquet_bloom_filter_push_down = 0;
 
+-- There is no cast to `IPv4` from a signed integer, so the statistics must not hide that error behind an
+-- empty result, and the cast from a 64-bit integer wraps: a UINT_64 column {3, 2^32+1, 2^32+2} arrives as
+-- 0.0.0.3, 0.0.0.1, 0.0.0.2 under a stored min of 3. The `DateTime` cast saturates instead, so a UINT_64
+-- column {2^32, 2^32+1} arrives as two 2106-02-07 06:28:15 under stored bounds above that.
+insert into function file(currentDatabase() || '_05230_u64ip.parquet', Parquet, 'x UInt64')
+    select arrayJoin([toUInt64(3), toUInt64(4294967297), toUInt64(4294967298)]) as x;
+insert into function file(currentDatabase() || '_05230_u64dt.parquet', Parquet, 'x UInt64')
+    select arrayJoin([toUInt64(4294967296), toUInt64(4294967297)]) as x;
+select count() from file(currentDatabase() || '_05230_i32.parquet', Parquet, 'x IPv4')
+    where x = toIPv4('255.255.255.255')
+    settings input_format_parquet_dictionary_filter_push_down = 0,
+             input_format_parquet_bloom_filter_push_down = 0; -- { serverError NOT_IMPLEMENTED }
+select count() from file(currentDatabase() || '_05230_u64ip.parquet', Parquet, 'x IPv4')
+    where x = toIPv4('0.0.0.1')
+    settings input_format_parquet_dictionary_filter_push_down = 0,
+             input_format_parquet_bloom_filter_push_down = 0;
+select count() from file(currentDatabase() || '_05230_u64dt.parquet', Parquet, 'x DateTime(''UTC'')')
+    where x = toDateTime(4294967295, 'UTC')
+    settings input_format_parquet_dictionary_filter_push_down = 0,
+             input_format_parquet_bloom_filter_push_down = 0;
+
+-- By default a `DATE` value outside the requested type's window fails the read, and the statistics must
+-- not turn that error into an empty result, on either side of the window.
+insert into function file(currentDatabase() || '_05230_dhi.parquet', Parquet, 'x Date32')
+    select arrayJoin([toDate32('2149-06-06'), toDate32('2149-06-07')]) as x;
+insert into function file(currentDatabase() || '_05230_dlo.parquet', Parquet, 'x Date32')
+    select arrayJoin([toDate32('1969-12-31'), toDate32('1970-01-06')]) as x;
+select count() from file(currentDatabase() || '_05230_dhi.parquet', Parquet, 'x Date')
+    where x < toDate('2000-01-01'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+select count() from file(currentDatabase() || '_05230_dlo.parquet', Parquet, 'x Date')
+    where x > toDate('1970-01-10'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+-- `Date32` spans 0000-01-01 to 9999-12-31, which `Date32` arithmetic does not enforce. Each leg alone must keep
+-- the error, on both sides.
+insert into function file(currentDatabase() || '_05230_d32hi.parquet', Parquet, 'x Date32')
+    select arrayJoin([toDate32('9999-12-31'), toDate32('9999-12-31') + 1]) as x;
+insert into function file(currentDatabase() || '_05230_d32lo.parquet', Parquet, 'x Date32')
+    select arrayJoin([toDate32('0000-01-01') - 1, toDate32('0000-01-01')]) as x;
+select count() from file(currentDatabase() || '_05230_d32hi.parquet', Parquet, 'x Date32')
+    where x < toDate32('2000-01-01'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+select count() from file(currentDatabase() || '_05230_d32hi.parquet', Parquet, 'x Date32')
+    where x < toDate32('2000-01-01')
+    settings input_format_parquet_filter_push_down = 0; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+select count() from file(currentDatabase() || '_05230_d32hi.parquet', Parquet, 'x Date32')
+    where x < toDate32('2000-01-01')
+    settings input_format_parquet_page_filter_push_down = 0; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+select count() from file(currentDatabase() || '_05230_d32lo.parquet', Parquet, 'x Date32')
+    where x > toDate32('2000-01-01')
+    settings input_format_parquet_filter_push_down = 0; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+select count() from file(currentDatabase() || '_05230_d32lo.parquet', Parquet, 'x Date32')
+    where x > toDate32('2000-01-01')
+    settings input_format_parquet_page_filter_push_down = 0; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+
 -- The dictionary and bloom filters hash both sides after casting to the parquet physical type, so they
 -- agree for a same-width signedness flip. Pin that: with both min/max legs off and each hash filter on
 -- in turn, the row is still found.
@@ -173,6 +225,8 @@ insert into function file(currentDatabase() || '_05230_c_u8e.parquet', Parquet, 
     select toUInt8(if(number < 1000, 5, 200)) as x from numbers(2000) settings output_format_parquet_row_group_size = 1000;
 insert into function file(currentDatabase() || '_05230_c_u16d.parquet', Parquet, 'x UInt16')
     select toUInt16(number) as x from numbers(4000) settings output_format_parquet_row_group_size = 1000;
+insert into function file(currentDatabase() || '_05230_c_u64dt.parquet', Parquet, 'x UInt64')
+    select toUInt64(1000000000 + number) as x from numbers(4000) settings output_format_parquet_row_group_size = 1000;
 
 select count() from file(currentDatabase() || '_05230_c_i32.parquet', Parquet, 'x Int32') where x > 3500
     settings log_comment = '05230prune_i32', input_format_parquet_dictionary_filter_push_down = 1048576;
@@ -204,9 +258,27 @@ select count() from file(currentDatabase() || '_05230_c_i8e.parquet', Parquet, '
 select count() from file(currentDatabase() || '_05230_c_u8e.parquet', Parquet, 'x Enum16(''lo'' = 5, ''hi'' = 200)')
     where x > 'lo'
     settings log_comment = '05230prune_u8e16', input_format_parquet_dictionary_filter_push_down = 1048576;
+-- An unsigned 32-bit column read as `IPv4`, and in-range timestamps in a UINT_64 column read as `DateTime`.
+select count() from file(currentDatabase() || '_05230_c_u32.parquet', Parquet, 'x IPv4') where x > toIPv4(3500)
+    settings log_comment = '05230prune_u32ip', input_format_parquet_dictionary_filter_push_down = 1048576;
+select count() from file(currentDatabase() || '_05230_c_u64dt.parquet', Parquet, 'x DateTime(''UTC'')')
+    where x > toDateTime(1000003500, 'UTC')
+    settings log_comment = '05230prune_u64dt', input_format_parquet_dictionary_filter_push_down = 1048576;
+-- The page index leg alone prunes an integer and a `DATE` file, so the page-only arms above do reach it.
+select count() from file(currentDatabase() || '_05230_c_i32.parquet', Parquet, 'x Int32') where x > 3500
+    settings log_comment = '05230page_i32', input_format_parquet_filter_push_down = 0,
+             input_format_parquet_dictionary_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 0;
+select count() from file(currentDatabase() || '_05230_d32hi.parquet', Parquet, 'x Date32') where x < toDate32('2000-01-01')
+    settings log_comment = '05230page_d32hi', date_time_overflow_behavior = 'saturate',
+             input_format_parquet_filter_push_down = 0,
+             input_format_parquet_dictionary_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 0;
 
 system flush logs query_log;
 select distinct log_comment, ProfileEvents['ParquetReadRowGroups'], ProfileEvents['ParquetPrunedRowGroups']
     from system.query_log
     where current_database = currentDatabase() and type = 'QueryFinish' and log_comment like '05230prune%'
+    order by log_comment;
+select distinct log_comment, ProfileEvents['ParquetPrunedPages']
+    from system.query_log
+    where current_database = currentDatabase() and type = 'QueryFinish' and log_comment like '05230page%'
     order by log_comment;

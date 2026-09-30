@@ -18,6 +18,8 @@
 1
 2
 1
+2
+1
 1
 2
 1
@@ -31,6 +33,10 @@
 499
 1000
 1000
+499
+499
+499
+0
 05230prune_bool	1	1
 05230prune_d32_from_date	1	1
 05230prune_date	1	1
@@ -39,5 +45,9 @@
 05230prune_i8e8	1	1
 05230prune_u32	1	3
 05230prune_u32big	1	3
+05230prune_u32ip	1	3
+05230prune_u64dt	1	3
 05230prune_u8	1	1
 05230prune_u8e16	1	1
+05230page_d32hi	1
+05230page_i32	3

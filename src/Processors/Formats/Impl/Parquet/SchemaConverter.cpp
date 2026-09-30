@@ -974,7 +974,7 @@ void SchemaConverter::processPrimitiveColumn(
 
     /// Statistics endpoints are ordered as the stored type, so they bound the output column only
     /// if the cast to it preserves that order for every stored value, not just the ones present.
-    /// `Date` and an Enum order by their underlying integer, which is what getSizeOfValueInMemory
+    /// `Date`, `IPv4` and an Enum order by their underlying integer, which is what getSizeOfValueInMemory
     /// and `converter.field_signed` describe.
     auto stats_order_preserved = [&](const IntConverter & converter)
     {
@@ -993,7 +993,7 @@ void SchemaConverter::processPrimitiveColumn(
         /// native integers of that width rather than with the reinterpreting types below.
         const bool which_is_enum = which.isEnum();
         /// A day number outside the target's window is reinterpreted rather than carried over. When
-        /// `date_overflow_behavior` is set (parquet `DATE`), convertField drops every endpoint
+        /// `date_overflow_behavior` is set (parquet `DATE`), convertField bounds nothing by an endpoint
         /// outside that window, and inside it the day number is the output value.
         const bool date_range_checked
             = converter.date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore;
@@ -1006,13 +1006,11 @@ void SchemaConverter::processPrimitiveColumn(
         else switch (which.idx)
         {
             case TypeIndex::IPv4:
-                if (allow_datetime_and_ipv4)
-                {
-                    converter.field_ipv4 = true;
-                    converter.field_signed = false;
-                }
-                else
+                /// There is no cast to IPv4 from a signed integer, and the one from a 64-bit integer wraps.
+                converter.field_signed = false;
+                if (!allow_datetime_and_ipv4 || !stats_order_preserved(converter))
                     return false;
+                converter.field_ipv4 = true;
                 break;
             case TypeIndex::Date:
                 converter.field_signed = false;
@@ -1025,6 +1023,7 @@ void SchemaConverter::processPrimitiveColumn(
                 if (!allow_datetime_and_ipv4)
                     return false;
                 converter.field_signed = false;
+                converter.field_datetime = true;
                 break;
             case TypeIndex::Date32:
                 /// `Date32` stops at day 2932896 and reads a larger number as seconds instead, so its
