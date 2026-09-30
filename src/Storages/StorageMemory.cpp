@@ -253,14 +253,9 @@ void StorageMemory::drop()
 
 static inline void updateBlockData(Block & old_block, const Block & new_block)
 {
-    /// A stored block keeps the structure of its INSERT: it may lack an updated column or hold it with an older type.
+    /// A stored block keeps the column types of its INSERT, so the type is replaced together with the data.
     for (const auto & column : new_block)
-    {
-        if (auto * old_column = old_block.findByName(column.name))
-            *old_column = column;
-        else
-            old_block.insert(column);
-    }
+        old_block.getByName(column.name) = column;
 }
 
 void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
