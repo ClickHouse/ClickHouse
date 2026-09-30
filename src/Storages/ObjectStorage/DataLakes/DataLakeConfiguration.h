@@ -465,9 +465,9 @@ public:
     }
 
     std::optional<DataLakeReadEstimate>
-    estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, ContextPtr context) const override
+    estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & column_names, ContextPtr context) const override
     {
-        return getMetadata()->estimateRead(storage_metadata_snapshot, filter, context);
+        return getMetadata()->estimateRead(storage_metadata_snapshot, filter, column_names, context);
     }
 
     /// Data lakes never overwrite an existing data file in place: a new snapshot references new

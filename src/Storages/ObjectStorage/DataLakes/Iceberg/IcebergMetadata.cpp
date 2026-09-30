@@ -1308,7 +1308,8 @@ bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_met
 }
 
 std::optional<DataLakeReadEstimate>
-IcebergMetadata::estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, ContextPtr context) const
+IcebergMetadata::estimateRead(
+    StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & /*column_names*/, ContextPtr context) const
 {
     auto table_state_snapshot = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);
     if (table_state_snapshot == nullptr)

@@ -112,7 +112,7 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimateReadFromD
         return std::nullopt;
 
     if (!data_lake_read_estimate)
-        data_lake_read_estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), getContext());
+        data_lake_read_estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), /* column_names */ {}, getContext());
     return *data_lake_read_estimate;
 }
 
