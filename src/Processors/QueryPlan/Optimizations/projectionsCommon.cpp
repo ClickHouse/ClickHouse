@@ -30,7 +30,6 @@ namespace Setting
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool force_aggregation_in_order;
     extern const SettingsUInt64 max_projection_rows_to_use_projection_index;
@@ -96,8 +95,7 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
 
     if (reading->isParallelReadingEnabled())
     {
-        bool support_projection = query_settings[Setting::allow_experimental_analyzer]
-            && query_settings[Setting::parallel_replicas_local_plan]
+        bool support_projection = query_settings[Setting::parallel_replicas_local_plan]
             && query_settings[Setting::parallel_replicas_support_projection];
 
         /// AggregationInOrder may cause local and remote replicas to use different CoordinationModes, which is currently unsupported.
@@ -396,6 +394,8 @@ bool analyzeProjectionCandidate(
     ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
     const SelectQueryInfo & projection_query_info,
     const std::optional<TopKFilterInfo> & top_k_filter_info,
+    bool allow_query_condition_cache,
+    bool allow_top_k_prewhere_query_condition_cache,
     const ContextPtr & context)
 {
     RangesInDataParts projection_parts;
@@ -432,7 +432,12 @@ bool analyzeProjectionCandidate(
         projection_query_info,
         top_k_filter_info,
         context,
-        context->getSettingsRef()[Setting::max_threads]);
+        context->getSettingsRef()[Setting::max_threads],
+        /*max_block_numbers_to_read=*/nullptr,
+        /// The candidate's marks are reused by the projection read, so it must not consult the cache
+        /// when the analyzed read has it disabled for correctness (`disableQueryConditionCache`).
+        allow_query_condition_cache,
+        allow_top_k_prewhere_query_condition_cache);
 
     /// If projection analysis exceeded limits, skip this candidate
     if (!projection_result_ptr->isUsable())
@@ -534,7 +539,10 @@ void filterPartsAndCollectProjectionCandidates(
         reading.getTopKFilterInfo(),
         context,
         context->getSettingsRef()[Setting::max_threads],
-        nullptr);
+        /*max_block_numbers_to_read=*/nullptr,
+        /// The result filters the parts of the actual read, so keep the read's own cache gate.
+        reading.isQueryConditionCacheAllowed(),
+        reading.isTopKPrewhereQueryConditionCacheAllowed());
 
     /// Projection has no filtering effect, skip it
     if (projection_result_ptr->selected_marks == projection_marks_to_read)

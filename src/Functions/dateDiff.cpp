@@ -19,7 +19,6 @@
 #include <base/find_symbols.h>
 
 #include <type_traits>
-#include <utility>
 
 
 namespace DB
@@ -234,20 +233,12 @@ public:
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
             {
-                auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, static_cast<UInt8>(0), timezone_x);
-                auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, static_cast<UInt8>(0), timezone_y);
-                /// `a_comp` / `b_comp` are in chronological order, so the weekdays must be too: for
-                /// `x > y` they were swapped above, and comparing `x_day_of_week` / `y_day_of_week` in
-                /// argument order would run the weekday test in the opposite direction from the time test.
+                auto a_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, static_cast<UInt8>(0), timezone_x);
+                auto b_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, static_cast<UInt8>(0), timezone_y);
                 if (x_nanoseconds > y_nanoseconds)
-                    std::swap(x_day_of_week, y_day_of_week);
-                /// The time-of-day chain must stay nested under `x_day_of_week == y_day_of_week`, the same
-                /// way the `month` branch above keeps it under `a_comp.date.day == b_comp.date.day`. It used
-                /// to be a separate top-level `||` term, so `age('week', ...)` decremented the result even
-                /// when `x_day_of_week < y_day_of_week`, i.e. when the end really is later in the week than
-                /// the start.
-                if ((x_day_of_week > y_day_of_week)
-                    || ((x_day_of_week == y_day_of_week) && ((a_comp.time.hour > b_comp.time.hour)
+                    std::swap(a_day_of_week, b_day_of_week);
+                if ((a_day_of_week > b_day_of_week)
+                    || ((a_day_of_week == b_day_of_week) && ((a_comp.time.hour > b_comp.time.hour)
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
                     || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
