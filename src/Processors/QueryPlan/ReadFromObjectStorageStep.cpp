@@ -21,6 +21,8 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <algorithm>
+
 #include "config.h"
 
 #if USE_AWS_S3
@@ -96,12 +98,12 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
 }
 
-void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     createIterator();
 
@@ -154,10 +156,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
+    /// `max_num_streams` is a read-parallelism request, not a thread budget.
+    const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
     if (parallelize_output
         && FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context)
-        && output_ports > 0 && output_ports < max_num_streams)
-        pipe.resize(max_num_streams);
+        && output_ports > 0 && output_ports < resize_to)
+        pipe.resize(resize_to);
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
@@ -255,12 +259,10 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
 
 std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names)
 {
-    /// `StorageObjectStorage::read` propagates a bare row policy (no PREWHERE) into
-    /// `info.row_level_filter`, which the split pins to the main pass; keep this guard in case a
-    /// caller constructs the step without that propagation, since the source would still evaluate
-    /// the filter in the main pass via `FormatFilterInfo`.
+    /// A row policy is not part of `info`, but the source evaluates it in the main pass via
+    /// `FormatFilterInfo`, so its input columns must not be deferred to the lazy branch.
     NameSet names_to_keep = required_names;
-    if (!info.row_level_filter && query_info.row_level_filter)
+    if (query_info.row_level_filter)
         for (const auto & column : query_info.row_level_filter->actions.getRequiredColumns())
             names_to_keep.insert(column.name);
 

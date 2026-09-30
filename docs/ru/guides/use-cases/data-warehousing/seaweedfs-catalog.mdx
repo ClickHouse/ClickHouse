@@ -72,7 +72,7 @@ SeaweedFS — это распределённое хранилище файло�
 services:
   seaweedfs:
     image: chrislusf/seaweedfs:latest
-    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics
+    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics -admin.port=12646
     ports:
       - "8333:8333"   # S3 endpoint
       - "8181:8181"   # Iceberg REST catalog
@@ -101,7 +101,7 @@ networks:
     driver: bridge
 ```
 
-Команда `mini` запускает весь стек SeaweedFS в одном контейнере. Флаг `-tableBucket=analytics` заранее создаёт бакет S3 Tables с именем `analytics`, который используется в качестве хранилища Iceberg.
+Команда `mini` запускает весь стек SeaweedFS в одном контейнере. Флаг `-tableBucket=analytics` заранее создаёт бакет S3 Tables с именем `analytics`, который используется в качестве хранилища Iceberg. `-admin.port=12646` обеспечивает, что административный порт gRPC, производный от этого значения в SeaweedFS, находится ниже диапазона эфемерных портов Linux, иначе при запуске его может раньше занять другое соединение.
 
 **Шаг 3:** Выполните следующую команду, чтобы запустить сервисы:
 

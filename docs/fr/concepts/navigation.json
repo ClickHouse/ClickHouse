@@ -5,7 +5,7 @@
     "fr/concepts/index",
     {
       "expanded": true,
-      "group": "Fondamentaux",
+      "group": "Principes fondamentaux",
       "pages": [
         "fr/concepts/core-concepts/index",
         "fr/concepts/core-concepts/glossary",
@@ -19,7 +19,7 @@
     },
     {
       "expanded": true,
-      "group": "Concepts ClickHouse",
+      "group": "Concepts de ClickHouse",
       "pages": [
         "fr/concepts/features/index",
         {
@@ -70,7 +70,7 @@
             },
             "fr/concepts/features/performance/lazy-materialization",
             {
-              "group": "Dépannage",
+              "group": "Résolution des problèmes",
               "pages": [
                 "fr/concepts/features/performance/troubleshoot/debugging-memory-issues",
                 "fr/concepts/features/performance/troubleshoot/oom-canary",
@@ -83,6 +83,7 @@
         {
           "group": "Opérations",
           "pages": [
+            "fr/concepts/features/operations/background-queries",
             {
               "group": "Insertion",
               "pages": [
@@ -149,7 +150,8 @@
                 "fr/concepts/features/configuration/server-config/workload-scheduling",
                 "fr/concepts/features/configuration/server-config/quotas",
                 "fr/concepts/features/configuration/server-config/composable-protocols",
-                "fr/concepts/features/configuration/server-config/startup-scripts"
+                "fr/concepts/features/configuration/server-config/startup-scripts",
+                "fr/concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
@@ -169,7 +171,7 @@
               ]
             },
             {
-              "group": "Authentificateurs externes",
+              "group": "Mécanismes d’authentification externes",
               "pages": [
                 "fr/concepts/features/security/external-authenticators/index",
                 {
@@ -211,30 +213,34 @@
             "fr/concepts/features/interfaces/native-clients-interfaces-index",
             "fr/concepts/features/interfaces/cli",
             "fr/concepts/features/interfaces/client",
+            "fr/concepts/features/interfaces/mcp",
             {
               "group": "Drivers et interfaces",
               "pages": [
                 "fr/concepts/features/interfaces/overview",
                 "fr/concepts/features/interfaces/http",
+                "fr/concepts/features/interfaces/framing-formats",
                 "fr/concepts/features/interfaces/tcp",
-                "fr/concepts/features/interfaces/jdbc",
+                "fr/concepts/features/interfaces/adbc",
                 "fr/concepts/features/interfaces/mysql",
                 {
                   "$ref": "features/interfaces/odbc/navigation.json"
                 },
                 "fr/concepts/features/interfaces/postgresql",
                 "fr/concepts/features/interfaces/prometheus",
+                "fr/concepts/features/interfaces/prometheus-metrics",
                 "fr/concepts/features/interfaces/ssh",
                 "fr/concepts/features/interfaces/grpc",
                 "fr/concepts/features/interfaces/arrowflight"
               ]
             },
-            "fr/concepts/features/interfaces/cpp",
             "fr/concepts/features/interfaces/schema-inference",
             "fr/concepts/features/interfaces/documentation-search",
             "fr/concepts/features/interfaces/web-sql",
+            "fr/concepts/features/interfaces/sql-console",
             "fr/concepts/features/interfaces/web-ui-color-coding",
             "fr/concepts/features/interfaces/web-ui-pinned-columns",
+            "fr/concepts/features/interfaces/web-ui-result-shaping",
             "fr/concepts/features/interfaces/web-terminal",
             {
               "group": "Clients tiers",

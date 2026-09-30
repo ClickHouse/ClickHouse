@@ -102,9 +102,6 @@ PatchReadResultPtr MergeTreePatchReaderMerge::readPatch(const MarkRange & range)
     if (!patch_part.perform_alter_conversions)
         fixPatchBlockTypes(patch_read_result->block, *reader);
 
-    patch_read_result->min_part_offset = 0;
-    patch_read_result->max_part_offset = 0;
-
     if (read_result.num_rows == 0)
         return patch_read_result;
 
@@ -116,7 +113,7 @@ PatchReadResultPtr MergeTreePatchReaderMerge::readPatch(const MarkRange & range)
 
     auto [patch_begin, patch_end] = getPartNameRange(part_name_col, patch_part.source_parts.front());
 
-    if (patch_begin != part_name_col.size() && patch_end != 0)
+    if (patch_begin < patch_end)
     {
         patch_read_result->min_part_offset = offset_data[patch_begin];
         patch_read_result->max_part_offset = offset_data[patch_end - 1];
@@ -151,7 +148,11 @@ bool MergeTreePatchReaderMerge::needNewPatch(const ReadResult & main_result, con
     if (!main_result.max_part_offset.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Min/max part offset must be set in RangeReader for reading patch parts");
 
-    return *main_result.max_part_offset > old_patch_result.max_part_offset;
+    /// A range without rows of the source part covers no offsets of it, so the next range must still be read.
+    if (!old_patch_result.max_part_offset.has_value())
+        return true;
+
+    return *main_result.max_part_offset > *old_patch_result.max_part_offset;
 }
 
 bool MergeTreePatchReaderMerge::needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & /*main_block*/) const
@@ -161,7 +162,11 @@ bool MergeTreePatchReaderMerge::needOldPatch(const ReadResult & main_result, con
     if (!main_result.min_part_offset.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Min/max part offset must be set in RangeReader for reading patch parts");
 
-    return *main_result.min_part_offset <= old_patch_result.max_part_offset;
+    /// Such a range can never contribute rows to the source part.
+    if (!old_patch_result.max_part_offset.has_value())
+        return false;
+
+    return *main_result.min_part_offset <= *old_patch_result.max_part_offset;
 }
 
 MergeTreePatchReaderJoin::MergeTreePatchReaderJoin(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_, PatchJoinCache * patch_join_cache_)

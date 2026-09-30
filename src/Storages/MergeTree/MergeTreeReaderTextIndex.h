@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
+#include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -97,6 +98,11 @@ private:
     void applyPostingsPhrase(IColumn & column, const TextSearchQueryPtr & search_query, size_t row_offset, size_t num_rows);
     void initializePositionsStream();
 
+    /// Intersects the phrase tokens' postings into candidates, then decodes only the covering blocks.
+    PaddedPODArray<UInt32> phraseSearchBlocked(const TextSearchQuery & search_query);
+    /// One token's full posting list — the rank space the blocked position stream is addressed in.
+    PostingList readAllPostingsForToken(std::string_view token, const TokenPostingsInfo & token_info);
+
     using TextIndexGranulePtr = std::shared_ptr<const MergeTreeIndexGranuleText>;
 
     MergeTreeIndexWithCondition index;
@@ -132,6 +138,7 @@ private:
     size_t current_row = 0;
     size_t current_mark = 0;
     PaddedPODArray<UInt32> indices_buffer;
+    TextIndexBlockedPositionsCodec::DecodeScratch blocked_positions_scratch;
 
     bool is_initialized = false;
     /// Virtual columns that are always true.
@@ -143,7 +150,7 @@ private:
     /// sparse-index header and confirming no virtual column carries pattern predicates.
     bool lazy_mode_requested = false;
     bool use_lazy_mode = false;
-    float lazy_intersection_density_threshold = 0.2f;
+    TextIndexPostingsIntersectionAlgorithm intersection_algorithm = TextIndexPostingsIntersectionAlgorithm::Auto;
 
     /// Cached lazy cursors, indexed by column position in `columns_to_read` and keyed by token.
     /// Cursors are forward-only and hold mutable segment/block position, so they must not be

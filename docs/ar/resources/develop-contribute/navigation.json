@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "مقدمة",
+      "group": "المقدمة",
       "pages": [
         "ar/resources/develop-contribute/introduction/developer-instruction",
         "ar/resources/develop-contribute/introduction/architecture"
       ]
     },
     {
-      "group": "الإنشاء",
+      "group": "البناء",
       "pages": [
         "ar/resources/develop-contribute/build/build",
         "ar/resources/develop-contribute/build/build-osx",
@@ -53,7 +53,7 @@
       ]
     },
     {
-      "group": "خريطة الطريق",
+      "group": "خارطة الطريق",
       "pages": [
         "ar/resources/develop-contribute/roadmap"
       ]

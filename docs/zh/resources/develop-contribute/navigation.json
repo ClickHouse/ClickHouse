@@ -31,7 +31,7 @@
       ]
     },
     {
-      "group": "参与贡献",
+      "group": "贡献",
       "pages": [
         "zh/resources/develop-contribute/contribute/tests",
         "zh/resources/develop-contribute/contribute/continuous-integration",

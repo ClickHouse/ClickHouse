@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "开始使用",
+      "group": "入门",
       "pages": [
         "zh/chdb/index",
         "zh/chdb/getting-started"

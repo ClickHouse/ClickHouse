@@ -44,6 +44,7 @@
               "expanded": false,
               "group": "Compute and storage",
               "pages": [
+                "products/cloud/features/infrastructure/on-demand-compute",
                 "products/cloud/features/large-single-replica-services",
                 "products/cloud/features/infrastructure/parallel-replicas",
                 "products/cloud/features/infrastructure/replica-aware-routing",
@@ -126,8 +127,7 @@
                 "products/cloud/guides/security/cloud-access-management/manage-my-account",
                 "products/cloud/guides/security/cloud-access-management/manage-cloud-users",
                 "products/cloud/reference/security/console-roles",
-                "products/cloud/guides/security/cloud-access-management/manage-custom-roles",
-                "products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+                "products/cloud/guides/security/cloud-access-management/manage-custom-roles"
               ]
             },
             {
@@ -332,6 +332,7 @@
             "products/cloud/reference/billing/payment-thresholds",
             "products/cloud/reference/billing/spend-alerts",
             "products/cloud/reference/billing/managing-payment-methods",
+            "products/cloud/reference/billing/self-service-prepaid-credit-management",
             "products/cloud/reference/billing/billing-compliance"
           ]
         },

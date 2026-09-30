@@ -32,7 +32,7 @@
           ]
         },
         {
-          "group": "Dictionaries",
+          "group": "辞書",
           "pages": [
             "ja/concepts/features/dictionaries/index",
             "ja/concepts/features/dictionaries/best-practices"
@@ -62,7 +62,7 @@
               ]
             },
             {
-              "group": "スキッピング索引",
+              "group": "スキップインデックス",
               "pages": [
                 "ja/concepts/features/performance/skip-indexes/skipping-indexes",
                 "ja/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -81,10 +81,11 @@
           ]
         },
         {
-          "group": "操作",
+          "group": "データ操作",
           "pages": [
+            "ja/concepts/features/operations/background-queries",
             {
-              "group": "INSERT",
+              "group": "挿入",
               "pages": [
                 "ja/concepts/features/operations/insert/inserting-data",
                 "ja/concepts/features/operations/insert/asyncinserts",
@@ -95,13 +96,13 @@
               ]
             },
             {
-              "group": "SELECT",
+              "group": "データの取得",
               "pages": [
                 "ja/concepts/features/operations/select/joining-tables"
               ]
             },
             {
-              "group": "UPDATE",
+              "group": "更新",
               "pages": [
                 "ja/concepts/features/operations/update/index",
                 "ja/concepts/features/operations/update/overview",
@@ -109,7 +110,7 @@
               ]
             },
             {
-              "group": "DELETE",
+              "group": "削除",
               "pages": [
                 "ja/concepts/features/operations/delete/index",
                 "ja/concepts/features/operations/delete/overview",
@@ -149,7 +150,8 @@
                 "ja/concepts/features/configuration/server-config/workload-scheduling",
                 "ja/concepts/features/configuration/server-config/quotas",
                 "ja/concepts/features/configuration/server-config/composable-protocols",
-                "ja/concepts/features/configuration/server-config/startup-scripts"
+                "ja/concepts/features/configuration/server-config/startup-scripts",
+                "ja/concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
@@ -169,7 +171,7 @@
               ]
             },
             {
-              "group": "外部認証",
+              "group": "外部認証機構",
               "pages": [
                 "ja/concepts/features/security/external-authenticators/index",
                 {
@@ -211,30 +213,34 @@
             "ja/concepts/features/interfaces/native-clients-interfaces-index",
             "ja/concepts/features/interfaces/cli",
             "ja/concepts/features/interfaces/client",
+            "ja/concepts/features/interfaces/mcp",
             {
               "group": "ドライバーとインターフェイス",
               "pages": [
                 "ja/concepts/features/interfaces/overview",
                 "ja/concepts/features/interfaces/http",
+                "ja/concepts/features/interfaces/framing-formats",
                 "ja/concepts/features/interfaces/tcp",
-                "ja/concepts/features/interfaces/jdbc",
+                "ja/concepts/features/interfaces/adbc",
                 "ja/concepts/features/interfaces/mysql",
                 {
                   "$ref": "features/interfaces/odbc/navigation.json"
                 },
                 "ja/concepts/features/interfaces/postgresql",
                 "ja/concepts/features/interfaces/prometheus",
+                "ja/concepts/features/interfaces/prometheus-metrics",
                 "ja/concepts/features/interfaces/ssh",
                 "ja/concepts/features/interfaces/grpc",
                 "ja/concepts/features/interfaces/arrowflight"
               ]
             },
-            "ja/concepts/features/interfaces/cpp",
             "ja/concepts/features/interfaces/schema-inference",
             "ja/concepts/features/interfaces/documentation-search",
             "ja/concepts/features/interfaces/web-sql",
+            "ja/concepts/features/interfaces/sql-console",
             "ja/concepts/features/interfaces/web-ui-color-coding",
             "ja/concepts/features/interfaces/web-ui-pinned-columns",
+            "ja/concepts/features/interfaces/web-ui-result-shaping",
             "ja/concepts/features/interfaces/web-terminal",
             {
               "group": "サードパーティ製クライアント",

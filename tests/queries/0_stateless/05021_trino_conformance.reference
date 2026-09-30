@@ -1,0 +1,99 @@
+-- TestAggregation
+1
+2
+1	3
+-- TestArraySortAfterArrayDistinct
+['cat','dog','elephant']
+-- TestCorrelatedAggregation
+4	true
+-- TestDistinctAggregations
+3
+3	6
+3	4
+2	3
+1
+1	1
+-- TestFilteredAggregations
+10
+18	2
+8	10
+2
+2	6
+2	30
+-- TestFormat
+1.000000
+1.000000
+1
+1
+134
+-- TestGroupBy
+(42)
+2	2
+1
+1
+2
+2
+-- TestGrouping
+0	2
+-- TestJoin
+1
+nan	nan
+10	b
+5
+5
+a	1	a	1
+-- TestJoinUsing
+1	a	b	a	b
+1	a	b
+1	2	a	b
+1	a	b
+1	2	3
+1	2	3
+-- TestLambdaExpressions
+0
+2
+3
+[2,3,4]	[11,21,31]
+[2,3,4]	[11,21,31]
+[[2],[3],[4]]
+[[2],[3],[4]]
+-- TestListagg
+a
+1	a
+a,bb,ccc,dddd
+abc
+1	ac
+2	bd
+dddd,ccc,bb,a
+-- TestOrderedAggregation
+8
+[4,1,3]
+[3,1,4]
+[4,3,1]
+['a','abcd','bcd']
+[2,1,5]
+-- TestSelectAll
+1	a
+1	2	3
+1	2	3
+1	2	3
+(1)	b	1	1
+(1)	a	2	1
+(2)	b	1	2
+['b']	1
+['a','a']	1
+['b']	2
+-- TestSubqueries
+2
+2
+1
+2
+3
+[1,2,3]
+-- TestValues
+1	a
+1	true
+\N
+\N	\N
+-- TestWindow
+1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1

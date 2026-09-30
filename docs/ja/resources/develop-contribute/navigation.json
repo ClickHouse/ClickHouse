@@ -31,7 +31,7 @@
       ]
     },
     {
-      "group": "コントリビューション",
+      "group": "貢献",
       "pages": [
         "ja/resources/develop-contribute/contribute/tests",
         "ja/resources/develop-contribute/contribute/continuous-integration",
@@ -60,6 +60,6 @@
     }
   ],
   "icon": "/images/icons/icon-contribute.svg",
-  "item": "開発とコントリビューション",
+  "item": "開発と貢献",
   "root": "ja/resources/develop-contribute/index"
 }
