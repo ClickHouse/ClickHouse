@@ -589,10 +589,6 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 
     Chars & res_chars = res->chars;
     size_t res_chars_size = 0;
-    /// This is a dependent prefix-sum where each iteration depends on the
-    /// previous one.  Auto-vectorization adds horizontal-reduction overhead
-    /// without improving throughput for dependent chains.
-#pragma clang loop vectorize(disable)
     for (size_t i = 0; i < col_size; ++i)
     {
         size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
@@ -944,4 +940,8 @@ void ColumnString::batchSerializeAsComparable(
         [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
 }
 
+ColumnPlanes ColumnString::getPlanes() const
+{
+    return ColumnPlanes(ColumnPlanes::Shape::String, offsets.data(), chars.data());
+}
 }

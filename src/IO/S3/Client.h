@@ -367,7 +367,7 @@ public:
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
         ServerSideEncryptionKMSConfig sse_kms_config,
-        HTTPHeaderEntries headers,
+        NormalizedHTTPHeaderEntries headers,
         CredentialsConfiguration credentials_configuration,
         const String & session_token = "",
         const std::shared_ptr<ClientCache> & shared_cache = nullptr);

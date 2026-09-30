@@ -83,7 +83,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     std::optional<std::string> opt_disk_name;
     HTTPRequestThrottler request_throttler;
 
-    HTTPHeaderEntries extra_headers;
+    NormalizedHTTPHeaderEntries extra_headers;
     String http_client;
     String service_account;
     String metadata_service;
@@ -244,7 +244,7 @@ protected:
 
     HTTPRequestThrottler request_throttler;
 
-    const HTTPHeaderEntries extra_headers;
+    const NormalizedHTTPHeaderEntries extra_headers;
 };
 
 class PocoHTTPClientGCPOAuth : public PocoHTTPClient

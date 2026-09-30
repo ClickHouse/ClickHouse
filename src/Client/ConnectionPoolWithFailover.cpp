@@ -258,7 +258,7 @@ ConnectionPoolWithFailover::tryGetEntry(
         const QualifiedTableName * table_to_check,
         [[maybe_unused]] AsyncCallback async_callback)
 {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     if (async_callback)
     {
         ConnectionEstablisherAsync connection_establisher_async(pool, &timeouts, settings, log, table_to_check);

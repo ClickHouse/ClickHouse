@@ -412,9 +412,19 @@ CREATE ROW POLICY p1, p2 ON t1, t2
 CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 ON table2
 ```
 
-## USING Clause {#using-clause}
+## USING clause {#using-clause}
 
-Allows specifying a condition to filter rows. A user will see a row if the condition is calculated to non-zero for the row.
+Defines a filter condition for a table. A user can only see rows for which the condition is true (evaluates to a non-zero value). This is similar to adding an extra `WHERE` condition to every query the user runs against the table.
+
+For example, the following policy limits `analyst_role` to rows from the EU:
+
+```sql
+CREATE ROW POLICY region_filter ON db.orders
+USING region = 'EU'
+TO analyst_role;
+```
+
+With this policy, `SELECT * FROM db.orders` returns the same rows as `SELECT * FROM db.orders WHERE region = 'EU'` would.
 
 ## TO Clause {#to-clause}
 
@@ -470,6 +480,12 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 
 enable the user `peter` to see table1 rows only if both `b=1` AND `c=2`, although
 any other table in mydb would have only `b=1` policy applied for the user.
+
+## Tables that read from other tables {#tables-that-read-from-other-tables}
+
+A row policy filters rows where the data is actually read. An `Alias` table returns the rows of its target table as its own, so the row policies of the target apply to reads through the alias as well, combined with the policies of the alias itself using a logical `AND`. A `Merge` table applies the policies of the tables it reads from. One exception: when a matched table reads remotely, such as a `Distributed` table, the remote server processes the query before the policy is applied, because the policy runs above that table's read rather than at the read. Such a query can fail, when it aggregates without selecting the policy's columns, or return fewer rows than the policy allows, when the remote server applies an `ORDER BY ... LIMIT` to rows the policy would have hidden. Define the policy on the underlying local tables of each remote server instead.
+
+This does not extend to every table that reads from another table. A `Buffer` table and a materialized view read through their destination or target table do **not** inherit that table's row policies: the policy is written against the target's schema and, for a view with `SQL SECURITY DEFINER`, is evaluated for a different user than the one running the read. Define the policy on the table users actually query in those cases.
 
 ## Distributed and remote-backed tables {#distributed-and-remote-backed-tables}
 

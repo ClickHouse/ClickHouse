@@ -189,17 +189,14 @@ def test_optimize_manifest_per_file_stats(started_cluster_iceberg_with_spark):
     assert data_entries_checked > 0
 
 
-@pytest.mark.parametrize("storage_type", ["local"])
-def test_optimize_rejects_latest_gc_disabled_with_pinned_metadata(
-    started_cluster_iceberg_with_spark, storage_type
+def create_pinned_optimize_table(
+    started_cluster_iceberg_with_spark, instance, storage_type, table_name
 ):
-    instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
-    TABLE_NAME = "test_optimize_gc_disabled_" + get_uuid_str()
 
     spark.sql(
         f"""
-        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES (
+        CREATE TABLE {table_name} (id long, data string) USING iceberg TBLPROPERTIES (
             'format-version' = '2',
             'write.update.mode' = 'merge-on-read',
             'write.delete.mode' = 'merge-on-read',
@@ -208,19 +205,19 @@ def test_optimize_rejects_latest_gc_disabled_with_pinned_metadata(
         """
     )
     spark.sql(
-        f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range(10, 100)"
+        f"INSERT INTO {table_name} SELECT id, char(id + ascii('a')) FROM range(10, 100)"
     )
-    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
+    spark.sql(f"DELETE FROM {table_name} WHERE id < 20")
 
     default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{table_name}/",
+        f"/iceberg_data/default/{table_name}/",
     )
 
     metadata_dir = (
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata"
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata"
     )
     pinned_metadata_file = instance.exec_in_container(
         ["bash", "-c", f"ls -v {metadata_dir}/v*.metadata.json | tail -1"]
@@ -231,11 +228,23 @@ def test_optimize_rejects_latest_gc_disabled_with_pinned_metadata(
     create_iceberg_table(
         storage_type,
         instance,
-        TABLE_NAME,
+        table_name,
         started_cluster_iceberg_with_spark,
         explicit_metadata_path=pinned_metadata_path,
     )
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+    assert int(instance.query(f"SELECT count() FROM {table_name}")) == 80
+    return spark
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_rejects_latest_gc_disabled_with_pinned_metadata(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_gc_disabled_" + get_uuid_str()
+    spark = create_pinned_optimize_table(
+        started_cluster_iceberg_with_spark, instance, storage_type, TABLE_NAME
+    )
 
     spark_alter_table(
         started_cluster_iceberg_with_spark,
@@ -267,3 +276,105 @@ def test_optimize_rejects_latest_gc_disabled_with_pinned_metadata(
         storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark
     )
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_uses_latest_metadata_with_pinned_metadata(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_latest_pinned_" + get_uuid_str()
+    spark = create_pinned_optimize_table(
+        started_cluster_iceberg_with_spark, instance, storage_type, TABLE_NAME
+    )
+
+    spark_alter_table(
+        started_cluster_iceberg_with_spark,
+        spark,
+        storage_type,
+        TABLE_NAME,
+        "SET TBLPROPERTIES('clickhouse.test.external-commit' = '1')",
+    )
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+    create_iceberg_table(
+        storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_rejects_external_schema_change(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_schema_change_" + get_uuid_str()
+    spark = create_pinned_optimize_table(
+        started_cluster_iceberg_with_spark, instance, storage_type, TABLE_NAME
+    )
+
+    spark_alter_table(
+        started_cluster_iceberg_with_spark,
+        spark,
+        storage_type,
+        TABLE_NAME,
+        "ADD COLUMN extra string",
+    )
+
+    error = instance.query_and_get_error(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+    assert "BAD_ARGUMENTS" in error, error
+    assert "Iceberg schema changed" in error, error
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+    create_iceberg_table(
+        storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark
+    )
+    assert "extra" in instance.query(f"DESCRIBE TABLE {TABLE_NAME}")
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_uses_latest_metadata_compression(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_latest_codec_" + get_uuid_str()
+    spark = create_pinned_optimize_table(
+        started_cluster_iceberg_with_spark, instance, storage_type, TABLE_NAME
+    )
+
+    spark_alter_table(
+        started_cluster_iceberg_with_spark,
+        spark,
+        storage_type,
+        TABLE_NAME,
+        "SET TBLPROPERTIES('write.metadata.compression-codec' = 'gzip')",
+    )
+
+    metadata_dir = (
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata"
+    )
+    compressed_metadata = instance.exec_in_container(
+        ["bash", "-c", f"ls {metadata_dir}/*.gz.metadata.json 2>/dev/null | head -1"]
+    ).strip()
+    assert compressed_metadata
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+    create_iceberg_table(
+        storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+

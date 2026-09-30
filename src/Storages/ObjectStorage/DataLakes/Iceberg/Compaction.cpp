@@ -111,6 +111,9 @@ struct Plan
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
     FileNamesGenerator generator;
     Poco::JSON::Object::Ptr initial_metadata_object;
+    CompressionMethod metadata_compression_method = CompressionMethod::None;
+    String metadata_file_path;
+    bool schema_matches_cached = true;
 
     class ParititonEncoder
     {
@@ -155,7 +158,7 @@ static bool isCurrentManifestListAboveThreshold(
 {
     LoggerPtr log = getLogger("IcebergCompaction::isCurrentManifestListAboveThreshold");
 
-    if (!metadata_object->has(Iceberg::f_current_snapshot_id) || metadata_object->isNull(Iceberg::f_current_snapshot_id))
+    if (!metadata_object->has(Iceberg::f_current_snapshot_id))
         return false;
     Int64 current_snapshot_id = metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
     if (current_snapshot_id < 0)
@@ -189,15 +192,13 @@ static Plan getPlan(
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
     const String & write_format,
-    ContextPtr context,
-    CompressionMethod compression_method)
+    SharedHeader sample_block,
+    ContextPtr context)
 {
     LoggerPtr log = getLogger("IcebergCompaction::getPlan");
 
     Plan plan;
-    plan.generator = FileNamesGenerator(persistent_table_components.path_resolver.getTableLocation(), false, compression_method, write_format);
-
-    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
@@ -205,10 +206,24 @@ static Plan getPlan(
         context,
         log.get(),
         persistent_table_components.table_uuid,
-        persistent_table_components.metadata_compression_method);
+        persistent_table_components.metadata_compression_method,
+        /* force_fetch_latest_metadata */ true,
+        /* ignore_metadata_pointer_overrides */ true);
+
+    plan.metadata_compression_method = compression_method;
+    plan.metadata_file_path = metadata_file_path;
+    plan.generator = FileNamesGenerator(
+        persistent_table_components.path_resolver.getTableLocation(), false, compression_method, write_format);
 
     Poco::JSON::Object::Ptr initial_metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        = getMetadataJSONObject(
+            metadata_file_path,
+            object_storage,
+            persistent_table_components.metadata_cache,
+            context,
+            log,
+            compression_method,
+            persistent_table_components.table_uuid);
 
     /// Exactly version 2: v1 lacks the sequence-number machinery the rewrite relies on, and
     /// a v3 table must not be accepted either -- writeMetadataFiles rebuilds the metadata
@@ -229,6 +244,16 @@ static Plan getPlan(
             break;
         }
     }
+
+    for (UInt32 i = 0; i < schemas->size(); ++i)
+        persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(i));
+
+    Block current_schema_block;
+    for (const auto & name_and_type
+         : *persistent_table_components.schema_processor->getClickHouseTableSchemaById(static_cast<Int32>(current_schema_id)))
+        current_schema_block.insert(ColumnWithTypeAndName(name_and_type.type, name_and_type.name));
+
+    plan.schema_matches_cached = blocksHaveEqualStructure(current_schema_block, *sample_block);
     plan.initial_metadata_object = initial_metadata_object;
 
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
@@ -410,6 +435,7 @@ static void writeDataFiles(
         }
         output_format->flush();
         output_format->finalize();
+        data_file->manifest_list->statistics.addColumnSizesOnDisk(output_format->getColumnSizesOnDisk(), *sample_block);
         write_buffer->finalize();
         auto file_bytes = write_buffer->count();
         if (file_bytes == 0 && !data_file->patched_path.empty())
@@ -437,7 +463,7 @@ static bool writeConsolidatedManifestFile(
     auto log = getLogger("IcebergManifestConsolidation");
 
     // Derive current snapshot info directly from the metadata file.
-    if (!metadata_object->has(Iceberg::f_current_snapshot_id) || metadata_object->isNull(Iceberg::f_current_snapshot_id))
+    if (!metadata_object->has(Iceberg::f_current_snapshot_id))
     {
         LOG_INFO(log, "No current snapshot found, skipping manifest consolidation");
         return true;
@@ -1384,7 +1410,7 @@ void compactIcebergManifests(
         if (attempt > 0)
             LOG_INFO(log, "Retrying manifest compaction (attempt {}/{})", attempt + 1, MAX_COMPACTION_RETRIES);
 
-        const auto [metadata_version, metadata_file_path, _] = getLatestMetadataFileAndVersionWithCatalog(
+        const auto [metadata_version, metadata_file_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage_,
             catalog,
             table_id.getTableName(),
@@ -1403,7 +1429,7 @@ void compactIcebergManifests(
             persistent_table_components.metadata_cache,
             context_,
             log,
-            persistent_table_components.metadata_compression_method,
+            compression_method,
             persistent_table_components.table_uuid);
 
         /// Validate the format version on the freshly-fetched metadata (before the threshold early-return), since the table may have been upgraded to v3 by another writer after this table object was created.
@@ -1435,7 +1461,7 @@ void compactIcebergManifests(
                 context_,
                 sample_block_,
                 write_format,
-                persistent_table_components.metadata_compression_method,
+                compression_method,
                 data_lake_settings,
                 catalog,
                 table_id))
@@ -1474,10 +1500,15 @@ void compactIcebergTable(
         persistent_table_components,
         object_storage_,
         write_format,
-        context_,
-        persistent_table_components.metadata_compression_method);
+        sample_block_,
+        context_);
     if (plan.need_optimize)
     {
+        if (!plan.schema_matches_cached)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Iceberg schema changed since the table metadata was loaded; refusing OPTIMIZE to avoid rewriting stale metadata");
+
         auto log = getLogger("IcebergCompaction");
         const auto [_metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
             object_storage_,
@@ -1500,6 +1531,11 @@ void compactIcebergTable(
             persistent_table_components.table_uuid);
         validateGarbageCollectionEnabled(current_metadata, "optimize Iceberg table");
 
+        if (metadata_file_path != plan.metadata_file_path)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Iceberg metadata changed during compaction planning; retry OPTIMIZE");
+
         auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
         writeDataFiles(
             plan,
@@ -1509,7 +1545,7 @@ void compactIcebergTable(
             format_settings_,
             context_,
             write_format,
-            persistent_table_components.metadata_compression_method);
+            plan.metadata_compression_method);
         writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, context_, sample_block_, write_format, persistent_table_components.table_path);
         clearOldFiles(object_storage_, old_files);
     }
