@@ -24,13 +24,13 @@ $CLICKHOUSE_CLIENT -q "
 # prints whether the estimate was sampled and whether the real read falls inside the span it reports
 check()
 {
-    local projection="$1" key="$2" where="$3" options="$4"
+    local projection="$1" key="$2" where="$3" options="$4" table="${5:-t_scan}" real_table="${6:-t_real_scan}"
     local out est span low high real
     out=$($CLICKHOUSE_CLIENT -q "
-        CREATE HYPOTHETICAL PROJECTION ${projection} ON t_scan (SELECT a, b, c, d ORDER BY ${key});
-        EXPLAIN WHATIF ${options} SELECT count() FROM t_scan WHERE ${where} SETTINGS ${PIN};
+        CREATE HYPOTHETICAL PROJECTION ${projection} ON ${table} (SELECT * ORDER BY ${key});
+        EXPLAIN WHATIF ${options} SELECT count() FROM ${table} WHERE ${where} SETTINGS ${PIN};
         SELECT '--- real ---';
-        EXPLAIN indexes = 1 SELECT count() FROM t_real_scan WHERE ${where}
+        EXPLAIN indexes = 1 SELECT count() FROM ${real_table} WHERE ${where}
             SETTINGS ${PIN}, preferred_optimize_projection_name = '${projection}';
     ")
     est=$(sed -n '1,/^--- real ---$/p' <<< "$out" | grep -E '^\s+marks:' | tail -1 | awk '{print $2}')
@@ -89,3 +89,17 @@ $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_b ON t_scan (SELECT a, b, c, d ORDER BY b);
     EXPLAIN WHATIF projection_scan_budget_rows = 5000 SELECT count() FROM t_scan WHERE b < 100 AND _part_offset < 10000 SETTINGS ${PIN};
 " | grep -E '^\s+(status|empirical_status):' | awk '{$1=$1; print}'
+
+# fewer sampled rows than the part has granules: each sampled row stands for ten real granules here
+echo "--- a sample thinner than one row per granule ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_thin; DROP TABLE IF EXISTS t_thin_real;
+    CREATE TABLE t_thin (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 10, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    CREATE TABLE t_thin_real AS t_thin;
+    ALTER TABLE t_thin_real ADD PROJECTION p_b (SELECT * ORDER BY b);
+    INSERT INTO t_thin SELECT number, cityHash64(number) % 1000 FROM numbers(100000);
+    INSERT INTO t_thin_real SELECT number, cityHash64(number) % 1000 FROM numbers(100000);
+"
+check p_b b "b < 100" "projection_scan_budget_rows = 1000" t_thin t_thin_real
+check p_b b "b = 7" "projection_scan_budget_rows = 1000" t_thin t_thin_real

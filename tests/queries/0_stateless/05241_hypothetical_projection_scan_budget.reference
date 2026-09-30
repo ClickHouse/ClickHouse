@@ -21,3 +21,6 @@ sampled_marks: 30 / 59
 --- an offset filter on a sampled estimate ---
 status: applicable
 empirical_status: unsupported
+--- a sample thinner than one row per granule ---
+b < 100: sampled 1, real inside the span 1
+b = 7: sampled 1, real inside the span 1
