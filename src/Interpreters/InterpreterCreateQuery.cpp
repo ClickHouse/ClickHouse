@@ -62,6 +62,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
@@ -1064,7 +1065,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
-        auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
+        /// A lazy table's proxy only caches columns. Its projections and keys are available after
+        /// materializing the nested storage, and admission checks must inspect those declarations.
+        StoragePtr metadata_storage = as_storage;
+        if (const auto * lazy_source = as_storage->as<StorageTableProxy>())
+            metadata_storage = lazy_source->getNested();
+        auto as_storage_metadata = metadata_storage->getInMemoryMetadataPtr(getContext(), false);
         properties.columns = as_storage_metadata->getColumns();
 
         if (!create.comment && !as_storage_metadata->comment.empty())
@@ -1086,7 +1092,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
             /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
             /// Note: only supports the source table engine is using the new syntax.
-            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(as_storage.get()))
+            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(metadata_storage.get()))
             {
                 if (merge_tree_data->format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
                 {
@@ -1114,7 +1120,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.is_clone_as)
         {
-            if (!endsWith(as_storage->getName(), "MergeTree"))
+            if (!endsWith(metadata_storage->getName(), "MergeTree"))
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support CLONE AS from tables of the MergeTree family");
 
             if (create.storage)
