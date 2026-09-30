@@ -1587,6 +1587,10 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags(co
 
     auto new_groups = getGroupForTags(tags_vector);
 
+    /// Unique groups are kept in first-seen order, so all-unique inputs need no remapping.
+    if (new_groups.size() == res.size())
+        return new_groups;
+
     for (auto & index : res)
         index = new_groups.at(index);
 
@@ -1693,14 +1697,16 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags2(c
 
         for (size_t i = 0; i != groups1.size(); ++i)
         {
-            min_group1 = std::min(min_group1, groups1[i]);
-            max_group1 = std::max(max_group1, groups1[i]);
-            min_group2 = std::min(min_group2, groups2[i]);
-            max_group2 = std::max(max_group2, groups2[i]);
-
             auto [it, inserted] = indices_in_result_vector.try_emplace(std::make_pair(groups1[i], groups2[i]), num_unique_pairs);
             if (inserted)
+            {
+                /// Repeated pairs cannot extend either component's range.
+                min_group1 = std::min(min_group1, groups1[i]);
+                max_group1 = std::max(max_group1, groups1[i]);
+                min_group2 = std::min(min_group2, groups2[i]);
+                max_group2 = std::max(max_group2, groups2[i]);
                 ++num_unique_pairs;
+            }
             res[i] = it->second;
         }
     }
@@ -1742,6 +1748,9 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags2(c
         chassert(new_tags_vector.size() == num_unique_pairs);
 
         auto new_groups = getGroupForTags(new_tags_vector);
+        if (num_unique_pairs == res.size())
+            return new_groups;
+
         for (auto & index : res)
             index = new_groups.at(index);
 
@@ -1759,7 +1768,8 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags2(c
         if (res[i] == next_pair_index)
         {
             unique_pairs.emplace_back(groups1[i], groups2[i]);
-            ++next_pair_index;
+            if (++next_pair_index == num_unique_pairs)
+                break;
         }
     }
     chassert(unique_pairs.size() == num_unique_pairs);
@@ -1829,6 +1839,9 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags2(c
     }
 
     auto new_groups = getGroupForTags(new_tags_vector);
+    if (num_unique_pairs == res.size())
+        return new_groups;
+
     for (auto & index : res)
         index = new_groups.at(index);
 
