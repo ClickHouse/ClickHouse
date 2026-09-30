@@ -2037,6 +2037,11 @@ class SettingsRandomizer:
             random_settings["cluster_for_parallel_replicas"] = "parallel_replicas"
             random_settings["parallel_replicas_local_plan"] = 1
             random_settings["parallel_replicas_for_non_replicated_merge_tree"] = 1
+        # With parallel replicas, `optimize_aggregation_in_order` rejects every projection, including the implicit
+        # `_minmax_count_projection` behind trivial `count()`, so tests asserting on projections, exact counts
+        # or read limits break under the `ParallelReplicas` configuration without finding anything.
+        if args.no_parallel_replicas:
+            random_settings["optimize_aggregation_in_order"] = 0
 
     @staticmethod
     def get_random_settings(args, tags):
