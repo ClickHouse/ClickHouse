@@ -175,6 +175,19 @@ def test_restore_codec_projection_with_missing_dictionary(started_cluster):
         "ENGINE = MergeTree ORDER BY a"
     )
     node.query(
+        "CREATE TABLE codec_restore_missing_dict.suspicious_source "
+        "(a UInt64, PROJECTION pp (a CODEC(Gorilla)) AS "
+        "(SELECT a, dictGet('codec_restore_missing_dict.lookup', 'value', a) AS d ORDER BY a)) "
+        "ENGINE = MergeTree ORDER BY a",
+        settings={"allow_suspicious_codecs": 1},
+    )
+    node.query(
+        "CREATE TABLE codec_restore_missing_dict.typed_source "
+        "(k UInt64, a Float64, PROJECTION pp (a Float64 CODEC(Gorilla)) AS "
+        "(SELECT a, dictGet('codec_restore_missing_dict.lookup', 'value', k) AS d ORDER BY a)) "
+        "ENGINE = MergeTree ORDER BY k"
+    )
+    node.query(
         "DROP DICTIONARY codec_restore_missing_dict.lookup "
         "SETTINGS check_table_dependencies = 0"
     )
@@ -204,6 +217,42 @@ def test_restore_codec_projection_with_missing_dictionary(started_cluster):
     )
     assert "CODEC(ZSTD(" in node.query(
         "SHOW CREATE TABLE codec_restore_missing_dict.restored"
+    )
+
+    suspicious_backup = f"unavailable_projection_suspicious_dict_{uuid.uuid4().hex}"
+    node.query(
+        "BACKUP TABLE codec_restore_missing_dict.suspicious_source "
+        f"TO Disk('backups', '{suspicious_backup}')"
+    )
+    restore_suspicious = (
+        "RESTORE TABLE codec_restore_missing_dict.suspicious_source "
+        f"AS codec_restore_missing_dict.suspicious_restored FROM Disk('backups', '{suspicious_backup}')"
+    )
+    error = node.query_and_get_error(restore_suspicious)
+    assert "without a column type" in error, error
+    assert (
+        node.query(
+            "EXISTS TABLE codec_restore_missing_dict.suspicious_restored"
+        ).strip()
+        == "0"
+    )
+
+    node.query(restore_suspicious, settings={"allow_suspicious_codecs": 1})
+    assert "CODEC(Gorilla)" in node.query(
+        "SHOW CREATE TABLE codec_restore_missing_dict.suspicious_restored"
+    )
+
+    typed_backup = f"unavailable_projection_typed_dict_{uuid.uuid4().hex}"
+    node.query(
+        "BACKUP TABLE codec_restore_missing_dict.typed_source "
+        f"TO Disk('backups', '{typed_backup}')"
+    )
+    node.query(
+        "RESTORE TABLE codec_restore_missing_dict.typed_source "
+        f"AS codec_restore_missing_dict.typed_restored FROM Disk('backups', '{typed_backup}')"
+    )
+    assert "CODEC(Gorilla)" in node.query(
+        "SHOW CREATE TABLE codec_restore_missing_dict.typed_restored"
     )
 
 

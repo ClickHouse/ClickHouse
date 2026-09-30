@@ -1026,13 +1026,20 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                         }
                         catch (const Exception &)
                         {
-                            /// A missing dependency can still prevent analysis. Check codec settings
-                            /// without output types before preserving the unavailable declaration.
+                            /// A missing dependency can still prevent analysis. Validate against
+                            /// declared types where possible and reject codecs needing an unknown type.
                             for (const auto & child : declaration.columns->children)
+                            {
                                 if (const auto * column = child ? child->as<const ASTColumnDeclaration>() : nullptr;
                                     column && column->getCodec())
+                                {
+                                    const auto type_ast = column->getType();
+                                    const auto declared_type = type_ast ? DataTypeFactory::instance().get(type_ast) : DataTypePtr{};
                                     CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                                        column->getCodec(), {}, CodecValidationSettings(getContext()->getSettingsRef()));
+                                        column->getCodec(), declared_type, CodecValidationSettings(
+                                            getContext()->getSettingsRef(), /*reject_type_sensitive_without_column_type=*/ true));
+                                }
+                            }
                         }
                         if (checked_projection)
                             ProjectionDescription::validateDeclaredColumnCodecs(

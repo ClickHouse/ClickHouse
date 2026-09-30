@@ -33,13 +33,15 @@ using CodecNameWithLevel = std::pair<String, std::optional<int>>;
 
 struct CodecValidationSettings
 {
-    explicit CodecValidationSettings(const Settings & settings_)
+    explicit CodecValidationSettings(const Settings & settings_, bool reject_type_sensitive_without_column_type_ = false)
         : settings(&settings_)
+        , reject_type_sensitive_without_column_type(reject_type_sensitive_without_column_type_)
     {
     }
 
     /// The stored pointer would dangle when constructed from a temporary.
     explicit CodecValidationSettings(Settings &&) = delete;
+    CodecValidationSettings(Settings &&, bool) = delete;
 
     /// An already accepted codec must not be re-judged by the current session, or existing tables could fail to load.
     static CodecValidationSettings trusted() { return {}; }
@@ -47,6 +49,9 @@ struct CodecValidationSettings
     /// nullptr on trusted paths (every gated / suspicious codec is accepted).
     /// Otherwise a gated codec must be enabled by its dedicated setting.
     const Settings * settings = nullptr;
+
+    /// Used when a temporarily unavailable projection has no output type during `RESTORE`.
+    bool reject_type_sensitive_without_column_type = false;
 
 private:
     CodecValidationSettings() = default;
@@ -157,7 +162,11 @@ protected:
 
 private:
     ASTPtr validateCodecAndGetPreprocessedASTImpl(
-        const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const;
+        const ASTPtr & ast,
+        const DataTypePtr & column_type,
+        const Settings * settings,
+        bool sanity_check,
+        bool reject_type_sensitive_without_column_type) const;
 
     /// Name of the gate setting: `enable_<lowercase family>_codec`.
     static String getGateSettingName(const String & family_name);

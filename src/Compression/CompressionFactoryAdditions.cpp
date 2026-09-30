@@ -69,7 +69,8 @@ void CompressionCodecFactory::validateCodecString(
 {
     ParserCodec codec_parser;
     auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    validateCodecAndGetPreprocessedASTImpl(ast, {}, validation_settings.settings, /*sanity_check=*/ false);
+    validateCodecAndGetPreprocessedASTImpl(
+        ast, {}, validation_settings.settings, /*sanity_check=*/ false, /*reject_type_sensitive_without_column_type=*/ false);
 }
 
 namespace
@@ -117,11 +118,16 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
     const ASTPtr & ast, const DataTypePtr & column_type, const CodecValidationSettings & validation_settings) const
 {
     const bool sanity_check = validation_settings.settings && !(*validation_settings.settings)[Setting::allow_suspicious_codecs];
-    return validateCodecAndGetPreprocessedASTImpl(ast, column_type, validation_settings.settings, sanity_check);
+    return validateCodecAndGetPreprocessedASTImpl(
+        ast, column_type, validation_settings.settings, sanity_check, validation_settings.reject_type_sensitive_without_column_type);
 }
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
-    const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const
+    const ASTPtr & ast,
+    const DataTypePtr & column_type,
+    const Settings * settings,
+    bool sanity_check,
+    bool reject_type_sensitive_without_column_type) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
@@ -349,6 +355,12 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                     "because it does not make sense to apply any non-post-processing codecs after "
                     "post-processing ones. (Note: you can enable setting 'allow_suspicious_codecs' "
                     "to skip this check).", codec_description);
+
+            if (last_floating_point_time_series_codec_pos.has_value()
+                && !column_type && reject_type_sensitive_without_column_type)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot validate floating-point time series codec {} without a column type",
+                    codec_description);
 
             /// Floating-point time series codecs are not supposed to compress non-floating-point data
             if (last_floating_point_time_series_codec_pos.has_value()
