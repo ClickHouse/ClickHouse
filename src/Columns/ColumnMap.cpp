@@ -533,4 +533,10 @@ void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<Col
 }
 
 
+ColumnPlanes ColumnMap::getPlanes() const
+{
+    ColumnPlanes planes(ColumnPlanes::Shape::Map);
+    planes.children = {&getNestedColumn()};
+    return planes;
+}
 }

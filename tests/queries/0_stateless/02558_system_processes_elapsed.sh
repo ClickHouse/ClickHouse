@@ -16,7 +16,7 @@ while :; do
         continue
     fi
     wait
-    $CLICKHOUSE_CLIENT -q "kill query where current_database = currentDatabase() sync format Null"
+    $CLICKHOUSE_CLIENT -q "kill query where current_database = currentDatabase() sync format Null settings kill_throw_if_noop = false"
     if [[ $duration -eq 1 ]]; then
         echo "OK"
         break

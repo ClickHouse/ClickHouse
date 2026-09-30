@@ -34,7 +34,8 @@ The external aggregation settings (`max_bytes_before_external_group_by`, `max_by
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "New setting. Enable spill memory data into external storage adaptively."}]}]}/>
 
-Trigger processor to spill data into external storage adpatively. grace join is supported at present.
+Trigger processor to spill data into external storage adaptively. Hash joins that can spill are supported at present, both
+`grace_hash` and the adaptive `hash` / `parallel_hash` path.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -126,7 +127,7 @@ The table below shows the behavior of this setting for various date-time functio
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "The text index is now GA"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "0"},{"label": "Text index was moved to Beta."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "The text index is now GA. This also applies to the alias `allow_experimental_full_text_index`."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "0"},{"label": "Text index was moved to Beta."}]}, {"id": "row-3","items": [{"label": "24.6"},{"label": "0"},{"label": "Enable experimental text index. At the time the setting was named `allow_experimental_full_text_index`, which is now an alias of it."}]}]}/>
 
 If set to true, allow using the text index.
 
@@ -256,7 +257,7 @@ SET dialect = 'clickhouse_json';
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_json_lazy_type_hints`."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Lazy JSON type hints are now Beta. An alias for setting 'allow_experimental_json_lazy_type_hints'."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Lazy JSON type hints are now Beta. An alias for setting 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "New experimental setting for lazy JSON type hints. At the time the setting was named `allow_experimental_json_lazy_type_hints`, which is now an alias of it."}]}]}/>
 
 Enables lazy type hints for the [JSON](/reference/data-types/newjson) type.
 
@@ -322,7 +323,7 @@ Generate named tuples in function tuple() when all names are unique and can be t
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)` is now GA"}]}, {"id": "row-2","items": [{"label": "26.6"},{"label": "0"},{"label": "Nullable Tuple is now Beta. Added as an alias for 'allow_experimental_nullable_tuple_type'."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)` is now GA. This also applies to the alias `allow_experimental_nullable_tuple_type`."}]}, {"id": "row-2","items": [{"label": "26.6"},{"label": "0"},{"label": "Nullable Tuple is now Beta. Added as an alias for 'allow_experimental_nullable_tuple_type'."}]}, {"id": "row-3","items": [{"label": "26.1"},{"label": "0"},{"label": "New experimental setting. At the time the setting was named `allow_experimental_nullable_tuple_type`, which is now an alias of it."}]}]}/>
 
 Allows creation of [Nullable](/reference/data-types/nullable) [Tuple](/reference/data-types/tuple) columns in tables.
 
@@ -505,7 +506,7 @@ Enables the `SZ3` compression codec.
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."}]}, {"id": "row-2","items": [{"label": "25.6"},{"label": "0"},{"label": "New setting to enable experimental timeSeries* aggregate functions. At the time the setting was named `allow_experimental_time_series_aggregate_functions`, which is now an alias of it."}]}, {"id": "row-3","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud only. At the time the setting was named `allow_experimental_ts_to_grid_aggregate_function`, which is now an alias of it."}]}]}/>
 
 Enables the `timeSeries*` aggregate functions for Prometheus-like time series resampling, rate, and delta calculation.
 
@@ -517,7 +518,7 @@ Enables the `timeSeries*` aggregate functions for Prometheus-like time series re
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_table`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_table`."}]}, {"id": "row-2","items": [{"label": "24.8"},{"label": "0"},{"label": "Added new setting to allow the TimeSeries table engine. At the time the setting was named `allow_experimental_time_series_table`, which is now an alias of it."}]}]}/>
 
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
@@ -529,7 +530,7 @@ Allows creation of tables with the [TimeSeries](/reference/engines/table-engines
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "New settings. Allows to use a new experimental Time and Time64 data types."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "1"},{"label": "Enable Time and Time64 type by default"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "New settings. Allows to use a new experimental Time and Time64 data types. This also applies to the alias `allow_experimental_time_time64_type`."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "1"},{"label": "Enable Time and Time64 type by default. This also applies to the alias `allow_experimental_time_time64_type`."}]}]}/>
 
 Allows creation of [Time](/reference/data-types/time) and [Time64](/reference/data-types/time64) data types.
 
@@ -567,7 +568,7 @@ Allow ARRAY JOIN with multiple arrays that have different sizes. When this setti
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_unique_key`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_unique_key`."}]}, {"id": "row-2","items": [{"label": "26.5"},{"label": "0"},{"label": "New setting to gate the experimental UNIQUE KEY clause on MergeTree-family tables. At the time the setting was named `allow_experimental_unique_key`, which is now an alias of it."}]}]}/>
 
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 

@@ -392,7 +392,7 @@ class AwsGlueCatalogManager(CatalogManager):
         node.query(
             f"""
 DROP DATABASE IF EXISTS {database_name};
-SET allow_experimental_database_glue_catalog=1;
+SET allow_database_glue_catalog=1;
 CREATE DATABASE {database_name} ENGINE = DataLakeCatalog()
 SETTINGS
     {settings_str}

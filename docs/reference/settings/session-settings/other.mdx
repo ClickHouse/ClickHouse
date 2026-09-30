@@ -106,6 +106,14 @@ Possible values:
 - 'path' — Use FlightDescriptor::Path (default, works with most Arrow Flight servers)
 - 'command' — Use FlightDescriptor::Command with a SELECT query (required for Dremio)
 
+## arrow_flight_request_timeout_sec {#arrow_flight_request_timeout_sec}
+
+<SettingsInfoBlock type="UInt64" default_value="300" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "300"},{"label": "New setting bounding a single Arrow Flight request. No timeout was set before, so a Flight server that accepted a request and never answered blocked the query indefinitely; 0 restores that behavior."}]}]}/>
+
+Timeout in seconds for a single Arrow Flight request. It bounds the whole request: for a read that is the entire result stream, not just the wait for the first record batch. Zero means no timeout, in which case a Flight server that accepts a request and never answers blocks the query until the connection is closed.
+
 ## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -179,6 +187,9 @@ whole query; with `N` replicas and `T` tries each, the total wait can reach
 because a replica is always tried once before it is written off. Use
 [max_execution_time](/reference/settings/session-settings/max-execution#max_execution_time) to bound
 the query itself.
+
+`skip_unavailable_shards` does not silence this: a replica the initiator had no free connection
+slot for was never contacted, so the shard is not treated as unavailable.
 
 Possible values:
 
@@ -878,6 +889,25 @@ If enabled, functions 'least' and 'greatest' return NULL if one of their argumen
 
 List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.
 
+## legacy_join_size_limits_trigger_spilling {#legacy_join_size_limits_trigger_spilling}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`max_rows_in_join` \/ `max_bytes_in_join` are now hard caps for every hash join, including the ones that spill to disk, where they used to act as the spill trigger. Spilling is driven by `max_bytes_before_external_join` \/ `max_bytes_ratio_before_external_join` alone."}]}]}/>
+
+Restores how `max_rows_in_join` and `max_bytes_in_join` worked before the spill threshold became the trigger, for
+the part of a join that runs on disk: reaching one of them makes the join spill further instead of stopping the query.
+`join_algorithm = 'grace_hash'` then spills on those two alone and ignores `max_bytes_before_external_join` entirely, zero
+included. `hash` / `parallel_hash` still go to disk on the spill threshold and spill on either one afterwards; their
+in-memory phase keeps treating the two as a hard cap, as it did before.
+
+For queries written against the earlier meaning of these two settings; `compatibility` enables it automatically.
+
+A server that predates this setting applies the old meaning, and cannot be told otherwise, so with
+`serialize_query_plan = 1` a join whose spilling depends on the new meaning is not sent to such a server at all:
+the query fails instead of quietly running with the other contract. Turning this setting on makes those queries
+work across the two versions, with the old meaning on both sides.
+
 ## limit {#limit}
 
 <SettingsInfoBlock type="Double" default_value="0" />
@@ -1165,6 +1195,16 @@ Priority of the query. 1 - the highest, higher value - lower priority; 0 - do no
 
 Enable pushing user roles from originator to other nodes while performing a query.
 
+## qbit_one_bit_symmetric_distance {#qbit_one_bit_symmetric_distance}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting: at precision 1 the QBit distance functions can reduce the reference vector to its signs as well and use the Hamming distance between the sign vectors (XOR + popcount) instead of keeping the reference at full precision"}]}]}/>
+
+When a `QBit` distance function (`L2DistanceTransposed`, `cosineDistanceTransposed`, `dotProductTransposed` and their `...Quantized` variants) is called with precision 1, also reduce the reference vector to the signs of its elements and derive the result from the Hamming distance between the two sign vectors, computed with XOR and popcount.
+
+By default the reference vector keeps its full precision at precision 1 and only the stored vector is reduced to signs (an asymmetric distance). The symmetric distance is several times faster, but it ignores the magnitudes of the reference elements: a dimension where the reference is large counts as much as one where it is close to zero.
+
 ## query_metric_log_interval {#query_metric_log_interval}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
@@ -1196,6 +1236,8 @@ The wait time for reading from RabbitMQ before retry.
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 0 - no read-only restrictions. 1 - only read requests, as well as changing explicitly allowed settings. 2 - only read requests, as well as changing settings, except for the 'readonly' setting.
+
+Do not make `readonly` itself changeable under `readonly = 1`: a session can then clear it with `SET readonly = 0`, unless the same constraint also forbids `0`. See [constraints on settings](/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly).
 
 ## recursive_cte_max_steps_in_type_inference {#recursive_cte_max_steps_in_type_inference}
 
@@ -1361,11 +1403,13 @@ Applies to queries received over the native TCP and HTTP protocols. Over HTTP, p
 
 The main use case is a long `INSERT ... SELECT` that must not be lost when the client connection drops.
 
-## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
+## secondary_indexes_enable_bulk_filtering {#secondary_indexes_enable_bulk_filtering}
+
+**Aliases**: `secondary_indices_enable_bulk_filtering`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "A new algorithm for filtering by data skipping indices"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Added an alias for setting `secondary_indices_enable_bulk_filtering`."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "A new algorithm for filtering by data skipping indices"}]}]}/>
 
 Enable the bulk filtering algorithm for indices. It is expected to be always better, but we have this setting for compatibility and control.
 
@@ -1436,6 +1480,9 @@ You can use functions `timeZone()` and `serverTimeZone()` to get the session tim
 Possible values:
 
 -    Any time zone name from `system.time_zones`, e.g. `Europe/Berlin`, `UTC` or `Zulu`
+-    A fixed offset from UTC, spelled `Fixed/UTC±HH:MM:SS`, e.g. `Fixed/UTC+05:30:00`. The offset has to be a whole number of quarters of an hour and no further from UTC than 14 hours, which covers every offset a real time zone has.
+
+Only these names are accepted. A name that only the operating system's time zone database has is not, because ClickHouse ships its own copy of the time zone database so that results do not depend on the host.
 
 Examples:
 
