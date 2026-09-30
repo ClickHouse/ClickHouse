@@ -54,6 +54,16 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No groups exist");
     }
 
+    /// Check group IDs without materializing tags or allocating lookup state.
+    /// Groups are append-only, so a snapshot of the group count is sufficient.
+    void validateGroups(const VectorWithMemoryTracking<Group> & groups_, size_t num_groups)
+    {
+        const auto invalid_group = std::find_if(groups_.begin(), groups_.end(),
+            [num_groups](Group group) { return group >= num_groups; });
+        if (invalid_group != groups_.end())
+            throwGroupOutOfBound(*invalid_group, num_groups);
+    }
+
     [[noreturn]] void throwIDWasAddedWithOtherTags(const IColumn & id_column, size_t row, const TagNamesAndValuesPtr & tags, const TagNamesAndValuesPtr & existing_tags)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -1531,6 +1541,13 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags(co
     if (groups_.empty())
         return {};
 
+    size_t num_groups;
+    {
+        SharedLockGuard lock{mutex};
+        num_groups = groups.size();
+    }
+    validateGroups(groups_, num_groups);
+
     VectorWithMemoryTracking<Group> res;
     res.resize(groups_.size());
 
@@ -1682,6 +1699,14 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags2(c
     if (groups1.empty())
         return {};
 
+    size_t num_groups;
+    {
+        SharedLockGuard lock{mutex};
+        num_groups = groups.size();
+    }
+    validateGroups(groups1, num_groups);
+    validateGroups(groups2, num_groups);
+
     size_t num_unique_pairs = 0;
 
     VectorWithMemoryTracking<Group> res;
@@ -1742,7 +1767,8 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags2(c
             if (res[i] == next_pair_index)
             {
                 new_tags_vector.push_back(transform_func(tags_vector1[i], tags_vector2[i]));
-                ++next_pair_index;
+                if (++next_pair_index == num_unique_pairs)
+                    break;
             }
         }
         chassert(new_tags_vector.size() == num_unique_pairs);

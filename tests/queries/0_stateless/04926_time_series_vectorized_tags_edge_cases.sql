@@ -234,3 +234,34 @@ SELECT count() FROM
 -- Invalid IDs must be rejected before indexing the collector or allocating their numeric range.
 SELECT timeSeriesCopyTags(materialize(toUInt64(0)), materialize(toUInt64(18446744073709551615)), ['src']); -- {serverError BAD_ARGUMENTS}
 SELECT timeSeriesCopyTags(materialize(toUInt64(18446744073709551615)), materialize(toUInt64(0)), ['src']); -- {serverError BAD_ARGUMENTS}
+
+-- Exercise repeated, dense, sparse and late-invalid IDs in a full vectorized block.
+-- These queries create no tags, so group 0 is the only valid group.
+SELECT timeSeriesRemoveTag(materialize(toUInt64(1000000)), 'missing')
+FROM numbers(4096) SETTINGS max_threads = 1, max_block_size = 4096 FORMAT Null; -- {serverError BAD_ARGUMENTS}
+SELECT timeSeriesRemoveTag(number + 1000000, 'missing')
+FROM numbers(4096) SETTINGS max_threads = 1, max_block_size = 4096 FORMAT Null; -- {serverError BAD_ARGUMENTS}
+SELECT timeSeriesRemoveTag(if(number % 2 = 0, toUInt64(0), toUInt64(18446744073709551615)), 'missing')
+FROM numbers(4096) SETTINGS max_threads = 1, max_block_size = 4096 FORMAT Null; -- {serverError BAD_ARGUMENTS}
+SELECT timeSeriesRemoveTag(if(number = 4095, toUInt64(1), toUInt64(0)), 'missing')
+FROM numbers(4096) SETTINGS max_threads = 1, max_block_size = 4096 FORMAT Null; -- {serverError BAD_ARGUMENTS}
+
+-- Keep both copy arguments vectorized and validate each side before pair/component indexing.
+SELECT timeSeriesCopyTags(materialize(toUInt64(1000000)), materialize(toUInt64(0)), ['src'])
+FROM numbers(4096) SETTINGS max_threads = 1, max_block_size = 4096 FORMAT Null; -- {serverError BAD_ARGUMENTS}
+SELECT timeSeriesCopyTags(materialize(toUInt64(0)), materialize(toUInt64(1000000)), ['src'])
+FROM numbers(4096) SETTINGS max_threads = 1, max_block_size = 4096 FORMAT Null; -- {serverError BAD_ARGUMENTS}
+SELECT timeSeriesCopyTags(number + 1000000, materialize(toUInt64(0)), ['src'])
+FROM numbers(4096) SETTINGS max_threads = 1, max_block_size = 4096 FORMAT Null; -- {serverError BAD_ARGUMENTS}
+SELECT timeSeriesCopyTags(materialize(toUInt64(0)), number + 1000000, ['src'])
+FROM numbers(4096) SETTINGS max_threads = 1, max_block_size = 4096 FORMAT Null; -- {serverError BAD_ARGUMENTS}
+SELECT timeSeriesCopyTags(if(number % 2 = 0, toUInt64(0), toUInt64(18446744073709551615)), materialize(toUInt64(0)), ['src'])
+FROM numbers(4096) SETTINGS max_threads = 1, max_block_size = 4096 FORMAT Null; -- {serverError BAD_ARGUMENTS}
+SELECT timeSeriesCopyTags(materialize(toUInt64(0)), if(number % 2 = 0, toUInt64(0), toUInt64(18446744073709551615)), ['src'])
+FROM numbers(4096) SETTINGS max_threads = 1, max_block_size = 4096 FORMAT Null; -- {serverError BAD_ARGUMENTS}
+
+-- Even a no-op copy must reject an invalid final row on either side.
+SELECT timeSeriesCopyTag(if(number = 4095, toUInt64(1), toUInt64(0)), materialize(toUInt64(0)), 'missing')
+FROM numbers(4096) SETTINGS max_threads = 1, max_block_size = 4096 FORMAT Null; -- {serverError BAD_ARGUMENTS}
+SELECT timeSeriesCopyTag(materialize(toUInt64(0)), if(number = 4095, toUInt64(1), toUInt64(0)), 'missing')
+FROM numbers(4096) SETTINGS max_threads = 1, max_block_size = 4096 FORMAT Null; -- {serverError BAD_ARGUMENTS}
