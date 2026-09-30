@@ -124,6 +124,7 @@ public:
     {
         WriteBufferFromVector<BLOB> wbuf(blob);
         CompressedWriteBuffer compressed_buffer(wbuf, codec);
+        NativeWriter::setAggregateFunctionStateVersions(wrapped_column.type, client_revision);
         auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(client_revision, wrapped_column);
         NativeWriter::writeData(
             *serialization, column_to_write, compressed_buffer, format_settings, 0, column_to_write->size(), client_revision);
