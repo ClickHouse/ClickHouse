@@ -271,7 +271,9 @@ void ASTSelectWithUnionQuery::writeJSON(WriteBuffer & out) const
     w.writeString("column_match_mode", toString(column_match_mode));
     w.writeBool("is_normalized", is_normalized);
 
-    if (!list_of_modes.empty())
+    /// Normalized nodes use only union_mode and column_match_mode. The positional
+    /// normalizer can retain parser-era lists in memory; do not serialize ignored metadata.
+    if (!is_normalized && !list_of_modes.empty())
     {
         w.writeKey("list_of_modes");
         auto & o = w.getOut();
@@ -284,7 +286,7 @@ void ASTSelectWithUnionQuery::writeJSON(WriteBuffer & out) const
         o << ']';
     }
 
-    if (!list_of_column_match_modes.empty())
+    if (!is_normalized && !list_of_column_match_modes.empty())
     {
         w.writeKey("list_of_column_match_modes");
         auto & o = w.getOut();
@@ -329,6 +331,21 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
     auto column_match_modes_arr = r.readStringArray("list_of_column_match_modes");
     for (const auto & mode_str : column_match_modes_arr)
         list_of_column_match_modes.push_back(parseSetOperationColumnMatchMode(mode_str));
+
+    if (is_normalized)
+    {
+        if (union_mode == SelectUnionMode::UNION_DEFAULT
+            || union_mode == SelectUnionMode::EXCEPT_DEFAULT
+            || union_mode == SelectUnionMode::INTERSECT_DEFAULT)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Normalized `SelectWithUnionQuery` AST requires an explicit ALL or DISTINCT mode "
+                "during AST JSON deserialization");
+
+        if (!list_of_modes.empty() || !list_of_column_match_modes.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Normalized `SelectWithUnionQuery` AST cannot contain parser-era set operation lists "
+                "during AST JSON deserialization");
+    }
 
     /// `list_of_selects` is a required invariant: `clone`, `formatQueryImpl`, and the interpreters
     /// dereference it unconditionally. Reject malformed JSON that omits it instead of producing an

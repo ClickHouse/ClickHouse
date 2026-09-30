@@ -221,6 +221,33 @@ SELECT formatQueryFromJSON(
         '"list_of_column_match_modes":["NAME"]',
         '"list_of_column_match_modes":[]'));
 
+-- Flipping the flag must not silently discard ALL BY NAME.
+SELECT formatQueryFromJSON(
+    replace(
+        parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'),
+        '"is_normalized":false',
+        '"is_normalized":true')); -- { serverError BAD_ARGUMENTS }
+
+-- An explicit normalized mode must not hide parser-era edge metadata either.
+SELECT formatQueryFromJSON(
+    replace(
+        replace(
+            parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'),
+            '"union_mode":"UNION_DEFAULT"',
+            '"union_mode":"UNION_ALL"'),
+        '"is_normalized":false',
+        '"is_normalized":true')); -- { serverError BAD_ARGUMENTS }
+
+-- Empty edge lists alone do not make an unresolved default mode normalized.
+SELECT formatQueryFromJSON(
+    replace(
+        replace(
+            parseQueryToJSON('SELECT 1 AS a UNION ALL SELECT 2 AS a'),
+            '"list_of_modes":["UNION_ALL"]',
+            '"list_of_modes":[]'),
+        '"is_normalized":false',
+        '"is_normalized":true')); -- { serverError BAD_ARGUMENTS }
+
 SELECT formatQueryFromJSON(
     replace(
         parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'),
