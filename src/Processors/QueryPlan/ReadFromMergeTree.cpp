@@ -6481,7 +6481,7 @@ ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_outp
     /// Positions in the row-policy output header, which is the input header for PREWHERE.
     std::vector<size_t> required_row_level_output_positions;
     /// Positions from the old final RFMT output that remain after pruning.
-    std::vector<size_t> kept_output_positions = final_output_positions;
+    const auto & kept_output_positions = final_output_positions;
     bool removed_output_from_prewhere = false;
     if (query_info.prewhere_info)
     {
