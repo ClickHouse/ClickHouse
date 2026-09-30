@@ -14,7 +14,8 @@
           "GET /v1/organizations/{organizationId}/activities/{activityId}",
           "es/products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
           "POST /v1/organizations/{organizationId}/byocInfrastructure",
-          "es/products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-validate",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "es/products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get"
@@ -134,6 +135,16 @@
           "es/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
           "es/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
           "es/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update"
+        ]
+      },
+      {
+        "group": "Saved queries",
+        "pages": [
+          "products/cloud/api-reference/saved-queries/saved-query-create",
+          "products/cloud/api-reference/saved-queries/saved-query-list",
+          "products/cloud/api-reference/saved-queries/saved-query-delete",
+          "products/cloud/api-reference/saved-queries/saved-query-get",
+          "products/cloud/api-reference/saved-queries/saved-query-update"
         ]
       }
     ]
