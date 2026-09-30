@@ -18,14 +18,13 @@ FORMAT TSVRaw;
 -- A wrapped-set atom built through an injective transform of a scalar predicate is exact
 -- (`f(s) IN f(set)` is equivalent to `s IN set`), so negated membership can prune through it.
 -- A transform that is not recognized as injective keeps the atom relaxed, and negation must not
--- prune through it. A relaxed atom would also disable pruning through the exact atoms of its
--- multi-atom group under `NOT`, so such atoms are dropped from the negated groups that have an
--- exact atom, and negation prunes through the exact atom alone. The selected marks do not always
--- tell which atoms a negated group keeps, so the negated checks print the condition.
+-- prune through it. A relaxed atom stays in its multi-atom group under `NOT`: the group can be false
+-- only where its exact atom can be, so negation still prunes through the exact atom. The negated
+-- checks print the condition, which shows the atoms of each negated group.
 
 -- `NOT has(const_array, key)` folds into the `notHas` complement leaf, where additional wrapped
 -- atoms must be exact. `IS NOT DISTINCT FROM` has no complement function, so its negation exercises
--- cleanup of a `NOT` over a multi-atom group below.
+-- a `NOT` over a multi-atom group below.
 
 -- `toString` declares itself injective.
 CREATE TABLE test_injective (x UInt64) ENGINE = MergeTree ORDER BY (toString(x), x)
@@ -40,30 +39,30 @@ INSERT INTO test_injective SELECT intDiv(number, 4) FROM numbers(24);
 {{ check('test_injective', "has([1], x)") }}
 
 -- `concat` with a constant suffix is mathematically injective, but it does not declare itself
--- injective, so its atom conservatively stays relaxed: it is dropped from the negated group,
--- and the negation prunes through the exact direct atom on `s` alone.
+-- injective, so its atom conservatively stays relaxed. The `notHas` complement leaf does not build
+-- it, and the negation prunes through the exact direct atom on `s`.
 CREATE TABLE test_concat (s String) ENGINE = MergeTree ORDER BY (concat(s, '_x'), s)
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_concat SELECT char(97 + intDiv(number, 4)) FROM numbers(24);
 
 {{ check('test_concat', "NOT has(['b'], s)", condition = true) }}
--- The same leaf under a real `NOT`: the relaxed `concat` atom is dropped and the exact atom on
--- `s` prunes.
+-- The same leaf under a real `NOT`: the relaxed `concat` atom stays in the group, and the exact
+-- atom on `s` prunes.
 {{ check('test_concat', "NOT (s IS NOT DISTINCT FROM 'b')", condition = true) }}
 
--- A genuinely non-injective transform: the wrapped atom stays relaxed, so it is dropped from
--- the negated group and the negation prunes through the exact direct atom on `s` alone.
+-- A genuinely non-injective transform: the wrapped atom stays relaxed. The `notHas` complement
+-- leaf does not build it, and the negation prunes through the exact direct atom on `s`.
 CREATE TABLE test_noninjective (s String) ENGINE = MergeTree ORDER BY (cityHash64(s) % 8, s)
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_noninjective SELECT char(97 + intDiv(number, 4)) FROM numbers(24);
 
 {{ check('test_noninjective', "NOT has(['b'], s)", condition = true) }}
--- The same leaf under a real `NOT`.
+-- The same leaf under a real `NOT`, where the relaxed atom stays in the group.
 {{ check('test_noninjective', "NOT (s IS NOT DISTINCT FROM 'b')", condition = true) }}
 
 -- An injective transform of one tuple component is still only a necessary condition of the
--- tuple membership: the component atom stays relaxed, so it is dropped from the negated group
--- and the negation prunes through the exact direct tuple atom alone, same as `NOT IN`.
+-- tuple membership: the component atom would be relaxed, so the complement leaves do not build it,
+-- and both negations prune through the exact direct tuple atom.
 CREATE TABLE test_tuple_negation (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY (toString(x), x, y)
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_tuple_negation SELECT intDiv(number, 4), intDiv(number, 4) FROM numbers(24);
@@ -71,13 +70,12 @@ INSERT INTO test_tuple_negation SELECT intDiv(number, 4), intDiv(number, 4) FROM
 {{ check('test_tuple_negation', "NOT has([(1, 1)], (x, y))", condition = true) }}
 {{ check('test_tuple_negation', "(x, y) NOT IN ((1, 1))", condition = true) }}
 
--- When the group has no exact atom, the relaxed atom is kept: it cannot prune under the
--- negation, and the query must still read everything and not lose rows.
+-- When the leaf has no exact atom, its relaxed atom cannot prune under the negation, and the
+-- query must still read everything and not lose rows.
 CREATE TABLE test_only_relaxed (s String) ENGINE = MergeTree ORDER BY concat(s, '_x')
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_only_relaxed SELECT char(97 + intDiv(number, 4)) FROM numbers(24);
 
 {{ check('test_only_relaxed', "NOT has(['b'], s)", condition = true) }}
--- The same leaf under a real `NOT`: with no exact atom in the group, the relaxed atom is kept
--- and cannot prune.
+-- The same leaf under a real `NOT`.
 {{ check('test_only_relaxed', "NOT (s IS NOT DISTINCT FROM 'b')", condition = true) }}

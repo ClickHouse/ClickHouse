@@ -2,10 +2,11 @@
 -- no-random-settings, no-random-merge-tree-settings: the selected marks and EXPLAIN output may differ with
 -- random settings.
 
--- A negated predicate leaf over a key that has both a space-filling curve and another key
--- expression over the same column. The leaf emits one atom per key expression, and the
--- space-filling-curve collapse rewrites a curve-argument range into a relaxed atom, so the
--- cleanup of relaxed atoms in negated multi-atom groups has to hold after that collapse too.
+-- A predicate leaf over a key that has both a space-filling curve and another key expression over
+-- the same column. The leaf becomes a group with one atom per key expression, and the
+-- space-filling-curve collapse turns the curve-argument range of the group into a relaxed atom. The
+-- group must keep pruning through its other atom, also under negation, and the counts must match a
+-- full scan.
 
 SET explain_query_plan_default = 'legacy';
 SET optimize_trivial_count_with_sparsity_filter = 0;
