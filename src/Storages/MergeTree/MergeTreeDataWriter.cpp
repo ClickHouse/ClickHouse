@@ -267,7 +267,8 @@ void updateTTLInfo(
     }
 }
 
-void updateTTLInfo(MergeTreeDataPartTTLInfo & ttl_info, const IColumn & ttl_column, const IColumn * where_column, bool zero_ttl_never_expires)
+void updateTTLInfo(
+    MergeTreeDataPartTTLInfo & ttl_info, const IColumn & ttl_column, const IColumn * where_column, bool zero_ttl_never_expires)
 {
     if (where_column)
     {
