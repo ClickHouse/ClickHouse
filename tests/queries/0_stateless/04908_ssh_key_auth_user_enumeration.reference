@@ -1,3 +1,2 @@
-every user state was challenged
-every failure is the generic authentication error
-the failures are indistinguishable
+every user was challenged and then got the generic authentication error
+the errors are identical apart from the user name
