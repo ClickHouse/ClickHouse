@@ -6,46 +6,67 @@ Two backends are supported, selected by flag:
   --codex    OpenAI Codex CLI       (auth: OPENAI_API_KEY from `/ci/llm/openai_api_key`)
   --copilot  GitHub Copilot CLI     (auth: gh robot token from `/ci/robot-ch-test-poll-copilot`)
 
-The backends reach GitHub as different identities. Copilot authenticates with a
-robot token, in a temporary `GH_CONFIG_DIR`. Codex shells out to `gh` with
-`GH_CONFIG_DIR` unset (`GH_PREFIX`), so it runs as the app the job requires to be
-authenticated up front (`enable_gh_auth=True`).
+A run has three stages, and only the middle one involves the agent:
 
-The agent writes a free-form Markdown summary to `REVIEW_FILE`. The job script
-then posts that summary via `python3 -m ci.praktika.gh post-or-update --tag review`
-so the top-level comment is always authored by the pre-authenticated app, not
-the agent's robot account.
-
-Each agent occasionally hits transient GitHub authorization errors mid-run
-("Authorization error, you may need to run /login"). The whole attempt is
-wrapped in a retry loop with exponential backoff so a single transient API
-failure does not fail the Code Review job. Authorization-style
-failures do not always surface as a Python exception — they show up as a
-non-zero exit code and a missing/empty review file — so both are checked here.
+1. Context. The job fetches the PR, its diff, review threads, conversation,
+   linked issues, CI status and the previous AI review into `CONTEXT_DIR`
+   (`ai_review/context.py`), and a Loom code-index brief for the diff
+   (`ai_review/loom.py`) when Loom is configured for the repository.
+2. Review. The agent reads the context and the checkout, may query Loom through
+   `python3 -m ci.jobs.scripts.ai_review.loom`, and writes its summary, inline
+   comments and thread actions as files into `OUTPUT_DIR`. The Codex agent runs
+   with no GitHub credentials. An attempt is retried when the agent fails or
+   writes no summary; nothing has been posted at that point, so a retry cannot
+   duplicate comments.
+3. Publish. The job validates the inline comments against the diff and the
+   thread actions against the thread ownership rules (`ai_review/publish.py`),
+   posts the inline comments as one review, applies the thread actions, and
+   posts the summary via `post-or-update --tag review` as the pre-authenticated
+   app, with a hidden marker of the reviewed commit for the next run.
 """
 
+import json
 import os
 import random
 import shlex
-import subprocess
 import sys
 import tempfile
 import time
 import traceback
 import urllib.parse
 
+from ci.jobs.scripts.ai_review import context as review_context
+from ci.jobs.scripts.ai_review import loom, prompt, publish
 from ci.praktika import Secret
+from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
+from ci.praktika.utils import Shell
 
-REVIEW_FILE = "./ci/tmp/copilot_review.md"
-GH_PREFIX = "env -u GH_CONFIG_DIR"
+WORK_DIR = "./ci/tmp/ai_review"
+CONTEXT_DIR = f"{WORK_DIR}/context"
+LOOM_DIR = f"{CONTEXT_DIR}/loom"
+OUTPUT_DIR = f"{WORK_DIR}/out"
+SUMMARY_FILE = f"{OUTPUT_DIR}/summary.md"
+PROMPT_FILE = f"{WORK_DIR}/prompt.md"
+LOOM_CALL_LOG = f"{WORK_DIR}/loom_calls.jsonl"
 
-# Number of attempts at a full agent run. The agents fetch auth state and make
-# GitHub / model-provider API calls during execution; either layer can hit a
-# transient 5xx / authorization error that no single inner subprocess controls.
-# Retrying the whole sequence is the only reliable way to recover.
+MODEL = "gpt-5.4"
+REASONING_EFFORT = "xhigh"
+
+# Number of attempts at a full agent run. The agents make model-provider API
+# calls during execution, which can hit transient 5xx errors that no single
+# inner subprocess controls. Retrying the whole run is the only reliable way
+# to recover.
 MAX_ATTEMPTS = 3
+# Wall-clock limit of one attempt, and the point after which no new attempt is
+# started. A hung agent otherwise holds the runner until the job timeout.
+ATTEMPT_TIMEOUT_SECONDS = 50 * 60
+NO_NEW_ATTEMPT_AFTER_SECONDS = 100 * 60
+
+# Linux limits a single command-line argument to 128 KiB. The Copilot CLI takes
+# the prompt as an argument; above this size it is pointed at the prompt file.
+_MAX_PROMPT_ARGUMENT = 120_000
 
 # Robot gh tokens the Copilot CLI authenticates against GitHub with. Each
 # attempt picks one in a randomised rotation so a single robot's rate limit
@@ -60,10 +81,6 @@ ROBOT_NAMES = [
 OPENAI_KEY_SECRET = "/ci/llm/openai_api_key"
 
 
-def _join_prompt(*sections):
-    return "\n\n".join(section.rstrip() for section in sections if section).rstrip() + "\n"
-
-
 def _repo_from_pr_url(pr_url):
     path_parts = urllib.parse.urlparse(pr_url).path.strip("/").split("/")
     if len(path_parts) >= 4 and path_parts[2] == "pull":
@@ -72,197 +89,66 @@ def _repo_from_pr_url(pr_url):
 
 
 def _pr_repository(info):
+    # Always derive the PR repository from the PR URL or the CI event, never
+    # from the local checkout remote, which may point to a fork.
     return _repo_from_pr_url(info.pr_url) or info.repo_name
 
 
-def _pre_review_instructions():
-    return """\
-Review instructions:
-- Follow the Review Instructions in .claude/skills/review/SKILL.md.
-- Repo is checked out at PR head.
-- Post findings as individual inline review comments on specific lines.
-"""
+def _ssm(name):
+    return Secret.Config(name=name, type=Secret.Type.AWS_SSM_PARAMETER, region="us-east-1").get_value()
 
 
-def _review_target(info):
-    repo_name = _pr_repository(info)
-    return f"""\
-Review target:
-- PR URL: {info.pr_url}
-- PR repository: `{repo_name}`
-- Always derive the PR repository from the PR URL or the CI event. For ClickHouse reviews this will be either
-  `ClickHouse/ClickHouse` or `ClickHouse/ClickHouse-private`. Do not infer the review repository from
-  the local checkout remote, because local checkouts may point to a fork.
-"""
+def _reset_output_dir():
+    """Remove the previous attempt's outputs so they cannot be mistaken for the
+    result of a later failed attempt."""
+    Shell.check(f"rm -rf {shlex.quote(OUTPUT_DIR)}", verbose=False)
+    os.makedirs(f"{OUTPUT_DIR}/comments", exist_ok=True)
+    os.makedirs(f"{OUTPUT_DIR}/replies", exist_ok=True)
 
 
-def _pre_review_tools(pr_number, repo_name):
-    return f"""\
-Tools:
-- Prefix every `gh` call with `{GH_PREFIX}`.
-- Pass `--repo {repo_name}` exactly as shown in each command below. For `gh` subcommands not shown
-  here, only add `--repo` if the command documents it. Do NOT add `--repo` to
-  `resolve-pr-review-thread` / `unresolve-pr-review-thread`: they take only `--thread-id` (a globally
-  unique GraphQL node id that already identifies the repo) and reject `--repo` with
-  `error: unrecognized arguments`.
-- Post ALL new inline findings as ONE batched review, not as separate comments. Write each finding's
-  body to its own Markdown file, then list the findings in a single JSON file: an array of objects
-  `{{"path": "<file>", "line": <N>, "side": "RIGHT", "body_file": "<body.md>"}}` (for a multi-line
-  range add `"start_line": <N>` and `"start_side": "RIGHT"`; use `"side": "LEFT"` for a deleted line).
-  Submit the whole batch with a single call:
-  `{GH_PREFIX} python3 -m ci.praktika.gh post-pr-review --comments-file <comments.json> --commit <sha> --repo {repo_name}`.
-  The wrapper reads each `body_file` and assembles the review payload, so multi-line Markdown is
-  uploaded correctly. Call it exactly once per run, and only if there is at least one new inline finding.
-- Do NOT post new findings as individual comments (`post-pr-line-comment` without `--reply-to`); that
-  is reserved for thread replies (see below). Do NOT call `gh api .../pulls/.../comments`,
-  `gh api .../pulls/.../reviews`, or `gh pr review` directly: the wrappers exist to avoid the
-  `-f`/`-F` and JSON-escaping footguns that have posted literal `@<file>` / `\\n` bodies before.
-- Fetch inline review threads with:
-  `{GH_PREFIX} python3 -m ci.praktika.gh list-pr-review-threads --pr {pr_number} --repo {repo_name}`.
-  The command returns JSON; each thread carries its node `id`, `isResolved`, `resolvedBy.login`
-  (the user who most recently resolved it, or `null`), `path`, `line`, and `comments.nodes` with
-  author, body, `databaseId`, and `createdAt`.
-- Fetch top-level conversation with:
-  `{GH_PREFIX} gh api '/repos/{repo_name}/issues/{pr_number}/comments' --paginate`.
-- Reply on an existing thread with:
-  `{GH_PREFIX} python3 -m ci.praktika.gh post-pr-line-comment --file <body.md> --reply-to <parent_databaseId> --repo {repo_name}`.
-  Use the `databaseId` of the first comment on the thread as `<parent_databaseId>`, and omit
-  `--commit`, `--path`, and `--line`.
-- Resolve or unresolve bot-authored review threads with:
-  `{GH_PREFIX} python3 -m ci.praktika.gh resolve-pr-review-thread --thread-id <thread_node_id>`
-  `{GH_PREFIX} python3 -m ci.praktika.gh unresolve-pr-review-thread --thread-id <thread_node_id>`.
-"""
+def _agent_env(loom_config, extra=None):
+    """Environment of the agent process: the job's environment without GitHub
+    credentials, plus the Loom configuration for the Loom CLI."""
+    env = {k: v for k, v in os.environ.items() if k not in ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN")}
+    env.update(loom_config.env())
+    env["LOOM_CALL_LOG"] = os.path.abspath(LOOM_CALL_LOG)
+    env["PYTHONPATH"] = os.pathsep.join(p for p in (os.getcwd(), env.get("PYTHONPATH", "")) if p)
+    env.update(extra or {})
+    return env
 
 
-def _pre_review_procedure(pr_url):
-    return f"""\
-Procedure:
-1. In GitHub discussions, "you" are the `clickhouse-gh` GitHub App. Its identity appears in two
-   forms depending on which GraphQL field returns it: `clickhouse-gh` in `author.login` (comments,
-   reviews) and `clickhouse-gh[bot]` in `resolvedBy.login` (review threads). Treat both as you.
-2. Fetch all prior discussion on this PR before reviewing.
-3. Provide a thorough review of {pr_url}. Read the current code and PR diff, not only the discussion.
-4. Read every reply on every thread. Treat each reply as a deliberate engineering decision by the
-   author. An explanation that holds up, a pointer to a fixing commit, or a tradeoff you agree with
-   means drop the point. A dismissal ("no", "won't fix", "by design", "pathological", "wontfix",
-   "agree to disagree", a silent thread resolution) is also a deliberate decision -- accept it. If
-   you still believe the issue is real after the author's reply, see step 5 for what to do with it.
-5. Apply the same judgment to your own prior summary: drop findings that have been addressed, keep
-   or sharpen the rest. Verify by reading the current code, not by trusting the author's reply.
-   Findings the author dismissed but you still consider real STAY in the summary's `Findings`
-   section, marked `[dismissed by author -- <thread URL>]` with a one-line note on why you still
-   consider it real. Do NOT migrate them back to the inline thread.
-6. On existing threads, post a new comment only in these two cases:
-   (a) The author asked you a direct, answerable question (e.g. "what would the fix look like?",
-       "do you have a repro?"). Answer it once and stop -- do not restate the original finding.
-   (b) The author explicitly claimed the issue is fixed ("fixed in <commit>", "this is fixed now")
-       but the current code shows the original issue is still present. Reply once pointing to the
-       `file:line` that disproves the claim. Distinguish this from a dismissal: "won't fix",
-       "by design", "pathological", "no", a silent thread resolution are NOT fixed claims.
-   In every other case, do not reply on the thread.
-7. Resolve and re-open only threads you created yourself: that means threads whose first entry in
-   `comments.nodes` has `author.login == "clickhouse-gh"`. Resolve such a thread when the issue no
-   longer holds in the current code. Re-open such a thread only when it is resolved AND the issue
-   is still present AND either:
-   (a) the thread's `resolvedBy.login` is `"clickhouse-gh[bot]"` (whether you resolved it
-       prematurely or a later commit reintroduced the issue). Re-open silently, no reply needed.
-   (b) case 6(b) fires -- re-open AND post the 6(b) reply in the same run.
-   Never resolve or unresolve threads whose first comment was authored by anyone else.
-8. For genuinely new issues that do not already have a thread, collect them all into the single
-   batched review described under Tools (one inline comment per issue, on the relevant changed line).
-   For architectural issues that do not map cleanly to one line, attach the comment to the most
-   relevant change in the diff. Submit the whole batch with one `post-pr-review` call; never post new
-   findings one at a time.
-9. Do NOT post inline comments for issues that dedicated CI jobs already catch and report: build /
-   compilation failures (missing headers, undeclared symbols, type errors, link errors) and style
-   check failures (formatting, linters, `check_cpp.sh` / `check_style.sh` output). These are not
-   blockers in this review context: the build and Style Check jobs surface them with full toolchain
-   output, so a review comment is pure noise. If you want to mention them, include them only as
-   `💡 Nits` in the summary file, never as inline comments or as `❌ Blockers` / `⚠️ Majors`.
-"""
-
-
-def _pre_review_output():
-    return f"""\
-Output:
-Write a self-contained summary of ALL findings, regardless of previous summaries, as plain Markdown
-to {REVIEW_FILE} using the REQUESTED OUTPUT FORMAT from .claude/skills/review/SKILL.md:
-start with `---
-#### AI Review`, then use ##### for section headers.
-Do NOT post the summary yourself: the job script will post it after you finish.
-"""
-
-
-def _pre_review_prompt(info):
-    repo_name = _pr_repository(info)
-    return _join_prompt(
-        _pre_review_instructions(),
-        _review_target(info),
-        _pre_review_tools(info.pr_number, repo_name),
-        _pre_review_procedure(info.pr_url),
-        _pre_review_output(),
-    )
-
-
-def _post_review():
-    """Post REVIEW_FILE as a PR comment. Raises on failure, failing the job."""
-    subprocess.run(
-        [
-            sys.executable, "-m", "ci.praktika.gh",
-            "post-or-update", "--tag", "review", "--file", REVIEW_FILE,
-        ],
-        check=True,
-    )
-
-
-def _drop_stale_review_file():
-    """Remove any leftover REVIEW_FILE so a prior attempt's artifact cannot
-    be mistaken for the result of a later failed attempt."""
-    if os.path.exists(REVIEW_FILE):
-        try:
-            os.unlink(REVIEW_FILE)
-        except OSError as e:
-            print(f"WARNING: Failed to remove stale {REVIEW_FILE}: {e}")
-
-
-def _gh_auth_with_robot_token(gh_config_dir, robot_name):
-    """Authenticate gh CLI in a scoped GH_CONFIG_DIR using the given robot token."""
-    print(f"Using robot: {robot_name}")
-    token = Secret.Config(
-        name=robot_name,
-        type=Secret.Type.AWS_SSM_PARAMETER,
-        region="us-east-1",
-    ).get_value()
-    subprocess.run(
-        ["gh", "auth", "login", "--with-token"],
-        input=token, text=True, check=True,
-        env={**os.environ, "GH_CONFIG_DIR": gh_config_dir},
-    )
-
-
-def _run_copilot_once(prompt, robot_name):
-    """Run a single attempt of `gh auth login` + `copilot` for one robot."""
-    _drop_stale_review_file()
+def _run_copilot_once(loom_config, robot_name):
+    """One attempt: `gh auth login` with a robot token (the Copilot CLI's own
+    authentication) + `copilot`."""
     with tempfile.TemporaryDirectory() as gh_config_dir:
-        _gh_auth_with_robot_token(gh_config_dir, robot_name)
-        return Result.from_commands_run(
-            name="copilot review",
-            # --allow-all: enable all permissions; --allow-all-tools alone hits
-            #   a CLI bug where compound shell commands are denied and the gate
-            #   then tries to escalate to a human (github/copilot-cli#176, #2971)
-            # --no-ask-user: disable ask_user so the agent cannot try to prompt
-            #   for permission in a non-interactive session
-            # --add-dir .: restrict file access to repo root (default, but explicit)
-            # </dev/null: ensure stdin is definitively non-interactive
-            command=f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
-                    f"copilot -p {shlex.quote(prompt)} --allow-all --no-ask-user "
-                    f"--add-dir . --model gpt-5.4 --effort xhigh < /dev/null",
-            with_info=True,
+        print(f"Using robot: {robot_name}")
+        Shell.check(
+            "gh auth login --with-token", stdin_str=_ssm(robot_name), strict=True, verbose=False,
+            env={**os.environ, "GH_CONFIG_DIR": gh_config_dir},
+        )
+        with open(PROMPT_FILE, "r", encoding="utf-8") as f:
+            size = len(f.read().encode())
+        prompt_arg = (
+            f'"$(cat {shlex.quote(PROMPT_FILE)})"' if size <= _MAX_PROMPT_ARGUMENT
+            else shlex.quote(f"Read {PROMPT_FILE} and follow the instructions in it exactly.")
+        )
+        # --allow-all: enable all permissions; --allow-all-tools alone hits
+        #   a CLI bug where compound shell commands are denied and the gate
+        #   then tries to escalate to a human (github/copilot-cli#176, #2971)
+        # --no-ask-user: disable ask_user so the agent cannot try to prompt
+        #   for permission in a non-interactive session
+        # --add-dir .: restrict file access to repo root (default, but explicit)
+        # </dev/null: ensure stdin is definitively non-interactive
+        return Shell.run(
+            f"copilot -p {prompt_arg} --allow-all --no-ask-user --add-dir . "
+            f"--model {MODEL} --effort {REASONING_EFFORT} < /dev/null",
+            timeout=ATTEMPT_TIMEOUT_SECONDS,
+            env=_agent_env(loom_config, {"GH_CONFIG_DIR": gh_config_dir}),
         )
 
 
-def _run_codex_once(prompt, _robot_name):
-    """Run a single attempt of `codex login` + `codex exec`.
+def _run_codex_once(loom_config, _robot_name):
+    """One attempt: `codex login` + `codex exec`.
 
     Codex stores credentials in `$CODEX_HOME/auth.json` and does NOT consult
     `OPENAI_API_KEY` directly when invoked — you have to run
@@ -272,103 +158,148 @@ def _run_codex_once(prompt, _robot_name):
     to use for helper binaries) so the API key never lands on global runner
     state.
 
-    The agent's own `gh` calls run as the app authenticated before the job, so
-    no robot token takes part in this attempt.
+    The agent gets no GitHub credentials: `GH_CONFIG_DIR` points at an empty
+    directory and `GH_TOKEN` is not passed. Everything it needs from GitHub is
+    in the prefetched context, and the job posts its output.
     """
-    _drop_stale_review_file()
-    with tempfile.TemporaryDirectory(dir="./ci/tmp") as codex_home:
-        openai_key = Secret.Config(
-            name=OPENAI_KEY_SECRET,
-            type=Secret.Type.AWS_SSM_PARAMETER,
-            region="us-east-1",
-        ).get_value()
-        subprocess.run(
-            ["codex", "login", "--with-api-key"],
-            input=openai_key, text=True, check=True,
+    with tempfile.TemporaryDirectory(dir="./ci/tmp") as codex_home, \
+            tempfile.TemporaryDirectory(dir="./ci/tmp") as empty_gh_config:
+        Shell.check(
+            "codex login --with-api-key", stdin_str=_ssm(OPENAI_KEY_SECRET), strict=True, verbose=False,
             env={**os.environ, "CODEX_HOME": codex_home},
         )
-
-        return Result.from_commands_run(
-            name="codex review",
-            # -m gpt-5.4: same model the Copilot CLI uses, so
-            #   review quality stays comparable across backends.
-            # -s workspace-write: writable workspace + /tmp + CODEX_HOME,
-            #   read-only elsewhere; sufficient for the review output.
-            # sandbox_workspace_write.network_access=true: the agent
-            #   shells out to `gh` to post inline comments, which needs
-            #   network.
-            # approval_policy=never: codex `exec` is non-interactive,
-            #   but the approval policy still applies; "never" lets the
-            #   agent execute without blocking on an approval request.
-            # --color never: no ANSI codes in the job log.
-            command=f"CODEX_HOME={shlex.quote(codex_home)} "
-                    f"codex exec "
-                    f"-m gpt-5.4 -c 'model_reasoning_effort=xhigh' "
-                    f"-s workspace-write "
-                    f"-c sandbox_workspace_write.network_access=true "
-                    f"-c approval_policy=never "
-                    f"--color never "
-                    f"{shlex.quote(prompt)}",
-            with_info=True,
+        # -m: same model the Copilot CLI uses, so review quality stays
+        #   comparable across backends.
+        # -s workspace-write: writable workspace + /tmp + CODEX_HOME,
+        #   read-only elsewhere; sufficient for the review output.
+        # sandbox_workspace_write.network_access=true: the Loom CLI needs
+        #   network.
+        # approval_policy=never: codex `exec` is non-interactive,
+        #   but the approval policy still applies; "never" lets the
+        #   agent execute without blocking on an approval request.
+        # --color never: no ANSI codes in the job log.
+        # `-` reads the prompt from stdin, which has no argument size limit.
+        return Shell.run(
+            f"codex exec -m {MODEL} -c 'model_reasoning_effort={REASONING_EFFORT}' "
+            f"-s workspace-write -c sandbox_workspace_write.network_access=true "
+            f"-c approval_policy=never --color never - < {shlex.quote(PROMPT_FILE)}",
+            timeout=ATTEMPT_TIMEOUT_SECONDS,
+            env=_agent_env(loom_config, {"CODEX_HOME": codex_home, "GH_CONFIG_DIR": empty_gh_config}),
         )
 
 
-def _run(prompt, run_once, agent_name):
-    """Run the chosen agent with retries, then post the review comment.
+def _outputs_problem():
+    """Why the agent's output cannot be published, or "" when it can."""
+    if not os.path.exists(SUMMARY_FILE):
+        return f"agent did not write {SUMMARY_FILE}"
+    if os.path.getsize(SUMMARY_FILE) == 0:
+        return f"{SUMMARY_FILE} is empty"
+    for name in ("comments.json", "thread_actions.json"):
+        path = f"{OUTPUT_DIR}/{name}"
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    if not isinstance(json.load(f), list):
+                        return f"{path} is not a JSON array"
+            except ValueError as e:
+                return f"{path} is not valid JSON: {e}"
+    return ""
 
-    Each attempt re-fetches secrets and re-runs the agent. The attempt counts
-    as success only if the subprocess exits 0 AND `REVIEW_FILE` was written
-    with non-empty content.
-    """
+
+def _run_agent(run_once, agent_name, loom_config):
+    """Run the agent until it produces publishable output. Raises otherwise."""
+    started = time.time()
     last_error = None
     robots = ROBOT_NAMES.copy()
     random.shuffle(robots)
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        robot_name = robots[(attempt - 1) % len(robots)]
+        if attempt > 1 and time.time() - started > NO_NEW_ATTEMPT_AFTER_SECONDS:
+            print(f"Not starting attempt {attempt}: {int(time.time() - started)}s already spent")
+            break
+        _reset_output_dir()
         try:
-            result = run_once(prompt, robot_name)
-            if not result.is_ok():
-                last_error = (
-                    f"{agent_name} subprocess exited with non-OK status [{result.status}]"
-                )
-                print(f"WARNING: {agent_name} attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
-            elif not os.path.exists(REVIEW_FILE):
-                last_error = f"{agent_name} did not write {REVIEW_FILE}"
-                print(f"WARNING: {agent_name} attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
-            elif os.path.getsize(REVIEW_FILE) == 0:
-                last_error = f"{REVIEW_FILE} is empty"
-                print(f"WARNING: {agent_name} attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
+            exit_code = run_once(loom_config, robots[(attempt - 1) % len(robots)])
+            problem = _outputs_problem()
+            if exit_code != 0 and problem:
+                last_error = f"{agent_name} exited with code {exit_code}: {problem}"
+            elif problem:
+                last_error = problem
             else:
-                last_error = None
-                break
+                if exit_code != 0:
+                    # The outputs are complete (they are written last); a
+                    # non-zero exit after that is a CLI shutdown issue.
+                    print(f"WARNING: {agent_name} exited with code {exit_code} after writing complete output")
+                return
         except Exception as e:  # noqa: BLE001 — broad catch: any exception is retryable here
             last_error = f"{type(e).__name__}: {e}"
-            print(f"WARNING: {agent_name} attempt {attempt}/{MAX_ATTEMPTS} raised: {last_error}")
             traceback.print_exc()
-
+        print(f"WARNING: {agent_name} attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
         if attempt < MAX_ATTEMPTS:
             delay = min(2 ** attempt, 60)
             print(f"Retrying {agent_name} in {delay}s ...")
             time.sleep(delay)
+    raise RuntimeError(f"{agent_name} review failed: {last_error}")
 
-    if last_error is not None:
-        raise RuntimeError(
-            f"{agent_name} review failed after {MAX_ATTEMPTS} attempts: {last_error}"
-        )
 
-    # Post the summary from the job script so the job fails loudly if anything is broken.
-    _post_review()
+def _post_summary(summary, head_sha):
+    """Post the summary as the updateable `review` comment. Raises on failure,
+    failing the job."""
+    body = summary.rstrip() + "\n\n" + review_context.REVIEWED_SHA_MARKER.format(sha=head_sha) + "\n"
+    path = f"{WORK_DIR}/summary_to_post.md"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(body)
+    Shell.check(
+        f"{shlex.quote(sys.executable)} -m ci.praktika.gh post-or-update --tag {review_context.REVIEW_COMMENT_TAG} "
+        f"--file {shlex.quote(path)}",
+        strict=True,
+    )
 
 
 def review(run_once, agent_name):
     info = Info()
     if not info.pr_number:
         print("Not a PR, skipping")
-        return
+        return []
 
-    os.makedirs("./ci/tmp", exist_ok=True)
-    prompt = _pre_review_prompt(info)
-    _run(prompt, run_once, agent_name)
+    repo = _pr_repository(info)
+    Shell.check(f"rm -rf {shlex.quote(WORK_DIR)}", verbose=False)
+    os.makedirs(WORK_DIR, exist_ok=True)
+
+    ctx = review_context.fetch(CONTEXT_DIR, repo, info.pr_number)
+
+    loom_config = loom.Config.for_repo(repo, info.pr_number, _ssm)
+    os.environ["LOOM_CALL_LOG"] = os.path.abspath(LOOM_CALL_LOG)
+    brief = loom.write_brief(loom_config, ctx.pr, ctx.files, LOOM_DIR)
+    print(f"Loom brief: {'written' if brief else 'not available'}")
+
+    text = prompt.build(
+        pr_url=info.pr_url,
+        repo=repo,
+        context_index=review_context.index_markdown(CONTEXT_DIR),
+        incremental=os.path.exists(f"{CONTEXT_DIR}/since_last_review.md"),
+        brief=brief,
+        overlay=loom_config.pr_overlay,
+        output_dir=OUTPUT_DIR,
+    )
+    with open(PROMPT_FILE, "w", encoding="utf-8") as f:
+        f.write(text)
+
+    _run_agent(run_once, agent_name, loom_config)
+
+    # Re-read the threads: the author may have replied or resolved while the
+    # agent ran, and thread actions are checked against the current state.
+    try:
+        threads = GH.list_pr_review_threads(pr=info.pr_number, repo=repo)
+    except Exception as e:  # noqa: BLE001
+        print(f"WARNING: failed to re-read review threads, using the snapshot: {e}")
+        threads = ctx.threads
+
+    with open(SUMMARY_FILE, "r", encoding="utf-8") as f:
+        summary = f.read()
+    summary = publish.publish(GH, repo, info.pr_number, ctx.head_sha, ctx.files, threads, OUTPUT_DIR, summary)
+    _post_summary(summary, ctx.head_sha)
+
+    return [p for p in (PROMPT_FILE, SUMMARY_FILE, LOOM_CALL_LOG) if os.path.exists(p)]
 
 
 if __name__ == "__main__":
@@ -382,12 +313,13 @@ if __name__ == "__main__":
 
     status = Result.Status.OK
     info = ""
+    files = []
     try:
-        review(run_once, agent_name)
+        files = review(run_once, agent_name)
     except Exception as e:
         info = f"ERROR: {e}"
         print(info)
         traceback.print_exc()
         status = Result.Status.FAIL
 
-    Result.create_from(status=status, info=info).complete_job()
+    Result.create_from(status=status, info=info, files=files).complete_job()
