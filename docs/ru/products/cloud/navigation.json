@@ -252,21 +252,17 @@
       "group": "AI tools and agents",
       "pages": [
         "ru/products/cloud/features/ai-ml/index",
-        "ru/products/cloud/features/ai-ml/aichat/using-ai-chat",
-        "ru/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
-        "ru/products/cloud/features/ai-ml/langfuse",
         {
-          "expanded": false,
-          "group": "Remote MCP",
-          "pages": [
-            "ru/products/cloud/features/ai-ml/remote-mcp",
-            "ru/products/cloud/features/ai-ml/mcp/remote-mcp"
-          ]
-        },
-        {
-          "group": "ClickHouse Agents",
+          "group": "Agents",
           "pages": [
             "ru/products/cloud/features/ai-ml/agents/index",
+            {
+              "group": "ClickHouse Assistant",
+              "pages": [
+                "ru/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+                "ru/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer"
+              ]
+            },
             "ru/products/cloud/features/ai-ml/agents/quickstart",
             "ru/products/cloud/features/ai-ml/agents/chat",
             {
@@ -287,6 +283,15 @@
             "ru/products/cloud/features/ai-ml/agents/memory",
             "ru/products/cloud/features/ai-ml/agents/marketplace",
             "ru/products/cloud/features/ai-ml/agents/sharing-and-access"
+          ]
+        },
+        "ru/products/cloud/features/ai-ml/langfuse",
+        {
+          "expanded": false,
+          "group": "Remote MCP",
+          "pages": [
+            "ru/products/cloud/features/ai-ml/remote-mcp",
+            "ru/products/cloud/features/ai-ml/mcp/remote-mcp"
           ]
         },
         "ru/products/cloud/features/ai-ml/model-developer-terms"
