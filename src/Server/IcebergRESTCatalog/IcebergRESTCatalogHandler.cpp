@@ -40,6 +40,7 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int AUTHENTICATION_FAILED;
+    extern const int BAD_ARGUMENTS;
     extern const int QUERY_IS_PROHIBITED;
     extern const int READONLY;
     extern const int KEEPER_EXCEPTION;
@@ -57,10 +58,27 @@ constexpr size_t MAX_NAMESPACE_LEVEL_LENGTH = 256;
 constexpr size_t MAX_NAMESPACE_PROPERTIES_SIZE = 64_KiB;
 constexpr char NAMESPACE_LEVEL_SEPARATOR = '\x1F';
 
+/// The handler maps `BAD_ARGUMENTS` to a 400 response.
+void validateNamespace(const IcebergNamespaceName & name)
+{
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Namespace must have at least one level");
+    if (name.size() > MAX_NAMESPACE_LEVELS)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Namespace must have at most {} levels", MAX_NAMESPACE_LEVELS);
+    for (const auto & level : name)
+    {
+        if (level.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Namespace levels must be non-empty");
+        if (level.size() > MAX_NAMESPACE_LEVEL_LENGTH)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Namespace levels must be at most {} bytes", MAX_NAMESPACE_LEVEL_LENGTH);
+    }
+}
+
 IcebergNamespaceName splitNamespace(const String & value)
 {
     IcebergNamespaceName result;
     boost::split(result, value, [](char c) { return c == NAMESPACE_LEVEL_SEPARATOR; });
+    validateNamespace(result);
     return result;
 }
 
@@ -251,8 +269,14 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
         String message = "Internal server error";
 
         const int code = getCurrentExceptionCode();
+        if (code == ErrorCodes::BAD_ARGUMENTS)
+        {
+            status = Poco::Net::HTTPResponse::HTTP_BAD_REQUEST;
+            type = "BadRequestException";
+            message = getCurrentExceptionMessage(false);
+        }
         /// `AccessControl` reports a wrong password for the `default` user as `REQUIRED_PASSWORD`.
-        if (code == ErrorCodes::AUTHENTICATION_FAILED || code == ErrorCodes::REQUIRED_PASSWORD)
+        else if (code == ErrorCodes::AUTHENTICATION_FAILED || code == ErrorCodes::REQUIRED_PASSWORD)
         {
             status = Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED;
             type = "NotAuthorizedException";
@@ -395,20 +419,11 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
         const auto json = parser.parse(*body).extract<Poco::JSON::Object::Ptr>();
 
         const auto namespace_array = json->getArray("namespace");
-        if (!namespace_array || namespace_array->size() == 0)
-            throw Poco::Exception("'namespace' must be a non-empty array");
-        if (namespace_array->size() > MAX_NAMESPACE_LEVELS)
-            throw Poco::Exception(fmt::format("'namespace' must have at most {} levels", MAX_NAMESPACE_LEVELS));
+        if (!namespace_array)
+            throw Poco::Exception("'namespace' must be an array");
 
         for (const auto & level : *namespace_array)
-        {
-            auto level_string = level.extract<String>();
-            if (level_string.empty())
-                throw Poco::Exception("namespace levels must be non-empty strings");
-            if (level_string.size() > MAX_NAMESPACE_LEVEL_LENGTH)
-                throw Poco::Exception(fmt::format("namespace levels must be at most {} bytes", MAX_NAMESPACE_LEVEL_LENGTH));
-            name.push_back(std::move(level_string));
-        }
+            name.push_back(level.extract<String>());
 
         if (json->has("properties"))
         {
@@ -435,6 +450,7 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
             fmt::format("Malformed create namespace request: {}", e.displayText()));
         return;
     }
+    validateNamespace(name);
 
     if (!warehouse.store->createNamespace(name, properties))
     {
