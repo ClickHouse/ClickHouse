@@ -1,5 +1,5 @@
 #include <Common/DateLUT.h>
-#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
@@ -252,9 +252,8 @@ const DateLUTImpl & DateLUT::getImplementation(std::string_view time_zone) const
     auto [it, inserted] = impls.emplace(time_zone, nullptr);
     if (inserted)
     {
-        /// Several megabytes that stay here for the lifetime of the process, so they belong to the server and
-        /// not to whichever query was the first to name this time zone.
-        DB::MemoryTrackerSwitcher switcher(&total_memory_tracker);
+        /// Lives as long as the process, not the query that first named this time zone.
+        MemoryTrackerBlockerInThread not_charged_to_the_query;
 
         try
         {

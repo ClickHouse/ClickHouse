@@ -250,13 +250,10 @@ SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMet
 
 void StorageMemory::setData(std::unique_ptr<BlocksWithCounts> new_data)
 {
-    /// The blocks are the table's data now: still charged to the query that built them, which keeps it under the
-    /// memory limits, and settled to the server total when it ends rather than reported as unaccounted.
     setCurrentQueryMemoryDriftExpected();
 
+    /// The replaced blocks are dropped inside this scope, unless a reader still holds them.
     MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
-    /// Kept until the end of the blocked scope so that dropping the blocks this replaces happens here, unless a
-    /// reader still holds that version, in which case they go with it.
     auto replaced = data.get();
     data.set(std::move(new_data));
 }

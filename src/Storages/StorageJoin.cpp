@@ -153,8 +153,7 @@ void StorageJoin::optimizeUnlocked()
     size_t current_bytes = join->getTotalByteCount();
     size_t dummy = current_bytes;
     {
-        /// What the shrink gives back was settled into the server total when the query that inserted it ended,
-        /// so releasing it must not be credited to this one, as in `truncate` and `mutate`.
+        /// Table data belongs to the server, not to the query releasing it.
         MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
         join->shrinkStoredBlocksToFit(dummy, true);
     }
@@ -179,8 +178,6 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
 
     increment = 0;
     {
-        /// The data being dropped here was settled into the server total when the query that inserted it ended,
-        /// so releasing it must not be credited to this one.
         MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
         join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
     }
@@ -230,8 +227,6 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
     {
-        /// The data being replaced was already settled into the server total, so releasing it must not credit
-        /// this mutation. The new data it builds stays charged to it instead, settled the same way when it ends.
         MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
         join = std::move(new_data);
     }

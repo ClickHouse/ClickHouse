@@ -1073,8 +1073,7 @@ private:
     /// Does the loading, possibly in the separate thread.
     void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {})
     {
-        /// The blocker below only covers this thread, while loading runs a query of its own whose pipeline
-        /// threads inherit the group. Loading in a group that accounts memory globally covers them too.
+        /// The blocker below covers this thread only, not the pipeline threads of the loading query.
         if (thread_group)
             thread_group = ThreadGroup::createWithoutQueryMemoryTracker(std::move(thread_group));
 

@@ -134,8 +134,7 @@ const MemoryTracker & MergeListElement::getMemoryTracker() const
 
 MergeListElement::~MergeListElement()
 {
-    /// The merge hands the part it produced to the table, so its tracker can end non-zero; that is a hand-off,
-    /// not something unaccounted. Marks the merge's chain and the caller's, for an `OPTIMIZE` merging inline.
+    /// The part produced goes to the table; also marks the caller for an `OPTIMIZE` merging inline.
     thread_group->memory_tracker.setDriftExpected();
     setCurrentQueryMemoryDriftExpected();
 }

@@ -585,8 +585,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
     }
     preprocessInsertQuery(query, query_context);
 
-    /// The bytes read below outlive this query once queued; charge them to a tracker of their own from the
-    /// start instead of estimating the size afterwards.
+    /// The data outlives this query once queued, so it is charged to a tracker of its own from the start.
     auto queued_data_tracker = tryCreateMemoryTrackerUnderCurrentQuery(VariableContext::Process);
     if (queued_data_tracker)
         queued_data_tracker->setDriftExpected();
@@ -628,8 +627,6 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 
         if (!read_buf->eof())
         {
-            /// Falls back to the synchronous path: the data never gets queued, so the tracker just goes out of
-            /// scope here; the bytes stay the query's, since that is where it sat all along.
             /// Concat read buffer with already extracted from insert
             /// query data and with the rest data from insert query.
             ConcatReadBuffer::Buffers buffers;
@@ -701,8 +698,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
     /// Query parameters make sense only for format Values.
     if (insert_query.format == "Values")
     {
-        /// The queue holds on to these until the flush, just like the data, so they are charged the same way
-        /// and handed over with it. A parameter can carry the whole payload of the insert.
+        /// Queued until the flush, like the data, and a parameter can carry the whole payload.
         std::optional<MemoryTrackerSwitcher> switcher;
         if (entry->queued_data_tracker)
             switcher.emplace(entry->queued_data_tracker.get());
@@ -786,8 +782,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
             throw;
         }
 
-        /// The entry is queued now, so its data outlives this query; move the charge to the user, who keeps it
-        /// until whichever thread flushes the entry frees it.
+        /// Queued now: the user keeps the charge until the flush frees it, whichever thread does that.
         if (entry->queued_data_tracker)
         {
             if (auto * user_memory_tracker = getCurrentUserMemoryTracker())

@@ -13,8 +13,7 @@ std::optional<UInt64> getCurrentQueryHardLimit();
 /// Return current query tracked memory usage
 Int64 getCurrentQueryMemoryUsage();
 
-/// Tell the current query that memory it allocated is deliberately left to something that outlives it, such as
-/// the data of an in-memory table. It is still settled when the query ends, but not reported as unaccounted.
+/// The current query deliberately leaves memory to something that outlives it (e.g. the data of an in-memory table).
 void setCurrentQueryMemoryDriftExpected();
 
 /// The tracker of the user the current thread's memory is charged to, or `nullptr`.

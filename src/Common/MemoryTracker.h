@@ -139,7 +139,7 @@ private:
 
     bool updatePeak(Int64 will_be, bool log_memory_usage) noexcept;
     void logMemoryUsage(Int64 current) const;
-    Int64 decrementLocalUsage(Int64 size, Int64 * owned_by_the_server = nullptr) noexcept;
+    Int64 decrementLocalUsage(Int64 size) noexcept;
     void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept;
     void traceLargeAllocation(Int64 size) noexcept;
 
@@ -147,31 +147,24 @@ private:
 
     bool isSizeOkForSampling(UInt64 size) const;
 
-    /// Credit the global tracker for bytes a query freed but never held, skipping the user, which does not hold
-    /// them either.
-    void freeBytesOwnedByTheServer(Int64 size);
-
-    /// Remove up to `size`, never going below zero however concurrent frees interleave, and tell how much was
-    /// actually removed.
-    Int64 subtractAtMostWhatIsThere(Int64 size);
+    /// Takes `size` off this tracker alone (saturating at zero, negative gives back), as `free` does before
+    /// moving on to the parent. Returns what was actually removed. The total does not change.
+    Int64 adjustLocally(Int64 size);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     std::atomic_bool drift_expected = false;
+    /// A starting point, lowered as flagged sites get fixed.
+    static constexpr Int64 drift_warn_threshold = 1024 * 1024;
 #endif
 
-    /// `Process` trackers (queries, tasks, queued data) whose parent is this one, counted only for a `User` tracker.
+    /// `Process` trackers whose parent is this one; only a `User` tracker counts them.
     std::atomic<Int64> children_count = 0;
 
     void attachChild();
     /// When the last child goes, nothing should be charged here any more, so whatever is left is settled.
     void detachChild();
 
-    /// Moves `size` bytes off this tracker and its ancestors, stopping before `until`: still allocated and counted
-    /// from `until` up, just no longer charged below it. Not alloc/free, which would change the total.
-    void transferUpTo(const MemoryTracker * until, Int64 size);
-
-    /// Settle whatever is left on a query's tracker when the query ends, so that the per-user tracker ends at
-    /// zero for that query. Warns in debug builds when the amount is large enough to be a real bug.
+    /// Whatever a query still holds when it ends is taken off its user, so the user ends at zero for that query.
     void settleDriftOnQueryEnd();
 
     /// Helper fields for analyzing the global memory tracker. Both are touched only by the
@@ -213,8 +206,8 @@ public:
         return rss.load(std::memory_order_relaxed);
     }
 
-    /// Marks memory the query deliberately leaves to something that outlives it (e.g. an in-memory table) so
-    /// the settle at query end isn't reported as a bug. Propagates up through the task trackers too.
+    /// Marks memory the query deliberately leaves to something that outlives it (e.g. an in-memory table), so
+    /// that `unexpectedDrift` does not report it. Marks every task tracker up the chain.
     void setDriftExpected()
     {
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -225,6 +218,10 @@ public:
         }
 #endif
     }
+
+    /// Debug builds only: what a query's tracker still holds (or is over-credited by) when that is large and
+    /// not marked expected, else 0. Points at the query that allocated something outliving it.
+    Int64 unexpectedDrift() const;
 
     /// Moves this tracker under `new_parent` together with what it holds: the bytes leave the old ancestors that
     /// are not ancestors of `new_parent` and are charged to the new ones, whose hard limits are checked first.
@@ -348,6 +345,11 @@ public:
         description_ptr.store(description, std::memory_order_relaxed);
     }
 
+    const char * getDescription() const
+    {
+        return description_ptr.load(std::memory_order_relaxed);
+    }
+
     OvercommitRatio getOvercommitRatio();
     OvercommitRatio getOvercommitRatio(Int64 limit);
 
@@ -384,8 +386,7 @@ public:
     /// Reset the accumulated data.
     void reset();
 
-    /// Starts a new measurement period. Never below what is currently held, which belongs to whoever is still
-    /// charged here rather than to the period being ended.
+    /// Not below what is currently held, which belongs to whoever is still charged here.
     void resetPeak()
     {
         peak.store(std::max<Int64>(amount.load(std::memory_order_relaxed), 0), std::memory_order_relaxed);

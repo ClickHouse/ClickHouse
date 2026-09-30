@@ -895,8 +895,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         /// We avoid covering the whole function with the scope so that transient work stays in the default arena (avoid contention)
         /// The shared bundle and serializations manage their own arena scopes
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        /// Copy the infos, not just the pointers: sharing them keeps objects the writer was charged for
-        /// alive on the part, and outside the arena, until a background thread drops it.
+        /// A copy, so that the part does not keep objects the writer was charged for.
         serialization_infos = new_infos.clone();
     }
 

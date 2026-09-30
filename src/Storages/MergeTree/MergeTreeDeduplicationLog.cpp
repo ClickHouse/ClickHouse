@@ -466,8 +466,6 @@ MergeTreeDeduplicationLog::~MergeTreeDeduplicationLog()
 {
     shutdown();
 
-    /// Same reason as everywhere above: the map and the log descriptions go with the table, not with whoever
-    /// drops it.
     MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
     deduplication_map.clear();
     existing_logs.clear();

@@ -616,6 +616,43 @@ TEST(MemoryTracker, ReparentChecksTheLimitOfTheNewParent)
     runInThread(hierarchy, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(10 * MB); });
 }
 
+TEST(MemoryTracker, QuerySettlesWhatItStillHoldsWhenItEnds)
+{
+    const Int64 total_before = total_memory_tracker.get();
+    MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
+    auto query = std::make_unique<MemoryTracker>(&user, VariableContext::Process, false);
+    runAttachedTo(*query, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::alloc(10 * MB); });
+    expectNear(user.get(), 10 * MB);
+
+    /// Still allocated, so the server total keeps it, but the user does not.
+    query.reset();
+    EXPECT_EQ(user.get(), 0);
+    expectNear(total_memory_tracker.get() - total_before, 10 * MB);
+
+    runAttachedTo(total_memory_tracker, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(10 * MB); });
+}
+
+TEST(MemoryTracker, FreeingWhatAnotherQueryHoldsDoesNotCreditTheUser)
+{
+    const Int64 total_before = total_memory_tracker.get();
+    MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
+    auto holder = std::make_unique<MemoryTracker>(&user, VariableContext::Process, false);
+    MemoryTracker releaser{&user, VariableContext::Process, false};
+    runAttachedTo(*holder, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::alloc(10 * MB); });
+
+    /// The releaser never held it, so neither it nor the user is credited; only the server total is.
+    runAttachedTo(releaser, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(10 * MB); });
+    EXPECT_EQ(releaser.get(), 0);
+    expectNear(holder->get(), 10 * MB);
+    expectNear(user.get(), 10 * MB);
+    expectNear(total_memory_tracker.get() - total_before, 0);
+
+    /// The holder ends and settles its share, so the user is back at zero and the total is untouched.
+    holder.reset();
+    EXPECT_EQ(user.get(), 0);
+    expectNear(total_memory_tracker.get() - total_before, 0);
+}
+
 TEST(MemoryTracker, UserSettlesToZeroWhenItsLastQueryEnds)
 {
     MemoryTracker user{&total_memory_tracker, VariableContext::User, false};

@@ -19,7 +19,7 @@ namespace DB
 {
 
 
-/// Covers the control block too, which `std::allocate_shared` puts in the same block.
+/// Cache entries are the server's, not the query's that inserts or evicts them.
 template <typename T>
 struct ServerOwnedCacheEntryAllocator
 {

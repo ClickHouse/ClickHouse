@@ -85,6 +85,7 @@ class ThreadGroup
 public:
     using FatalErrorCallback = std::function<void()>;
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
+    ~ThreadGroup();
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -94,10 +95,6 @@ public:
     const ContextWeakPtr global_context;
 
     const FatalErrorCallback fatal_error_callback;
-
-    /// False for work deliberately accounted in the server total rather than the query's user, see
-    /// `createWithoutQueryMemoryTracker`; kept even if that work runs a query of its own.
-    const bool charge_memory_to_query_user = true;
 
     const Int32 os_threads_nice_value;
 
@@ -149,9 +146,12 @@ public:
     static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group);
     static ThreadGroupPtr createForExplainAnalyze(ThreadGroupPtr parent_thread_group);
 
-    /// For work a query only triggers (e.g. loading a dictionary) that outlives it and can't be uncharged from
-    /// the query: memory is accounted globally, covering spawned threads too, unlike `MemoryTrackerBlockerInThread`.
+    /// For work a query only triggers but that outlives it (e.g. loading a dictionary): memory is accounted in the
+    /// server total, in every thread of the group, unlike `MemoryTrackerBlockerInThread`.
     static ThreadGroupPtr createWithoutQueryMemoryTracker(ThreadGroupPtr parent);
+
+    /// Nested groups charge memory through the group above them; only a top-level one is attached to a user.
+    bool isNested() const { return parent != nullptr; }
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;

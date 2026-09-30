@@ -1,5 +1,4 @@
 #include <Interpreters/ProcessList.h>
-#include <Common/formatReadable.h>
 #include <Core/Settings.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
@@ -76,7 +75,6 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int BAD_ARGUMENTS;
-    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 
@@ -312,16 +310,14 @@ ProcessList::EntryPtr ProcessList::insert(
         }
         ProcessListForUser & user_process_list = user_process_list_it->second;
 
-        /// A user without queries starts a new period here rather than when its previous query left, so that
-        /// whatever that query settled on the way out is already accounted for.
+        /// A new period starts with the user's next query rather than when its last one left, because a query
+        /// settles what it holds after it leaves the list. Set the limits before the group is attached below, so
+        /// that what the query already allocated is checked against them.
         const bool starts_a_new_period = user_process_list.queries.empty();
         if (starts_a_new_period)
             user_process_list.startNewPeriod();
 
-        /// Track memory usage for all simultaneously running queries from single user. Set before this query's
-        /// group is attached to the user below, so that what the query already allocated, and anything a group
-        /// of the previous period allocates meanwhile, is held to this query's limit rather than to the one left
-        /// behind. The first query of a period writes it instead of raising it, so that a lower one takes effect.
+        /// Track memory usage for all simultaneously running queries from single user.
         if (starts_a_new_period)
             user_process_list.user_memory_tracker.setHardLimit(settings[Setting::max_memory_usage_for_user]);
         else
@@ -336,20 +332,11 @@ ProcessList::EntryPtr ProcessList::insert(
         {
             thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
 
-            /// The group gets a user here, so hand it what the query allocated before that. Keep the parent for groups
-            /// that account globally on purpose (a dictionary loaded on behalf of a query), and for nested ones that
-            /// already reach a user through the query above them (a materialized view, or a flush started by
-            /// `SYSTEM FLUSH ASYNC INSERT QUEUE`), which would otherwise be charged to the user twice.
-            bool already_on_a_user = false;
-            for (auto * tracker = thread_group->memory_tracker.getParent(); tracker && !already_on_a_user;
-                 tracker = tracker->getParent())
-                already_on_a_user = tracker->level == VariableContext::User;
-
-            if (thread_group->charge_memory_to_query_user && !already_on_a_user)
+            /// A nested group (a view, a flush run by `SYSTEM FLUSH ASYNC INSERT QUEUE`, a dictionary load) is
+            /// charged through the group above it, and would be charged to the user twice.
+            if (!thread_group->isNested())
             {
                 thread_group->memory_tracker.reparent(&user_process_list.user_memory_tracker);
-
-                /// Mirror the tracker parent, so the query's monitor escalates against the user it joined.
                 thread_group->memory_pressure_monitor.setParent(user_process_list.user_memory_pressure_monitor);
             }
             if (user_process_list.user_temp_data_on_disk)
@@ -531,9 +518,8 @@ ProcessListEntry::~ProcessListEntry()
     parent.have_space.notify_all();
 
     /// The `user_to_queries` entry is intentionally kept (do not erase it here): `getUserInfo`
-    /// reads entries lock-free via raw pointers and relies on them never being erased. Its limits and peak are reset
-    /// when the user's next query arrives, see `ProcessList::insert`; its memory tracker settles to zero by itself
-    /// once no query or task is attached to it, see `MemoryTracker::detachChild`.
+    /// reads entries lock-free via raw pointers and relies on them never being erased. Its trackers are reset
+    /// when the user's next query arrives, see `ProcessList::insert`.
 }
 
 

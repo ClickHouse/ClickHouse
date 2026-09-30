@@ -194,8 +194,7 @@ private:
             const String query_id;
             const String async_dedup_token;
             const String format;
-            /// Holds the queued bytes on behalf of the user that pushed them, so they keep counting against
-            /// `max_memory_usage_for_user` until this entry is gone, wherever the flush frees them.
+            /// Keeps the queued bytes charged to the user that pushed them until the flush frees them.
             const std::unique_ptr<MemoryTracker> queued_data_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
             NameToNameMap query_parameters;

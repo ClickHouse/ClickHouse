@@ -177,8 +177,7 @@ private:
         size_t bytes = 0;
     };
 
-    /// Replaces the table's data. The blocks it drops belong to the table, and to the server total once the
-    /// query that wrote them has ended, so they are released without crediting whichever query replaces them.
+    /// Table data belongs to the server: what this drops is not credited to the query, what it keeps is left to the server.
     void setData(std::unique_ptr<BlocksWithCounts> new_data);
 
     /// MultiVersion data storage, so that we can copy the vector of blocks to readers.

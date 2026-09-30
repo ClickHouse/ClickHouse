@@ -20,6 +20,7 @@
 #include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/SensitiveDataMasker.h>
@@ -139,7 +140,6 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group, bool charge_memory_
     , query_context(parent->query_context)
     , global_context(parent->global_context)
     , fatal_error_callback(parent->fatal_error_callback)
-    , charge_memory_to_query_user(charge_memory_to_parent)
     , os_threads_nice_value(parent->os_threads_nice_value)
     , memory_spill_scheduler(parent->memory_spill_scheduler)
     , performance_counters(VariableContext::Process, &parent->performance_counters)
@@ -236,6 +236,23 @@ ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::funct
     auto group = std::make_shared<ThreadGroup>(query_context_, os_threads_nice_value, std::move(fatal_error_callback_));
     group->memory_tracker.setDescription("Query");
     return group;
+}
+
+ThreadGroup::~ThreadGroup()
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    if (Int64 drift = memory_tracker.unexpectedDrift())
+    {
+        LOG_WARNING(
+            getLogger("ThreadGroup"),
+            "{} ended {} {} (`{}`): it allocated memory that outlives it, which should be accounted where it belongs, "
+            "or memory it never allocated was freed against it. Mark it with `setDriftExpected` if it is intended.",
+            memory_tracker.getDescription() ? memory_tracker.getDescription() : "A task",
+            drift > 0 ? "still holding" : "over-credited by",
+            ReadableSize(std::abs(drift)),
+            shared_data.query_for_logs);
+    }
+#endif
 }
 
 ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_value)
@@ -445,7 +462,7 @@ void ThreadStatus::detachFromGroup()
 
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
-    /// So that `system.query_thread_log` written below sees all of this thread's memory.
+    /// flush untracked memory before resetting memory_tracker parent
     flushUntrackedMemory();
 
     if (boundToOSThread())
@@ -456,15 +473,11 @@ void ThreadStatus::detachFromGroup()
 
     performance_counters.setParent(&ProfileEvents::global_counters);
 
-    /// Free query-scoped state (e.g. `local_data`'s query text for logs) here, while the tracker still points at
-    /// the query; freeing after the re-parent below would land on `total_memory_tracker`, leaving the user charged.
+    /// Freed while the tracker still points at the query, so that e.g. the query text for logs is not left charged to it.
     clearQueryId();
     query_context.reset();
     local_data = {};
     fatal_error_callback = {};
-
-    /// Hand the frees above back to the query before the parent changes.
-    flushUntrackedMemory();
 
     memory_tracker.reset();
     /// Extract MemoryTracker out from query and user context
@@ -594,8 +607,7 @@ void ThreadStatus::initPerformanceCounters()
 
     if (!taskstats)
     {
-        /// `taskstats` is created once per thread, not per query, and kept until the thread dies; charging
-        /// the query that happened to attach first would leave it on that user's tracker for good.
+        /// Lives as long as the thread, not the query that happened to attach first.
         MemoryTrackerBlockerInThread not_charged_to_the_query;
         try
         {

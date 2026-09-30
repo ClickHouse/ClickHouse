@@ -842,8 +842,7 @@ static void logQueryFinishImpl(
                 query_log->add([&](QueryLogElement & e) { e = elem; });
         }
 
-        /// `elem` is captured by value in a finish callback `BlockIO` owns, so its ~12 KB profile-counters
-        /// snapshot would otherwise outlive the query until `BlockIO` is destroyed; drop it, already logged above.
+        /// Already logged; `elem` lives on in a `BlockIO` callback and this snapshot would outlive the query.
         elem.profile_counters.reset();
     }
 
