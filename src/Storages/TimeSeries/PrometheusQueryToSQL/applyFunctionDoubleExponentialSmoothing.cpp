@@ -90,7 +90,9 @@ SQLQueryPiece applyDoubleExponentialSmoothing(
     checkArgumentTypes(function_node, arguments, context);
 
     /// The factors are empty if the evaluation range is empty (e.g. a subquery window without steps), then so is the result.
-    if ((arguments[1].store_method == StoreMethod::EMPTY) || (arguments[2].store_method == StoreMethod::EMPTY))
+    /// Like Prometheus, an empty range vector gives an empty result before the factors are checked.
+    if ((arguments[0].store_method == StoreMethod::EMPTY) || (arguments[1].store_method == StoreMethod::EMPTY)
+        || (arguments[2].store_method == StoreMethod::EMPTY))
         return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
 
     const Float64 smoothing_factor = extractConstantFactor(function_node, arguments[1], "smoothing factor", context);

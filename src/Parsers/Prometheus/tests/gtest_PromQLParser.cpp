@@ -1105,7 +1105,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("double_exponential_smoothing(demo_memory_usage_bytes[20m], 0.5, 0.3)"), R"(
-double_exponential_smoothing(demo_memory_usage_bytes[1200], 0.5, 0.3)
+double_exponential_smoothing(demo_memory_usage_bytes[20m], 0.5, 0.3)
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(double_exponential_smoothing):

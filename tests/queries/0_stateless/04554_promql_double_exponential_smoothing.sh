@@ -76,6 +76,10 @@ echo "$out" | grep -o "NOT_IMPLEMENTED" | head -1
 echo "-- The subquery window (1699999990, 1700000000] contains no 1m step, so the result is empty (and not an error about the factors)."
 promql_client -q "max_over_time(double_exponential_smoothing(m[3m], 0.5, 0.5)[10s:1m])" 2>&1
 
+echo "-- An empty range vector gives an empty result before the factors are checked, as in Prometheus."
+promql_client -q "double_exponential_smoothing(m[10s:1m], 1.5, 0.5)" 2>&1
+promql_client -q "double_exponential_smoothing(m[10s:1m], scalar(sum(vector(0.5))), 0.5)" 2>&1
+
 echo "-- A Float32 series gives the same Float64 result as a Float64 series: the result is not rounded to Float32."
 $CLICKHOUSE_CLIENT --enable_time_series_aggregate_functions 1 -q "
 SELECT

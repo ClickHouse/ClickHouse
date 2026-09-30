@@ -17,5 +17,6 @@ NOT_IMPLEMENTED
 currently requires a constant trend factor
 NOT_IMPLEMENTED
 -- The subquery window (1699999990, 1700000000] contains no 1m step, so the result is empty (and not an error about the factors).
+-- An empty range vector gives an empty result before the factors are checked, as in Prometheus.
 -- A Float32 series gives the same Float64 result as a Float64 series: the result is not rounded to Float32.
 1	Array(Nullable(Float64))	1
