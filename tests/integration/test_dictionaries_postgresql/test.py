@@ -621,19 +621,6 @@ def test_predefined_connection_configuration(started_cluster):
         "SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))"
     )
 
-    node1.query(
-        """
-    DROP DICTIONARY postgres_dict;
-    CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
-    PRIMARY KEY id
-    SOURCE(POSTGRESQL(NAME postgres1 PORT 5432))
-        LIFETIME(MIN 1 MAX 2)
-        LAYOUT(HASHED());
-    """
-    )
-    result = node1.query("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))")
-    assert int(result.strip()) == 99
-
 
 def test_bad_configuration(started_cluster):
     conn = get_postgres_conn(

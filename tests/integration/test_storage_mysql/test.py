@@ -1601,52 +1601,7 @@ def test_mysql_ssl_contents_override_configured_paths(started_cluster):
         with pytest.raises(QueryRuntimeException) as exception:
             node1.query(f"SELECT count() FROM mysql(mysql_with_locked_ssl, {credentials})")
         assert "Override not allowed for 'ssl_ca'" in str(exception.value)
-
-        # The contents form is the only way to supply a TLS credential from SQL, so it stays usable
-        # when overrides are forbidden by default: it is not a new key, it replaces the path the
-        # collection defines, and the operator forbids that with `overridable="false"` instead.
-        hardened = {"allow_named_collection_override_by_default": 0}
-        assert (
-            node1.query(
-                f"SELECT count() FROM mysql(mysql_with_ssl, {credentials})",
-                settings=hardened,
-            )
-            == "0\n"
-        )
-        with pytest.raises(QueryRuntimeException) as exception:
-            node1.query(
-                f"SELECT count() FROM mysql(mysql_with_locked_ssl, {credentials})",
-                settings=hardened,
-            )
-        assert "Override not allowed for 'ssl_ca'" in str(exception.value)
-
-        # An unrelated key is still a new key, and is still refused under that policy.
-        with pytest.raises(QueryRuntimeException) as exception:
-            node1.query(
-                "SELECT count() FROM mysql(mysql_with_ssl, table = 'test_table')",
-                settings=hardened,
-            )
-        assert "Override not allowed for 'table'" in str(exception.value)
-
-        # The same override on the dictionary DDL path: the overrides of `SOURCE(MYSQL(NAME ...))`
-        # arrive as generated configuration keys rather than as an AST, and must be recognized as
-        # query-supplied all the same. The source is instantiated when the dictionary is loaded.
-        node1.query(
-            f"""
-            CREATE DICTIONARY dict_ssl_override (id UInt64, name String DEFAULT '')
-            PRIMARY KEY id
-            SOURCE(MYSQL(
-                NAME mysql_with_ssl
-                SSL_CA_PEM {quote_certificate("ca.pem")}
-                SSL_CERT_PEM {quote_certificate("client-cert.pem")}
-                SSL_KEY_PEM {quote_certificate("client-key.pem")}))
-            LAYOUT(FLAT()) LIFETIME(0)
-            """
-        )
-        node1.query("SYSTEM RELOAD DICTIONARY dict_ssl_override")
-        assert node1.query("SELECT count() FROM dict_ssl_override") == "0\n"
     finally:
-        node1.query("DROP DICTIONARY IF EXISTS dict_ssl_override")
         with conn.cursor() as cursor:
             cursor.execute(f"DROP USER 'ssl_user'@'{node1.ip_address}'")
             cursor.execute("FLUSH PRIVILEGES")
@@ -1694,25 +1649,7 @@ def test_mysql_ssl_empty_override_is_rejected(started_cluster):
                     f"SELECT count() FROM mysql(mysql_ssl_contents_nc, {key} = '')"
                 )
             assert "cannot be overridden with an empty" in str(exception.value)
-
-        # The overrides of a dictionary created with a DDL query arrive as generated configuration
-        # keys rather than as an AST, and must be recognized as query-supplied all the same. The
-        # source of a dictionary is instantiated when it is loaded, so the load is what surfaces
-        # the rejection.
-        node1.query("DROP DICTIONARY IF EXISTS mysql_ssl_empty_override_dictionary")
-        node1.query(
-            """
-            CREATE DICTIONARY mysql_ssl_empty_override_dictionary (id UInt32, name String)
-            PRIMARY KEY id
-            SOURCE(MYSQL(NAME mysql_ssl_contents_nc SSL_CA_PEM ''))
-            LAYOUT(FLAT()) LIFETIME(0)
-            """
-        )
-        with pytest.raises(QueryRuntimeException) as exception:
-            node1.query("SYSTEM RELOAD DICTIONARY mysql_ssl_empty_override_dictionary")
-        assert "cannot be overridden with an empty" in str(exception.value)
     finally:
-        node1.query("DROP DICTIONARY IF EXISTS mysql_ssl_empty_override_dictionary")
         node1.query("DROP NAMED COLLECTION mysql_ssl_contents_nc")
 
     # The rejection covers exactly the overrides that would drop a credential the collection

@@ -3754,6 +3754,10 @@ key_name3 = 'some value' [[NOT] OVERRIDABLE],
 `OR REPLACE` and `IF NOT EXISTS` cannot be used together. `CREATE OR REPLACE` of an existing collection
 replaces it entirely: keys and overridability flags absent from the new definition are removed.
 
+Overriding a stored key when using the collection requires `SHOW NAMED COLLECTIONS SECRETS` on that collection,
+including keys marked `OVERRIDABLE`. Keys marked `NOT OVERRIDABLE` cannot be overridden.
+Dictionary sources can add missing keys but cannot override stored keys.
+
 **Example**
 
 ```sql

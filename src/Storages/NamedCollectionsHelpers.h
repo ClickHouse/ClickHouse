@@ -17,23 +17,32 @@
 namespace DB
 {
 
+class ASTSetQuery;
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
 
+/// Replacing a stored key (including an alias) requires `SHOW NAMED COLLECTIONS SECRETS`.
+/// A null context forbids replacements, for dictionary sources loaded in the background.
+void checkNamedCollectionOverride(const NamedCollection & collection, const std::string & key, ContextPtr context);
+
 /// Helper function to get named collection for table engine.
 /// Table engines have collection name as first argument of ast and other arguments are key-value overrides.
-/// If dependent_table_id is provided, registers the table as a dependency of the named collection.
+/// If `dependent_table_id` is provided, registers the table as a dependency of the named collection.
+/// Checks overrides in `SETTINGS` before the engine applies them.
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ASTs asts,
     ContextPtr context,
     bool throw_unknown_collection = true,
     VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args = nullptr,
-    const StorageID * dependent_table_id = nullptr);
+    const StorageID * dependent_table_id = nullptr,
+    const ASTSetQuery * settings = nullptr);
 
 /// Helper function to get named collection for dictionary source.
-/// Dictionaries have collection name as name argument of dict configuration and other arguments are overrides.
+/// Dictionaries have the collection name as the `name` argument of their configuration.
+/// Other arguments may add missing keys, but cannot override stored keys during background loading.
 /// Also registers the dictionary as a dependency of the named collection, so that
 /// DROP NAMED COLLECTION is blocked while the dictionary exists.
 /// The dictionary's identity is derived from config_prefix, which has the form

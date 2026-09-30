@@ -45,7 +45,6 @@ namespace DB
 {
 namespace Setting
 {
-extern const SettingsBool allow_named_collection_override_by_default;
 extern const SettingsNonZeroUInt64 max_insert_block_size;
 extern const SettingsMilliseconds rabbitmq_max_wait_ms;
 extern const SettingsMilliseconds stream_flush_interval_ms;
@@ -1050,7 +1049,6 @@ bool resolveCredentialSource(
     bool password_assigned_by_query,
     bool token_assigned_by_query,
     bool destination_assigned_by_query,
-    bool allow_named_collection_override_by_default,
     bool loading_from_existing_metadata)
 {
     /// The value the named collection defines itself, before a query override of the same key.
@@ -1119,55 +1117,6 @@ bool resolveCredentialSource(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "`nats_url` and `nats_server_list` cannot be overridden when credentials come from the server configuration file");
-
-    /// Credentials the operator explicitly locked (`<nats_credential_file overridable="false">`) cannot be
-    /// replaced from a query. `tryGetNamedCollectionWithOverrides` checks this for the engine-argument
-    /// spelling - `nats_credentials` inherits the permission of the path key it replaces, see
-    /// `findOverrideForbiddingKey` - but the `SETTINGS` clause is applied on top of the collection values
-    /// without passing through that check, so the permission is enforced here for both spellings. It is
-    /// enforced when loading from metadata as well, for the same reason it is enforced there for the
-    /// engine-argument spelling: the lock is a policy on a named collection that is still in use, and the
-    /// alternative is to authenticate with credentials the operator forbade. This must be based on key
-    /// existence, not the value: `tryGetNamedCollectionWithOverrides` also refuses a new key when
-    /// `allow_named_collection_override_by_default` is disabled. When the collection already stores
-    /// `nats_credentials`, this is a same-key override and uses `allow_named_collection_override_by_default`.
-    /// Replacing `nats_credential_file` uses `true`: passing the contents is the only way to supply these
-    /// credentials from SQL, so the operator states the permission with the attribute.
-    if (named_collection)
-    {
-        /// This exactly mirrors `findOverrideForbiddingKey`: inline credentials replace a configured
-        /// file path, but otherwise they are either a same-key override or a new key. The collection
-        /// has already been mutated by the engine-argument override, so use its pre-override state.
-        const auto is_defined_in_collection = [&](const std::string & key)
-        {
-            return named_collection->isQueryOverridden(key) ? named_collection->getValueBeforeQueryOverride(key).has_value()
-                                                            : named_collection->has(key);
-        };
-        const auto check_override_allowed = [&](const char * key, bool default_value)
-        {
-            if (!named_collection->isOverridable(key, default_value))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
-        };
-
-        if (credentials_assigned_by_query)
-        {
-            const auto * key = is_defined_in_collection("nats_credentials") || !is_defined_in_collection("nats_credential_file")
-                ? "nats_credentials"
-                : "nats_credential_file";
-            check_override_allowed(key, std::string_view{key} == "nats_credential_file" || allow_named_collection_override_by_default);
-        }
-
-        /// `nats_username`, `nats_password`, and `nats_token` do not have an alternative spelling,
-        /// so their query overrides follow the regular named-collection policy. In particular, this
-        /// prevents a `SETTINGS` clause from clearing operator-provided credentials and bypassing the
-        /// destination-binding check above.
-        if (username_assigned_by_query)
-            check_override_allowed("nats_username", allow_named_collection_override_by_default);
-        if (password_assigned_by_query)
-            check_override_allowed("nats_password", allow_named_collection_override_by_default);
-        if (token_assigned_by_query)
-            check_override_allowed("nats_token", allow_named_collection_override_by_default);
-    }
 
     /// A path to a credentials file is only accepted from the server configuration file: the server opens
     /// the file with its own privileges, and during authentication the credentials are sent to `nats_url`,
@@ -1243,7 +1192,8 @@ void registerStorageNATS(StorageFactory & factory)
         bool client_key_file_assigned_by_query = false;
         /// Whether the named collection is defined in the server configuration file rather than created by SQL.
         bool collection_defined_in_config = false;
-        auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id);
+        auto named_collection = tryGetNamedCollectionWithOverrides(
+            args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id, args.storage_def->settings);
         if (named_collection)
         {
             nats_settings->loadFromNamedCollection(named_collection);
@@ -1328,7 +1278,6 @@ void registerStorageNATS(StorageFactory & factory)
             password_assigned_by_query,
             token_assigned_by_query,
             destination_assigned_by_query,
-            args.getLocalContext()->getSettingsRef()[Setting::allow_named_collection_override_by_default],
             (isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax)
                 && (!named_collection || collection_defined_in_config));
 
