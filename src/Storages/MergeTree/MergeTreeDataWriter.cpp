@@ -191,11 +191,20 @@ void buildScatterSelector(
 namespace
 {
 
+void updateTTLInfoValue(MergeTreeDataPartTTLInfo & ttl_info, time_t value, bool zero_ttl_never_expires)
+{
+    if (zero_ttl_never_expires)
+        ttl_info.updateZeroAsNever(value);
+    else
+        ttl_info.update(value);
+}
+
 template <bool with_where, typename TTLType, typename WhereColumnType, typename ValueExtractor>
 void updateTTLInfo(
     MergeTreeDataPartTTLInfo & ttl_info,
     const PaddedPODArray<TTLType> & ttl_data,
     const WhereColumnType * where_column,
+    bool zero_ttl_never_expires,
     ValueExtractor && value_extractor)
 {
     for (size_t i = 0; i < ttl_data.size(); ++i)
@@ -207,46 +216,47 @@ void updateTTLInfo(
             if (where_column->getBool(i))
             {
                 auto value = value_extractor(ttl_data[i]);
-                ttl_info.update(value);
+                updateTTLInfoValue(ttl_info, value, zero_ttl_never_expires);
             }
         }
         else
         {
             auto value = value_extractor(ttl_data[i]);
-            ttl_info.update(value);
+            updateTTLInfoValue(ttl_info, value, zero_ttl_never_expires);
         }
     }
 }
 
 template <bool with_where, typename WhereColumnType>
-void updateTTLInfo(MergeTreeDataPartTTLInfo & ttl_info, const IColumn & ttl_column, const WhereColumnType * where_column)
+void updateTTLInfo(
+    MergeTreeDataPartTTLInfo & ttl_info, const IColumn & ttl_column, const WhereColumnType * where_column, bool zero_ttl_never_expires)
 {
     const auto & date_lut = DateLUT::serverTimezoneInstance();
 
     if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(&ttl_column))
     {
-        updateTTLInfo<with_where>(ttl_info, column_date->getData(), where_column, [&date_lut](UInt16 val)
+        updateTTLInfo<with_where>(ttl_info, column_date->getData(), where_column, zero_ttl_never_expires, [&date_lut](UInt16 val)
         {
             return date_lut.fromDayNum(DayNum(val));
         });
     }
     else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(&ttl_column))
     {
-        updateTTLInfo<with_where>(ttl_info, column_date_time->getData(), where_column, [](UInt32 val)
+        updateTTLInfo<with_where>(ttl_info, column_date_time->getData(), where_column, zero_ttl_never_expires, [](UInt32 val)
         {
             return val;
         });
     }
     else if (const ColumnInt32 * column_date_32 = typeid_cast<const ColumnInt32 *>(&ttl_column))
     {
-        updateTTLInfo<with_where>(ttl_info, column_date_32->getData(), where_column, [&date_lut](Int32 val)
+        updateTTLInfo<with_where>(ttl_info, column_date_32->getData(), where_column, zero_ttl_never_expires, [&date_lut](Int32 val)
         {
             return date_lut.fromDayNum(ExtendedDayNum(val));
         });
     }
     else if (const ColumnDateTime64 * column_date_time_64 = typeid_cast<const ColumnDateTime64 *>(&ttl_column))
     {
-        updateTTLInfo<with_where>(ttl_info, column_date_time_64->getData(), where_column, [scale = column_date_time_64->getScale()](DateTime64 val)
+        updateTTLInfo<with_where>(ttl_info, column_date_time_64->getData(), where_column, zero_ttl_never_expires, [scale = column_date_time_64->getScale()](DateTime64 val)
         {
             return val / intExp10OfSize<Int64>(scale);
         });
@@ -257,19 +267,19 @@ void updateTTLInfo(MergeTreeDataPartTTLInfo & ttl_info, const IColumn & ttl_colu
     }
 }
 
-void updateTTLInfo(MergeTreeDataPartTTLInfo & ttl_info, const IColumn & ttl_column, const IColumn * where_column)
+void updateTTLInfo(MergeTreeDataPartTTLInfo & ttl_info, const IColumn & ttl_column, const IColumn * where_column, bool zero_ttl_never_expires)
 {
     if (where_column)
     {
         /// Add specialization for UInt8 because it's the most common type for filter
         if (const auto * where_column_uint8 = typeid_cast<const ColumnUInt8 *>(where_column))
-            updateTTLInfo<true>(ttl_info, ttl_column, where_column_uint8);
+            updateTTLInfo<true>(ttl_info, ttl_column, where_column_uint8, zero_ttl_never_expires);
         else
-            updateTTLInfo<true>(ttl_info, ttl_column, where_column);
+            updateTTLInfo<true>(ttl_info, ttl_column, where_column, zero_ttl_never_expires);
     }
     else
     {
-        updateTTLInfo<false>(ttl_info, ttl_column, where_column);
+        updateTTLInfo<false>(ttl_info, ttl_column, where_column, zero_ttl_never_expires);
     }
 }
 
@@ -293,7 +303,8 @@ bool hasRowsInFilter(const IColumn & where_column)
         return hasRowsInFilter<IColumn>(where_column);
 }
 
-void updateTTLInfoConst(MergeTreeDataPartTTLInfo & ttl_info, const ColumnConst & ttl_column, const IColumn * where_column)
+void updateTTLInfoConst(
+    MergeTreeDataPartTTLInfo & ttl_info, const ColumnConst & ttl_column, const IColumn * where_column, bool zero_ttl_never_expires)
 {
     if (where_column && !hasRowsInFilter(*where_column))
         return;
@@ -301,20 +312,21 @@ void updateTTLInfoConst(MergeTreeDataPartTTLInfo & ttl_info, const ColumnConst &
     if (typeid_cast<const ColumnUInt16 *>(&ttl_column.getDataColumn()))
     {
         const auto & date_lut = DateLUT::serverTimezoneInstance();
-        ttl_info.update(date_lut.fromDayNum(DayNum(ttl_column.getValue<UInt16>())));
+        updateTTLInfoValue(ttl_info, date_lut.fromDayNum(DayNum(ttl_column.getValue<UInt16>())), zero_ttl_never_expires);
     }
     else if (typeid_cast<const ColumnUInt32 *>(&ttl_column.getDataColumn()))
     {
-        ttl_info.update(ttl_column.getValue<UInt32>());
+        updateTTLInfoValue(ttl_info, ttl_column.getValue<UInt32>(), zero_ttl_never_expires);
     }
     else if (typeid_cast<const ColumnInt32 *>(&ttl_column.getDataColumn()))
     {
         const auto & date_lut = DateLUT::serverTimezoneInstance();
-        ttl_info.update(date_lut.fromDayNum(ExtendedDayNum(ttl_column.getValue<Int32>())));
+        updateTTLInfoValue(ttl_info, date_lut.fromDayNum(ExtendedDayNum(ttl_column.getValue<Int32>())), zero_ttl_never_expires);
     }
     else if (const ColumnDateTime64 * column_date_time_64 = typeid_cast<const ColumnDateTime64 *>(&ttl_column.getDataColumn()))
     {
-        ttl_info.update(ttl_column.getValue<DateTime64>() / intExp10OfSize<Int64>(column_date_time_64->getScale()));
+        updateTTLInfoValue(
+            ttl_info, ttl_column.getValue<DateTime64>() / intExp10OfSize<Int64>(column_date_time_64->getScale()), zero_ttl_never_expires);
     }
     else
     {
@@ -330,7 +342,8 @@ void updateTTL(
     IMergeTreeDataPart::TTLInfos & ttl_infos,
     MergeTreeDataPartTTLInfo & ttl_info,
     const Block & block,
-    bool update_part_min_max_ttls)
+    bool update_part_min_max_ttls,
+    bool zero_ttl_never_expires)
 {
     auto expr_and_set = ttl_entry.buildExpression(context);
     for (auto & subquery : expr_and_set.sets->getSubqueries())
@@ -354,11 +367,11 @@ void updateTTL(
 
     if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(ttl_column.get()))
     {
-        updateTTLInfoConst(ttl_info, *column_const, where_column.get());
+        updateTTLInfoConst(ttl_info, *column_const, where_column.get(), zero_ttl_never_expires);
     }
     else
     {
-        updateTTLInfo(ttl_info, *ttl_column, where_column.get());
+        updateTTLInfo(ttl_info, *ttl_column, where_column.get(), zero_ttl_never_expires);
     }
 
     if (update_part_min_max_ttls)
@@ -933,7 +946,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     const auto & move_ttl_entries = metadata_snapshot->getMoveTTLs();
     for (const auto & ttl_entry : move_ttl_entries)
-        updateTTL(context, ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
+        updateTTL(context, ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false, false);
 
     const UInt64 & min_bytes_to_perform_insert =
             (*data_settings)[MergeTreeSetting::min_free_disk_bytes_to_perform_insert].changed
@@ -1057,20 +1070,20 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     }
 
     if (metadata_snapshot->hasRowsTTL())
-        updateTTL(context, metadata_snapshot->getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
+        updateTTL(context, metadata_snapshot->getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true, true);
 
     for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())
-        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.group_by_ttl[ttl_entry.result_column], block, true);
+        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.group_by_ttl[ttl_entry.result_column], block, true, false);
 
     for (const auto & ttl_entry : metadata_snapshot->getRowsWhereTTLs())
-        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.rows_where_ttl[ttl_entry.result_column], block, true);
+        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.rows_where_ttl[ttl_entry.result_column], block, true, false);
 
     for (const auto & [name, ttl_entry] : metadata_snapshot->getColumnTTLs())
-        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block, true);
+        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block, true, true);
 
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
     for (const auto & ttl_entry : recompression_ttl_entries)
-        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
+        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false, false);
 
     new_data_part->ttl_infos.update(move_ttl_infos);
 

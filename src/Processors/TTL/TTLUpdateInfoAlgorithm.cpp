@@ -28,8 +28,16 @@ void TTLUpdateInfoAlgorithm::execute(Block & block)
     PaddedPODArray<Int64> timestamps;
     extractTimestamps(ttl_column.get(), timestamps);
 
-    for (size_t i = 0; i < rows; ++i)
-        new_ttl_info.update(timestamps[i]);
+    if (ttl_update_field == TTLUpdateField::TABLE_TTL || ttl_update_field == TTLUpdateField::COLUMNS_TTL)
+    {
+        for (size_t i = 0; i < rows; ++i)
+            new_ttl_info.updateZeroAsNever(timestamps[i]);
+    }
+    else
+    {
+        for (size_t i = 0; i < rows; ++i)
+            new_ttl_info.update(timestamps[i]);
+    }
 }
 
 void TTLUpdateInfoAlgorithm::finalize(const MutableDataPartPtr & data_part) const

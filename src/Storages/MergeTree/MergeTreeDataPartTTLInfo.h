@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 
+#include <limits>
 #include <map>
 #include <optional>
 #include <vector>
@@ -18,6 +19,8 @@ using TTLDescriptions = std::vector<TTLDescription>;
 /// Minimal and maximal ttl for column or table
 struct MergeTreeDataPartTTLInfo
 {
+    static constexpr time_t NEVER = std::numeric_limits<time_t>::max();
+
     time_t min = 0;
     time_t max = 0;
 
@@ -30,6 +33,9 @@ struct MergeTreeDataPartTTLInfo
 
     void update(time_t time);
     void update(const MergeTreeDataPartTTLInfo & other_info);
+
+    /// A TTL of 0 never expires, so it sets `max` to `NEVER` and leaves `min` unchanged.
+    void updateZeroAsNever(time_t time);
 };
 
 /// Order is important as it would be serialized and hashed for checksums
@@ -89,7 +95,7 @@ struct MergeTreeDataPartTTLInfos
     bool empty() const
     {
         /// part_min_ttl in minimum of rows, rows_where and group_by TTLs
-        return !part_min_ttl && moves_ttl.empty() && recompression_ttl.empty() && columns_ttl.empty() && rows_where_ttl.empty() && group_by_ttl.empty();
+        return !part_min_ttl && !part_max_ttl && moves_ttl.empty() && recompression_ttl.empty() && columns_ttl.empty() && rows_where_ttl.empty() && group_by_ttl.empty();
     }
 };
 

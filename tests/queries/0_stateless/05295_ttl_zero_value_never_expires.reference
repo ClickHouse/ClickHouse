@@ -1,0 +1,24 @@
+-- horizontal merge
+5	5
+-- vertical merge
+10	10
+['Vertical']
+-- TTL expression that is 0 for some rows
+5	5
+-- column TTL
+5	5
+-- MODIFY TTL with ttl_only_drop_parts
+10	5
+1
+-- part with only TTL 0 rows, reloaded, then merged with an expired part
+5	5
+-- merged twice
+5	5
+5	5
+-- column TTL, merged twice
+5	5
+5	10
+-- column TTL added by MODIFY COLUMN, recalculated only
+5	5
+-- background TTL merge
+5	5

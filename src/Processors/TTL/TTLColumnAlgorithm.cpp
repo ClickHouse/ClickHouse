@@ -108,7 +108,7 @@ void TTLColumnAlgorithm::execute(Block & block)
         }
         else
         {
-            new_ttl_info.update(cur_ttl);
+            new_ttl_info.updateZeroAsNever(cur_ttl);
             is_fully_empty = false;
             if (result_column)
                 result_column->insertFrom(*values_column, i);
