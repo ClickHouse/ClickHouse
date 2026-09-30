@@ -3,3 +3,7 @@ s != 'b'	20	20	21	Condition: and((concat(s, '_x') not in ['b_x', 'b_x']), (s not
 s = 'b'	4	4	5
 s != 'b'	20	20	21
 id = 5	1	1	2	Condition: (id in [5, 5])
+f = 0	4	4	11	Condition: (f in [0., 0.])
+f != 0	8	8	9
+f <=> 0	4	4	11
+f = 5	1	1	2	Condition: and((cityHash64(f) in [13310970109181126441, 13310970109181126441]), (f in [5., 5.]))

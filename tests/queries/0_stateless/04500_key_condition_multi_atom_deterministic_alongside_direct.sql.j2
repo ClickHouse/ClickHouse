@@ -47,3 +47,15 @@ SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_det_plain SELECT number FROM numbers(24);
 
 {{ check('test_det_plain', "id = 5", condition = true) }}
+
+-- A float zero equals the zero of the other sign, which a key function tells apart: `cityHash64(-0.0)`
+-- differs from `cityHash64(0.0)`. A zero constant therefore builds no atom through the transform, and only
+-- the direct atom constrains `f`. A non-zero constant keeps both atoms.
+CREATE TABLE test_det_float_zero (f Float64) ENGINE = MergeTree ORDER BY (cityHash64(f), f)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_det_float_zero SELECT if(number < 4, -0., number) FROM numbers(12);
+
+{{ check('test_det_float_zero', 'f = 0', condition = true) }}
+{{ check('test_det_float_zero', 'f != 0') }}
+{{ check('test_det_float_zero', 'f <=> 0') }}
+{{ check('test_det_float_zero', 'f = 5', condition = true) }}

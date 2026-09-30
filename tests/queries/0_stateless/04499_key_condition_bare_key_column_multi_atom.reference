@@ -9,3 +9,9 @@ flag	50	50	50
 NOT flag	50	50	50
 flag	32	32	48	Condition: true
 flag	48	48	25	Condition: (flag not in [0, 0])
+f	6	6	5	Condition: true
+NOT f	4	4	5
+f	6	6	5
+NOT f	4	4	5
+f	6	6	4	Condition: (f not in [0., 0.])
+NOT f	4	4	2
