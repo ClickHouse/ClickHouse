@@ -58,6 +58,19 @@ INSERT INTO ts (metric_family, type, unit, help) VALUES ('e2', 'gauge', '', '');
 INSERT INTO ts (metric_family, type, unit, help) VALUES ('e1', 'gauge', '', ''); -- still a hit
 SELECT metric_family, count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE metric_family LIKE 'e%' GROUP BY metric_family ORDER BY metric_family;
 
+SELECT '--- a description changed when the pending rows are full is written, its key is forgotten by the cache, and the previous description is written again after it ---';
+SYSTEM CLEAR TIME SERIES CACHES ts;
+INSERT INTO ts (metric_family, type, unit, help) VALUES ('x', 'gauge', '', 'A');
+INSERT INTO ts (metric_family, type, unit, help) SELECT ['p1', 'p2', 'p3', 'x'][number + 1], 'gauge', '', ['', '', '', 'B'][number + 1] FROM numbers(4) SETTINGS max_block_size = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0; -- one row per block: p1, p2, p3 fill the pending rows, then x overflows them as the only key of its block
+INSERT INTO ts (metric_family, type, unit, help) VALUES ('x', 'gauge', '', 'A');
+SELECT count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE metric_family = 'x';
+
+SELECT '--- when a block overflows the pending rows, the keys of its last written rows are forgotten, a duplicate at its end does not count ---';
+SYSTEM CLEAR TIME SERIES CACHES ts;
+INSERT INTO ts (metric_family, type, unit, help) VALUES ('k1', 'gauge', '', ''), ('k2', 'gauge', '', ''), ('k3', 'gauge', '', ''), ('k4', 'gauge', '', ''), ('k1', 'gauge', '', ''); -- k4 overflows the three pending rows, the repeated k1 is a duplicate
+INSERT INTO ts (metric_family, type, unit, help) VALUES ('k1', 'gauge', '', ''), ('k2', 'gauge', '', ''), ('k3', 'gauge', '', ''), ('k4', 'gauge', '', ''); -- k1, k2, k3 are remembered, k4 is written again
+SELECT metric_family, count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE metric_family LIKE 'k%' GROUP BY metric_family ORDER BY metric_family;
+
 SELECT '--- an entry expires after the expiration period ---';
 ALTER TABLE ts MODIFY SETTING metric_families_deduplication_cache_size_bytes = 10000, metric_families_deduplication_cache_expiration_seconds = 1;
 INSERT INTO ts (metric_family, type, unit, help) VALUES ('m4', 'gauge', '', '');
