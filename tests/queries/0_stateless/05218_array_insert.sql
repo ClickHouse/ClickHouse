@@ -72,3 +72,15 @@ SELECT arrayInsert([1, 2, 3], toInt64(-9223372036854775808), 9); -- { serverErro
 SELECT arrayInsert([1, 2, 3], toFloat64(1), 9); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayInsert([1, 2, 3], NULL, 9); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayInsert([1, 2, 3], toNullable(toUInt8(1)), 9); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Constant signed and unsigned positions with variable arrays.
+SELECT arrayInsert(arr, -2, 9), arrayInsert(arr, toUInt64(2), 9)
+FROM values('arr Array(Int32)', [1], [1, 2, 3]);
+
+-- Constant array with unsigned positions and per-row inserted values.
+SELECT arrayInsert([1, 2, 3], pos, value)
+FROM values('pos UInt64, value Int32', (1, 7), (2, 8), (4, 9));
+
+-- Extreme positions must also be rejected by the dynamic path.
+SELECT arrayInsert([1, 2, 3], materialize(toUInt64(18446744073709551615)), 9); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT arrayInsert([1, 2, 3], materialize(toInt64(-9223372036854775808)), 9); -- { serverError ARGUMENT_OUT_OF_BOUND }
