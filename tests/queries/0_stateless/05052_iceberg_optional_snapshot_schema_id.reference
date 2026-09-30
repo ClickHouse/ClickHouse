@@ -7,3 +7,8 @@ Current snapshot with legacy history
 3
 Historical snapshot without schema-id
 1
+Current snapshot with explicit null schema-id
+1
+2
+Historical snapshot with explicit null schema-id
+1
