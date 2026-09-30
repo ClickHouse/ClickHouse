@@ -86,6 +86,7 @@ allow_sparse
 allow_special_serialization_kinds_in_output_formats
 allow_statistics
 allow_statistic_optimize
+allow_suspicious_indexes
 allow_statistics_optimize
 allow_unrestricted_reads_from_keeper
 enable_vector_similarity_index
