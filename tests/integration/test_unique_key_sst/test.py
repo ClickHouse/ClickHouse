@@ -357,6 +357,50 @@ def test_unique_key_sst_checksums(started_cluster):
     node.query("DROP TABLE uk_sst_ro SYNC")
 
 
+def test_unique_key_check_detects_a_corrupt_bitmap(started_cluster):
+    # CHECK TABLE re-hashes a delete bitmap through its `checksums.txt` entry: the bitmap is listed,
+    # CHECK passes, then fails once a byte of the bitmap is flipped.
+    node.query("DROP TABLE IF EXISTS uk_bitmap_check SYNC")
+    node.query(
+        """
+        CREATE TABLE uk_bitmap_check (k UInt64, v UInt64)
+        ENGINE = MergeTree ORDER BY k UNIQUE KEY (k)
+        SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1
+        """,
+        settings=UK_SETTINGS,
+    )
+    node.query("INSERT INTO uk_bitmap_check SELECT number, 0 FROM numbers(8)")
+    # The second INSERT overwrites four keys, so all_2_2_0 holds a bitmap for all_1_1_0.
+    node.query("INSERT INTO uk_bitmap_check SELECT number, 1 FROM numbers(4)")
+
+    holder = node.query(
+        "SELECT path FROM system.parts WHERE database = 'default' AND table = 'uk_bitmap_check'"
+        " AND active AND name = 'all_2_2_0'"
+    ).strip()
+    bitmaps = bash(node, f"find {shlex.quote(holder)} -maxdepth 1 -name 'delete_bitmap_*.rbm'").split()
+
+    # bitmap_written
+    assert len(bitmaps) == 1, f"Expected one bitmap in {holder}, got {bitmaps}"
+    bitmap = bitmaps[0]
+
+    # check_before: red if the bitmap is not listed in `checksums.txt` (an unlisted file fails CHECK)
+    check_settings = {"check_query_single_value_result": 1, "send_logs_level": "none"}
+    assert node.query("CHECK TABLE uk_bitmap_check", settings=check_settings) == "1\n"
+
+    # Flip the last byte, covered by the trailing CRC and by the checksum entry.
+    size = file_size(node, bitmap)
+    bash(node, f"printf '\\xff' | dd of={shlex.quote(bitmap)} bs=1 seek={size - 1} count=1 conv=notrunc status=none")
+
+    node.query("DETACH TABLE uk_bitmap_check")
+    node.query("ATTACH TABLE uk_bitmap_check")
+
+    # corrupt_detected
+    answer, error = node.query_and_get_answer_with_error("CHECK TABLE uk_bitmap_check", settings=check_settings)
+    assert answer == "0\n" or "CHECKSUM_DOESNT_MATCH" in error or "BAD_SIZE_OF_FILE" in error, (answer, error)
+
+    node.query("DROP TABLE uk_bitmap_check SYNC")
+
+
 def test_unique_key_on_a_non_plain_engine_still_loads(started_cluster):
     # Servers before the plain-MergeTree restriction accepted UNIQUE KEY family-wide, so such
     # metadata exists and must stay attachable -- an unattachable table cannot be dropped either.
