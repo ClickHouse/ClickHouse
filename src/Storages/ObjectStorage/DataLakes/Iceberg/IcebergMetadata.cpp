@@ -77,6 +77,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AlterDropPartitionExecutor.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestColumnStatistics.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
@@ -1626,7 +1627,7 @@ bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_met
 
 std::optional<DataLakeReadEstimate>
 IcebergMetadata::estimateRead(
-    StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & /*column_names*/, ContextPtr context) const
+    StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & column_names, ContextPtr context) const
 {
     auto table_state_snapshot = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);
     if (table_state_snapshot == nullptr)
@@ -1644,6 +1645,9 @@ IcebergMetadata::estimateRead(
     auto data_snapshot = getRelevantDataSnapshotFromTableStateSnapshot(*table_state_snapshot, context);
     if (!data_snapshot)
         return estimate;
+
+    ManifestColumnStatistics column_statistics(
+        column_names, storage_metadata_snapshot->getColumns(), *persistent_components.schema_processor, table_state_snapshot->schema_id);
 
     /// Prune as the read does (`IcebergIterator`), but never build an `IN` set: planning must not run a subquery.
     const auto & settings = context->getSettingsRef();
@@ -1737,6 +1741,7 @@ IcebergMetadata::estimateRead(
                 }
                 /// Trusted as written, although ClickHouse before 26.5 wrote the row count of the whole commit into each file.
                 *estimate.rows += static_cast<UInt64>(data_file->parsed_entry->record_count);
+                column_statistics.addFile(*data_file, manifest_list_entry.manifest_file_path);
             }
             return true;
         });
@@ -1745,6 +1750,7 @@ IcebergMetadata::estimateRead(
         estimate.rows.reset();
         return estimate;
     }
+    estimate.columns = column_statistics.finalize(*estimate.rows);
     return estimate;
 }
 

@@ -288,11 +288,20 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             return unknown;
 
         const bool exact = *estimate->rows == 0 || (!has_filter && !estimate->has_delete_files);
-        return RelationStats{
+        RelationStats stats{
             .estimated_rows = estimate->rows,
             .table_name = table_display_name,
             .imprecise_estimate = !exact,
             .source = RowEstimateSource::DataLakeMetadata};
+        for (const auto & [name, column] : estimate->columns)
+            stats.column_stats.emplace(
+                name,
+                ColumnStats{
+                    .num_distinct_values = column.num_distinct_values,
+                    .min_value = column.min_value,
+                    .max_value = column.max_value,
+                    .null_fraction = column.null_fraction});
+        return stats;
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
