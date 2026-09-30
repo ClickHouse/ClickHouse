@@ -580,8 +580,8 @@ JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & unneeded_output
     auto & actions_dag = *expression_actions.getActionsDAG();
     auto & dag_outputs = actions_dag.getOutputs();
 
-    /// A dropped output goes away, and leaves actions_after_join with it. The dropped positions are sorted, so one
-    /// walk over the outputs finds them.
+    /// A dropped output goes away, and is erased from `actions_after_join` as well. The dropped positions are sorted,
+    /// so one walk over the outputs finds them.
     const auto & dropped_positions = plan.dropped_output_positions;
     ActionsDAG::NodeRawConstPtrs new_actions_after_join = actions_after_join;
     ActionsDAG::NodeRawConstPtrs new_outputs;

@@ -222,25 +222,26 @@ protected:
 
     bool isDummyColumnOfThisStep(const ActionsDAG::Node * node) const;
 
-    /// Everything removeUnusedColumns needs to know, computed without touching the step. Shared by
-    /// removeUnusedColumns and getUnneededColumns so their answers cannot differ.
+    /// Everything removeUnusedColumns needs to know, computed without touching the step.
+    /// Shared by removeUnusedColumns and getUnneededColumns so their answers cannot differ.
     struct UnneededColumnsPlan
     {
         /// What the join does not need of each side.
         UnneededInputPositions unneeded_input_positions;
-
-        /// Set when no output is left and the step has to put its dummy column back.
-        bool adds_dummy_output = false;
+        /// The DAG outputs that go away, as positions in `getOutputs()`, sorted:
+        /// the unneeded ones, except an existing dummy column.
+        /// A dropped output is also erased from `actions_after_join`, the nodes computed on the joined block,
+        /// so that the list does not point to a node removed from the DAG.
+        /// The dummy column, when one is added, is appended after the outputs that remain.
+        std::vector<size_t> dropped_output_positions;
         /// Nodes that have to survive pruning besides the kept outputs: the join conditions, and one
         /// input per side that would otherwise lose every column.
         ActionsDAG::NodeRawConstPtrs extra_pruning_roots;
+
         /// Whether removeUnusedActions would erase any node.
         bool removes_any_action = false;
-
-        /// The DAG outputs that go away, as positions in `getOutputs()`, sorted: the unneeded ones, except an existing
-        /// dummy column. A dropped output leaves `actions_after_join` with it. The dummy column, when one is added, is
-        /// appended after the outputs that remain.
-        std::vector<size_t> dropped_output_positions;
+        /// Set when no output is left and the step has to put its dummy column back.
+        bool adds_dummy_output = false;
     };
 
     UnneededColumnsPlan analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const;
