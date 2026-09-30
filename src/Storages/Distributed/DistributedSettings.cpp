@@ -1,6 +1,8 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
+#include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -12,6 +14,14 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool distributed_background_insert_batch;
+    extern const SettingsMilliseconds distributed_background_insert_max_sleep_time_ms;
+    extern const SettingsMilliseconds distributed_background_insert_sleep_time_ms;
+    extern const SettingsBool distributed_background_insert_split_batch_on_failure;
+}
 
 namespace ErrorCodes
 {
@@ -103,9 +113,30 @@ void DistributedSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
+void DistributedSettings::applyBackgroundInsertDefaults(const Settings & query_settings)
+{
+    if (!(*this)[DistributedSetting::background_insert_batch].changed)
+        (*this)[DistributedSetting::background_insert_batch] = query_settings[Setting::distributed_background_insert_batch];
+    if (!(*this)[DistributedSetting::background_insert_split_batch_on_failure].changed)
+        (*this)[DistributedSetting::background_insert_split_batch_on_failure]
+            = query_settings[Setting::distributed_background_insert_split_batch_on_failure];
+    if (!(*this)[DistributedSetting::background_insert_sleep_time_ms].changed)
+        (*this)[DistributedSetting::background_insert_sleep_time_ms] = query_settings[Setting::distributed_background_insert_sleep_time_ms];
+    if (!(*this)[DistributedSetting::background_insert_max_sleep_time_ms].changed)
+        (*this)[DistributedSetting::background_insert_max_sleep_time_ms]
+            = query_settings[Setting::distributed_background_insert_max_sleep_time_ms];
+}
+
 bool DistributedSettings::hasBuiltin(std::string_view name)
 {
     return DistributedSettingsImpl::hasBuiltin(name);
+}
+
+SettingDescriptions DistributedSettings::enumerateEngineSettings(ContextPtr context)
+{
+    auto settings = context->getDistributedSettings();
+    settings.applyBackgroundInsertDefaults(context->getGlobalContext()->getSettingsRef());
+    return settings.enumerateSettings();
 }
 
 IMPLEMENT_SETTINGS_ENUMERATION(DistributedSettings)

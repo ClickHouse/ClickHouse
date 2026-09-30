@@ -160,11 +160,7 @@ namespace Setting
     extern const SettingsBool allow_nondeterministic_optimize_skip_unused_shards;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
-    extern const SettingsBool distributed_background_insert_batch;
     extern const SettingsUInt64 distributed_background_insert_timeout;
-    extern const SettingsMilliseconds distributed_background_insert_sleep_time_ms;
-    extern const SettingsMilliseconds distributed_background_insert_max_sleep_time_ms;
-    extern const SettingsBool distributed_background_insert_split_batch_on_failure;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsUInt64 distributed_push_down_limit;
@@ -190,9 +186,6 @@ namespace Setting
 namespace DistributedSetting
 {
     extern const DistributedSettingsUInt64 background_insert_batch;
-    extern const DistributedSettingsMilliseconds background_insert_max_sleep_time_ms;
-    extern const DistributedSettingsMilliseconds background_insert_sleep_time_ms;
-    extern const DistributedSettingsUInt64 background_insert_split_batch_on_failure;
     extern const DistributedSettingsUInt64 bytes_to_delay_insert;
     extern const DistributedSettingsUInt64 bytes_to_throw_insert;
     extern const DistributedSettingsBool flush_on_detach;
@@ -2028,16 +2021,7 @@ static void finalizeDistributedSettings(DistributedSettings & distributed_settin
     }
 
     /// Set default values from the distributed_background_insert_* global context settings.
-    if (!distributed_settings[DistributedSetting::background_insert_batch].changed)
-        distributed_settings[DistributedSetting::background_insert_batch] = context->getSettingsRef()[Setting::distributed_background_insert_batch];
-    if (!distributed_settings[DistributedSetting::background_insert_split_batch_on_failure].changed)
-        distributed_settings[DistributedSetting::background_insert_split_batch_on_failure]
-            = context->getSettingsRef()[Setting::distributed_background_insert_split_batch_on_failure];
-    if (!distributed_settings[DistributedSetting::background_insert_sleep_time_ms].changed)
-        distributed_settings[DistributedSetting::background_insert_sleep_time_ms] = context->getSettingsRef()[Setting::distributed_background_insert_sleep_time_ms];
-    if (!distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms].changed)
-        distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms]
-            = context->getSettingsRef()[Setting::distributed_background_insert_max_sleep_time_ms];
+    distributed_settings.applyBackgroundInsertDefaults(context->getSettingsRef());
 }
 
 void registerStorageDistributed(StorageFactory & factory);
@@ -2138,7 +2122,7 @@ void registerStorageDistributed(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::REMOTE,
         .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
-        .enumerate_engine_settings_fn = enumerateCompiledDefaults<DistributedSettings>,
+        .enumerate_engine_settings_fn = DistributedSettings::enumerateEngineSettings,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -2590,7 +2574,7 @@ void registerStorageRemote(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::REMOTE,
         .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
-        .enumerate_engine_settings_fn = enumerateCompiledDefaults<DistributedSettings>,
+        .enumerate_engine_settings_fn = DistributedSettings::enumerateEngineSettings,
     };
 
     const String common_description = R"DOCS_MD(
