@@ -21,7 +21,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
-#include <TableFunctions/ITableFunction.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -141,8 +141,13 @@ void IStorageCluster::read(
             ASTPtr filter_ast = query_info.additional_filter_ast->clone();
             AddDefaultDatabaseVisitor(context, context->getCurrentDatabase()).visitTableExpressions(*filter_ast);
 
+            /// A replica names the storage after the canonical name of the function, not after its spelling in the query.
+            String function_name = table_function->name;
+            if (auto resolved_function = TableFunctionFactory::instance().tryGet(function_name, context))
+                function_name = resolved_function->getName();
+
             Tuple resolved_filter;
-            resolved_filter.push_back(StorageID(ITableFunction::getDatabaseName(), table_function->name).getFullNameNotQuoted());
+            resolved_filter.push_back(StorageID(ITableFunction::getDatabaseName(), function_name).getFullNameNotQuoted());
             resolved_filter.push_back(filter_ast->formatWithSecretsOneLine());
 
             Map forwarded_filters;
