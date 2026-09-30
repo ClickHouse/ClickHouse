@@ -93,10 +93,12 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
         children.push_back(compression_level);
     }
 
-    /// `format_ast` is parsed by `ParserIdentifier`.
+    /// `format_ast` is parsed by `ParserIdentifier`, which does not accept a query parameter.
     format_ast = r.readChildOfType<ASTIdentifier>("format_ast");
     if (format_ast)
     {
+        if (format_ast->as<ASTIdentifier &>().isParam())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Output 'format_ast' cannot be a query parameter during AST JSON deserialization");
         reject_alias(format_ast, "format_ast");
         setIdentifierSpecial(format_ast);
         children.push_back(format_ast);
