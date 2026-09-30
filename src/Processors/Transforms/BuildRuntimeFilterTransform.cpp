@@ -4,7 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
-#include <algorithm>
+#include <Processors/QueryPlan/RuntimeFilterBuildOptions.h>
 
 
 namespace DB
@@ -22,15 +22,8 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     String filter_name_,
     String filter_key_,
     size_t filters_to_merge_,
-    UInt64 exact_values_limit_,
-    UInt64 bloom_filter_bytes_,
-    UInt64 bloom_filter_hash_functions_,
-    Float64 pass_ratio_threshold_for_disabling_,
-    UInt64 blocks_to_skip_before_reenabling_,
-    Float64 max_ratio_of_set_bits_in_bloom_filter_,
-    bool allow_to_use_not_exact_filter_,
-    bool track_key_range_,
-    std::optional<UInt64> distinct_keys_hint_,
+    const RuntimeFilterBuildOptions & build_options_,
+    const RuntimeFilterConfig & runtime_filter_config_,
     ContextPtr query_context_)
     : ISimpleTransform(header_, header_, true)
     , filter_column_name(filter_column_name_)
@@ -45,45 +38,46 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     if (!filter_column_target_type->equals(*filter_column_original_type))
         cast_to_target_type = createInternalCast(filter_column, filter_column_target_type, CastType::nonAccurate, {}, nullptr);
 
-    if (allow_to_use_not_exact_filter_)
+    if (build_options_.polarity == RuntimeFilterPolarity::Contains)
     {
-        if (ApproximateRuntimeFilter::isDataTypeSupported(filter_column_target_type))
+        if (AdaptiveSetRuntimeFilter::isDataTypeSupported(filter_column_target_type))
         {
-            built_filter = std::make_unique<ApproximateRuntimeFilter>(
+            built_filter = std::make_unique<RuntimeFilter>(
                 filters_to_merge_,
-                filter_column_target_type,
-                pass_ratio_threshold_for_disabling_,
-                blocks_to_skip_before_reenabling_,
-                bloom_filter_bytes_,
-                exact_values_limit_,
-                bloom_filter_hash_functions_,
-                max_ratio_of_set_bits_in_bloom_filter_,
-                distinct_keys_hint_);
+                runtime_filter_config_,
+                RuntimeFilter::Adaptive(
+                    filter_column_target_type,
+                    build_options_.bloom.bytes,
+                    build_options_.exact_values_limit,
+                    build_options_.bloom.hash_functions,
+                    build_options_.max_ratio_of_set_bits,
+                    build_options_.distinct_keys_hint,
+                    build_options_.distinct_keys_hint_matches_filter_key));
         }
         else
         {
-            built_filter = std::make_unique<ExactContainsRuntimeFilter>(
+            built_filter = std::make_unique<RuntimeFilter>(
                 filters_to_merge_,
-                filter_column_target_type,
-                pass_ratio_threshold_for_disabling_,
-                blocks_to_skip_before_reenabling_,
-                bloom_filter_bytes_,
-                exact_values_limit_);
+                runtime_filter_config_,
+                RuntimeFilter::ExactContains(
+                    filter_column_target_type,
+                    build_options_.bloom.bytes,
+                    build_options_.exact_values_limit));
         }
     }
     else
     {
-        built_filter = std::make_unique<ExactNotContainsRuntimeFilter>(
+        built_filter = std::make_unique<RuntimeFilter>(
             filters_to_merge_,
-            filter_column_target_type,
-            pass_ratio_threshold_for_disabling_,
-            blocks_to_skip_before_reenabling_,
-            bloom_filter_bytes_,
-            exact_values_limit_);
+            runtime_filter_config_,
+            RuntimeFilter::ExactNotContains(
+                filter_column_target_type,
+                build_options_.bloom.bytes,
+                build_options_.exact_values_limit));
     }
 
     /// Only pay the extra min/max scan of the build side when the left side will use it for index analysis.
-    if (track_key_range_)
+    if (build_options_.track_key_range)
         built_filter->enableIndexAnalysis();
 }
 

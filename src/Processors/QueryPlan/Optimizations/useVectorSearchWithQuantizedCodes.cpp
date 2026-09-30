@@ -147,8 +147,8 @@ bool optimizeVectorSearchWithQuantizedCodes(
         return false;
 
     /// The shortlist uses internal functions (`__quantizeDistance`/`__productQuantizationDistance`) that are not registered in
-    /// FunctionFactory, so a remote node could not deserialize the plan. Leave the query exact when the plan is
-    /// distributed (the vector-search-index path is skipped for the same reason above).
+    /// FunctionFactory, so a remote node could not deserialize the plan: do not rewrite the plan the initiator serializes.
+    /// Each plan fragment is re-optimized with this setting off, so the shortlist is still built inside a fragment.
     if (settings.make_distributed_plan)
         return false;
 
@@ -431,12 +431,36 @@ bool optimizeVectorSearchWithQuantizedCodes(
     inner_limit_node.step->setStepDescription("quantized shortlist limit");
     inner_limit_node.children = {&inner_sorting_node};
 
-    /// 5. Splice the shortlist above the whole filter/rename chain (between the rescore expression and the chain top).
-    /// The rescore expression keeps its output header because it ignores the extra codes/_approx columns. The general
-    /// lazy-materialization pass will later defer the heavy vector column on the inner LimitStep (descending through the
-    /// chain's Expression/Filter steps), so `vec` is read only for the k' shortlisted rows.
-    expression_node->children = {&inner_limit_node};
-    expression_node->step->updateInputHeader(inner_limit_node.step->getOutputHeader());
+    /// 5. Discard the approximate-distance column at the top of the shortlist. Nothing above consumes it, and an
+    /// unconsumed input is carried through to the block, which would widen the rescore expression's output by one
+    /// trailing column while every step above the splice keeps the width it was created with. Listing every shortlist
+    /// column as an input is what makes them consumed, so only the columns kept as outputs survive.
+    ActionsDAG discard_approx_dag;
+    SharedHeader shortlist_header = inner_limit_node.step->getOutputHeader();
+    std::vector<const ActionsDAG::Node *> shortlist_inputs;
+    shortlist_inputs.reserve(shortlist_header->columns());
+    for (const auto & shortlist_column : *shortlist_header)
+        shortlist_inputs.push_back(&discard_approx_dag.addInput(shortlist_column.name, shortlist_column.type));
+    for (size_t pos = 0; pos < shortlist_header->columns(); ++pos)
+        if (shortlist_header->getByPosition(pos).name != approx_column_name)
+            discard_approx_dag.getOutputs().push_back(shortlist_inputs[pos]);
+
+    auto discard_approx_step = std::make_unique<ExpressionStep>(shortlist_header, std::move(discard_approx_dag));
+    discard_approx_step->setStepDescription("quantized shortlist discard approximate distance");
+    /// Keep the discarded inputs, or a later pass strips them and re-exposes the column.
+    discard_approx_step->setPreventInputRemoval();
+
+    auto & discard_approx_node = nodes.emplace_back();
+    discard_approx_node.step = std::move(discard_approx_step);
+    discard_approx_node.children = {&inner_limit_node};
+
+    /// 6. Splice the shortlist above the whole filter/rename chain (between the rescore expression and the chain top).
+    /// The rescore expression keeps its output header because the extra codes columns are consumed by it and the
+    /// approximate distance was discarded above. The general lazy-materialization pass will later defer the heavy
+    /// vector column on the inner LimitStep (descending through the chain's Expression/Filter steps), so `vec` is
+    /// read only for the k' shortlisted rows.
+    expression_node->children = {&discard_approx_node};
+    expression_node->step->updateInputHeader(discard_approx_node.step->getOutputHeader());
 
     return true;
 }

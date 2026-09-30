@@ -2,10 +2,13 @@
 
 #include <memory>
 #include <Common/Epoll.h>
+#include <Common/Stopwatch.h>
+#include <optional>
 #include <Common/Logger.h>
 #include <Common/WakeupFd.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <Processors/ISource.h>
+#include <Columns/ColumnString.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Poco/Net/StreamSocket.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -20,6 +23,10 @@ using DistributedQueryCancellationPtr = std::shared_ptr<DistributedQueryCancella
 /// initiator it reads the query result and shares the query's cancellation state: a lost producer is
 /// recorded there and reported by the source driving the plan (see `tryGenerate`). On a worker the
 /// state is null and a lost peer is a plain `EXCHANGE_PEER_DISCONNECTED` failure of the task.
+///
+/// With `output_is_serialized` the source does not deserialize: it hands every packet on as one row
+/// of a `String` column, for the `StreamingExchangeDeserializingTransform` on every stream behind
+/// it, and only reads the end-of-stream marker itself.
 class StreamingExchangeSource final : public ISource
 {
 public:
@@ -30,8 +37,10 @@ public:
         String host_,
         UInt16 port_,
         DistributedQueryCancellationPtr cancellation_,
-        String auth_token_ = {})
-        : ISource(std::move(header_))
+        String auth_token_ = {},
+        bool output_is_serialized_ = false)
+        : ISource(output_is_serialized_ ? StreamingExchangeProtocol::packetStreamHeader() : header_)
+        , output_is_serialized(output_is_serialized_)
         , host(std::move(host_))
         , port(port_)
         , query_id(std::move(query_id_))
@@ -54,10 +63,18 @@ public:
     void onUpdatePorts() override;
 
 private:
+    /// Wakes a handshake waiting in `waitForSocket`.
+    void onCancel() noexcept override;
+
     void onStart();
-    void connect();
-    void sendHello();
-    void receiveHello();
+    /// Handshake steps under one deadline (`HELLO_TIMEOUT_SECONDS` of `handshake_watch`); false if cancelled first.
+    bool connect(const Stopwatch & handshake_watch);
+    bool sendHello(const Stopwatch & handshake_watch);
+    bool receiveHello(const Stopwatch & handshake_watch);
+    /// Waits for `events` on the socket; false once cancelled, `Poco::TimeoutException` naming `what` past the deadline.
+    bool waitForSocket(Int16 events, const Stopwatch & handshake_watch, std::string_view what);
+    /// This source is cancelled, or on the initiator the query is, e.g. by a failure recorded elsewhere.
+    bool isQueryCancelled() const;
 
     /// Read as many bytes as we can from the socket without blocking and update position accordingly.
     void readFromSocket(char * buffer, size_t buffer_size, size_t & position);
@@ -77,6 +94,7 @@ private:
     /// sender is gone.
     void sendNoMoreDataNeeded();
 
+    const bool output_is_serialized;
     const String host;
     const UInt16 port;
     const String query_id;
@@ -99,22 +117,28 @@ private:
     StreamingExchangeProtocol::PacketHeader current_packet_header{};
     size_t current_packet_header_bytes_filled = 0;
 
-    std::vector<char> current_packet_body;
+    /// The whole packet being received: the header, then the body. Kept as column bytes so that a
+
+    /// packet handed on as a row is not copied.
+
+    ColumnString::Chars current_packet_body;
     size_t current_packet_body_bytes_filled = 0;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::unique_ptr<ReadBufferFromMemory> packet_in;    /// One full packet
     size_t rows_read = 0;
     size_t bytes_read = 0;
+    /// Runs from a read that found no bytes until bytes arrive.
+    std::optional<Stopwatch> receive_wait;
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     /// Combines the socket and the output-update wakeup into one fd that the executor polls
     /// while the source waits in `Async`.
-    Epoll wait_events_epoll;
+    Epoll wait_events_epoll{EpollNesting::Leaf};
 #endif
     /// Written by `onUpdatePorts` (possibly from another thread) to wake the waiting source
     /// when its output port is updated - in particular closed by a satisfied `LIMIT`
-    /// downstream; drained in `tryGenerate`.
+    /// downstream; drained in `tryGenerate`. Also written by `onCancel` and drained by `waitForSocket`.
     WakeupFd output_update_wakeup;
 
     LoggerPtr log = getLogger("StreamingExchangeSource");
