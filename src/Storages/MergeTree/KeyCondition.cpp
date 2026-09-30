@@ -4994,8 +4994,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         if (!const_type->equals(*common_type))
                         {
                             // Replace direct call that throws exception with try version
-                            /// `convertFieldToType` returns an `Object` as it is, but a `Bool` is `UInt64` in a typed path
-                            /// and `Bool` in a dynamic one, so convert it as a column, as the comparison itself does.
+                            /// `convertFieldToType` keeps an `Object` as is; typed paths hold `Bool` as `UInt64`, dynamic ones as `Bool`.
                             Field converted = containsObjectType(*common_type)
                                 ? (*castColumn({const_type->createColumnConst(1, const_value), const_type, ""}, common_type))[0]
                                 : tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
