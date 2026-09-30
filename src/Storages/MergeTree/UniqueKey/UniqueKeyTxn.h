@@ -17,6 +17,7 @@ namespace DB
 {
 
 class IMergeTreeDataPart;
+class MergeTreeData;
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 class IDataPartStorage;
@@ -34,8 +35,8 @@ class PartitionWriteGuard;
 ///                   not yet visible.
 ///       2. publish: register the part on the transaction. Active, not yet visible.
 ///       3. commit:  csn = TransactionLog::commitTransaction(). The bitmaps become visible.
+///                   If the commit's Keeper reply was lost, wait until the transaction resolves.
 ///     Exit the critical section for the partition
-///     If the commit's Keeper reply was lost, wait until the transaction resolves
 ///
 /// A write may stage several bitmaps and publishes one part. `UniqueKeyTxnManager` drives the
 /// steps; the implementation supplies `stage` and `publish`.
@@ -89,7 +90,7 @@ MergeTreeTransactionHolder beginUniqueKeyTransaction(const MergeTreeTransactionP
 class UniqueKeyTxnManager
 {
 public:
-    explicit UniqueKeyTxnManager(DeleteBitmapStorePtr delete_bitmap_store_);
+    UniqueKeyTxnManager(const MergeTreeData & data_, DeleteBitmapStorePtr delete_bitmap_store_);
 
     DeleteBitmapStore & deleteBitmapStore() { return *delete_bitmap_store; }
 
@@ -105,6 +106,7 @@ private:
     std::mutex partition_locks_mutex;
     std::unordered_map<String, std::mutex> partition_locks;
 
+    const MergeTreeData & data;
     DeleteBitmapStorePtr delete_bitmap_store;
 
     LoggerPtr log;

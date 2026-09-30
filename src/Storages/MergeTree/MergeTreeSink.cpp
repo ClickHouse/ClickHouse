@@ -410,6 +410,9 @@ void MergeTreeSink::finishDelayedChunk()
             /// writeTempPart moves the partition value out of block_with_partition into the part,
             /// so restore it from the just-written part before rewriting the filtered block.
             partition.block_with_partition.partition = MergeTreePartition(partition.temp_part->part->partition.value);
+            /// The conflict rolled the UNIQUE KEY transaction back.
+            if (metadata_snapshot->hasUniqueKey())
+                partition.uk_txn = beginUniqueKeyTransaction(context, "INSERT");
             partition.temp_part = writeNewTempPart(partition.block_with_partition, partition.uk_txn.getTransaction());
 
             /// If optimize_on_insert setting is true, the rewritten partition.block_with_partition

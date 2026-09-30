@@ -26,6 +26,7 @@
 #include <Core/Settings.h>
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <base/EnumReflection.h>
@@ -45,6 +46,11 @@ extern const Event UniqueKeyConflictIgnoredRows;
 
 namespace DB
 {
+
+namespace FailPoints
+{
+extern const char unique_key_insert_pause_before_commit[];
+}
 
 namespace ErrorCodes
 {
@@ -85,11 +91,6 @@ public:
                 writeKind(), partitionId());
             return {};
         }
-
-        /// Only when this write installs a bitmap of its own: a write that touches no target
-        /// derives nothing from the physical set and so cannot shadow anything.
-        if (!kills_per_part.empty())
-            rejectUndeterminedTransactions("delete bitmap");
 
         auto kills = ownKills();
         auto carried = selectCarriedBitmaps();
@@ -244,6 +245,9 @@ public:
         const PartitionWriteGuard &, const MergeTreeTransactionPtr & txn, const StagedWrite &) override
     {
         addPartToActiveSet(storage, own_part, txn);
+
+        /// The window a read sees the part Active before its commit point, otherwise too narrow to hit.
+        FailPointInjection::pauseFailPoint(FailPoints::unique_key_insert_pause_before_commit);
         return *own_part;
     }
 
@@ -386,8 +390,13 @@ std::vector<ProbeResult> UniqueKeyTxnCommit::InsertCommit::probeActiveParts(cons
     ProbeTargetsSnapshot targets;
     targets.reserve(active_parts.size());
     for (const auto & part : active_parts)
+    {
+        /// Rolled back after the part list was read.
+        if (part->version->getInfo().creation_csn == Tx::RolledBackCSN)
+            continue;
         if (auto probe_target = makeSSTProbeTarget(part))
             targets.push_back(std::move(probe_target));
+    }
 
     auto columns = metadata_snapshot->getUniqueKeyColumns();
     auto probe = makeUniqueKeyProbe(
