@@ -34,7 +34,6 @@ OPTIMIZE TABLE t_ttl_patch_expired FINAL;
 
 SELECT 'after blocked patch merge', x, x2, y FROM t_ttl_patch_expired;
 
-SYSTEM START TTL MERGES t_ttl_patch_expired;
 DROP TABLE t_ttl_patch_expired;
 
 -- The blocked patch merge must reach the TTL recalculation step even when an expired column rides
@@ -69,7 +68,6 @@ WHERE database = currentDatabase() AND table = 't_ttl_patch_rows_where' AND acti
 
 SELECT 'rows kept while blocked', count() FROM t_ttl_patch_rows_where WHERE y = 2;
 
-SYSTEM START TTL MERGES t_ttl_patch_rows_where;
 DROP TABLE t_ttl_patch_rows_where;
 
 -- An index reading the expired column keeps it in the merge header (MergeTask's
@@ -100,5 +98,4 @@ SELECT 'recompression bound built from the default', countIf(recompression_ttl_i
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't_ttl_patch_indexed' AND active AND partition_id NOT LIKE 'patch-%';
 
-SYSTEM START TTL MERGES t_ttl_patch_indexed;
 DROP TABLE t_ttl_patch_indexed;
