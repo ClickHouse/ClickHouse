@@ -1,7 +1,8 @@
-# Heavily templated code here makes the static analyzer re-analyze thousands of
-# instantiations with inlined callees (up to 38 minutes for one file). Shallow mode
-# does not inline callees, which makes it about eight times faster. It is passed as a
-# compiler flag because `clang-analyzer-mode` in `CheckOptions` has no effect.
+# Type dispatch here instantiates functions hundreds of times, and the static analyzer
+# re-analyzes each instantiation with its callees inlined (up to 38 minutes for one file).
+# A smaller exploration budget per function keeps inlining, so no new false positives,
+# and makes the slowest files about six times faster (the default is 225000).
+# It is passed as a compiler flag because analyzer options in `CheckOptions` have no effect.
 InheritParentConfig: true
 
-ExtraArgs: ['-Xclang', '-analyzer-config', '-Xclang', 'mode=shallow']
+ExtraArgs: ['-Xclang', '-analyzer-config', '-Xclang', 'max-nodes=25000']
