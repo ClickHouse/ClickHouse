@@ -20,7 +20,8 @@ struct SettingDescription
     String type;
     String comment;
     SettingsTierType tier = SettingsTierType::PRODUCTION;
-    /// From the current user's settings constraints, where any apply to the setting.
+    /// From the current user's settings constraints, where any apply to the setting. `readonly` is also set for a
+    /// setting the engine never lets change (`MergeTreeSettings::isReadonlySetting`).
     std::optional<String> min_value;
     std::optional<String> max_value;
     std::vector<String> disallowed_values;

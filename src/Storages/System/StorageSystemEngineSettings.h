@@ -8,7 +8,7 @@ namespace DB
 
 class Context;
 
-/// Implements system table "engine_settings" which shows all settings for all table engines.
+/// Implements `system.engine_settings`: the engine-specific settings of table engines, one row per engine and setting.
 class StorageSystemEngineSettings final : public IStorageSystemOneBlock
 {
 public:
