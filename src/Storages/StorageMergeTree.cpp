@@ -1886,12 +1886,13 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             .explanation = PreformattedMessage::create("Merges are disabled for UNIQUE KEY tables"),
         });
 
+    /// Owned here and handed to the predicate, the collector and `getMutationVersionForMergedPart`.
     auto reservations = getCommittingBlocksSnapshot();
     /// Test hook: the reservations are copied under `lock`, the patch parts are not read yet. Only explicit `OPTIMIZE` reaches here.
     if (!partition_id.empty())
         FailPointInjection::pauseFailPoint(FailPoints::mt_optimize_pause_before_reading_patches);
-    auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, txn, lock, std::move(reservations));
-    auto parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate);
+    auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, txn, lock, reservations);
+    auto parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate, reservations.lastAllocatedBlock());
 
     const auto is_background_memory_usage_ok = []() -> std::expected<void, PreformattedMessage>
     {
@@ -1934,7 +1935,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// the new metadata and registers the rename mutation under, so the mutations read here
             /// match the `metadata_snapshot` this merge writes its result with.
             auto mutation_version = getMutationVersionForMergedPart(
-                future_part->part_info.getDataVersion(), future_part->part_info.getPartitionId(), merge_predicate->getReservations(), lock);
+                future_part->part_info.getDataVersion(), future_part->part_info.getPartitionId(), reservations, lock);
 
             if (!mutation_version)
                 return std::unexpected(SelectMergeFailure{
@@ -2080,14 +2081,15 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                     });
             }
 
-            /// The wait released the mutex: reservations, watermark and metadata are stale. A stale watermark
+            /// The wait released the mutex: reservations, last allocated block and metadata are stale. A stale bound
             /// would drop parts inserted meanwhile, and a rename published meanwhile would be missed.
             if (attempt > 0)
             {
                 auto metadata_snapshot_handle = getInMemoryMetadataPtr(getContext(), false);
                 metadata_snapshot = metadata_snapshot_handle;
-                merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, txn, lock, getCommittingBlocksSnapshot());
-                parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate);
+                reservations = getCommittingBlocksSnapshot();
+                merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, txn, lock, reservations);
+                parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate, reservations.lastAllocatedBlock());
             }
             ++attempt;
 
@@ -4625,7 +4627,7 @@ void StorageMergeTree::waitForCommittingInsertsAndMutations(Int64 max_block_numb
 
 CommittingBlocksSnapshot StorageMergeTree::getCommittingBlocksSnapshot() const
 {
-    /// `allocateBlockNumber` increments and inserts under this mutex, so a block is either in the copy or above the watermark.
+    /// `allocateBlockNumber` increments and inserts under this mutex, so a block is either in the copy or above the last allocated block.
     std::lock_guard lock(committing_blocks_mutex);
     return CommittingBlocksSnapshot(committing_blocks, static_cast<Int64>(increment.value.load()));
 }

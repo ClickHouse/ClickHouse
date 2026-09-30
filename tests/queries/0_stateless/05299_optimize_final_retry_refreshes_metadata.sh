@@ -62,8 +62,8 @@ second_pid=$!
 wait_for_query_result "SYSTEM FLUSH LOGS text_log; SELECT count() > 0 FROM system.text_log WHERE query_id = '$OPTIMIZE_QUERY_ID' AND message LIKE 'Waiting for currently running merges%'" "1"
 
 # A third part, created only now that the retried selection is known to be waiting: it is above the
-# reservations/watermark snapshot the first attempt took, so only a rebuild on the retry can see it.
-# Without the rebuild the watermark is stale, the collector drops this part, and it is left out of
+# reservations/last-allocated-block snapshot the first attempt took, so only a rebuild on the retry can see it.
+# Without the rebuild the last allocated block is stale, the collector drops this part, and it is left out of
 # the FINAL result.
 $CLICKHOUSE_CLIENT --query "INSERT INTO $TABLE SELECT number + 200, 1 FROM numbers(100)"
 

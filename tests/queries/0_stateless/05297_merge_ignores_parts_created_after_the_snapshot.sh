@@ -3,13 +3,13 @@
 # no-parallel -- server-wide failpoints pause the next mutation's block allocation, the next
 # mutation registration, and the next explicit `OPTIMIZE`'s merge selection.
 # no-replicated-database -- the local timing of `DELETE`, `INSERT` and `OPTIMIZE` is assumed.
-# no-shared-merge-tree -- the candidate watermark under test is `MergeTreePartsCollector`'s.
+# no-shared-merge-tree -- the last-allocated-block filter under test is `MergeTreePartsCollector`'s.
 # no-ordinary-database -- transactions need an Atomic database.
 
 # A mutation that allocates its block after a merge selection copied its reservations is invisible to that
 # snapshot, and so is a part activated afterwards. Merging the two older parts with that late part would
 # leave the merged part at a low version, so the mutation would later rewrite data inserted after its own version.
-# `MergeTreePartsCollector` drops parts with `min_block` above the snapshot watermark from the initial set of
+# `MergeTreePartsCollector` drops parts with `min_block` above the snapshot's last allocated block from the initial set of
 # `OPTIMIZE FINAL`, so only the older parts merge. `optimize_throw_if_noop = 1` fails the test if the late part is refused instead.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -62,14 +62,14 @@ function run_late_part_arm()
     local delete_pid=$!
     wait_failpoint $MUTATION_FP
 
-    # The `OPTIMIZE` selection copies the reservations and the watermark (blocks 1 and 2 only) and parks
+    # The `OPTIMIZE` selection copies the reservations and the last allocated block (blocks 1 and 2 only) and parks
     # holding the background mutex.
     $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $OPTIMIZE_FP"
     $CLICKHOUSE_CLIENT --query_id "$OPTIMIZE_QUERY_ID" --query "$1" &
     local optimize_pid=$!
     wait_failpoint $OPTIMIZE_FP
 
-    # The DELETE allocates its block above the watermark and parks before registering; waiting for that
+    # The DELETE allocates its block above the last allocated block and parks before registering; waiting for that
     # pause orders the `INSERT` after the allocation. The inserted part lands above the DELETE's version.
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $MUTATION_FP"
     wait_failpoint $REGISTER_FP

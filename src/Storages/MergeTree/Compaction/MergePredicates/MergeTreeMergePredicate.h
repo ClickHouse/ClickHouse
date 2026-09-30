@@ -14,17 +14,12 @@ public:
     /// `reservations_` must be taken before the constructor reads the patch parts; see `getPatchesToApplyOnMerge`.
     MergeTreeMergePredicate(
         const StorageMergeTree & storage_, const MergeTreeTransactionPtr & tx_, std::unique_lock<std::mutex> & merge_mutate_lock_,
-        CommittingBlocksSnapshot reservations_);
+        const CommittingBlocksSnapshot & reservations_);
     ~MergeTreeMergePredicate() override = default;
 
     std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
     std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const;
     PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override;
-
-    /// A part created after the snapshot; a version allocated in between can lie below it.
-    bool isPartAfterSnapshot(const MergeTreeDataPartPtr & part) const;
-
-    const CommittingBlocksSnapshot & getReservations() const { return reservations; }
 
 private:
     const StorageMergeTree & storage;

@@ -24,9 +24,9 @@ PlainCommittingBlockHolder::~PlainCommittingBlockHolder()
     storage.removeCommittingBlock(block);
 }
 
-CommittingBlocksSnapshot::CommittingBlocksSnapshot(const CommittingBlocksSet & blocks, Int64 watermark_)
+CommittingBlocksSnapshot::CommittingBlocksSnapshot(const CommittingBlocksSet & blocks, Int64 last_allocated_block_)
     : min_update_block(getMinUpdateBlockNumber(blocks))
-    , watermark_value(watermark_)
+    , last_allocated_block(last_allocated_block_)
 {
     for (const auto & block : blocks)
     {

@@ -82,10 +82,10 @@ static MergeTreeDataPartsVector getPartsVisibleForMerge(const StorageMergeTree &
 
 MergeTreeMergePredicate::MergeTreeMergePredicate(
     const StorageMergeTree & storage_, const MergeTreeTransactionPtr & tx_, std::unique_lock<std::mutex> & merge_mutate_lock_,
-    CommittingBlocksSnapshot reservations_)
+    const CommittingBlocksSnapshot & reservations_)
     : storage(storage_)
     , merge_mutate_lock(merge_mutate_lock_)
-    , reservations(std::move(reservations_))
+    , reservations(reservations_)
 {
     /// The wider set is used only to find the data versions that a merge of patch parts must not span.
     /// A version that only a rollbackable outdated part has still has to be seen here, otherwise the
@@ -229,18 +229,11 @@ PartsRange MergeTreeMergePredicate::getPatchesToApplyOnMerge(const PartsRange & 
     if (auto reservation = reservations.firstReservationAfter(first_part.getDataVersion()))
         next_version = next_version == 0 ? reservation->number : std::min(next_version, reservation->number);
 
-    std::vector<MergeTreePartInfo> patches_at_or_below_watermark;
-    std::ranges::copy_if(it->second, std::back_inserter(patches_at_or_below_watermark),
-        [&](const auto & patch) { return patch.getDataVersion() <= reservations.watermark(); });
+    std::vector<MergeTreePartInfo> patches_allocated_before_snapshot;
+    std::ranges::copy_if(it->second, std::back_inserter(patches_allocated_before_snapshot),
+        [&](const auto & patch) { return patch.getDataVersion() <= reservations.lastAllocatedBlock(); });
 
-    return DB::getPatchesToApplyOnMerge(patches_at_or_below_watermark, range, next_version);
-}
-
-bool MergeTreeMergePredicate::isPartAfterSnapshot(const MergeTreeDataPartPtr & part) const
-{
-    /// `min_block` alone identifies a late candidate. A restored or attached part may carry a foreign
-    /// mutation version above this table's counter; it is not a late allocation and stays a candidate.
-    return part->info.min_block > reservations.watermark();
+    return DB::getPatchesToApplyOnMerge(patches_allocated_before_snapshot, range, next_version);
 }
 
 }
