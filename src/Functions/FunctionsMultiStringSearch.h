@@ -87,6 +87,11 @@ public:
         return Impl::getReturnType();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return Impl::getReturnType();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & haystack_ptr = arguments[0].column;

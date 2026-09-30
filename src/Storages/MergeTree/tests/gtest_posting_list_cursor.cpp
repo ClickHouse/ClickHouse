@@ -3624,6 +3624,7 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
     {
         .version = MergeTreeTextIndexSerializationVersion::V1_WithCodec,
         .codec_type = IPostingListCodec::Type::Bitpacking,
+        .json_path_values_configuration = {},
         .sparse_index = std::move(sparse_index),
     };
 
@@ -3676,6 +3677,7 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
     {
         .version = MergeTreeTextIndexSerializationVersion::V0_Initial,
         .codec_type = IPostingListCodec::Type::None,
+        .json_path_values_configuration = {},
         .sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr()),
     };
 
@@ -3686,6 +3688,7 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
     {
         .version = MergeTreeTextIndexSerializationVersion::V1_WithCodec,
         .codec_type = IPostingListCodec::Type::None,
+        .json_path_values_configuration = {},
         .sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr()),
     };
 
@@ -3701,6 +3704,7 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
         .codec_type = IPostingListCodec::Type::None,
         .has_positions = true,
         .positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor),
+        .json_path_values_configuration = {},
         .sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr()),
     };
 
@@ -3716,6 +3720,7 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
     {
         .version = MergeTreeTextIndexSerializationVersion::V2_WithPositions,
         .codec_type = IPostingListCodec::Type::None,
+        .json_path_values_configuration = {},
         .sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr()),
     };
 

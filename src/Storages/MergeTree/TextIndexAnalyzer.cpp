@@ -74,6 +74,7 @@ void TextIndexAnalyzer::QueryBuilder::markFailed()
 {
     is_failed = true;
     postings.reset();
+    dynamic_fallback_postings.reset();
     rows_range.reset();
     num_live_tokens = 0;
 }
@@ -97,7 +98,7 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken(std::string_view token)
 
     /// `Any` mode fails once none of its declared tokens can contribute.
     /// Pattern queries discover tokens dynamically, so the count applies only to pure-token queries.
-    if (query->getPatterns().empty())
+    if (!query->hasPatternLookup())
     {
         if (num_live_tokens > 0)
             --num_live_tokens;
@@ -138,10 +139,18 @@ void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
     }
 }
 
-void TextIndexAnalyzer::QueryBuilder::addPostings(const PostingList & token_postings)
+void TextIndexAnalyzer::QueryBuilder::addPostings(std::string_view token, const PostingList & token_postings)
 {
     if (is_failed)
         return;
+
+    if (query->getJSONPayload() && query->getJSONPayload()->requiresValidation(token))
+    {
+        if (dynamic_fallback_postings)
+            *dynamic_fallback_postings |= token_postings;
+        else
+            dynamic_fallback_postings = token_postings;
+    }
 
     ++num_read_postings;
 
@@ -158,7 +167,9 @@ void TextIndexAnalyzer::QueryBuilder::addPostings(const PostingList & token_post
         markFailed();
 }
 
-TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text)
+TextIndexAnalyzer::TextIndexAnalyzer(
+    const MergeTreeIndexConditionText & condition_text,
+    const std::optional<JSONPathValues::IndexConfiguration> & part_configuration)
 {
     global_search_mode = condition_text.getGlobalSearchMode();
 
@@ -167,14 +178,38 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
         auto & query_builder = query_builders[hash];
         query_builder.query = query;
 
+        if (!condition_text.canUseQueryWithPartConfiguration(*query, part_configuration))
+        {
+            query_builder.is_bypassed = true;
+            query_builder.is_unavailable = true;
+            for (const auto & token : query->getTokens())
+                queries_by_token.try_emplace(token);
+            continue;
+        }
+
         for (const auto & token : query->getTokens())
         {
             if (queries_by_token[token].insert(hash).second)
                 ++query_builder.num_live_tokens;
         }
 
-        for (const auto & pattern : query->getPatterns())
-            queries_by_pattern[&pattern].insert(hash);
+        if (query->getJSONPayload() && query->getJSONPayload()->match_patterns_by_prefix)
+        {
+            for (const auto & prefix : query->getJSONPayload()->pattern_token_prefixes)
+                queries_by_prefix[prefix].insert(hash);
+        }
+        else
+        {
+            for (const auto & pattern : query->getPatterns())
+                queries_by_pattern[&pattern].insert(hash);
+        }
+
+        if (query->getJSONPayload())
+        {
+            for (const auto & prefix : query->getJSONPayload()->validation_pattern_prefixes)
+                queries_by_prefix[prefix].insert(hash);
+        }
+
     }
 }
 
@@ -266,7 +301,7 @@ void TextIndexAnalyzer::addPostings(std::string_view token, const PostingList & 
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
-        query_builder.addPostings(*postings_ptr);
+        query_builder.addPostings(token, *postings_ptr);
     });
 }
 
@@ -282,14 +317,49 @@ bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
 {
     bool added = false;
 
+    for (const auto & [prefix, query_hashes] : queries_by_prefix)
+    {
+        if (!token.starts_with(prefix))
+            continue;
+
+        for (const auto & query_hash : query_hashes)
+        {
+            const auto & query = query_builders.at(query_hash).query;
+            if (!query->getJSONPayload() || query->getJSONPayload()->matchesPatternToken(token))
+            {
+                queries_by_token[token].emplace(query_hash);
+                added = true;
+            }
+        }
+    }
+
+    std::optional<std::string_view> decoded_json_value;
+    bool decoded_json_token_initialized = false;
     for (const auto & [pattern, query_hashes] : queries_by_pattern)
     {
-        if (pattern->match(token.data(), token.size()))
+        for (const auto & query_hash : query_hashes)
         {
-            added = true;
+            const auto & query = query_builders.at(query_hash).query;
+            std::string_view subject = token;
+            if (const auto & payload = query->getJSONPayload())
+            {
+                if (!payload->matchesPatternToken(token))
+                    continue;
+                if (!decoded_json_token_initialized)
+                {
+                    decoded_json_value = JSONPathValues::tryGetCompleteScalarValue(token);
+                    decoded_json_token_initialized = true;
+                }
+                if (!decoded_json_value)
+                    continue;
+                subject = *decoded_json_value;
+            }
 
-            for (const auto & query_hash : query_hashes)
-                queries_by_token[token].emplace(query_hash);
+            if (!pattern->match(subject.data(), subject.size()))
+                continue;
+
+            queries_by_token[token].emplace(query_hash);
+            added = true;
         }
     }
 
@@ -298,14 +368,23 @@ bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
 
 std::optional<std::vector<TextIndexAnalyzer::TokenKeyRange>> TextIndexAnalyzer::getPatternTokenKeyRanges() const
 {
-    if (queries_by_pattern.empty())
+    if (queries_by_pattern.empty() && queries_by_prefix.empty())
         return std::nullopt;
 
     std::vector<TokenKeyRange> key_ranges;
-    key_ranges.reserve(queries_by_pattern.size());
+    key_ranges.reserve(queries_by_pattern.size() + queries_by_prefix.size());
 
-    for (const auto & [pattern, _] : queries_by_pattern)
+    for (const auto & [prefix, _] : queries_by_prefix)
+        key_ranges.emplace_back(prefix, firstStringThatIsGreaterThanAllStringsWithPrefix(prefix));
+
+    for (const auto & [pattern, query_hashes] : queries_by_pattern)
     {
+        if (std::ranges::any_of(query_hashes, [&](const auto & query_hash)
+        {
+            return query_builders.at(query_hash).query->getJSONPayload().has_value();
+        }))
+            return std::nullopt;
+
         String literal(pattern->getRequiredSubstring());
         if (literal.empty())
             return std::nullopt;
@@ -332,10 +411,17 @@ std::optional<std::vector<TextIndexAnalyzer::TokenKeyRange>> TextIndexAnalyzer::
 
 bool TextIndexAnalyzer::canFilterTokensByLiterals() const
 {
-    if (queries_by_pattern.empty())
+    if (queries_by_pattern.empty() && queries_by_prefix.empty())
         return false;
 
-    return std::ranges::all_of(queries_by_pattern, [](const auto & entry) { return !entry.first->getRequiredSubstring().empty(); });
+    return std::ranges::all_of(queries_by_pattern, [&](const auto & entry)
+    {
+        return !entry.first->getRequiredSubstring().empty()
+            && std::ranges::none_of(entry.second, [&](const auto & query_hash)
+            {
+                return query_builders.at(query_hash).query->getJSONPayload().has_value();
+            });
+    });
 }
 
 void TextIndexAnalyzer::markPatternCandidateTokens(
@@ -374,6 +460,23 @@ void TextIndexAnalyzer::matchTokensByLiterals(
     for (const auto & [pattern, _] : queries_by_pattern)
         markPatternCandidateTokens(*pattern, tokens, candidate_marks);
 
+    for (const auto & [prefix, _] : queries_by_prefix)
+    {
+        size_t begin = 0;
+        size_t end = num_tokens;
+        while (begin < end)
+        {
+            const size_t middle = begin + (end - begin) / 2;
+            if (std::string_view(tokens.getDataAt(middle)) < prefix)
+                begin = middle + 1;
+            else
+                end = middle;
+        }
+
+        while (begin < num_tokens && std::string_view(tokens.getDataAt(begin)).starts_with(prefix))
+            candidate_marks[begin++] = 1;
+    }
+
     for (size_t token_idx = 0; token_idx < num_tokens; ++token_idx)
     {
         if (candidate_marks[token_idx] && addTokenToPatterns(tokens.getDataAt(token_idx)))
@@ -395,9 +498,9 @@ bool TextIndexAnalyzer::hasReadPostings(std::string_view token) const
 void TextIndexAnalyzer::bypassPatternQueries()
 {
     QueryHashes all_pattern_queries;
-    for (const auto & [_, query_hashes] : queries_by_pattern)
+    for (const auto & [query_hash, query_builder] : query_builders)
     {
-        for (const auto & query_hash : query_hashes)
+        if (query_builder.query->hasPatternLookup())
             all_pattern_queries.insert(query_hash);
     }
 
@@ -479,7 +582,7 @@ double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_bu
                 /// sparse index was filtered as too common at build time ⟹ treat it as covering
                 /// all rows, which makes the union saturate at n.
                 double token_cardinality = (it == query_builder.tokens.end())
-                    ? n
+                    ? (query.getJSONPayload() ? 0.0 : n)
                     : static_cast<double>(it->second->cardinality);
 
                 not_in_any *= (1.0 - token_cardinality / n);
