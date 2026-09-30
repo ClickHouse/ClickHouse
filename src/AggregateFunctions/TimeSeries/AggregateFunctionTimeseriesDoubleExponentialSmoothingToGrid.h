@@ -1,10 +1,8 @@
 #pragma once
 
-#include <algorithm>
 #include <cstddef>
 #include <optional>
 #include <utility>
-#include <vector>
 
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -31,13 +29,11 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
 
     using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType>;
 
-    /// Per-bucket summary that collects the bucket's (timestamp, value) samples, and (once combined over a window)
-    /// the window's samples too. Double exponential smoothing is order-dependent, so the timestamps are kept and
-    /// used to order the samples before smoothing. There is no `unmerge`, so the `SlidingSum` recomputes the
-    /// window's samples per grid point.
+    /// The bucket's sample values, or the window's values once merged. They stay in timestamp order because
+    /// each bucket yields sorted samples and the window merges buckets in time order.
     struct Summary
     {
-        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> samples;
+        VectorWithMemoryTracking<ValueType> samples;
 
         void merge(const Summary & other)
         {
@@ -61,9 +57,9 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
         void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
             Summary summary;
-            samples.forEachSample([&summary](TimestampType timestamp, ValueType value)
+            samples.forEachSample([&summary](TimestampType, ValueType value)
             {
-                summary.samples.emplace_back(timestamp, value);
+                summary.samples.push_back(value);
             });
             add(std::move(summary), bucket_end_timestamp);
         }
@@ -82,28 +78,24 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
 
         std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
-            const Summary combined = sliding_sum.getCurrentSum();
+            const auto & values = sliding_sum.getCurrentSum().samples;
 
             /// Prometheus can't smooth with fewer than two points, and returns no value in that case.
-            if (combined.samples.size() < 2)
+            if (values.size() < 2)
                 return std::nullopt;
 
-            std::vector<std::pair<TimestampType, ValueType>> sorted(combined.samples.begin(), combined.samples.end()); // STYLE_CHECK_ALLOW_STD_CONTAINERS
-            std::sort(sorted.begin(), sorted.end(),
-                [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
-
-            const size_t l = sorted.size();
+            const size_t l = values.size();
             const Float64 sf = smoothing_factor;
             const Float64 tf = trend_factor;
 
             /// Initial level and trend, matching Prometheus's funcDoubleExponentialSmoothing.
             Float64 s0 = 0;
-            Float64 s1 = static_cast<Float64>(sorted[0].second);
-            Float64 b = static_cast<Float64>(sorted[1].second) - static_cast<Float64>(sorted[0].second);
+            Float64 s1 = static_cast<Float64>(values[0]);
+            Float64 b = static_cast<Float64>(values[1]) - static_cast<Float64>(values[0]);
 
             for (size_t i = 1; i < l; ++i)
             {
-                const Float64 x = sf * static_cast<Float64>(sorted[i].second);
+                const Float64 x = sf * static_cast<Float64>(values[i]);
 
                 /// calcTrendValue(i - 1): the trend is left unchanged on the first step (i == 1), then updated as
                 /// tf * (s1 - s0) + (1 - tf) * b on subsequent steps.
