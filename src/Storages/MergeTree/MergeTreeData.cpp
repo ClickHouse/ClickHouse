@@ -10302,8 +10302,19 @@ static void checkDateTimeConversionArgument(const Field & value, const DataTypeP
 {
     if (value.getType() == Field::Types::String)
     {
-        if (WhichDataType(removeLowCardinalityAndNullable(type)).isDateOrDate32OrDateTimeOrDateTime64())
-            convertPartitionFieldToType(value, type);
+        const WhichDataType which(removeLowCardinalityAndNullable(type));
+        if (!which.isDateOrDate32OrDateTimeOrDateTime64())
+            return;
+
+        /// `toDate('2024-02-29 12:00:00')` ignores the time, so only the date is checked.
+        String text = value.safeGet<String>();
+        if (which.isDateOrDate32() && text.size() > 10 && (text[10] == ' ' || text[10] == 'T'))
+            text.resize(10);
+
+        /// A conversion accepts more spellings than a partition literal, e.g. `'2024-02-29 12:00:00Z'`. Only a
+        /// spelling that a literal accepts too can be checked.
+        if (!tryConvertFieldToType(Field(text), *type).isNull())
+            convertPartitionFieldToType(Field(text), type);
     }
     else if (value.getType() == Field::Types::Tuple)
     {
