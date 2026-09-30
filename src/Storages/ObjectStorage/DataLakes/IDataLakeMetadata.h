@@ -3,6 +3,7 @@
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
 
+#include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -50,6 +51,26 @@ using PartitionCommands = std::vector<PartitionCommand>;
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
+/// Statistics of one column over the data files left after pruning.
+struct DataLakeColumnEstimate
+{
+    /// Where `num_distinct_values` comes from; only the first two bound the true count.
+    enum class DistinctValuesSource : UInt8
+    {
+        IdentityPartition,
+        ValueRange,
+        ColumnSize,
+        ColumnType,
+    };
+
+    UInt64 num_distinct_values = 1;
+    DistinctValuesSource distinct_values_source = DistinctValuesSource::ColumnType;
+    /// Typed as the storage column.
+    std::optional<Field> min_value;
+    std::optional<Field> max_value;
+    std::optional<Float64> null_fraction;
+};
+
 /// Rows of a read, estimated from the data lake metadata without reading data (see `IDataLakeMetadata::estimateRead`).
 struct DataLakeReadEstimate
 {
@@ -59,6 +80,8 @@ struct DataLakeReadEstimate
     bool pruned_data_files = false;
     /// The snapshot has live delete files.
     bool has_delete_files = false;
+    /// By storage column name; only requested columns, and only when `rows` is known and positive.
+    std::unordered_map<String, DataLakeColumnEstimate> columns;
 };
 
 class IDataLakeMetadata : boost::noncopyable
@@ -143,8 +166,10 @@ public:
     virtual bool supportsLazyMaterialization(StorageMetadataPtr, ContextPtr) const { return false; }
 
     /// Estimates from the metadata only the rows a read of the pinned data snapshot returns, with the data files
-    /// pruned by `filter` as the read prunes them. std::nullopt if this data lake gives no estimate.
-    virtual std::optional<DataLakeReadEstimate> estimateRead(StorageMetadataPtr, const ActionsDAG * /*filter*/, ContextPtr) const
+    /// pruned by `filter` as the read prunes them, and the statistics of `column_names`. std::nullopt if this data lake
+    /// gives no estimate.
+    virtual std::optional<DataLakeReadEstimate>
+    estimateRead(StorageMetadataPtr, const ActionsDAG * /*filter*/, const Names & /*column_names*/, ContextPtr) const
     {
         return std::nullopt;
     }
