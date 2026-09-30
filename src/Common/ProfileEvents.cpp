@@ -106,7 +106,10 @@
     M(MarkCacheHits, "Number of times an entry has been found in the mark cache, so we didn't have to load a mark file.", ValueType::Number) \
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
     M(UniqueKeyBitmapLoadMicroseconds, "Time spent reading and deserializing UNIQUE KEY delete-bitmap sidecar files on a DeleteBitmapCache miss.", ValueType::Microseconds) \
-    M(UniqueKeyBitmapUpdates, "Number of UNIQUE KEY delete-bitmap sidecar files written (one per supersession / DELETE commit).", ValueType::Number) \
+    M(UniqueKeyMutexHoldMicroseconds, "Total wall-clock time the per-partition UNIQUE KEY mutex was held across all acquisitions on this server (sum of hold-time microseconds).", ValueType::Microseconds) \
+    M(UniqueKeyDedupProbes, "Number of new-row keys probed against existing parts on the UNIQUE KEY INSERT write-path.", ValueType::Number) \
+    M(UniqueKeyConflictOverwriteRows, "Number of new-row keys that superseded a live row in an existing part on the UNIQUE KEY INSERT write-path.", ValueType::Number) \
+    M(UniqueKeyConflictIgnoredRows, "Number of incoming rows dropped by unique_key_conflict_action = ignore because the key was already live in the partition.", ValueType::Number) \
     M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load a index file.", ValueType::Number) \
     M(PrimaryIndexCacheMisses, "Number of times an entry has not been found in the primary index cache, so we had to load a index file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
     M(IcebergMetadataFilesCacheHits, "Number of times iceberg metadata files have been found in the cache.", ValueType::Number) \
@@ -116,6 +119,10 @@
     M(PaimonMetadataFilesCacheHits, "Number of times paimon metadata files have been found in the cache.", ValueType::Number) \
     M(PaimonMetadataFilesCacheMisses, "Number of times paimon metadata files have not been found in the paimon metadata cache and had to be read from (remote) disk.", ValueType::Number) \
     M(PaimonMetadataFilesCacheWeightLost, "Approximate number of bytes evicted from the paimon metadata cache.", ValueType::Number) \
+    M(TimeSeriesMetricFamiliesDeduplicationCacheHits, "Number of rows not written to the metric families tables of TimeSeries tables because the deduplication cache already had them or the same insert had already written them.", ValueType::Number) \
+    M(TimeSeriesMetricFamiliesDeduplicationCacheMisses, "Number of rows written to the metric families tables of TimeSeries tables after they were not found in the deduplication cache.", ValueType::Number) \
+    M(TimeSeriesTagsDeduplicationCacheHits, "Number of rows not written to the tags tables of TimeSeries tables because the deduplication cache already had them or the same insert had already written them.", ValueType::Number) \
+    M(TimeSeriesTagsDeduplicationCacheMisses, "Number of rows written to the tags tables of TimeSeries tables after they were not found in the deduplication cache.", ValueType::Number) \
     M(IcebergMetadataReadWaitTimeMicroseconds, "Total time data readers spend waiting for iceberg metadata files to be read and parsed, summed across all reader threads.", ValueType::Microseconds) \
     M(ParquetMetadataCacheHits, "Number of times parquet metadata has been found in the cache.", ValueType::Number) \
     M(ParquetMetadataCacheMisses, "Number of times parquet metadata has not been found in the cache and had to be read from disk.", ValueType::Number) \

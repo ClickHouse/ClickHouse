@@ -1821,6 +1821,13 @@ void forEachAvroEntry(
     auto reader_base = std::make_unique<avro::DataFileReaderBase>(std::move(input_stream), MAX_AVRO_SCHEMA_DEPTH);
     avro::DataFileReader<avro::GenericDatum> reader(std::move(reader_base));
 
+    if (reader.readerSchema().root()->type() != avro::AVRO_RECORD)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Avro file {} has root schema type {}, but Iceberg manifest-list entries must be records",
+            filename,
+            static_cast<int>(reader.readerSchema().root()->type()));
+
     avro::GenericDatum datum(reader.readerSchema());
     while (reader.read(datum))
         callback(datum);
