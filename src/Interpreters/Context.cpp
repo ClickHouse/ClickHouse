@@ -19,6 +19,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
 #include <Common/EventNotifier.h>
+#include <Common/FailPoint.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <base/getMemoryAmount.h>
 #include <Common/Stopwatch.h>
@@ -467,6 +468,12 @@ namespace ServerSetting
     extern const ServerSettingsBool allow_experimental_webassembly_udf;
     extern const ServerSettingsString webassembly_udf_engine;
     extern const ServerSettingsBool allow_experimental_executable_udf_drivers;
+}
+
+namespace FailPoints
+{
+    extern const char context_zookeeper_lock_acquired_pause[];
+    extern const char context_auxiliary_zookeeper_lock_acquired_pause[];
 }
 
 namespace ErrorCodes
@@ -6242,19 +6249,33 @@ void recordZooKeeperConnectionLoss()
     );
 }
 
+std::unique_lock<std::timed_mutex> acquireZooKeeperLock(
+    const Context & context, std::timed_mutex & mutex, const char * lock_name)
+{
+    auto lock_acquire_timeout = context.getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
+    if (context.hasQueryContext())
+        lock_acquire_timeout = context.getQueryContext()->getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
+
+    std::unique_lock lock(mutex, std::defer_lock);
+    if (lock_acquire_timeout.totalMilliseconds() == 0)
+        lock.lock();
+    else if (!lock.try_lock_for(std::chrono::milliseconds(lock_acquire_timeout.totalMilliseconds())))
+        throw Exception(
+            ErrorCodes::TIMEOUT_EXCEEDED,
+            "Timeout exceeded while acquiring {} ({} ms)",
+            lock_name,
+            lock_acquire_timeout.totalMilliseconds());
+
+    return lock;
+}
+
 }
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     auto component_guard = Coordination::setCurrentComponent("Context::getZooKeeper");
-    auto lock_acquire_timeout = getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
-    if (hasQueryContext())
-        lock_acquire_timeout = getQueryContext()->getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
-    std::unique_lock lock(shared->zookeeper_mutex, std::defer_lock);
-    if (lock_acquire_timeout.totalMilliseconds() == 0)
-        lock.lock();
-    else if (!lock.try_lock_for(std::chrono::milliseconds(lock_acquire_timeout.totalMilliseconds())))
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while acquiring ZooKeeper lock ({} ms)", lock_acquire_timeout.totalMilliseconds());
+    auto lock = acquireZooKeeperLock(*this, shared->zookeeper_mutex, "ZooKeeper lock");
+    FailPointInjection::pauseFailPoint(FailPoints::context_zookeeper_lock_acquired_pause);
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
 
     if (!shared->zookeeper)
@@ -6390,7 +6411,7 @@ bool Context::tryCheckClientConnectionToMyKeeperCluster() const
 
 UInt32 Context::getZooKeeperSessionUptime() const
 {
-    std::lock_guard lock(shared->zookeeper_mutex);
+    auto lock = acquireZooKeeperLock(*this, shared->zookeeper_mutex, "ZooKeeper lock");
     if (!shared->zookeeper || shared->zookeeper->expired())
         return 0;
     return shared->zookeeper->getSessionUptime();
@@ -6534,14 +6555,8 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
     auto component_guard = Coordination::setCurrentComponent("Context::getAuxiliaryZooKeeper");
-    auto lock_acquire_timeout = getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
-    if (hasQueryContext())
-        lock_acquire_timeout = getQueryContext()->getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
-    std::unique_lock lock(shared->auxiliary_zookeepers_mutex, std::defer_lock);
-    if (lock_acquire_timeout.totalMilliseconds() == 0)
-        lock.lock();
-    else if (!lock.try_lock_for(std::chrono::milliseconds(lock_acquire_timeout.totalMilliseconds())))
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while acquiring auxiliary ZooKeeper lock ({} ms)", lock_acquire_timeout.totalMilliseconds());
+    auto lock = acquireZooKeeperLock(*this, shared->auxiliary_zookeepers_mutex, "auxiliary ZooKeeper lock");
+    FailPointInjection::pauseFailPoint(FailPoints::context_auxiliary_zookeeper_lock_acquired_pause);
     const auto config_name = "auxiliary_zookeepers." + name;
 
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
@@ -6593,7 +6608,7 @@ std::shared_ptr<zkutil::ZooKeeper> Context::getDefaultOrAuxiliaryZooKeeper(const
 
 std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
 {
-    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+    auto lock = acquireZooKeeperLock(*this, shared->auxiliary_zookeepers_mutex, "auxiliary ZooKeeper lock");
     return shared->auxiliary_zookeepers;
 }
 

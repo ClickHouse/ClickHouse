@@ -10,7 +10,6 @@ import pytest
 import time
 import concurrent.futures
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
-from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.xml")
 
@@ -63,9 +62,12 @@ def test_zookeeper_lock_acquire_timeout(started_cluster, zk_name):
 
         def run_query(query_id, lock_acquire_timeout_ms):
             start = time.time()
+            query = f"SELECT '{query_id}', * FROM system.zookeeper WHERE path = '/'{zk_filter} LIMIT 1"
+            if zk_name == "default" and query_id == "short_0":
+                query = "SELECT zookeeperSessionUptime()"
             try:
                 node.query(
-                    f"SELECT '{query_id}', * FROM system.zookeeper WHERE path = '/'{zk_filter} LIMIT 1",
+                    query,
                     settings={"get_zookeeper_lock_acquire_timeout_ms": lock_acquire_timeout_ms},
                     timeout=(lock_acquire_timeout_ms / 1000) * 10,
                     query_id=query_id,
@@ -77,28 +79,41 @@ def test_zookeeper_lock_acquire_timeout(started_cluster, zk_name):
         # Fire queries concurrently:
         # - One with long timeout (will hold the mutex)
         # - Several with short timeout (should fail fast)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=num_short_queries + 1) as executor:
-            # Start the long-timeout query first
-            long_future = executor.submit(run_query, "long", long_timeout_ms)
-            
-            # Long-timeout query should be running and acquire the mutex
-            assert_eq_with_retry(node, "SELECT count() FROM system.processes WHERE query_id = 'long'", "1")
-            
-            # Now fire short-timeout queries
-            short_futures = [executor.submit(run_query, f"short_{i}", short_timeout_ms) for i in range(num_short_queries)]
+        failpoint = (
+            "context_zookeeper_lock_acquired_pause"
+            if zk_name == "default"
+            else "context_auxiliary_zookeeper_lock_acquired_pause"
+        )
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=num_short_queries + 1) as executor:
+                # Start the long-timeout query first
+                long_future = executor.submit(run_query, "long", long_timeout_ms)
 
-            for f in concurrent.futures.as_completed(short_futures, timeout=10):
-                results.append(f.result())
+                try:
+                    # Long-timeout query should be running and acquire the mutex
+                    node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=10)
 
-            long_result = long_future.result()
-            assert long_result[0] == "error", f"Expected error, got {long_result[0]}"
-            assert "DB::Exception: All connection tries failed while connecting to ZooKeeper." in long_result[2], f"Expected 'all connection tries failed' error, got {long_result[2]}"
+                    # Now fire short-timeout queries
+                    short_futures = [executor.submit(run_query, f"short_{i}", short_timeout_ms) for i in range(num_short_queries)]
+
+                    for f in concurrent.futures.as_completed(short_futures, timeout=10):
+                        results.append(f.result())
+                finally:
+                    node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+                long_result = long_future.result()
+                assert long_result[0] == "error", f"Expected error, got {long_result[0]}"
+                assert "DB::Exception: All connection tries failed while connecting to ZooKeeper." in long_result[2], f"Expected 'all connection tries failed' error, got {long_result[2]}"
+        finally:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
 
         # Analyze results from short-timeout queries
         # Look for our specific mutex acquire timeout error message
         assert len(results) == num_short_queries, f"Expected {num_short_queries} results, got {len(results)}"
         for r in results:
             assert r[0] == "error", f"Expected error, got {r[0]}"
+            assert "TIMEOUT_EXCEEDED" in r[2], f"Expected TIMEOUT_EXCEEDED error, got {r[2]}"
             assert "acquiring" in r[2] and "ZooKeeper lock" in r[2], f"Expected 'acquiring ... ZooKeeper lock' error, got {r[2]}"
             assert r[1] < max_short_query_duration_seconds, f"Expected timeout < {max_short_query_duration_seconds}s, got {r[1]}s"
 
