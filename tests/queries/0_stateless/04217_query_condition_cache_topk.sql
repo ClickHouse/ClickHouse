@@ -10,7 +10,12 @@
 -- through the `ORDER BY <column> LIMIT n` (TopK) plan, and that QCC entries
 -- are partitioned by the TopK plan parameters (column, type, LIMIT, direction,
 -- num_sort_columns) so a re-run with the same plan reuses the cached granule
--- decisions while a re-run with a different plan stores a fresh entry instead.
+-- decisions while a re-run with a different plan stores fresh entries instead.
+--
+-- Each TopK plan writes two entries per part: one for the WHERE filter (written
+-- by `FilterTransform`, see `updateQueryConditionCache`) and one for the dynamic
+-- `__topKFilter` PREWHERE (written by `MergeTreeSelectProcessor`, issue #114639).
+-- Both are salted with the TopK plan parameters.
 
 SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
@@ -41,21 +46,21 @@ SELECT '--- QCC starts empty';
 SYSTEM CLEAR QUERY CONDITION CACHE;
 SELECT count() FROM system.query_condition_cache;
 
-SELECT '--- Same TopK plan re-runs reuse the same QCC entry';
+SELECT '--- Same TopK plan re-runs reuse the same QCC entries';
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 
-SELECT '--- Different LIMIT writes a separate entry';
+SELECT '--- Different LIMIT writes separate entries';
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 7 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 
-SELECT '--- Different sort direction writes a separate entry';
+SELECT '--- Different sort direction writes separate entries';
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 DESC LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 
-SELECT '--- Different sort column writes a separate entry';
+SELECT '--- Different sort column writes separate entries';
 SELECT v2 FROM tab WHERE v2 = 10000 ORDER BY v2 ASC LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 
@@ -79,13 +84,13 @@ FROM numbers(1_000_000);
 SYSTEM CLEAR QUERY CONDITION CACHE;
 SELECT count() FROM system.query_condition_cache;
 
-SELECT '--- Same NULLS direction re-runs reuse the same QCC entry';
+SELECT '--- Same NULLS direction re-runs reuse the same QCC entries';
 SELECT n FROM tab2 WHERE v = 10000 ORDER BY n ASC NULLS FIRST LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 SELECT n FROM tab2 WHERE v = 10000 ORDER BY n ASC NULLS FIRST LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 
-SELECT '--- Different NULLS direction writes a separate entry';
+SELECT '--- Different NULLS direction writes separate entries';
 SELECT n FROM tab2 WHERE v = 10000 ORDER BY n ASC NULLS LAST LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 
