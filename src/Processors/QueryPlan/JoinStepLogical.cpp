@@ -460,10 +460,9 @@ JoinStepLogical::analyzeUnneededColumns(const std::vector<size_t> & unneeded_out
         /// Do not remove join_dummy_result from the outputs, because it was added to ensure at least one
         /// output column, so it is kept even when it is not required.
         if (!unneeded_positions_set.contains(position) || isDummyColumnOfThisStep(output_node))
-        {
             kept_output_nodes.push_back(output_node);
-            plan.kept_output_positions.push_back(position);
-        }
+        else
+            plan.dropped_output_positions.push_back(position);
     }
 
     /// Nothing is left to output, so a dummy column takes the place of the removed ones.
@@ -522,7 +521,7 @@ JoinStepLogical::analyzeUnneededColumns(const std::vector<size_t> & unneeded_out
 
     plan.removes_any_action = surviving_nodes.size() < actions_dag.getNodes().size();
 
-    if (!plan.removes_any_action && plan.kept_output_positions.size() == dag_outputs.size())
+    if (!plan.removes_any_action && plan.dropped_output_positions.empty())
     {
         plan.unneeded_input_positions.resize(input_headers.size());
         return plan;
@@ -581,27 +580,26 @@ JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & unneeded_output
     auto & actions_dag = *expression_actions.getActionsDAG();
     auto & dag_outputs = actions_dag.getOutputs();
 
-    /// An output the kept list skips goes away, and leaves actions_after_join with it. Both lists are in
-    /// output order, so one walk finds them.
-    const auto & kept_positions = plan.kept_output_positions;
-    const size_t former_output_count = dag_outputs.size();
+    /// A dropped output goes away, and leaves actions_after_join with it. The dropped positions are sorted, so one
+    /// walk over the outputs finds them.
+    const auto & dropped_positions = plan.dropped_output_positions;
     ActionsDAG::NodeRawConstPtrs new_actions_after_join = actions_after_join;
     ActionsDAG::NodeRawConstPtrs new_outputs;
-    new_outputs.reserve(kept_positions.size() + (plan.adds_dummy_output ? 1 : 0));
+    new_outputs.reserve(dag_outputs.size() - dropped_positions.size() + (plan.adds_dummy_output ? 1 : 0));
 
-    size_t next_kept = 0;
+    size_t next_dropped = 0;
     for (size_t position = 0; position < dag_outputs.size(); ++position)
     {
         const auto * output_node = dag_outputs[position];
-        if (next_kept < kept_positions.size() && kept_positions[next_kept] == position)
+        if (next_dropped < dropped_positions.size() && dropped_positions[next_dropped] == position)
         {
-            ++next_kept;
-            new_outputs.push_back(output_node);
+            ++next_dropped;
+            new_actions_after_join.erase(
+                std::remove(new_actions_after_join.begin(), new_actions_after_join.end(), output_node), new_actions_after_join.end());
             continue;
         }
 
-        new_actions_after_join.erase(
-            std::remove(new_actions_after_join.begin(), new_actions_after_join.end(), output_node), new_actions_after_join.end());
+        new_outputs.push_back(output_node);
     }
 
     if (plan.adds_dummy_output)
@@ -614,7 +612,7 @@ JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & unneeded_output
         dag_outputs.push_back(node);
     }
 
-    const bool changes_outputs = new_outputs.size() != dag_outputs.size() || plan.adds_dummy_output;
+    const bool changes_outputs = !dropped_positions.empty() || plan.adds_dummy_output;
 
     /// An input reading a column its side keeps stays, also where nothing needs it any more; one reading a
     /// column the side dropped goes. A column a side keeps beyond what the join reads, or appends, is
@@ -680,7 +678,7 @@ JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & unneeded_output
     }
 
     RemoveUnusedColumnsResult result;
-    result.dropped_output_positions = complementPositions(former_output_count, kept_positions);
+    result.dropped_output_positions = dropped_positions;
     result.step_changed = changes_outputs || removed_any_action || !to_consume[0].empty() || !to_consume[1].empty()
         || !blocksHaveEqualStructure(*input_headers[0], *inputs[0].header)
         || !blocksHaveEqualStructure(*input_headers[1], *inputs[1].header);

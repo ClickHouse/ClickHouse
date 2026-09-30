@@ -237,9 +237,10 @@ protected:
         /// Whether removeUnusedActions would erase any node.
         bool removes_any_action = false;
 
-        /// The DAG outputs that survive, as positions in `getOutputs()`. The dummy column, when one is added, has no position of its own: it
-        /// is appended after them. An output not in here goes away, and leaves `actions_after_join` with it.
-        std::vector<size_t> kept_output_positions;
+        /// The DAG outputs that go away, as positions in `getOutputs()`, sorted: the unneeded ones, except an existing
+        /// dummy column. A dropped output leaves `actions_after_join` with it. The dummy column, when one is added, is
+        /// appended after the outputs that remain.
+        std::vector<size_t> dropped_output_positions;
     };
 
     UnneededColumnsPlan analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const;
