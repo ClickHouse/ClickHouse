@@ -1,0 +1,57 @@
+0
+1
+2
+\N
+cube	0
+cube	1
+cube	2
+cube	\N
+grouping sets	0	1
+grouping sets	1	1
+grouping sets	2	1
+grouping sets	\N	3
+group by all	0	1
+group by all	1	1
+group by all	2	1
+group by all	\N	3
+having	1	1
+having	2	1
+having	\N	3
+expression	0
+expression	1
+expression	2
+expression	\N
+other keys	0	0	1
+other keys	0	\N	1
+other keys	1	1	1
+other keys	1	\N	1
+other keys	2	2	1
+other keys	2	\N	1
+other keys	\N	\N	3
+other keys, cube	0	0	1
+other keys, cube	0	\N	1
+other keys, cube	1	1	1
+other keys, cube	1	\N	1
+other keys, cube	\N	0	1
+other keys, cube	\N	1	1
+other keys, cube	\N	\N	2
+other keys, grouping sets	0	0	1
+other keys, grouping sets	0	\N	1
+other keys, grouping sets	1	1	1
+other keys, grouping sets	1	\N	1
+other string keys	x	w	x	1
+other string keys	x	w	\N	1
+other string keys	x	\N	\N	1
+other string keys	\N	\N	\N	1
+key of a key	0	0	1
+key of a key	0	\N	1
+key of a key	1	1	1
+key of a key	1	\N	1
+key of a key	2	2	1
+key of a key	2	\N	1
+key of a key	\N	\N	3
+remote	0	2
+remote	1	2
+remote	2	2
+remote	\N	6
+explain	0	3
