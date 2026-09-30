@@ -10,6 +10,7 @@
 #include <deque>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 using namespace DB;
@@ -445,6 +446,27 @@ TEST(RequestQueue, SwapSchedulerKeepsRequests)
     EXPECT_EQ(cost, 5);
     // All five requests are still there and dequeue (single query → FIFO under fair too).
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2, 3, 4, 5}));
+}
+
+/// The swap hook runs on the scheduler thread in response to SQL, so it must not fail halfway.
+static_assert(noexcept(std::declval<RequestQueue &>().setScheduler(SchedulerAlgorithm::Fair)));
+
+/// Switching through every algorithm and back reuses the queue's algorithm instances: the pending
+/// requests are kept, in order, across all switches.
+TEST(RequestQueue, SwapThroughAllSchedulersKeepsRequests)
+{
+    Fixture f(SchedulerAlgorithm::Fifo);
+    auto * a = f.makeQuery();
+    for (int i = 1; i <= 4; ++i)
+        f.enqueue(i, a);
+    for (auto algo : {SchedulerAlgorithm::Fair, SchedulerAlgorithm::Las, SchedulerAlgorithm::Priority,
+                      SchedulerAlgorithm::Fifo, SchedulerAlgorithm::Fair})
+        f.queue->setScheduler(algo);
+    auto [len, cost] = f.queue->getQueueLengthAndCost();
+    EXPECT_EQ(len, 4u);
+    EXPECT_EQ(cost, 4);
+    // Single query → every algorithm serves it in arrival order.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2, 3, 4}));
 }
 
 /// Toggling a fair leaf's algorithm away and back must not double-count the pending backlog's

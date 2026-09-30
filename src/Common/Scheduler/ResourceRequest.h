@@ -17,6 +17,7 @@ namespace DB
 class ISchedulerQueue;
 class ISchedulerConstraint;
 class RequestQueue;
+class ISchedulingAlgorithm;
 class FifoAlgorithm;
 class FairAlgorithm;
 class LasAlgorithm;
@@ -160,6 +161,7 @@ public:
     bool addConstraint(ISchedulerConstraint * new_constraint);
 
 private:
+    friend class ISchedulingAlgorithm; // moves requests between algorithms through `EnqueuedList`
     friend class FifoAlgorithm; // uses `enqueued_hook` for the `fifo` scheduler
     friend class FairAlgorithm; // uses `scheduling_hook` + `scheduling.key` for the `fair` scheduler
     friend class LasAlgorithm; // uses `scheduling_hook` + `scheduling.key` for the `las` scheduler

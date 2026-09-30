@@ -12,12 +12,11 @@
 
 #include <algorithm>
 #include <atomic>
+#include <exception>
 #include <iterator>
 #include <limits>
-#include <memory>
 #include <mutex>
 #include <string_view>
-#include <vector>
 
 
 namespace DB
@@ -25,7 +24,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int INVALID_SCHEDULER_NODE;
     extern const int SERVER_OVERLOADED;
     extern const int BAD_ARGUMENTS;
@@ -76,8 +74,14 @@ public:
     /// Used to trim to `max_waiting_queries`.
     virtual ResourceRequest * popWorst() = 0;
 
-    /// Drain all pending requests into `out` (for purge and for the scheduler-swap hook).
-    virtual void pullAll(std::vector<ResourceRequest *> & out) = 0;
+    /// Move all pending requests, in order, to the back of `out` (for purge and for the scheduler-swap
+    /// hook). Does not allocate: `out` links the requests through `enqueued_hook`, which is free once a
+    /// request is out of an algorithm.
+    virtual void pullAll(ResourceRequest::EnqueuedList & out) noexcept = 0;
+
+    /// Restart the ordering state (virtual time, arrival sequence) of an empty algorithm, as if it
+    /// were new. Called when the queue switches to it.
+    virtual void reset() noexcept = 0;
 
     virtual bool empty() const = 0;
 };
@@ -114,14 +118,9 @@ public:
         return request;
     }
 
-    void pullAll(std::vector<ResourceRequest *> & out) override
-    {
-        while (!requests.empty())
-        {
-            out.push_back(&requests.front());
-            requests.pop_front();
-        }
-    }
+    void pullAll(ResourceRequest::EnqueuedList & out) noexcept override { out.splice(out.end(), requests); }
+
+    void reset() noexcept override {}
 
     bool empty() const override { return requests.empty(); }
 
@@ -144,6 +143,7 @@ public:
 
     void push(ResourceRequest * request) override
     {
+        chassert(request->scheduling.context); // stamped by the classifier that produced the request's link
         // A request arriving to an empty queue starts a new busy period: roll system virtual time to
         // the max finish tag reached so far, so a query idle across the boundary (or a fresh query)
         // does not start behind a stale system time and monopolise the resource until it catches up.
@@ -197,14 +197,22 @@ public:
         return request;
     }
 
-    void pullAll(std::vector<ResourceRequest *> & out) override
+    void pullAll(ResourceRequest::EnqueuedList & out) noexcept override
     {
         while (!requests.empty())
         {
-            auto it = requests.begin();
-            out.push_back(&*it);
-            requests.erase(it);
+            ResourceRequest & request = *requests.begin();
+            requests.erase(requests.begin());
+            out.push_back(request);
         }
+    }
+
+    void reset() noexcept override
+    {
+        chassert(requests.empty());
+        system_vruntime = 0.0;
+        max_vruntime = 0.0;
+        next_seq = 0;
     }
 
     bool empty() const override { return requests.empty(); }
@@ -369,14 +377,20 @@ public:
         return request;
     }
 
-    void pullAll(std::vector<ResourceRequest *> & out) override
+    void pullAll(ResourceRequest::EnqueuedList & out) noexcept override
     {
         while (!requests.empty())
         {
-            auto it = requests.begin();
-            out.push_back(&*it);
-            requests.erase(it);
+            ResourceRequest & request = *requests.begin();
+            requests.erase(requests.begin());
+            out.push_back(request);
         }
+    }
+
+    void reset() noexcept override
+    {
+        chassert(requests.empty());
+        next_seq = 0;
     }
 
     bool empty() const override { return requests.empty(); }
@@ -433,6 +447,7 @@ public:
         // Order by the query's `workload_priority`: lower value = higher precedence, so a negative
         // value sorts ahead of the default `0` and a positive value behind it. Ties break FIFO by
         // arrival sequence.
+        chassert(request->scheduling.context); // stamped by the classifier that produced the request's link
         request->scheduling.priority = request->scheduling.context->priority;
         request->scheduling.key = {0.0, next_seq++};
         requests.insert(*request);
@@ -466,14 +481,20 @@ public:
         return request;
     }
 
-    void pullAll(std::vector<ResourceRequest *> & out) override
+    void pullAll(ResourceRequest::EnqueuedList & out) noexcept override
     {
         while (!requests.empty())
         {
-            auto it = requests.begin();
-            out.push_back(&*it);
-            requests.erase(it);
+            ResourceRequest & request = *requests.begin();
+            requests.erase(requests.begin());
+            out.push_back(request);
         }
+    }
+
+    void reset() noexcept override
+    {
+        chassert(requests.empty());
+        next_seq = 0;
     }
 
     bool empty() const override { return requests.empty(); }
@@ -501,10 +522,12 @@ private:
  * workload leaf. The leaf owns the cross-cutting concerns (mutex, budget via `ISchedulerQueue`,
  * `max_waiting_queries`, counters, activation) and delegates ordering to an `ISchedulingAlgorithm`.
  *
- * `setScheduler()` swaps the algorithm in place (pulling all pending requests from the old one and
- * pushing them into the new one) so a `CREATE OR REPLACE WORKLOAD` that changes `scheduler` neither
- * rebuilds the hierarchy nor invalidates the `ResourceLink` cached by classifiers, and loses no
- * pending requests.
+ * `setScheduler()` switches the algorithm in place, moving all pending requests from the old one to
+ * the new one, so a `CREATE OR REPLACE WORKLOAD` that changes `scheduler` neither rebuilds the
+ * hierarchy nor invalidates the `ResourceLink` cached by classifiers, and loses no pending requests.
+ * Moving requests between algorithms, or out of one for eviction and purge, does not allocate: the
+ * queue holds one instance of each algorithm and links the moved requests into an intrusive list.
+ * These paths run on the scheduler thread in response to SQL, so they must not fail halfway.
  */
 class RequestQueue final : public ISchedulerQueue
 {
@@ -518,11 +541,12 @@ public:
         CostUnit unit_ = CostUnit::IOByte,
         Int64 max_queued_ = default_max_queued)
         : ISchedulerQueue(event_queue_, info_)
-        , unit(unit_)
+        , fair_algorithm(unit_)
+        , las_algorithm(unit_)
         , max_queued(max_queued_)
         , algorithm(algorithm_)
+        , algo(&algorithmFor(algorithm_))
     {
-        algo = makeAlgorithm(algorithm_, unit_);
     }
 
     ~RequestQueue() override
@@ -568,6 +592,7 @@ public:
         // request is served; `finish()` corrects it to real cost later. Unread by `fifo`/`priority`.
         request->scheduling.state->attained_cost.fetch_add(request->scheduling.cost, std::memory_order_relaxed);
         queue_cost -= request->cost;
+        chassert(total_requests > 0);
         total_requests--;
         if (total_requests == 0)
         {
@@ -587,6 +612,7 @@ public:
         if (!algo->erase(request))
             return false;
         queue_cost -= request->cost;
+        chassert(total_requests > 0);
         total_requests--;
         canceled_requests++;
         canceled_cost += request->cost;
@@ -602,7 +628,7 @@ public:
     {
         // Collect requests to fail while holding the lock, but call failed() outside the lock
         // to avoid potential deadlock with CPULeaseAllocation::mutex (lock order inversion).
-        std::vector<ResourceRequest *> requests_to_fail;
+        ResourceRequest::EnqueuedList requests_to_fail;
         {
             std::lock_guard lock(mutex);
             is_not_usable = true;
@@ -611,15 +637,16 @@ public:
             total_requests = 0;
             cancelActivation();
         }
-        auto exception = std::make_exception_ptr(
-            Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue with resource request is about to be destructed"));
-        for (ResourceRequest * request : requests_to_fail)
-            request->failed(exception);
+        failRequests(requests_to_fail, []
+        {
+            return std::make_exception_ptr(
+                Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue with resource request is about to be destructed"));
+        });
     }
 
     void updateQueueLimit(Int64 value) override
     {
-        std::vector<ResourceRequest *> requests_to_fail;
+        ResourceRequest::EnqueuedList requests_to_fail;
         {
             std::lock_guard lock(mutex);
             // `0` means "reject every waiting request" — a valid limit, as at construction and in
@@ -635,7 +662,7 @@ public:
                 total_requests--;
                 rejected_requests++;
                 rejected_cost += request->cost;
-                requests_to_fail.push_back(request);
+                requests_to_fail.push_back(*request);
             }
             if (total_requests == 0)
             {
@@ -643,32 +670,38 @@ public:
                 cancelActivation();
             }
         }
-        auto exception = std::make_exception_ptr(
-            Exception(ErrorCodes::SERVER_OVERLOADED, "Workload limit `max_waiting_queries` has been reached"));
-        for (ResourceRequest * request : requests_to_fail)
-            request->failed(exception);
+        failRequests(requests_to_fail, []
+        {
+            return std::make_exception_ptr(
+                Exception(ErrorCodes::SERVER_OVERLOADED, "Workload limit `max_waiting_queries` has been reached"));
+        });
     }
 
-    /// Swap the scheduling algorithm in place, migrating all pending requests (swap hook called by
-    /// `WorkloadResourceManager` when the workload `scheduler` setting changes). No effect on the
-    /// node identity, `ResourceLink`, activation state, or the pending-request count.
-    void setScheduler(SchedulerAlgorithm new_algorithm)
+    /// Switch the scheduling algorithm in place, moving all pending requests to the new one (swap hook
+    /// called by `WorkloadResourceManager` when the workload `scheduler` setting changes). No effect on
+    /// the node identity, `ResourceLink`, activation state, or the pending-request count.
+    void setScheduler(SchedulerAlgorithm new_algorithm) noexcept
     {
         std::lock_guard lock(mutex);
         if (new_algorithm == algorithm)
             return;
-        std::vector<ResourceRequest *> pending;
+        ResourceRequest::EnqueuedList pending;
         algo->pullAll(pending);
-        algo = makeAlgorithm(new_algorithm, unit);
         algorithm = new_algorithm;
-        // When switching to `fair`, reset each migrated query's vruntime — the fresh instance restarts
-        // system virtual time at 0, so a stale projection would be double-counted. attained_cost is
-        // real accrued service and is kept.
+        algo = &algorithmFor(new_algorithm);
+        algo->reset();
+        // When switching to `fair`, reset each migrated query's vruntime — `reset` restarts system
+        // virtual time at 0, so a stale projection would be double-counted. attained_cost is real
+        // accrued service and is kept.
         if (new_algorithm == SchedulerAlgorithm::Fair)
-            for (ResourceRequest * request : pending)
-                request->scheduling.state->fair.vruntime = 0.0;
-        for (ResourceRequest * request : pending)
-            algo->push(request);
+            for (ResourceRequest & request : pending)
+                request.scheduling.state->fair.vruntime = 0.0;
+        while (!pending.empty())
+        {
+            ResourceRequest & request = pending.front();
+            pending.pop_front(); // `fifo` links the request through the same hook
+            algo->push(&request);
+        }
     }
 
     SchedulerAlgorithm getScheduler() const
@@ -706,27 +739,54 @@ public:
     }
 
 private:
-    static std::unique_ptr<ISchedulingAlgorithm> makeAlgorithm(SchedulerAlgorithm algorithm_, CostUnit unit_)
+    ISchedulingAlgorithm & algorithmFor(SchedulerAlgorithm algorithm_) noexcept
     {
         switch (algorithm_)
         {
-            case SchedulerAlgorithm::Fifo:
-                return std::make_unique<FifoAlgorithm>();
-            case SchedulerAlgorithm::Fair:
-                return std::make_unique<FairAlgorithm>(unit_);
-            case SchedulerAlgorithm::Las:
-                return std::make_unique<LasAlgorithm>(unit_);
-            case SchedulerAlgorithm::Priority:
-                return std::make_unique<PriorityAlgorithm>();
+            case SchedulerAlgorithm::Fifo: return fifo_algorithm;
+            case SchedulerAlgorithm::Fair: return fair_algorithm;
+            case SchedulerAlgorithm::Las: return las_algorithm;
+            case SchedulerAlgorithm::Priority: return priority_algorithm;
         }
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected scheduler algorithm");
+        UNREACHABLE();
+    }
+
+    /// Fail the requests collected in `requests` (called outside the queue mutex). If building the
+    /// exception fails, e.g. out of memory, the requests are failed with that error instead, so they
+    /// are always released. Each request is unlinked before `failed()`, because its owner may reuse
+    /// or destroy it right after.
+    template <typename MakeException>
+    static void failRequests(ResourceRequest::EnqueuedList & requests, const MakeException & make_exception)
+    {
+        if (requests.empty())
+            return;
+        std::exception_ptr exception;
+        try
+        {
+            exception = make_exception();
+        }
+        catch (...)
+        {
+            exception = std::current_exception();
+        }
+        while (!requests.empty())
+        {
+            ResourceRequest & request = requests.front();
+            requests.pop_front();
+            request.failed(exception);
+        }
     }
 
     mutable std::mutex mutex;
-    const CostUnit unit;
+    /// One instance of each algorithm, so switching between them never allocates; `algo` points at
+    /// the active one, the others are empty.
+    FifoAlgorithm fifo_algorithm;
+    FairAlgorithm fair_algorithm;
+    LasAlgorithm las_algorithm;
+    PriorityAlgorithm priority_algorithm;
     Int64 max_queued;
     SchedulerAlgorithm algorithm;
-    std::unique_ptr<ISchedulingAlgorithm> algo;
+    ISchedulingAlgorithm * algo;
     ResourceCost queue_cost = 0;
     size_t total_requests = 0;
     bool is_not_usable = false;
