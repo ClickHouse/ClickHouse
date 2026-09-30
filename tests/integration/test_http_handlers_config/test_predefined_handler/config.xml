@@ -54,7 +54,7 @@
             <url>/test_predefined_handler_delete_no_body</url>
             <handler>
                 <type>predefined_query_handler</type>
-                <query>SELECT 1</query>
+                <query>SELECT {value:UInt32}</query>
             </handler>
         </rule>
         <rule>

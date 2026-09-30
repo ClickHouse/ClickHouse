@@ -2166,7 +2166,8 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     const auto methods_path = config_prefix + ".methods";
     bool has_only_body_carrying_methods = false;
     bool has_post_method = false;
-    if (query_may_consume_request_body && config.has(methods_path))
+    bool has_put_or_delete_method = false;
+    if (config.has(methods_path))
     {
         Poco::StringTokenizer methods(config.getString(methods_path), ",", Poco::StringTokenizer::TOK_TRIM);
         has_only_body_carrying_methods
@@ -2182,6 +2183,13 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         has_post_method = std::any_of(
             methods.begin(), methods.end(),
             [](const auto & method) { return Poco::toUpper(method) == Poco::Net::HTTPRequest::HTTP_POST; });
+        has_put_or_delete_method = std::any_of(
+            methods.begin(), methods.end(), [](const auto & method)
+            {
+                const auto normalized_method = Poco::toUpper(method);
+                return normalized_method == Poco::Net::HTTPRequest::HTTP_PUT
+                    || normalized_method == Poco::Net::HTTPRequest::HTTP_DELETE;
+            });
     }
 
     if (query_may_consume_request_body && !has_only_body_carrying_methods)
@@ -2196,7 +2204,12 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     /// Config-defined handlers run `PUT` and `DELETE` in `readonly` mode (see `setReadOnlyIfHTTPMethodIdempotent`),
     /// so a body-consuming handler whose query needs to write (for example an `INSERT` of the uploaded data) could
     /// never succeed over those methods. Reject such a rule unless it also accepts `POST`.
-    if (query_may_consume_request_body && !has_post_method && queryRequiresMutatingHTTPMethod(*predefined_query_ast))
+    /// Declared parameters can also come from a form body on PUT/DELETE. Do not add them to the required-body
+    /// predicate above: GET and URL-bound parameters must remain valid without imposing body-only methods or
+    /// framing on a bodyless DELETE. A rule with no method filter already accepts POST.
+    const bool may_consume_form_parameters = has_put_or_delete_method && !analyze_receive_params.empty();
+    if ((query_may_consume_request_body || may_consume_form_parameters)
+        && !has_post_method && queryRequiresMutatingHTTPMethod(*predefined_query_ast))
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,

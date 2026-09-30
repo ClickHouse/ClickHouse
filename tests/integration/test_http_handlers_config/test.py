@@ -196,12 +196,12 @@ def test_predefined_handler_delete_body():
 
         assert "411" == response.split(b" ", 2)[1].decode(), response
 
-        # A handler whose query never reads the body still accepts an unframed DELETE.
+        # A URL-bound parameter does not require a body or framing on DELETE.
         with socket.create_connection(
             (cluster.instance.ip_address, 8123), timeout=5
         ) as sock:
             sock.sendall(
-                b"DELETE /test_predefined_handler_delete_no_body HTTP/1.1\r\n"
+                b"DELETE /test_predefined_handler_delete_no_body?value=1 HTTP/1.1\r\n"
                 b"Host: localhost\r\n"
                 b"Connection: close\r\n\r\n"
             )

@@ -172,10 +172,17 @@ def test_predefined_handler_rejects_body_query_with_safe_method(start_cluster):
     )
 
 
-def test_predefined_handler_rejects_mutating_query_without_post(start_cluster):
-    # Config-defined handlers run PUT and DELETE in readonly mode, so an INSERT handler needs POST.
-    _assert_predefined_handler_config_error(
+@pytest.mark.parametrize(
+    "config_name",
+    [
         "bad_predefined_insert_without_post.xml",
+        "bad_predefined_form_insert_without_post.xml",
+    ],
+)
+def test_predefined_handler_rejects_mutating_query_without_post(start_cluster, config_name):
+    # Both streaming input and form-bound parameters need POST for a mutating configured query.
+    _assert_predefined_handler_config_error(
+        config_name,
         BAD_PREDEFINED_INSERT_WITHOUT_POST_CONFIG_IN_CONTAINER,
         "runs a query that modifies data, but its <methods> do not include POST",
     )
