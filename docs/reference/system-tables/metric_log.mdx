@@ -111,7 +111,10 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_MarkCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times an entry has been found in the mark cache, so we didn't have to load a mark file.
 - `ProfileEvent_MarkCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.
 - `ProfileEvent_UniqueKeyBitmapLoadMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent reading and deserializing UNIQUE KEY delete-bitmap sidecar files on a DeleteBitmapCache miss.
-- `ProfileEvent_UniqueKeyBitmapUpdates` ([UInt64](/reference/data-types/int-uint)) — Number of UNIQUE KEY delete-bitmap sidecar files written (one per supersession / DELETE commit).
+- `ProfileEvent_UniqueKeyMutexHoldMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total wall-clock time the per-partition UNIQUE KEY mutex was held across all acquisitions on this server (sum of hold-time microseconds).
+- `ProfileEvent_UniqueKeyDedupProbes` ([UInt64](/reference/data-types/int-uint)) — Number of new-row keys probed against existing parts on the UNIQUE KEY INSERT write-path.
+- `ProfileEvent_UniqueKeyConflictOverwriteRows` ([UInt64](/reference/data-types/int-uint)) — Number of new-row keys that superseded a live row in an existing part on the UNIQUE KEY INSERT write-path.
+- `ProfileEvent_UniqueKeyConflictIgnoredRows` ([UInt64](/reference/data-types/int-uint)) — Number of incoming rows dropped by unique_key_conflict_action = ignore because the key was already live in the partition.
 - `ProfileEvent_PrimaryIndexCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times an entry has been found in the primary index cache, so we didn't have to load a index file.
 - `ProfileEvent_PrimaryIndexCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times an entry has not been found in the primary index cache, so we had to load a index file in memory, which is a costly operation, adding to query latency.
 - `ProfileEvent_IcebergMetadataFilesCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times iceberg metadata files have been found in the cache.
@@ -121,6 +124,10 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_PaimonMetadataFilesCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times paimon metadata files have been found in the cache.
 - `ProfileEvent_PaimonMetadataFilesCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times paimon metadata files have not been found in the paimon metadata cache and had to be read from (remote) disk.
 - `ProfileEvent_PaimonMetadataFilesCacheWeightLost` ([UInt64](/reference/data-types/int-uint)) — Approximate number of bytes evicted from the paimon metadata cache.
+- `ProfileEvent_TimeSeriesMetricFamiliesDeduplicationCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of rows not written to the metric families tables of TimeSeries tables because the deduplication cache already had them or the same insert had already written them.
+- `ProfileEvent_TimeSeriesMetricFamiliesDeduplicationCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of rows written to the metric families tables of TimeSeries tables after they were not found in the deduplication cache.
+- `ProfileEvent_TimeSeriesTagsDeduplicationCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of rows not written to the tags tables of TimeSeries tables because the deduplication cache already had them or the same insert had already written them.
+- `ProfileEvent_TimeSeriesTagsDeduplicationCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of rows written to the tags tables of TimeSeries tables after they were not found in the deduplication cache.
 - `ProfileEvent_IcebergMetadataReadWaitTimeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time data readers spend waiting for iceberg metadata files to be read and parsed, summed across all reader threads.
 - `ProfileEvent_ParquetMetadataCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times parquet metadata has been found in the cache.
 - `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times parquet metadata has not been found in the cache and had to be read from disk.
@@ -2069,6 +2076,10 @@ It is safe to truncate or drop this table at any time.
 - `CurrentMetric_QueryConditionCacheEntries` ([Int64](/reference/data-types/int-uint)) — Total number of entries in the query condition cache
 - `CurrentMetric_EncryptionHeaderCacheBytes` ([Int64](/reference/data-types/int-uint)) — Total size of the encryption header cache in bytes
 - `CurrentMetric_EncryptionHeaderCacheEntries` ([Int64](/reference/data-types/int-uint)) — Total number of entries in the encryption header cache
+- `CurrentMetric_TimeSeriesMetricFamiliesDeduplicationCacheEntries` ([Int64](/reference/data-types/int-uint)) — Number of entries in the deduplication caches of the metric families tables of TimeSeries tables
+- `CurrentMetric_TimeSeriesMetricFamiliesDeduplicationCacheBytes` ([Int64](/reference/data-types/int-uint)) — Approximate size in bytes of the deduplication caches of the metric families tables of TimeSeries tables
+- `CurrentMetric_TimeSeriesTagsDeduplicationCacheEntries` ([Int64](/reference/data-types/int-uint)) — Number of entries in the deduplication caches of the tags tables of TimeSeries tables
+- `CurrentMetric_TimeSeriesTagsDeduplicationCacheBytes` ([Int64](/reference/data-types/int-uint)) — Approximate size in bytes of the deduplication caches of the tags tables of TimeSeries tables
 - `CurrentMetric_CompiledExpressionCacheBytes` ([Int64](/reference/data-types/int-uint)) — Reserved page-block capacity (rounded up to whole pages with a 2x over-provisioning factor) held by `JITModuleMemoryManager` for executable/data sections of cached JIT-compiled functions. NOT the actual bytes of machine code in use (that's smaller). Allocated via `posix_memalign`, which is intercepted into jemalloc, so this is accounted within the dedicated JIT arena and is a subset of `jemalloc.jit_arena.active_bytes`.
 - `CurrentMetric_CompiledExpressionCacheCount` ([Int64](/reference/data-types/int-uint)) — Total entries in the cache of JIT-compiled machine code.
 - `CurrentMetric_SerializationCacheBytesInMemoryAllocated` ([Int64](/reference/data-types/int-uint)) — Total size of the serialization cache in bytes including keys and overhead from empty slots

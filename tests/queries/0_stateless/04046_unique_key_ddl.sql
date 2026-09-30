@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage, no-fasttest
+-- Tags: no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-fasttest
 -- no-parallel: ATTACHes a table with a fixed UUID (item 10c), which collides
 -- across concurrent runs of this test (e.g. the flaky check's parallel workers).
 -- no-fasttest: UNIQUE KEY INSERT writes the dense-index SST, which needs RocksDB.
