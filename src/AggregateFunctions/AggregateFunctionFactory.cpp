@@ -381,7 +381,9 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             function = found.window_creator(name, argument_types, parameters, settings);
         else
         {
-            if (!is_data_type_reconstruction && found.execution_availability_check)
+            if (!is_data_type_reconstruction
+                && found.execution_availability_check
+                && !found.creator_handles_execution_availability)
                 found.execution_availability_check(name, settings);
             function = found.creator(name, argument_types, parameters, settings);
         }

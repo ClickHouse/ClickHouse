@@ -2,8 +2,9 @@
 SELECT exponentialTimeDecayedSum(10)(value, time) OVER ()
 FROM VALUES('value Float64, time Float64', (1, 0));
 
--- The new aggregate functions and scalar constructor are experimental and disabled by default.
-SELECT exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+-- With the experiment disabled, the existing names keep their legacy window-only behavior.
+-- The new regular aggregate path is not enabled.
+SELECT exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0)); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecaying(10)(1, toFloat64(0)); -- { serverError UNKNOWN_FUNCTION }
 
 -- Boolean keywords enable and disable the experimental feature.
@@ -11,11 +12,11 @@ SET allow_experimental_time_decay_aggregate_functions = true;
 SELECT tupleElement(exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0)), 'value_at_anchor');
 
 SET allow_experimental_time_decay_aggregate_functions = false;
-SELECT exponentialTimeDecayedAvg(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+SELECT exponentialTimeDecayedAvg(10)(toFloat64(1), toFloat64(0)); -- { serverError BAD_ARGUMENTS }
 
 -- Numeric Boolean values have the same behavior.
 SET allow_experimental_time_decay_aggregate_functions = 0;
-SELECT exponentialTimeDecayedCount(10)(toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+SELECT exponentialTimeDecayedCount(10)(toFloat64(0)); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecaying(10)(1, toFloat64(0)); -- { serverError UNKNOWN_FUNCTION }
 
 SET allow_experimental_time_decay_aggregate_functions = 1;

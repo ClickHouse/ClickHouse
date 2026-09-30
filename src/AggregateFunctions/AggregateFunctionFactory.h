@@ -53,6 +53,9 @@ struct AggregateFunctionWithProperties
     /// Functions with query-only approximations can disable that behavior so persisted merges
     /// are constructed with their exact defaults.
     bool use_query_settings_for_data_type_reconstruction = true;
+    /// Some dual legacy/new registrations choose the appropriate implementation in the creator.
+    /// Keep the availability marker for data-type validation without preempting that selection.
+    bool creator_handles_execution_availability = false;
 
     AggregateFunctionWithProperties() = default;
     AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
@@ -67,7 +70,8 @@ struct AggregateFunctionWithProperties
         AggregateFunctionCreator window_creator_ = {},
         std::optional<AggregateFunctionProperties> window_properties_ = {},
         AggregateFunctionExecutionAvailabilityCheck execution_availability_check_ = {},
-        bool use_query_settings_for_data_type_reconstruction_ = true) /// NOLINT
+        bool use_query_settings_for_data_type_reconstruction_ = true,
+        bool creator_handles_execution_availability_ = false) /// NOLINT
         : creator(std::forward<Creator>(creator_))
         , window_creator(std::move(window_creator_))
         , documentation(std::move(documentation_))
@@ -75,6 +79,7 @@ struct AggregateFunctionWithProperties
         , window_properties(std::move(window_properties_))
         , execution_availability_check(std::move(execution_availability_check_))
         , use_query_settings_for_data_type_reconstruction(use_query_settings_for_data_type_reconstruction_)
+        , creator_handles_execution_availability(creator_handles_execution_availability_)
     {
     }
 };
