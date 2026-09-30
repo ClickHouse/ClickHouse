@@ -110,8 +110,6 @@
 
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
-#include <Compression/CompressionFactory.h>
-
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/QueryLog.h>
