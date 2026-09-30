@@ -517,6 +517,11 @@ public:
 
         response.setContentType("application/json");
 
+        /// A failed table lookup goes to the outer handler, which keeps its HTTP status (e.g. 404 for an unknown table).
+        StoragePtr table;
+        if (!Poco::URI(uri).getPath().ends_with("/format_query"))
+            table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+
         try
         {
             /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
@@ -533,7 +538,6 @@ public:
                 return;
             }
 
-            auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
             auto query_finish_callback = [&]()

@@ -247,6 +247,21 @@ def test_error_before_dispatch():
     node.query("DROP USER prometheus_password_user")
 
 
+# A time-series table that cannot be found keeps its HTTP status too.
+def test_unknown_table_before_query():
+    for params, error in (
+        ({"table": "no_such_table"}, "UNKNOWN_TABLE"),
+        ({"database": "no_such_database", "table": "prometheus"}, "UNKNOWN_DATABASE"),
+    ):
+        response = get_response_to_http_api_query(
+            node.ip_address, 9093, "/dynamic_table/api/v1/query", "vector(1)", 150, params=params,
+        )
+        assert response.status_code == 404, response.text
+        assert response.headers["Content-Type"] == "application/json"
+        assert response.json()["errorType"] == "not_found"
+        assert error in extract_error_from_http_api_response(response)
+
+
 # Checks the case when an exception appears before any block has been written to the response buffer.
 # The response must be a well-formed Prometheus error response `{"status":"error",...}`
 def test_error_before_first_block():
