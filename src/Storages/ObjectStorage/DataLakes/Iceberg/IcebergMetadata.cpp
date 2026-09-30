@@ -383,10 +383,25 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
     if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
         schema_processor->updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
-    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
-    for (UInt32 j = 0; j < schemas->size(); ++j)
+    if (metadata_object->has(f_schemas))
     {
-        auto schema = schemas->getObject(j);
+        auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
+        for (UInt32 j = 0; j < schemas->size(); ++j)
+        {
+            auto schema = schemas->getObject(j);
+            schema_processor->addIcebergTableSchema(schema);
+        }
+    }
+    else if (metadata_object->has(f_schema))
+    {
+        auto schema = metadata_object->getObject(f_schema);
+        if (!schema->has(f_schema_id) || schema->isNull(f_schema_id))
+        {
+            const Int32 schema_id = metadata_object->has(f_current_schema_id) && !metadata_object->isNull(f_current_schema_id)
+                ? metadata_object->getValue<Int32>(f_current_schema_id)
+                : 0;
+            schema->set(f_schema_id, schema_id);
+        }
         schema_processor->addIcebergTableSchema(schema);
     }
     Poco::JSON::Object::Ptr current_snapshot = nullptr;
@@ -1678,7 +1693,9 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         persistent_components.metadata_compression_method,
         persistent_components.table_uuid);
 
-    auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
+    auto [schema, current_schema_id] = metadata_object->has(f_schemas)
+        ? parseTableSchemaV2Method(metadata_object)
+        : parseTableSchemaV1Method(metadata_object);
     auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickHouseTableSchemaById(current_schema_id), local_context);
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     result.sort_order_id = sort_order_id;
