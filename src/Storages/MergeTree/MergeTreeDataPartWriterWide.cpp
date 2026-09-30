@@ -970,16 +970,6 @@ void MergeTreeDataPartWriterWide::writeFinalMark(const NameAndTypePair & name_an
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
 
-static void fillIndexGranularityImpl(
-    MergeTreeIndexGranularity & index_granularity,
-    size_t index_offset,
-    size_t index_granularity_for_block,
-    size_t rows_in_block)
-{
-    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
-        index_granularity.appendMark(index_granularity_for_block);
-}
-
 void MergeTreeDataPartWriterWide::fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block)
 {
     if (getCurrentMark() < index_granularity->getMarksCount() && getCurrentMark() != index_granularity->getMarksCount() - 1)
@@ -990,11 +980,7 @@ void MergeTreeDataPartWriterWide::fillIndexGranularity(size_t index_granularity_
     if (rows_written_in_last_mark != 0)
         index_offset = index_granularity->getLastMarkRows() - rows_written_in_last_mark;
 
-    fillIndexGranularityImpl(
-        *index_granularity,
-        index_offset,
-        index_granularity_for_block,
-        rows_in_block);
+    fillIndexGranularityForWidePart(*index_granularity, index_offset, index_granularity_for_block, rows_in_block);
 }
 
 

@@ -294,10 +294,7 @@ bool buildProjectionPart(
     return true;
 }
 
-/// The writer never sizes granules over a whole part: it asks `computeIndexGranularity` for one
-/// granule size per block it is handed, then fills the marks with `fillIndexGranularityImpl`. Both
-/// steps are reproduced here over a simulated block sequence, so the layout follows the writer's for
-/// any block size instead of only for one long block.
+/// replay the writer over a sequence of blocks: one granule size per block, marks filled by the writer's own rules
 std::vector<size_t> simulateWriterMarks(
     const ProjectionPartData & data,
     MergeTreeDataPartType part_type,
@@ -312,10 +309,8 @@ std::vector<size_t> simulateWriterMarks(
     const size_t average_row_bytes = data.rows != 0 ? std::max<size_t>(data.bytes / data.rows, 1) : 1;
     auto row_bytes = [&](size_t row) -> size_t { return per_row_bytes ? data.row_bytes[data.order[row]] : average_row_bytes; };
 
-    std::vector<size_t> mark_rows;
-    size_t recorded = 0; /// rows the marks claim
-    size_t written = 0; /// rows that reached them
-
+    MergeTreeIndexGranularityAdaptive granularity;
+    size_t written = 0;
     for (size_t row = 0; row < data.rows;)
     {
         size_t block_rows = 0;
@@ -333,53 +328,29 @@ std::vector<size_t> simulateWriterMarks(
         const size_t granule_rows = computeIndexGranularity(
             block_rows, block_bytes, granularity_bytes, fixed_granularity_rows, /* blocks_are_granules */ false, adaptive_marks);
 
-        /// rows of this block that go into the mark the previous block left open
-        size_t offset = 0;
-        if (recorded > written)
+        /// rows the mark left open by the previous block still takes
+        size_t open_rows_missing = granularity.getTotalRows() - written;
+        /// the wide writer first shrinks an open mark wider than this block's granule
+        if (part_type == MergeTreeDataPartType::Wide && open_rows_missing > granule_rows)
         {
-            const size_t open_rows = written - (recorded - mark_rows.back());
-            /// a mark wider than this block's granule is shrunk first, as `MergeTreeDataPartWriterWide::write` does
-            if (mark_rows.back() - open_rows > granule_rows)
-            {
-                recorded -= mark_rows.back();
-                mark_rows.back() = std::max(open_rows, granule_rows);
-                recorded += mark_rows.back();
-            }
-            offset = std::min(recorded - written, block_rows);
+            granularity.adjustLastMark(std::max(granularity.getLastMarkRows() - open_rows_missing, granule_rows));
+            open_rows_missing = granularity.getTotalRows() - written;
         }
 
-        for (size_t cur = offset; cur < block_rows; cur += granule_rows)
-        {
-            const size_t left = block_rows - cur;
-            /// the compact writer closes the block's tail, into a mark of its own or into the previous
-            /// mark when it holds under half a granule; the wide writer leaves the mark open
-            const bool close_tail = part_type == MergeTreeDataPartType::Compact && left < granule_rows
-                && (block_rows >= granule_rows || offset != 0) && !mark_rows.empty();
-            if (close_tail)
-            {
-                if (left * 2 >= granule_rows)
-                    mark_rows.push_back(left);
-                else
-                    mark_rows.back() += left;
-                recorded += left;
-            }
-            else
-            {
-                mark_rows.push_back(granule_rows);
-                recorded += granule_rows;
-            }
-        }
+        if (part_type == MergeTreeDataPartType::Compact)
+            fillIndexGranularityForCompactPart(granularity, open_rows_missing, granule_rows, block_rows);
+        else
+            fillIndexGranularityForWidePart(granularity, open_rows_missing, granule_rows, block_rows);
         written += block_rows;
     }
 
-    /// closing the part shrinks the last mark to the rows that reached it (`adjustLastMark`)
-    if (recorded > written)
-    {
-        recorded -= mark_rows.back();
-        mark_rows.back() = written - recorded;
-    }
-    if (!mark_rows.empty() && mark_rows.back() == 0)
-        mark_rows.pop_back();
+    /// closing the part trims the last mark to the rows that reached it
+    if (granularity.getTotalRows() > written)
+        granularity.adjustLastMark(granularity.getLastMarkRows() - (granularity.getTotalRows() - written));
+
+    std::vector<size_t> mark_rows(granularity.getMarksCount());
+    for (size_t mark = 0; mark < mark_rows.size(); ++mark)
+        mark_rows[mark] = granularity.getMarkRows(mark);
     return mark_rows;
 }
 
