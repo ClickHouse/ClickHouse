@@ -10471,6 +10471,7 @@ The setting only affects the translation of PromQL queries (the `promql` dialect
 `prometheusQueryRange` table functions and the Prometheus HTTP API): the generated `timeSeriesRateToGrid`,
 `timeSeriesIncreaseToGrid` and `timeSeriesDeltaToGrid` get the fifth parameter `exact_rate = 1`.
 It does not affect these aggregate functions used directly in SQL, pass the fifth parameter to them explicitly.
+With this setting, a subquery as the argument of these functions is not supported, like the `anchored` modifier in Prometheus.
 )", IMPORTANT | SettingsTierType::PRIVATE_PREVIEW, \
         {"26.10", false, false, "New setting to calculate PromQL rate, increase, and delta without boundary extrapolation."}) \
     DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(

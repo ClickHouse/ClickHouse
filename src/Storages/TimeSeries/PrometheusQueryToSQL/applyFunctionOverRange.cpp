@@ -17,6 +17,7 @@
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -229,6 +230,14 @@ namespace
 
         return &it->second;
     }
+
+    /// Whether the range vector is a subquery, maybe with the offset and @ modifiers.
+    bool isSubquery(const Node * range_vector_node)
+    {
+        while (range_vector_node->node_type == NodeType::Offset)
+            range_vector_node = static_cast<const PrometheusQueryTree::Offset *>(range_vector_node)->getExpression();
+        return range_vector_node->node_type == NodeType::Subquery;
+    }
 }
 
 
@@ -274,6 +283,12 @@ SQLQueryPiece applyFunctionOverRange(
     chassert(impl_info);
 
     checkArgumentTypes(function_name, arguments, context);
+
+    /// The exact mode is not supported for a subquery, like the `anchored` modifier in Prometheus.
+    if (impl_info->supports_exact_rate && context.exact_rate && isSubquery(arguments[0].node))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Function '{}' does not support a subquery {} with the setting 'promql_exact_rate' enabled",
+                        function_name, getPromQLText(arguments[0], context));
 
     auto node_range = context.node_range_getter.get(node);
     if (node_range.empty())

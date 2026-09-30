@@ -12,6 +12,8 @@
 0.25
 0.25
 [(1700000000,10),(1700000020,10)]
+--- promql_exact_rate = 1: a subquery is not supported, like the anchored modifier in Prometheus ---
+0.25
 --- range query, promql_exact_rate = 0 ---
 [(1699999960,20)]
 --- promql dialect ---

@@ -33,6 +33,11 @@ SELECT value FROM prometheusQuery(ts, 'rate(counter[40s])', 1700000000);
 SELECT value FROM prometheusQuery(ts, 'rate(counter[40s] @ 1700000000)', 1700000100);
 SELECT arrayMap(x -> (toUnixTimestamp64Second(x.1), x.2), samples) FROM prometheusQueryRange(ts, 'increase(counter[40s])', 1700000000, 1700000020, 20);
 
+SELECT '--- promql_exact_rate = 1: a subquery is not supported, like the anchored modifier in Prometheus ---';
+SELECT value FROM prometheusQuery(ts, 'rate(counter[40s:20s])', 1700000000); -- { serverError NOT_IMPLEMENTED }
+SELECT value FROM prometheusQuery(ts, 'increase(counter[40s:20s] offset 20s)', 1700000000); -- { serverError NOT_IMPLEMENTED }
+SELECT value FROM prometheusQuery(ts, 'max_over_time(rate(counter[40s])[40s:20s])', 1700000000);
+
 SELECT '--- range query, promql_exact_rate = 0 ---';
 SET promql_exact_rate = 0;
 SELECT arrayMap(x -> (toUnixTimestamp64Second(x.1), x.2), samples) FROM prometheusQueryRange(ts, 'increase(up[40s])', 1699999960, 1700000000, 20);
