@@ -2812,6 +2812,36 @@ void ReadFromMergeTree::setAnalyzedResultWithFinalExpansion(const AnalysisResult
     analyzed_result_ptr = std::move(expanded);
 }
 
+UInt64 ReadFromMergeTree::getSelectedParts() const
+{
+    if (build_pipeline_on_demand)
+    {
+        auto analysis = getOrCreateAnalyzedResult();
+        return analysis ? analysis->selected_parts : 0;
+    }
+    return selected_parts;
+}
+
+UInt64 ReadFromMergeTree::getSelectedRows() const
+{
+    if (build_pipeline_on_demand)
+    {
+        auto analysis = getOrCreateAnalyzedResult();
+        return analysis ? analysis->selected_rows : 0;
+    }
+    return selected_rows;
+}
+
+UInt64 ReadFromMergeTree::getSelectedMarks() const
+{
+    if (build_pipeline_on_demand)
+    {
+        auto analysis = getOrCreateAnalyzedResult();
+        return analysis ? analysis->selected_marks : 0;
+    }
+    return selected_marks;
+}
+
 void ReadFromMergeTree::resetParts(RangesInDataParts parts)
 {
     prepared_parts = std::make_shared<const RangesInDataParts>(std::move(parts));

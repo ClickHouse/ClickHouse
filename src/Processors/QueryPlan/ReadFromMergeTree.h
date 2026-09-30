@@ -316,9 +316,11 @@ public:
     bool hasPinnedBlockNumbers() const { return max_block_numbers_to_read != nullptr; }
 
     StorageID getStorageID() const { return data.getStorageID(); }
-    UInt64 getSelectedParts() const { return selected_parts; }
-    UInt64 getSelectedRows() const { return selected_rows; }
-    UInt64 getSelectedMarks() const { return selected_marks; }
+    /// The totals of the selected ranges, for `EXPLAIN ESTIMATE`. They are set when the pipeline is built.
+    /// If the pipeline is built on demand, they come from the analysis, which runs here if it did not run yet.
+    UInt64 getSelectedParts() const;
+    UInt64 getSelectedRows() const;
+    UInt64 getSelectedMarks() const;
 
     struct Indexes
     {
