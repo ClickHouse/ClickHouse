@@ -260,3 +260,32 @@ FORMAT Null;
 SYSTEM START MERGES nested_drop_deep_mutation;
 DROP TABLE nested_drop_deep_mutation;
 
+DROP TABLE IF EXISTS nested_rename_unflattened_mutation;
+
+SET flatten_nested = 0;
+
+CREATE TABLE nested_rename_unflattened_mutation
+(
+    n Nested(a UInt64, b UInt64),
+    x UInt64,
+    c UInt64
+)
+ENGINE = MergeTree
+ORDER BY x
+SETTINGS share_nested_offsets = 0;
+
+INSERT INTO nested_rename_unflattened_mutation VALUES ([(1, 10)], 1, 1);
+SYSTEM STOP MERGES nested_rename_unflattened_mutation;
+ALTER TABLE nested_rename_unflattened_mutation UPDATE c = length(`n.a`) + 1 WHERE 1 SETTINGS mutations_sync = 0;
+
+ALTER TABLE nested_rename_unflattened_mutation RENAME COLUMN n TO m; -- { serverError BAD_ARGUMENTS }
+
+KILL MUTATION
+WHERE database = currentDatabase() AND table = 'nested_rename_unflattened_mutation'
+SYNC
+FORMAT Null;
+
+SYSTEM START MERGES nested_rename_unflattened_mutation;
+DROP TABLE nested_rename_unflattened_mutation;
+
+

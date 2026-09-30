@@ -13247,7 +13247,7 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
     };
 
     NameSet affected_column_names{command.column_name};
-    if (command.type == AlterCommand::DROP_COLUMN)
+    if (command.type == AlterCommand::DROP_COLUMN || command.type == AlterCommand::RENAME_COLUMN)
         affected_column_names = expand(command.column_name);
 
     auto throw_exception = [] (
