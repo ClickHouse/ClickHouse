@@ -1,4 +1,6 @@
 #pragma once
+#include <functional>
+#include <string>
 #include <type_traits>
 #include <vector>
 #include <IO/WriteBuffer.h>
@@ -31,6 +33,9 @@ class IItem
 public:
     virtual ~IItem() = default;
     virtual void format(const FormatSettings & settings, FormatContext & context) = 0;
+
+    /// Rewrites every string value in the tree in place, leaving keys alone.
+    virtual void transformStringValues(const std::function<void(std::string &)> &) {}
 };
 
 using ItemPtr = std::unique_ptr<IItem>;
@@ -40,6 +45,8 @@ class JSONString : public IItem
 public:
     explicit JSONString(std::string_view value_) : value(value_) {}
     void format(const FormatSettings & settings, FormatContext & context) override;
+
+    void transformStringValues(const std::function<void(std::string &)> & transform) override { transform(value); }
 
 private:
     std::string value;
@@ -87,6 +94,12 @@ public:
 
     void format(const FormatSettings & settings, FormatContext & context) override;
 
+    void transformStringValues(const std::function<void(std::string &)> & transform) override
+    {
+        for (auto & value : values)
+            value->transformStringValues(transform);
+    }
+
 private:
     std::vector<ItemPtr> values;
 };
@@ -111,6 +124,12 @@ public:
     void add(std::string key, T value) { add(std::move(key), std::make_unique<JSONNumber<T>>(value)); }
 
     void format(const FormatSettings & settings, FormatContext & context) override;
+
+    void transformStringValues(const std::function<void(std::string &)> & transform) override
+    {
+        for (auto & pair : values)
+            pair.value->transformStringValues(transform);
+    }
 
 private:
     std::vector<Pair> values;

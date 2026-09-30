@@ -117,7 +117,7 @@ bool ExecutionThreadContext::executeTask()
         auto & cached_clock = processor->query_plan_step_wall_clock_ptr;
         /// We will search in the registry only initially or when the group of the processor changed
         if (!cached_clock)
-            cached_clock = step_to_wall_clock_registry->find(step, group);
+            cached_clock = step_to_wall_clock_registry->find(processor->getStepUniqID(), group);
 
         clock = cached_clock;
         chassert(clock);

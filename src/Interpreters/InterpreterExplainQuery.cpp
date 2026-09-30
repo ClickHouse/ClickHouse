@@ -53,7 +53,7 @@
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/QueryPlan/AnalyzePlanStats.h>
+#include <Processors/QueryPlan/StepStatisticsCollector.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/StepWallClockRegistry.h>
 #include <QueryPipeline/printPipeline.h>
@@ -1271,7 +1271,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             planning_ns += watch.elapsed();
 
             auto step_wall_clock_registry = std::make_unique<StepWallClockRegistry>();
-            step_wall_clock_registry->populateFromPlan(plan);
+            step_wall_clock_registry->populateFromPlan(plan, /*only_built_child_plans=*/ false);
             pipeline.setStepWallClockRegistry(std::move(step_wall_clock_registry));
 
             pipeline.setCollectWorkIntervals(analyzed.time);
@@ -1303,7 +1303,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             UInt64 read_bytes  = analyze_thread_group->performance_counters[ProfileEvents::SelectedBytes];
             Int64  peak_memory = analyze_thread_group->memory_tracker.getPeak();
 
-            AnalyzeStepsStats steps_to_stats(pipeline, plan, execute_ns);
+            StepStatisticsCollector steps_to_stats(pipeline, plan, execute_ns);
 
             formatHeaderExplainAnalyze(
                 total_time_ns, planning_ns, execute_ns, steps_to_stats.executionTimeBreakdown(), read_rows, read_bytes, peak_memory, buf);

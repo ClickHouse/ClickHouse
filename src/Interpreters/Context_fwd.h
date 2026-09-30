@@ -16,6 +16,9 @@ using Scalars = std::map<String, Block>;
 
 class Context;
 
+class QueryPlanProfiler;
+using QueryPlanProfilerPtr = std::shared_ptr<QueryPlanProfiler>;
+
 /// Most used types have shorter names
 using ContextPtr = std::shared_ptr<const Context>;
 using ContextMutablePtr = std::shared_ptr<Context>;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <unordered_map>
-#include <Processors/QueryPlan/StepStatsModel.h>
+#include <Processors/QueryPlan/StepStatisticsModel.h>
 #include <Processors/Executors/WorkInterval.h>
 #include <Processors/QueryPlan/ConcurrencyProfile.h>
 #include <Processors/QueryPlan/QueryPlan.h>

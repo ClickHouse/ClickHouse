@@ -11,8 +11,6 @@
 namespace DB
 {
 
-class IQueryPlanStep;
-
 struct StepIOStats
 {
     UInt64 input_rows = 0;
@@ -77,16 +75,6 @@ struct ExecutionTimeBreakdown
     UInt64 outside_steps_ns = 0;
     /// No thread ran any processor: executor start-up and shutdown, scheduling gaps, waits.
     UInt64 idle_ns = 0;
-};
-
-struct StepStatsContext
-{
-    const IQueryPlanStep * step = nullptr;
-    StepIOStats io;
-    UInt64 execution_query_time_ns = 0;
-    UInt64 max_num_threads_per_query = 0;
-    const StepTimeAndConcurrency * time_and_conc_stats = nullptr;
-    StepGroupStatsByGroupId group_stats;
 };
 
 }
