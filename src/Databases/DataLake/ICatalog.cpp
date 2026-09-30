@@ -306,13 +306,14 @@ std::optional<DataLakeSpecificProperties> TableMetadata::getDataLakeSpecificProp
     return data_lake_specific_metadata;
 }
 
-void TableMetadata::setPartitionAndSortingKeys(DB::ASTPtr partition_by_, DB::ASTPtr order_by_)
+void TableMetadata::setPartitionAndSortingKeys(DB::ASTPtr partition_by_, DB::ASTPtr order_by_, std::string unsupported_properties_)
 {
     if (!with_partition_and_sorting_keys)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Partition and sorting keys were not requested");
 
     partition_by = std::move(partition_by_);
     order_by = std::move(order_by_);
+    unsupported_properties = std::move(unsupported_properties_);
 }
 
 DB::ASTPtr TableMetadata::getPartitionBy() const

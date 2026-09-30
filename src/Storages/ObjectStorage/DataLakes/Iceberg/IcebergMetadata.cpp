@@ -958,7 +958,8 @@ void IcebergMetadata::createInitial(
         location_path = "/" + location_path;
 
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
-        location_path, *columns, partition_by, order_by, local_context, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
+        location_path, *columns, partition_by, order_by, local_context,
+        configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version], /*is_catalog_table=*/ bool(catalog));
     auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
     auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
 
@@ -1045,7 +1046,9 @@ void IcebergMetadata::createInitial(
         auto catalog_filename = Iceberg::makeIcebergLocationURI(
             configuration_ptr->getTypeName(), configuration_ptr->getNamespace(), filename);
 
-        if (!catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object, compression_method, if_not_exists))
+        /// Always ask for a conflict to be reported as `false`, so the files staged above are removed
+        /// before `TABLE_ALREADY_EXISTS` is thrown, with or without `IF NOT EXISTS`.
+        if (!catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object, compression_method, /* if_not_exists */ true))
         {
             if (!catalog_writes_metadata_file)
             {

@@ -96,6 +96,7 @@ namespace DB::DataLakeStorageSetting
 namespace DB::Setting
 {
 extern const SettingsString iceberg_metadata_compression_method;
+extern const SettingsBool datalake_ignore_unsupported_table_properties;
 }
 
 namespace ProfileEvents
@@ -940,22 +941,23 @@ static String parseColumnArgument(const ASTPtr & arg_ast, const String & clickho
     return identifier->name();
 }
 
+static const std::unordered_map<String, String> clickhouse_name_to_iceberg
+{
+    {"identity", "identity"},
+    {"icebergBucket", "bucket"},
+    {"icebergTruncate", "truncate"},
+    {"icebergYear", "year"},
+    {"icebergMonth", "month"},
+    {"icebergDay", "day"},
+    {"icebergHour", "hour"},
+    {"toYearNumSinceEpoch", "year"},
+    {"toMonthNumSinceEpoch", "month"},
+    {"toRelativeDayNum", "day"},
+    {"toRelativeHourNum", "hour"}
+};
+
 static std::pair<String, String> parseFunction(const ASTPtr & func_object)
 {
-    const static std::unordered_map<String, String> clickhouse_name_to_iceberg = {
-            {"identity", "identity"},
-            {"icebergBucket", "bucket"},
-            {"icebergTruncate", "truncate"},
-            {"icebergYear", "year"},
-            {"icebergMonth", "month"},
-            {"icebergDay", "day"},
-            {"icebergHour", "hour"},
-            {"toYearNumSinceEpoch", "year"},
-            {"toMonthNumSinceEpoch", "month"},
-            {"toRelativeDayNum", "day"},
-            {"toRelativeHourNum", "hour"}
-        };
-
     const auto * func = func_object ? func_object->as<ASTFunction>() : nullptr;
     if (!func)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid iceberg sort order expression, expected a function");
@@ -1090,13 +1092,52 @@ static std::vector<std::pair<String, String>> parseTransformAndColumnPairs(ASTPt
     return result;
 }
 
+/// SQL expressions are validated separately; this only checks whether an Iceberg transform can encode the key.
+static bool isRepresentableKey(ASTPtr key, const std::unordered_map<String, Int32> & column_name_to_source_id)
+{
+    key = unwrapOrderByElement(key);
+    if (const auto * identifier = key->as<ASTIdentifier>())
+        return column_name_to_source_id.contains(identifier->name());
+
+    const auto * function = key->as<ASTFunction>();
+    const auto * expressions = key->as<ASTExpressionList>();
+    if (function && function->name == "tuple")
+        expressions = function->arguments->as<ASTExpressionList>();
+    if (expressions)
+    {
+        bool representable = true;
+        for (const auto & child : expressions->children)
+            representable = isRepresentableKey(child, column_name_to_source_id) && representable;
+        return representable;
+    }
+
+    if (!function || !clickhouse_name_to_iceberg.contains(function->name))
+        return false;
+
+    const auto & arguments = function->arguments->children;
+    const bool has_parameter = function->name == "icebergBucket" || function->name == "icebergTruncate";
+    if (arguments.size() != (has_parameter ? 2 : 1))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments for Iceberg transform {}", function->name);
+    if (has_parameter)
+    {
+        const auto * parameter = arguments.front()->as<ASTLiteral>();
+        if (!parameter)
+            return false;
+        if (parameter->value.safeGet<Int64>() <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg transform {} requires a positive parameter", function->name);
+    }
+    const auto * column = arguments.back()->as<ASTIdentifier>();
+    return column && column_name_to_source_id.contains(column->name());
+}
+
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,
     ASTPtr partition_by,
     ASTPtr order_by,
     ContextPtr context,
-    UInt64 format_version)
+    UInt64 format_version,
+    bool is_catalog_table)
 {
     std::unordered_map<String, Int32> column_name_to_source_id;
     static Poco::UUIDGenerator uuid_generator;
@@ -1140,6 +1181,29 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     Poco::JSON::Array::Ptr schema_array = new Poco::JSON::Array;
     schema_array->add(schema_representation);
     new_metadata_file_content->set(Iceberg::f_schemas, schema_array);
+
+    if (is_catalog_table)
+    {
+        const bool ignore_unsupported_properties = context->getSettingsRef()[Setting::datalake_ignore_unsupported_table_properties];
+        auto validate_key = [&](ASTPtr & key, const char * clause)
+        {
+            if (!key)
+                return;
+            /// Validate even when omissions are allowed: invalid SQL must not silently disappear.
+            KeyDescription::getKeyFromAST(key, columns, {}, context);
+            if (!isRepresentableKey(key, column_name_to_source_id))
+            {
+                if (!ignore_unsupported_properties)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot represent {} expression {} in Iceberg. "
+                        "Set datalake_ignore_unsupported_table_properties = 1 to omit unsupported properties",
+                        clause, key->formatForLogging());
+                key.reset();
+            }
+        };
+        validate_key(partition_by, "PARTITION BY");
+        validate_key(order_by, "ORDER BY");
+    }
 
     new_metadata_file_content->set(Iceberg::f_default_spec_id, 0);
     Poco::JSON::Object::Ptr partition_spec = new Poco::JSON::Object;
@@ -1806,7 +1870,7 @@ static std::optional<String> formatIcebergTransformExpression(
     return fmt::format("{}({})", transform->transform_name, column_name);
 }
 
-std::pair<ASTPtr, ASTPtr> getPartitionAndSortingKeyASTsFromMetadata(const Poco::JSON::Object::Ptr & metadata_object)
+std::tuple<ASTPtr, ASTPtr, String> getPartitionAndSortingKeyASTsFromMetadata(const Poco::JSON::Object::Ptr & metadata_object)
 {
     const auto schema = metadata_object->has(f_schemas) && metadata_object->has(f_current_schema_id)
         ? parseTableSchemaV2Method(metadata_object).first
@@ -1840,6 +1904,7 @@ std::pair<ASTPtr, ASTPtr> getPartitionAndSortingKeyASTsFromMetadata(const Poco::
         partition_fields = metadata_object->getArray(f_partition_spec);
     }
 
+    String unsupported_properties;
     ASTPtr partition_by;
     if (partition_fields)
     {
@@ -1854,6 +1919,9 @@ std::pair<ASTPtr, ASTPtr> getPartitionAndSortingKeyASTsFromMetadata(const Poco::
             else if (!expression->empty())
                 expressions.push_back(std::move(*expression));
         }
+
+        if (!representable)
+            unsupported_properties = "PARTITION BY";
 
         if (representable && !expressions.empty())
         {
@@ -1897,6 +1965,13 @@ std::pair<ASTPtr, ASTPtr> getPartitionAndSortingKeyASTsFromMetadata(const Poco::
                 expressions.push_back(std::move(*expression));
             }
 
+            if (!representable)
+            {
+                if (!unsupported_properties.empty())
+                    unsupported_properties += ", ";
+                unsupported_properties += "ORDER BY";
+            }
+
             if (representable && !expressions.empty())
             {
                 String order_by_str = fmt::format("{}", fmt::join(expressions, ", "));
@@ -1909,7 +1984,7 @@ std::pair<ASTPtr, ASTPtr> getPartitionAndSortingKeyASTsFromMetadata(const Poco::
         }
     }
 
-    return {partition_by, order_by};
+    return {partition_by, order_by, unsupported_properties};
 }
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type)

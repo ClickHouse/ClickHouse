@@ -9300,10 +9300,11 @@ Cloud default value: `1`.
 )", BETA, allow_experimental_database_iceberg, \
         {"25.8", false, false, "Added an alias for setting `allow_experimental_database_iceberg`"}, \
         {"24.12", false, false, "New setting. At the time the setting was named `allow_experimental_database_iceberg`, which is now an alias of it."}) \
-    DECLARE(Bool, datalake_create_table_as_ignore_unsupported_source_properties, false, R"(
-Allow `CREATE TABLE ... AS` in a `DataLakeCatalog` database to ignore table properties inherited from the source that the destination cannot represent. Properties written explicitly in the destination `CREATE TABLE` query are still rejected.
+    DECLARE(Bool, datalake_ignore_unsupported_table_properties, false, R"(
+Allow `CREATE TABLE`, `CREATE TABLE ... AS`, and `SHOW CREATE TABLE` in a `DataLakeCatalog` database to omit unsupported table properties, including explicitly specified and inherited properties. Supported properties are preserved. By default, properties that cannot be represented cause an exception.
+This setting does not suppress invalid expressions, unknown columns, invalid transform arguments, or incompatible storage engines, endpoints, and credentials.
 )", BETA, \
-        {"26.10", false, false, "New setting: allow `CREATE TABLE ... AS` in a `DataLakeCatalog` to ignore unsupported properties inherited from the source."}) \
+        {"26.10", false, false, "New setting: allow `CREATE TABLE` and `SHOW CREATE TABLE` in a `DataLakeCatalog` to omit unsupported table properties."}) \
     DECLARE_WITH_ALIAS(Bool, allow_database_unity_catalog, false, R"(
 Allow database engine `DataLakeCatalog` with `catalog_type = 'unity'`
 

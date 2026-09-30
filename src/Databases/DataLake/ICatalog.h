@@ -97,7 +97,11 @@ public:
     void setDataLakeSpecificProperties(std::optional<DataLakeSpecificProperties> && metadata);
     std::optional<DataLakeSpecificProperties> getDataLakeSpecificProperties() const;
 
-    void setPartitionAndSortingKeys(DB::ASTPtr partition_by_, DB::ASTPtr order_by_);
+    void setPartitionAndSortingKeys(DB::ASTPtr partition_by_, DB::ASTPtr order_by_, std::string unsupported_properties_);
+    const std::string & getUnsupportedProperties() const
+    {
+        return unsupported_properties;
+    }
     DB::ASTPtr getPartitionBy() const;
     DB::ASTPtr getOrderBy() const;
 
@@ -157,6 +161,7 @@ private:
 
     DB::ASTPtr partition_by;
     DB::ASTPtr order_by;
+    std::string unsupported_properties;
 
     std::string reason_why_table_is_not_readable;
     std::optional<std::string> table_uuid;

@@ -440,8 +440,8 @@ bool GlueCatalog::tryGetTableMetadata(
                 setup_specific_properties();
             if (result.isDefaultReadableTable())
             {
-                auto [partition_by, order_by] = DB::Iceberg::getPartitionAndSortingKeyASTsFromMetadata(getIcebergMetadataObject(result));
-                result.setPartitionAndSortingKeys(std::move(partition_by), std::move(order_by));
+                auto [partition_by, order_by, unsupported_properties] = DB::Iceberg::getPartitionAndSortingKeyASTsFromMetadata(getIcebergMetadataObject(result));
+                result.setPartitionAndSortingKeys(std::move(partition_by), std::move(order_by), std::move(unsupported_properties));
             }
         }
     }

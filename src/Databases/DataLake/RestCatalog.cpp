@@ -1748,8 +1748,8 @@ bool RestCatalog::getTableMetadataImpl(
 
     if (result.requiresPartitionAndSortingKeys())
     {
-        auto [partition_by, order_by] = DB::Iceberg::getPartitionAndSortingKeyASTsFromMetadata(metadata_object);
-        result.setPartitionAndSortingKeys(std::move(partition_by), std::move(order_by));
+        auto [partition_by, order_by, unsupported_properties] = DB::Iceberg::getPartitionAndSortingKeyASTsFromMetadata(metadata_object);
+        result.setPartitionAndSortingKeys(std::move(partition_by), std::move(order_by), std::move(unsupported_properties));
     }
 
     if (result.isDefaultReadableTable() && result.requiresCredentials() && object->has("config"))

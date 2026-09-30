@@ -55,6 +55,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/TTLDescription.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -127,6 +128,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
@@ -139,7 +141,7 @@ namespace Setting
     extern const SettingsUInt64 database_replicated_allow_explicit_uuid;
     extern const SettingsBool database_replicated_allow_heavy_create;
     extern const SettingsBool database_replicated_allow_only_replicated_engine;
-    extern const SettingsBool datalake_create_table_as_ignore_unsupported_source_properties;
+    extern const SettingsBool datalake_ignore_unsupported_table_properties;
     extern const SettingsBool data_type_default_nullable;
     extern const SettingsSQLSecurityType default_materialized_view_sql_security;
     extern const SettingsSQLSecurityType default_normal_view_sql_security;
@@ -997,9 +999,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (!create.comment && !as_storage_metadata->comment.empty())
             create.set(create.comment, make_intrusive<ASTLiteral>(as_storage_metadata->comment));
 
-        /// Secondary indices and projections make sense only for MergeTree family of storage engines.
-        /// We should not copy them for other storages.
-        if (create.storage && create.storage->engine && endsWith(create.storage->engine->name, "MergeTree"))
+        /// Retain source properties for `DataLakeCatalog` until its validation either rejects or explicitly omits them.
+        const auto target_database = DatabaseCatalog::instance().tryGetDatabase(getContext()->resolveDatabase(create.getDatabase()));
+        const bool is_datalake_catalog = target_database && target_database->isDatalakeCatalog();
+        if (is_datalake_catalog || (create.storage && create.storage->engine && endsWith(create.storage->engine->name, "MergeTree")))
         {
             /// Copy secondary indexes but only the ones which were not implicitly created. These will be re-generated later again and need
             /// not be copied.
@@ -1013,7 +1016,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
             /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
             /// Note: only supports the source table engine is using the new syntax.
-            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(as_storage.get()))
+            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(as_storage.get()); merge_tree_data && !is_datalake_catalog)
             {
                 if (merge_tree_data->format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
                 {
@@ -2070,8 +2073,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         visitor.visitTableExpressions(*create.columns_list);
 
     const bool engine_user_specified = create.storage && create.storage->engine;
-    const bool columns_user_specified = create.columns_list;
-    const bool comment_user_specified = create.comment;
 
     const char * datalake_unsupported_storage_clause = nullptr;
     if (create.storage)
@@ -2209,9 +2210,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (database && database->isDatalakeCatalog())
     {
-        const bool ignore_unsupported_source_properties
-            = !as_table_saved.empty()
-            && getContext()->getSettingsRef()[Setting::datalake_create_table_as_ignore_unsupported_source_properties];
+        const bool ignore_unsupported_properties
+            = getContext()->getSettingsRef()[Setting::datalake_ignore_unsupported_table_properties];
 
         if (create.is_ordinary_view || create.is_materialized_view
             || create.is_dictionary || create.attach || create.is_clone_as
@@ -2223,7 +2223,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (engine_user_specified)
             database->validateCreateTableEngine(*create.storage);
 
-        if (datalake_unsupported_storage_clause)
+        if (datalake_unsupported_storage_clause && !ignore_unsupported_properties)
         {
             if (engine_user_specified)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -2238,7 +2238,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "(got {})", datalake_unsupported_storage_clause);
         }
 
-        if (!ignore_unsupported_source_properties || columns_user_specified)
+        if (!ignore_unsupported_properties)
         {
             for (const auto & column : properties.columns)
             {
@@ -2261,12 +2261,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                     "DataLakeCatalog CREATE TABLE does not support PRIMARY KEY, indices, constraints, or projections");
         }
 
-        if (create.comment && (!ignore_unsupported_source_properties || comment_user_specified))
+        if (create.comment && !ignore_unsupported_properties)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table COMMENT is not supported by DataLakeCatalog table creation "
                 "(note: CREATE TABLE ... AS inherits the comment from the source table)");
 
-        if (!ignore_unsupported_source_properties && !as_table_saved.empty())
+        if (!ignore_unsupported_properties && !as_table_saved.empty())
         {
             const ASTStorage * source_storage = create.storage;
             ASTPtr source_create_ptr;
@@ -2291,26 +2291,53 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             }
         }
 
-        if (ignore_unsupported_source_properties)
+        if (ignore_unsupported_properties)
         {
-            if (!columns_user_specified)
+            /// Validate expressions before omitting properties that the destination cannot store.
+            KeyDescription primary_key;
+            const auto ttl_validation = getContext()->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]
+                ? TTLValidationMode::SkipValidation : TTLValidationMode::Validate;
+            if (create.storage)
             {
-                ColumnsDescription plain_columns;
-                for (const auto & column : properties.columns)
-                    plain_columns.add(ColumnDescription(column.name, column.type));
-
-                properties.columns = std::move(plain_columns);
-                properties.indices = {};
-                properties.constraints = {};
-                properties.projections = {};
-
-                auto columns_list = make_intrusive<ASTColumns>();
-                columns_list->set(columns_list->columns, formatColumns(properties.columns));
-                create.set(create.columns_list, columns_list);
+                auto * key = create.storage->primary_key ? create.storage->primary_key : create.storage->order_by;
+                if (key)
+                    primary_key = KeyDescription::getKeyFromAST(key->ptr(), properties.columns, {}, getContext());
+                if (create.storage->sample_by)
+                    KeyDescription::getKeyFromAST(create.storage->sample_by->ptr(), properties.columns, {}, getContext());
+                if (create.storage->unique_key)
+                    KeyDescription::getKeyFromAST(create.storage->unique_key->ptr(), properties.columns, {}, getContext());
+                if (create.storage->ttl_table)
+                    TTLTableDescription::getTTLForTableFromAST(
+                        create.storage->ttl_table->ptr(), properties.columns, getContext(), primary_key, ttl_validation);
             }
+            for (const auto & column : properties.columns)
+                if (column.ttl)
+                    TTLDescription::getTTLFromAST(column.ttl, properties.columns, getContext(), primary_key, ttl_validation);
+            properties.constraints.getExpressions(getContext(), properties.columns.getAllPhysical());
 
-            if (!comment_user_specified)
-                create.reset(create.comment);
+            ColumnsDescription plain_columns;
+            for (const auto & column : properties.columns)
+                plain_columns.add(ColumnDescription(column.name, column.type));
+
+            properties.columns = std::move(plain_columns);
+            properties.indices = {};
+            properties.constraints = {};
+            properties.projections = {};
+
+            auto columns_list = make_intrusive<ASTColumns>();
+            columns_list->set(columns_list->columns, formatColumns(properties.columns));
+            create.set(create.columns_list, columns_list);
+            create.reset(create.comment);
+
+            if (create.storage)
+            {
+                create.storage->reset(create.storage->primary_key);
+                create.storage->reset(create.storage->sample_by);
+                create.storage->reset(create.storage->ttl_table);
+                create.storage->reset(create.storage->unique_key);
+                if (!engine_user_specified)
+                    create.storage->reset(create.storage->settings);
+            }
         }
     }
 
@@ -2662,20 +2689,39 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (database->isDatalakeCatalog() && !as_table_saved.empty())
     {
         String as_database_name = getContext()->resolveDatabase(as_database_saved);
-        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, as_table_saved}, getContext());
-        /// A materialized view keeps its keys in its target table.
-        if (const auto * materialized_view = as_storage->as<StorageMaterializedView>())
-            as_storage = materialized_view->getTargetTable();
-        auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
+        auto source_database = DatabaseCatalog::instance().getDatabase(as_database_name);
+        ASTPtr source_partition_by;
+        ASTPtr source_order_by;
+        if (source_database->isDatalakeCatalog())
+        {
+            /// Use the same validated definition as `SHOW CREATE TABLE`, including any explicitly permitted omissions.
+            auto source_query = source_database->getCreateTableQuery(as_table_saved, getContext());
+            const auto & source_create = source_query->as<ASTCreateQuery &>();
+            if (source_create.storage)
+            {
+                source_partition_by = source_create.storage->partition_by;
+                source_order_by = source_create.storage->order_by;
+            }
+        }
+        else
+        {
+            StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, as_table_saved}, getContext());
+            /// A materialized view keeps its keys in its target table.
+            if (const auto * materialized_view = as_storage->as<StorageMaterializedView>())
+                as_storage = materialized_view->getTargetTable();
+            auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
+            if (as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
+                source_partition_by = as_storage_metadata->getPartitionKeyAST();
+            if (as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
+                source_order_by = as_storage_metadata->getSortingKeyAST();
+        }
 
         if (engine_user_specified)
         {
-            if (!create_query.storage->partition_by
-                && as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
-                create_query.storage->set(create_query.storage->partition_by, as_storage_metadata->getPartitionKeyAST()->clone());
-            if (!create_query.storage->order_by
-                && as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
-                create_query.storage->set(create_query.storage->order_by, as_storage_metadata->getSortingKeyAST()->clone());
+            if (!create_query.storage->partition_by && source_partition_by)
+                create_query.storage->set(create_query.storage->partition_by, source_partition_by->clone());
+            if (!create_query.storage->order_by && source_order_by)
+                create_query.storage->set(create_query.storage->order_by, source_order_by->clone());
         }
         else
         {
@@ -2689,10 +2735,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                     order_by = create_query.storage->order_by->clone();
             }
 
-            if (!partition_by && as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
-                partition_by = as_storage_metadata->getPartitionKeyAST()->clone();
-            if (!order_by && as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
-                order_by = as_storage_metadata->getSortingKeyAST()->clone();
+            if (!partition_by && source_partition_by)
+                partition_by = source_partition_by->clone();
+            if (!order_by && source_order_by)
+                order_by = source_order_by->clone();
 
             auto storage_ast = make_intrusive<ASTStorage>();
             create_query.set(create_query.storage, storage_ast);
