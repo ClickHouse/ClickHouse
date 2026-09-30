@@ -1321,9 +1321,10 @@ Possible values:
     DECLARE(Bool, allow_suspicious_fixed_string_types, false, R"(
 In CREATE TABLE statement allows creating columns of type FixedString(n) with n > 256. FixedString with length >= 256 is suspicious and most likely indicates a misuse
 )", 0) \
-    DECLARE(Bool, allow_suspicious_indices, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_suspicious_indexes, false, R"(
 Reject primary/secondary indexes and sorting keys with identical expressions
-)", 0, \
+)", 0, allow_suspicious_indices, \
+        {"26.10", false, false, "Added an alias for setting `allow_suspicious_indices`."}, \
         {"23.4", true, false, "If true, index can defined with identical expressions"}) \
     DECLARE(Bool, allow_minmax_index_for_json, false, R"(
 Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
@@ -2305,7 +2306,7 @@ If statistics are build and materialized for newly inserted parts. Even if disab
 Only build and store column statistics for newly inserted parts (see `materialize_statistics_on_insert`) for tables whose current size plus the block being written, does not exceed this value. `0` means no size limit.
 )", 0, \
         {"26.8", 0, 26843545600, "New setting."}) \
-    DECLARE(String, ignore_data_skipping_indices, "", R"(
+    DECLARE_WITH_ALIAS(String, ignore_data_skipping_indexes, "", R"(
 Ignores the skipping indexes specified if used by the query.
 
 Consider the following example:
@@ -2388,9 +2389,10 @@ Expression ((Projection + Before ORDER BY))
 ```
 
 Works with tables in the MergeTree family.
-)", 0) \
+)", 0, ignore_data_skipping_indices, \
+        {"26.10", "", "", "Added an alias for setting `ignore_data_skipping_indices`."}) \
     \
-    DECLARE(String, force_data_skipping_indices, "", R"(
+    DECLARE_WITH_ALIAS(String, force_data_skipping_indexes, "", R"(
 Disables query execution if passed data skipping indices wasn't used.
 
 Consider the following example:
@@ -2415,10 +2417,12 @@ SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_
 SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- query will produce INDEX_NOT_USED error, since d1_null_idx is not used.
 SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- Ok.
 ```
-)", 0) \
-    DECLARE(Bool, secondary_indices_enable_bulk_filtering, true, R"(
+)", 0, force_data_skipping_indices, \
+        {"26.10", "", "", "Added an alias for setting `force_data_skipping_indices`."}) \
+    DECLARE_WITH_ALIAS(Bool, secondary_indexes_enable_bulk_filtering, true, R"(
 Enable the bulk filtering algorithm for indices. It is expected to be always better, but we have this setting for compatibility and control.
-)", 0, \
+)", 0, secondary_indices_enable_bulk_filtering, \
+        {"26.10", true, true, "Added an alias for setting `secondary_indices_enable_bulk_filtering`."}, \
         {"25.5", false, true, "A new algorithm for filtering by data skipping indices"}) \
     DECLARE(Float, max_streams_to_max_threads_ratio, 1, R"(
 Allows you to use more sources than the number of threads - to more evenly distribute work across threads. It is assumed that this is a temporary solution since it will be possible in the future to make the number of sources equal to the number of threads, but for each source to dynamically select available work for itself.
@@ -7386,7 +7390,7 @@ This is an expert-level setting which should only be used for debugging by devel
 </Note>
 )", 0, \
         {"26.9", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."}) \
-    DECLARE(Bool, query_plan_lower_array_join_function, false, R"(
+    DECLARE(Bool, query_plan_lower_array_join_function, true, R"(
 Toggles a query-plan-level optimization which lowers an `arrayJoin` function inside an expression into a real `ARRAY JOIN` step, so it goes through the same execution machinery as the `ARRAY JOIN` clause (lazy replication and filter fusion).
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
@@ -7394,7 +7398,12 @@ Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enabl
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
 :::
 )", 0, \
+        {"26.10", false, true, "Enable query_plan_lower_array_join_function by default."}, \
         {"26.9", false, false, "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."}) \
+    DECLARE(Bool, legacy_array_join_function_nondeterministic_evaluation, false, R"(
+How a non-deterministic function next to the `arrayJoin` function is evaluated when it does not depend on the joined value, for example `rand()` or `generateUUIDv4()` in the same `SELECT`. By default it gives a different value on every output row, like with the `ARRAY JOIN` clause. Enable to get the behavior of older versions: one value per source row, repeated across that row's expanded rows.
+)", 0, \
+        {"26.10", true, false, "A non-deterministic function next to the `arrayJoin` function gives a different value on every output row, like with the `ARRAY JOIN` clause. The setting restores one value per source row."}) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
@@ -7599,7 +7608,7 @@ Use lazy materialization optimization for reading local Parquet files with the `
         {"26.8", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading local Parquet files with the `file` table function and the `File` table engine."}) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0, \
-        {"25.12", 10, 10000, "Increase the limit after performance improvement"}, \
+        {"25.12", 100, 10000, "Increase the limit after performance improvement"}, \
         {"25.11", 10, 100, "More optimal"}, \
         {"25.4", 10, 10, "Added new setting to control maximum limit value that allows to use query plan for lazy materialization optimisation. If zero, there is no limit"}) \
     DECLARE(Bool, query_plan_optimize_lazy_final, false, R"(
@@ -9076,11 +9085,11 @@ Skip whole Iceberg manifest files whose partition summaries in the manifest list
 )", 0, \
         {"26.9", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."}) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
-If enabled and the `schema` key of an Iceberg manifest file header carries a schema that differs from the schema already registered for the same schema-id from metadata.json, the metadata.json schema is used and the manifest header copy is ignored with a warning. If disabled, such a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
+If enabled and the schema-id of an Iceberg manifest file is already registered from metadata.json, the metadata.json schema is used and the copy in the `schema` key of the manifest file header is ignored without being compared. If disabled, the manifest header copy is compared with the metadata.json schema, and a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
 
 The manifest header schema is only a copy of the table schema at the time the manifest was written, and some writers (e.g. AWS S3 Tables maintenance jobs) have been observed storing degraded copies there. Other query engines resolve schemas from metadata.json and ignore divergent header copies, so the default follows them. A conflict between two metadata.json schema definitions still always fails the query.
 )", 0, \
-        {"26.10", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema and log a warning instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.10 restores the previous strict behavior."}) \
+        {"26.10", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.10 restores the previous strict behavior."}) \
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
 Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
 )", 0) \
@@ -9240,11 +9249,6 @@ Index analysis done only on replica-coordinator and skipped on other replicas. E
 Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive.
 )", 0, \
         {"25.8", false, true, "New setting. Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive."}) \
-    DECLARE(Bool, parallel_replicas_insert_select_local_pipeline, true, R"(
-Use local pipeline during distributed INSERT SELECT with parallel replicas
-)", 0, \
-        {"25.5", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}, \
-        {"25.4", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}) \
     DECLARE(Milliseconds, parallel_replicas_connect_timeout_ms, 300, R"(
 The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query execution
 )", 0, \
@@ -10799,6 +10803,10 @@ Enable experimental table function `eval`.
         {"26.5", true, true, "Obsolete setting, the logical join step is now always used."}, \
         {"25.2", false, true, "Enable new step"}, \
         {"25.1", false, false, "New join step, internal change"}) \
+    MAKE_OBSOLETE(M, Bool, parallel_replicas_insert_select_local_pipeline, true, \
+        {"26.10", true, true, "Obsolete setting: whether the initiator runs the local pipeline of a distributed `INSERT SELECT` is decided by `parallel_replicas_local_plan` and `parallel_replicas_prefer_local_replica` alone, and it is still skipped when `max_execution_time_leaf` imposes a different timeout contract. Set `parallel_replicas_local_plan = 0` to leave all the reading to the remote replicas."}, \
+        {"25.5", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}, \
+        {"25.4", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}) \
     MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1, \
         {"26.6", 1, 1, "Obsolete setting, the database engine in Cloud no longer depends on it."}, \
         {"24.10", 1, 1, "A setting for ClickHouse Cloud"}) \

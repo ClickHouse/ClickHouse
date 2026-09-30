@@ -274,7 +274,10 @@ Block executeInternalQuery(const String & query, ContextPtr context)
     /// `limit`, `offset`, and the result size limits - belong to the final traceView output, not
     /// to the queries that build it: applied here they would cut the spans read, or fail on a
     /// column that only the output has. The resource limits (rows read, memory, time) stay:
-    /// these queries are where the work of the call is done.
+    /// these queries are where the work of the call is done. `additional_table_filters` stays too:
+    /// keyed by table name, a filter on `system.opentelemetry_span_log` restricts the spans the
+    /// caller may see, possibly pinned by a profile as a row restriction, and it must apply to the
+    /// reads here exactly as it would to a view over the span log.
     Settings settings = query_context->getSettingsCopy();
     ClusterProxy::stripInitiatorOnlySettings(settings);
     settings.set(Setting::max_result_rows, 0);
@@ -652,9 +655,12 @@ String spanLogSource(const TraceViewArguments & arguments, ContextMutablePtr con
     const ClusterPtr span_log_replicas = all_replicas->getClusterWithMultipleShards(
         std::vector<size_t>(indices.begin(), indices.end())); // STYLE_CHECK_ALLOW_STD_CONTAINERS: the type it takes
 
-    /// A Distributed table over those replicas only, visible to the internal queries of `context`
-    /// under this name. It lives as long as `context`, which is private to this call.
-    const String source = "_trace_view_span_log";
+    /// A Distributed table over those replicas only, visible to the internal queries of `context`.
+    /// It lives as long as `context`, which is private to this call, but `context` is a copy of
+    /// the caller's and carries the caller's temporary tables: the name is unique to this call so
+    /// that it cannot clash with one of them.
+    String source = "_trace_view_span_log_" + toString(UUIDHelpers::generateV4());
+    std::erase(source, '-');
     context->addExternalTable(source, TemporaryTableHolder(context, [&](const StorageID & table_id) -> StoragePtr
     {
         auto storage = std::make_shared<StorageDistributed>(
