@@ -1,3 +1,5 @@
+#include <unordered_set>
+
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/Exception.h>
@@ -255,11 +257,16 @@ namespace
             return true;
         }
 
-        bool parseScalar(const antlr4::tree::TerminalNode * ctx, ScalarType & result)
+        bool parseScalar(
+            const antlr4::tree::TerminalNode * ctx,
+            ScalarType & result,
+            bool * is_duration = nullptr,
+            std::optional<Int64> * duration_ms = nullptr)
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseScalar(getText(ctx), result, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseScalar(
+                    getText(ctx), result, &error_message, &error_pos, is_duration, duration_ms))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -347,13 +354,19 @@ namespace
         Node * makeScalar(antlr4::tree::TerminalNode * ctx)
         {
             ScalarType scalar = 0;
-            if (!parseScalar(ctx, scalar))
+            bool is_duration = false;
+            std::optional<Int64> duration_ms;
+            if (!parseScalar(ctx, scalar, &is_duration, &duration_ms))
             {
                 chassert(error_listener.hasError());
                 return nullptr;
             }
             auto new_node = std::make_unique<Scalar>();
             new_node->scalar = scalar;
+            new_node->is_duration = is_duration;
+            new_node->duration_ms = duration_ms;
+            if (is_duration)
+                new_node->duration_str = getText(ctx);
             return addNode(std::move(new_node));
         }
 
@@ -665,6 +678,27 @@ namespace
                     new_node->group_right = true;
                     if (auto * extra_labels_ctx = group_right_ctx->labelNameList())
                         new_node->extra_labels = getLabelNameList(extra_labels_ctx);
+                }
+
+                if (!error_listener.hasError() && new_node->on && !new_node->extra_labels.empty())
+                {
+                    std::unordered_set<std::string_view> extra_labels;
+                    extra_labels.reserve(new_node->extra_labels.size());
+                    for (const auto & extra_label : new_node->extra_labels)
+                        extra_labels.emplace(extra_label);
+
+                    for (const auto & label : new_node->labels)
+                    {
+                        if (extra_labels.contains(label))
+                        {
+                            const size_t error_pos = convertCodePointPositionToByteOffset(
+                                promql_query, grouping->getStart()->getStartIndex());
+                            error_listener.setError(
+                                "label " + PrometheusQueryParsingUtil::quoteStringLiteral(label) + " must not occur in ON and GROUP clause at once",
+                                error_pos);
+                            break;
+                        }
+                    }
                 }
             }
             new_node->bool_modifier = bool_modifier;

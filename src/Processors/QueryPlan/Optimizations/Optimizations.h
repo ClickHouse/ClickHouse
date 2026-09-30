@@ -292,9 +292,6 @@ void processAndOptimizeTextIndexFunctions(
     const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
-/// Builds the dynamic `__topKFilter` PREWHERE condition that `tryOptimizeTopK` requested and merges
-/// it into whatever PREWHERE the read already has. Must run after `optimizePrewhere`, after
-/// projection replacement and after `optimizeReadInOrder`.
 void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);
@@ -312,6 +309,7 @@ void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, co
 void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeCreatingSetPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
+void disableTopKQueryConditionCacheUnderNonDeterministicFilters(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 bool optimizeVectorSearchWithQuantizedCodes(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings, size_t max_limit_for_lazy_materialization);
 /// Replaces a `CommonSubplanReferenceStep` with a clone of the subplan it references. The subplan's
