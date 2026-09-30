@@ -12,7 +12,6 @@ const std::vector<std::string> & allExperimentalSettingNames()
     {
         std::vector<std::string> result =
         {
-        "allow_experimental_codecs",
         "allow_experimental_funnel_functions",
         "allow_experimental_nlp_functions",
         "allow_fuzz_query_functions",
