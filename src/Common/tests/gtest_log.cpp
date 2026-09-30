@@ -290,6 +290,9 @@ TEST(Logger, RotationParseInvalid)
     EXPECT_THROW(Poco::CombinedRotateStrategy("100X", ""), Poco::InvalidArgumentException);
     EXPECT_THROW(Poco::CombinedRotateStrategy("100M,12:00,garbage", ""), Poco::InvalidArgumentException);
     EXPECT_THROW(Poco::CombinedRotateStrategy("100M,daily,garbage", ""), Poco::InvalidArgumentException);
+    EXPECT_THROW(Poco::CombinedRotateStrategy("25:00", ""), Poco::InvalidArgumentException);
+    EXPECT_THROW(Poco::CombinedRotateStrategy("12:99", ""), Poco::InvalidArgumentException);
+    EXPECT_THROW(Poco::CombinedRotateStrategy("Sunday,24:00", ""), Poco::InvalidArgumentException);
 }
 
 TEST(Logger, RotationTimeNotMistakenForSize)

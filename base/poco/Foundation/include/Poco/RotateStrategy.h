@@ -83,6 +83,11 @@ public:
             default:
                 throw InvalidArgumentException("Invalid rotation time specified.");
         }
+
+        /// An out-of-range value would make getNextRollover loop forever
+        if (_hour < -1 || _hour > 23 || _minute < 0 || _minute > 59)
+            throw InvalidArgumentException("Invalid rotation time specified: hour must be 0-23 and minute 0-59.");
+
         getNextRollover();
     }
 
