@@ -187,9 +187,7 @@ private:
         return tryGetColumnFromBlock(src, name_and_type);
     }
 
-    /// The array of `src` that gives the sizes of `column` when `src` lacks it: the first array of its `Nested` from
-    /// `nested_arrays` that `src` stores. None for a column that is not an array member of a `Nested`: only dotted names are
-    /// members, and only members are checked to have equal sizes on insert.
+    /// Only dotted names are members of a `Nested`, and the members of one `Nested` are checked to have equal sizes on insert.
     const ColumnWithTypeAndName * findSizesSource(const Block & src, const NameAndTypePair & column) const
     {
         if (nested_arrays.empty() || !isArray(column.getTypeInStorage()))
@@ -213,10 +211,7 @@ private:
         return nullptr;
     }
 
-    /// Fills the entries of `columns` (`columns_to_read` read from `src`) that `src` lacks, from `src` alone. All members of
-    /// one `Nested` in a stored block have equal sizes (checked on insert), so a missing member is an array of default elements
-    /// with the sizes of the array that `findSizesSource` picks, and a missing subcolumn of such a member is taken from that
-    /// array. The other entries get the default value of their type.
+    /// Each missing entry is filled from `src` alone, independently of the other columns of the read.
     void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesList & columns_to_read, Columns & columns) const
     {
         NamesAndTypesList columns_without_sizes;
@@ -562,8 +557,6 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
     return result;
 }
 
-/// The arrays of the table that are members of the `Nested` of a requested member. A block written before a requested member
-/// was added takes its array sizes from one of them.
 static Names getArraysOfRequestedNested(const NamesAndTypesList & physical_columns, const StorageSnapshotPtr & storage_snapshot)
 {
     NameSet nested_names;
