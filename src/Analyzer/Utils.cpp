@@ -1890,9 +1890,8 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
                 return make_intrusive<ASTLiteral>(Null());
 
-            /// Name the member type and the `Dynamic` type, as for `Variant`: the literal does not keep the member
-            /// type (an `Enum8` value is inferred back as its number). A consumer that clears `date_time_as_numbers`
-            /// parses the literal itself and has no `Dynamic`, so it gets the bare member literal.
+            /// A literal alone loses the member type (an `Enum8` is inferred back as its number): name it and the `Dynamic` type.
+            /// A consumer that clears `date_time_as_numbers` has no `Dynamic` and gets the bare member literal.
             auto name_member = [&](ASTPtr member_ast, const DataTypePtr & member_type)
             {
                 if (!date_time_as_numbers)
