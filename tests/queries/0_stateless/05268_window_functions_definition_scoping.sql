@@ -8,9 +8,13 @@ SELECT count() OVER w FROM numbers(3) WINDOW w AS (PARTITION BY nope); -- { serv
 SELECT count() OVER w FROM numbers(3) WINDOW w AS (ORDER BY number, nope); -- { serverError UNKNOWN_IDENTIFIER }
 
 SELECT '-- A window name is visible only in the query that defines it';
+-- The outer definitions below are valid in both scopes: the inner query and the CTE expose number, and the
+-- same definitions work when the window is used in the outer query. Only the reference from the inner scope fails.
+SELECT number, count() OVER w AS outer_count FROM (SELECT number FROM numbers(3)) WINDOW w AS (ORDER BY number) ORDER BY number;
+WITH cte AS (SELECT number FROM numbers(3)) SELECT number, count() OVER w AS outer_count FROM cte WINDOW w AS (ORDER BY number) ORDER BY number;
 SELECT count() OVER w FROM numbers(3); -- { serverError BAD_ARGUMENTS }
-SELECT * FROM (SELECT count() OVER w FROM numbers(3)) WINDOW w AS (ORDER BY number); -- { serverError BAD_ARGUMENTS }
-WITH cte AS (SELECT count() OVER w AS c FROM numbers(3)) SELECT c FROM cte WINDOW w AS (ORDER BY c); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM (SELECT number, count() OVER w FROM numbers(3)) WINDOW w AS (ORDER BY number); -- { serverError BAD_ARGUMENTS }
+WITH cte AS (SELECT number, count() OVER w AS c FROM numbers(3)) SELECT number, c FROM cte WINDOW w AS (ORDER BY number); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- The same window name may be defined independently in sibling subqueries and in the outer query';
 SELECT a.n, a.c AS by_parity, b.c AS by_third, count() OVER w AS running

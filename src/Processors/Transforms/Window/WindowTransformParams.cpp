@@ -58,8 +58,12 @@ int compareRangeOffset(
 
     if (!shifted_rhs)
         return offset_is_preceding ? 1 : -1;
-
-    return (lhs_value > *shifted_rhs) - (lhs_value < *shifted_rhs);
+    else if (lhs_value < *shifted_rhs)
+        return -1;
+    else if (lhs_value == *shifted_rhs)
+        return 0;
+    else
+        return 1;
 }
 
 // The same over a Nullable column: NULL sorts before every value and equals NULL.
@@ -84,30 +88,22 @@ int compareNullableRangeOffset(
 template <bool nullable>
 RangeOffsetComparator chooseRangeOffsetComparatorForValueType(const IColumn & column)
 {
-    if (typeid_cast<const ColumnVector<UInt8> *>(&column))
-        return nullable ? compareNullableRangeOffset<UInt8> : compareRangeOffset<UInt8>;
-    else if (typeid_cast<const ColumnVector<UInt16> *>(&column))
-        return nullable ? compareNullableRangeOffset<UInt16> : compareRangeOffset<UInt16>;
-    else if (typeid_cast<const ColumnVector<UInt32> *>(&column))
-        return nullable ? compareNullableRangeOffset<UInt32> : compareRangeOffset<UInt32>;
-    else if (typeid_cast<const ColumnVector<UInt64> *>(&column))
-        return nullable ? compareNullableRangeOffset<UInt64> : compareRangeOffset<UInt64>;
-    else if (typeid_cast<const ColumnVector<Int8> *>(&column))
-        return nullable ? compareNullableRangeOffset<Int8> : compareRangeOffset<Int8>;
-    else if (typeid_cast<const ColumnVector<Int16> *>(&column))
-        return nullable ? compareNullableRangeOffset<Int16> : compareRangeOffset<Int16>;
-    else if (typeid_cast<const ColumnVector<Int32> *>(&column))
-        return nullable ? compareNullableRangeOffset<Int32> : compareRangeOffset<Int32>;
-    else if (typeid_cast<const ColumnVector<Int64> *>(&column))
-        return nullable ? compareNullableRangeOffset<Int64> : compareRangeOffset<Int64>;
-    else if (typeid_cast<const ColumnVector<Int128> *>(&column))
-        return nullable ? compareNullableRangeOffset<Int128> : compareRangeOffset<Int128>;
-    else if (typeid_cast<const ColumnVector<Float32> *>(&column))
-        return nullable ? compareNullableRangeOffset<Float32> : compareRangeOffset<Float32>;
-    else if (typeid_cast<const ColumnVector<Float64> *>(&column))
-        return nullable ? compareNullableRangeOffset<Float64> : compareRangeOffset<Float64>;
-    else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The RANGE OFFSET frame for '{}' ORDER BY column is not implemented", column.getName());
+    switch (column.getDataType())
+    {
+        case TypeIndex::UInt8: return nullable ? compareNullableRangeOffset<UInt8> : compareRangeOffset<UInt8>;
+        case TypeIndex::UInt16: return nullable ? compareNullableRangeOffset<UInt16> : compareRangeOffset<UInt16>;
+        case TypeIndex::UInt32: return nullable ? compareNullableRangeOffset<UInt32> : compareRangeOffset<UInt32>;
+        case TypeIndex::UInt64: return nullable ? compareNullableRangeOffset<UInt64> : compareRangeOffset<UInt64>;
+        case TypeIndex::Int8: return nullable ? compareNullableRangeOffset<Int8> : compareRangeOffset<Int8>;
+        case TypeIndex::Int16: return nullable ? compareNullableRangeOffset<Int16> : compareRangeOffset<Int16>;
+        case TypeIndex::Int32: return nullable ? compareNullableRangeOffset<Int32> : compareRangeOffset<Int32>;
+        case TypeIndex::Int64: return nullable ? compareNullableRangeOffset<Int64> : compareRangeOffset<Int64>;
+        case TypeIndex::Int128: return nullable ? compareNullableRangeOffset<Int128> : compareRangeOffset<Int128>;
+        case TypeIndex::Float32: return nullable ? compareNullableRangeOffset<Float32> : compareRangeOffset<Float32>;
+        case TypeIndex::Float64: return nullable ? compareNullableRangeOffset<Float64> : compareRangeOffset<Float64>;
+        default:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The RANGE OFFSET frame for '{}' ORDER BY column is not implemented", column.getName());
+    }
 }
 
 bool isRangeOffsetFrame(const WindowFrame & frame)
