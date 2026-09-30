@@ -140,6 +140,7 @@ write_log("plain", [
 EOF
 
 # The engine predicate is disabled in the filtered query: it does not support dotted names yet (#118775).
+# A subcolumn name that matches two fields, like s.`a.b` here, reads the first of them in schema order.
 $CLICKHOUSE_LOCAL -q "
 SELECT 'a and a.b';
 SELECT id, a, \`a.b\` FROM deltaLakeLocal('$DIR/cols') ORDER BY id;
@@ -160,6 +161,9 @@ CREATE TABLE declared (id Nullable(Int32), \`d.x.y\` Nullable(Int32), \`o.s\` Tu
 SELECT id, \`d.x.y\`, \`o.s\` FROM declared ORDER BY id;
 SELECT 'a.b before a';
 SELECT id, \`a.b\`, a, r FROM deltaLakeLocal('$DIR/reversed') ORDER BY id;
+SELECT 'ambiguous subcolumn';
+SELECT id, s.\`a.b\` FROM deltaLakeLocal('$DIR/cols') ORDER BY id;
+SELECT id, r.\`a.b\` FROM deltaLakeLocal('$DIR/reversed') ORDER BY id;
 SELECT 'a backslash in a name';
 SELECT id, \`a\\\\\`, \`a.b\` FROM deltaLakeLocal('$DIR/backslash') ORDER BY id;
 SELECT 'partitioned';

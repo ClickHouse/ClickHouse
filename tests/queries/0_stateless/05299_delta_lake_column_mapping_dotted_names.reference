@@ -24,6 +24,11 @@ declared schema
 a.b before a
 1	2	(1)	(2,(1))
 2	4	(3)	(4,(3))
+ambiguous subcolumn
+1	1
+2	3
+1	2
+2	4
 a backslash in a name
 1	(1)	2
 2	(3)	4
