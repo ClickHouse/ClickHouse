@@ -252,7 +252,7 @@ Where `representation` is one of (case-insensitive):
 - `'Hex'` — hexadecimal digits, `2 * N` characters. On input, an optional `0x` prefix and uppercase digits are accepted. On output, lowercase digits are used.
 - `'Base64'` — Base64 with padding, like the [base64Encode](/reference/functions/regular-functions/encoding-functions#base64Encode) function.
 - `'Base64URL'` — URL-safe Base64 without padding, like the [base64URLEncode](/reference/functions/regular-functions/encoding-functions#base64URLEncode) function. Padding is optional on input.
-- `'Base58'` — Base58 with the Bitcoin alphabet, like the [base58Encode](/reference/functions/regular-functions/encoding-functions#base58Encode) function. Encoding and decoding of 32 and 64 bytes values are specialized.
+- `'Base58'` — Base58 with the Bitcoin alphabet, like the [base58Encode](/reference/functions/regular-functions/encoding-functions#base58Encode) function. Encoding of 32 and 64 bytes values is specialized.
 
 The value is always stored as exactly `N` raw bytes: the storage, the binary formats (`Native`, `RowBinary`, `Parquet`, ...) and the comparison of values
 are the same as for `FixedString(N)`. The representation only changes the conversion from and to text:

@@ -101,16 +101,9 @@ bool tryDecodeBase58(std::string_view encoded, size_t n, UInt8 * dst)
 {
     const auto * src = reinterpret_cast<const UInt8 *>(encoded.data());
 
-    /// Specialized decoders write exactly 32 / 64 bytes and validate the input length themselves.
-    if (n == 32)
-        return decodeBase58_32(src, encoded.size(), dst).value_or(0) == n;
-    if (n == 64)
-        return decodeBase58_64(src, encoded.size(), dst).value_or(0) == n;
-
-    /// The generic decoder writes up to one byte per input character without any bound, and it is quadratic.
-    /// An N bytes value is encoded with at most N characters (all zero bytes are encoded as '1')
-    /// or ceil(N * log(256) / log(58)) < N * 1.3658 + 1 characters, so longer inputs are invalid.
-    if (encoded.size() > n + n / 2 + 1)
+    /// The decoder writes up to one byte per input character without any bound, and it is quadratic.
+    /// An N bytes value is encoded with at most maxBase58EncodedLength(N) characters, so longer inputs are invalid.
+    if (encoded.size() > maxBase58EncodedLength(n))
         return false;
 
     PODArrayWithStackMemory<UInt8, STACK_BUFFER_SIZE> buffer(encoded.size());
