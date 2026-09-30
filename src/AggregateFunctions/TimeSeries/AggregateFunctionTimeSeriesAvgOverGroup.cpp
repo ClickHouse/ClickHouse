@@ -142,35 +142,35 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).add(assert_cast<const ColumnFloat64 &>(*columns[0]).getData()[row_num]);
+        data(place).add(assert_cast<const ColumnFloat64 &>(*columns[0]).getData()[row_num]);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).merge(this->data(rhs));
+        data(place).merge(data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        const auto & data = this->data(place);
-        writeBinaryLittleEndian(data.value, buf);
-        writeBinaryLittleEndian(data.compensation, buf);
-        writeVarUInt(data.count, buf);
-        writeBinary(data.is_mean, buf);
+        const auto & state = data(place);
+        writeBinaryLittleEndian(state.value, buf);
+        writeBinaryLittleEndian(state.compensation, buf);
+        writeVarUInt(state.count, buf);
+        writeBinary(state.is_mean, buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        auto & data = this->data(place);
-        readBinaryLittleEndian(data.value, buf);
-        readBinaryLittleEndian(data.compensation, buf);
-        readVarUInt(data.count, buf);
-        readBinary(data.is_mean, buf);
+        auto & state = data(place);
+        readBinaryLittleEndian(state.value, buf);
+        readBinaryLittleEndian(state.compensation, buf);
+        readVarUInt(state.count, buf);
+        readBinary(state.is_mean, buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnFloat64 &>(to).getData().push_back(this->data(place).get());
+        assert_cast<ColumnFloat64 &>(to).getData().push_back(data(place).get());
     }
 };
 
