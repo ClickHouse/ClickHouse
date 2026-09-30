@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <sleep_after_receiving_query_ms>0</sleep_after_receiving_query_ms>
+        </default>
+    </profiles>
+</clickhouse>

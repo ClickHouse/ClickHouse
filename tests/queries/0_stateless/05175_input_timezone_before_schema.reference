@@ -1,0 +1,2 @@
+server timezone precedes input schema with and without column metadata
+explicit query timezone and timezone-qualified column preserved
