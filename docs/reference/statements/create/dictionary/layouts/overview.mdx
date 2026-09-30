@@ -42,7 +42,7 @@ Caching layouts are not recommended due to potentially poor performance and diff
 </Tip>
 
 <Note>
-In ClickHouse Cloud, cache-based layouts are unsuitable for insert-time enrichment because their warmed entries are local to each server and do not survive node replacement. Use a fully loaded layout instead; see [Cloud dictionaries in ingestion paths](/concepts/features/dictionaries/best-practices#cloud-dictionaries-in-ingestion-path).
+Cache-based layouts are unsuitable for reliable insert-time enrichment because their warmed entries are local to each server and are lost when a server restarts or is replaced. ClickHouse Cloud autoscaling and managed node replacement make this condition more likely. Use a fully loaded layout instead; see [Cache dictionaries in ingestion paths](/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
 </Note>
 
 ## Specify dictionary layout {#specify-dictionary-layout}
