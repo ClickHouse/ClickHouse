@@ -23,7 +23,6 @@ namespace ProfileEvents
     extern const Event StreamingExchangePacketsSent;
     extern const Event StreamingExchangeSendQueueFullMicroseconds;
     extern const Event StreamingExchangeConnectionWaitMicroseconds;
-    extern const Event DistributedPlanExchangeSinkEarlyCloses;
 }
 
 namespace CurrentMetrics
@@ -211,10 +210,6 @@ ISink::Status StreamingExchangeSink::prepare()
     /// would keep computing data that nobody reads.
     if (no_more_data_needed)
     {
-        /// A peer that closes after reading the end-of-stream packet also lands here, but that
-        /// stream ran out of data instead of being stopped.
-        if (!end_of_stream_added)
-            ProfileEvents::increment(ProfileEvents::DistributedPlanExchangeSinkEarlyCloses);
         input.close();
         return Status::Finished;
     }

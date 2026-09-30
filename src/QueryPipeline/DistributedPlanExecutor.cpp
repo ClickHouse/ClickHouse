@@ -78,8 +78,6 @@ namespace ProfileEvents
     extern const Event DistributedPlanRemoteTasks;
     extern const Event DistributedPlanLocalExecution;
     extern const Event DistributedPlanHostsUsed;
-    extern const Event DistributedPlanExchangeSinkEarlyCloses;
-    extern const Event DistributedPlanExchangeSourceEarlyCloses;
 }
 
 
@@ -433,7 +431,6 @@ private:
             /// data that nobody reads.
             if (exchange->isReaderDetached())
             {
-                ProfileEvents::increment(ProfileEvents::DistributedPlanExchangeSinkEarlyCloses);
                 input.close();
                 return Status::Finished;
             }
@@ -477,7 +474,6 @@ private:
             if (!detach_notified && getPort().isFinished())
             {
                 detach_notified = true;
-                ProfileEvents::increment(ProfileEvents::DistributedPlanExchangeSourceEarlyCloses);
                 exchange->detachReader();
             }
             return ISource::prepare();
