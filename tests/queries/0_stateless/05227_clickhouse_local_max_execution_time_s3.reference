@@ -1,0 +1,15 @@
+--- clickhouse-local honours max_execution_time while the S3 client retries
+TIMEOUT_EXCEEDED
+exit TIMEOUT_EXCEEDED
+--- the server answers the same query the same way
+TIMEOUT_EXCEEDED
+exit TIMEOUT_EXCEEDED
+--- without a time limit the S3 failure is still reported as an S3 failure
+0
+S3_ERROR
+exit not a timeout
+--- with timeout_overflow_mode = break the expiry does not cancel the query
+0
+exit not a timeout
+--- a query on a local listener keeps its time limit while the process shuts down
+cancelled by its own time limit during shutdown
