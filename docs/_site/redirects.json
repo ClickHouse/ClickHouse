@@ -55512,11 +55512,11 @@
     "source": "/resources/develop-contribute/native-protocol/basics"
   },
   {
-    "destination": "/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "destination": "/resources/develop-contribute/native-protocol/protocol",
     "source": "/resources/develop-contribute/native-protocol/client"
   },
   {
-    "destination": "/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "destination": "/resources/develop-contribute/native-protocol/protocol",
     "source": "/resources/develop-contribute/native-protocol/server"
   },
   {
@@ -55528,11 +55528,11 @@
     "source": "/ar/resources/develop-contribute/native-protocol/basics"
   },
   {
-    "destination": "/ar/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "destination": "/ar/resources/develop-contribute/native-protocol/protocol",
     "source": "/ar/resources/develop-contribute/native-protocol/client"
   },
   {
-    "destination": "/ar/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "destination": "/ar/resources/develop-contribute/native-protocol/protocol",
     "source": "/ar/resources/develop-contribute/native-protocol/server"
   },
   {
@@ -55544,11 +55544,11 @@
     "source": "/es/resources/develop-contribute/native-protocol/basics"
   },
   {
-    "destination": "/es/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "destination": "/es/resources/develop-contribute/native-protocol/protocol",
     "source": "/es/resources/develop-contribute/native-protocol/client"
   },
   {
-    "destination": "/es/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "destination": "/es/resources/develop-contribute/native-protocol/protocol",
     "source": "/es/resources/develop-contribute/native-protocol/server"
   },
   {
@@ -55560,11 +55560,11 @@
     "source": "/fr/resources/develop-contribute/native-protocol/basics"
   },
   {
-    "destination": "/fr/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "destination": "/fr/resources/develop-contribute/native-protocol/protocol",
     "source": "/fr/resources/develop-contribute/native-protocol/client"
   },
   {
-    "destination": "/fr/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "destination": "/fr/resources/develop-contribute/native-protocol/protocol",
     "source": "/fr/resources/develop-contribute/native-protocol/server"
   },
   {
@@ -55576,11 +55576,11 @@
     "source": "/ja/resources/develop-contribute/native-protocol/basics"
   },
   {
-    "destination": "/ja/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "destination": "/ja/resources/develop-contribute/native-protocol/protocol",
     "source": "/ja/resources/develop-contribute/native-protocol/client"
   },
   {
-    "destination": "/ja/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "destination": "/ja/resources/develop-contribute/native-protocol/protocol",
     "source": "/ja/resources/develop-contribute/native-protocol/server"
   },
   {
@@ -55592,11 +55592,11 @@
     "source": "/ko/resources/develop-contribute/native-protocol/basics"
   },
   {
-    "destination": "/ko/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "destination": "/ko/resources/develop-contribute/native-protocol/protocol",
     "source": "/ko/resources/develop-contribute/native-protocol/client"
   },
   {
-    "destination": "/ko/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "destination": "/ko/resources/develop-contribute/native-protocol/protocol",
     "source": "/ko/resources/develop-contribute/native-protocol/server"
   },
   {
@@ -55608,11 +55608,11 @@
     "source": "/pt-BR/resources/develop-contribute/native-protocol/basics"
   },
   {
-    "destination": "/pt-BR/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "destination": "/pt-BR/resources/develop-contribute/native-protocol/protocol",
     "source": "/pt-BR/resources/develop-contribute/native-protocol/client"
   },
   {
-    "destination": "/pt-BR/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "destination": "/pt-BR/resources/develop-contribute/native-protocol/protocol",
     "source": "/pt-BR/resources/develop-contribute/native-protocol/server"
   },
   {
@@ -55624,11 +55624,11 @@
     "source": "/ru/resources/develop-contribute/native-protocol/basics"
   },
   {
-    "destination": "/ru/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "destination": "/ru/resources/develop-contribute/native-protocol/protocol",
     "source": "/ru/resources/develop-contribute/native-protocol/client"
   },
   {
-    "destination": "/ru/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "destination": "/ru/resources/develop-contribute/native-protocol/protocol",
     "source": "/ru/resources/develop-contribute/native-protocol/server"
   },
   {
@@ -55640,11 +55640,11 @@
     "source": "/zh/resources/develop-contribute/native-protocol/basics"
   },
   {
-    "destination": "/zh/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "destination": "/zh/resources/develop-contribute/native-protocol/protocol",
     "source": "/zh/resources/develop-contribute/native-protocol/client"
   },
   {
-    "destination": "/zh/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "destination": "/zh/resources/develop-contribute/native-protocol/protocol",
     "source": "/zh/resources/develop-contribute/native-protocol/server"
   },
   {
