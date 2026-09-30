@@ -36,7 +36,7 @@ The function returns three columns:
 - `timestamp` - Contains timestamps.
 - `value` - Contains values.
 
-For a TimeSeries table of [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) 7 and later,
+For a TimeSeries table of [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) 8 and later,
 which stores native histograms, the function returns the histogram samples too, with a fourth column:
 - `histogram` - An empty array for a float sample, and an array with one element for a histogram sample. The element is a tuple
   with the fields of the histogram as they are stored in the [histograms table](/reference/functions/table-functions/timeSeriesHistograms):
