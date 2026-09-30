@@ -5536,6 +5536,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     {
         const auto & uk_columns = old_metadata.unique_key.column_names;
         NameSet uk_set(uk_columns.begin(), uk_columns.end());
+        /// Names produced by earlier `RENAME`/`ADD` in this statement (`Nested` `n` becomes `n.x`).
+        ColumnsDescription working_columns = old_metadata.columns;
+        const bool share_nested_offsets = (*settings_from_storage)[MergeTreeSetting::share_nested_offsets];
 
         auto uk_list_str = [&uk_columns]()
         {
@@ -5571,25 +5574,35 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Column TTL is not supported on tables with UNIQUE KEY");
 
-            /// CLEAR COLUMN (parsed as DROP_COLUMN with `clear`) rewrites the whole
-            /// part and drops the per-part `unique_key_index.sst`, regardless of
-            /// which column is targeted. Reject it on UNIQUE KEY tables, but only
-            /// when it would actually rewrite a part: the target must be an existing
-            /// physical (stored) column. `CLEAR COLUMN missing IF EXISTS` and CLEAR
-            /// of a non-stored column are no-ops (`hasPhysical` is false for both),
-            /// so they fall through to normal handling. CLEAR of a UK column falls
-            /// through to the ALTER_OF_COLUMN_IS_FORBIDDEN guard below. Note the
-            /// mutation-path guard in `checkMutationIsPossible` never sees CLEAR
-            /// COLUMN — it is dispatched as an AlterCommand, not a mutation — so this
-            /// is the effective chokepoint.
-            if (command.type == AlterCommand::DROP_COLUMN && command.clear
+            /// CLEAR COLUMN rewrites the whole part and would drop the per-part `unique_key_index.sst`.
+            /// Reject it only when it targets a stored column: `CLEAR COLUMN missing IF EXISTS` and
+            /// CLEAR of a non-stored column are no-ops, and CLEAR of a UK column hits the
+            /// ALTER_OF_COLUMN_IS_FORBIDDEN guard below. This is the only chokepoint: CLEAR COLUMN is
+            /// dispatched as an AlterCommand, not a mutation.
+            if (command.type == AlterCommand::DROP_COLUMN && command.clear && !command.ignore
                 && !uk_set.contains(command.column_name)
-                && old_metadata.columns.hasPhysical(command.column_name))
+                && (share_nested_offsets
+                    ? working_columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, command.column_name)
+                    : working_columns.hasPhysical(command.column_name)))
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER TABLE ... CLEAR COLUMN {} is not supported on tables with UNIQUE KEY: "
                     "the whole part is rewritten regardless of which column is targeted, so the "
                     "per-part UNIQUE KEY dense index would be lost.",
                     backQuoteIfNeed(command.column_name));
+
+            if (!command.ignore)
+            {
+                if (command.type == AlterCommand::RENAME_COLUMN && working_columns.has(command.column_name))
+                    working_columns.rename(command.column_name, command.rename_to);
+                else if (command.type == AlterCommand::ADD_COLUMN && command.data_type)
+                    command.addColumnsFromAlter(working_columns, local_context, share_nested_offsets);
+                /// Plain `DROP COLUMN` advances the snapshot like `prepare()`/`validate()`,
+                /// so a later name reusing `ADD COLUMN` in this statement is not seen as duplicate.
+                else if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !command.partition
+                    && (working_columns.has(command.column_name)
+                        || (share_nested_offsets && working_columns.hasNested(command.column_name))))
+                    working_columns.remove(command.column_name);
+            }
 
             const bool affects_column =
                 command.type == AlterCommand::DROP_COLUMN
@@ -6222,7 +6235,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             {
                 dropped_columns.emplace(command.column_name);
             }
-            else
+            else if (share_nested_offsets)
             {
                 const auto & nested = old_metadata.columns.getNested(command.column_name);
                 for (const auto & nested_column : nested)
