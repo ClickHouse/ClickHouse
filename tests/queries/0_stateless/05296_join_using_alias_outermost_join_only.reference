@@ -18,6 +18,8 @@ ARRAY JOIN above the JOIN is not a level: the JOIN stays outermost
 2	2	1
 2	2	2
 2	3	1
+a matcher inside the aliased key expression expands over the left side
+(1,(1))	(1)
 a subquery has its own join tree
 2	2	7
 2	3

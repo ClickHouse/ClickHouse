@@ -1,6 +1,7 @@
 -- With `analyzer_compatibility_join_using_top_level_identifier` a `JOIN USING` identifier is resolved from an alias of the query.
--- The old analyzer rewrote a query with several JOINs into nested subqueries, so only the outermost JOIN could see such an
--- alias; an inner JOIN took the key from its left table. USING keys at different levels of the join tree follow the same rule.
+-- The old analyzer rewrote a query with several JOINs into nested subqueries, so an inner JOIN never saw such an alias and
+-- took the key from its left table. Only the outermost JOIN keeps the alias lookup; USING keys at different levels of the
+-- join tree follow the same rule.
 
 SET analyzer_compatibility_join_using_top_level_identifier = 1;
 SET joined_subquery_requires_alias = 0;
@@ -39,6 +40,9 @@ SELECT 'ARRAY JOIN above the JOIN is not a level: the JOIN stays outermost';
 SELECT a + 1 AS b, t2.b AS right_b, x FROM (SELECT 1 AS a, 3 AS b, [1, 2] AS arr) t1 JOIN (SELECT 2 AS b) t2 USING (b) ARRAY JOIN arr AS x ORDER BY x;
 -- A JOIN below an ARRAY JOIN that is itself below another JOIN is an inner JOIN.
 SELECT a + 1 AS b, t2.b AS right_b, x FROM (SELECT 1 AS a, 3 AS b, [1] AS arr) t1 JOIN (SELECT 3 AS b) t2 USING (b) ARRAY JOIN arr AS x JOIN (SELECT 1 AS z) t3 ON 1 = 1;
+
+SELECT 'a matcher inside the aliased key expression expands over the left side';
+SELECT tuple(*) AS k, t2.k AS right_k FROM (SELECT 1 AS a) t1 JOIN (SELECT tuple(1) AS k) t2 USING (k);
 
 SELECT 'a subquery has its own join tree';
 SELECT s.b, s.right_b, t.c FROM (SELECT a + 1 AS b, t2.b AS right_b FROM (SELECT 1 AS a, 3 AS b) t1 JOIN (SELECT 2 AS b) t2 USING (b)) s JOIN (SELECT 7 AS c) t ON 1 = 1 JOIN (SELECT 1 AS z) u ON 1 = 1;
