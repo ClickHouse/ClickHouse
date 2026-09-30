@@ -828,9 +828,9 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
     keeper_context->updateSettings(new_settings);
 }
 
-void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests)
+void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)
 {
-    keeper_stats.updateLatency(process_time_ms, subrequests);
+    keeper_stats.updateLatency(process_time_ms);
 }
 
 static uint64_t getTotalSize(const DiskPtr & disk, const std::string & path = "")
