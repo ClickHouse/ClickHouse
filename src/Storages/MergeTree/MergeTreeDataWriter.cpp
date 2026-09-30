@@ -6,6 +6,7 @@
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Disks/createVolume.h>
@@ -581,6 +582,21 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     return result;
 }
 
+/// Every supported SimpleAggregateFunction on a scalar type returns a single value unchanged.
+static bool hasOnlyScalarSimpleAggregates(const Block & block)
+{
+    for (const auto & column : block)
+    {
+        if (!typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()))
+            continue;
+
+        WhichDataType which(column.type);
+        if (which.isArray() || which.isTuple() || which.isMap())
+            return false;
+    }
+    return true;
+}
+
 Block MergeTreeDataWriter::mergeBlock(
     Block && block,
     const StorageMetadataPtr & metadata_snapshot,
@@ -596,6 +612,7 @@ Block MergeTreeDataWriter::mergeBlock(
     span.addAttribute("clickhouse.columns", header->columns());
 
     if (merging_params.mode == MergeTreeData::MergingParams::Aggregating
+        && hasOnlyScalarSimpleAggregates(*header)
         && hasUniqueSortingKey(*header, sort_description, permutation))
     {
         Block result = *header;
