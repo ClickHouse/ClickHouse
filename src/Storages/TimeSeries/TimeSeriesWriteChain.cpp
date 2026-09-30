@@ -3,6 +3,7 @@
 
 #include <Core/Block.h>
 #include <Common/EventFD.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -25,6 +26,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -120,15 +126,17 @@ private:
 };
 
 
+/// One arrival per target per chunk. Later chunks do not reuse an earlier arrival.
 struct TimeSeriesCommitBarrier
 {
     explicit TimeSeriesCommitBarrier(size_t expected_) : expected(expected_) {}
 
     void addWaiter(EventFD * event_fd) { waiters.push_back(event_fd); }
 
-    void markFlushed()
+    void arrive()
     {
-        if (flushed.fetch_add(1) + 1 == expected)
+        const size_t count = arrived.fetch_add(1) + 1;
+        if (expected && count % expected == 0)
             wake();
     }
 
@@ -146,14 +154,9 @@ struct TimeSeriesCommitBarrier
 
     bool isFailed() const { return failed.load(); }
 
-    bool mayRelease(bool is_leader) const
-    {
-        if (failed.load())
-            return false;
-        if (is_leader)
-            return flushed.load() == expected;
-        return leader_done.load();
-    }
+    bool isLeaderFinished() const { return leader_done.load(); }
+
+    bool readyFor(size_t epoch) const { return arrived.load() >= expected * (epoch + 1); }
 
 private:
     void wake()
@@ -167,13 +170,14 @@ private:
     }
 
     size_t expected = 0;
-    std::atomic<size_t> flushed{0};
+    std::atomic<size_t> arrived{0};
     std::atomic<bool> failed{false};
     std::atomic<bool> leader_done{false};
     std::vector<EventFD *> waiters;
 };
 
 
+/// Sits in front of the storage sink. Every target must have the chunk before any sink consumes it.
 class TimeSeriesCommitGate final : public IProcessor
 {
 public:
@@ -197,7 +201,10 @@ public:
         if (!output.canPush())
             return Status::PortFull;
 
-        if (!flush_observed)
+        if (barrier->isFailed())
+            return Status::Finished;
+
+        if (!holding)
         {
             if (!input.hasData() && !input.isFinished())
             {
@@ -214,45 +221,46 @@ public:
                 return Status::PortFull;
             }
 
-            barrier->markFlushed();
-            flush_observed = true;
+            if (input.hasData())
+            {
+                auto data = input.pullData(true);
+                if (data.exception)
+                {
+                    barrier->fail();
+                    output.pushException(std::move(data.exception));
+                    return Status::PortFull;
+                }
+                held = std::move(data.chunk);
+                barrier->arrive();
+                holding = true;
+            }
+            else
+            {
+                if (is_leader && !leader_signaled)
+                {
+                    leader_signaled = true;
+                    barrier->leaderFinished();
+                }
+                else if (!is_leader && !barrier->isLeaderFinished())
+                {
+                    waiting = true;
+                    return Status::Async;
+                }
+                output.finish();
+                return Status::Finished;
+            }
         }
 
-        if (barrier->isFailed())
-            return Status::Finished;
-
-        if (!barrier->mayRelease(is_leader))
+        if (!barrier->readyFor(epoch))
         {
             waiting = true;
             return Status::Async;
         }
 
-        if (input.hasData())
-        {
-            auto data = input.pullData(true);
-            if (data.exception)
-            {
-                barrier->fail();
-                output.pushException(std::move(data.exception));
-                return Status::PortFull;
-            }
-            output.push(std::move(data.chunk));
-            return Status::PortFull;
-        }
-
-        if (input.isFinished())
-        {
-            if (is_leader && !leader_signaled)
-            {
-                leader_signaled = true;
-                barrier->leaderFinished();
-            }
-            output.finish();
-            return Status::Finished;
-        }
-
-        input.setNeeded();
-        return Status::NeedData;
+        output.push(std::move(held));
+        holding = false;
+        ++epoch;
+        return Status::PortFull;
     }
 
     void work() override
@@ -279,9 +287,11 @@ private:
     OutputPort & output;
     std::shared_ptr<TimeSeriesCommitBarrier> barrier;
     bool is_leader = false;
-    bool flush_observed = false;
+    bool holding = false;
     bool waiting = false;
     bool leader_signaled = false;
+    size_t epoch = 0;
+    Chunk held;
     EventFD event;
 };
 
@@ -310,6 +320,46 @@ protected:
 private:
     std::function<void()> on_finish;
 };
+
+
+void insertCommitGateBeforeStorageSink(Chain & chain, const std::shared_ptr<TimeSeriesCommitBarrier> & barrier, bool is_leader)
+{
+    IProcessor * processor = &chain.getInputPort().getProcessor();
+    while (!dynamic_cast<SinkToStorage *>(processor))
+    {
+        if (processor->getOutputs().size() != 1 || !processor->getOutputs().front().isConnected())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "TimeSeries target chain has no storage sink");
+        processor = &processor->getOutputs().front().getInputPort().getProcessor();
+    }
+
+    InputPort & sink_input = processor->getInputs().front();
+    auto gate = std::make_shared<TimeSeriesCommitGate>(sink_input.getSharedHeader(), barrier, is_leader);
+
+    /// The chain input and output stay on the first and last processors.
+    if (&sink_input == &chain.getInputPort())
+    {
+        chain.addSource(std::move(gate));
+        return;
+    }
+
+    OutputPort * upstream = nullptr;
+    for (auto & current : chain.getProcessors())
+    {
+        for (auto & output : current->getOutputs())
+        {
+            if (output.isConnected() && &output.getInputPort() == &sink_input)
+                upstream = &output;
+        }
+    }
+
+    if (!upstream)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "TimeSeries target chain has no storage sink");
+
+    disconnect(*upstream, sink_input);
+    connect(*upstream, gate->getInputs().front());
+    connect(gate->getOutputs().front(), sink_input);
+    chain.getProcessors().insert(std::prev(chain.getProcessors().end()), std::move(gate));
+}
 
 }
 
@@ -371,17 +421,15 @@ Chain buildTimeSeriesWriteChain(
         else if (target.is_metric_families)
             on_finish = [sink] { sink->markMetricFamiliesWritten(); };
 
-        auto gate = std::make_shared<TimeSeriesCommitGate>(target.chain.getOutputSharedHeader(), barrier, i == leader_index);
+        insertCommitGateBeforeStorageSink(target.chain, barrier, i == leader_index);
         auto branch_sink = std::make_shared<TimeSeriesBranchSink>(target.chain.getOutputSharedHeader(), std::move(on_finish));
         connect(*split_output, target.chain.getInputPort());
-        connect(target.chain.getOutputPort(), gate->getInputs().front());
-        connect(gate->getOutputs().front(), branch_sink->getPort());
+        connect(target.chain.getOutputPort(), branch_sink->getPort());
         ++split_output;
 
         resources.append(target.chain.detachResources());
         for (const auto & processor : target.chain.getProcessors())
             processors.push_back(processor);
-        processors.push_back(std::move(gate));
         processors.push_back(std::move(branch_sink));
     }
     processors.push_back(tail);

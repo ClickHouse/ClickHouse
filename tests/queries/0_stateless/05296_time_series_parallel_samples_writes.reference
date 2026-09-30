@@ -21,3 +21,12 @@ m	prod
 m	dev	1
 5
 1
+--- early block commit still rejects a bad metric name ---
+0
+0
+0
+0
+0
+0
+0
+0

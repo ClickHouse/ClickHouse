@@ -77,4 +77,30 @@ SELECT metric_name, tags['env'] AS env, count() FROM timeSeriesTags(ts_after) GR
 SELECT value FROM timeSeriesSamples(ts_after) ORDER BY value;
 SELECT sum(total_rows) FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%';
 
-DROP TABLE ts_ext, ts_after, ext_tags, ext_samples, ext_recent;
+SELECT '--- early block commit still rejects a bad metric name ---';
+
+CREATE TABLE ext_samples_dest
+(
+    id Tuple(UInt64, UUID),
+    timestamp DateTime64(3),
+    value Float64
+) ENGINE = MergeTree ORDER BY (id, timestamp);
+
+CREATE MATERIALIZED VIEW ext_samples_mv TO ext_samples_dest AS SELECT * FROM ext_samples;
+
+INSERT INTO ts_ext (metric_name, tags, samples) SETTINGS input_format_connection_handling = 1, input_format_max_block_wait_ms = 1 VALUES ('bad_tags', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 11.)]); -- { serverError VIOLATED_CONSTRAINT }
+
+SELECT count() FROM ext_tags WHERE metric_name = 'bad_tags';
+SELECT count() FROM ext_samples WHERE value = 11;
+SELECT count() FROM ext_recent WHERE value = 11;
+SELECT count() FROM ext_samples_dest WHERE value = 11;
+
+INSERT INTO ts_ext (metric_name, tags, samples) SETTINGS wait_for_part_commit_in_dependent_materialized_views = 1 VALUES ('bad_tags', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 12.)]); -- { serverError VIOLATED_CONSTRAINT }
+
+SELECT count() FROM ext_tags WHERE metric_name = 'bad_tags';
+SELECT count() FROM ext_samples WHERE value = 12;
+SELECT count() FROM ext_recent WHERE value = 12;
+SELECT count() FROM ext_samples_dest WHERE value = 12;
+
+DROP VIEW ext_samples_mv;
+DROP TABLE ts_ext, ts_after, ext_tags, ext_samples, ext_recent, ext_samples_dest;
