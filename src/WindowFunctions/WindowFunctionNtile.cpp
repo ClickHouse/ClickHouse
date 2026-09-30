@@ -42,7 +42,7 @@ struct NtileState
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be a constant");
 
             const UInt64 value = arg_col[transform->current_row.row].safeGet<UInt64>();
-            if (value == 0 || value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            if (value == 0 || value > std::numeric_limits<Int64>::max())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be in [1, {}], {} given", std::numeric_limits<Int64>::max(), value);
 
             buckets = value;
