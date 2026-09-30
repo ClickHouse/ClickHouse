@@ -102,8 +102,8 @@ void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn 
 
     struct Landed
     {
-        PinnedBuffer first;
-        PinnedBuffer chars;
+        PinnedBuffer data;
+        PinnedBuffer offsets;
     };
     std::vector<Landed> landed(from.size());
 
@@ -114,14 +114,14 @@ void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn 
         switch (view.kind)
         {
             case GPUColumnKind::Fixed:
-                landed[i].first.appendFromDevice(view.fixed.data, view.fixed.rows * sizeOf(view.fixed.element_type), stream);
+                landed[i].data.appendFromDevice(view.fixed.data, view.fixed.rows * sizeOf(view.fixed.element_type), stream);
                 break;
             case GPUColumnKind::Variable:
                 if (view.variable.rows == 0)
                     break;
-                landed[i].first.appendFromDevice(
+                landed[i].data.appendFromDevice(
                     reinterpret_cast<const char *>(view.variable.offsets), (view.variable.rows + 1) * sizeof(UInt64), stream);
-                landed[i].chars.appendFromDevice(view.variable.chars, view.variable.chars_bytes, stream);
+                landed[i].offsets.appendFromDevice(view.variable.chars, view.variable.chars_bytes, stream);
                 break;
         }
     }
@@ -134,10 +134,10 @@ void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn 
         switch (view.kind)
         {
             case GPUColumnKind::Fixed:
-                fillFixed(*to[i], view.fixed.element_type, view.fixed.rows, landed[i].first.bytes());
+                fillFixed(*to[i], view.fixed.element_type, view.fixed.rows, landed[i].data.bytes());
                 break;
             case GPUColumnKind::Variable:
-                fillVariable(*to[i], view.variable.rows, landed[i].first.bytes(), landed[i].chars.bytes());
+                fillVariable(*to[i], view.variable.rows, landed[i].data.bytes(), landed[i].offsets.bytes());
                 break;
         }
     }

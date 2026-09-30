@@ -11,7 +11,7 @@ struct StreamRegistry
     rmm::cuda_stream_view upload;
     rmm::cuda_stream_view decompression;
 
-    static const StreamRegistry & get();
+    __host__ static const StreamRegistry & get();
 };
 
 }

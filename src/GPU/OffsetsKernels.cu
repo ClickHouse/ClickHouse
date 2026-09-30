@@ -32,7 +32,7 @@ struct AddStart
 
 }
 
-void subtractFromOffsets(const uint64_t * from, size_t count, uint64_t minus, uint64_t * to, rmm::cuda_stream_view stream)
+__host__ void subtractFromOffsets(const uint64_t * from, size_t count, uint64_t minus, uint64_t * to, rmm::cuda_stream_view stream)
 {
     if (count == 0 || (minus == 0 && from == to))
         return;
@@ -43,7 +43,7 @@ void subtractFromOffsets(const uint64_t * from, size_t count, uint64_t minus, ui
     });
 }
 
-void offsetsFromSizes(const uint64_t * sizes, size_t count, uint64_t * offsets_end, rmm::cuda_stream_view stream)
+__host__ void offsetsFromSizes(const uint64_t * sizes, size_t count, uint64_t * offsets_end, rmm::cuda_stream_view stream)
 {
     if (count == 0)
         return;
@@ -56,7 +56,7 @@ void offsetsFromSizes(const uint64_t * sizes, size_t count, uint64_t * offsets_e
     });
 }
 
-CoveredRows rowsCoveredBy(const uint64_t * offsets, size_t num_rows, uint64_t chars_bytes, rmm::cuda_stream_view stream)
+__host__ CoveredRows rowsCoveredBy(const uint64_t * offsets, size_t num_rows, uint64_t chars_bytes, rmm::cuda_stream_view stream)
 {
     return guarded("counting the strings within " + std::to_string(chars_bytes) + " bytes", [&]
     {

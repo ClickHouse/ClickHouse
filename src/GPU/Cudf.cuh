@@ -18,10 +18,8 @@
 namespace DB::GPU
 {
 
-std::string describeForeign(const std::exception & exception);
-
 template <typename Body>
-auto guarded(const std::string & doing, Body && body)
+__host__ auto guarded(const std::string & doing, Body && body)
 {
     try
     {
@@ -32,26 +30,25 @@ auto guarded(const std::string & doing, Body && body)
         if (isClickHouseException(exception))
             throw;
 
-        const std::string description = describeForeign(exception);
-        throwGPUError((doing + ": " + description).c_str());
+        throwGPUError((doing + ": " + exception.what()).c_str());
     }
 }
 
-void checkCuda(cudaError_t status, const std::string & what);
+__host__ void checkCuda(cudaError_t status, const std::string & what);
 
-cudf::data_type cudfTypeOf(GPUElementType element_type);
+__host__ cudf::data_type cudfTypeOf(GPUElementType element_type);
 
-cudf::column_view columnViewOf(const DeviceColumnView & column, GPUElementType expected_type, const std::string & what);
+__host__ cudf::column_view columnViewOf(const DeviceColumnView & column, GPUElementType expected_type, const std::string & what);
 
-cudf::column_view columnViewOf(const DeviceFixedColumn & column, GPUElementType expected_type, const std::string & what);
+__host__ cudf::column_view columnViewOf(const DeviceFixedColumn & column, GPUElementType expected_type, const std::string & what);
 
-cudf::column_view columnViewOf(const DeviceVariableColumn & column, const std::string & what);
+__host__ cudf::column_view columnViewOf(const DeviceVariableColumn & column, const std::string & what);
 
-void checkNoNulls(const cudf::column_view & column, const std::string & what);
+__host__ void checkNoNulls(const cudf::column_view & column, const std::string & what);
 
-DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUElementType expected_type, const std::string & what);
+__host__ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUElementType expected_type, const std::string & what);
 
-DeviceVariableColumn deviceViewOfVariable(
+__host__ DeviceVariableColumn deviceViewOfVariable(
     const cudf::column_view & column, std::unique_ptr<cudf::column> & widened_offsets, const std::string & what, rmm::cuda_stream_view stream);
 
 }
