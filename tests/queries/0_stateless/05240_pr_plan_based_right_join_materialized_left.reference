@@ -8,6 +8,11 @@ view left: reads from replicas
 10	45
 the join is shipped to the replicas
 1
+view left with FINAL: reads from replicas
+1
+10	45
+the join is not shipped
+0
 materialized view left: reads from replicas
 1
 10	45

@@ -62,6 +62,20 @@ SELECT 'the join is shipped to the replicas';
 SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
     EXPLAIN SELECT count(), sum(r.key) FROM v_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
 
+-- `FINAL` over the plain `View` makes the left side unshippable again, so this is the negative case
+-- for the arm above: the right side is still read from the replicas, the join is not shipped, and the
+-- answer is the same. The wrapper gates the query-based tests pin - `parallel_replicas_allow_view_over_mergetree`
+-- and `parallel_replicas_allow_materialized_views` - are not consulted on this path: they are read in
+-- `findParallelReplicasQuery` and `PlannerJoinTree`, while plan-based places its split in
+-- `applyParallelReplicas`, so both arms above ship the join at either value of either setting.
+SELECT 'view left with FINAL: reads from replicas';
+SELECT countIf(explain ILIKE '%ParallelReplicas%') FROM (
+    EXPLAIN SELECT count(), sum(r.key) FROM (SELECT key FROM v_left FINAL) AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+SELECT count(), sum(r.key) FROM (SELECT key FROM v_left FINAL) AS l RIGHT JOIN t_right AS r ON l.key = r.key;
+SELECT 'the join is not shipped';
+SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
+    EXPLAIN SELECT count(), sum(r.key) FROM (SELECT key FROM v_left FINAL) AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+
 SELECT 'materialized view left: reads from replicas';
 SELECT countIf(explain ILIKE '%ParallelReplicas%') FROM (
     EXPLAIN SELECT count(), sum(r.key) FROM mv_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
