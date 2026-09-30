@@ -2,7 +2,7 @@
 
 SET enable_json_type = 1;
 
-SET allow_experimental_nullable_tuple_type = 0;
+SET enable_nullable_tuple_type = 0;
 
 DROP TABLE IF EXISTS test;
 
@@ -22,7 +22,7 @@ FROM numbers(4);
 
 SELECT json.d AS path, toTypeName(path) FROM test;
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS test;
 
