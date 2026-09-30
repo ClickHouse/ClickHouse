@@ -25,6 +25,7 @@ struct ASTWindowDefinition : public IAST
     WindowFrame::BoundaryType frame_end_type = WindowFrame::BoundaryType::Current;
     ASTPtr frame_end_offset;
     bool frame_end_preceding = false;
+    ASTPtr session_window_threshold;
 
     ASTPtr clone() const override;
 
@@ -42,6 +43,7 @@ struct ASTWindowDefinition : public IAST
         f(nullptr, &order_by);
         f(nullptr, &frame_begin_offset);
         f(nullptr, &frame_end_offset);
+        f(nullptr, &session_window_threshold);
     }
 
 

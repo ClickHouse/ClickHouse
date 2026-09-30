@@ -10177,6 +10177,11 @@ Selects the algorithm that intersects posting lists in lazy posting list apply m
 Intersections of 256 or more tokens always use leapfrog.
 )", 0, \
         {"26.10", "auto", "auto", "New setting superseding `text_index_lazy_intersection_density_threshold`: selects the posting list intersection algorithm in lazy posting list apply mode. `auto` keeps the previous default behavior, so `compatibility` must not change it."}) \
+    DECLARE(Bool, allow_experimental_session_window_frame, false, R"(
+Allow the experimental `SESSION` window frame type (`... OVER (ORDER BY key SESSION threshold)`), which groups consecutive rows into disjoint sessions separated by a gap larger than `threshold` on the `ORDER BY` key.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to allow the experimental `SESSION` window frame type for window functions."}) \
+    \
     DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", EXPERIMENTAL) \

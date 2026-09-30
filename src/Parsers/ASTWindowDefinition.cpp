@@ -55,6 +55,12 @@ ASTPtr ASTWindowDefinition::clone() const
         result->children.push_back(result->frame_end_offset);
     }
 
+    if (session_window_threshold)
+    {
+        result->session_window_threshold = session_window_threshold->clone();
+        result->children.push_back(result->session_window_threshold);
+    }
+
     return result;
 }
 
@@ -66,9 +72,9 @@ String ASTWindowDefinition::getID(char) const
 void ASTWindowDefinition::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     /// The frame and the parent window name are not children, so the default implementation does
-    /// not see them. The offsets are children and are covered by the generic walk.
+    /// not see them. The offsets and the SESSION threshold are children and are covered by the generic walk.
     /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
-    static_assert(sizeof(void *) != 8 || sizeof(*this) == 112, "If members were added to ASTWindowDefinition, hash them here unless they are purely cosmetic.");
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 120, "If members were added to ASTWindowDefinition, hash them here unless they are purely cosmetic.");
     hash_state.update(parent_window_name.size());
     hash_state.update(parent_window_name);
     hash_state.update(frame_is_default);
@@ -131,6 +137,13 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         /// rather than `(expr) AS alias`, which the parser cannot accept here.
         FormatStateStacked offset_frame = format_frame;
         offset_frame.need_parens = true;
+
+        if (frame_type == WindowFrame::FrameType::SESSION)
+        {
+            ostr << frame_type << " ";
+            session_window_threshold->format(ostr, settings, state, offset_frame);
+            return;
+        }
 
         ostr << frame_type << " BETWEEN ";
         if (frame_begin_type == WindowFrame::BoundaryType::Current)
@@ -234,6 +247,16 @@ void ASTWindowDefinition::writeJSON(WriteBuffer & out) const
             case WindowFrame::FrameType::RANGE:
                 w.writeString("frame_type", "RANGE");
                 break;
+            case WindowFrame::FrameType::SESSION:
+                w.writeString("frame_type", "SESSION");
+                break;
+        }
+        /// A SESSION frame carries a threshold instead of boundaries, and `formatImpl` emits
+        /// neither boundary for it, so the boundary fields must stay absent to round-trip.
+        if (frame_type == WindowFrame::FrameType::SESSION)
+        {
+            w.writeChild("session_window_threshold", session_window_threshold);
+            return;
         }
         switch (frame_begin_type)
         {
@@ -278,6 +301,7 @@ static WindowFrame::FrameType parseFrameType(const String & s)
     if (s == "ROWS") return WindowFrame::FrameType::ROWS;
     if (s == "GROUPS") return WindowFrame::FrameType::GROUPS;
     if (s == "RANGE") return WindowFrame::FrameType::RANGE;
+    if (s == "SESSION") return WindowFrame::FrameType::SESSION;
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown WindowFrame FrameType: '{}'", s);
 }
 
@@ -332,6 +356,18 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
         "frame_end_type",
         "frame_end_offset",
         "frame_end_preceding",
+        "session_window_threshold",
+    };
+
+    /// A SESSION frame carries a threshold instead of boundaries; the boundary fields are
+    /// mutually exclusive with it, in both directions.
+    static constexpr std::array frame_boundary_field_keys = {
+        "frame_begin_type",
+        "frame_begin_offset",
+        "frame_begin_preceding",
+        "frame_end_type",
+        "frame_end_offset",
+        "frame_end_preceding",
     };
 
     if (frame_is_default)
@@ -343,6 +379,22 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Field '{}' is present for a default-frame window during AST JSON deserialization", key);
     }
+    else if (r.has("frame_type") && r.getString("frame_type") == "SESSION")
+    {
+        frame_type = WindowFrame::FrameType::SESSION;
+
+        for (const char * key : frame_boundary_field_keys)
+            if (r.has(key))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Field '{}' is present for a SESSION-frame window during AST JSON deserialization", key);
+
+        child = r.readChild("session_window_threshold");
+        if (!child)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Missing 'session_window_threshold' for a SESSION-frame window during AST JSON deserialization");
+        session_window_threshold = child;
+        children.push_back(session_window_threshold);
+    }
     else
     {
         if (!r.has("frame_type"))
@@ -351,6 +403,9 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_begin_type' for a non-default-frame window during AST JSON deserialization");
         if (!r.has("frame_end_type"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_end_type' for a non-default-frame window during AST JSON deserialization");
+        if (r.has("session_window_threshold"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'session_window_threshold' is only valid for a SESSION frame during AST JSON deserialization");
 
         frame_type = parseFrameType(r.getString("frame_type"));
         frame_begin_type = parseBoundaryType(r.getString("frame_begin_type"));

@@ -248,7 +248,7 @@ APPLY_FOR_ONE_TYPE(FUNCTION##Nullable, ColumnNullable) \
 else \
 { \
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, \
-        "The RANGE OFFSET frame for '{}' ORDER BY column is not implemented", \
+        "The offset-based frames for '{}' ORDER BY column are not implemented", \
         demangle(typeid(*column).name())); \
 }
 
@@ -359,15 +359,34 @@ void WindowTransform::setupRangeOffsetComparison()
     const bool begin_is_offset = frame.begin_type == WindowFrame::BoundaryType::Offset;
     const bool end_is_offset = frame.end_type == WindowFrame::BoundaryType::Offset;
     const bool is_range_offset_frame = frame.type == WindowFrame::FrameType::RANGE && (begin_is_offset || end_is_offset);
-    if (!is_range_offset_frame)
+    const bool is_session_frame = frame.type == WindowFrame::FrameType::SESSION;
+    if (!is_range_offset_frame && !is_session_frame)
         return;
 
-    // Choose a row comparison function for RANGE OFFSET frame based on the
-    // type of the ORDER BY column.
+    // Choose a row comparison function for RANGE OFFSET or SESSION frame
+    // based on the type of the ORDER BY column.
     chassert(order_by_indices.size() == 1);
     const auto & entry = input_header.getByPosition(order_by_indices[0]);
     const IColumn * column = entry.column.get();
     APPLY_FOR_TYPES(compareValuesWithOffset)
+
+    if (is_session_frame)
+    {
+        const auto converted = convertFieldToTypeOrThrow(
+            frame.session_window_threshold,
+            *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
+
+        // The converted value is what the frame advances by, and it can round down to zero in
+        // the ORDER BY type. Negated "less" because there is no "greater" visitor.
+        if (!accurateLess(Field(0), converted))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Window frame start offset must be positive, instead have {} as specified in the query, {} as converted to the ORDER BY type {}",
+                            frame.session_window_threshold, converted, entry.type->getPrettyName());
+        }
+
+        frame.session_window_threshold = converted;
+    }
 
     // Convert the offsets to the ORDER BY column type. We can't just check
     // that the type matches, because e.g. the int literals are always
@@ -689,8 +708,21 @@ void WindowTransform::advanceFrameStart()
 
     const auto frame_start_before = frame_start;
 
-    switch (window_description.frame.begin_type)
+    if (window_description.frame.type == WindowFrame::FrameType::SESSION)
     {
+        // The SESSION frames are disjoint, so if the current row
+        // went out of the current frame, the next frame has to start
+        // with the current row. Otherwise, the frame doesn't change.
+        if (current_row >= prev_frame_end)
+        {
+            frame_start = current_row;
+        }
+        frame_started = true;
+    }
+    else
+    {
+        switch (window_description.frame.begin_type)
+        {
         case WindowFrame::BoundaryType::Unbounded:
             // UNBOUNDED PRECEDING, just mark it valid. It is initialized when
             // the new partition starts.
@@ -721,8 +753,16 @@ void WindowTransform::advanceFrameStart()
                 case WindowFrame::FrameType::GROUPS:
                     advanceFrameStartGroupsOffset();
                     break;
+                case WindowFrame::FrameType::SESSION:
+                    // A SESSION frame does not use boundary types; advanceFrameStart()
+                    // dispatches it before reaching this switch.
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Frame start type '{}' for frame '{}' is not implemented",
+                        window_description.frame.begin_type,
+                        window_description.frame.type);
             }
             break;
+        }
     }
 
     chassert(frame_start_before <= frame_start);
@@ -767,8 +807,9 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
             return false;
         case WindowFrame::FrameType::RANGE:
         case WindowFrame::FrameType::GROUPS:
-            // For RANGE and GROUPS frames, rows that compare equal on the ORDER
-            // BY key are peers.
+        case WindowFrame::FrameType::SESSION:
+            // For RANGE, GROUPS and SESSION frames, rows that compare equal on
+            // the ORDER BY key are peers.
             break;
     }
 
@@ -973,6 +1014,54 @@ void WindowTransform::advanceFrameEndRangeOffset()
     frame_ended = partition_ended;
 }
 
+void WindowTransform::advanceFrameEndSession()
+{
+    if (current_row < prev_frame_end)
+    {
+        // Sessions are disjoint, so every row of one shares the frame already found for it.
+        // This can only be true once a frame has been found: prev_frame_end starts at the
+        // partition start, which is not greater than any row in it.
+        frame_ended = true;
+        chassert(prev_frame_end == frame_end);
+        return;
+    }
+
+    const int direction = window_description.order_by[0].direction;
+
+    // Each candidate is compared against its immediate predecessor, not against a row
+    // remembered from an earlier call. `frame_end` may be resumed at a row that only
+    // arrived after the previous call stopped at the soft end of input, and then the gap
+    // that precedes it still has to be examined.
+    for (; frame_end < partition_end; advanceRowNumber(frame_end))
+    {
+        // The session's first row is unconditionally part of it: there is no preceding
+        // row in this session to measure a gap against.
+        if (frame_end == frame_start)
+            continue;
+
+        const RowNumber previous = prevRowNumber(frame_end);
+
+        const auto * reference_column = inputAt(previous)[order_by_indices[0]].get();
+        const auto * compared_column = inputAt(frame_end)[order_by_indices[0]].get();
+
+        // The frame continues while the current value is within the threshold of the
+        // previous one, so a gap larger than the threshold ends it. When the direction is
+        // DESC, the comparison result changes sign, and the window threshold changes sign
+        // (governed by "offset_is_preceding").
+        if (compare_values_with_offset(compared_column, frame_end.row,
+            reference_column, previous.row,
+            window_description.frame.session_window_threshold,
+            /* offset_is_preceding = */ direction < 0) * direction > 0)
+        {
+            // `frame_end` is a past-the-end pointer, and this row starts the next session.
+            frame_ended = true;
+            return;
+        }
+    }
+
+    frame_ended = partition_ended;
+}
+
 RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, RowNumber & scan_frontier, bool & need_more_data) const
 {
     need_more_data = false;
@@ -1126,8 +1215,14 @@ void WindowTransform::advanceFrameEnd()
 
     const auto frame_end_before = frame_end;
 
-    switch (window_description.frame.end_type)
+    if (window_description.frame.type == WindowFrame::FrameType::SESSION)
     {
+        advanceFrameEndSession();
+    }
+    else
+    {
+        switch (window_description.frame.end_type)
+        {
         case WindowFrame::BoundaryType::Current:
             advanceFrameEndCurrentRow();
             break;
@@ -1146,8 +1241,15 @@ void WindowTransform::advanceFrameEnd()
                 case WindowFrame::FrameType::GROUPS:
                     advanceFrameEndGroupsOffset();
                     break;
+                case WindowFrame::FrameType::SESSION:
+                    // A SESSION frame does not use boundary types; advanceFrameEnd()
+                    // dispatches it before reaching this switch.
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "The frame end type '{}' is not implemented",
+                        window_description.frame.end_type);
             }
             break;
+        }
     }
 
     // We might not have advanced the frame end if we found out we reached the

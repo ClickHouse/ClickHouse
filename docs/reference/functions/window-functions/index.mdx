@@ -49,6 +49,8 @@ WINDOW window_name as ([
 - `ROWS`, `RANGE`, or `GROUPS` - defines bounds of a frame, aggregate_function is calculated within a frame. `ROWS` counts physical rows, `RANGE` counts `ORDER BY` values, and `GROUPS` counts peer groups (rows equal on the `ORDER BY` key).
 - `WINDOW` - allows multiple expressions to use the same window definition.
 
+Besides the standard frame types above, ClickHouse has an experimental [`SESSION` frame](#session-frame), written `SESSION threshold` in place of the frame bounds.
+
 ```text
       PARTITION
 ┌─────────────────┐  <-- UNBOUNDED PRECEDING (BEGINNING of the PARTITION)
@@ -775,6 +777,45 @@ ORDER BY
 │ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
 │ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
 └──────────────┴─────────────────────┴───────┴─────────────────────────┘
+```
+
+### SESSION frame {#session-frame}
+
+<Warning>
+The `SESSION` frame is experimental. To use it, enable the setting `allow_experimental_session_window_frame = 1`.
+</Warning>
+
+The `SESSION` frame groups consecutive rows (in `ORDER BY` order) into disjoint sessions: a new session starts whenever the gap between a row and the previous row on the single `ORDER BY` key exceeds a given threshold. Unlike `ROWS`/`RANGE`/`GROUPS`, which produce a sliding or growing frame per row, every row in the same session shares one and the same frame, so a window aggregate returns the same value for all rows of a session.
+
+Syntax:
+
+```text
+function OVER ([PARTITION BY ...] ORDER BY key [ASC|DESC] SESSION threshold)
+```
+
+- Exactly one `ORDER BY` column is required (the session key). More than one raises an error.
+- The session key accepts the same types as `RANGE OFFSET`, which include integers up to 128-bit signed, `Float32`/`Float64`, `Date`, `Date32`, `DateTime` and types represented by those (such as `Enum`). Wider integers, `BFloat16`, `Decimal` and `DateTime64` raise an error, as they do for `RANGE OFFSET`. The threshold must be a native numeric type.
+- `threshold` is expressed in the natural units of the `ORDER BY` column, the same as `RANGE OFFSET`. For a numeric key it is the numeric gap; for a `DateTime` key it is a number of seconds (`INTERVAL` on the threshold is not supported, specify seconds directly). So a "60 second" session over a `DateTime` column is written `SESSION 60`.
+- `threshold` must be a positive constant. Zero, negative, non-constant, or non-numeric thresholds raise an error.
+- `DESC` ordering is supported; sessions are then formed on decreasing keys.
+
+Example: group values into sessions where consecutive values differ by no more than 2, and collect each session with `groupArray`:
+
+```sql
+SET allow_experimental_session_window_frame = 1;
+
+SELECT
+    arrayJoin([1, 20, 22, 24, 100, 101]) AS n,
+    groupArray(n) OVER (ORDER BY n SESSION 2) AS session;
+
+┌───n─┬─session────┐
+│   1 │ [1]        │
+│  20 │ [20,22,24] │
+│  22 │ [20,22,24] │
+│  24 │ [20,22,24] │
+│ 100 │ [100,101]  │
+│ 101 │ [100,101]  │
+└─────┴────────────┘
 ```
 
 ## References {#references}
