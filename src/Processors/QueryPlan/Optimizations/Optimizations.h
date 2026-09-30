@@ -208,8 +208,22 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
 /// One walk over the plan: going down, each step that supports it (canRemoveUnusedColumns) is asked what it does
 /// not need of its children once its parent does not need some of its columns; coming back up, it removes those,
 /// its children already pruned. A column a child keeps beyond what it was asked for is consumed by the step above
-/// it. A step that does not support it needs everything of its children. Returns whether anything changed.
-bool removeUnusedColumns(QueryPlan::Node & root);
+/// it. A step that does not support it needs everything of its children. `root` keeps all its outputs.
+enum class RemoveUnusedColumnsMode : uint8_t
+{
+    /// Walks the whole subtree.
+    Global,
+    /// Walks down only while a step leaves something of a child unneeded, and not at all if `root` cannot prune.
+    /// For a local optimization: it finds the columns that a change of `root` left unread.
+    Local,
+};
+
+/// Returns the number of layers below `root` that changed, counting `root` as the first, or 0 when nothing did.
+size_t removeUnusedColumns(QueryPlan::Node & root, RemoveUnusedColumnsMode mode);
+
+/// The local mode as a local optimization. Not in `getOptimizations`: it runs only after the global mode, which
+/// finds the unused columns of the whole plan at once.
+size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
 /// Build BloomFilter from right side of JOIN and add condition that looks up into this BloomFilter to the left side of the JOIN.
 /// This condition can potentially be pushed down all the way to the storage and filter unmatched rows very early.

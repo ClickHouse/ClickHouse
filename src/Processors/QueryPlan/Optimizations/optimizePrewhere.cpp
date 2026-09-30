@@ -352,25 +352,15 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (!remove_unused_columns)
         return;
 
-    auto & parent_step = parent_node.step;
-    if (source_step_with_filter->canRemoveUnusedColumns() && parent_step->canRemoveUnusedColumns())
-    {
-        /// Keep the outputs as they are, and prune what the new step and the read below it no longer need. A
-        /// column the read keeps anyway - `ReadFromMergeTree` with FINAL keeps the sorting key for the merge -
-        /// is consumed by the step.
-        const auto unneeded = parent_step->getUnneededColumns({});
-        auto source_result = source_step_with_filter->removeUnusedColumns(unneeded.at(0), {});
-        parent_step->removeUnusedColumns(
-            {}, {{std::move(source_result.dropped_output_positions), source_step_with_filter->getOutputHeader()}});
+    /// Keep the outputs as they are, and prune what the new step and the read below it no longer need. A column the
+    /// read keeps anyway - `ReadFromMergeTree` with FINAL keeps the sorting key for the merge - is consumed by the step.
+    removeUnusedColumns(parent_node, RemoveUnusedColumnsMode::Local);
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-        {
-            assertBlocksHaveEqualStructure(
-                *source_step_with_filter->getOutputHeader(),
-                *parent_step->getInputHeaders()[0],
-                "after removing unused columns in optimizePrewhere");
-        }
+    assertBlocksHaveEqualStructure(
+        *source_step_with_filter->getOutputHeader(),
+        *parent_node.step->getInputHeaders()[0],
+        "after removing unused columns in optimizePrewhere");
 #endif
-    }
 }
 
 }

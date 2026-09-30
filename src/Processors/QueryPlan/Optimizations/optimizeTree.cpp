@@ -132,9 +132,10 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
 
     const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings);
 
-    /// Applies the local optimizations bottom-up until none applies any more. Returns false where EXPLAIN is to stop
-    /// at the limit of optimizations.
-    const auto apply_local_optimizations = [&]() -> bool
+    /// Applies the local optimizations bottom-up until none applies any more, and with `remove_unused_columns_locally`
+    /// the local mode of removing unused columns as one of them. Returns false where EXPLAIN is to stop at the limit
+    /// of optimizations.
+    const auto apply_local_optimizations = [&](bool remove_unused_columns_locally) -> bool
     {
         std::stack<Frame> stack;
         stack.push({.node = &root});
@@ -174,16 +175,9 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
 
             size_t max_update_depth = 0;
 
-            /// Apply all optimizations.
-            for (const auto & optimization : getOptimizations())
+            /// Tries to apply one optimization. Returns false where EXPLAIN is to stop at the limit of optimizations.
+            const auto apply = [&](const auto & apply_optimization, [[maybe_unused]] std::string_view name) -> bool
             {
-                if (!(optimization_settings.*(optimization.is_enabled)))
-                    continue;
-
-                /// Just in case, skip optimization if it is not initialized.
-                if (!optimization.apply)
-                    continue;
-
                 if (max_optimizations_to_apply && max_optimizations_to_apply < total_applied_optimizations)
                 {
                     if (optimization_settings.is_explain)
@@ -195,18 +189,34 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
                         max_optimizations_to_apply);
                 }
 
-
-                /// Try to apply optimization.
-                auto update_depth = optimization.apply(frame.node, nodes, extra_settings);
+                auto update_depth = apply_optimization(frame.node, nodes, extra_settings);
                 if (update_depth)
                 {
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-                    checkHeaders(*frame.node, String("after optimization ") + optimization.name, update_depth);
+                    checkHeaders(*frame.node, fmt::format("after optimization {}", name), update_depth);
 #endif
                     ++total_applied_optimizations;
                 }
                 max_update_depth = std::max<size_t>(max_update_depth, update_depth);
+                return true;
+            };
+
+            /// Apply all optimizations.
+            for (const auto & optimization : getOptimizations())
+            {
+                if (!(optimization_settings.*(optimization.is_enabled)))
+                    continue;
+
+                /// Just in case, skip optimization if it is not initialized.
+                if (!optimization.apply)
+                    continue;
+
+                if (!apply(optimization.apply, optimization.name))
+                    return false;
             }
+
+            if (remove_unused_columns_locally && !apply(tryRemoveUnusedColumns, "removeUnusedColumns"))
+                return false;
 
             /// Traverse `max_update_depth` layers of tree again.
             if (max_update_depth)
@@ -223,28 +233,20 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         return true;
     };
 
-    if (!apply_local_optimizations())
+    if (!apply_local_optimizations(/*remove_unused_columns_locally=*/false))
         return;
 
-    /// Removing unused columns looks at the whole plan at once, so it runs after the local optimizations, and they run
-    /// again after it has removed anything, since fewer columns can let more of them apply.
-    while (optimization_settings.remove_unused_columns && removeUnusedColumns(root))
-    {
-        ++total_applied_optimizations;
-        if (max_optimizations_to_apply && max_optimizations_to_apply < total_applied_optimizations)
-        {
-            if (optimization_settings.is_explain)
-                return;
+    if (!optimization_settings.remove_unused_columns)
+        return;
 
-            throw Exception(
-                ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                "Too many optimizations applied to query plan. Current limit {}",
-                max_optimizations_to_apply);
-        }
+    /// Removing unused columns looks at the whole plan at once, so it runs after the local optimizations. Fewer columns
+    /// can let more of them apply, so they run again, and the local mode of removing unused columns with them: a change
+    /// of a step can leave columns below it unread.
+    if (!removeUnusedColumns(root, RemoveUnusedColumnsMode::Global))
+        return;
 
-        if (!apply_local_optimizations())
-            return;
-    }
+    ++total_applied_optimizations;
+    apply_local_optimizations(/*remove_unused_columns_locally=*/true);
 }
 
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
