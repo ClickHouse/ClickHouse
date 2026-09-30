@@ -921,7 +921,47 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
 
 void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
-    variant_column_ptr->updateHashWithValueRange(begin, end, hash);
+    /// Discriminators index this column's own variants, which differ between blocks, so a variant is
+    /// numbered by its first appearance in the range and identified by its type name.
+    const auto & variant_col = getVariantColumn();
+    const auto & local_discriminators = variant_col.getLocalDiscriminators();
+    const auto & offsets = variant_col.getOffsets();
+    const size_t num_variants = variant_col.getNumVariants();
+
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> rank_by_local_discr(num_variants, ColumnVariant::NULL_DISCRIMINATOR);
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> local_discr_by_rank;
+    VectorWithMemoryTracking<size_t> variant_first_offset(num_variants, 0);
+    VectorWithMemoryTracking<size_t> variant_count(num_variants, 0);
+
+    for (size_t i = begin; i < end; ++i)
+    {
+        const auto local_discr = local_discriminators[i];
+        if (local_discr == ColumnVariant::NULL_DISCRIMINATOR)
+        {
+            hash.update(local_discr);
+            continue;
+        }
+
+        auto & rank = rank_by_local_discr[local_discr];
+        if (rank == ColumnVariant::NULL_DISCRIMINATOR)
+        {
+            rank = static_cast<ColumnVariant::Discriminator>(local_discr_by_rank.size());
+            local_discr_by_rank.push_back(local_discr);
+            variant_first_offset[local_discr] = offsets[i];
+        }
+
+        ++variant_count[local_discr];
+        hash.update(rank);
+    }
+
+    for (const auto local_discr : local_discr_by_rank)
+    {
+        const auto & variant_name = variant_info.variant_names[variant_col.globalDiscriminatorByLocal(local_discr)];
+        hash.update(variant_name.size());
+        hash.update(variant_name);
+        variant_col.getVariantByLocalDiscriminator(local_discr).updateHashWithValueRange(
+            variant_first_offset[local_discr], variant_first_offset[local_discr] + variant_count[local_discr], hash);
+    }
 }
 
 namespace
