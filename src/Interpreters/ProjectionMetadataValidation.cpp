@@ -188,11 +188,16 @@ void validateProjectionMetadataAdmission(
             const auto * alias = source_table ? source_table->as<StorageAlias>() : nullptr;
             if (source_table && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {})))
             {
-                /// StorageAlias resolves lazy targets in isMergeTree(), so its forwarded metadata
-                /// below is the target's full metadata rather than a proxy's cached columns.
-                const bool source_is_merge_tree = source_table->isMergeTree();
-                if ((create.storage && create.storage->engine) || source_is_merge_tree)
+                /// Without an explicit engine, AS alias inherits ENGINE = Alias rather than the
+                /// alias target's MergeTree engine, so it cannot copy the target's projections.
+                const bool copies_projections = (create.storage && create.storage->engine)
+                    || (!alias && source_table->isMergeTree());
+                if (copies_projections)
                 {
+                    /// An explicit MergeTree destination can copy through an alias. Resolve any
+                    /// lazy target before reading the alias's forwarded projection metadata.
+                    if (alias)
+                        alias->isMergeTree();
                     /// Without an explicit engine, the destination inherits the source's engine.
                     /// Only a `MergeTree` destination copies projections.
                     const auto source_metadata = source_table->getInMemoryMetadataPtr(context, false);
@@ -214,7 +219,7 @@ void validateProjectionMetadataAdmission(
                         inspect_projection(definition);
                     source_projection_safety_known = true;
                 }
-                else if (!alias)
+                else
                     source_projection_safety_known = true;
             }
         }

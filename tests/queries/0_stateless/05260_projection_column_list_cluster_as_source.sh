@@ -16,6 +16,8 @@ memory_table="${CLICKHOUSE_DATABASE}.t_projection_column_list_cluster_memory"
 lazy_database="${CLICKHOUSE_DATABASE}_projection_lazy"
 lazy_source="${lazy_database}.src"
 lazy_copy="${CLICKHOUSE_DATABASE}.t_projection_column_list_lazy_copy"
+alias_source="${CLICKHOUSE_DATABASE}.t_projection_column_list_alias_source"
+alias_copy="${CLICKHOUSE_DATABASE}.t_projection_column_list_alias_copy"
 
 old_format=(--distributed_ddl_entry_format_version=1)
 wait_for_worker=(--distributed_ddl_task_timeout=180 --distributed_ddl_output_mode=throw)
@@ -74,6 +76,22 @@ ${CLICKHOUSE_CLIENT} "${old_format[@]}" "${wait_for_worker[@]}" \
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_inherited'"
 
+# AS alias inherits ENGINE = Alias, not the MergeTree engine of its target. The worker's
+# Alias validation should report the copied column definitions, not the projection gate.
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${alias_source}
+    ENGINE = Alias('${CLICKHOUSE_DATABASE}', 't_projection_column_list_source')"
+if output=$(${CLICKHOUSE_CLIENT} "${old_format[@]}" "${wait_for_worker[@]}" \
+    --allow_projection_column_list_in_replicated_metadata=0 -q "
+    CREATE TABLE ${alias_copy} ON CLUSTER test_shard_localhost AS ${alias_source} FORMAT Null" 2>&1); then
+    echo "alias inheritance unexpectedly succeeded" >&2
+    exit 1
+fi
+if [[ "$output" != *BAD_ARGUMENTS* ]]; then
+    echo "alias inheritance failed with an unexpected error: $output" >&2
+    exit 1
+fi
+echo "alias inheritance reached Alias validation"
+
 # The catalog returns a TableProxy after reattaching a lazy database. The initiator must
 # materialize it before inspecting projections, or it will see only cached columns.
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${lazy_database} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
@@ -95,5 +113,6 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
 ${CLICKHOUSE_CLIENT} "${wait_for_worker[@]}" -q "DROP TABLE ${copy_table} ON CLUSTER test_shard_localhost FORMAT Null"
 ${CLICKHOUSE_CLIENT} "${wait_for_worker[@]}" -q "DROP TABLE ${inherited_table} ON CLUSTER test_shard_localhost FORMAT Null"
 ${CLICKHOUSE_CLIENT} "${wait_for_worker[@]}" -q "DROP TABLE ${memory_table} ON CLUSTER test_shard_localhost FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${alias_source}"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${source_table}"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${lazy_database}"
