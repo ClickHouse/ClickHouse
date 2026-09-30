@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
@@ -1770,6 +1771,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
           * Such a situation is possible if the receive of a part has failed, and it was moved to the end of the queue.
           */
         size_t sum_parts_size_in_bytes = 0;
+        MergeTreeData::DataPartsVector source_parts;
         for (const auto & name : entry.source_parts)
         {
             if (future_parts.contains(name))
@@ -1787,6 +1789,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     sum_parts_size_in_bytes += part->getExistingBytesOnDisk();
                 else
                     sum_parts_size_in_bytes += part->getBytesOnDisk();
+                source_parts.push_back(std::move(part));
             }
         }
 
@@ -1875,13 +1878,13 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     return false;
                 }
 
-                /// A TTLDrop merge deletes every row only when an unconditional rows TTL is the
-                /// table's only TTL. With a GROUP BY, WHERE or column TTL rows survive and the
-                /// merge rewrites them, so it does need room for what its source parts hold.
-                if (entry.merge_type == MergeType::TTLDrop)
+                /// A TTLDrop merge deletes every row only when it drops every source part unread
+                /// (see `MergeTask`). Otherwise rows survive and the merge rewrites them, so it
+                /// does need room for what its source parts hold.
+                if (entry.merge_type == MergeType::TTLDrop && source_parts.size() == entry.source_parts.size())
                 {
                     const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
-                    if (metadata_snapshot->hasOnlyRowsTTL())
+                    if (MergeTask::canDropTTLExpiredPartsUnread(*metadata_snapshot, source_parts, entry.create_time))
                         ignore_max_size = true;
                 }
             }

@@ -14,7 +14,11 @@ node = cluster.add_instance(
         "configs/storage_configuration.xml",
         "configs/fast_background_pool.xml",
     ],
-    tmpfs=["/ttl_drop_gate_a:size=64M", "/ttl_drop_gate_b:size=64M"],
+    tmpfs=[
+        "/ttl_drop_gate_a:size=64M",
+        "/ttl_drop_gate_b:size=64M",
+        "/ttl_drop_gate_orphan:size=64M",
+    ],
     with_zookeeper=True,
 )
 
@@ -25,7 +29,7 @@ ROWS_PER_INSERT = 18000
 
 # Each case gets its own disk and policy so that dropping one table's data cannot raise the
 # other table's threshold.
-CASES = {"t_a": "gate_a", "t_b": "gate_b"}
+CASES = {"t_a": "gate_a", "t_b": "gate_b", "t_orphan": "gate_orphan"}
 
 
 @pytest.fixture(scope="module")
@@ -205,3 +209,53 @@ def test_row_retaining_drop_is_still_postponed_by_source_size(started_cluster):
     )
 
     node.query("DROP TABLE t_b SYNC")
+
+
+def test_orphan_ttl_drop_is_still_postponed_by_source_size(started_cluster):
+    """A drop tagged by TTL info of a TTL the table no longer has must keep the gate.
+
+    The parts carry the expired info of a removed column TTL and no rows TTL info, so the
+    merge is tagged as a whole-part drop, but the table's only TTL, a rows TTL, has not
+    expired for any row. The merge writes the rows back and needs room for them.
+    """
+    node.query("DROP TABLE IF EXISTS t_orphan SYNC")
+    node.query(
+        """
+        CREATE TABLE t_orphan (id UInt64, s String TTL event_time + INTERVAL 1 DAY, event_time DateTime)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/ttl_drop_gate/t_orphan', 'r1')
+        ORDER BY id
+        SETTINGS storage_policy = 'only_orphan',
+                 ttl_only_drop_parts = 1,
+                 merge_with_ttl_timeout = 0,
+                 max_replicated_merges_with_ttl_in_queue = 1,
+                 min_bytes_for_wide_part = 1
+        """
+    )
+    node.query("SYSTEM STOP TTL MERGES t_orphan")
+
+    for _ in range(2):
+        node.query(
+            "INSERT INTO t_orphan SELECT number, randomString(1024), now() - INTERVAL 10 DAY "
+            f"FROM numbers({ROWS_PER_INSERT})"
+        )
+    node.query("ALTER TABLE t_orphan MODIFY COLUMN s REMOVE TTL")
+    node.query(
+        "ALTER TABLE t_orphan MODIFY TTL event_time + INTERVAL 50 YEAR "
+        "SETTINGS materialize_ttl_after_modify = 0"
+    )
+    rows_before = query_int("SELECT count() FROM t_orphan")
+
+    assert_gate_would_fire("t_orphan", "all")
+
+    node.query("SYSTEM START TTL MERGES t_orphan")
+
+    entry = wait_for_entry_postponed_on_size("t_orphan")
+    assert "TTLDrop" in entry, (
+        "the postponed entry is not the whole-part drop this case is about, so it does not "
+        f"discriminate the exempted class:\n{entry}"
+    )
+    assert query_int("SELECT count() FROM t_orphan") == rows_before, (
+        "rows were removed although the merge was supposed to stay postponed:\n" + entry
+    )
+
+    node.query("DROP TABLE t_orphan SYNC")
