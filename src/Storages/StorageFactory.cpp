@@ -44,9 +44,7 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 }
 
 
-/// Whether the definition is replayed (attach, DDL replay, Keeper recovery, Shared Catalog replay)
-/// rather than written by the user now. Refusing a replayed definition would block loading or retry forever.
-static bool isReplayedTableDefinition(
+bool isReplayedTableDefinition(
     LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context)
 {
     const auto metadata_txn = local_context->getZooKeeperMetadataTransaction();

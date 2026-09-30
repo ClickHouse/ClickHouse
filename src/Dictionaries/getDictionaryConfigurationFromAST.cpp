@@ -587,7 +587,8 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const ASTExpressionList * ast_expr_list,
-    ContextPtr context)
+    ContextPtr context,
+    bool is_fresh_definition)
 {
     const auto & children = ast_expr_list->children;
     for (const auto & child : children)
@@ -603,10 +604,13 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         }
         else if (const auto * literal = pair->second->as<const ASTLiteral>())
         {
-            /// The grammar admits an array literal for any key-value parameter, but a dictionary
-            /// source parameter has no structured representation for it, so reject a collection
-            /// instead of silently stringifying it.
-            if (literal->value.getType() == Field::Types::Array)
+            /// The grammar admits an array literal for any key-value parameter, and a constant expression in a definition is
+            /// evaluated to a tuple or map literal, but a dictionary source parameter has no structured representation for a
+            /// collection, so reject one instead of silently stringifying it. A replayed definition may hold a `tuple(...)`
+            /// call, which evaluates to a tuple, so a tuple or map is refused only in a fresh definition.
+            const auto value_type = literal->value.getType();
+            if (value_type == Field::Types::Array
+                || (is_fresh_definition && (value_type == Field::Types::Tuple || value_type == Field::Types::Map)))
             {
                 throw DB::Exception(
                     ErrorCodes::BAD_ARGUMENTS,
@@ -619,7 +623,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         }
         else if (const auto * list = pair->second->as<const ASTExpressionList>())
         {
-            buildConfigurationFromFunctionWithKeyValueArguments(doc, current_xml_element, list, context);
+            buildConfigurationFromFunctionWithKeyValueArguments(doc, current_xml_element, list, context, is_fresh_definition);
         }
         else if (const auto * func = pair->second->as<ASTFunction>())
         {
@@ -682,7 +686,8 @@ void buildSourceConfiguration(
     const ASTFunctionWithKeyValueArguments * source,
     const ASTDictionarySettings * settings,
     const String & dictionary_name,
-    ContextPtr context)
+    ContextPtr context,
+    bool is_fresh_definition)
 {
     DictionarySourceFactory::instance().checkSourceAvailable(source->name, dictionary_name, context);
 
@@ -690,7 +695,8 @@ void buildSourceConfiguration(
     root->appendChild(outer_element);
     AutoPtr<Element> source_element(doc->createElement(source->name));
     outer_element->appendChild(source_element);
-    buildConfigurationFromFunctionWithKeyValueArguments(doc, source_element, source->elements->as<const ASTExpressionList>(), context);
+    buildConfigurationFromFunctionWithKeyValueArguments(
+        doc, source_element, source->elements->as<const ASTExpressionList>(), context, is_fresh_definition);
 
     if (settings != nullptr)
     {
@@ -752,7 +758,7 @@ static void checkLifetime(const ASTCreateQuery & query)
 
 
 DictionaryConfigurationPtr
-getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr context, const std::string & database_)
+getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr context, const std::string & database_, bool is_fresh_definition)
 {
     checkAST(query);
     checkLifetime(query);
@@ -811,7 +817,14 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
     buildLayoutConfiguration(xml_document, current_dictionary, query.dictionary->dict_settings, dictionary_layout);
-    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings, full_dictionary_name, context);
+    buildSourceConfiguration(
+        xml_document,
+        current_dictionary,
+        query.dictionary->source,
+        query.dictionary->dict_settings,
+        full_dictionary_name,
+        context,
+        is_fresh_definition);
     buildLifetimeConfiguration(xml_document, current_dictionary, query.dictionary->lifetime);
 
     if (query.dictionary->range)

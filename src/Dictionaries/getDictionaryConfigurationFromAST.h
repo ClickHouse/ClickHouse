@@ -22,8 +22,10 @@ using DictionaryConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfigurati
 /// Convert dictionary AST to Poco::AbstractConfiguration
 /// This function is necessary because all loadable objects configuration are Poco::AbstractConfiguration
 /// Can throw exception if query is ill-formed
+/// Only a fresh definition (stated now, not replayed from storage) is refused a tuple or map source parameter value.
 DictionaryConfigurationPtr
-getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr context, const std::string & database_ = "");
+getDictionaryConfigurationFromAST(
+    const ASTCreateQuery & query, ContextPtr context, const std::string & database_ = "", bool is_fresh_definition = false);
 
 struct ClickHouseDictionarySourceInfo
 {
