@@ -12,9 +12,8 @@ cleanup()
 {
     ${CLICKHOUSE_CLIENT} --query "
         DROP TABLE IF EXISTS t_signed;
-        DROP TABLE IF EXISTS t_u32;
         DROP TABLE IF EXISTS t_u64;
-        DROP TABLE IF EXISTS t_nested_u32;
+        DROP TABLE IF EXISTS t_nested_u64;
         DROP TABLE IF EXISTS t_wide"
     rm -rf "${TABLE_PATH}" "${WIDE_PATH}"
 }
@@ -25,13 +24,12 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
     INSERT INTO t_signed VALUES (1, 2, [3]);"
 
 # The table already exists at the path, so these do not create a schema: they are ClickHouse tables
-# with unsigned columns over the existing Iceberg `int` and `long` fields, as older releases created them.
+# with `UInt64` columns over the existing Iceberg fields, as older releases created them.
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE IF NOT EXISTS t_u32 (a UInt32, b Int64, c Array(Int32)) ENGINE = IcebergLocal('${TABLE_PATH}');
     CREATE TABLE IF NOT EXISTS t_u64 (a Int32, b UInt64, c Array(Int32)) ENGINE = IcebergLocal('${TABLE_PATH}');
-    CREATE TABLE IF NOT EXISTS t_nested_u32 (a Int32, b Int64, c Array(UInt32)) ENGINE = IcebergLocal('${TABLE_PATH}');"
+    CREATE TABLE IF NOT EXISTS t_nested_u64 (a Int32, b Int64, c Array(UInt64)) ENGINE = IcebergLocal('${TABLE_PATH}');"
 
-for table in t_u32 t_u64 t_nested_u32
+for table in t_u64 t_nested_u64
 do
     ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${table} VALUES (1, 2, [3])" 2>&1 \
         | grep -o "Cannot write column [a-z]* of type [A-Za-z0-9()]*"

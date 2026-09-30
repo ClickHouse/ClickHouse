@@ -10,12 +10,8 @@
 #include <Core/Range.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Databases/DataLake/Common.h>
@@ -153,71 +149,23 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
     }
 }
 
-void checkUnsignedIntegerFitsIcebergType(const DataTypePtr & type, const Poco::Dynamic::Var & iceberg_type, const String & column_name)
+void checkNoUInt64(const ColumnWithTypeAndName & column)
 {
-    auto nested_type = removeLowCardinalityAndNullable(type);
-    switch (nested_type->getTypeId())
+    auto throw_uint64 = [&]
     {
-        case TypeIndex::UInt64:
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot write column {} of type {} into Iceberg: the widest Iceberg integer type is the signed 64-bit `long`, "
-                "which cannot represent every UInt64 value. Declare the column as Int64 instead",
-                column_name, type->getName());
-        case TypeIndex::UInt32:
-            if (iceberg_type.isString() && iceberg_type.extract<String>() == "int")
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot write column {} of type {} into Iceberg: the Iceberg field has the signed 32-bit type `int`, "
-                    "which cannot represent every UInt32 value. Declare the column as Int32 instead",
-                    column_name, type->getName());
-            return;
-        default:
-            break;
-    }
-
-    Poco::JSON::Object::Ptr iceberg_object;
-    if (iceberg_type.type() == typeid(Poco::JSON::Object::Ptr))
-        iceberg_object = iceberg_type.extract<Poco::JSON::Object::Ptr>();
-
-    switch (nested_type->getTypeId())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot write column {} of type {} into Iceberg: the widest Iceberg integer type is the signed 64-bit `long`, "
+            "which cannot represent every UInt64 value. Declare the column as Int64 instead",
+            column.name, column.type->getName());
+    };
+    if (column.type->getTypeId() == TypeIndex::UInt64)
+        throw_uint64();
+    column.type->forEachChild([&](const IDataType & child)
     {
-        case TypeIndex::Array:
-            checkUnsignedIntegerFitsIcebergType(
-                assert_cast<const DataTypeArray &>(*nested_type).getNestedType(),
-                iceberg_object ? iceberg_object->get(Iceberg::f_element) : Poco::Dynamic::Var{},
-                column_name);
-            break;
-        case TypeIndex::Map:
-        {
-            const auto & map_type = assert_cast<const DataTypeMap &>(*nested_type);
-            checkUnsignedIntegerFitsIcebergType(
-                map_type.getKeyType(), iceberg_object ? iceberg_object->get(Iceberg::f_key) : Poco::Dynamic::Var{}, column_name);
-            checkUnsignedIntegerFitsIcebergType(
-                map_type.getValueType(), iceberg_object ? iceberg_object->get(Iceberg::f_value) : Poco::Dynamic::Var{}, column_name);
-            break;
-        }
-        case TypeIndex::Tuple:
-        {
-            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*nested_type);
-            Poco::JSON::Array::Ptr iceberg_fields = iceberg_object ? iceberg_object->getArray(Iceberg::f_fields) : nullptr;
-            for (size_t i = 0; i < tuple_type.getElements().size(); ++i)
-            {
-                Poco::Dynamic::Var element_iceberg_type;
-                const auto & element_name = tuple_type.getNameByPosition(i + 1);
-                for (size_t j = 0; iceberg_fields && j < iceberg_fields->size(); ++j)
-                {
-                    auto iceberg_field = iceberg_fields->getObject(static_cast<UInt32>(j));
-                    if (iceberg_field->getValue<String>(Iceberg::f_name) == element_name)
-                        element_iceberg_type = iceberg_field->get(Iceberg::f_type);
-                }
-                checkUnsignedIntegerFitsIcebergType(tuple_type.getElements()[i], element_iceberg_type, column_name);
-            }
-            break;
-        }
-        default:
-            break;
-    }
+        if (child.getTypeId() == TypeIndex::UInt64)
+            throw_uint64();
+    });
 }
 
 /// Whether a float/double partition value is NaN, which the manifest-list partition summary records via `contains_nan` rather than as ordered lower/upper bounds.
@@ -1239,18 +1187,8 @@ IcebergStorageSink::IcebergStorageSink(
         }
     }
 
-    auto schema_fields = current_schema->getArray(Iceberg::f_fields);
     for (const auto & column : *sample_block)
-    {
-        Poco::Dynamic::Var column_iceberg_type;
-        for (size_t i = 0; i < schema_fields->size(); ++i)
-        {
-            auto schema_field = schema_fields->getObject(static_cast<UInt32>(i));
-            if (schema_field->getValue<String>(Iceberg::f_name) == column.name)
-                column_iceberg_type = schema_field->get(Iceberg::f_type);
-        }
-        checkUnsignedIntegerFitsIcebergType(column.type, column_iceberg_type, column.name);
-    }
+        checkNoUInt64(column);
 
     sort_description = Iceberg::getSortingKeyDescriptionFromMetadata(metadata, sample_block->getNamesAndTypesList(), context);
 
