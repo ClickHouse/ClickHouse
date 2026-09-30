@@ -9,5 +9,7 @@ INSERT INTO t_hint_window SELECT number % 10, number, number + 1 FROM numbers(30
 
 SELECT sum(s) FROM (SELECT k, v, w, sum(v) OVER (PARTITION BY k) AS s FROM t_hint_window QUALIFY v <= w AND w < 41);
 SELECT sum(s) FROM (SELECT k, v, sum(v) OVER (PARTITION BY k) AS s FROM t_hint_window QUALIFY indexHint(v < 41) AND v < 41);
+-- the hinted column is not read anywhere else
+SELECT sum(s) FROM (SELECT k, sum(w) OVER (PARTITION BY k) AS s FROM t_hint_window QUALIFY indexHint(v < 41));
 
 DROP TABLE t_hint_window;
