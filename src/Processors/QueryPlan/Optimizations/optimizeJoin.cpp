@@ -955,7 +955,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
         if (isMissingStatisticsSource(rel.source))
             relations_without_statistics.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
-        else if (rel.source == RowEstimateSource::DataLakeMetadata && rel.imprecise_estimate)
+        else if (rel.source == RowEstimateSource::DataLakeMetadata && rel.imprecise_estimate && rel.column_stats.empty())
             relations_estimated_from_data_lake_metadata.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
     }
 

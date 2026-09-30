@@ -255,6 +255,23 @@ std::unordered_map<Int32, DB::Range> getDataFileHyperrectangles(
     return hyperrectangles;
 }
 
+std::unordered_map<Int32, std::pair<DB::Field, DB::Field>> getDataFileColumnBounds(
+    const ProcessedManifestFileEntry & entry,
+    const std::unordered_map<Int32, DB::DataTypePtr> & column_types,
+    const IcebergPathFromMetadata & path_to_manifest_file)
+{
+    std::unordered_map<Int32, std::pair<DB::Field, DB::Field>> column_bounds;
+    const auto & parsed_entry = entry.parsed_entry;
+    if (parsed_entry->content_type != FileContentType::DATA)
+        return column_bounds;
+
+    for (const auto & [column_id, column_type] : column_types)
+        if (auto bounds = decodeColumnBounds(*parsed_entry, column_id, column_type, path_to_manifest_file))
+            column_bounds.emplace(column_id, std::pair{std::move(bounds->declared_lower), std::move(bounds->declared_upper)});
+
+    return column_bounds;
+}
+
 const std::vector<ProcessedManifestFileEntryPtr> &
 ManifestFileIterator::ManifestFileEntriesHandle::getFilesWithoutDeleted(FileContentType content_type) const
 {

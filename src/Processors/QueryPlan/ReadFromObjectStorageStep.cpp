@@ -37,6 +37,7 @@ namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool s3_validate_etag_on_read;
+    extern const SettingsBool use_statistics;
 }
 
 
@@ -112,7 +113,13 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimateReadFromD
         return std::nullopt;
 
     if (!data_lake_read_estimate)
-        data_lake_read_estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), /* column_names */ {}, getContext());
+    {
+        /// Column statistics cost a bound decoding per file and column, so they are computed only when they can be used.
+        Names column_names;
+        if (getContext()->getSettingsRef()[Setting::use_statistics])
+            column_names = requiredSourceColumns();
+        data_lake_read_estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), column_names, getContext());
+    }
     return *data_lake_read_estimate;
 }
 
