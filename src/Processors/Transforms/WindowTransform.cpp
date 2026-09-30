@@ -1096,10 +1096,9 @@ IProcessor::Status WindowTransform::prepare()
             // Output the ready block.
             const auto & block = blocks.blockAt(next_output_block_number);
             auto columns = block.input_columns;
-            for (const auto & res : block.result_columns)
-            {
-                columns.push_back(res->getPtr());
-            }
+            for (auto & res : block.result_columns)
+                columns.push_back(std::move(res));
+
             Chunk chunk;
             chunk.setColumns(columns, block.rows_count);
 

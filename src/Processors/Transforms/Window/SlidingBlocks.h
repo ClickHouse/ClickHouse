@@ -31,7 +31,7 @@ struct SlidingBlock
     const int64_t block_number = 0;
 
     /// Output
-    MutableColumns result_columns;
+    mutable MutableColumns result_columns;
 };
 
 class SlidingBlocks
