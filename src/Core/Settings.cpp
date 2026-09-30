@@ -5651,6 +5651,18 @@ Minimum number of non-pure-substring `LIKE`/`ILIKE`/`match` branches (prefix/suf
 Minimum number of pure-substring (`%needle%`) `LIKE`/`ILIKE` branches, sharing the same left-hand-side expression, required for `optimize_or_like_chain` to rewrite a chain into `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8`. Calibrated on the `hits` dataset (see `tests/performance/optimize_or_like_chain_hits.xml`): the `multiSearchAny` rewrite becomes faster than short-circuit `OR` evaluation from about four branches. A value of 0 or 1 disables the threshold. Has no effect when `optimize_or_like_chain` is disabled. See also `optimize_or_like_chain_min_patterns` for the regexp (`multiMatchAny`) path.
 )", 0, \
         {"26.7", 0, 4, "New setting controlling the minimum number of pure-substring (%needle%) LIKE/ILIKE branches (sharing the same LHS expression) required for optimize_or_like_chain to rewrite a chain into multiSearchAny."}) \
+    DECLARE(Bool, optimize_rewrite_has_phrase_or_chain, false, R"(
+Coalesce a chain of `hasPhrase` calls on the same column joined by `OR` into a single `hasAnyPhrases` call, so the column is tokenized once instead of once per phrase. For example, `hasPhrase(c, 'p0') OR hasPhrase(c, 'p1')` becomes `hasAnyPhrases(c, ['p0', 'p1'])`.
+
+Disabled by default: rewriting `hasPhrase` is not always beneficial. A text index may be able to answer `hasPhrase` without reading the column, whereas `hasAnyPhrases` reads the column to verify every row. Enable it for the brute-force (no text index) path, where tokenizing the column once per query instead of once per phrase is a clear win.
+)", 0, \
+        {"26.10", false, false, "New setting to coalesce OR chains of hasPhrase on the same column into hasAnyPhrases (off by default; auto-rewriting hasPhrase is not always beneficial)."}) \
+    DECLARE(Bool, optimize_rewrite_has_phrase_and_chain, false, R"(
+Coalesce a chain of `hasPhrase` calls on the same column joined by `AND` into a single `hasAllPhrases` call. For example, `hasPhrase(c, 'p0') AND hasPhrase(c, 'p1')` becomes `hasAllPhrases(c, ['p0', 'p1'])`.
+
+Disabled by default: because `AND` short-circuits, the original chain stops at the first phrase that is absent in a row, whereas `hasAllPhrases` always scans the column once and tests every phrase. For a selective `AND` filter (most rows are missing some phrase) this does more per-row work than the short-circuited chain and can be slower on the brute-force (no text index) path. Enable it when the phrases are expected to occur together, or when a text index makes the row-level cost negligible.
+)", 0, \
+        {"26.10", false, false, "New setting to coalesce AND chains of hasPhrase on the same column into hasAllPhrases (off by default; can regress selective AND filters because AND short-circuits)."}) \
     DECLARE(Bool, optimize_arithmetic_operations_in_aggregate_functions, true, R"(
 Move arithmetic operations out of aggregation functions
 )", 0) \

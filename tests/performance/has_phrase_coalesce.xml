@@ -1,0 +1,32 @@
+<test>
+    <!--
+        Measures the hasPhrase coalescing optimization on `hits_10m_single.URL`. URL has content on
+        every row (unlike SearchPhrase, which is empty for most rows), and there is no text index on it
+        here, so the brute-force tokenization path is exercised.
+
+        A chain of `hasPhrase` on the same column is rewritten into a single `hasAnyPhrases`/
+        `hasAllPhrases`, tokenizing the column once instead of once per phrase. The queries use only
+        `hasPhrase`, so they also run on the base/master build (which has neither the new functions nor
+        the settings); on this branch the analyzer coalesces them, so the comparison shows the effect.
+
+        OR coalescing is on by default (`optimize_rewrite_has_phrase_or_chain`), so the OR queries are
+        expected to get faster. AND coalescing is off by default (`optimize_rewrite_has_phrase_and_chain`,
+        because an AND chain short-circuits on the first absent phrase and coalescing it can regress), so
+        the AND queries are expected to be unchanged - they are kept here as a guard that the default does
+        not regress AND filters.
+    -->
+
+    <!-- OR chains over phrases that rarely appear as consecutive tokens: most rows evaluate all of
+         them, so the base build tokenizes URL once per phrase. The saving grows with the count. -->
+    <query tag='or_x2'>SELECT count() FROM hits_10m_single WHERE hasPhrase(URL, 'foto video') OR hasPhrase(URL, 'news sport')</query>
+    <query tag='or_x4'>SELECT count() FROM hits_10m_single WHERE hasPhrase(URL, 'foto video') OR hasPhrase(URL, 'news sport') OR hasPhrase(URL, 'auto moto') OR hasPhrase(URL, 'kino online')</query>
+    <query tag='or_x8'>SELECT count() FROM hits_10m_single WHERE hasPhrase(URL, 'foto video') OR hasPhrase(URL, 'news sport') OR hasPhrase(URL, 'auto moto') OR hasPhrase(URL, 'kino online') OR hasPhrase(URL, 'mail agent') OR hasPhrase(URL, 'yandex maps') OR hasPhrase(URL, 'rambler news') OR hasPhrase(URL, 'google play')</query>
+
+    <!-- AND chains (default short-circuit). -->
+    <query tag='and_x2'>SELECT count() FROM hits_10m_single WHERE hasPhrase(URL, 'yandex ru') AND hasPhrase(URL, 'mail ru')</query>
+    <query tag='and_x4'>SELECT count() FROM hits_10m_single WHERE hasPhrase(URL, 'yandex ru') AND hasPhrase(URL, 'mail ru') AND hasPhrase(URL, 'google com') AND hasPhrase(URL, 'rambler ru')</query>
+
+    <!-- Heavier tokenizer (ngrams) makes tokenization a larger share of the work; explicit-tokenizer
+         calls are coalesced too. These 3-grams match almost no rows, forcing full tokenization. -->
+    <query tag='ngrams_or_x4'>SELECT count() FROM hits_10m_single WHERE hasPhrase(URL, 'qwx', 'ngrams(3)') OR hasPhrase(URL, 'zxq', 'ngrams(3)') OR hasPhrase(URL, 'jqv', 'ngrams(3)') OR hasPhrase(URL, 'vqz', 'ngrams(3)')</query>
+</test>

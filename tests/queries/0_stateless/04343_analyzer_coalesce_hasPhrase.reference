@@ -1,0 +1,291 @@
+-- OR chain is NOT coalesced by default
+QUERY id: 0
+  PROJECTION COLUMNS
+    s String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: \'the quick brown fox jumps over the lazy dog\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: hasPhrase, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'the quick brown fox jumps over the lazy dog\', constant_value_type: String
+                CONSTANT id: 13, constant_value: \'quick brown\', constant_value_type: String
+          FUNCTION id: 14, function_name: hasPhrase, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 15, nodes: 2
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'the quick brown fox jumps over the lazy dog\', constant_value_type: String
+                CONSTANT id: 16, constant_value: \'lazy dog\', constant_value_type: String
+-- OR chain over the same column -> hasAnyPhrases (when enabled)
+QUERY id: 0
+  PROJECTION COLUMNS
+    s String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: \'the quick brown fox jumps over the lazy dog\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: hasAnyPhrases, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'the quick brown fox jumps over the lazy dog\', constant_value_type: String
+                CONSTANT id: 13, constant_value: Array_[\'quick brown\', \'lazy dog\', \'fox jumps\'], constant_value_type: Array(String)
+          CONSTANT id: 14, constant_value: UInt64_0, constant_value_type: UInt8
+  SETTINGS optimize_rewrite_has_phrase_or_chain=1
+-- AND chain is NOT coalesced by default
+QUERY id: 0
+  PROJECTION COLUMNS
+    s String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: \'the quick brown fox jumps over the lazy dog\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: hasPhrase, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'the quick brown fox jumps over the lazy dog\', constant_value_type: String
+                CONSTANT id: 13, constant_value: \'quick brown\', constant_value_type: String
+          FUNCTION id: 14, function_name: hasPhrase, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 15, nodes: 2
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'the quick brown fox jumps over the lazy dog\', constant_value_type: String
+                CONSTANT id: 16, constant_value: \'lazy dog\', constant_value_type: String
+  SETTINGS optimize_rewrite_has_phrase_or_chain=1
+-- AND chain -> hasAllPhrases when explicitly enabled (single folded arg is padded with AND 1)
+QUERY id: 0
+  PROJECTION COLUMNS
+    s String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: \'the quick brown fox jumps over the lazy dog\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: hasAllPhrases, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'the quick brown fox jumps over the lazy dog\', constant_value_type: String
+                CONSTANT id: 13, constant_value: Array_[\'quick brown\', \'lazy dog\'], constant_value_type: Array(String)
+          CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
+  SETTINGS optimize_rewrite_has_phrase_and_chain=1
+-- OR setting disabled: no rewrite
+QUERY id: 0
+  PROJECTION COLUMNS
+    s String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: \'the quick brown fox jumps over the lazy dog\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: hasPhrase, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'the quick brown fox jumps over the lazy dog\', constant_value_type: String
+                CONSTANT id: 13, constant_value: \'quick brown\', constant_value_type: String
+          FUNCTION id: 14, function_name: hasPhrase, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 15, nodes: 2
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'the quick brown fox jumps over the lazy dog\', constant_value_type: String
+                CONSTANT id: 16, constant_value: \'lazy dog\', constant_value_type: String
+  SETTINGS optimize_rewrite_has_phrase_or_chain=0
+-- non-hasPhrase operands are preserved
+QUERY id: 0
+  PROJECTION COLUMNS
+    s String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: \'the quick brown fox\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: hasAnyPhrases, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'the quick brown fox\', constant_value_type: String
+                CONSTANT id: 13, constant_value: Array_[\'quick brown\', \'brown fox\'], constant_value_type: Array(String)
+          FUNCTION id: 14, function_name: equals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 15, nodes: 2
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'the quick brown fox\', constant_value_type: String
+                CONSTANT id: 16, constant_value: \'x\', constant_value_type: String
+  SETTINGS optimize_rewrite_has_phrase_or_chain=1
+-- different columns are NOT coalesced
+QUERY id: 0
+  PROJECTION COLUMNS
+    s1 String
+    s2 String
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: \'the quick brown fox\', constant_value_type: String
+      FUNCTION id: 5, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 6, nodes: 1
+            CONSTANT id: 7, constant_value: \'the lazy dog\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 8, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 9, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: hasPhrase, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                FUNCTION id: 13, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 14, nodes: 1
+                      CONSTANT id: 15, constant_value: \'the quick brown fox\', constant_value_type: String
+                CONSTANT id: 16, constant_value: \'quick brown\', constant_value_type: String
+          FUNCTION id: 17, function_name: hasPhrase, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 18, nodes: 2
+                FUNCTION id: 19, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 20, nodes: 1
+                      CONSTANT id: 21, constant_value: \'the lazy dog\', constant_value_type: String
+                CONSTANT id: 22, constant_value: \'lazy dog\', constant_value_type: String
+  SETTINGS optimize_rewrite_has_phrase_or_chain=1
+-- different tokenizers are NOT coalesced (no-arg vs explicit, and distinct explicit)
+QUERY id: 0
+  PROJECTION COLUMNS
+    s String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: \'abcdef\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: hasPhrase, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'abcdef\', constant_value_type: String
+                CONSTANT id: 13, constant_value: \'abc\', constant_value_type: String
+          FUNCTION id: 14, function_name: hasPhrase, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 15, nodes: 3
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'abcdef\', constant_value_type: String
+                CONSTANT id: 16, constant_value: \'bcd\', constant_value_type: String
+                CONSTANT id: 17, constant_value: \'ngrams(3)\', constant_value_type: String
+  SETTINGS optimize_rewrite_has_phrase_or_chain=1
+-- same explicit tokenizer IS coalesced (3-arg hasAnyPhrases)
+QUERY id: 0
+  PROJECTION COLUMNS
+    s String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: \'abcdef\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: hasAnyPhrases, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 3
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'abcdef\', constant_value_type: String
+                CONSTANT id: 13, constant_value: Array_[\'abc\', \'cde\'], constant_value_type: Array(String)
+                CONSTANT id: 14, constant_value: \'ngrams(3)\', constant_value_type: String
+          CONSTANT id: 15, constant_value: UInt64_0, constant_value_type: UInt8
+  SETTINGS optimize_rewrite_has_phrase_or_chain=1
+-- functional: WHERE result is identical with the rewrite on and off
+1
+2
+5
+1
+2
+5
+1
+1

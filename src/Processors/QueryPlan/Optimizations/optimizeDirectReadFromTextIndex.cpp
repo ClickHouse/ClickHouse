@@ -606,7 +606,8 @@ private:
     /// has/hasAll/hasAny operate on array elements directly, bypassing the tokenizer, preprocessor, and postprocessor.
     static bool needApplyTokenizer(const String & function_name)
     {
-        return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+        return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase"
+            || function_name == "hasAnyPhrases" || function_name == "hasAllPhrases";
     }
 
     /// Returns true for functions that require applying the preprocessor to the haystack.
@@ -614,10 +615,12 @@ private:
     static bool needApplyPreprocessor(const String & function_name)
     {
         return function_name == "hasToken"
-            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase"
+            || function_name == "hasAnyPhrases" || function_name == "hasAllPhrases";
     }
 
     /// Returns true for functions that require applying the postprocessor to the haystack and needle.
+    /// `hasAnyPhrases`/`hasAllPhrases` are not here: the text index is not used for them with a postprocessor.
     static bool needApplyPostprocessor(const String & function_name)
     {
         return function_name == "hasToken"
@@ -787,11 +790,27 @@ private:
                     new_children[0] = merged_outputs.front();
                 }
 
-                /// Needles in array are not processed and passed as is.
+                /// hasToken/hasPhrase/... pass a single string needle, preprocessed directly.
+                /// hasAnyTokens/hasAllTokens needles given as an array are already tokens, passed as-is.
+                /// hasAnyPhrases/hasAllPhrases needles are phrases (like hasPhrase's single phrase), so the
+                /// preprocessor must be applied to every array element.
                 if (needles_field.getType() == Field::Types::String)
                 {
                     needles_field = preprocessor->processConstant(needles_field.safeGet<String>());
                     needles_type = std::make_shared<DataTypeString>();
+                }
+                else if (
+                    needles_field.getType() == Field::Types::Array
+                    && (function_name == "hasAnyPhrases" || function_name == "hasAllPhrases"))
+                {
+                    Array phrases = needles_field.safeGet<Array>();
+                    for (auto & phrase : phrases)
+                    {
+                        if (phrase.getType() == Field::Types::String)
+                            phrase = preprocessor->processConstant(phrase.safeGet<String>());
+                    }
+                    needles_field = std::move(phrases);
+                    needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
                 }
             }
         }
