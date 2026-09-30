@@ -7,8 +7,10 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSnapshotQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <base/EnumReflection.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
@@ -90,6 +92,19 @@ namespace
             ostr << backQuoteIfNeed(table_name.second);
         }
     }
+
+    /// The parser ends an `EXCEPT DATA FROM TABLES` list at a comma followed by an unquoted element keyword,
+    /// so a name spelled like one has to be quoted.
+    String backQuoteExceptDataTableName(const String & name)
+    {
+        for (const auto * keyword : {"TABLE", "DICTIONARY", "VIEW", "DATABASE", "ALL"})
+        {
+            if (equalsCaseInsensitive(name, keyword))
+                return backQuote(name);
+        }
+        return backQuoteIfNeed(name);
+    }
+
     void formatExceptDataTables(const std::set<DatabaseAndTableName> & except_data_tables, WriteBuffer & ostr, const IAST::FormatSettings &, bool only_table_names=false)
     {
         if (except_data_tables.empty())
@@ -104,8 +119,8 @@ namespace
                 ostr << ", ";
 
             if (!table_name.first.empty() && !only_table_names)
-                ostr << backQuoteIfNeed(table_name.first) << ".";
-            ostr << backQuoteIfNeed(table_name.second);
+                ostr << backQuoteExceptDataTableName(table_name.first) << ".";
+            ostr << backQuoteExceptDataTableName(table_name.second);
         }
     }
 
@@ -247,24 +262,23 @@ namespace
 
     ASTPtr rewriteSettingsWithoutOnCluster(ASTPtr settings, const WithoutOnClusterASTRewriteParams & params)
     {
-        SettingsChanges changes;
-        if (settings)
-            changes = assert_cast<ASTSetQuery *>(settings.get())->changes;
-
-        std::erase_if(
-            changes,
-            [](const SettingChange & change)
-            {
-                const String & name = change.name;
-                return (name == "internal") || (name == "async") || (name == "host_id");
-            });
-
-        changes.emplace_back("internal", true);
-        changes.emplace_back("async", true);
-        changes.emplace_back("host_id", params.host_id);
-
         auto out_settings = make_intrusive<ASTSetQuery>();
-        out_settings->changes = std::move(changes);
+        if (settings)
+        {
+            const auto & original = *assert_cast<ASTSetQuery *>(settings.get());
+            out_settings->changes = original.changes;
+            out_settings->default_settings = original.default_settings;
+        }
+
+        /// The values injected below win over the query's own, so strip them from both carriers: a
+        /// surviving `name = DEFAULT` would reset one.
+        static constexpr std::string_view names_to_strip[] = {"internal", "async", "host_id"};
+        stripNamesFromSetQuery(*out_settings, names_to_strip);
+
+        out_settings->changes.emplace_back("internal", true);
+        out_settings->changes.emplace_back("async", true);
+        out_settings->changes.emplace_back("host_id", params.host_id);
+
         out_settings->is_standalone = false;
         return out_settings;
     }
@@ -862,7 +876,18 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
     /// `query.settings->as<const ASTSetQuery &>().changes`, so reject any other node type here.
     settings = r.readChildOfType<ASTSetQuery>("settings");
     if (settings)
+    {
+        /// `base_backup` and `cluster_host_ids` are fields, not settings: the parser never keeps them
+        /// here, and such an entry would not round-trip.
+        for (const auto & name : settings->as<const ASTSetQuery &>().default_settings)
+            if (equalsCaseInsensitive(name, "base_backup") || equalsCaseInsensitive(name, "cluster_host_ids"))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "'{}' is a BACKUP/RESTORE field rather than a setting, so it must not appear in "
+                    "'default_settings' during AST JSON deserialization",
+                    name);
         children.push_back(settings);
+    }
     cluster_host_ids = r.readChild("cluster_host_ids");
     if (cluster_host_ids)
         children.push_back(cluster_host_ids);

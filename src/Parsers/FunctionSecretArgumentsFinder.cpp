@@ -1433,7 +1433,7 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
 
     /// Any other locator holds a credential no rule here masks (`AzureBlobStorage` holds
     /// `account_key` and connection-string material); its engine name and arity are not secrets.
-    std::string replacement = storage_function->name() + "(";
+    std::string replacement = backQuoteIfNeed(storage_function->name()) + "(";
     for (size_t i = 0, size = storage_function->hasArguments() ? storage_function->arguments->size() : 0; i < size; ++i)
         replacement += i > 0 ? ", '[HIDDEN]'" : "'[HIDDEN]'";
     replacement += ")";

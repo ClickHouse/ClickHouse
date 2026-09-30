@@ -7,8 +7,8 @@
 -- so the final assertion can prove none of them leaks. They used to leak in plaintext in SHOW CREATE
 -- and logged query text.
 
--- Engine form: SHOW CREATE hides every secret; the non-secret extra_credentials identifiers
--- (role_arn, role_session_name) stay visible while external_id is hidden.
+-- Engine form: SHOW CREATE hides every secret; the non-secret extra_credentials identifier
+-- (role_arn) stays visible while external_id is hidden.
 DROP TABLE IF EXISTS t_04510;
 CREATE TABLE t_04510 (x UInt8)
 ENGINE = S3('http://localhost:11111/test/04510', 'ak', 'SEKRIT_SAK',
@@ -403,9 +403,9 @@ CREATE DATABASE db_04510_mixed ENGINE = Backup('', S3('url_dbmixed',
 CREATE DATABASE db_04510_ncurl ENGINE = Backup('', S3(nc_dburl_missing,
                  url = concat('https://user:SEKRIT_PW@', 'localhost/x?X-Amz-Signature=SEKRIT_SIG'))); -- { serverError BAD_ARGUMENTS }
 
--- A headers() map keeps its keys, hides its values and takes no positional slot, so the access key id
--- of the valid triple stays visible. The rejection message must not echo the map: only its parent's
--- formatter hides a nested map's values, so the map formatted on its own carries them in plaintext.
+-- A `headers` map keeps its keys, hides its values and takes no positional slot, so the access key id
+-- stays visible. The backup engine rejects this map; its error must not echo the map because only its
+-- parent's formatter masks the nested values.
 CREATE DATABASE db_04510_hdr ENGINE = Backup('', S3('url_dbhdr', 'ak', 'SEKRIT_SAK',
                  headers('X-Auth' = 'SEKRIT_DBHDR'))); -- { serverError BAD_ARGUMENTS }
 

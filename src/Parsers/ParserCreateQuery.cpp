@@ -1758,6 +1758,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_create(Keyword::CREATE);
+    ParserKeyword s_or_replace(Keyword::OR_REPLACE);
     ParserKeyword s_named_collection(Keyword::NAMED_COLLECTION);
     ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
     ParserKeyword s_on(Keyword::ON);
@@ -1768,6 +1769,7 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     ParserToken s_comma(TokenType::Comma);
 
     String cluster_str;
+    bool or_replace = false;
     bool if_not_exists = false;
 
     ASTPtr collection_name;
@@ -1775,10 +1777,13 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     if (!s_create.ignore(pos, expected))
         return false;
 
+    if (s_or_replace.ignore(pos, expected))
+        or_replace = true;
+
     if (!s_named_collection.ignore(pos, expected))
         return false;
 
-    if (s_if_not_exists.ignore(pos, expected))
+    if (!or_replace && s_if_not_exists.ignore(pos, expected))
         if_not_exists = true;
 
     if (!name_p.parse(pos, collection_name, expected))
@@ -1816,6 +1821,7 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
 
     tryGetIdentifierNameInto(collection_name, query->collection_name);
     query->if_not_exists = if_not_exists;
+    query->or_replace = or_replace;
     query->changes = changes;
     query->cluster = std::move(cluster_str);
     query->overridability = overridability;
@@ -3004,7 +3010,7 @@ ENGINE = MergeTree ORDER BY x;
 
 <ExperimentalBadge/>
 
-The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type.
+The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it.
 
 <Note>
 Specialized codecs are currently chosen for integers up to 64 bits, enums, dates and times, `Decimal32`/`Decimal64`, `IPv4`, and `Float32`/`Float64`. Other columns select between the default codec and `NONE` for their values.
@@ -3026,7 +3032,7 @@ INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number
 OPTIMIZE TABLE adaptive FINAL;
 ```
 
-You can observe how it works with the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/mergeTreeCodecBlockCounts) table function. Here `time` grows steadily, so `T64`, which stores only the bits that vary within a block, beat the default codec on every block. `user_id` holds hashes that no codec can shrink, so its blocks were stored raw:
+You can observe how it works with the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/mergeTreeCodecBlockCounts) table function. Here `time` grows steadily, so `T64`, which stores only the bits that vary within a block, followed by the default `LZ4` squeezing the regular pattern those bits form, beat the default alone on every block. `user_id` holds hashes that no codec can shrink, so its blocks were stored raw:
 
 ```sql
 SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase(), 'adaptive');
@@ -3034,7 +3040,7 @@ SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase
 
 ```text
    ┌─column──┬─codec_block_counts─┐
-1. │ time    │ {'T64':62}         │
+1. │ time    │ {'T64, LZ4':62}    │
 2. │ user_id │ {'NONE':123}       │
    └─────────┴────────────────────┘
 ```
@@ -3749,22 +3755,26 @@ DDL-created named collections can be enabled on select ClickHouse Cloud services
 **Syntax**
 
 ```sql
-CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
+CREATE [OR REPLACE] NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
 key_name1 = 'some value' [[NOT] OVERRIDABLE],
 key_name2 = 'some value' [[NOT] OVERRIDABLE],
 key_name3 = 'some value' [[NOT] OVERRIDABLE],
 ...
 ```
 
+`OR REPLACE` and `IF NOT EXISTS` cannot be used together. `CREATE OR REPLACE` of an existing collection
+replaces it entirely: keys and overridability flags absent from the new definition are removed.
+
 **Example**
 
 ```sql
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
+CREATE OR REPLACE NAMED COLLECTION foobar AS a = '2', c = '3';
 ```
 
 **Related statements**
 
-- [CREATE NAMED COLLECTION](/reference/statements/alter/named-collection)
+- [ALTER NAMED COLLECTION](/reference/statements/alter/named-collection)
 - [DROP NAMED COLLECTION](/reference/statements/drop#drop-function)
 
 **See Also**
@@ -3772,7 +3782,7 @@ CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
 - [Named collections guide](/concepts/features/configuration/server-config/named-collections)
 )DOCS_MD",
         .syntax = R"(
-CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster]
+CREATE [OR REPLACE] NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster]
 AS key_name1 = 'some value' [[NOT] OVERRIDABLE], key_name2 = 'some value' [[NOT] OVERRIDABLE], ...
 )",
         .parent = "CREATE",
