@@ -1,0 +1,12 @@
+1	42	part1
+2	42	part2
+1	part1_new
+2	part2
+oldest_hits	3
+oldest_rows	10
+oldest_overwritten	0	new_oldest
+oldest_overwritten	4	new_4
+oldest_overwritten	9	new_9
+many_parts_made	1
+many_parts_rows	600
+many_parts_last_value	1805

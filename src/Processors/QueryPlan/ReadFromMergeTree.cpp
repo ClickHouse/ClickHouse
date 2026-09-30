@@ -267,6 +267,7 @@ namespace ProfileEvents
     extern const Event DistributedPlanWorkerPartsReceived;
     extern const Event DistributedPlanWorkerPartsScanned;
     extern const Event DistributedPlanWorkerPartsPruned;
+    extern const Event UniqueKeyBitmapGranulesSkipped;
 }
 
 namespace DB
@@ -395,6 +396,61 @@ static bool checkAnyPartOnRemoteFS(const RangesInDataParts & parts)
             return true;
     }
     return false;
+}
+
+/// `ranges` without the marks whose rows are all in `bitmap`; a run is split where a middle granule goes.
+static MarkRanges selectLiveMarkRanges(const MarkRanges & ranges, const MergeTreeIndexGranularity & granularity, const DeleteBitmap & bitmap)
+{
+    MarkRanges live;
+    for (const auto & range : ranges)
+    {
+        const size_t first_live = live.size();
+        for (size_t mark = range.begin; mark < range.end; ++mark)
+        {
+            const size_t rows = granularity.getMarkRows(mark);
+            const UInt64 row_begin = granularity.getMarkStartingRow(mark);
+            if (rows > 0 && bitmap.rangeCardinality(row_begin, row_begin + rows) == rows)
+                continue;
+
+            if (live.size() > first_live && live.back().end == mark)
+                ++live.back().end;
+            else
+                live.emplace_back(mark, mark + 1);
+        }
+    }
+    return live;
+}
+
+/// Drop the granules whose rows are all deleted at the read snapshot, and restate the totals
+/// that index analysis computed. Runs after its row-limit checks, which count the rows before deletes.
+static void dropFullyDeadGranules(const ReadSnapshot & uk_read_snapshot, ReadFromMergeTree::AnalysisResult & result)
+{
+    size_t granules_skipped = 0;
+    for (auto & part : result.parts_with_ranges)
+    {
+        const ConstDeleteBitmapPtr bitmap = uk_read_snapshot.bitmapAt(part.data_part->info);
+        if (bitmap->empty())
+            continue;
+
+        const size_t marks_before = part.getMarksCount();
+        part.ranges = selectLiveMarkRanges(part.ranges, *part.data_part->index_granularity, *bitmap);
+        granules_skipped += marks_before - part.getMarksCount();
+    }
+
+    if (granules_skipped == 0)
+        return;
+
+    std::erase_if(result.parts_with_ranges, [](const RangesInDataPart & part) { return part.ranges.empty(); });
+
+    result.selected_parts = result.parts_with_ranges.size();
+    result.selected_ranges = 0;
+    for (const auto & part : result.parts_with_ranges)
+        result.selected_ranges += part.ranges.size();
+    result.selected_marks = result.parts_with_ranges.getMarksCountAllParts();
+    result.selected_rows = result.parts_with_ranges.getRowsCountAllParts();
+    result.has_exact_ranges |= result.selected_parts == 0;
+
+    ProfileEvents::increment(ProfileEvents::UniqueKeyBitmapGranulesSkipped, granules_skipped);
 }
 
 /// build sort description for output stream
@@ -2735,6 +2791,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/true);
 
+    if (const auto * uk_read_snapshot = tryGetUniqueKeyReadSnapshot(*storage_snapshot))
+        dropFullyDeadGranules(*uk_read_snapshot, *analyzed_result_ptr);
+
     return analyzed_result_ptr;
 }
 
@@ -4690,13 +4749,25 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
 
     PartRangesReadInfo info(getParts(), context->getSettingsRef(), *data.getSettings());
 
+    /// The lazy step re-reads by offset only rows this step already filtered, so it needs no bitmap.
+    StorageSnapshotPtr lazy_storage_snapshot = storage_snapshot;
+    if (tryGetUniqueKeyReadSnapshot(*storage_snapshot))
+    {
+        const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+        auto lazy_snapshot_data = std::make_unique<MergeTreeData::SnapshotData>();
+        lazy_snapshot_data->storage = snapshot_data.storage;
+        lazy_snapshot_data->parts = snapshot_data.parts;
+        lazy_snapshot_data->mutations_snapshot = snapshot_data.mutations_snapshot;
+        lazy_storage_snapshot = storage_snapshot->clone(std::move(lazy_snapshot_data));
+    }
+
     auto new_reading = std::make_unique<LazilyReadFromMergeTree>(
         std::move(lazy_reading_header),
         block_size.max_block_size_rows,
         info.min_marks_for_concurrent_read,
         reader_settings,
         mutations_snapshot,
-        storage_snapshot,
+        std::move(lazy_storage_snapshot),
         context,
         data.getLogName());
 
@@ -5114,6 +5185,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         {
             stripped_snapshot_data->storage = snapshot_data->storage;
             stripped_snapshot_data->mutations_snapshot = snapshot_data->mutations_snapshot;
+            /// Kept: the read pool resolves delete bitmaps through it.
+            stripped_snapshot_data->uk_read_snapshot = snapshot_data->uk_read_snapshot;
         }
 
         /// The snapshot object may be shared with other query plan steps.
@@ -5170,6 +5243,19 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             deferred_row_level_filter != nullptr,
             deferred_prewhere_info != nullptr,
             fmt::join(result.column_names_to_read, ","));
+    }
+
+    /// The row filter keys on `_part_offset`, so read it when a bitmap is non-empty. Through
+    /// `required_source_columns`, not `output_header`: it stays out of the step's public header.
+    const auto * uk_read_snapshot = tryGetUniqueKeyReadSnapshot(*storage_snapshot);
+    const bool need_part_offset_for_bitmap = uk_read_snapshot && std::ranges::any_of(
+        result.parts_with_ranges,
+        [&](const RangesInDataPart & p) { return !uk_read_snapshot->bitmapAt(p.data_part->info)->empty(); });
+    if (need_part_offset_for_bitmap && !std::ranges::contains(all_column_names, "_part_offset"))
+    {
+        all_column_names.insert(all_column_names.begin(), "_part_offset");
+        required_source_columns = all_column_names;
+        result.column_names_to_read = all_column_names;
     }
 
     shared_virtual_fields.emplace("_sample_factor", result.sampling.used_sample_factor);
@@ -6240,7 +6326,8 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
         }
     }
 
-    storage_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, std::move(new_metadata));
+    /// Keeps `data`: the read pool resolves delete bitmaps through it.
+    storage_snapshot = storage_snapshot->clone(std::move(new_metadata), storage_snapshot->data);
 
     if (output_header != nullptr)
     {

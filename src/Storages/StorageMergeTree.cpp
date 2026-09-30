@@ -406,6 +406,16 @@ std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) cons
 {
     chassert(local_context);
 
+    /// Each part's rows and its bitmap come from one read snapshot, so the count matches a `SELECT`'s.
+    if (hasUniqueKey())
+    {
+        const auto uk_read_snapshot = makeUniqueKeyReadSnapshot(local_context);
+        UInt64 res = 0;
+        for (const auto & part : getVisibleDataPartsVector(local_context))
+            res += uk_read_snapshot->liveRows(*part);
+        return res;
+    }
+
     UInt64 res = 0;
     if (local_context->getCurrentTransaction())
     {
@@ -426,8 +436,13 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Acti
 {
     chassert(local_context);
 
+    /// Guarded, so a plain count on a table without a unique key does not start a transaction
+    /// as a side effect.
+    ReadSnapshotPtr uk_read_snapshot;
+    if (hasUniqueKey())
+        uk_read_snapshot = makeUniqueKeyReadSnapshot(local_context);
     auto parts = getVisibleDataPartsVector(local_context);
-    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts));
+    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts), uk_read_snapshot.get());
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const

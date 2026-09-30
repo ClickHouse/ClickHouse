@@ -5,3 +5,4 @@ ignore_rows	3	c
 ignore_rows	4	d
 ignore_partitioned	0	2	b
 ignore_partitioned	0	4	d
+altered_policy	1	third

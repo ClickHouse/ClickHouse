@@ -10,6 +10,7 @@
 #include <Access/ContextAccess.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
+#include <Storages/MergeTree/UniqueKey/ReadSnapshot.h>
 
 namespace ProfileEvents
 {
@@ -223,6 +224,8 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
 #endif
     );
     read_task_info.read_hints = part_with_ranges.read_hints;
+    if (const auto * uk_read_snapshot = tryGetUniqueKeyReadSnapshot(*storage_snapshot))
+        read_task_info.delete_bitmap = uk_read_snapshot->bitmapAt(data_part->info);
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)

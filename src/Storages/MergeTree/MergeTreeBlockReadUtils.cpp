@@ -566,6 +566,15 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             post_column_names.push_back(name);
     }
 
+    /// Re-add `_part_offset` when PREWHERE consumed it as an input: the post-PREWHERE
+    /// delete-bitmap filter keys on it, and losing it would silently skip the filter.
+    if (storage_snapshot->metadata->hasUniqueKey()
+        && std::ranges::contains(required_columns, "_part_offset")
+        && !std::ranges::contains(post_column_names, "_part_offset"))
+    {
+        post_column_names.push_back("_part_offset");
+    }
+
     result.columns = storage_snapshot->getColumnsByNames(options, post_column_names);
     return result;
 }
