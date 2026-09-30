@@ -41,6 +41,7 @@ Exactly one entry point is required.
 | `--no-gateway` | Disables the session gateway (no OIDC-managed sessions); skips the prompt. On a VM, root on the host can still manage sessions through the local session file. |
 | `--managed` | Enables managed mode: runs the executor so ClickHouse Cloud manages the lifecycle of ClickHouse services in this cluster; skips the prompt. Requires an Amazon EKS cluster. |
 | `--no-managed` | Leaves managed mode (the executor) off; skips the prompt. |
+| `--from-terraform <path>` | Outputs of a [Terraform root](/products/bring-your-own-cloud/connector/terraform-aws#hand-off), as `terraform output -json` prints them (`-` reads stdin). Fills `--cluster-name`, `--server`, and `--ca-data` on a VM, or `--target-namespace` and the managed overlay's IRSA role and node selector on Kubernetes. A flag that disagrees with the file is refused. |
 | `--force` | Overwrites an existing config or overlay and regenerates the client key; also acknowledges superseding an unexpired auto-signed certificate. The cluster UUID is preserved even under `--force`. |
 | `--skip-provision` | Stage only: skips per-role ClickHouse access provisioning (and, on the systemd target, the unit enable and verify). Run `clicklink clctl {scraper,troubleshoot} access provision` separately. `--target helm` still applies the executor's grant; a VM skips it too. |
 | `--ch-user-suffix <suffix>` | Optional suffix for the provisioned ClickHouse usernames (`pcm_scraper` becomes `pcm_scraper_<suffix>`), so a second connector deployment can share an instance without colliding on the first one's users. |
@@ -69,6 +70,11 @@ Valid only with `--target helm`.
 | `--ch-pod <ref>` | ClickHouse pod for the in-pod provisioning steps, as a name or `k=v` label selector (default: a Running pod backing each instance's Service). |
 | `--api-private-ca` | Your connector endpoint serves a certificate issued by the enrollment bundle's CA: stages `api.tls.caFile` pointing at the mounted CA chain, which is appended to the system roots. |
 | `--egress-cidrs <cidrs>` | Comma-separated CIDRs of your connector endpoint for the chart's default-deny NetworkPolicy: stages it enabled with these as `networkPolicy.allowEgressCIDRs` (prompted on a terminal in managed mode). Without them the policy is staged disabled for you to enable later. |
+| `--platform-bundle <path>` | Rendered platform manifest (the file `clicklink clctl platform approve --bundle` reads). With `--managed` and `--from-terraform`, installs Karpenter and its node pools, the AWS Load Balancer controller, the `gp3-encrypted` StorageClass, and the components the bundle pins where they are missing. See [Terraform on AWS](/products/bring-your-own-cloud/connector/terraform-aws#hand-off). |
+| `--server-instance-families <families>` | Requires `--platform-bundle`. Comma-separated arm64 EC2 instance-store families with local NVMe for the `clickhouse-server` NodePool (default `m7gd`). The pool flags shape new NodePools only; existing pools are not modified. |
+| `--keeper-instance-families <families>` | Requires `--platform-bundle`. Comma-separated arm64 EC2 instance families of the `clickhouse-keeper` NodePool (default `m7g`). |
+| `--server-pool-limits <limits>` | Requires `--platform-bundle`. Comma-separated `key=quantity` resource limits of the `clickhouse-server` NodePool (default `cpu=1000,memory=4Ti`). |
+| `--keeper-pool-limits <limits>` | Requires `--platform-bundle`. Comma-separated `key=quantity` resource limits of the `clickhouse-keeper` NodePool (default `cpu=100,memory=400Gi`). |
 
 ### VM-only flags {#init-vm-flags}
 
@@ -88,6 +94,7 @@ Valid only with `--target systemd`.
 - `--no-instance` and `--instance` are mutually exclusive.
 - `--managed` and `--no-managed` are mutually exclusive, and `--cluster-name` is rejected with `--no-managed`. Under `--target helm`, `--instance` and `--instance-namespace` are rejected with `--managed`.
 - `--no-auto-sign` and `--sign-endpoint` are mutually exclusive with each other, and both (plus `--api-private-ca`, `--managed`, `--no-managed`, and `--cluster-name`) are rejected with `--signed-cert`.
+- `--platform-bundle` needs `--target helm`, `--managed`, and `--from-terraform`, and is rejected with `--no-managed` or `--signed-cert`. The four pool flags are rejected without `--platform-bundle`, and refused when the NodePools already exist.
 - `--operators` and `--no-gateway` are mutually exclusive.
 - `--skip-provision` rejects `--ch-pod`, `--ch-user-suffix`, `--server`, `--ca-data`, and `--ch-admin-password-stdin` (nothing provisions).
 

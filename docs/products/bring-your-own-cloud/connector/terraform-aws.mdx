@@ -11,9 +11,9 @@ import { Image } from "/snippets/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-Managed mode runs on an Amazon EKS cluster you own. Each release ships four Terraform root modules (roots, below) that either create a cluster meeting its requirements or add what it needs to a VPC or cluster you already have. The roots create infrastructure only: the cluster, its system node group, IAM roles, KMS keys, and tags. Everything that runs inside the cluster is installed afterwards. The roots need Terraform 1.10+ or OpenTofu 1.12+ and the AWS provider `~> 6.0`. `tofu` works in place of `terraform` in every command on this page.
+Managed mode runs on an Amazon EKS cluster you own. Each release ships four Terraform root modules (roots, below) that either create a cluster meeting its requirements or add what it needs to a VPC or cluster you already have. The roots create infrastructure only: the cluster, its system node group, IAM roles, KMS keys, and tags. Everything that runs inside the cluster is installed afterwards by `clicklink clctl init`, from the outputs and a platform bundle (see [hand off to the connector](#hand-off)). The roots need Terraform 1.10+ or OpenTofu 1.12+ and the AWS provider `~> 6.0`. `tofu` works in place of `terraform` in every command on this page.
 
-<Image img="/images/cloud/reference/byoc-connector-terraform-flow.svg" size="lg" alt="Terraform provisioning flow for the connector on AWS" />
+<Image img="/images/cloud/reference/byoc-connector-terraform-flow.svg" size="lg" alt="Terraform provisioning flow for the ClickHouse Connector on AWS" />
 
 ## Choose a root {#choose-a-root}
 
@@ -123,13 +123,15 @@ The `production` and `existing-vpc` API endpoints are private. Run `init` and `k
 
 ## Hand off to the connector {#hand-off}
 
-Export the outputs, then pass them to `init` from a machine whose kube context points at the new cluster:
+Export the outputs, then pass them to `init` together with the platform bundle, from a machine whose kube context points at the new cluster:
 
 ```bash
 terraform output -json > outputs.json
 clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm --managed \
-  --from-terraform outputs.json
+  --from-terraform outputs.json --platform-bundle bundle.yaml
 ```
+
+`--platform-bundle` installs what the roots leave out: Karpenter with an `EC2NodeClass` and the `clickhouse-server` and `clickhouse-keeper` NodePools, the AWS Load Balancer controller, the `gp3-encrypted` StorageClass (encrypted with the EBS key when the outputs carry one), and the platform components the bundle pins: the snapshot controller, the ClickHouse operator, and the monitoring collectors. The bundle is the platform manifest ClickHouse Cloud renders for your environment; your account team delivers it during onboarding, and its `cluster:` section pins the Karpenter and load balancer controller versions. The flag needs `--target helm`, `--managed`, and `--from-terraform`. A component that is already present is left as it is, so re-running the command is safe, and `init` prints a report of what it installed, what it skipped, and why. Without the flag, `init` enrolls the connector but installs none of these, and the cluster cannot run a service until they are in place. See [platform updates](/products/bring-your-own-cloud/connector/platform-updates) for how the components change afterwards.
 
 `--from-terraform` accepts either the full document `terraform output -json` prints or the bare object from `terraform output -json clicklink`. The `clicklink` output carries the cluster identity (`account_id`, `region`, `cluster_name`, `cluster_endpoint`, `cluster_ca`), the OIDC provider, the connector namespace, the IAM role for managed services, the EBS key, the Karpenter node role and queue, the load balancer controller role, and `system_node_selector`. `init` reads the cluster identity and the connector namespace from the file. It annotates the ServiceAccount that managed services run under with the IAM role and gives the connector pods the node selector. On a VM (`--target systemd`), where there is no kube context, `init` reaches the cluster with `cluster_endpoint` and `cluster_ca` from the file.
 
