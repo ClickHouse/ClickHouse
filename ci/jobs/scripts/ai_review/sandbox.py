@@ -1,0 +1,114 @@
+"""
+Run the review agent without any way to reach a GitHub or cloud credential.
+
+The agent executes commands, with network access, over text a contributor
+wrote. Pointing its `GH_CONFIG_DIR` at an empty directory is no boundary: it can
+unset the override and read the job user's `gh` store, and the runner's AWS
+role (reachable through the instance metadata service) can mint a new GitHub
+token or read any CI secret. So, as `ci/jobs/revert_ci_regressions.py` does for
+its investigation agent, and with the same helpers:
+
+  * the job's `gh` token store is removed before the agent starts, and a fresh
+    token is minted for publishing after it has finished (`reauthenticate`);
+  * the agent runs as `AGENT_USER`, a uid of its own whose packets to the
+    credential endpoints the runner's firewall rejects (checked by a probe),
+    with an environment built from nothing (`env -i`), and no process of that
+    user survives an attempt;
+  * it works in a disposable copy of the checked-out tree (`git archive`, so
+    no `.git`, no git config and no hooks) under an unlistable directory in
+    `/var/tmp`, outside the job user's home, together with a copy of the
+    review context. Its outputs are copied back into the job's output
+    directory, without following symlinks, before anything reads them.
+"""
+
+import os
+import shlex
+import shutil
+import subprocess
+import tempfile
+
+from ci.jobs.revert_ci_regressions import (
+    AGENT_USER,
+    agent_scratch_root,
+    chown,
+    confine_agent_user,
+    kill_agent_processes,
+    scrub_gh_credentials,
+)
+from ci.praktika.gh_auth import GHAuth
+from ci.praktika.utils import Shell
+
+
+def prepare():
+    """Remove the job's GitHub credential and make sure the agent's user is
+    confined. Raises when the confinement cannot be established."""
+    scrub_gh_credentials()
+    confine_agent_user()
+
+
+def reauthenticate():
+    """Mint the token the job publishes with, after the agent has run."""
+    if not GHAuth.auth(force=True, no_strict=True):
+        raise RuntimeError("could not mint a GitHub token to publish the review")
+
+
+class Workspace:
+    """One attempt's workspace: a copy of the tree plus the review context,
+    owned by the agent's user while the agent runs."""
+
+    def __init__(self, root, context_dir, work_dir):
+        self.root = root
+        self.attempt_dir = tempfile.mkdtemp(prefix="attempt-", dir=root)
+        os.chmod(self.attempt_dir, 0o711)
+        self.tree = os.path.join(self.attempt_dir, "tree")
+        self.codex_home = os.path.join(self.attempt_dir, "codex")
+        self.gh_config = os.path.join(self.attempt_dir, "gh")
+        for path in (self.tree, self.codex_home, self.gh_config):
+            os.makedirs(path)
+        Shell.check(f"git archive --format=tar HEAD | tar -x -C {shlex.quote(self.tree)}", strict=True, verbose=True)
+        # The context and output directories keep their relative paths, so the
+        # prompt's `./ci/tmp/ai_review/...` paths hold inside the copy.
+        self.work_dir = os.path.join(self.tree, work_dir)
+        shutil.copytree(context_dir, os.path.join(self.tree, context_dir), symlinks=True)
+
+    def run(self, command, env, timeout, stdin_file=None):
+        """Run `command` (a list) in the tree as the agent's user, with an
+        environment built from `env` alone and stdin read from `stdin_file` by
+        the job's own shell. The command line is not printed: `env` holds the
+        Loom token, which the agent gets anyway, but the job log does not."""
+        try:
+            kill_agent_processes()
+            chown(f"{AGENT_USER}:", self.attempt_dir)
+            assignments = " ".join(shlex.quote(f"{k}={v}") for k, v in env.items())
+            redirect = f" < {shlex.quote(stdin_file)}" if stdin_file else ""
+            print(f"Running as {AGENT_USER} in {self.tree}: {' '.join(command)}")
+            return Shell.run(
+                f"cd {shlex.quote(self.tree)} && sudo -n -u {AGENT_USER} env -i {assignments} "
+                + " ".join(shlex.quote(c) for c in command) + redirect,
+                timeout=timeout,
+                verbose=False,
+            )
+        finally:
+            kill_agent_processes()
+            chown(f"{os.getuid()}:{os.getgid()}", self.attempt_dir)
+
+    def collect(self, rel_path, dest):
+        """Copy the agent's `rel_path` directory to `dest`, symlinks as links."""
+        src = os.path.join(self.tree, rel_path)
+        if os.path.exists(dest):
+            shutil.rmtree(dest)
+        if os.path.isdir(src) and not os.path.islink(src):
+            shutil.copytree(src, dest, symlinks=True)
+
+    def remove(self):
+        Shell.check(f"rm -rf {shlex.quote(self.attempt_dir)}", verbose=False)
+
+
+def codex_login(codex, codex_home, openai_key):
+    subprocess.run(
+        [codex, "login", "--with-api-key"], input=openai_key, text=True, check=True,
+        env={**os.environ, "CODEX_HOME": codex_home},
+    )
+
+
+__all__ = ["AGENT_USER", "Workspace", "agent_scratch_root", "codex_login", "prepare", "reauthenticate"]

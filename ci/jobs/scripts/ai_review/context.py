@@ -200,8 +200,8 @@ def _render_linked(repo, numbers):
 
 
 def _render_ci_status(repo, sha):
-    data = gh_json(f"/repos/{repo}/commits/{sha}/check-runs?per_page=100")
-    runs = (data or {}).get("check_runs") or []
+    pages = gh_json(f"/repos/{repo}/commits/{sha}/check-runs?per_page=100", paginate=True) or []
+    runs = [r for page in pages if isinstance(page, dict) for r in page.get("check_runs") or []]
     if not runs:
         return "No check runs reported yet.\n"
     out = ["Check runs on the head commit when the review started:", ""]

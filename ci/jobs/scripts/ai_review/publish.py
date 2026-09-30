@@ -40,6 +40,9 @@ _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 MAX_INLINE_COMMENTS = 6
 
+# The output directory relative to the tree, as the agent sees it.
+_OUTPUT_SUFFIX = "/ci/tmp/ai_review/out/"
+
 # Two comments on the same file whose word sets overlap this much (Jaccard)
 # say the same thing.
 _DUPLICATE_SIMILARITY = 0.5
@@ -96,13 +99,25 @@ def _load_json_list(path):
 
 
 def _read_body(entry, base_dir):
+    """The body of a comment or reply, read only from a regular file inside
+    `base_dir` (the output directory). The agent chooses `body_file` and the
+    text ends up on GitHub, so a path outside the directory, a traversal or a
+    symlink out of it would let it publish any file the job can read."""
     body_file = entry.get("body_file") or ""
-    if body_file and not os.path.isabs(body_file) and not os.path.exists(body_file):
-        body_file = os.path.join(base_dir, body_file)
-    if not body_file or not os.path.exists(body_file):
+    if not body_file:
         return "", body_file
-    with open(body_file, "r", encoding="utf-8") as f:
-        return f.read().strip(), body_file
+    base = os.path.realpath(base_dir)
+    if os.path.isabs(body_file) and _OUTPUT_SUFFIX in body_file:
+        # An absolute path into the agent's copy of the tree: the same file
+        # was copied into the output directory.
+        body_file = os.path.join(base_dir, body_file.rsplit(_OUTPUT_SUFFIX, 1)[1])
+    candidate = body_file if os.path.isabs(body_file) or os.path.exists(body_file) else os.path.join(base_dir, body_file)
+    resolved = os.path.realpath(candidate)
+    if os.path.commonpath([base, resolved]) != base or os.path.islink(candidate) or not os.path.isfile(resolved):
+        print(f"WARNING: ignoring body file [{body_file}]: not a regular file inside {base_dir}")
+        return "", body_file
+    with open(resolved, "r", encoding="utf-8", errors="replace") as f:
+        return f.read().strip(), resolved
 
 
 def validate_comments(entries, files, threads, base_dir):

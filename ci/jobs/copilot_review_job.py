@@ -15,7 +15,9 @@ A run has three stages, and only the middle one involves the agent:
 2. Review. The agent reads the context and the checkout, may query Loom through
    `python3 -m ci.jobs.scripts.ai_review.loom`, and writes its summary, inline
    comments and thread actions as files into `OUTPUT_DIR`. The Codex agent runs
-   with no GitHub credentials; the Copilot CLI needs its robot login for its own
+   as a user of its own in a copy of the tree, with no GitHub token and no
+   route to the runner's cloud credentials (`ai_review/sandbox.py`); the job
+   mints a fresh token to publish. The Copilot CLI needs its robot login for its own
    model access, so a Copilot agent could reach `gh` and relies on the prompt
    not to post. An attempt is retried when the agent fails or its output is
    incomplete; nothing has been posted at that point, so a retry cannot
@@ -31,6 +33,7 @@ import json
 import os
 import random
 import shlex
+import shutil
 import sys
 import tempfile
 import time
@@ -38,7 +41,7 @@ import traceback
 import urllib.parse
 
 from ci.jobs.scripts.ai_review import context as review_context
-from ci.jobs.scripts.ai_review import loom, prompt, publish
+from ci.jobs.scripts.ai_review import loom, prompt, publish, sandbox
 from ci.praktika import Secret
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
@@ -161,28 +164,39 @@ def _run_copilot_once(loom_config, robot_name, model, effort):
 
 
 def _run_codex_once(loom_config, _robot_name, model, effort):
-    """One attempt: `codex login` + `codex exec`.
+    """One attempt: `codex login` + `codex exec`, confined (see `sandbox.py`).
 
     Codex stores credentials in `$CODEX_HOME/auth.json` and does NOT consult
     `OPENAI_API_KEY` directly when invoked — you have to run
     `codex login --with-api-key` first, which reads the key from stdin and
-    writes it into `auth.json`. `CODEX_HOME` is scoped to a per-attempt
-    temporary directory under `./ci/tmp` (not `/tmp`, which codex refuses
-    to use for helper binaries) so the API key never lands on global runner
-    state.
+    writes it into `auth.json`. The login runs as the job user in the
+    attempt's scratch directory, which is then handed to the agent's user.
 
-    The agent gets no GitHub credentials: `GH_CONFIG_DIR` points at an empty
-    directory and `GH_TOKEN` is not passed. Everything it needs from GitHub is
-    in the prefetched context, and the job posts its output.
+    The agent runs as `sandbox.AGENT_USER` in a copy of the tree, with an
+    empty environment apart from what is listed below, no GitHub credential
+    and no route to the runner's cloud credentials. Its outputs are copied
+    back into `OUTPUT_DIR`.
     """
-    with tempfile.TemporaryDirectory(dir="./ci/tmp") as codex_home, \
-            tempfile.TemporaryDirectory(dir="./ci/tmp") as empty_gh_config:
-        Shell.check(
-            "codex login --with-api-key", stdin_str=_ssm(OPENAI_KEY_SECRET), strict=True, verbose=False,
-            env={**os.environ, "CODEX_HOME": codex_home},
-        )
-        # -m: same model the Copilot CLI uses, so review quality stays
-        #   comparable across backends.
+    codex = shutil.which("codex")
+    if not codex:
+        raise RuntimeError("the codex CLI is not installed on this runner")
+    root = sandbox.agent_scratch_root()
+    try:
+        ws = sandbox.Workspace(root, CONTEXT_DIR, WORK_DIR)
+        for sub in ("out/comments", "out/replies", "scratch"):
+            os.makedirs(os.path.join(ws.work_dir, sub), exist_ok=True)
+        sandbox.codex_login(codex, ws.codex_home, _ssm(OPENAI_KEY_SECRET))
+        agent_log = os.path.join(ws.work_dir, "loom_calls.jsonl")
+        env = {
+            "HOME": ws.codex_home,
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "LANG": "C.UTF-8",
+            "CODEX_HOME": ws.codex_home,
+            "GH_CONFIG_DIR": ws.gh_config,
+            "PYTHONPATH": ws.tree,
+            "LOOM_CALL_LOG": agent_log,
+            **loom_config.env(),
+        }
         # -s workspace-write: writable workspace + /tmp + CODEX_HOME,
         #   read-only elsewhere; sufficient for the review output.
         # sandbox_workspace_write.network_access=true: the Loom CLI needs
@@ -191,14 +205,22 @@ def _run_codex_once(loom_config, _robot_name, model, effort):
         #   but the approval policy still applies; "never" lets the
         #   agent execute without blocking on an approval request.
         # --color never: no ANSI codes in the job log.
-        # `-` reads the prompt from stdin, which has no argument size limit.
-        return Shell.run(
-            f"codex exec -m {shlex.quote(model)} -c model_reasoning_effort={shlex.quote(effort)} "
-            f"-s workspace-write -c sandbox_workspace_write.network_access=true "
-            f"-c approval_policy=never --color never - < {shlex.quote(PROMPT_FILE)}",
-            timeout=ATTEMPT_TIMEOUT_SECONDS,
-            env=_agent_env(loom_config, {"CODEX_HOME": codex_home, "GH_CONFIG_DIR": empty_gh_config}),
-        )
+        # `-` reads the prompt from stdin (redirected by the job's shell),
+        #   which has no argument size limit.
+        command = [
+            codex, "exec", "-m", model, "-c", f"model_reasoning_effort={effort}",
+            "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
+            "-c", "approval_policy=never", "--color", "never", "-",
+        ]
+        exit_code = ws.run(command, env, ATTEMPT_TIMEOUT_SECONDS, stdin_file=os.path.abspath(PROMPT_FILE))
+        ws.collect(os.path.join(WORK_DIR, "out"), OUTPUT_DIR)
+        if os.path.isfile(agent_log) and not os.path.islink(agent_log):
+            with open(agent_log, "r", encoding="utf-8", errors="replace") as src, \
+                    open(LOOM_CALL_LOG, "a", encoding="utf-8") as dst:
+                dst.write(src.read())
+        return exit_code
+    finally:
+        Shell.check(f"rm -rf {shlex.quote(root)}", verbose=False)
 
 
 def _outputs_problem():
@@ -314,15 +336,25 @@ def review(run_once, agent_name):
 
     if run_once is _run_codex_once:
         Shell.check("codex --version", verbose=True)
+        # From here until the agent is done, the job holds no GitHub token.
+        sandbox.prepare()
     model = _run_agent(run_once, agent_name, loom_config)
+    if run_once is _run_codex_once:
+        sandbox.reauthenticate()
 
     # Re-read the threads: the author may have replied or resolved while the
     # agent ran, and thread actions are checked against the current state.
     try:
         threads = GH.list_pr_review_threads(pr=info.pr_number, repo=repo)
     except Exception as e:  # noqa: BLE001
-        print(f"WARNING: failed to re-read review threads, using the snapshot: {e}")
+        # Thread actions are authorized by the current thread state; a stale
+        # snapshot could re-open a thread the author has since resolved. Post
+        # the review and the summary, but change no thread.
+        print(f"WARNING: failed to re-read review threads, applying no thread actions: {e}")
         threads = ctx.threads
+        action_file = f"{OUTPUT_DIR}/thread_actions.json"
+        if os.path.exists(action_file):
+            os.unlink(action_file)
 
     with open(SUMMARY_FILE, "r", encoding="utf-8") as f:
         summary = f.read()

@@ -68,8 +68,8 @@ You are reviewing {pr_url} (repository `{repo}`). Its context, fetched from GitH
 
 {context_index}
 
-Use `diff.patch` as the PR diff. The local clone may not contain the base commit, so do not rely on
-`git diff` or `git log` against the base branch."""
+Use `diff.patch` as the PR diff. The working tree may be a plain copy of the PR head without git
+history, so use Loom `history` and `blame` rather than `git log` or `git diff`."""
     if incremental:
         text += """
 
@@ -191,7 +191,7 @@ def _evidence():
 # What a finding needs
 
 - It is about this PR: the PR introduces the problem, makes it reachable, or promises behavior it
-  does not deliver. Check with Loom `blame`/`history` or `git log` whether the code predates the PR;
+  does not deliver. Check with Loom `blame` or `history` whether the code predates the PR;
   a new caller that makes old code reachable counts as the PR's. A pre-existing problem you notice in
   passing is at most a one-line note in the summary, never an inline comment.
 - It names its consequence: wrong results, data loss or corruption, a crash, abort or hang, a broken

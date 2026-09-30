@@ -349,3 +349,54 @@ def test_untrusted_text_is_stripped_of_hidden_content():
     pr = {"number": 1, "title": "T​", "body": "<!-- hidden -->visible", "user": {}, "base": {}, "head": {}}
     rendered = context._render_pr(pr, [])
     assert "hidden" not in rendered and "visible" in rendered
+
+
+def test_body_files_outside_the_output_directory_are_never_read():
+    with tempfile.TemporaryDirectory() as d:
+        out = os.path.join(d, "out")
+        os.makedirs(os.path.join(out, "comments"))
+        secret = _body(d, "hosts.yml", "oauth_token: dummy-secret")
+        os.symlink(secret, os.path.join(out, "comments", "link.md"))
+        good = _body(os.path.join(out, "comments"), "1.md", "⚠️ real finding")
+        for bad in (secret, os.path.join(out, "..", "hosts.yml"), os.path.join(out, "comments", "link.md")):
+            body, _ = publish._read_body({"body_file": bad}, out)
+            assert body == ""
+        assert publish._read_body({"body_file": good}, out)[0] == "⚠️ real finding"
+        # An absolute path into the agent's copy maps onto the collected output.
+        agent_path = "/var/tmp/praktika-agent-x/attempt-y/tree/ci/tmp/ai_review/out/comments/1.md"
+        assert publish._read_body({"body_file": agent_path}, out)[0] == "⚠️ real finding"
+        with open(os.path.join(out, "comments.json"), "w") as f:
+            json.dump([{"path": "src/NotInDiff.cpp", "line": 1, "severity": "major", "body_file": secret}], f)
+        summary = publish.publish(mock.MagicMock(), "ClickHouse/ClickHouse", 1, "abc", FILES, [], out, "---\n#### AI Review\n")
+        assert "dummy-secret" not in summary
+
+
+def test_ci_status_reads_every_page():
+    pages = [{"total_count": 101, "check_runs": [{"name": f"Skipped {i}", "conclusion": "skipped"} for i in range(100)]},
+             {"check_runs": [{"name": "Style check", "conclusion": "failure"}]}]
+    with mock.patch.object(context, "gh_json", return_value=pages):
+        assert "Style check: failure" in context._render_ci_status("ClickHouse/ClickHouse", "abc")
+
+
+def test_sandbox_workspace_copies_tree_and_collects_output_without_following_links():
+    from ci.jobs.scripts.ai_review import sandbox
+
+    with tempfile.TemporaryDirectory() as repo, tempfile.TemporaryDirectory() as root:
+        cwd = os.getcwd()
+        try:
+            os.chdir(repo)
+            os.system("git init -q . && echo 'int x;' > a.cpp && git add a.cpp && git -c user.name=t -c user.email=t@t commit -qm init")
+            os.makedirs("ci/tmp/ai_review/context")
+            _body("ci/tmp/ai_review/context", "pr.md", "# PR")
+            ws = sandbox.Workspace(root, "./ci/tmp/ai_review/context", "./ci/tmp/ai_review")
+            assert os.path.isfile(os.path.join(ws.tree, "a.cpp")) and not os.path.exists(os.path.join(ws.tree, ".git"))
+            assert os.path.isfile(os.path.join(ws.tree, "ci/tmp/ai_review/context/pr.md"))
+            out = os.path.join(ws.work_dir, "out")
+            os.makedirs(out)
+            _body(out, "summary.md", "---\n#### AI Review\n")
+            os.symlink("/etc/passwd", os.path.join(out, "leak.md"))
+            ws.collect("./ci/tmp/ai_review/out", "./ci/tmp/ai_review/out")
+            assert os.path.isfile("ci/tmp/ai_review/out/summary.md") and os.path.islink("ci/tmp/ai_review/out/leak.md")
+            assert publish._read_body({"body_file": "./ci/tmp/ai_review/out/leak.md"}, "./ci/tmp/ai_review/out")[0] == ""
+        finally:
+            os.chdir(cwd)
