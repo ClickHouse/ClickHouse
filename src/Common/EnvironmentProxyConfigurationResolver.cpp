@@ -56,6 +56,13 @@ namespace
         const auto & host = uri.getHost();
         const auto & scheme = uri.getScheme();
         const auto port = uri.getPort();
+        /// Split on the raw userinfo first, then percent-decode each half.
+        /// Decoding first would make an encoded "%3A" indistinguishable from the real separator.
+        const auto [encoded_username, encoded_password] = ProxyConfiguration::parseUserInfo(uri.getUserInfo());
+        std::string username;
+        std::string password;
+        Poco::URI::decode(encoded_username, username);
+        Poco::URI::decode(encoded_password, password);
 
         const bool use_tunneling_for_https_requests_over_http_proxy = ProxyConfiguration::useTunneling(
             request_protocol,
@@ -70,7 +77,9 @@ namespace
             port,
             use_tunneling_for_https_requests_over_http_proxy,
             request_protocol,
-            no_proxy_hosts_string
+            no_proxy_hosts_string,
+            username,
+            password
         };
     }
 }
