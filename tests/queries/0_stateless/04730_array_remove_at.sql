@@ -22,7 +22,6 @@ SELECT
 FROM numbers(4)
 ORDER BY number;
 
--- Constant array with a dynamic index must stay compact instead of being materialized per row.
 SELECT
     number,
     arrayRemoveAt(
@@ -31,7 +30,6 @@ SELECT
 FROM numbers(4)
 ORDER BY number;
 
--- Constant index is read once. A position larger than the whole nested column is guaranteed out of bounds.
 SELECT number, arrayRemoveAt([number, number + 1, number + 2], toInt8(2)) FROM numbers(3) ORDER BY number;
 SELECT number, arrayRemoveAt([number, number + 1, number + 2], toInt8(-1)) FROM numbers(3) ORDER BY number;
 SELECT number, arrayRemoveAt([number, number + 1], toUInt64(18446744073709551615)) FROM numbers(3) ORDER BY number;
@@ -55,10 +53,8 @@ SELECT number, arrayRemoveAt(CAST([toUInt64(number), NULL, toUInt64(number + 2)]
 -- Dynamic unsigned indexes use the same positional semantics as signed indexes.
 SELECT number, arrayRemoveAt([number, number + 1], toUInt8(number % 2 + 1)) FROM numbers(3) ORDER BY number;
 
--- Singleton arrays exercise the lazy no-op path for dynamic arrays.
 SELECT number, arrayRemoveAt([number], toInt8(2)) FROM numbers(3) ORDER BY number;
 
--- A dynamic index that is out of bounds for every row keeps a constant array compact.
 SELECT number, arrayRemoveAt([1], toInt8(number + 2)) FROM numbers(3) ORDER BY number;
 
 SELECT arrayRemoveAt([1, 2, 3], 0); -- { serverError ZERO_ARRAY_OR_TUPLE_INDEX }

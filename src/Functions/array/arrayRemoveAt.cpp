@@ -157,9 +157,7 @@ public:
             return executeConstantArray(*array, index_column, index_is_unsigned, input_rows_count);
         }
 
-        const auto array_column = arguments[0].column->convertToFullColumnIfConst();
-
-        const auto * array = checkAndGetColumn<ColumnArray>(array_column.get());
+        const auto * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         if (!array)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
