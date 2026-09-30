@@ -765,7 +765,9 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     return true;
 }
 
-/** Check the SELECT privilege for the columns that the planner resolved "away"
+/** Check the SELECT privilege for the columns that the planner resolved "away": `indexHint` arguments and ALIAS
+  * columns inlined into PREWHERE. Checked separately from the selected columns on purpose: a trivial query such as
+  * `SELECT count() FROM t` passes with a grant on any one column, while these names are always required.
   */
 void checkAccessRightsForColumnsResolvedAway(
     const TableNode & table_node, const TableExpressionData & table_expression_data, const ContextPtr & query_context)

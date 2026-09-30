@@ -20,6 +20,7 @@
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
+#include <Planner/Utils.h>
 
 
 namespace DB
@@ -113,13 +114,13 @@ public:
 
                 if (!keep_alias_columns)
                 {
-                    /// The ALIAS column is about to be replaced by its expression but the user observes its values through the
-                    /// filter, so column grants still have to be enforced for it.
-                    if (select_added_columns)
-                        table_expression_data.markColumnForAccessCheck(column_node->getColumnName());
-
-                    /// The replacement is performed in leaveImpl()
-                    nodes_to_inline.insert(node.get());
+                    /// For PREWHERE we can just replace ALIAS column with it's expression,
+                    /// because ActionsDAG for PREWHERE applied right on top of table expression
+                    /// and cannot affect subqueries or other table expressions.
+                    node = column_node->getExpression();
+                    /// The visitor above has registered the expression's source columns as read but not selected, and the
+                    /// children walk that follows must not select them either: a grant on the ALIAS name is sufficient.
+                    inlined_alias_expressions.insert(node.get());
                     return;
                 }
 
@@ -189,8 +190,7 @@ public:
             return;
         }
 
-        if (nodes_to_inline.erase(node.get()))
-            node = node->as<ColumnNode &>().getExpression();
+        inlined_alias_expressions.erase(node.get());
     }
 
     static bool isAliasColumn(const QueryTreeNodePtr & node)
@@ -243,7 +243,7 @@ public:
         /// Do not traverse Materialized CTE subquery, because it is executed separately.
         if (auto * table_node = parent_node->as<TableNode>())
             return child_node != table_node->getMaterializedCTESubquery();
-        return !(checkSubquery(child_node) || isAliasColumn(parent_node));
+        return !(checkSubquery(child_node) || isAliasColumn(parent_node) || inlined_alias_expressions.contains(parent_node.get()));
     }
 
     static bool isIndexHintFunction(const QueryTreeNodePtr & node)
@@ -281,8 +281,8 @@ private:
     /// True if we are traversing arguments of function "indexHint".
     bool is_inside_index_hint_function = false;
 
-    /// ALIAS column nodes that need to be replaced by their expressions
-    std::unordered_set<const IQueryTreeNode *> nodes_to_inline;
+    /// Expressions that replaced ALIAS columns while `keep_alias_columns` is false; their columns are already collected.
+    std::unordered_set<const IQueryTreeNode *> inlined_alias_expressions;
 };
 
 class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
@@ -459,6 +459,11 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         NameSet required_column_names_without_prewhere(read_column_names.begin(), read_column_names.end());
         const auto & selected_column_names = table_expression_data.getSelectedColumnsNames();
         required_column_names_without_prewhere.insert(selected_column_names.begin(), selected_column_names.end());
+
+        /// The visit below inlines ALIAS columns, which would hide their names from the access check.
+        /// Record what PREWHERE references first, so the same names are checked as for WHERE.
+        for (const auto & column_name : collectReferencedColumnNames(query_node_typed.getPrewhere(), prewhere_table_expression))
+            table_expression_data.markColumnForAccessCheck(column_name);
 
         collect_source_columns_visitor.setKeepAliasColumns(false);
         collect_source_columns_visitor.visit(query_node_typed.getPrewhere());
