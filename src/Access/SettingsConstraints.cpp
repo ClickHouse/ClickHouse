@@ -13,6 +13,7 @@
 #include <Common/SettingSource.h>
 #include <IO/WriteHelpers.h>
 
+#include <algorithm>
 #include <bitset>
 #include <functional>
 #include <string_view>
@@ -333,6 +334,27 @@ void SettingsConstraints::checkProfileElementValues(
         SettingChange value(element.setting_name, *element.max_value);
         checkImpl(current_settings, value, THROW_ON_VIOLATION, source, /*ignore_unchanged_settings=*/false, actor_is_config_defined);
     }
+
+    /// With `settings_constraints_replace_previous` a constraint replaces the one it overrides as a whole, so
+    /// a bound it leaves out is lifted for whoever gets it. It must keep every bound the actor is subject to;
+    /// the values it declares are checked above.
+    if (actor_is_config_defined || !element.isConstraint() || element.writability == SettingConstraintWritability::CONST
+        || !access_control || !access_control->doesSettingsConstraintsReplacePrevious())
+        return;
+    auto setting_name = resolveSettingName(element.setting_name);
+    auto it = constraints.find(setting_name);
+    if (it == constraints.end())
+        return;
+    const auto & bound = it->second;
+    bool keeps_disallowed_values = std::ranges::all_of(bound.disallowed_values, [&](const Field & value)
+    {
+        return std::ranges::any_of(element.disallowed_values, [&](const Field & element_value)
+        {
+            return settingCastValueUtil(setting_name, element_value) == value;
+        });
+    });
+    if ((!bound.min_value.isNull() && !element.min_value) || (!bound.max_value.isNull() && !element.max_value) || !keeps_disallowed_values)
+        throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
 }
 
 void SettingsConstraints::checkProfileElementWritability(
