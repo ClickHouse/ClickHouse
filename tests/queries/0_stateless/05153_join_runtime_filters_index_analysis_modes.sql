@@ -109,11 +109,19 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     initiator.log_comment AS mode,
     sum(part.ProfileEvents['RuntimeFilterGranulesConsidered']) > 0 AS granules_considered,
-    sum(part.ProfileEvents['RuntimeFilterGranulesDropped']) > 0 AS granules_dropped
+    sum(part.ProfileEvents['RuntimeFilterGranulesDropped']) > 0 AS granules_dropped,
+    -- Guards against the rows passing vacuously. A parallel-replicas row that stopped engaging parallel
+    -- replicas at all - a changed default, a new bail-out - would otherwise keep pruning locally and stay
+    -- green while testing nothing. This says nothing about *which* replica pruned: that depends on the
+    -- coordinator's assignment and on the read reaching a granule after the runtime filter is ready, and
+    -- the pruning is fail-open, so it is not an invariant. Forcing the read to be the initiator's only is
+    -- not an option either - a one-replica cluster does not engage parallel replicas, so the row would go
+    -- vacuous in the other direction.
+    max(initiator.ProfileEvents['ParallelReplicasUsedCount']) > 0 AS parallel_replicas_engaged
 FROM system.query_log AS part
 INNER JOIN
 (
-    SELECT query_id, log_comment
+    SELECT query_id, log_comment, ProfileEvents
     FROM system.query_log
     WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish'
         AND log_comment IN ('05153_local', '05153_distributed_plan', '05153_parallel_replicas',
