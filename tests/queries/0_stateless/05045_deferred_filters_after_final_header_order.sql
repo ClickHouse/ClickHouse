@@ -1,5 +1,3 @@
--- Tags: no-darwin
--- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- A read step whose filters are deferred past FINAL must keep the output header it was planned with.
 -- Under `make_distributed_plan` the consuming stage is built from that header before the producing
