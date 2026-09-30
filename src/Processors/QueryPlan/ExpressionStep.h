@@ -51,18 +51,17 @@ public:
 private:
     void updateOutputHeader() override;
 
-    /// Everything removeUnusedColumns needs to know, computed without touching the step. Shared by
-    /// removeUnusedColumns and getUnneededColumns so their answers cannot differ.
+    /// Everything removeUnusedColumns needs to know, computed without touching the step.
+    /// Shared by removeUnusedColumns and getUnneededColumns so their answers cannot differ.
     struct UnneededColumnsPlan
     {
-        /// The positions nobody needs, which are also the outputs that go away.
-        std::vector<size_t> unneeded_output_positions;
-        /// How many of them index the DAG's outputs. The output header holds those first and the
-        /// pass-through columns after, and the positions are sorted, so the unneeded DAG outputs are a
-        /// prefix of the positions rather than a list of their own.
-        size_t unneeded_dag_position_count = 0;
         /// One entry per column of the input header, in header order.
         std::vector<InputColumnUsage> input_columns;
+        /// The positions nobody needs, which are also the outputs that go away.
+        std::vector<size_t> unneeded_output_positions;
+        /// How many of them index the DAG's outputs. The output header holds the DAG outputs first and the
+        /// pass-through columns after, so the unneeded DAG outputs are a prefix of `unneeded_output_positions`.
+        size_t unneeded_dag_position_count = 0;
 
         /// The DAG outputs that remain, in their order.
         ActionsDAG::NodeRawConstPtrs neededDAGOutputs(const ActionsDAG::NodeRawConstPtrs & outputs) const;

@@ -80,29 +80,31 @@ public:
 private:
     void updateOutputHeader() override;
 
-    /// Everything removeUnusedColumns needs to know, computed without touching the DAG. Shared by removeUnusedColumns,
-    /// getUnneededColumns and pruneDAGOutputsByPosition so their answers cannot differ.
+    /// Everything removeUnusedColumns needs to know, computed without touching the DAG.
+    /// Shared by removeUnusedColumns, getUnneededColumns and pruneDAGOutputsByPosition so their answers cannot differ.
     struct UnneededColumnsPlan
     {
-        /// The value the filter column flag takes.
-        bool remove_filter_column = false;
-        /// The DAG outputs nobody needs, as positions in `getOutputs` before any is removed, sorted. Never the filter
-        /// column: it is needed to filter, whether or not anyone reads it.
-        ///
-        /// Unlike for the other steps, these are not just the caller's positions. The header the caller counts in
-        /// has the filter column erased from it, so its positions are shifted back over that column first.
-        std::vector<size_t> unneeded_dag_positions;
         /// One entry per column of the input header, in header order.
         std::vector<InputColumnUsage> input_columns;
-        /// Whether the output header changes - a DAG output goes away, or the filter column is dropped from it now -
-        /// and whether removeUnusedActions would erase any node.
+        /// The DAG outputs nobody needs, as positions in `getOutputs` before any is removed, sorted. Never the filter
+        /// column: it is needed to filter, whether or not anyone reads it.
+        /// Unlike for the other steps, these are not just the caller's positions. The header the caller counts in
+        /// may have the filter column erased from it, so the caller's positions are shifted back over that column
+        /// first.
+        std::vector<size_t> unneeded_dag_positions;
+        /// The position of the filter column in the DAG's outputs, before any is removed.
+        size_t filter_output_position = 0;
+
+        /// Whether the filter column is removed from the output header after the pruning: it already was, or nobody
+        /// reads it any more.
+        bool remove_filter_column = false;
+
+        /// Whether the output header changes, and whether removeUnusedActions would erase any node.
         bool changes_output_header = false;
         bool removes_any_action = false;
         /// Whether the filter predicate folds to a constant through `materialize` once the filter column is dropped;
         /// the rest of the plan is worked out on the folded DAG.
         bool fold_filter_predicate = false;
-        /// The position of the filter column in the DAG's outputs, before any is removed.
-        size_t filter_output_position = 0;
 
         /// The DAG outputs that remain, in their order.
         ActionsDAG::NodeRawConstPtrs neededDAGOutputs(const ActionsDAG::NodeRawConstPtrs & outputs) const;
