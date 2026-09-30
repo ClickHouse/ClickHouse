@@ -7398,6 +7398,10 @@ This is an expert-level setting which should only be used for debugging by devel
 )", 0, \
         {"26.10", false, true, "Enable query_plan_lower_array_join_function by default."}, \
         {"26.9", false, false, "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."}) \
+    DECLARE(Bool, legacy_array_join_function_nondeterministic_evaluation, false, R"(
+How a non-deterministic function next to the `arrayJoin` function is evaluated when it does not depend on the joined value, for example `rand()` or `generateUUIDv4()` in the same `SELECT`. By default it gives a different value on every output row, like with the `ARRAY JOIN` clause. Enable to get the behavior of older versions: one value per source row, repeated across that row's expanded rows.
+)", 0, \
+        {"26.10", true, false, "A non-deterministic function next to the `arrayJoin` function gives a different value on every output row, like with the `ARRAY JOIN` clause. The setting restores one value per source row."}) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
