@@ -1391,6 +1391,8 @@ IcebergMetadata::estimateRead(StorageMetadataPtr storage_metadata_snapshot, cons
                 estimate.rows.reset();
                 return estimate;
             }
+            /// TODO AI made this decision: trust `record_count` as `totalRows` does, although files written by ClickHouse
+            /// before 26.5 may overstate it (PR 118942) (issue 120440, plan O7).
             *estimate.rows += static_cast<UInt64>(data_file->parsed_entry->record_count);
         }
     }
