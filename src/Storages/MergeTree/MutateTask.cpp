@@ -118,6 +118,7 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -4218,6 +4219,13 @@ bool MutateTask::prepare()
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, rewrites_all_columns);
+
+    /// A part cannot be left with no columns: it could not be loaded or read.
+    if (new_columns.empty())
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+            "Cannot mutate part {}: none of its columns ({}) would remain, because the table does not have them "
+            "or the mutation removes them. Empty parts are not allowed",
+            ctx->source_part->name, fmt::join(ctx->source_part->getColumns().getNames(), ", "));
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
     if (!new_columns_substreams.empty())

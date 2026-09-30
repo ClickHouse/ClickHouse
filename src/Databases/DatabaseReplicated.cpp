@@ -97,7 +97,7 @@ namespace DatabaseReplicatedSetting
     extern const DatabaseReplicatedSettingsString collection_name;
     extern const DatabaseReplicatedSettingsFloat max_broken_tables_ratio;
     extern const DatabaseReplicatedSettingsNonZeroUInt64 max_replication_lag_to_enqueue;
-    extern const DatabaseReplicatedSettingsNonZeroUInt64 logs_to_keep;
+    extern const DatabaseReplicatedSettingsNonZeroUInt32 logs_to_keep;
     extern const DatabaseReplicatedSettingsString default_replica_path;
     extern const DatabaseReplicatedSettingsString default_replica_shard_name;
     extern const DatabaseReplicatedSettingsString default_replica_name;
@@ -1039,6 +1039,18 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     }
 }
 
+ASTPtr DatabaseReplicated::getCreateDatabaseQueryImpl() const
+{
+    ASTPtr ast = DatabaseOnDisk::getCreateDatabaseQueryImpl();
+
+    /// The metadata file may still hold a `logs_to_keep` above `UInt32::max`, if written by an older server.
+    auto * create = ast->as<ASTCreateQuery>();
+    if (create && create->storage && create->storage->settings)
+        DatabaseReplicatedSettings::checkOrClampLogsToKeep(*create->storage->settings, true /* clamp_on_overflow */);
+
+    return ast;
+}
+
 void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr context_, LoadingStrictnessLevel mode)
 {
     DatabaseAtomic::beforeLoadingMetadata(context_, mode);
@@ -1571,7 +1583,8 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     bool looks_like_replicated = metadata.contains("Replicated");
     bool looks_like_shared = metadata.contains("Shared");
     bool looks_like_merge_tree = metadata.contains("MergeTree");
-    if (!(looks_like_replicated || looks_like_shared) || !looks_like_merge_tree)
+    bool looks_like_keeper_map = metadata.contains("KeeperMap");
+    if (!((looks_like_replicated || looks_like_shared) && looks_like_merge_tree) && !looks_like_keeper_map)
         return UUIDHelpers::Nil;
 
     ParserCreateQuery parser;
@@ -1582,8 +1595,10 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     const ASTCreateQuery & create = query->as<const ASTCreateQuery &>();
     if (!create.storage || !create.storage->engine)
         return UUIDHelpers::Nil;
-    if (!(startsWith(create.storage->engine->name, "Replicated") || startsWith(create.storage->engine->name, "Shared"))
-        || !endsWith(create.storage->engine->name, "MergeTree"))
+    const String & engine_name = create.storage->engine->name;
+    bool is_replicated_merge_tree = (startsWith(engine_name, "Replicated") || startsWith(engine_name, "Shared"))
+        && endsWith(engine_name, "MergeTree");
+    if (!is_replicated_merge_tree && engine_name != "KeeperMap")
         return UUIDHelpers::Nil;
     chassert(create.uuid != UUIDHelpers::Nil);
     return create.uuid;
@@ -1613,6 +1628,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     /// For ReplicatedMergeTree tables we can compare only UUIDs to ensure that it's the same table.
     /// Metadata can be different, it's handled on table replication level.
+    /// KeeperMap tables are matched by UUID too: their data is stored in Keeper, so re-creating them would lose it.
     /// We need to handle renamed tables only.
     /// TODO maybe we should also update MergeTree SETTINGS if required?
     std::unordered_map<UUID, String> zk_replicated_id_to_name;
@@ -1646,7 +1662,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         LOG_TEST(log, "Existing table {}", name);
 
         UUID local_replicated_id = UUIDHelpers::Nil;
-        if (existing_tables_it->table()->supportsReplication())
+        if (existing_tables_it->table()->supportsReplication() || existing_tables_it->table()->as<StorageKeeperMap>())
         {
             /// Check if replicated tables have the same UUID
             local_replicated_id = existing_tables_it->table()->getStorageID().uuid;
@@ -3124,7 +3140,16 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         const auto & initial_storage_settings = args.context->getDatabaseReplicatedSettings();
         DatabaseReplicatedSettings database_replicated_settings{initial_storage_settings};
         if (engine_define->settings)
-            database_replicated_settings.loadFromQuery(*engine_define);
+        {
+            /// Whether the definition is replayed from stored metadata (startup, short-syntax ATTACH, RESTORE)
+            /// rather than supplied by the user now. A full-syntax ATTACH is user input, validated like CREATE.
+            /// Not `args.internal`: wrappers such as `PARALLEL WITH` run fresh user statements as internal queries.
+            const bool loading_from_existing_metadata = args.is_metadata_replay
+                || args.create_query.attach_short_syntax
+                || args.is_restore_from_backup
+                || isLoadingFromExistingMetadata(args.mode);
+            database_replicated_settings.loadFromQuery(*engine_define, loading_from_existing_metadata);
+        }
 
         return std::make_shared<DatabaseReplicated>(
             args.database_name,
@@ -3289,7 +3314,7 @@ The following settings are supported:
 | `check_consistency`                                                          | true                           | Check consistency of local metadata and metadata in Keeper, do replica recovery on inconsistency                                                                                                                                                                                                                                      |
 | `max_retries_before_automatic_recovery`                                      | 10                             | Max number of attempts to execute a queue entry before marking replica as lost recovering it from snapshot (0 means infinite)                                                                                                                                                                                                         |
 | `allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views` | false                          | If enabled, when processing DDLs in Replicated databases, it skips creating and exchanging DDLs of the temporary tables of refreshable materialized views if possible                                                                                                                                                                 |
-| `logs_to_keep`                                                               | 1000                           | Default number of logs to keep in ZooKeeper for Replicated database.                                                                                                                                                                                                                                                                  |
+| `logs_to_keep`                                                               | 1000                           | Default number of logs to keep in ZooKeeper for Replicated database. Bounded by the DDL log counter, which is 32-bit, so the value must not exceed `4294967295`; a larger value is rejected with `BAD_ARGUMENTS` in a user-supplied definition (`CREATE` or a full-syntax `ATTACH`) and clamped with a warning when existing metadata is replayed |
 | `default_replica_path`                                                       | `/clickhouse/databases/{uuid}` | The path to the database in ZooKeeper. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                        |
 | `default_replica_shard_name`                                                 | `{shard}`                      | The shard name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                |
 | `default_replica_name`                                                       | `{replica}`                    | The name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                      |
