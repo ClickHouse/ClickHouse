@@ -562,6 +562,11 @@ def main():
                 f'echo "$(grep "exists in cache" {clang_tidy_cache_log} | wc -l) in cache\n'
                 f'$(grep "does not exist in cache" {clang_tidy_cache_log} | wc -l) not in cache"',
             )
+            # Per-file clang-tidy durations (start and end of every ninja edge). The entries
+            # of this build follow the ones pre-seeded from the toolchain.
+            ninja_log = "./ci/tmp/ninja_log.txt"
+            Shell.check(f"cp {build_dir}/.ninja_log {ninja_log}")
+            files.append(ninja_log)
         run_shell_with_output("Output programs", f"ls -l {build_dir}/programs/")
         Shell.check("pwd")
         res = results[-1].is_ok()
