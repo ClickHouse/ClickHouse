@@ -30,6 +30,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/IAST.h>
@@ -2297,10 +2298,27 @@ struct ReplayGateNeeds
     bool materialized_mysql_database = false;
     bool materialized_postgresql_table = false;
     bool time_series_table = false;
-    bool kafka_engine = false;
+    bool kafka_keeper_offsets = false;
     bool nullable_tuple_type = false;
     bool unique_key = false;
+    bool data_lake_catalog_database = false;
+    bool ytsaurus_table = false;
 };
+
+/// Kafka reads its Keeper-offsets gate only when `kafka_keeper_path` or `kafka_replica_name` is set,
+/// in SETTINGS or by a named collection, so any non-literal engine argument keeps the gate.
+bool kafkaMayStoreOffsetsInKeeper(const ASTStorage & storage)
+{
+    if (storage.engine->arguments)
+        for (const auto & argument : storage.engine->arguments->children)
+            if (!argument->as<ASTLiteral>())
+                return true;
+    if (storage.settings)
+        for (const auto & change : storage.settings->changes)
+            if (change.name == "kafka_keeper_path" || change.name == "kafka_replica_name")
+                return true;
+    return false;
+}
 
 ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_queries)
 {
@@ -2320,7 +2338,8 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
                     .analyzable_query_text = true, .ordinary_database = true, .replicated_database = true,
                     .materialized_postgresql_database = true, .materialized_mysql_database = true,
                     .materialized_postgresql_table = true, .time_series_table = true,
-                    .kafka_engine = true, .nullable_tuple_type = true, .unique_key = true};
+                    .kafka_keeper_offsets = true, .nullable_tuple_type = true, .unique_key = true,
+                    .data_lake_catalog_database = true, .ytsaurus_table = true};
         }
 
         const auto * create = create_ast->as<ASTCreateQuery>();
@@ -2359,30 +2378,35 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
                     needs.materialized_postgresql_database = true;
                 else if (equalsCaseInsensitive(engine.name, "MaterializedMySQL"))
                     needs.materialized_mysql_database = true;
+                else if (equalsCaseInsensitive(engine.name, "DataLakeCatalog"))
+                    needs.data_lake_catalog_database = true;
             }
         }
         else
         {
-            std::vector<const ASTFunction *> table_engines;
+            std::vector<const ASTStorage *> table_storages;
             if (create->storage && create->storage->engine)
-                table_engines.push_back(create->storage->engine);
+                table_storages.push_back(create->storage);
             /// A view or TimeSeries keeps its inner table engines in `targets`.
             if (create->targets)
                 for (const auto * inner : create->targets->getInnerEngines())
                     if (inner->engine)
-                        table_engines.push_back(inner->engine);
+                        table_storages.push_back(inner);
 
             /// CREATE TABLE: gate on the table engine name.
-            for (const auto * engine : table_engines)
+            for (const auto * storage : table_storages)
             {
+                const auto * engine = storage->engine;
                 if (startsWithCaseInsensitive(engine->name, "Replicated") && engine->arguments && !engine->arguments->children.empty())
                     needs.replicated_engine_arguments = true;
                 if (equalsCaseInsensitive(engine->name, "MaterializedPostgreSQL"))
                     needs.materialized_postgresql_table = true;
                 if (equalsCaseInsensitive(engine->name, "TimeSeries"))
                     needs.time_series_table = true;
-                if (equalsCaseInsensitive(engine->name, "Kafka"))
-                    needs.kafka_engine = true;
+                if (equalsCaseInsensitive(engine->name, "Kafka") && kafkaMayStoreOffsetsInKeeper(*storage))
+                    needs.kafka_keeper_offsets = true;
+                if (equalsCaseInsensitive(engine->name, "YTsaurus"))
+                    needs.ytsaurus_table = true;
             }
         }
 
@@ -2452,14 +2476,14 @@ String replaySettingsPrelude(const std::set<String> & settings_known_to_server, 
         if (name == "allow_experimental_time_series_table")
             return needs.time_series_table;
         if (name == "allow_experimental_kafka_offsets_storage_in_keeper")
-            return needs.kafka_engine;
+            return needs.kafka_keeper_offsets;
         if (name == "enable_nullable_tuple_type")
             return needs.nullable_tuple_type;
         return false;
     };
 
     String res;
-    /// Shared gates stay conservative except analyzer-only, UNIQUE KEY and dead settings proven absent.
+    /// Shared gates stay conservative, except dead ones and those whose only carrier is proven absent.
     static const std::set<std::string_view> dead_settings = {
         "allow_experimental_window_functions",
         "allow_experimental_hash_functions",
@@ -2470,10 +2494,23 @@ String replaySettingsPrelude(const std::set<String> & settings_known_to_server, 
         "allow_suspicious_types_in_order_by",
         "allow_experimental_correlated_subqueries",
     };
+    /// Read only when a `DataLakeCatalog` database is created.
+    static const std::set<std::string_view> data_lake_catalog_settings = {
+        "allow_experimental_database_iceberg",
+        "allow_experimental_database_hms_catalog",
+        "allow_experimental_database_unity_catalog",
+        "allow_experimental_database_glue_catalog",
+        "allow_database_unity_catalog",
+        "allow_database_glue_catalog",
+        "allow_database_iceberg",
+        "allow_experimental_database_paimon_rest_catalog",
+    };
     for (const auto & name : allExperimentalSettingNames())
         if (settings_known_to_server.contains(name) && !dead_settings.contains(name)
             && (!analyzer_settings.contains(name) || needs.analyzable_query_text)
-            && (name != "allow_experimental_unique_key" || needs.unique_key))
+            && (name != "allow_experimental_unique_key" || needs.unique_key)
+            && (!data_lake_catalog_settings.contains(name) || needs.data_lake_catalog_database)
+            && (name != "allow_experimental_ytsaurus_table_engine" || needs.ytsaurus_table))
             res += "SET " + name + " = 1;\n";
     /// Emit dump-specific gates only when the dumped AST proves they are needed.
     for (const auto & [name, value] : dump_specific)

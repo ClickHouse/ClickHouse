@@ -1,0 +1,9 @@
+--- the Kafka Keeper-offsets gate follows its carriers ---
+plain Kafka, keeper gate emitted: 0
+Kafka with Keeper settings, keeper gate emitted: 1
+Kafka over a named collection, keeper gate emitted: 1
+--- a plain Kafka dump replays under a Keeper-offsets constraint ---
+OK: constrained replay succeeded
+constrained replay table present: 1
+--- a YTsaurus table keeps its engine gate ---
+YTsaurus table, engine gate emitted: 1

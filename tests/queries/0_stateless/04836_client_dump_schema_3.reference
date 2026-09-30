@@ -37,10 +37,11 @@ bad-select view replayed: 1
 no-mv schema, mv gate emitted: 0
 no-mv schema, ungated gate emitted: 0
 no-mv schema, analyzer gate emitted: 0
+no-mv schema, engine-only gates emitted: 0
 empty dump, any SET emitted: 0
 projection schema, analyzer gate emitted: 1
 projection schema, dead gates emitted: 0
---- a plain dump replays under unrelated analyzer and UNIQUE KEY constraints ---
+--- a plain dump replays under unrelated analyzer, UNIQUE KEY, DataLakeCatalog and YTsaurus constraints ---
 OK: constrained replay succeeded
 constrained replay table present: 1
 --- the prelude keeps the residual shared gates conservative ---

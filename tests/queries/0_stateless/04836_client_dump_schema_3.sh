@@ -259,6 +259,8 @@ echo "no-mv schema, mv gate emitted: $(grep -c 'SET allow_materialized_view_with
 echo "no-mv schema, ungated gate emitted: $(grep -c 'SET allow_experimental_time_series_table' "$NOMV_DUMP_FILE")"
 # Analyzer-only gates are omitted when no stored query text can reach them.
 echo "no-mv schema, analyzer gate emitted: $(grep -c 'SET allow_suspicious_types_in_group_by' "$NOMV_DUMP_FILE")"
+# DataLakeCatalog and YTsaurus gates are omitted without a database or table of that engine.
+echo "no-mv schema, engine-only gates emitted: $(grep -cE 'SET allow_(experimental_)?database_(iceberg|unity_catalog|glue_catalog|hms_catalog|paimon_rest_catalog) |SET allow_experimental_ytsaurus_table_engine ' "$NOMV_DUMP_FILE")"
 # Excluding every non-predefined database - clickhouse-local also carries `default` - leaves no
 # statement to replay, so there is nothing for a gate to guard and the prelude is dropped whole.
 $CLICKHOUSE_LOCAL --path "$NOMV_PATH" --dump-schema --dump-schema-exclude="${DB},default" > "$NOMV_DUMP_FILE" 2>"$ERR_FILE"
@@ -279,7 +281,7 @@ echo "projection schema, analyzer gate emitted: $(grep -c 'SET allow_suspicious_
 echo "projection schema, dead gates emitted: $(grep -cE 'SET (allow_experimental_window_functions|allow_experimental_hash_functions|allow_simdjson) = ' "$PROJ_DUMP_FILE")"
 rm -rf "$PROJ_PATH" "$PROJ_DUMP_FILE"
 
-echo '--- a plain dump replays under unrelated analyzer and UNIQUE KEY constraints ---'
+echo '--- a plain dump replays under unrelated analyzer, UNIQUE KEY, DataLakeCatalog and YTsaurus constraints ---'
 CONSTRAINT_DB="${DB}_constraint"
 CONSTRAINT_USER="${DB}_constraint_user"
 CONSTRAINT_PROFILE="${DB}_constraint_profile"
@@ -295,7 +297,7 @@ $CLICKHOUSE_CLIENT --multiquery --query "
     DROP DATABASE IF EXISTS ${CONSTRAINT_DB};
     DROP USER IF EXISTS ${CONSTRAINT_USER};
     DROP SETTINGS PROFILE IF EXISTS ${CONSTRAINT_PROFILE};
-    CREATE SETTINGS PROFILE ${CONSTRAINT_PROFILE} SETTINGS allow_suspicious_types_in_group_by = 0 CONST, enable_unique_key = 0 CONST;
+    CREATE SETTINGS PROFILE ${CONSTRAINT_PROFILE} SETTINGS allow_suspicious_types_in_group_by = 0 CONST, enable_unique_key = 0 CONST, allow_database_iceberg = 0 CONST, allow_experimental_ytsaurus_table_engine = 0 CONST;
     CREATE USER ${CONSTRAINT_USER} SETTINGS PROFILE '${CONSTRAINT_PROFILE}';
     GRANT CREATE DATABASE, CREATE TABLE ON *.* TO ${CONSTRAINT_USER};
     GRANT TABLE ENGINE ON * TO ${CONSTRAINT_USER};

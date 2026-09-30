@@ -7,12 +7,8 @@
 namespace DB
 {
 
-/*
- * Settings that allow the use of experimental, deprecated, or potentially unsafe features in a
- * CREATE query. Anything that has to replay a stored CREATE without the settings it was created
- * under needs all of them: DatabaseReplicated::recoverLostReplica() sets them on a context, and
- * --dump-schema emits them as a prelude. New create-time gates belong here, so both stay complete.
- */
+/// Settings that allow experimental, deprecated or unsafe features in a CREATE query.
+/// recoverLostReplica() enables all of them, and --dump-schema emits those its CREATEs can reach.
 const std::vector<std::string> & allExperimentalSettingNames();
 
 /*
