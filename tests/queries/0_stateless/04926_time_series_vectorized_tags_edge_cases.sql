@@ -23,14 +23,14 @@ WITH
             ORDER BY number
         )
     ) AS src_groups,
-    [1, 10, 15, 20, 30, 50, 75, 80, 89, 90, 91, 95, 99, 100] AS cutoffs,
+    [1, 19, 20, 21, 99, 100] AS cutoffs,
     cutoffs[intDiv(number, 100) + 1] AS unique_pairs,
     (number * 37 + 11) % 100 AS row_index,
     if(row_index < unique_pairs, row_index, 0) AS pair_index,
     timeSeriesCopyTags(dest_groups[pair_index + 1], src_groups[100 - pair_index], ['src']) AS result
 SELECT unique_pairs, count(), uniqExact(result),
        countIf(timeSeriesGroupToTags(result) != [('dest', toString(pair_index)), ('src', toString(99 - pair_index))])
-FROM numbers(1400)
+FROM numbers(600)
 GROUP BY unique_pairs
 ORDER BY unique_pairs
 SETTINGS max_threads = 1, max_block_size = 100;
@@ -61,8 +61,8 @@ WITH
     timeSeriesCopyTags(dest_groups[dest_index + 1], src_groups[src_index + 1], ['src']) AS result
 SELECT count(), uniqExact(result),
        countIf(timeSeriesGroupToTags(result) != [('dest', toString(dest_index)), ('src', toString(src_index))])
-FROM numbers(128)
-SETTINGS max_threads = 1, max_block_size = 128;
+FROM numbers(64)
+SETTINGS max_threads = 1, max_block_size = 64;
 
 SELECT 'mixed dense and sparse components';
 WITH
@@ -71,7 +71,7 @@ WITH
         FROM
         (
             SELECT number, timeSeriesTagsToGroup([('dest', toString(number))]) AS group
-            FROM numbers(64)
+            FROM numbers(128)
             ORDER BY number
         )
     ) AS dest_groups,
@@ -80,30 +80,32 @@ WITH
         FROM
         (
             SELECT number, timeSeriesTagsToGroup([('src', toString(number))]) AS group
-            FROM numbers(64)
+            FROM numbers(128)
             ORDER BY number
         )
     ) AS src_groups,
-    intDiv(number, 64) AS shape,
+    intDiv(number, 128) AS shape,
     (number * 13 + 3) % 16 AS pair_index,
-    (pair_index % 4) * if(shape = 0, 1, 16) AS dest_index,
-    intDiv(pair_index, 4) * if(shape = 1, 1, 16) AS src_index,
+    (pair_index % 4) * if(shape = 0, 1, 32) AS dest_index,
+    intDiv(pair_index, 4) * if(shape = 1, 1, 32) AS src_index,
     timeSeriesCopyTags(dest_groups[dest_index + 1], src_groups[src_index + 1], ['src']) AS result
 SELECT shape, count(), uniqExact(result),
        countIf(timeSeriesGroupToTags(result) != [('dest', toString(dest_index)), ('src', toString(src_index))])
-FROM numbers(192)
+FROM numbers(384)
 GROUP BY shape
 ORDER BY shape
-SETTINGS max_threads = 1, max_block_size = 64;
+SETTINGS max_threads = 1, max_block_size = 128;
 
 SELECT 'dense component range boundary';
+-- Four unique pairs in 32 rows select component deduplication. Destination ranges
+-- 15 and 16 fall immediately below and at its range / unique_pairs == 4 boundary.
 WITH
     (
         SELECT groupArray(group)
         FROM
         (
             SELECT number, timeSeriesTagsToGroup([('dest', toString(number))]) AS group
-            FROM numbers(8)
+            FROM numbers(17)
             ORDER BY number
         )
     ) AS dest_groups,
@@ -116,16 +118,27 @@ WITH
             ORDER BY number
         )
     ) AS src_groups,
-    intDiv(number, 16) AS shape,
+    intDiv(number, 32) AS shape,
     (number * 3 + 1) % 4 AS pair_index,
-    if(shape = 0, pair_index, if(pair_index = 3, 4, pair_index)) AS dest_index,
+    if(pair_index = 3, 15 + shape, pair_index) AS dest_index,
     3 - pair_index AS src_index,
     timeSeriesCopyTags(dest_groups[dest_index + 1], src_groups[src_index + 1], ['src']) AS result
 SELECT shape, count(), uniqExact(result),
        countIf(timeSeriesGroupToTags(result) != [('dest', toString(dest_index)), ('src', toString(src_index))])
-FROM numbers(32)
+FROM numbers(64)
 GROUP BY shape
 ORDER BY shape
+SETTINGS max_threads = 1, max_block_size = 32;
+
+SELECT 'unique inputs with identical results';
+WITH
+    timeSeriesTagsToGroup([('dest', toString(number))]) AS dest_group,
+    timeSeriesTagsToGroup([('src', toString(number))]) AS src_group,
+    timeSeriesCopyTags(dest_group, src_group, ['dest']) AS pair_result,
+    timeSeriesRemoveTag(dest_group, 'dest') AS unary_result
+SELECT count(), uniqExact(pair_result), uniqExact(unary_result),
+       countIf(timeSeriesGroupToTags(pair_result) != [] OR timeSeriesGroupToTags(unary_result) != [])
+FROM numbers(16)
 SETTINGS max_threads = 1, max_block_size = 16;
 
 SELECT 'group zero and distinct pairs with identical results';

@@ -3,36 +3,27 @@
         <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
     </settings>
 
-    <!-- Achilles cases: the old pair-duplicate cutoff, component reuse independent of pair cardinality,
-         sparse component IDs, row order, and allocation overhead in tiny or highly repetitive blocks. -->
+    <!-- Keep the active pair-cardinality boundary, independent component reuse, sparse IDs,
+         shuffled rows, and block-size extremes. The main test covers all-unique and repeated aligned pairs. -->
     <substitutions>
         <substitution>
             <name>unique_pairs</name>
             <values>
-                <value>90001</value>
-                <value>90000</value>
-                <value>89999</value>
-                <value>80000</value>
-                <value>30000</value>
                 <value>20000</value>
-                <value>15000</value>
+                <value>20001</value>
+                <value>99900</value>
             </values>
         </substitution>
         <substitution>
             <name>cross_shape</name>
             <values>
-                <value>(100000, 320, 320, 1, 1, 1)</value>
-                <value>(90000, 300, 300, 1, 1, 1)</value>
-                <value>(89999, 300, 300, 1, 1, 1)</value>
-                <value>(50000, 250, 200, 1, 1, 1)</value>
+                <value>(100000, 320, 320, 1, 1, 7919)</value>
                 <value>(50000, 250, 200, 1, 1, 7919)</value>
-                <value>(20000, 160, 125, 512, 512, 1)</value>
-                <value>(20000, 160, 125, 1, 512, 1)</value>
+                <value>(20000, 160, 125, 512, 1024, 1)</value>
+                <value>(20000, 160, 125, 1, 1024, 1)</value>
                 <value>(20000, 160, 125, 512, 1, 1)</value>
                 <value>(100000, 1, 100000, 1, 1, 1)</value>
                 <value>(100000, 100000, 1, 1, 1, 1)</value>
-                <value>(32, 8, 4, 1, 1, 1)</value>
-                <value>(32, 8, 4, 512, 512, 1)</value>
             </values>
         </substitution>
         <substitution>
@@ -44,7 +35,7 @@
         </substitution>
     </substitutions>
 
-    <!-- Dense aligned pairs, including both sides of the former 90%-unique boundary. -->
+    <!-- At and just above the 20%-unique component-dedup boundary, plus a near-unique control. -->
     <query>
         WITH
             (
