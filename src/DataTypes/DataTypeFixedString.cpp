@@ -273,15 +273,15 @@ CREATE TABLE accounts
 )
 ENGINE = MergeTree ORDER BY id;
 
-INSERT INTO accounts VALUES ('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'usdc');
+INSERT INTO accounts VALUES ('6SaxMUHmrqwP2rXA2fdz7UojWaoRrfH8zKBKc2MAoEM1', 'example');
 
-SELECT id, hex(id), name FROM accounts WHERE id = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+SELECT id, hex(id), name FROM accounts WHERE id = '6SaxMUHmrqwP2rXA2fdz7UojWaoRrfH8zKBKc2MAoEM1';
 ```
 
 ```text
-┌─id───────────────────────────────────────────┬─hex(id)──────────────────────────────────────────────────────────┬─name─┐
-│ EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v │ C6FA7AF3BEDBAD3A3D65F36AABC97431B1BBE4C2D2F6E0E47CA60203452F5D61 │ usdc │
-└──────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────┴──────┘
+┌─id───────────────────────────────────────────┬─hex(id)──────────────────────────────────────────────────────────┬─name────┐
+│ 6SaxMUHmrqwP2rXA2fdz7UojWaoRrfH8zKBKc2MAoEM1 │ 50D858E0985ECC7F60418AAF0CC5AB587F42C2570A884095A9E8CCACD0F6545C │ example │
+└──────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────┴─────────┘
 ```
 )DOCS_MD",
             .syntax = "FixedString(N[, representation])",

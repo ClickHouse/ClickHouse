@@ -11,7 +11,7 @@ DROP TABLE IF EXISTS fs_accounts;
 DROP TABLE IF EXISTS fs_transfers;
 DROP TABLE IF EXISTS fs_migration;
 
--- Solana-like 32 bytes public keys. index_granularity = 1 so that wrong primary key analysis would lose rows.
+-- 32 bytes keys, the text order of the Base58 values differs from the order of bytes. index_granularity = 1 so that wrong primary key analysis would lose rows.
 CREATE TABLE fs_accounts
 (
     id FixedString(32, 'Base58'),
@@ -23,11 +23,11 @@ CREATE TABLE fs_accounts
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 
 INSERT INTO fs_accounts (id, name) VALUES
-    ('11111111111111111111111111111111', 'system'),
-    ('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', 'token'),
-    ('So11111111111111111111111111111111111111112', 'wsol'),
-    ('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'usdc'),
-    ('Vote111111111111111111111111111111111111111', 'vote');
+    ('11111111111111111111111111111111', 'zero'),
+    ('V8r5WP8Hq5HN6PN1kAXYUcskoSgvSVoYAqqjwsXQNtw', 'beta'),
+    ('TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j', 'alpha'),
+    ('EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y', 'gamma'),
+    ('ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF', 'delta');
 
 -- The same bytes in the other representations.
 ALTER TABLE fs_accounts UPDATE id64 = id, id64url = id, idhex = id WHERE 1 SETTINGS mutations_sync = 2;
@@ -36,44 +36,44 @@ SELECT '-- output in the declared representation, sorted by bytes';
 SELECT id, id64, id64url, idhex, name FROM fs_accounts ORDER BY id;
 
 SELECT '-- output formats';
-SELECT id, id64 FROM fs_accounts WHERE name = 'usdc' FORMAT TSV;
-SELECT id, id64 FROM fs_accounts WHERE name = 'usdc' FORMAT CSV;
-SELECT id, id64 FROM fs_accounts WHERE name = 'usdc' FORMAT JSONEachRow;
-SELECT id, id64 FROM fs_accounts WHERE name = 'usdc' FORMAT Values;
+SELECT id, id64 FROM fs_accounts WHERE name = 'gamma' FORMAT TSV;
+SELECT id, id64 FROM fs_accounts WHERE name = 'gamma' FORMAT CSV;
+SELECT id, id64 FROM fs_accounts WHERE name = 'gamma' FORMAT JSONEachRow;
+SELECT id, id64 FROM fs_accounts WHERE name = 'gamma' FORMAT Values;
 SELECT '';
-SELECT id64, id64url, idhex FROM fs_accounts WHERE name = 'wsol' FORMAT JSONEachRow;
-SELECT id64 FROM fs_accounts WHERE name = 'wsol' FORMAT JSONEachRow SETTINGS output_format_json_escape_forward_slashes = 0;
-SELECT id64, idhex FROM fs_accounts WHERE name = 'wsol' FORMAT CSV;
-SELECT id64 FROM fs_accounts WHERE name = 'wsol' FORMAT XML SETTINGS output_format_write_statistics = 0;
+SELECT id64, id64url, idhex FROM fs_accounts WHERE name = 'alpha' FORMAT JSONEachRow;
+SELECT id64 FROM fs_accounts WHERE name = 'alpha' FORMAT JSONEachRow SETTINGS output_format_json_escape_forward_slashes = 0;
+SELECT id64, idhex FROM fs_accounts WHERE name = 'alpha' FORMAT CSV;
+SELECT id64 FROM fs_accounts WHERE name = 'alpha' FORMAT XML SETTINGS output_format_write_statistics = 0;
 SELECT '';
 
 SELECT '-- stored bytes';
-SELECT length(id), hex(id) = idhex, base58Encode(id) = toString(id), base64Encode(id64) = toString(id64) FROM fs_accounts WHERE name = 'usdc';
+SELECT length(id), hex(id) = idhex, base58Encode(id) = toString(id), base64Encode(id64) = toString(id64) FROM fs_accounts WHERE name = 'gamma';
 
 SELECT '-- toString and CAST to String return the text representation';
-SELECT toString(id), CAST(id AS String), toString(id64), toString(id64url), toString(idhex) FROM fs_accounts WHERE name = 'wsol';
-SELECT toTypeName(toString(id)), toString(id) = 'So11111111111111111111111111111111111111112' FROM fs_accounts WHERE name = 'wsol';
+SELECT toString(id), CAST(id AS String), toString(id64), toString(id64url), toString(idhex) FROM fs_accounts WHERE name = 'alpha';
+SELECT toTypeName(toString(id)), toString(id) = 'TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j' FROM fs_accounts WHERE name = 'alpha';
 
 SELECT '-- equality with string constants uses the primary key';
-SELECT name FROM fs_accounts WHERE id = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' SETTINGS force_primary_key = 1;
-SELECT name FROM fs_accounts WHERE 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' = id SETTINGS force_primary_key = 1;
-SELECT name FROM fs_accounts WHERE id != 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' ORDER BY name;
-SELECT count() FROM fs_accounts WHERE id64 = base64Encode(base58Decode('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'));
+SELECT name FROM fs_accounts WHERE id = 'EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y' SETTINGS force_primary_key = 1;
+SELECT name FROM fs_accounts WHERE 'EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y' = id SETTINGS force_primary_key = 1;
+SELECT name FROM fs_accounts WHERE id != 'EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y' ORDER BY name;
+SELECT count() FROM fs_accounts WHERE id64 = base64Encode(base58Decode('EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y'));
 SELECT count() FROM fs_accounts WHERE id = 'not base58 0OIl'; -- { serverError INCORRECT_DATA }
 SELECT count() FROM fs_accounts WHERE id = '1'; -- { serverError INCORRECT_DATA }
 
 SELECT '-- comparison with FixedString(32) holding the same bytes';
-SELECT name FROM fs_accounts WHERE id = toFixedString(base58Decode('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'), 32) SETTINGS force_primary_key = 1;
+SELECT name FROM fs_accounts WHERE id = toFixedString(base58Decode('EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y'), 32) SETTINGS force_primary_key = 1;
 SELECT count() FROM fs_accounts WHERE id = CAST(id64 AS FixedString(32));
 SELECT count() FROM fs_accounts WHERE id = id64; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT count() FROM fs_accounts WHERE id = CAST('abc' AS FixedString(3)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT '-- comparison with a String column';
-SELECT count() FROM fs_accounts WHERE id = materialize('So11111111111111111111111111111111111111112');
+SELECT count() FROM fs_accounts WHERE id = materialize('TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j');
 SELECT count() FROM fs_accounts WHERE id = materialize('invalid!'); -- { serverError INCORRECT_DATA }
 
 SELECT '-- toString is not monotonic for Base58 and Base64: neither the primary key nor reading in order must rely on it';
-SELECT name FROM fs_accounts WHERE toString(id) = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+SELECT name FROM fs_accounts WHERE toString(id) = 'EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y';
 SELECT name FROM fs_accounts WHERE toString(id) >= 'T' ORDER BY name;
 SELECT groupArray(s) FROM (SELECT toString(id) AS s FROM fs_accounts ORDER BY toString(id));
 SELECT groupArray(s) FROM (SELECT toString(id) AS s FROM fs_accounts ORDER BY toString(id) DESC LIMIT 2);
@@ -84,29 +84,29 @@ SELECT id FROM fs_accounts ORDER BY id DESC LIMIT 2 SETTINGS use_top_k_dynamic_f
 SELECT id FROM fs_accounts ORDER BY id LIMIT 2 SETTINGS use_top_k_dynamic_filtering = 0;
 
 SELECT '-- IN';
-SELECT name FROM fs_accounts WHERE (id, name) IN ((toFixedString(base58Decode('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'), 32), 'usdc'), ('Vote111111111111111111111111111111111111111', 'vote')) ORDER BY name;
-SELECT name FROM fs_accounts WHERE id IN ('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'So11111111111111111111111111111111111111112') ORDER BY name SETTINGS force_primary_key = 1;
-SELECT name FROM fs_accounts WHERE id NOT IN ('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'So11111111111111111111111111111111111111112') ORDER BY name;
-SELECT name FROM fs_accounts WHERE id IN (SELECT id FROM fs_accounts WHERE name IN ('token', 'vote')) ORDER BY name;
-SELECT name FROM fs_accounts WHERE id IN (SELECT 'Vote111111111111111111111111111111111111111') ORDER BY name;
-SELECT 'Vote111111111111111111111111111111111111111' IN (SELECT id FROM fs_accounts);
+SELECT name FROM fs_accounts WHERE (id, name) IN ((toFixedString(base58Decode('EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y'), 32), 'gamma'), ('ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF', 'delta')) ORDER BY name;
+SELECT name FROM fs_accounts WHERE id IN ('EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y', 'TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j') ORDER BY name SETTINGS force_primary_key = 1;
+SELECT name FROM fs_accounts WHERE id NOT IN ('EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y', 'TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j') ORDER BY name;
+SELECT name FROM fs_accounts WHERE id IN (SELECT id FROM fs_accounts WHERE name IN ('beta', 'delta')) ORDER BY name;
+SELECT name FROM fs_accounts WHERE id IN (SELECT 'ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF') ORDER BY name;
+SELECT 'ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF' IN (SELECT id FROM fs_accounts);
 SELECT count() FROM fs_accounts WHERE id IN ('invalid!'); -- { serverError INCORRECT_DATA }
 
 SELECT '-- arrays';
-SELECT has([id], 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'), hasAny([id], ['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v']), hasAll([id], [id, 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v']), indexOf([id64, id64], 'xvp6877brTo9ZfNqq8l0MbG75MLS9uDkfKYCA0UvXWE=') FROM fs_accounts WHERE name = 'usdc';
-SELECT name, has(['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'So11111111111111111111111111111111111111112'], id), indexOf(['So11111111111111111111111111111111111111112', 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'], id), has([toString(id)], id) FROM fs_accounts ORDER BY name;
-SELECT name FROM fs_accounts WHERE has(['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'Vote111111111111111111111111111111111111111'], id) ORDER BY name;
+SELECT has([id], 'EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y'), hasAny([id], ['EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y']), hasAll([id], [id, 'EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y']), indexOf([id64, id64], 'xnoO/WwfBo+ye0zSkAoUMz07UIgt1RE28npxtsYGGCU=') FROM fs_accounts WHERE name = 'gamma';
+SELECT name, has(['EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y', 'TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j'], id), indexOf(['TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j', 'EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y'], id), has([toString(id)], id) FROM fs_accounts ORDER BY name;
+SELECT name FROM fs_accounts WHERE has(['EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y', 'ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF'], id) ORDER BY name;
 SELECT has(['invalid!'], id) FROM fs_accounts; -- { serverError INCORRECT_DATA }
-SELECT toTypeName([id, 'So11111111111111111111111111111111111111112']), [id, 'So11111111111111111111111111111111111111112'] FROM fs_accounts WHERE name = 'usdc';
-SELECT groupArray(id) FROM (SELECT id FROM fs_accounts WHERE name IN ('usdc', 'wsol') ORDER BY id);
+SELECT toTypeName([id, 'TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j']), [id, 'TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j'] FROM fs_accounts WHERE name = 'gamma';
+SELECT groupArray(id) FROM (SELECT id FROM fs_accounts WHERE name IN ('gamma', 'alpha') ORDER BY id);
 -- There is no common FixedString type for different representations.
 SELECT [id, id64] FROM fs_accounts SETTINGS use_variant_as_common_type = 0; -- { serverError NO_COMMON_TYPE }
-SELECT toTypeName([id, id64]), [id, id64] FROM fs_accounts WHERE name = 'usdc' SETTINGS use_variant_as_common_type = 1;
+SELECT toTypeName([id, id64]), [id, id64] FROM fs_accounts WHERE name = 'gamma' SETTINGS use_variant_as_common_type = 1;
 
 SELECT '-- common type with String';
-SELECT toTypeName(if(name = 'usdc', id, 'So11111111111111111111111111111111111111112')), if(name = 'usdc', id, 'So11111111111111111111111111111111111111112') FROM fs_accounts WHERE name IN ('usdc', 'vote') ORDER BY name;
-SELECT id FROM (SELECT id FROM fs_accounts WHERE name = 'vote' UNION ALL SELECT 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA') ORDER BY id;
-SELECT if(name = 'usdc', id, 'not base58!') FROM fs_accounts; -- { serverError INCORRECT_DATA }
+SELECT toTypeName(if(name = 'gamma', id, 'TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j')), if(name = 'gamma', id, 'TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j') FROM fs_accounts WHERE name IN ('gamma', 'delta') ORDER BY name;
+SELECT id FROM (SELECT id FROM fs_accounts WHERE name = 'delta' UNION ALL SELECT 'V8r5WP8Hq5HN6PN1kAXYUcskoSgvSVoYAqqjwsXQNtw') ORDER BY id;
+SELECT if(name = 'gamma', id, 'not base58!') FROM fs_accounts; -- { serverError INCORRECT_DATA }
 
 SELECT '-- JOIN';
 CREATE TABLE fs_transfers
@@ -119,17 +119,17 @@ CREATE TABLE fs_transfers
     INDEX destination_set destination TYPE set(100) GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY (source, amount) SETTINGS index_granularity = 1;
-INSERT INTO fs_transfers SELECT a.id, b.id, toString(b.id), number FROM fs_accounts AS a, fs_accounts AS b, numbers(2) AS n WHERE a.name = 'usdc' AND b.name != 'usdc';
+INSERT INTO fs_transfers SELECT a.id, b.id, toString(b.id), number FROM fs_accounts AS a, fs_accounts AS b, numbers(2) AS n WHERE a.name = 'gamma' AND b.name != 'gamma';
 SELECT a.name, sum(t.amount), count() FROM fs_transfers AS t INNER JOIN fs_accounts AS a ON t.destination = a.id GROUP BY a.name ORDER BY a.name;
 SELECT a.name, count() FROM fs_transfers AS t INNER JOIN fs_accounts AS a ON t.destination_str = a.id GROUP BY a.name ORDER BY a.name;
 SELECT a.name, count() FROM fs_transfers AS t INNER JOIN fs_accounts AS a ON toFixedString(base58Decode(t.destination_str), 32) = a.id GROUP BY a.name ORDER BY a.name;
 SELECT t.destination, a.name FROM fs_transfers AS t LEFT JOIN fs_accounts AS a ON t.destination = a.id WHERE t.amount = 0 ORDER BY t.destination;
 
 SELECT '-- skipping indexes';
-SELECT count() FROM fs_transfers WHERE destination = 'Vote111111111111111111111111111111111111111' SETTINGS force_data_skipping_indices = 'destination_bf';
-SELECT count() FROM fs_transfers WHERE destination IN ('Vote111111111111111111111111111111111111111', 'So11111111111111111111111111111111111111112') SETTINGS force_data_skipping_indices = 'destination_bf';
-SELECT count() FROM fs_transfers WHERE destination = 'Vote111111111111111111111111111111111111111' SETTINGS force_data_skipping_indices = 'destination_set';
-SELECT count() FROM fs_transfers WHERE has(['Vote111111111111111111111111111111111111111'], destination) SETTINGS force_data_skipping_indices = 'destination_bf';
+SELECT count() FROM fs_transfers WHERE destination = 'ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF' SETTINGS force_data_skipping_indices = 'destination_bf';
+SELECT count() FROM fs_transfers WHERE destination IN ('ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF', 'TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j') SETTINGS force_data_skipping_indices = 'destination_bf';
+SELECT count() FROM fs_transfers WHERE destination = 'ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF' SETTINGS force_data_skipping_indices = 'destination_set';
+SELECT count() FROM fs_transfers WHERE has(['ahUhdBiK524uzg5ihjoLrU5fnsaWnpzbJoKeAQPjeyF'], destination) SETTINGS force_data_skipping_indices = 'destination_bf';
 
 SELECT '-- GROUP BY, DISTINCT, ORDER BY, aggregate functions';
 SELECT destination, count() FROM fs_transfers GROUP BY destination ORDER BY destination;
@@ -138,37 +138,37 @@ SELECT uniqExact(destination), min(destination), max(destination), argMax(destin
 SELECT toTypeName(min(destination)), toTypeName(groupArray(destination)) FROM fs_transfers;
 
 SELECT '-- Nullable, LowCardinality, Map, Tuple';
-SELECT CAST(NULL AS Nullable(FixedString(32, 'Base58'))), CAST('So11111111111111111111111111111111111111112' AS Nullable(FixedString(32, 'Base58')));
-SELECT CAST('invalid!' AS Nullable(FixedString(32, 'Base58'))), accurateCastOrNull('invalid!', 'FixedString(32, \'Base58\')'), accurateCastOrNull('So11111111111111111111111111111111111111112', 'FixedString(32, \'Base58\')');
-SELECT CAST(materialize('So11111111111111111111111111111111111111112') AS LowCardinality(FixedString(32, 'Base58'))) AS x, toTypeName(x), x = 'So11111111111111111111111111111111111111112';
-SELECT CAST(map('So11111111111111111111111111111111111111112', 'AQI='), 'Map(FixedString(32, \'Base58\'), FixedString(2, \'Base64\'))') AS m, toTypeName(m), m['So11111111111111111111111111111111111111112'], mapContains(m, 'So11111111111111111111111111111111111111112'), mapContainsKey(m, 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
-SELECT CAST(('So11111111111111111111111111111111111111112', '0102'), 'Tuple(a FixedString(32, \'Base58\'), b FixedString(2, \'Hex\'))') AS t, t.a = 'So11111111111111111111111111111111111111112', t.b = '0x0102';
-SELECT x FROM (SELECT CAST(arrayJoin(['So11111111111111111111111111111111111111112', NULL]) AS Nullable(FixedString(32, 'Base58'))) AS x) WHERE x = 'So11111111111111111111111111111111111111112';
+SELECT CAST(NULL AS Nullable(FixedString(32, 'Base58'))), CAST('TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j' AS Nullable(FixedString(32, 'Base58')));
+SELECT CAST('invalid!' AS Nullable(FixedString(32, 'Base58'))), accurateCastOrNull('invalid!', 'FixedString(32, \'Base58\')'), accurateCastOrNull('TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j', 'FixedString(32, \'Base58\')');
+SELECT CAST(materialize('TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j') AS LowCardinality(FixedString(32, 'Base58'))) AS x, toTypeName(x), x = 'TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j';
+SELECT CAST(map('TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j', 'AQI='), 'Map(FixedString(32, \'Base58\'), FixedString(2, \'Base64\'))') AS m, toTypeName(m), m['TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j'], mapContains(m, 'TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j'), mapContainsKey(m, 'EMmg4BpEzf3RJwoZH9HFzQ1mmdm7gQEYqFa8k4ib3s4Y');
+SELECT CAST(('TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j', '0102'), 'Tuple(a FixedString(32, \'Base58\'), b FixedString(2, \'Hex\'))') AS t, t.a = 'TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j', t.b = '0x0102';
+SELECT x FROM (SELECT CAST(arrayJoin(['TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j', NULL]) AS Nullable(FixedString(32, 'Base58'))) AS x) WHERE x = 'TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j';
 
 SELECT '-- Dynamic and Variant keep the representation';
-SELECT CAST(CAST('So11111111111111111111111111111111111111112' AS FixedString(32, 'Base58')) AS Dynamic) AS d, dynamicType(d);
-SELECT CAST(CAST('So11111111111111111111111111111111111111112' AS FixedString(32, 'Base58')) AS Variant(UInt64, FixedString(32, 'Base58'))) AS v, variantType(v);
+SELECT CAST(CAST('TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j' AS FixedString(32, 'Base58')) AS Dynamic) AS d, dynamicType(d);
+SELECT CAST(CAST('TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j' AS FixedString(32, 'Base58')) AS Variant(UInt64, FixedString(32, 'Base58'))) AS v, variantType(v);
 DROP TABLE IF EXISTS fs_dynamic;
 CREATE TABLE fs_dynamic (d Dynamic) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO fs_dynamic SELECT CAST('So11111111111111111111111111111111111111112' AS FixedString(32, 'Base58'));
+INSERT INTO fs_dynamic SELECT CAST('TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j' AS FixedString(32, 'Base58'));
 INSERT INTO fs_dynamic SELECT CAST('0x0102' AS FixedString(2, 'Hex'));
 SELECT d, dynamicType(d) FROM fs_dynamic ORDER BY dynamicType(d);
 DROP TABLE fs_dynamic;
 -- With max_types = 1, the second type is stored in the shared variant.
 CREATE TABLE fs_dynamic (d Dynamic(max_types = 1)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO fs_dynamic VALUES (42::UInt64);
-INSERT INTO fs_dynamic SELECT CAST('So11111111111111111111111111111111111111112' AS FixedString(32, 'Base58'));
+INSERT INTO fs_dynamic SELECT CAST('TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j' AS FixedString(32, 'Base58'));
 OPTIMIZE TABLE fs_dynamic FINAL;
 SELECT d, dynamicType(d), isDynamicElementInSharedData(d) FROM fs_dynamic ORDER BY dynamicType(d);
 SELECT groupArray(d) FROM (SELECT d FROM fs_dynamic ORDER BY dynamicType(d));
 DROP TABLE fs_dynamic;
 
 SELECT '-- input formats';
-SELECT * FROM format(JSONEachRow, 'id FixedString(32, \'Base58\'), h FixedString(2, \'Hex\')', '{"id":"So11111111111111111111111111111111111111112","h":"0x0aFF"}');
-SELECT * FROM format(CSV, 'id FixedString(32, \'Base58\'), b FixedString(1, \'Base64URL\')', '"So11111111111111111111111111111111111111112",_w');
-SELECT * FROM format(TSV, 'id FixedString(32, \'Base58\'), b FixedString(1, \'Base64\')', 'So11111111111111111111111111111111111111112\t/w==');
+SELECT * FROM format(JSONEachRow, 'id FixedString(32, \'Base58\'), h FixedString(2, \'Hex\')', '{"id":"TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j","h":"0x0aFF"}');
+SELECT * FROM format(CSV, 'id FixedString(32, \'Base58\'), b FixedString(1, \'Base64URL\')', '"TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j",_w');
+SELECT * FROM format(TSV, 'id FixedString(32, \'Base58\'), b FixedString(1, \'Base64\')', 'TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j\t/w==');
 SELECT * FROM format(JSONEachRow, 'id FixedString(32, \'Base58\')', '{"id":"invalid!"}'); -- { serverError INCORRECT_DATA }
-SELECT * FROM format(JSONEachRow, 'id FixedString(32, \'Base58\')', '{"id":"invalid!"}\n{"id":"So11111111111111111111111111111111111111112"}') SETTINGS input_format_allow_errors_num = 1;
+SELECT * FROM format(JSONEachRow, 'id FixedString(32, \'Base58\')', '{"id":"invalid!"}\n{"id":"TNEYcisRwH4QpzGBov7zrizG9VnddqNbDaYEqsfWe2j"}') SETTINGS input_format_allow_errors_num = 1;
 
 SELECT '-- invalid values in INSERT';
 INSERT INTO fs_accounts (id, name) VALUES ('invalid!', 'invalid'); -- { error INCORRECT_DATA }
@@ -179,13 +179,13 @@ SELECT '-- persisted type';
 DETACH TABLE fs_accounts;
 ATTACH TABLE fs_accounts;
 SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'fs_accounts' ORDER BY position;
-SELECT id FROM fs_accounts WHERE name = 'token';
+SELECT id FROM fs_accounts WHERE name = 'beta';
 
 SELECT '-- migration from FixedString(32)';
 CREATE TABLE fs_migration (id FixedString(32)) ENGINE = MergeTree ORDER BY id;
-INSERT INTO fs_migration SELECT toFixedString(base58Decode('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'), 32);
+INSERT INTO fs_migration SELECT toFixedString(base58Decode('V8r5WP8Hq5HN6PN1kAXYUcskoSgvSVoYAqqjwsXQNtw'), 32);
 ALTER TABLE fs_migration MODIFY COLUMN id FixedString(32, 'Base58') SETTINGS mutations_sync = 2;
-SELECT id, toTypeName(id) FROM fs_migration WHERE id = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+SELECT id, toTypeName(id) FROM fs_migration WHERE id = 'V8r5WP8Hq5HN6PN1kAXYUcskoSgvSVoYAqqjwsXQNtw';
 
 DROP TABLE fs_accounts;
 DROP TABLE fs_transfers;
