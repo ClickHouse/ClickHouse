@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "연산자",
           "pages": [
-            "ko/reference/operators/index",
-            "ko/reference/operators/exists",
-            "ko/reference/operators/distributed-ddl"
+            "ko/reference/operators/index"
           ]
         }
       ]

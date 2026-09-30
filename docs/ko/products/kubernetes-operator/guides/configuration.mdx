@@ -80,6 +80,28 @@ spec:
         storage: 5Gi
 ```
 
+### 종료 시 리더십 이양 {#keeper-leadership-handover}
+
+Keeper 컨테이너에는 기본 `preStop` 후크가 설정되어 있습니다. 이 후크는 레플리카가 중지되기 전에 Raft
+리더십을 넘기도록 요청하고, 이양이 완료될 때까지 기다린 후에
+컨테이너가 종료되도록 합니다. 이 후크는 연산자가 시작한 롤아웃뿐만 아니라
+컨테이너가 정상적으로 중지될 때마다 실행됩니다. 디스케줄러에 의한 축출(eviction), 노드 드레인(drain), 자동 스케일러
+동작도 모두 동일한 후크를 트리거합니다. 이 후크는 조정 루프(reconcile loop) 로직이 아니라 큐블릿 수준의 `preStop` 핸들러이기
+때문입니다.
+
+이 후크가 없으면 현재 리더를 재시작할 때 새 선출이 완료될 때까지 앙상블(ensemble)에 리더가 없는 상태가
+지속됩니다. 부하가 높을 때는 선출에 수 초가 걸릴 수 있으며, ClickHouse에서는 이것이 Keeper 연결 끊김과 쿼리
+지연 시간 증가로 나타납니다. 이 후크는 레플리카에 리더십 양보를 요청한 다음(Keeper의 4글자 명령어 `ydld`를
+`http_control` 포트로 전송), 레플리카가 더 이상 리더가 아니게 될 때까지 상태를 폴링합니다. 요청만 보내고
+곧바로 컨테이너를 중지하지 않는 이유는, 요청을 보낸 뒤 확인하지 않는 방식(fire-and-forget)으로는 쓰기 부하 상황에서
+여전히 `SIGTERM`과의 경쟁에서 밀릴 수 있기 때문입니다. 이렇게 대기해야 리더가 없는 구간을 일정 범위 안으로 제한할 수 있습니다.
+
+이 후크는 별도의 구성이 필요 없으며, 지원되지 않는 환경에서도 문제 없이 동작합니다. 여기서 사용하는 리더십 명령어를 아직 지원하지 않는
+26.3 이전 버전의 Keeper에서는 요청이 아무 동작도 하지 않으며(no-op), 컨테이너는 후크가 없을 때와 동일하게 중지됩니다.
+이 후크는 셸 스크립트를 실행하므로 image에 `bash`가 포함되어 있어야 합니다. distroless 또는 scratch Keeper image를 사용하는 경우
+`containerTemplate.lifecycle`을 통해 후크를 재정의하거나 제거하십시오. 자세한 내용은
+[API 참조](/ko/products/kubernetes-operator/reference/api-reference#containertemplatespec)를 참고하십시오.
+
 <div id="storage-configuration">
   ## 저장소 구성 {#storage-configuration}
 </div>

@@ -80,6 +80,31 @@ spec:
         storage: 5Gi
 ```
 
+### Traspaso del liderazgo al finalizar {#keeper-leadership-handover}
+
+El contenedor de Keeper incluye un hook `preStop` predeterminado que solicita a la réplica que ceda el liderazgo de Raft
+antes de detenerse y espera a que el traspaso se complete antes de permitir que el
+contenedor finalice. Este hook se ejecuta en cada detención ordenada del contenedor, no solo en
+los rollouts iniciados por el operador: un desalojo del descheduler, un drenaje de nodos o una acción del autoscaler
+activan el mismo hook, ya que se trata de un handler `preStop` a nivel del agente kubelet y no
+de lógica del bucle de reconciliación.
+
+Sin este mecanismo, reiniciar el líder actual deja al ensemble sin líder hasta que
+concluye una nueva elección, lo que puede tardar varios segundos bajo carga y se manifiesta en
+ClickHouse como pérdida de conexión con Keeper y un aumento de la latencia de las consultas. El hook solicita a la
+réplica que ceda el liderazgo (mediante el comando de cuatro letras `ydld` de Keeper, enviado a través del
+puerto `http_control`) y luego sondea el estado de la réplica hasta que deja de ser el
+líder, en lugar de enviar la solicitud y dejar que el contenedor se detenga de inmediato. Una
+solicitud de tipo fire-and-forget todavía puede perder la carrera frente a `SIGTERM` bajo carga de escritura, por lo que
+es precisamente la espera lo que mantiene acotado el intervalo sin líder.
+
+El hook no requiere configuración y se degrada de forma controlada: en versiones de Keeper anteriores a
+26.3, que aún no admiten los comandos de liderazgo utilizados aquí, la solicitud no tiene efecto y
+el contenedor se detiene igual que lo haría sin el hook. Como ejecuta un script de shell, requiere
+`bash` en la imagen; si utiliza una imagen de Keeper distroless o scratch, sobrescríbalo o elimínelo
+mediante `containerTemplate.lifecycle`. Para más información, consulte la
+[Referencia de la API](/es/products/kubernetes-operator/reference/api-reference#containertemplatespec).
+
 <div id="storage-configuration">
   ## Configuración de almacenamiento {#storage-configuration}
 </div>

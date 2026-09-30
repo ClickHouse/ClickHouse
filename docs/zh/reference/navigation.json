@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "运算符",
           "pages": [
-            "zh/reference/operators/index",
-            "zh/reference/operators/exists",
-            "zh/reference/operators/distributed-ddl"
+            "zh/reference/operators/index"
           ]
         }
       ]

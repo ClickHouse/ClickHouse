@@ -80,6 +80,31 @@ spec:
         storage: 5Gi
 ```
 
+### Transfert du leadership à l&#39;arrêt {#keeper-leadership-handover}
+
+Le conteneur Keeper dispose d&#39;un hook `preStop` par défaut qui demande à la réplique de céder le leadership Raft
+avant de s&#39;arrêter, puis attend la fin de ce transfert avant de laisser le
+conteneur se terminer. Ce hook s&#39;exécute à chaque arrêt gracieux du conteneur, et pas uniquement lors des
+déploiements progressifs initiés par l&#39;opérateur : une éviction par le descheduler, un drainage de nœuds ou une action de
+l&#39;autoscaler déclenchent tous le même hook, puisqu&#39;il s&#39;agit d&#39;un handler `preStop` exécuté par le kubelet et non
+d&#39;une logique de la boucle de réconciliation.
+
+Sans ce hook, le redémarrage du leader actuel laisse l&#39;ensemble sans leader jusqu&#39;à
+l&#39;issue d&#39;une nouvelle élection, ce qui peut prendre plusieurs secondes sous charge et se traduit, côté
+ClickHouse, par des pertes de connexion à Keeper et une latence accrue des requêtes. Le hook demande à la
+réplique de céder le leadership (commande à quatre lettres `ydld` de Keeper, envoyée via le port
+`http_control`), puis interroge le statut de la réplique jusqu&#39;à ce qu&#39;elle ne soit plus
+leader, au lieu d&#39;envoyer la requête et de laisser immédiatement le conteneur s&#39;arrêter : sous une charge d&#39;écriture, une
+requête de type fire-and-forget peut encore être devancée par le `SIGTERM` (condition de concurrence) ; c&#39;est donc
+cette attente qui permet de borner la période sans leader.
+
+Le hook ne nécessite aucune configuration et se dégrade gracieusement : sur les versions de Keeper antérieures à
+26.3, qui ne prennent pas encore en charge les commandes de leadership utilisées ici, la requête est sans effet (no-op) et
+le conteneur s&#39;arrête comme il le ferait sans le hook. Comme il exécute un script shell, il nécessite
+`bash` dans l&#39;image ; si vous utilisez une image Keeper distroless ou scratch, remplacez-le ou supprimez-le
+via `containerTemplate.lifecycle` — consultez la
+[Référence de l&#39;API](/fr/products/kubernetes-operator/reference/api-reference#containertemplatespec).
+
 <div id="storage-configuration">
   ## Configuration du stockage {#storage-configuration}
 </div>

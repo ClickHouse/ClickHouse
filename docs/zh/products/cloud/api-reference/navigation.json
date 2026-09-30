@@ -14,8 +14,8 @@
           "GET /v1/organizations/{organizationId}/activities/{activityId}",
           "zh/products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
           "POST /v1/organizations/{organizationId}/byocInfrastructure",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-validate",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
+          "zh/products/cloud/api-reference/organization/organization-byoc-infrastructure-validate",
+          "zh/products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "zh/products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get"
@@ -138,13 +138,13 @@
         ]
       },
       {
-        "group": "Saved queries",
+        "group": "已保存的查询",
         "pages": [
-          "products/cloud/api-reference/saved-queries/saved-query-create",
-          "products/cloud/api-reference/saved-queries/saved-query-list",
-          "products/cloud/api-reference/saved-queries/saved-query-delete",
-          "products/cloud/api-reference/saved-queries/saved-query-get",
-          "products/cloud/api-reference/saved-queries/saved-query-update"
+          "zh/products/cloud/api-reference/saved-queries/saved-query-create",
+          "zh/products/cloud/api-reference/saved-queries/saved-query-list",
+          "zh/products/cloud/api-reference/saved-queries/saved-query-delete",
+          "zh/products/cloud/api-reference/saved-queries/saved-query-get",
+          "zh/products/cloud/api-reference/saved-queries/saved-query-update"
         ]
       }
     ]

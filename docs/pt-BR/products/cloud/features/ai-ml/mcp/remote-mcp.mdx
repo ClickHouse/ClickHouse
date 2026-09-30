@@ -16,6 +16,7 @@ Este guia mostra como habilitar o servidor MCP remoto do ClickHouse Cloud e conf
 
 * Um [serviço do ClickHouse Cloud](/pt-BR/get-started/setup/cloud) em execução
 * Sua IDE ou ferramenta de desenvolvimento com agentes de preferência
+* Para autenticação sem interação (headless), uma [chave de API do ClickHouse Cloud](/pt-BR/cloud/manage/openapi) com acesso à organização e aos serviços necessários
 
 ## Habilitar o servidor MCP remoto para Cloud {#enable-remote-mcp-server}
 
@@ -41,6 +42,89 @@ https://mcp.clickhouse.cloud/mcp
 </div>
 
 Escolha sua IDE ou ferramenta abaixo e siga as instruções de configuração correspondentes.
+
+### Autenticar a partir de um ambiente headless {#headless-mcp-client-authentication}
+
+Se o seu cliente MCP for executado em um host remoto ou headless, onde um fluxo do OAuth baseado em navegador não é viável, faça a autenticação com uma [chave de API do ClickHouse Cloud](/pt-BR/cloud/manage/openapi).
+
+1. No console do ClickHouse Cloud, abra sua organização e selecione **Chaves de API**.
+2. Crie uma chave com as funções e permissões mínimas necessárias para as organizações e os serviços que o cliente MCP precisa acessar e, em seguida, baixe o ID e o secret da chave.
+3. No host remoto, forneça as credenciais por meio do seu sistema de gerenciamento de secrets e crie um valor de autorização HTTP Basic:
+
+```bash
+export CLICKHOUSE_CLOUD_API_KEY="<key_id>"
+export CLICKHOUSE_CLOUD_API_SECRET="<key_secret>"
+
+export CH_AUTH="Basic $(
+  printf '%s:%s' \
+    "$CLICKHOUSE_CLOUD_API_KEY" \
+    "$CLICKHOUSE_CLOUD_API_SECRET" |
+  base64 | tr -d '\n'
+)"
+```
+
+4. Selecione seu cliente MCP e adicione o servidor MCP remoto:
+
+<Tabs>
+  <Tab title="Claude Code" id="headless-auth-claude-code">
+    ```bash
+    claude mcp add \
+      --scope user \
+      --transport http \
+      clickhouse-cloud \
+      https://mcp.clickhouse.cloud/mcp \
+      --header 'Authorization: ${CH_AUTH}'
+    ```
+
+    O Claude Code expande `CH_AUTH` a partir do ambiente ao se conectar. Inicie o Claude Code e execute `/mcp` para confirmar que `clickhouse-cloud` está conectado.
+
+    Consulte a [documentação de MCP do Claude Code](https://code.claude.com/docs/en/mcp#option-1-add-a-remote-http-server) para obter detalhes sobre servidores HTTP remotos e a configuração de cabeçalhos.
+  </Tab>
+
+  <Tab title="Codex" id="headless-auth-codex">
+    Adicione a seguinte entrada ao arquivo `~/.codex/config.toml`:
+
+    ```toml
+    [mcp_servers.clickhouse-cloud]
+    url = "https://mcp.clickhouse.cloud/mcp"
+    env_http_headers = { Authorization = "CH_AUTH" }
+    ```
+
+    Execute `codex mcp list` para confirmar que `clickhouse-cloud` está configurado.
+
+    Consulte a [referência de configuração do Codex](https://developers.openai.com/codex/config-reference) para obter detalhes sobre `mcp_servers.<id>.env_http_headers`.
+  </Tab>
+
+  <Tab title="OpenCode" id="headless-auth-opencode">
+    Adicione a seguinte entrada ao seu arquivo de configuração `opencode.jsonc`:
+
+    ```jsonc
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "servers": {
+          "clickhouse-cloud": {
+            "type": "remote",
+            "url": "https://mcp.clickhouse.cloud/mcp",
+            "oauth": false,
+            "headers": {
+              "Authorization": "{env:CH_AUTH}"
+            }
+          }
+        }
+      }
+    }
+    ```
+
+    Execute `opencode mcp list` para confirmar que `clickhouse-cloud` está conectado.
+
+    Consulte a [documentação de MCP do OpenCode](https://opencode.ai/v2/docs/mcp-servers#remote) para obter detalhes sobre servidores remotos, cabeçalhos e substituição de variáveis de ambiente.
+  </Tab>
+</Tabs>
+
+Mantenha `CH_AUTH` disponível em cada sessão do cliente e não faça commit da chave de API, do secret nem do valor de `CH_AUTH` no controle de versão. A codificação Base64 não criptografa as credenciais.
+
+Esse fluxo com chave de API não exige um navegador nem um login separado no `clickhousectl`.
 
 <div id="claude-code">
   ### Claude Code {#claude-code}

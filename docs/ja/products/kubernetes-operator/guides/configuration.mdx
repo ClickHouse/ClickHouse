@@ -80,6 +80,30 @@ spec:
         storage: 5Gi
 ```
 
+### 終了時のリーダーシップ移譲 {#keeper-leadership-handover}
+
+Keeper コンテナーにはデフォルトで `preStop` hook が設定されています。この hook は、停止前にレプリカへ Raft
+リーダーシップの移譲を要求し、移譲が完了するのを待ってから
+コンテナーを終了させます。この処理は、オペレーターが開始したロールアウトに限らず、コンテナーが
+正常停止するたびに実行されます。descheduler によるエビクション、ノードのドレイン、オートスケーラー
+の操作のいずれでも同じ hook がトリガーされます。これは、この hook がリコンサイルループのロジックではなく、
+キューブレットレベルの `preStop` ハンドラーだからです。
+
+この仕組みがないと、現在のリーダーを再起動した際、新しい選出が完了するまで ensemble にリーダーが
+存在しない状態になります。選出には負荷状況によって数秒かかることがあり、ClickHouse 側では
+Keeper の接続断やクエリレイテンシの増加として現れます。この hook は、リクエストを送信してすぐにコンテナーを停止させるのではなく、レプリカに
+リーダーシップの譲渡を要求したうえで (Keeper の 4 文字コマンド `ydld` を
+`http_control` ポート経由で送信) 、レプリカがリーダーでなくなるまでステータスをポーリングします。
+fire-and-forget 方式のリクエストでは、書き込み負荷が高い状況で `SIGTERM` との競合に負ける可能性があります。
+待機することで、リーダー不在の期間を一定の範囲内に抑えられます。
+
+この hook は設定不要で、非対応の環境でも問題なく動作します。ここで使用するリーダーシップコマンドにまだ対応していない
+26.3 より前の Keeper バージョンでは、リクエストは何も行わず、
+コンテナーは hook がない場合と同様に停止します。この hook はシェルスクリプトを実行するため、
+イメージに `bash` が必要です。distroless または scratch の Keeper イメージを使用する場合は、
+`containerTemplate.lifecycle` で hook を上書きまたは削除してください。詳細は
+[API リファレンス](/ja/products/kubernetes-operator/reference/api-reference#containertemplatespec) を参照してください。
+
 <div id="storage-configuration">
   ## ストレージ構成 {#storage-configuration}
 </div>

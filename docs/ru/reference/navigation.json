@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "Операторы",
           "pages": [
-            "ru/reference/operators/index",
-            "ru/reference/operators/exists",
-            "ru/reference/operators/distributed-ddl"
+            "ru/reference/operators/index"
           ]
         }
       ]

@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "演算子",
           "pages": [
-            "ja/reference/operators/index",
-            "ja/reference/operators/exists",
-            "ja/reference/operators/distributed-ddl"
+            "ja/reference/operators/index"
           ]
         }
       ]

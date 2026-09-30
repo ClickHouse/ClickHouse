@@ -14,7 +14,7 @@ Ces utilisateurs, ainsi que les charges de travail pilotées par des agents agis
 La fonctionnalité serveur MCP distant dans ClickHouse Cloud répond à ce besoin en exposant une interface standard que des agents externes peuvent utiliser pour obtenir un contexte analytique.
 MCP, ou Model Context Protocol, est une norme d’accès structuré aux données pour les applications d’IA alimentées par des LLM.
 Grâce à cette intégration, des agents externes peuvent lister les bases de données et les tables, inspecter les schémas et exécuter des requêtes SELECT en lecture seule et à portée limitée.
-L’authentification est gérée via OAuth. Le serveur est entièrement géré dans ClickHouse Cloud ; aucune configuration ni maintenance n’est donc nécessaire.
+L’authentification est gérée via OAuth 2.0 ou une [API key ClickHouse Cloud](/fr/cloud/manage/openapi). Le serveur est entièrement géré dans ClickHouse Cloud ; aucune configuration ni maintenance n’est donc nécessaire.
 
 Il est ainsi plus facile pour les outils agentiques de se connecter à ClickHouse et de récupérer les données dont ils ont besoin, que ce soit pour l’analyse, la synthèse, la génération de code ou l’exploration.
 
@@ -22,14 +22,14 @@ Il est ainsi plus facile pour les outils agentiques de se connecter à ClickHous
 
 ClickHouse propose deux serveurs MCP.
 
-|                      | Serveur MCP distant (Cloud)                                                                                                     | Serveur MCP open source                                                   |
+|                      | Serveur MCP distant (Cloud)                                                                                                      | Serveur MCP open source                                                   |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | **Source**           | Entièrement géré par ClickHouse Cloud                                                                                            | [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) sur GitHub |
 | **Transport**        | HTTP streamable (`https://mcp.clickhouse.cloud/mcp`)                                                                             | stdio local                                                               |
 | **Fonctionne avec**  | Les services ClickHouse Cloud                                                                                                    | Toute instance ClickHouse (self-hosted ou Cloud)                          |
-| **Authentification** | OAuth 2.0 avec vos identifiants Cloud                                                                                            | Variables d’environnement                                                 |
-| **Outils**           | 13 outils couvrant les requêtes, l’exploration du schéma, la gestion des services, les sauvegardes, ClickPipes et la facturation | 3 outils : `run_select_query`, `list_databases`, `list_tables`            |
-| **Configuration**    | Aucune installation. Pointez votre MCP client vers l’endpoint et authentifiez-vous.                                              | Installez et exécutez le serveur localement                               |
+| **Authentification** | OAuth 2.0 avec vos identifiants Cloud, ou une API key ClickHouse Cloud                                                           | Variables d’environnement                                                 |
+| **Outils**           | 13 outils couvrant les requêtes, l’exploration du schéma, la gestion des services, les sauvegardes, ClickPipes et la facturation | 3 outils : `run_select_query`, `list_databases`, `list_tables`            |
+| **Configuration**    | Aucune installation. Pointez votre client MCP vers l’endpoint et authentifiez-vous.                                              | Installez et exécutez le serveur localement                               |
 
 Le serveur MCP distant offre l’intégration la plus complète avec ClickHouse Cloud, notamment la gestion des services, la surveillance des sauvegardes, la visibilité sur ClickPipe et les données de facturation, sans infrastructure à gérer.
 Pour les instances ClickHouse self-hosted, consultez les [guides du serveur MCP open source](/fr/guides/use-cases/ai-ml/MCP/index).
@@ -51,9 +51,18 @@ https://mcp.clickhouse.cloud/mcp
 
 ## Authentification {#authentication}
 
-Tout accès au serveur MCP distant est authentifié via OAuth 2.0.
-Lorsqu’un client MCP se connecte pour la première fois, il lance un flux OAuth qui ouvre une fenêtre de navigateur pour permettre à l’utilisateur de se connecter avec ses identifiants ClickHouse Cloud.
-L’accès est limité aux organisations et aux services auxquels l’utilisateur authentifié est autorisé à accéder. Aucune configuration supplémentaire de clé API n’est requise.
+Le serveur MCP distant prend en charge deux méthodes d&#39;authentification :
+
+* **OAuth 2.0** : recommandé pour les clients interactifs. Lorsqu&#39;un client MCP se connecte pour la première fois, il ouvre une fenêtre de navigateur dans laquelle l&#39;utilisateur se connecte avec ses identifiants ClickHouse Cloud. L&#39;accès est limité aux organisations et aux services auxquels l&#39;utilisateur authentifié a la permission d&#39;accéder.
+* **API key ClickHouse Cloud** : destinée aux environnements distants, sans interface graphique ou automatisés, dans lesquels un flux OAuth via navigateur n&#39;est pas envisageable. Transmettez l&#39;ID et le secret de l&#39;API key via l&#39;authentification HTTP Basic :
+
+  ```text
+  Authorization: Basic base64(<key_id>:<key_secret>)
+  ```
+
+L&#39;accès par API key est limité par les rôles, les permissions et la date d&#39;expiration configurés pour la clé. Utilisez une clé dédiée, dotée des privilèges strictement nécessaires, et injectez-la via un système de gestion des secrets. L&#39;encodage Base64 ne chiffre pas les identifiants : ne committez donc pas la valeur encodée dans votre système de gestion de versions et ne l&#39;exposez pas dans les logs.
+
+Pour un exemple de configuration d&#39;un client MCP dans un environnement sans interface graphique, consultez [S&#39;authentifier depuis un environnement sans interface graphique](/fr/products/cloud/features/ai-ml/mcp/remote-mcp#headless-mcp-client-authentication).
 
 ## Sécurité {#safety}
 

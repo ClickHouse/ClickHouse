@@ -80,6 +80,31 @@ spec:
         storage: 5Gi
 ```
 
+### 终止时的 leader 身份移交 {#keeper-leadership-handover}
+
+Keeper 容器带有一个默认的 `preStop` hook，它会在副本停止前要求其移交 Raft
+leader 身份，并等待移交完成后才允许
+容器终止。容器每次正常停止时都会执行该 hook，而不仅限于
+operator 发起的滚动发布：descheduler 驱逐、节点排空或 自动扩缩器
+操作都会触发同一个 hook，因为它是 kubelet 节点代理级别的 `preStop` handler，而
+不是调和循环中的逻辑。
+
+如果没有该 hook，重启当前 leader 会导致 ensemble 在新一轮选举完成之前
+处于无 leader 状态；在高负载下，选举可能需要数秒，在
+ClickHouse 侧则表现为 Keeper 连接丢失以及查询延迟升高。该 hook 会要求
+副本让出 leader 身份 (通过
+`http_control` 端口发送 Keeper 的 `ydld` 四字命令) ，然后轮询副本的状态，直到其不再是
+leader 为止，而不是发出请求后立即让容器停止。在写入负载下，
+发出即忘式的请求仍可能在与 `SIGTERM` 的竞争中落败，因此
+正是这一等待过程确保了无 leader 窗口的时长可控。
+
+该 hook 无需任何配置，并且能够平稳降级：早于
+26.3 的 Keeper 版本尚不支持此处使用的 leader 身份相关命令，此时该请求为空操作，
+容器会像没有该 hook 时一样停止。该 hook 运行的是 shell 脚本，因此要求镜像中包含
+`bash`；如果您使用的是 distroless 或 scratch 类型的 Keeper 镜像，请通过 `containerTemplate.lifecycle` 覆盖或移除
+该 hook，详见
+[API 参考文档](/zh/products/kubernetes-operator/reference/api-reference#containertemplatespec)。
+
 <div id="storage-configuration">
   ## 存储配置 {#storage-configuration}
 </div>

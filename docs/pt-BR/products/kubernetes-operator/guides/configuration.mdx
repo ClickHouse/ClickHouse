@@ -80,6 +80,31 @@ spec:
         storage: 5Gi
 ```
 
+### Transferência de liderança no encerramento {#keeper-leadership-handover}
+
+O contêiner do Keeper tem um hook `preStop` padrão que solicita à réplica que transfira a liderança do Raft
+antes de parar e aguarda a conclusão da transferência antes de permitir que o
+contêiner seja encerrado. Isso ocorre em toda parada graciosa do contêiner, e não apenas
+em rollouts iniciados pelo operador: uma evicção pelo descheduler, uma drenagem de nós ou uma ação do
+escalonador automático acionam o mesmo hook, já que se trata de um handler `preStop` no nível do agente de nó do Kubernetes, e não
+de uma lógica do loop de reconciliação.
+
+Sem isso, reiniciar o líder atual deixa o ensemble sem líder até que uma
+nova eleição seja concluída, o que pode levar vários segundos sob carga e se manifesta no
+ClickHouse como perda de conexão com o Keeper e aumento da latência das consultas. O hook solicita à
+réplica que ceda a liderança (por meio do comando de quatro letras `ydld` do Keeper, enviado pela porta
+`http_control`) e, em seguida, verifica periodicamente o status da réplica até que ela deixe de ser a
+líder, em vez de enviar a requisição e deixar o contêiner parar imediatamente — uma
+requisição do tipo fire-and-forget ainda pode perder a corrida com o `SIGTERM` sob carga de escrita; por isso,
+é a espera que mantém limitada a janela sem líder.
+
+O hook não precisa de configuração e se degrada de forma graciosa: em versões do Keeper anteriores à
+26.3, que ainda não oferecem os comandos de liderança usados aqui, a requisição não tem efeito e
+o contêiner para normalmente, como se o hook não existisse. Como ele executa um script de shell, é necessário
+ter `bash` na imagem; se você usa uma imagem do Keeper distroless ou scratch, sobrescreva ou remova
+o hook por meio de `containerTemplate.lifecycle` — consulte a
+[Referência da API](/pt-BR/products/kubernetes-operator/reference/api-reference#containertemplatespec).
+
 <div id="storage-configuration">
   ## Configuração de armazenamento {#storage-configuration}
 </div>

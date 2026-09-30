@@ -14,8 +14,8 @@
           "GET /v1/organizations/{organizationId}/activities/{activityId}",
           "fr/products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
           "POST /v1/organizations/{organizationId}/byocInfrastructure",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-validate",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
+          "fr/products/cloud/api-reference/organization/organization-byoc-infrastructure-validate",
+          "fr/products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "fr/products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get"
@@ -138,13 +138,13 @@
         ]
       },
       {
-        "group": "Saved queries",
+        "group": "Requêtes enregistrées",
         "pages": [
-          "products/cloud/api-reference/saved-queries/saved-query-create",
-          "products/cloud/api-reference/saved-queries/saved-query-list",
-          "products/cloud/api-reference/saved-queries/saved-query-delete",
-          "products/cloud/api-reference/saved-queries/saved-query-get",
-          "products/cloud/api-reference/saved-queries/saved-query-update"
+          "fr/products/cloud/api-reference/saved-queries/saved-query-create",
+          "fr/products/cloud/api-reference/saved-queries/saved-query-list",
+          "fr/products/cloud/api-reference/saved-queries/saved-query-delete",
+          "fr/products/cloud/api-reference/saved-queries/saved-query-get",
+          "fr/products/cloud/api-reference/saved-queries/saved-query-update"
         ]
       }
     ]

@@ -16,6 +16,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 * Запущенный [сервис ClickHouse Cloud](/ru/get-started/setup/cloud)
 * IDE или выбранный вами инструмент для агентной разработки
+* Для неинтерактивной аутентификации — [ключ API ClickHouse Cloud](/ru/cloud/manage/openapi) с доступом к нужной организации и сервисам
 
 ## Включение удалённого MCP-сервера для Cloud {#enable-remote-mcp-server}
 
@@ -41,6 +42,89 @@ https://mcp.clickhouse.cloud/mcp
 </div>
 
 Выберите ниже IDE или инструмент и следуйте соответствующим инструкциям по настройке.
+
+### Аутентификация из среды без графического интерфейса {#headless-mcp-client-authentication}
+
+Если ваш MCP-клиент работает на удалённом хосте или хосте без графического интерфейса, где OAuth-поток через браузер использовать неудобно, выполните аутентификацию с помощью [ключа API ClickHouse Cloud](/ru/cloud/manage/openapi).
+
+1. В консоли ClickHouse Cloud откройте свою организацию и выберите **API Keys**.
+2. Создайте ключ с минимальным набором ролей и разрешений, необходимых MCP-клиенту для доступа к нужным организациям и сервисам, затем скачайте ID ключа и секрет.
+3. На удалённом хосте передайте учётные данные через используемую систему управления секретами и сформируйте значение для авторизации HTTP Basic:
+
+```bash
+export CLICKHOUSE_CLOUD_API_KEY="<key_id>"
+export CLICKHOUSE_CLOUD_API_SECRET="<key_secret>"
+
+export CH_AUTH="Basic $(
+  printf '%s:%s' \
+    "$CLICKHOUSE_CLOUD_API_KEY" \
+    "$CLICKHOUSE_CLOUD_API_SECRET" |
+  base64 | tr -d '\n'
+)"
+```
+
+4. Выберите свой MCP-клиент и добавьте удалённый MCP-сервер:
+
+<Tabs>
+  <Tab title="Claude Code" id="headless-auth-claude-code">
+    ```bash
+    claude mcp add \
+      --scope user \
+      --transport http \
+      clickhouse-cloud \
+      https://mcp.clickhouse.cloud/mcp \
+      --header 'Authorization: ${CH_AUTH}'
+    ```
+
+    При подключении Claude Code подставляет значение `CH_AUTH` из переменных окружения. Запустите Claude Code и выполните `/mcp`, чтобы убедиться, что `clickhouse-cloud` подключён.
+
+    Подробнее об удалённых HTTP-серверах и настройке заголовков см. в [документации Claude Code по MCP](https://code.claude.com/docs/en/mcp#option-1-add-a-remote-http-server).
+  </Tab>
+
+  <Tab title="Codex" id="headless-auth-codex">
+    Добавьте следующую запись в `~/.codex/config.toml`:
+
+    ```toml
+    [mcp_servers.clickhouse-cloud]
+    url = "https://mcp.clickhouse.cloud/mcp"
+    env_http_headers = { Authorization = "CH_AUTH" }
+    ```
+
+    Выполните `codex mcp list`, чтобы убедиться, что `clickhouse-cloud` настроен.
+
+    Подробнее о `mcp_servers.<id>.env_http_headers` см. в [справочнике по конфигурации Codex](https://developers.openai.com/codex/config-reference).
+  </Tab>
+
+  <Tab title="OpenCode" id="headless-auth-opencode">
+    Добавьте следующую запись в конфигурацию `opencode.jsonc`:
+
+    ```jsonc
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "servers": {
+          "clickhouse-cloud": {
+            "type": "remote",
+            "url": "https://mcp.clickhouse.cloud/mcp",
+            "oauth": false,
+            "headers": {
+              "Authorization": "{env:CH_AUTH}"
+            }
+          }
+        }
+      }
+    }
+    ```
+
+    Выполните `opencode mcp list`, чтобы убедиться, что `clickhouse-cloud` подключён.
+
+    Подробнее об удалённых серверах, заголовках и подстановке переменных окружения см. в [документации OpenCode по MCP](https://opencode.ai/v2/docs/mcp-servers#remote).
+  </Tab>
+</Tabs>
+
+Переменная `CH_AUTH` должна быть доступна в каждом сеансе клиента. Не коммитьте ключ API, секрет или значение `CH_AUTH` в систему контроля версий. Кодирование Base64 не шифрует учётные данные.
+
+При аутентификации по ключу API не нужен ни браузер, ни отдельный вход через `clickhousectl`.
 
 <div id="claude-code">
   ### Claude Code {#claude-code}

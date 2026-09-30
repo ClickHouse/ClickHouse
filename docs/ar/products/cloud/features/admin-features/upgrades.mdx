@@ -17,14 +17,10 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 * وللاطلاع على مواعيد إصدار النسخ، راجع صفحة [حالة الإصدار](/ar/resources/changelogs/cloud/release-status)
 
 <Note>
-  نقدّم آلية ترقية جديدة، وهو مفهوم نطلق عليه اسم &quot;make before break&quot; (أو MBB). في هذا النهج الجديد، نضيف نسخًا متماثلة محدَّثة قبل إزالة النسخ القديمة أثناء عملية الترقية. ويؤدي ذلك إلى ترقيات أكثر سلاسة وأقل تأثيرًا في أعباء العمل قيد التشغيل.
-
-  وكجزء من هذا التغيير، سيتم الاحتفاظ ببيانات جداول النظام التاريخية لمدة تصل إلى 30 يومًا كحد أقصى ضمن أحداث الترقية. بالإضافة إلى ذلك، لن يتم الاحتفاظ بأي بيانات من جداول النظام يعود تاريخها إلى ما قبل 19 ديسمبر 2024 للخدمات على AWS أو GCP، أو إلى ما قبل 14 يناير 2025 للخدمات على Azure، وذلك ضمن الترحيل إلى مستويات المؤسسة الجديدة.
+  بفضل آلية [MBB](/ar/products/cloud/features/autoscaling/make-before-break) في ClickHouse Cloud، يُحتفَظ ببيانات جداول النظام التاريخية لمدة تصل إلى 30 يومًا كحد أقصى ضمن أحداث الترقية.
 </Note>
 
-<div id="version-compatibility">
-  ## توافق الإصدار
-</div>
+## توافق الإصدار {#version-compatibility}
 
 عند إنشاء خدمة، يُضبط إعداد [`compatibility`](/ar/reference/settings/session-settings/compatibility#compatibility) على أحدث إصدار من ClickHouse متاح في ClickHouse Cloud وقت تهيئة خدمتك لأول مرة.
 
@@ -33,7 +29,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 لا يمكنك إدارة إعداد `compatibility` الافتراضي على مستوى الخدمة لخدمتك. يجب عليك [التواصل مع الدعم](https://clickhouse.com/support/program) إذا كنت ترغب في تغيير الإصدار المحدد لإعداد `compatibility` الافتراضي لخدمتك. ومع ذلك، يمكنك تجاوز إعداد `compatibility` على مستوى المستخدم أو الدور أو profile أو query أو الجلسة باستخدام آليات إعدادات ClickHouse القياسية، مثل `SET compatibility = '22.3'` في جلسة أو `SETTINGS compatibility = '22.3'` في query.
 
 <div id="maintenance-mode">
-  ## وضع الصيانة
+  ## وضع الصيانة {#maintenance-mode}
 </div>
 
 قد نحتاج أحيانًا إلى تحديث خدمتك، وقد يتطلب ذلك تعطيل بعض الميزات مثل التوسعة أو الخمول التلقائي. وفي حالات نادرة، قد نحتاج إلى اتخاذ إجراء بشأن خدمة تواجه مشكلات لإعادتها إلى حالة سليمة. أثناء هذه الصيانة، سترى إشعارًا على صفحة الخدمة يقول *&quot;الصيانة جارية&quot;*. وقد يظل بإمكانك استخدام الخدمة لتنفيذ الاستعلامات خلال هذا الوقت.
@@ -41,7 +37,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 لن تُفرض عليك أي رسوم عن الفترة التي تكون فيها الخدمة قيد الصيانة. ويُعد *وضع الصيانة* حالة نادرة، ولا ينبغي الخلط بينه وبين ترقيات الخدمة المعتادة.
 
 <div id="release-channels-upgrade-schedule">
-  ## قنوات الإصدار (جدول الترقية)
+  ## قنوات الإصدار (جدول الترقية) {#release-channels-upgrade-schedule}
 </div>
 
 يمكن للمستخدمين تحديد جدول الترقية لخدمة ClickHouse Cloud الخاصة بهم من خلال الاشتراك في قناة إصدار محددة. توجد ثلاث قنوات إصدار، كما يمكن للمستخدم تحديد يوم ووقت محددين من الأسبوع لإجراء الترقيات باستخدام ميزة **الترقيات المجدولة**.
@@ -56,9 +52,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
   تُدرج خدمات فئة Basic تلقائيًا ضمن قناة الإصدار السريعة
 </Note>
 
-<div id="fast-release-channel-early-upgrades">
-  ### قناة الإصدار السريع (الترقيات المبكرة)
-</div>
+### قناة الإصدار السريع (الترقيات المبكرة) {#fast-release-channel-early-upgrades}
 
 <ScalePlanFeatureBadge feature="قناة الإصدار السريع" />
 
@@ -80,7 +74,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 تُعد قناة **الإصدار السريع** هذه مناسبة لاختبار الميزات الجديدة في البيئات غير الحرجة. **ولا يُنصح بها لأعباء العمل في بيئات الإنتاج التي تتطلب زمن تشغيل وموثوقية بمستوى عالٍ.**
 
 <div id="regular-release-channel">
-  ### قناة الإصدار العادية
+  ### قناة الإصدار العادية {#regular-release-channel}
 </div>
 
 بالنسبة إلى جميع الخدمات ضمن فئتَي Scale وEnterprise التي لم يُضبط لها قناة إصدار أو جدول ترقية، فستُنفَّذ الترقيات كجزء من إصدار قناة الإصدار العادية. ويُنصح بهذا لبيئات الإنتاج.
@@ -92,7 +86,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 </Note>
 
 <div id="slow-release-channel-deferred-upgrades">
-  ### قناة الإصدار البطيء (الترقيات المؤجلة)
+  ### قناة الإصدار البطيء (الترقيات المؤجلة) {#slow-release-channel-deferred-upgrades}
 </div>
 
 <EnterprisePlanFeatureBadge feature="قناة الإصدار البطيء" />
@@ -113,9 +107,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
   * لن يؤدي الانتقال إلى قناة أبطأ إلى خفض إصدار خدمتك، بل سيُبقيها على إصدارها الحالي إلى أن يتوفر إصدار أحدث على تلك القناة، أي: من العادي إلى البطيء، أو من السريع إلى العادي أو البطيء
 </Note>
 
-<div id="scheduled-upgrades">
-  ## الترقيات المجدولة
-</div>
+## الترقيات المجدولة {#scheduled-upgrades}
 
 <EnterprisePlanFeatureBadge feature="الترقيات المجدولة" linking_verb_are="true" />
 

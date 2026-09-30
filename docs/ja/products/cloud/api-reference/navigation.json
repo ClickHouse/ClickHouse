@@ -14,8 +14,8 @@
           "GET /v1/organizations/{organizationId}/activities/{activityId}",
           "ja/products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
           "POST /v1/organizations/{organizationId}/byocInfrastructure",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-validate",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
+          "ja/products/cloud/api-reference/organization/organization-byoc-infrastructure-validate",
+          "ja/products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "ja/products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get"
@@ -138,13 +138,13 @@
         ]
       },
       {
-        "group": "Saved queries",
+        "group": "保存クエリ",
         "pages": [
-          "products/cloud/api-reference/saved-queries/saved-query-create",
-          "products/cloud/api-reference/saved-queries/saved-query-list",
-          "products/cloud/api-reference/saved-queries/saved-query-delete",
-          "products/cloud/api-reference/saved-queries/saved-query-get",
-          "products/cloud/api-reference/saved-queries/saved-query-update"
+          "ja/products/cloud/api-reference/saved-queries/saved-query-create",
+          "ja/products/cloud/api-reference/saved-queries/saved-query-list",
+          "ja/products/cloud/api-reference/saved-queries/saved-query-delete",
+          "ja/products/cloud/api-reference/saved-queries/saved-query-get",
+          "ja/products/cloud/api-reference/saved-queries/saved-query-update"
         ]
       }
     ]

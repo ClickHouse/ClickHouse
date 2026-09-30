@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "Operadores",
           "pages": [
-            "pt-BR/reference/operators/index",
-            "pt-BR/reference/operators/exists",
-            "pt-BR/reference/operators/distributed-ddl"
+            "pt-BR/reference/operators/index"
           ]
         }
       ]

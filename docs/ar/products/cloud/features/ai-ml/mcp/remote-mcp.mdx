@@ -2,7 +2,7 @@
 slug: /use-cases/AI/MCP/remote_mcp
 sidebarTitle: 'تمكين خادم MCP البعيد'
 title: 'تمكين خادم MCP البعيد في ClickHouse Cloud والاتصال به'
-description: 'يشرح هذا الدليل كيفية تمكين ClickHouse Cloud Remote MCP واستخدامه'
+description: 'يشرح هذا الدليل كيفية تمكين ClickHouse Cloud MCP البعيد واستخدامه'
 keywords: ['AI', 'ClickHouse Cloud', 'MCP']
 show_related_blogs: true
 doc_type: 'guide'
@@ -16,6 +16,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 * [خدمة ClickHouse Cloud](/ar/get-started/setup/cloud) قيد التشغيل
 * بيئة التطوير المتكاملة (IDE) أو أداة التطوير المعتمدة على الوكلاء التي تفضّلها
+* للمصادقة غير التفاعلية (headless)، [مفتاح API لـ ClickHouse Cloud](/ar/cloud/manage/openapi) يمتلك صلاحية الوصول إلى المؤسسة والخدمات المطلوبة
 
 ## تمكين خادم MCP البعيد لـ Cloud {#enable-remote-mcp-server}
 
@@ -41,6 +42,89 @@ https://mcp.clickhouse.cloud/mcp
 </div>
 
 اختر بيئة التطوير المتكاملة أو الأداة المناسبة أدناه، ثم اتبع تعليمات الإعداد المقابلة.
+
+### المصادقة من بيئة غير تفاعلية {#headless-mcp-client-authentication}
+
+إذا كان عميل MCP يعمل على مضيف بعيد أو غير تفاعلي، بحيث يتعذّر عمليًا استخدام تدفق OAuth عبر المتصفح، فاستخدم [مفتاح واجهة برمجة تطبيقات ClickHouse Cloud](/ar/cloud/manage/openapi) للمصادقة بدلًا من ذلك.
+
+1. في وحدة تحكم ClickHouse Cloud، افتح مؤسستك واختر **API Keys**.
+2. أنشئ مفتاحًا يتضمن الحد الأدنى من الأدوار والأذونات اللازمة للمؤسسات والخدمات التي يحتاج عميل MCP إلى الوصول إليها، ثم نزّل معرّف المفتاح والسر الخاص به.
+3. على المضيف البعيد، مرّر بيانات الاعتماد عبر نظام إدارة الأسرار المعتمد لديك، ثم أنشئ قيمة تفويض HTTP Basic:
+
+```bash
+export CLICKHOUSE_CLOUD_API_KEY="<key_id>"
+export CLICKHOUSE_CLOUD_API_SECRET="<key_secret>"
+
+export CH_AUTH="Basic $(
+  printf '%s:%s' \
+    "$CLICKHOUSE_CLOUD_API_KEY" \
+    "$CLICKHOUSE_CLOUD_API_SECRET" |
+  base64 | tr -d '\n'
+)"
+```
+
+4. اختر عميل MCP الذي تستخدمه وأضف خادم MCP البعيد:
+
+<Tabs>
+  <Tab title="Claude Code" id="headless-auth-claude-code">
+    ```bash
+    claude mcp add \
+      --scope user \
+      --transport http \
+      clickhouse-cloud \
+      https://mcp.clickhouse.cloud/mcp \
+      --header 'Authorization: ${CH_AUTH}'
+    ```
+
+    يستبدل Claude Code المتغير `CH_AUTH` بقيمته من البيئة عند الاتصال. شغّل Claude Code ونفّذ `/mcp` للتأكد من أن `clickhouse-cloud` متصل.
+
+    راجع [توثيق MCP في Claude Code](https://code.claude.com/docs/en/mcp#option-1-add-a-remote-http-server) للاطلاع على تفاصيل خوادم HTTP البعيدة وتهيئة الترويسات.
+  </Tab>
+
+  <Tab title="Codex" id="headless-auth-codex">
+    أضف الإدخال التالي إلى `~/.codex/config.toml`:
+
+    ```toml
+    [mcp_servers.clickhouse-cloud]
+    url = "https://mcp.clickhouse.cloud/mcp"
+    env_http_headers = { Authorization = "CH_AUTH" }
+    ```
+
+    نفّذ `codex mcp list` للتأكد من تهيئة `clickhouse-cloud`.
+
+    راجع [مرجع تهيئة Codex](https://developers.openai.com/codex/config-reference) للاطلاع على تفاصيل `mcp_servers.<id>.env_http_headers`.
+  </Tab>
+
+  <Tab title="OpenCode" id="headless-auth-opencode">
+    أضف الإدخال التالي إلى ملف التهيئة `opencode.jsonc`:
+
+    ```jsonc
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "servers": {
+          "clickhouse-cloud": {
+            "type": "remote",
+            "url": "https://mcp.clickhouse.cloud/mcp",
+            "oauth": false,
+            "headers": {
+              "Authorization": "{env:CH_AUTH}"
+            }
+          }
+        }
+      }
+    }
+    ```
+
+    نفّذ `opencode mcp list` للتأكد من أن `clickhouse-cloud` متصل.
+
+    راجع [توثيق MCP في OpenCode](https://opencode.ai/v2/docs/mcp-servers#remote) للاطلاع على تفاصيل الخوادم البعيدة والترويسات واستبدال متغيرات البيئة.
+  </Tab>
+</Tabs>
+
+احرص على أن يكون `CH_AUTH` متاحًا في كل session للعميل، ولا تُثبّت مفتاح API أو الـ Secret أو قيمة `CH_AUTH` في نظام التحكم بالمصدر. تذكّر أن ترميز Base64 لا يُشفّر بيانات الاعتماد.
+
+لا تتطلب طريقة المصادقة هذه بمفتاح API متصفحًا ولا تسجيل دخول منفصلًا عبر `clickhousectl`.
 
 <div id="claude-code">
   ### Claude Code {#claude-code}

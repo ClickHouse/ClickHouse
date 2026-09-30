@@ -16,6 +16,7 @@ Esta guía muestra cómo habilitar el servidor MCP remoto de ClickHouse Cloud y 
 
 * Un [servicio de ClickHouse Cloud](/es/get-started/setup/cloud) en ejecución
 * El IDE o la herramienta de desarrollo con agentes que prefiera
+* Para la autenticación sin interfaz gráfica, una [clave de API de ClickHouse Cloud](/es/cloud/manage/openapi) con acceso a la organización y los servicios necesarios
 
 ## Habilitar el servidor MCP remoto en Cloud {#enable-remote-mcp-server}
 
@@ -41,6 +42,89 @@ https://mcp.clickhouse.cloud/mcp
 </div>
 
 Elige tu IDE o herramienta a continuación y sigue las instrucciones de configuración correspondientes.
+
+### Autenticarse desde un entorno sin interfaz gráfica {#headless-mcp-client-authentication}
+
+Si su cliente MCP se ejecuta en un host remoto o sin interfaz gráfica en el que no resulta práctico un flujo OAuth basado en navegador, autentíquese con una [clave de API de ClickHouse Cloud](/es/cloud/manage/openapi).
+
+1. En la consola de ClickHouse Cloud, abra su organización y seleccione **API Keys**.
+2. Cree una clave con los roles y permisos mínimos necesarios para las organizaciones y los servicios a los que el cliente MCP necesita acceder y, a continuación, descargue el ID y el secreto de la clave.
+3. En el host remoto, proporcione las credenciales mediante su sistema de gestión de secretos y genere un valor de autorización HTTP Basic:
+
+```bash
+export CLICKHOUSE_CLOUD_API_KEY="<key_id>"
+export CLICKHOUSE_CLOUD_API_SECRET="<key_secret>"
+
+export CH_AUTH="Basic $(
+  printf '%s:%s' \
+    "$CLICKHOUSE_CLOUD_API_KEY" \
+    "$CLICKHOUSE_CLOUD_API_SECRET" |
+  base64 | tr -d '\n'
+)"
+```
+
+4. Seleccione su cliente MCP y agregue el servidor MCP remoto:
+
+<Tabs>
+  <Tab title="Claude Code" id="headless-auth-claude-code">
+    ```bash
+    claude mcp add \
+      --scope user \
+      --transport http \
+      clickhouse-cloud \
+      https://mcp.clickhouse.cloud/mcp \
+      --header 'Authorization: ${CH_AUTH}'
+    ```
+
+    Claude Code expande `CH_AUTH` a partir del entorno al conectarse. Inicie Claude Code y ejecute `/mcp` para confirmar que `clickhouse-cloud` está conectado.
+
+    Consulte la [documentación de MCP de Claude Code](https://code.claude.com/docs/en/mcp#option-1-add-a-remote-http-server) para obtener más información sobre los servidores HTTP remotos y la configuración de encabezados.
+  </Tab>
+
+  <Tab title="Codex" id="headless-auth-codex">
+    Agregue la siguiente entrada a `~/.codex/config.toml`:
+
+    ```toml
+    [mcp_servers.clickhouse-cloud]
+    url = "https://mcp.clickhouse.cloud/mcp"
+    env_http_headers = { Authorization = "CH_AUTH" }
+    ```
+
+    Ejecute `codex mcp list` para confirmar que `clickhouse-cloud` está configurado.
+
+    Consulte la [referencia de configuración de Codex](https://developers.openai.com/codex/config-reference) para obtener más información sobre `mcp_servers.<id>.env_http_headers`.
+  </Tab>
+
+  <Tab title="OpenCode" id="headless-auth-opencode">
+    Agregue la siguiente entrada a su archivo de configuración `opencode.jsonc`:
+
+    ```jsonc
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "servers": {
+          "clickhouse-cloud": {
+            "type": "remote",
+            "url": "https://mcp.clickhouse.cloud/mcp",
+            "oauth": false,
+            "headers": {
+              "Authorization": "{env:CH_AUTH}"
+            }
+          }
+        }
+      }
+    }
+    ```
+
+    Ejecute `opencode mcp list` para confirmar que `clickhouse-cloud` está conectado.
+
+    Consulte la [documentación de MCP de OpenCode](https://opencode.ai/v2/docs/mcp-servers#remote) para obtener más información sobre los servidores remotos, los encabezados y la sustitución de variables de entorno.
+  </Tab>
+</Tabs>
+
+Mantenga `CH_AUTH` disponible en cada sesión del cliente y no haga commit de la clave de API, el secreto ni el valor de `CH_AUTH` en el sistema de control de versiones. La codificación Base64 no cifra las credenciales.
+
+Este flujo basado en clave de API no requiere navegador ni un inicio de sesión aparte con `clickhousectl`.
 
 <div id="claude-code">
   ### Claude Code {#claude-code}

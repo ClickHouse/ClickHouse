@@ -10,12 +10,13 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-本指南介绍如何启用 ClickHouse Cloud Remote MCP Server，并将其配置为可与常见的开发者工具配合使用。
+本指南介绍如何启用 ClickHouse Cloud Remote MCP 服务器，并将其配置为可与常见的开发者工具配合使用。
 
 **前置条件**
 
 * 一个正在运行的 [ClickHouse Cloud 服务](/zh/get-started/setup/cloud)
 * 你选择的 IDE 或智能体开发工具
+* 如需进行无头 (headless) 身份验证，还需要一个有权访问所需组织和服务的 [ClickHouse Cloud API key](/zh/cloud/manage/openapi)
 
 ## 为 Cloud 启用远程 MCP 服务器 {#enable-remote-mcp-server}
 
@@ -41,6 +42,89 @@ https://mcp.clickhouse.cloud/mcp
 </div>
 
 请选择下方的 IDE 或工具，并按相应说明完成设置。
+
+### 在无头环境中进行身份验证 {#headless-mcp-client-authentication}
+
+如果您的 MCP 客户端运行在远程主机或无头主机上，不便使用基于浏览器的 OAuth 流程，请改用 [ClickHouse Cloud API key](/zh/cloud/manage/openapi) 进行身份验证。
+
+1. 在 ClickHouse Cloud 控制台中，打开您的组织并选择 **API Keys**。
+2. 创建一个 key，仅授予 MCP 客户端访问相关组织和服务所需的最小角色和权限，然后下载 key ID 和 secret。
+3. 在远程主机上，通过您的机密信息管理系统提供这些凭证，并生成 HTTP Basic 授权值：
+
+```bash
+export CLICKHOUSE_CLOUD_API_KEY="<key_id>"
+export CLICKHOUSE_CLOUD_API_SECRET="<key_secret>"
+
+export CH_AUTH="Basic $(
+  printf '%s:%s' \
+    "$CLICKHOUSE_CLOUD_API_KEY" \
+    "$CLICKHOUSE_CLOUD_API_SECRET" |
+  base64 | tr -d '\n'
+)"
+```
+
+4. 选择您的 MCP 客户端,并添加远程 MCP 服务器:
+
+<Tabs>
+  <Tab title="Claude Code" id="headless-auth-claude-code">
+    ```bash
+    claude mcp add \
+      --scope user \
+      --transport http \
+      clickhouse-cloud \
+      https://mcp.clickhouse.cloud/mcp \
+      --header 'Authorization: ${CH_AUTH}'
+    ```
+
+    Claude Code 在建立连接时会从环境变量中展开 `CH_AUTH`。启动 Claude Code 并运行 `/mcp`,确认 `clickhouse-cloud` 已连接。
+
+    有关远程 HTTP 服务器和请求头配置的详细信息,请参阅 [Claude Code MCP 文档](https://code.claude.com/docs/en/mcp#option-1-add-a-remote-http-server)。
+  </Tab>
+
+  <Tab title="Codex" id="headless-auth-codex">
+    在 `~/.codex/config.toml` 中添加以下条目:
+
+    ```toml
+    [mcp_servers.clickhouse-cloud]
+    url = "https://mcp.clickhouse.cloud/mcp"
+    env_http_headers = { Authorization = "CH_AUTH" }
+    ```
+
+    运行 `codex mcp list`,确认 `clickhouse-cloud` 已完成配置。
+
+    有关 `mcp_servers.<id>.env_http_headers` 的详细信息,请参阅 [Codex 配置参考文档](https://developers.openai.com/codex/config-reference)。
+  </Tab>
+
+  <Tab title="OpenCode" id="headless-auth-opencode">
+    在您的 `opencode.jsonc` 配置中添加以下条目:
+
+    ```jsonc
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "servers": {
+          "clickhouse-cloud": {
+            "type": "remote",
+            "url": "https://mcp.clickhouse.cloud/mcp",
+            "oauth": false,
+            "headers": {
+              "Authorization": "{env:CH_AUTH}"
+            }
+          }
+        }
+      }
+    }
+    ```
+
+    运行 `opencode mcp list`,确认 `clickhouse-cloud` 已连接。
+
+    有关远程服务器、请求头以及环境变量替换的详细信息,请参阅 [OpenCode MCP 文档](https://opencode.ai/v2/docs/mcp-servers#remote)。
+  </Tab>
+</Tabs>
+
+请确保 `CH_AUTH` 在每个客户端会话中均可用,切勿将 API key、机密信息或 `CH_AUTH` 的值提交到源代码管理系统。Base64 编码并不会对凭证进行加密。
+
+使用这种 API key 方式,既不需要浏览器,也无需另行通过 `clickhousectl` 登录。
 
 <div id="claude-code">
   ### Claude Code {#claude-code}

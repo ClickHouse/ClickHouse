@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "المعاملات",
           "pages": [
-            "ar/reference/operators/index",
-            "ar/reference/operators/exists",
-            "ar/reference/operators/distributed-ddl"
+            "ar/reference/operators/index"
           ]
         }
       ]

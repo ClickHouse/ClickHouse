@@ -16,6 +16,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 * 稼働中の[ClickHouse Cloud サービス](/ja/get-started/setup/cloud)
 * 使用する IDE またはエージェント型開発ツール
+* ヘッドレス認証を行う場合は、必要な組織およびサービスへのアクセス権を持つ [ClickHouse Cloud API キー](/ja/cloud/manage/openapi)
 
 ## Cloud でリモートMCPサーバーを有効にする {#enable-remote-mcp-server}
 
@@ -41,6 +42,89 @@ https://mcp.clickhouse.cloud/mcp
 </div>
 
 以下からお使いのIDEまたはツールを選択し、対応するセットアップ手順に従ってください。
+
+### ヘッドレス環境からの認証 {#headless-mcp-client-authentication}
+
+MCP クライアントがリモートホストやヘッドレスホスト上で動作しており、ブラウザベースの OAuth フローを利用するのが現実的でない場合は、代わりに [ClickHouse Cloud API キー](/ja/cloud/manage/openapi) を使用して認証します。
+
+1. ClickHouse Cloud コンソールで対象の組織を開き、**API Keys** を選択します。
+2. MCP クライアントがアクセスする組織およびサービスに必要な、最小限のロールとアクセス許可を付与したキーを作成し、キー ID とシークレットをダウンロードします。
+3. リモートホスト上で、シークレット管理システムを通じて認証情報を渡し、HTTP Basic 認証の値を作成します。
+
+```bash
+export CLICKHOUSE_CLOUD_API_KEY="<key_id>"
+export CLICKHOUSE_CLOUD_API_SECRET="<key_secret>"
+
+export CH_AUTH="Basic $(
+  printf '%s:%s' \
+    "$CLICKHOUSE_CLOUD_API_KEY" \
+    "$CLICKHOUSE_CLOUD_API_SECRET" |
+  base64 | tr -d '\n'
+)"
+```
+
+4. MCPクライアントを選択し、リモートMCPサーバーを追加します。
+
+<Tabs>
+  <Tab title="Claude Code" id="headless-auth-claude-code">
+    ```bash
+    claude mcp add \
+      --scope user \
+      --transport http \
+      clickhouse-cloud \
+      https://mcp.clickhouse.cloud/mcp \
+      --header 'Authorization: ${CH_AUTH}'
+    ```
+
+    Claude Code は接続時に環境変数の `CH_AUTH` を展開します。Claude Code を起動して `/mcp` を実行し、`clickhouse-cloud` が接続されていることを確認してください。
+
+    リモートHTTPサーバーとヘッダーの設定の詳細については、[Claude Code の MCP ドキュメント](https://code.claude.com/docs/en/mcp#option-1-add-a-remote-http-server)を参照してください。
+  </Tab>
+
+  <Tab title="Codex" id="headless-auth-codex">
+    `~/.codex/config.toml` に次のエントリを追加します。
+
+    ```toml
+    [mcp_servers.clickhouse-cloud]
+    url = "https://mcp.clickhouse.cloud/mcp"
+    env_http_headers = { Authorization = "CH_AUTH" }
+    ```
+
+    `codex mcp list` を実行し、`clickhouse-cloud` が設定されていることを確認してください。
+
+    `mcp_servers.<id>.env_http_headers` の詳細については、[Codex の設定リファレンス](https://developers.openai.com/codex/config-reference)を参照してください。
+  </Tab>
+
+  <Tab title="OpenCode" id="headless-auth-opencode">
+    `opencode.jsonc` 設定ファイルに次のエントリを追加します。
+
+    ```jsonc
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "servers": {
+          "clickhouse-cloud": {
+            "type": "remote",
+            "url": "https://mcp.clickhouse.cloud/mcp",
+            "oauth": false,
+            "headers": {
+              "Authorization": "{env:CH_AUTH}"
+            }
+          }
+        }
+      }
+    }
+    ```
+
+    `opencode mcp list` を実行し、`clickhouse-cloud` が接続されていることを確認してください。
+
+    リモートサーバー、ヘッダー、環境変数の置換の詳細については、[OpenCode の MCP ドキュメント](https://opencode.ai/v2/docs/mcp-servers#remote)を参照してください。
+  </Tab>
+</Tabs>
+
+各クライアントのセッションで `CH_AUTH` を参照できる状態にしておいてください。また、API キー、シークレット、`CH_AUTH` の値はソース管理にコミットしないでください。Base64 エンコードは認証情報を暗号化するものではありません。
+
+この API キーによる方式では、ブラウザも、`clickhousectl` での別途ログインも必要ありません。
 
 <div id="claude-code">
   ### Claude Code {#claude-code}

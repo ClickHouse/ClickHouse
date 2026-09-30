@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'Remote MCPサーバー'
+sidebarTitle: 'リモートMCPサーバー'
 slug: /cloud/features/ai-ml/remote-mcp
 title: 'Cloud の Remote MCP'
 description: 'ClickHouse Cloud におけるリモートMCP機能の説明'
@@ -14,22 +14,22 @@ doc_type: 'reference'
 ClickHouse Cloud の リモートMCPサーバー機能は、外部エージェントが分析コンテキストを取得するために利用できる標準インターフェイスを提供することで、この課題に対応します。
 MCP (Model Context Protocol) は、LLM を利用した AI アプリケーションが構造化データにアクセスするための標準です。
 このインテグレーションにより、外部エージェントはデータベースやテーブルの一覧表示、スキーマの確認、スコープが制限された読み取り専用の SELECT クエリの実行を行えます。
-認証は OAuth で処理されます。サーバーは ClickHouse Cloud 上で完全マネージド型として提供されるため、セットアップや保守は不要です。
+認証は OAuth 2.0 または [ClickHouse Cloud API キー](/ja/cloud/manage/openapi) で行います。サーバーは ClickHouse Cloud 上で完全マネージド型として提供されるため、セットアップや保守は不要です。
 
 これにより、分析、要約、コード生成、探索などの用途に応じて、エージェント型ツールは ClickHouse に簡単に接続し、必要なデータを取得できるようになります。
 
-## Remote MCPサーバーとオープンソースMCPサーバーの比較 {#remote-vs-oss}
+## リモートMCPサーバーとオープンソースMCPサーバーの比較 {#remote-vs-oss}
 
 ClickHouse には、2 つのMCPサーバーがあります。
 
-|             | リモートMCPサーバー (Cloud)                                     | オープンソースMCPサーバー                                                           |
-| ----------- | ------------------------------------------------------- | ------------------------------------------------------------------------ |
-| **ソース**     | ClickHouse Cloud が完全マネージドで提供                            | GitHub 上の [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) |
-| **トランスポート** | Streamable HTTP (`https://mcp.clickhouse.cloud/mcp`)    | ローカル stdio                                                               |
-| **対応環境**    | ClickHouse Cloud サービス                                   | あらゆる ClickHouse インスタンス (セルフホストまたは Cloud)                                 |
-| **認証**      | Cloud の認証情報を使用する OAuth 2.0                              | 環境変数                                                                     |
-| **ツール**     | クエリ実行、スキーマ探索、サービス管理、バックアップ、ClickPipes、請求をカバーする 13 個のツール | 3 個のツール: `run_select_query`, `list_databases`, `list_tables`             |
-| **セットアップ**  | インストール不要。MCPクライアント をエンドポイントに向けて認証します。                   | サーバーをローカルにインストールして実行                                                     |
+|             | リモートMCPサーバー (Cloud)                                      | オープンソースMCPサーバー                                                           |
+| ----------- | -------------------------------------------------------- | ------------------------------------------------------------------------ |
+| **ソース**     | ClickHouse Cloud が完全マネージド型で提供                             | GitHub 上の [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) |
+| **トランスポート** | Streamable HTTP (`https://mcp.clickhouse.cloud/mcp`)     | ローカル stdio                                                               |
+| **対応環境**    | ClickHouse Cloud サービス                                    | あらゆる ClickHouse インスタンス (セルフホストまたは Cloud)                                 |
+| **認証**      | Cloud の認証情報を使用する OAuth 2.0、または ClickHouse Cloud の API キー | 環境変数                                                                     |
+| **ツール**     | クエリ実行、スキーマ探索、サービス管理、バックアップ、ClickPipes、請求をカバーする 13 個のツール  | 3 個のツール: `run_select_query`, `list_databases`, `list_tables`             |
+| **セットアップ**  | インストール不要。MCPクライアント をエンドポイントに向けて認証します。                    | サーバーをローカルにインストールして実行                                                     |
 
 リモートMCPサーバーは、管理すべきインフラストラクチャなしで、サービス管理、バックアップ監視、ClickPipe の可視化、請求データなどを含む、ClickHouse Cloud との最も充実したインテグレーションを提供します。
 セルフホストの ClickHouse インスタンスについては、[オープンソースMCPサーバーのガイド](/ja/guides/use-cases/ai-ml/MCP/index)を参照してください。
@@ -51,9 +51,18 @@ https://mcp.clickhouse.cloud/mcp
 
 ## 認証 {#authentication}
 
-リモートMCPサーバーへのすべてのアクセスは、OAuth 2.0 によって認証されます。
-MCPクライアントが初めて接続する際には OAuth フローが開始され、ユーザーが ClickHouse Cloud の認証情報でサインインするためのブラウザーウィンドウが開きます。
-アクセスできる範囲は、認証されたユーザーにアクセス権限が付与されている組織とサービスに限定されます。追加のAPIキー設定は不要です。
+リモートMCPサーバーは、次の2つの認証方式をサポートしています。
+
+* **OAuth 2.0**: 対話型クライアントに推奨される方式です。MCP クライアントが初めて接続すると、ブラウザウィンドウが開き、ユーザーは ClickHouse Cloud の認証情報でサインインします。アクセスできる範囲は、認証されたユーザーがアクセス許可を持つ組織およびサービスに限られます。
+* **ClickHouse Cloud API キー**: ブラウザベースの OAuth フローを利用しにくいリモート環境、ヘッドレス環境、自動化環境向けの方式です。API キー ID とシークレットを HTTP Basic 認証で送信します。
+
+  ```text
+  Authorization: Basic base64(<key_id>:<key_secret>)
+  ```
+
+API キーによるアクセス範囲は、そのキーに設定されたロール、アクセス許可、有効期限によって決まります。最小権限の専用キーを使用し、シークレット管理システム経由で注入してください。Base64 エンコードは認証情報を暗号化するものではありません。エンコードした値をソース管理にコミットしたり、ログに出力したりしないでください。
+
+ヘッドレス環境で MCP クライアントを設定する例については、[ヘッドレス環境からの認証](/ja/products/cloud/features/ai-ml/mcp/remote-mcp#headless-mcp-client-authentication)を参照してください。
 
 ## 安全性 {#safety}
 

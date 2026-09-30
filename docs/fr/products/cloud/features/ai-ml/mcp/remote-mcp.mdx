@@ -10,12 +10,13 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-Ce guide explique comment activer le ClickHouse Cloud Remote MCP Server et le configurer pour l’utiliser avec les outils de développement courants.
+Ce guide explique comment activer le serveur MCP distant de ClickHouse Cloud et le configurer pour l’utiliser avec les outils de développement courants.
 
 **Prérequis**
 
 * Un [service ClickHouse Cloud](/fr/get-started/setup/cloud) actif
 * Votre IDE ou l’outil de développement agentique de votre choix
+* Pour l’authentification sans interface graphique, une [API key ClickHouse Cloud](/fr/cloud/manage/openapi) ayant accès à l’organisation et aux services requis
 
 ## Activer le serveur MCP distant dans Cloud {#enable-remote-mcp-server}
 
@@ -41,6 +42,89 @@ https://mcp.clickhouse.cloud/mcp
 </div>
 
 Choisissez votre IDE ou votre outil ci-dessous, puis suivez les instructions de configuration correspondantes.
+
+### S&#39;authentifier depuis un environnement sans interface graphique {#headless-mcp-client-authentication}
+
+Si votre client MCP s&#39;exécute sur un hôte distant ou sans interface graphique, où un flux OAuth via un navigateur n&#39;est pas envisageable, authentifiez-vous plutôt avec une [API key ClickHouse Cloud](/fr/cloud/manage/openapi).
+
+1. Dans la console ClickHouse Cloud, ouvrez votre organisation et sélectionnez **API Keys**.
+2. Créez une clé dotée des rôles et permissions minimaux nécessaires pour les organisations et les services auxquels le client MCP doit accéder, puis téléchargez l&#39;ID et le secret de la clé.
+3. Sur l&#39;hôte distant, fournissez les identifiants via votre système de gestion des secrets et générez une valeur d&#39;autorisation HTTP Basic :
+
+```bash
+export CLICKHOUSE_CLOUD_API_KEY="<key_id>"
+export CLICKHOUSE_CLOUD_API_SECRET="<key_secret>"
+
+export CH_AUTH="Basic $(
+  printf '%s:%s' \
+    "$CLICKHOUSE_CLOUD_API_KEY" \
+    "$CLICKHOUSE_CLOUD_API_SECRET" |
+  base64 | tr -d '\n'
+)"
+```
+
+4. Sélectionnez votre client MCP et ajoutez le serveur MCP distant :
+
+<Tabs>
+  <Tab title="Claude Code" id="headless-auth-claude-code">
+    ```bash
+    claude mcp add \
+      --scope user \
+      --transport http \
+      clickhouse-cloud \
+      https://mcp.clickhouse.cloud/mcp \
+      --header 'Authorization: ${CH_AUTH}'
+    ```
+
+    Claude Code lit la valeur de `CH_AUTH` dans l&#39;environnement au moment de la connexion. Lancez Claude Code et exécutez `/mcp` pour vérifier que `clickhouse-cloud` est connecté.
+
+    Consultez la [documentation MCP de Claude Code](https://code.claude.com/docs/en/mcp#option-1-add-a-remote-http-server) pour plus de détails sur les serveurs HTTP distants et la configuration des en-têtes.
+  </Tab>
+
+  <Tab title="Codex" id="headless-auth-codex">
+    Ajoutez l&#39;entrée suivante au fichier `~/.codex/config.toml` :
+
+    ```toml
+    [mcp_servers.clickhouse-cloud]
+    url = "https://mcp.clickhouse.cloud/mcp"
+    env_http_headers = { Authorization = "CH_AUTH" }
+    ```
+
+    Exécutez `codex mcp list` pour vérifier que `clickhouse-cloud` est configuré.
+
+    Consultez la [référence de configuration de Codex](https://developers.openai.com/codex/config-reference) pour plus de détails sur `mcp_servers.<id>.env_http_headers`.
+  </Tab>
+
+  <Tab title="OpenCode" id="headless-auth-opencode">
+    Ajoutez l&#39;entrée suivante à votre fichier de configuration `opencode.jsonc` :
+
+    ```jsonc
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "servers": {
+          "clickhouse-cloud": {
+            "type": "remote",
+            "url": "https://mcp.clickhouse.cloud/mcp",
+            "oauth": false,
+            "headers": {
+              "Authorization": "{env:CH_AUTH}"
+            }
+          }
+        }
+      }
+    }
+    ```
+
+    Exécutez `opencode mcp list` pour vérifier que `clickhouse-cloud` est connecté.
+
+    Consultez la [documentation MCP d&#39;OpenCode](https://opencode.ai/v2/docs/mcp-servers#remote) pour plus de détails sur les serveurs distants, les en-têtes et la substitution de variables d&#39;environnement.
+  </Tab>
+</Tabs>
+
+Veillez à ce que `CH_AUTH` reste disponible dans chaque session client, et ne commitez jamais l&#39;API key, le secret ni la valeur de `CH_AUTH` dans votre système de gestion de versions. L&#39;encodage Base64 ne chiffre pas les identifiants.
+
+Cette méthode d&#39;authentification par API key ne nécessite ni navigateur ni connexion distincte via `clickhousectl`.
 
 <div id="claude-code">
   ### Claude Code {#claude-code}
