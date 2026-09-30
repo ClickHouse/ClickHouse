@@ -4,10 +4,12 @@ SET allow_experimental_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts;
 CREATE TABLE ts ENGINE = TimeSeries
+SETTINGS recent_samples_partition_by = 'toStartOfInterval(toDateTime(timestamp, ''UTC''), toIntervalHour(5))'
 SAMPLES INNER ENGINE = MergeTree PARTITION BY toDate(timestamp, 'UTC') ORDER BY (id, timestamp)
     TTL toDateTime(timestamp) + INTERVAL 30 DAY SETTINGS ttl_only_drop_parts = 1;
 
-SELECT partition_key FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner_id.samples.%';
+SELECT splitByChar('.', name)[3] AS target, partition_key
+FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner_id.%samples.%' ORDER BY target;
 SELECT splitByChar('.', name)[3] AS target, extract(engine_full, 'TTL (.*) SETTINGS') AS ttl
 FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner_id.%samples.%' ORDER BY target;
 

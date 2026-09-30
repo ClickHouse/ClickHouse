@@ -1,4 +1,5 @@
-toDate(timestamp, \'UTC\')
+recentsamples	toStartOfInterval(toDateTime(timestamp, \'UTC\'), toIntervalHour(5))
+samples	toDate(timestamp, \'UTC\')
 recentsamples	toDateTime(timestamp) + toIntervalSecond(345600)
 samples	toDateTime(timestamp) + toIntervalDay(30)
 samples	2
