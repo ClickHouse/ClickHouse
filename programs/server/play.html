@@ -2189,8 +2189,8 @@ function accumulateResourceEvents(state, events)
             continue;
         }
 
-        /// Exclude compressed `NetworkSendBytes`, whose service bytes cannot be separated; decoded
-        /// result payloads add the browser-download leg in `makeEventStreamHandler` instead.
+        /// Exclude compressed `NetworkSendBytes`, whose service bytes cannot be separated; the result leg
+        /// counts decoded payload bytes in `makeEventStreamHandler`, more than a compressed response sends.
         /// Streaming exchanges of a distributed plan are not counted by the `Network*Bytes` events.
         if (e.name === 'OSReadBytes' || e.name === 'OSWriteBytes' || e.name === 'ReadBufferFromS3Bytes'
             || e.name === 'WriteBufferFromS3Bytes' || e.name === 'ReadBufferFromAzureBytes' || e.name === 'WriteBufferFromAzureBytes'
@@ -2585,7 +2585,7 @@ class QueryProgressElement extends HTMLElement
         if (mem_max < mem_total) parts.push(this._padMetric('ram_max', `${formatReadableBytes(mem_max)} max/host`));
         if (disk_total > 0) parts.push(this._padMetric('disk', `${formatReadableBytes(disk_total)} disk`));
         if (disk_max < disk_total) parts.push(this._padMetric('disk_max', `${formatReadableBytes(disk_max)} max/host`));
-        /// Live IO rate, matching the clickhouse-client progress line.
+        /// Live IO rate; its result leg is decoded payload bytes, so it can exceed the compressed download rate.
         if (r.io > 0) parts.push(this._padMetric('io', `${formatReadableBytes(r.io)}/s IO`));
 
         this._resources_text = parts.join(', ');
