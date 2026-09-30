@@ -1488,9 +1488,10 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     metadata_snapshots[current] = metadata;
     storage_locks[current] = std::move(lock);
 
-    auto column_names = init_context->getInsertionTableColumnNames();
+    auto column_names = init_context->getInsertionTableColumnsDescription()->getAllPhysical().getNames();
+
     if (init_context->hasQueryContext())
-        init_context->getQueryContext()->addQueryAccessInfo(current, column_names.has_value() ? column_names.value() : Names{});
+        init_context->getQueryContext()->addQueryAccessInfo(current, column_names);
 
     auto set_defaults_for_root_view = [&] (const StorageIDMaybeEmpty & root_view_, const StorageIDMaybeEmpty & inner_table_)
     {
