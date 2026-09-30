@@ -299,71 +299,8 @@ Field rescaleDecimal64Field(const Field & src, const ToDataType & to_type, bool 
     return DecimalField<T>(DecimalUtils::decimalFromComponentsWithMultiplier<T>(value, 0, 1), scale_to);
 }
 
-/// A `Tuple` source may be paired with an `Array` target: an `IN` list arrives as a tuple literal.
-const IDataType * getElementTypeHint(const IDataType * container_hint, size_t i)
+Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
-    if (!container_hint)
-        return nullptr;
-
-    if (const auto * array_hint = typeid_cast<const DataTypeArray *>(container_hint))
-        return array_hint->getNestedType().get();
-
-    if (const auto * tuple_hint = typeid_cast<const DataTypeTuple *>(container_hint))
-    {
-        const auto & elements = tuple_hint->getElements();
-        return i < elements.size() ? elements[i].get() : nullptr;
-    }
-
-    return nullptr;
-}
-
-/// A `Bool` literal is a `Bool` field, a `Bool` read from a column a `UInt64` one, as is the type's default.
-Field::Types::Which fieldTagClass(Field::Types::Which which)
-{
-    return which == Field::Types::Bool ? Field::Types::UInt64 : which;
-}
-
-/// A field does not record which alternative of a `Variant` it came from; the one alternative whose
-/// fields carry the same tag stands in for it. Null when none or several do.
-const IDataType * uniqueVariantAlternative(const DataTypeVariant & variant, const Field & src)
-{
-    const IDataType * found = nullptr;
-    for (const auto & alternative : variant.getVariants())
-    {
-        if (fieldTagClass(alternative->getDefault().getType()) != fieldTagClass(src.getType()))
-            continue;
-        if (found)
-            return nullptr;
-        found = alternative.get();
-    }
-    return found;
-}
-
-Field convertFieldToTypeImpl(const Field & src_in, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
-{
-    /// The caller unwraps `to_type` only; the branches below `static_cast` the hint, so it is unwrapped here once.
-    /// A `Dynamic` hint names no alternative at all.
-    while (from_type_hint)
-    {
-        if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(from_type_hint))
-            from_type_hint = nullable_hint->getNestedType().get();
-        else if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(from_type_hint))
-            from_type_hint = low_cardinality_hint->getDictionaryType().get();
-        else if (const auto * variant_hint = typeid_cast<const DataTypeVariant *>(from_type_hint))
-            from_type_hint = uniqueVariantAlternative(*variant_hint, src_in);
-        else if (WhichDataType(*from_type_hint).isDynamic())
-            from_type_hint = nullptr;
-        else
-            break;
-    }
-
-    /// A `Bool` read from a column arrives as a `UInt64` field and a `String` target prints the tag, so it is
-    /// given back the tag a `Bool` literal carries.
-    const Field retagged = from_type_hint && from_type_hint->getName() == "Bool" && src_in.getType() == Field::Types::UInt64
-        ? Field(src_in.safeGet<UInt64>() != 0)
-        : Field();
-    const Field & src = retagged.isNull() ? src_in : retagged;
-
     if (from_type_hint && from_type_hint->equals(type))
     {
         return src;
@@ -553,8 +490,6 @@ Field convertFieldToTypeImpl(const Field & src_in, const IDataType & type, const
     }
     if (which_type.isDateTime() && which_from_type.isDateTime64())
     {
-        /// Without this branch the round trip in `LogicalExpressionOptimizerPass` threw `TYPE_MISMATCH` on
-        /// every `DateTime64` column compared with a `DateTime` constant inside `AND`.
         const Int64 seconds = decimal64_to_seconds();
         if (strict && !(decimal64_has_whole_seconds() && seconds_representable_as_datetime(seconds)))
             return {};
@@ -796,8 +731,20 @@ Field convertFieldToTypeImpl(const Field & src_in, const IDataType & type, const
         }
 
         /// An Enum arrives as its underlying number, but `CAST(enum AS String)` uses the name.
+        /// Only `to_type` is unwrapped by the caller, so unwrap the hint here.
+        const IDataType * unwrapped_hint = from_type_hint;
+        while (unwrapped_hint)
+        {
+            if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(unwrapped_hint))
+                unwrapped_hint = nullable_hint->getNestedType().get();
+            else if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(unwrapped_hint))
+                unwrapped_hint = low_cardinality_hint->getDictionaryType().get();
+            else
+                break;
+        }
+
         /// Re-enter so that a `FixedString` target still zero-pads the name to its width.
-        if (const auto * enum_from_type = dynamic_cast<const IDataTypeEnum *>(from_type_hint))
+        if (const auto * enum_from_type = dynamic_cast<const IDataTypeEnum *>(unwrapped_hint))
             return convertFieldToTypeImpl(
                 enum_from_type->castToName(src), type, nullptr, format_settings, strict, convert_inexact_floats);
 
@@ -815,7 +762,7 @@ Field convertFieldToTypeImpl(const Field & src_in, const IDataType & type, const
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type, getElementTypeHint(from_type_hint, i), format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
@@ -847,7 +794,7 @@ Field convertFieldToTypeImpl(const Field & src_in, const IDataType & type, const
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[i], element_type, getElementTypeHint(from_type_hint, i), format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     /*
@@ -1023,10 +970,6 @@ Field convertFieldToTypeImpl(const Field & src_in, const IDataType & type, const
             const auto & key_type = *type_map->getKeyType();
             const auto & value_type = *type_map->getValueType();
 
-            const auto * map_hint = typeid_cast<const DataTypeMap *>(from_type_hint);
-            const IDataType * key_hint = map_hint ? map_hint->getKeyType().get() : nullptr;
-            const IDataType * value_hint = map_hint ? map_hint->getValueType().get() : nullptr;
-
             const auto & map = src.safeGet<Map>();
             size_t map_size = map.size();
 
@@ -1043,12 +986,12 @@ Field convertFieldToTypeImpl(const Field & src_in, const IDataType & type, const
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type, key_hint, format_settings, strict, convert_inexact_floats);
+                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats);
 
                 if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, value_hint, format_settings, strict, convert_inexact_floats);
+                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats);
                 if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 
