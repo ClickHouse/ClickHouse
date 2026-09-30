@@ -122,8 +122,8 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     if (time_limit_exceeded)
         data->executor->cancel(PipelineExecutor::ExecutionStatus::CancelledByTimeout);
 
-    const bool is_execution_finished = time_limit_exceeded || (lazy_format ? lazy_format->isFinished() : data->is_finished.load());
-    if (is_execution_finished)
+    const bool execution_finished = time_limit_exceeded || (lazy_format ? lazy_format->isFinished() : data->is_finished.load());
+    if (execution_finished)
     {
         /// If lazy format is finished, we don't cancel pipeline but wait for main thread to be finished.
         data->is_finished = true;

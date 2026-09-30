@@ -268,7 +268,7 @@ void PipelineExecutor::finalizeExecution()
         std::lock_guard lock(spawn_mutex);
         cpu_slots.reset();
     }
-  
+
     for (size_t thread_num = 0; thread_num < tasks.getNumThreads(); ++thread_num)
         tasks.getThreadContext(thread_num).flushWorkIntervals();
 
