@@ -1,4 +1,6 @@
 #include <Storages/KeyDescription.h>
+
+#include <map>
 #include <Storages/VirtualColumnUtils.h>
 
 #include <Functions/FunctionsMiscellaneous.h>
@@ -293,21 +295,30 @@ namespace
 {
 
 using NodeTypes = std::unordered_map<String, DataTypePtr>;
+/// A lambda body is compiled apart and may reuse an outer name, so its types are kept apart: by the
+/// enclosing function's name and the lambda's position among its arguments.
+using LambdaScopes = std::map<std::pair<String, size_t>, NodeTypes>;
 
-/// Node types by name, lambda bodies included: a comparison inside one is typed there.
-void collectNodeTypes(const ActionsDAG & dag, NodeTypes & types)
+void collectNodeTypes(const ActionsDAG & dag, NodeTypes & types, LambdaScopes & lambda_scopes)
 {
     for (const auto & node : dag.getNodes())
     {
         types.emplace(node.result_name, node.result_type);
-        if (node.type == ActionsDAG::ActionType::FUNCTION)
-            if (const auto * capture = typeid_cast<const FunctionCapture *>(node.function_base.get()))
-                collectNodeTypes(capture->getAcionsDAG(), types);
+        if (node.type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+        for (size_t i = 0; i < node.children.size(); ++i)
+        {
+            const auto * child = node.children[i];
+            if (child->type != ActionsDAG::ActionType::FUNCTION)
+                continue;
+            if (const auto * capture = typeid_cast<const FunctionCapture *>(child->function_base.get()))
+                collectNodeTypes(capture->getAcionsDAG(), lambda_scopes[{node.result_name, i}], lambda_scopes);
+        }
     }
 }
 
 /// As `ConvertEmptyStringComparisonToFunctionPass`: only a `String` or `FixedString` compared with `''`, typed before the children are rewritten.
-void rewriteEmptyStringComparisons(ASTPtr & ast, const NodeTypes & types)
+void rewriteEmptyStringComparisons(ASTPtr & ast, const NodeTypes & types, const LambdaScopes & lambda_scopes)
 {
     auto * function = ast->as<ASTFunction>();
     std::optional<size_t> compared;
@@ -334,8 +345,23 @@ void rewriteEmptyStringComparisons(ASTPtr & ast, const NodeTypes & types)
         }
     }
 
-    for (auto & child : ast->children)
-        rewriteEmptyStringComparisons(child, types);
+    /// The scope of a lambda argument is found by the declared spelling, before anything below is rewritten.
+    const String function_name = function && function->arguments ? ast->getColumnName() : String();
+    if (function && function->arguments)
+    {
+        auto & arguments = function->arguments->children;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            const auto * lambda = arguments[i]->as<ASTFunction>();
+            auto scope = lambda && lambda->name == "lambda" ? lambda_scopes.find({function_name, i}) : lambda_scopes.end();
+            rewriteEmptyStringComparisons(arguments[i], scope != lambda_scopes.end() ? scope->second : types, lambda_scopes);
+        }
+    }
+    else
+    {
+        for (auto & child : ast->children)
+            rewriteEmptyStringComparisons(child, types, lambda_scopes);
+    }
 
     if (compared)
         ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", function->arguments->children[*compared]);
@@ -350,7 +376,8 @@ NameToNameMap getColumnNameAliases(const ASTPtr & expression_list, const Express
         return aliases;
 
     NodeTypes types;
-    collectNodeTypes(expression_actions.getActionsDAG(), types);
+    LambdaScopes lambda_scopes;
+    collectNodeTypes(expression_actions.getActionsDAG(), types, lambda_scopes);
 
     NameSet declared_names;
     for (const auto & expression : expression_list->children)
@@ -359,7 +386,7 @@ NameToNameMap getColumnNameAliases(const ASTPtr & expression_list, const Express
     for (const auto & expression : expression_list->children)
     {
         ASTPtr rewritten = expression->clone();
-        rewriteEmptyStringComparisons(rewritten, types);
+        rewriteEmptyStringComparisons(rewritten, types, lambda_scopes);
 
         String rewritten_name = rewritten->getColumnName();
         if (!declared_names.contains(rewritten_name))

@@ -37,9 +37,9 @@ SELECT count() FROM tab WHERE if(s = '', 'abc', s) = 'abc' SETTINGS force_index_
 DROP TABLE tab;
 
 SELECT 'bloom filter on a map built by a lambda';
--- The comparison is typed inside the lambda.
-CREATE TABLE tab (m Map(String, String), INDEX idx mapValues(mapFilter((k, v) -> v != '', m)) TYPE bloom_filter) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
-INSERT INTO tab VALUES (map('k', 'abc')), (map('k', 'abc')), (map('k', 'v')), (map('k', ''));
+-- The comparison is typed inside the lambda, even when the index also reads a column of the argument's name.
+CREATE TABLE tab (v UInt64, m Map(String, String), INDEX idx (v, mapValues(mapFilter((k, v) -> v != '', m))) TYPE bloom_filter) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
+INSERT INTO tab VALUES (1, map('k', 'abc')), (2, map('k', 'abc')), (3, map('k', 'v')), (4, map('k', ''));
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM tab WHERE mapFilter((k, v) -> v != '', m)['k'] = 'abc') WHERE explain LIKE '%function_name: notEmpty%';
 SELECT count() FROM tab WHERE mapFilter((k, v) -> v != '', m)['k'] = 'abc' SETTINGS force_data_skipping_indices = 'idx';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE mapFilter((k, v) -> v != '', m)['k'] = 'abc') WHERE explain LIKE '%Name: idx%' OR explain LIKE '%Granules:%';
