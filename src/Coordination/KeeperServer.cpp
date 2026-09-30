@@ -765,8 +765,13 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         bool never_pause = false;
         fiu_do_on(FailPoints::keeper_never_pause_appending_entries, { never_pause = true; });
 
+        /// Pause only while part of the tail on disk is left for the commit thread, which then finishes
+        /// the replay without the leader. Not once all of it is committed: unless a commit is still
+        /// running or scheduled, only a request carrying entries ends the replay then, and pausing would
+        /// suppress it for good.
         return !never_pause
             && !keeper_context->localLogsPreprocessed()
+            && state_machine->last_commit_index() < last_log_idx_on_disk
             && raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk;
     });
 
@@ -1224,7 +1229,9 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 /// set serving requests to avoid elections on timeout
                 raft_instance->setServingRequest(true);
                 SCOPE_EXIT(raft_instance->setServingRequest(false));
-                /// maybe we got snapshot installed
+                /// Everything on disk is committed (snapshot install, or a divergent tail rolled back), so
+                /// only a request carrying entries can end the replay -- hence the pause condition excludes
+                /// this state. A running commit is excluded: it preprocesses what it commits and finishes here.
                 if (state_machine->last_commit_index() >= last_log_idx_on_disk && !raft_instance->isCommitInProgress())
                 {
                     LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: preprocessing logs");

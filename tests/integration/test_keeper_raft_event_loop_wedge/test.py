@@ -23,6 +23,11 @@ match from a request that carries entries.
 The third takes the back-off away entirely, so that the leader keeps re-sending for the whole
 replay and threads reach the wait continuously. That is the only way to exercise the bound
 itself: when the back-off works, a second thread never gets there.
+
+The last two reach the state in which everything on disk is already committed while the logs
+are still not preprocessed, so that no commit ends the replay and only a request carrying entries
+can: the second test again over a snapshot at the index where the two logs still match, and a
+replay overtaken by a snapshot the leader sends because it has compacted past the node's tail.
 """
 
 import logging
@@ -60,6 +65,8 @@ WAIT_STOPPED = "ProcessReq callback: stopped waiting for preprocessing"
 ADMISSION_DECLINED = "ProcessReq callback: another thread is already waiting"
 ENTRIES_REFUSED = "Logs not preprocessed, ProcessReq callback with"
 NO_REPLAY_NEEDED = "No log preprocessing needed"
+# The request that finds everything on disk already committed ends the replay itself.
+PREPROCESSED_ON_REQUEST = "ProcessReq callback: preprocessing logs"
 
 NODE2_CONFIG = "/etc/clickhouse-server/config.d/enable_keeper2.xml"
 WAIT_FAILPOINT = "keeper_local_logs_preprocessing_wait"
@@ -84,7 +91,6 @@ TAIL_CORRECTION = re.compile(
     r"GotAppendEntryReqFromLeader callback with last_log_idx=(\d+), "
     r"current last_log_idx_on_disk=(\d+)"
 )
-SERVER_LOG = "/var/log/clickhouse-server/clickhouse-server.log"
 
 
 @pytest.fixture(scope="module")
@@ -105,36 +111,15 @@ def start_and_connect(node):
     keeper_utils.wait_until_connected(cluster, node, timeout=240)
 
 
-def grep_log(node, pattern):
-    """Lines matching `pattern` that the node logged since it was last started.
-
-    Every integration test runs with `rotateOnOpen`, so a start rotates the previous
-    `clickhouse-server.log` away and opens an empty one: the current file holds exactly the run
-    that is being looked at, and the whole of it. Addressing it by a line number taken before
-    the restart would point past the end of the new, shorter file and quietly match nothing.
-    """
-    output = node.exec_in_container(
-        ["bash", "-c", f"grep -E -- '{pattern}' {SERVER_LOG}; true"]
-    )
-    return [line for line in output.splitlines() if line]
-
-
-def count_in_log(node, pattern):
-    """Number of lines matching `pattern` since the node was last started.
-
-    Counted in the container rather than returned, because the run that disables the pause
-    produces tens of thousands of these.
-    """
-    output = node.exec_in_container(
-        ["bash", "-c", f"grep -E -c -- '{pattern}' {SERVER_LOG} || true"]
-    )
-    return int(output.strip() or 0)
-
-
 def waiting_thread_events(node):
     """(+1 started / -1 stopped) events, in log order, for the preprocessing wait."""
     events = []
-    for line in grep_log(node, f"{WAIT_STARTED}|{WAIT_STOPPED}"):
+    # `only_latest`: every start rotates the log away (`rotateOnOpen`), so the current file holds
+    # exactly the run since the node was last started.
+    lines = node.grep_in_log(
+        f"{WAIT_STARTED}\\|{WAIT_STOPPED}", only_latest=True
+    ).splitlines()
+    for line in lines:
         match = LOG_LINE.match(line)
         assert match is not None, (
             f"a wait line the bound is computed from could not be read: {line!r}"
@@ -196,7 +181,9 @@ def test_raft_event_loop_is_not_wedged_by_log_replay(started_cluster):
 
     # The precondition of the bug has to have been reached: node2 must have restarted with log
     # entries that were not covered by a snapshot, otherwise nothing below checks anything.
-    assert not grep_log(node2, NO_REPLAY_NEEDED), (
+    assert not node2.grep_in_log(
+        NO_REPLAY_NEEDED, only_latest=True
+    ).splitlines(), (
         "node2 restarted with nothing to replay, so this test checks nothing"
     )
 
@@ -204,7 +191,7 @@ def test_raft_event_loop_is_not_wedged_by_log_replay(started_cluster):
     # reached it while it was replaying and the assertions below are vacuous. It must also have
     # refused only a handful: once it knows it can finish the replay on its own it asks the
     # leader to pause, so the count stays flat instead of growing with the length of the replay.
-    refused = grep_log(node2, ENTRIES_REFUSED)
+    refused = node2.grep_in_log(ENTRIES_REFUSED, only_latest=True).splitlines()
     logging.info("node2 refused the entries of %s append_entries requests", len(refused))
     assert refused, "the leader never sent entries to node2 while it was replaying"
     assert len(refused) <= 4, (
@@ -241,7 +228,7 @@ def test_raft_event_loop_is_not_wedged_by_log_replay(started_cluster):
         zk.close()
 
 
-def test_divergent_local_logs_are_reconciled(started_cluster):
+def check_divergent_local_logs_are_reconciled(snapshot_at_common_index):
     """A node that restarts with a local tail the leader does not have must still be corrected.
 
     Only a request carrying entries makes `GotAppendEntryReqFromLeader` lower
@@ -250,6 +237,8 @@ def test_divergent_local_logs_are_reconciled(started_cluster):
     replay can finish without such a request, and this is the case where it cannot.
     """
     keeper_utils.wait_nodes(cluster, ALL_NODES)
+    # Both callers run on the same cluster, so each writes its own znodes.
+    root = f"/divergent_{int(snapshot_at_common_index)}"
 
     # 1) Make node2 the leader, then take its quorum away, so that whatever it appends from now
     #    on can never commit and will have to be rolled back.
@@ -260,15 +249,27 @@ def test_divergent_local_logs_are_reconciled(started_cluster):
         time.sleep(0.5)
     else:
         raise Exception("node2 did not become the leader")
+    # A leader that has just taken over may still refuse new sessions.
+    keeper_utils.wait_until_connected(cluster, node2)
 
+    snapshot_idx = None
     zk = get_fake_zk(node2)
     try:
         node1.stop_clickhouse(kill=True)
         node3.stop_clickhouse(kill=True)
+        if snapshot_at_common_index:
+            # Nothing can commit any more, so this is the last index the logs will share.
+            snapshot_idx = keeper_utils.send_4lw_cmd(cluster, node2, cmd="csnp").strip()
+            assert (
+                snapshot_idx.isdigit()
+            ), f"csnp did not return a log index: {snapshot_idx!r}"
+            node2.wait_for_log_line(
+                f"Created persistent snapshot {snapshot_idx} with path"
+            )
         # This write is appended to node2's log and can never commit, so it is the entry that
         # diverges. It is expected to fail, and node2 may have dropped the session by then.
         try:
-            zk.create("/diverged", b"")
+            zk.create(f"{root}_diverged", b"")
         except Exception as e:
             logging.info("the write on the leader without a quorum failed, as expected: %s", e)
     finally:
@@ -294,7 +295,7 @@ def test_divergent_local_logs_are_reconciled(started_cluster):
     zk = get_fake_zk(keeper_utils.get_leader(cluster, [node1, node3]))
     try:
         for i in range(10):
-            zk.create(f"/written_without_node2_{i}", b"")
+            zk.create(f"{root}_written_without_node2_{i}", b"")
     finally:
         zk.stop()
         zk.close()
@@ -308,7 +309,9 @@ def test_divergent_local_logs_are_reconciled(started_cluster):
     # are the divergence: the setup produced one, and node2 was told about it.
     corrections = [
         (int(match.group(1)), int(match.group(2)))
-        for line in grep_log(node2, "GotAppendEntryReqFromLeader callback")
+        for line in node2.grep_in_log(
+            "GotAppendEntryReqFromLeader callback", only_latest=True
+        ).splitlines()
         for match in [TAIL_CORRECTION.search(line)]
         if match is not None
     ]
@@ -318,10 +321,21 @@ def test_divergent_local_logs_are_reconciled(started_cluster):
         "setup produced no divergence or the leader was paused before it could say so"
     )
 
+    if snapshot_at_common_index:
+        # The state this caller is for: the boundary came down onto the snapshot, so nothing was
+        # left to commit, and the replay was ended by a request carrying entries.
+        assert any(
+            leader_idx == int(snapshot_idx) < own_tail
+            for leader_idx, own_tail in corrections
+        ), f"node2 was not rolled back onto its snapshot {snapshot_idx}: {corrections}"
+        assert node2.grep_in_log(
+            PREPROCESSED_ON_REQUEST, only_latest=True
+        ).splitlines(), "the replay of node2 was not ended by a request carrying entries"
+
     # And NuRaft really did overwrite the entries only node2 had.
-    assert grep_log(node2, "rollback logs:"), (
-        "node2 never rolled back its divergent tail"
-    )
+    assert node2.grep_in_log(
+        "rollback logs:", only_latest=True
+    ).splitlines(), "node2 never rolled back its divergent tail"
 
     # The same bound as in the test above has to hold on this path as well, and every wait must
     # have been released: a wait that never ends is the wedge, whichever branch reached it.
@@ -337,19 +351,23 @@ def test_divergent_local_logs_are_reconciled(started_cluster):
     # 5) node2 agrees with the rest again: it dropped what only it had and took what it missed.
     zk = get_fake_zk(node2)
     try:
-        assert zk.exists("/diverged") is None
+        assert zk.exists(f"{root}_diverged") is None
         for i in range(10):
-            assert zk.exists(f"/written_without_node2_{i}") is not None
+            assert zk.exists(f"{root}_written_without_node2_{i}") is not None
     finally:
         zk.stop()
         zk.close()
 
     zk = get_fake_zk(keeper_utils.get_leader(cluster, ALL_NODES))
     try:
-        zk.create("/after_reconciliation", b"ok")
+        zk.create(f"{root}_after_reconciliation", b"ok")
     finally:
         zk.stop()
         zk.close()
+
+
+def test_divergent_local_logs_are_reconciled(started_cluster):
+    check_divergent_local_logs_are_reconciled(snapshot_at_common_index=False)
 
 
 def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
@@ -412,7 +430,9 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
         node2.start_clickhouse(start_wait_sec=240)
         keeper_utils.wait_until_connected(cluster, node2, timeout=240)
 
-        assert not grep_log(node2, NO_REPLAY_NEEDED), (
+        assert not node2.grep_in_log(
+            NO_REPLAY_NEEDED, only_latest=True
+        ).splitlines(), (
             "node2 restarted with nothing to replay, so this test checks nothing"
         )
 
@@ -420,7 +440,7 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
         # still not preprocessed, which only a deadline can produce. An unbounded wait also ends
         # eventually - the commit thread notifies it - so a wait that merely ended proves nothing.
         for _ in range(240):
-            if count_in_log(node2, f"{WAIT_STOPPED}, preprocessed=false"):
+            if int(node2.count_in_log(f"{WAIT_STOPPED}, preprocessed=false")):
                 break
             time.sleep(0.5)
         else:
@@ -445,19 +465,13 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
 
         node2.stop_clickhouse(kill=True)
         node2.replace_in_config(NODE2_CONFIG, NEVER_PAUSE_ONLY, FAILPOINTS_ACTIVE)
-        node2.start_clickhouse(start_wait_sec=240)
-        keeper_utils.wait_until_connected(cluster, node2, timeout=240)
 
-        assert not grep_log(node2, NO_REPLAY_NEEDED), (
-            "node2 restarted with nothing to replay, so this test checks nothing"
-        )
-
-        # A thread is parked at the failpoint holding the gate, and every later request that
-        # reaches the wait meets it. Producing those requests is the test's job, not the
-        # leader's: the tail was written before the restart, so it is one batch, and the parked
-        # request already took it. What the leader sends after that carries no entries and
-        # returns before the gate. So keep writing while we wait - then the leader has entries
-        # to send and the second thread arrives because something made it arrive.
+        # A thread parked at the failpoint holds the gate, and every later request that reaches
+        # the wait meets it. Producing those requests is the test's job, not the leader's: node2
+        # already has the whole tail, so while it replays the leader has nothing to send but
+        # heartbeats, which return before the gate. So keep writing from before the restart -
+        # then the leader has entries to send for the whole replay, the first request carrying
+        # them parks and the next one arrives because something made it arrive.
         stop_writing = threading.Event()
 
         def keep_writing():
@@ -479,8 +493,17 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
         writer = threading.Thread(target=keep_writing)
         writer.start()
         try:
+            node2.start_clickhouse(start_wait_sec=240)
+            keeper_utils.wait_until_connected(cluster, node2, timeout=240)
+
+            assert not node2.grep_in_log(
+                NO_REPLAY_NEEDED, only_latest=True
+            ).splitlines(), (
+                "node2 restarted with nothing to replay, so this test checks nothing"
+            )
+
             for _ in range(240):
-                if count_in_log(node2, ADMISSION_DECLINED):
+                if int(node2.count_in_log(ADMISSION_DECLINED)):
                     break
                 time.sleep(0.5)
             else:
@@ -496,8 +519,8 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
 
         # The refusal has to have happened, or the leader backed off for some other reason and
         # this is the first test with extra steps.
-        declined = count_in_log(node2, ADMISSION_DECLINED)
-        refused = count_in_log(node2, ENTRIES_REFUSED)
+        declined = int(node2.count_in_log(ADMISSION_DECLINED))
+        refused = int(node2.count_in_log(ENTRIES_REFUSED))
         logging.info(
             "node2 refused the entries of %s append_entries requests and turned away %s "
             "threads at the wait",
@@ -551,3 +574,140 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
                 logging.info("could not disable %s: %s", fail_point, e)
         node2.replace_in_config(NODE2_CONFIG, FAILPOINTS_ACTIVE + CONFIG_END, CONFIG_END)
         node2.replace_in_config(NODE2_CONFIG, NEVER_PAUSE_ONLY + CONFIG_END, CONFIG_END)
+
+
+# After the tests that need replays that last: the snapshot it leaves on node2 shortens every
+# later one.
+def test_divergent_local_logs_over_a_snapshot_are_reconciled(started_cluster):
+    """With a snapshot at the index the logs still match at, that index is already committed when
+    the boundary moves down to it, so no commit is left to finish the replay: only a request
+    carrying entries does, and the leader must not have been asked to stop sending them.
+    """
+    check_divergent_local_logs_are_reconciled(snapshot_at_common_index=True)
+
+
+def get_log_info(node):
+    data = keeper_utils.send_4lw_cmd(cluster, node, cmd="lgif")
+    return dict(line.split("\t") for line in data.splitlines() if "\t" in line)
+
+
+# Last of all: it compacts the logs of node1 and node3, after which a node that fell behind can
+# only be caught up by a snapshot.
+def test_replay_overtaken_by_an_installed_snapshot_is_finished(started_cluster):
+    """The other way to have everything on disk committed without a commit announcing it.
+
+    A node that restarts with a tail to replay behind a leader that has compacted past that tail
+    is sent a snapshot. Installing it moves the commit index beyond the whole tail at once, and no
+    `StateMachineExecution` follows, so here too only a request carrying entries ends the replay -
+    and the leader must not have been asked to stop sending them.
+    """
+    keeper_utils.wait_nodes(cluster, ALL_NODES)
+    root = "/installed_snapshot"
+
+    # 1) Entries in node2's log that no snapshot of its own covers, so it restarts with a replay.
+    zk = get_fake_zk(keeper_utils.get_leader(cluster, ALL_NODES))
+    try:
+        zk.create(root)
+        for i in range(10):
+            zk.create(f"{root}/before_{i}", b"")
+    finally:
+        zk.stop()
+        zk.close()
+
+    zk = get_fake_zk(node2)
+    try:
+        for _ in range(120):
+            if zk.exists(f"{root}/before_9") is not None:
+                break
+            time.sleep(0.5)
+        else:
+            raise Exception("node2 did not receive the entries it is going to replay")
+    finally:
+        zk.stop()
+        zk.close()
+
+    node2.stop_clickhouse(kill=True)
+
+    # 2) Move the log past node2's tail and compact it away behind a snapshot, on both nodes that
+    #    can lead, so that whichever does has only a snapshot to offer. The session is closed
+    #    before the snapshots are taken: nothing may be left after them for the leader to send,
+    #    or the first request after the install would carry entries whatever the leader was told.
+    zk = get_fake_zk(keeper_utils.get_leader(cluster, [node1, node3]))
+    try:
+        for i in range(10):
+            zk.create(f"{root}/without_node2_{i}", b"")
+    finally:
+        zk.stop()
+        zk.close()
+
+    for node in (node1, node3):
+        snapshot_idx = keeper_utils.send_4lw_cmd(cluster, node, cmd="csnp").strip()
+        assert (
+            snapshot_idx.isdigit()
+        ), f"csnp did not return a log index: {snapshot_idx!r}"
+        node.wait_for_log_line(f"Created persistent snapshot {snapshot_idx} with path")
+        for _ in range(60):
+            if int(get_log_info(node)["first_log_idx"]) >= int(snapshot_idx):
+                break
+            time.sleep(0.5)
+        else:
+            raise Exception(f"{node.name} did not compact its log behind the snapshot")
+
+    # 3) node2 replays, is sent the snapshot and installs it.
+    node2.start_clickhouse(start_wait_sec=240)
+    node2.wait_for_log_line("KeeperStateMachine: Applying snapshot", timeout=120)
+
+    assert not node2.grep_in_log(
+        NO_REPLAY_NEEDED, only_latest=True
+    ).splitlines(), "node2 restarted with nothing to replay, so this test checks nothing"
+    last_local = int(
+        re.search(
+            r"Last local log idx (\d+)",
+            node2.grep_in_log("Last local log idx", only_latest=True),
+        ).group(1)
+    )
+    installed = int(
+        re.search(
+            r"Applying snapshot (\d+)",
+            node2.grep_in_log("Applying snapshot", only_latest=True),
+        ).group(1)
+    )
+    assert installed >= last_local, (
+        f"the snapshot {installed} does not cover node2's tail {last_local}, so a commit would "
+        "still end the replay and this test checks nothing"
+    )
+
+    # The line above is logged when the install starts; the heartbeats that matter come after it.
+    for _ in range(240):
+        if int(get_log_info(node2)["last_committed_log_idx"]) >= installed:
+            break
+        time.sleep(0.5)
+    else:
+        raise Exception(f"node2 did not finish installing the snapshot {installed}")
+
+    # Whether the leader pauses is decided on the heartbeats that follow the install, and until
+    # something is written there is nothing it could send anyway. Let a few of them go by
+    # (100 ms apart) before giving it something.
+    time.sleep(1)
+
+    zk = get_fake_zk(keeper_utils.get_leader(cluster, [node1, node3]))
+    try:
+        zk.create(f"{root}/after_install", b"")
+    finally:
+        zk.stop()
+        zk.close()
+
+    keeper_utils.wait_until_connected(cluster, node2, timeout=240)
+    assert node2.grep_in_log(
+        PREPROCESSED_ON_REQUEST, only_latest=True
+    ).splitlines(), "the replay of node2 was not ended by a request carrying entries"
+
+    zk = get_fake_zk(node2)
+    try:
+        for i in range(10):
+            assert zk.exists(f"{root}/before_{i}") is not None
+            assert zk.exists(f"{root}/without_node2_{i}") is not None
+        assert zk.exists(f"{root}/after_install") is not None
+    finally:
+        zk.stop()
+        zk.close()
