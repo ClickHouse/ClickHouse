@@ -5298,11 +5298,16 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         && !query_info.isFinal()
         && !join_runtime_filters_for_index_analysis.empty()
         && !pending_mutations
-        /// Not supported under parallel replicas: the descriptor is not carried to remote replica
-        /// reads, so pruning would only cover the local replica's share. Skip it entirely there.
-        /// The setting's description documents this no-op, and
-        /// `05153_join_runtime_filters_index_analysis_distributed_noop` pins it.
-        && !isParallelReadingFromReplicas()
+        /// Parallel replicas prune too, each replica over its own assigned granules with its own filter.
+        /// That is safe because the filter is built from the whole build side - that side is broadcast and
+        /// read in full on every replica - so a granule a replica drops cannot hold a row that should have
+        /// matched, exactly as in a single-node read. A granule skipped this way is reported to the
+        /// coordinator as read, so the work is not handed to another replica instead.
+        ///
+        /// A read that never got a descriptor - they are attached while a plan is optimized and are not
+        /// serialized - leaves `runtime_prune_primary_key` and `runtime_skip_indexes` empty below and reads
+        /// its share unpruned. That is a loss of coverage, not of correctness, and it is what still happens
+        /// for a plan shipped with `make_distributed_plan`.
         && indexes.has_value())
     {
         /// The PK path only needs the data-read safety checks above; only the secondary skip-index
