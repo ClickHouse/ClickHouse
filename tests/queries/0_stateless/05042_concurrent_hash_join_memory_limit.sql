@@ -3,6 +3,11 @@
 
 SET max_threads = 8;
 
+-- CI randomizes this to 0, which removes the bound on the join order search. With a DP algorithm
+-- over this query's 16 relations, planning alone costs 105 MiB, so every cap below measures the
+-- planner instead of the hash join build it is about.
+SET query_plan_optimize_join_order_max_searched_plans = 100000;
+
 SET max_memory_usage = '16Mi', join_algorithm = 'parallel_hash';
 EXPLAIN
 WITH
