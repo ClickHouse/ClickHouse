@@ -57,29 +57,25 @@ expect_disabled_before_enqueue attach "
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
     WHERE database = currentDatabase() AND name = 't_projection_codec_old_attach'"
 
-# The AS source definition is copied on the worker without validating its already accepted codec.
+# The `AS` source definition has an accepted codec, but version 1 cannot carry the
+# column-list opt-in setting to the worker.
 ${CLICKHOUSE_CLIENT} --allow_suspicious_codecs=1 -q "
     CREATE TABLE ${source_table}
         (k UInt64, x UInt64, PROJECTION p (x CODEC(Delta, Delta)) AS (SELECT k, x ORDER BY k))
         ENGINE = MergeTree ORDER BY k"
-${CLICKHOUSE_CLIENT} "${v1_wait[@]}" -q "
+if output=$(${CLICKHOUSE_CLIENT} "${v1_wait[@]}" -q "
     CREATE TABLE ${copy_table} ON CLUSTER test_shard_localhost AS ${source_table}
-        ENGINE = MergeTree ORDER BY k FORMAT Null"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
-    WHERE database = currentDatabase() AND table = 't_projection_codec_old_copy'"
-${CLICKHOUSE_CLIENT} -q "SELECT countIf(position(replaceAll(create_table_query, '\`', ''),
-    'PROJECTION p (x CODEC(Delta, Delta)) AS') > 0) FROM system.tables
+        ENGINE = MergeTree ORDER BY k FORMAT Null" 2>&1); then
+    echo "copy_v1 unexpectedly succeeded" >&2
+    exit 1
+fi
+if [[ "$output" != *SUPPORT_IS_DISABLED* ]]; then
+    echo "copy_v1 failed with an unexpected error: $output" >&2
+    exit 1
+fi
+echo "copy_v1 rejected"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
     WHERE database = currentDatabase() AND name = 't_projection_codec_old_copy'"
-
-# MODIFY PROJECTION only changes settings; it restates the codec without validating it again.
-${CLICKHOUSE_CLIENT} "${v1_wait[@]}" -q "
-    ALTER TABLE ${copy_table} ON CLUSTER test_shard_localhost
-        MODIFY PROJECTION p (x CODEC(Delta, Delta)) AS (SELECT k, x ORDER BY k)
-        WITH SETTINGS (index_granularity = 128) FORMAT Null"
-${CLICKHOUSE_CLIENT} -q "SELECT countIf(position(create_table_query,
-    'WITH SETTINGS (index_granularity = 128)') > 0) FROM system.tables
-    WHERE database = currentDatabase() AND name = 't_projection_codec_old_copy'"
-${CLICKHOUSE_CLIENT} "${wait_for_worker[@]}" -q "DROP TABLE ${copy_table} ON CLUSTER test_shard_localhost FORMAT Null"
 
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${alter_table} (k UInt64, x Float64)
     ENGINE = MergeTree ORDER BY k"
@@ -131,6 +127,15 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_codec_old_copy'"
 ${CLICKHOUSE_CLIENT} -q "SELECT countIf(position(replaceAll(create_table_query, '\`', ''),
     'PROJECTION p (x CODEC(Delta, Delta)) AS') > 0) FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_projection_codec_old_copy'"
+
+# `MODIFY PROJECTION` only changes settings; it restates the accepted codec without validating it again.
+${CLICKHOUSE_CLIENT} "${v1_wait[@]}" -q "
+    ALTER TABLE ${copy_table} ON CLUSTER test_shard_localhost
+        MODIFY PROJECTION p (x CODEC(Delta, Delta)) AS (SELECT k, x ORDER BY k)
+        WITH SETTINGS (index_granularity = 128) FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "SELECT countIf(position(create_table_query,
+    'WITH SETTINGS (index_granularity = 128)') > 0) FROM system.tables
     WHERE database = currentDatabase() AND name = 't_projection_codec_old_copy'"
 
 # Format 3 normalizes AS source into an explicit projection list before enqueueing it. The worker

@@ -2,12 +2,12 @@ create rejected
 0
 attach rejected
 0
-1
-1
-1
+copy_v1 rejected
+0
 alter_add rejected
 0
 create_v2_without_codec_setting rejected
+1
 1
 1
 1

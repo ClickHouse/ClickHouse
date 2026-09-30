@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-replicated-database, no-shared-merge-tree
 
-# In old-format distributed DDL, the worker resolves AS <source> after the initiator checks the
-# query. Both names must contain the runner's database: the worker's current database is `default`,
+# In old-format distributed DDL, the worker resolves `AS <source>` and checks the copied metadata.
+# Both names must contain the runner's database: the worker's current database is `default`,
 # and parallel flaky-test retries can otherwise collide on the source table.
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,10 +22,10 @@ alias_copy="${CLICKHOUSE_DATABASE}.t_projection_column_list_alias_copy"
 old_format=(--distributed_ddl_entry_format_version=1)
 wait_for_worker=(--distributed_ddl_task_timeout=180 --distributed_ddl_output_mode=throw)
 
-expect_disabled_before_enqueue() {
-    local label="$1" query="$2" output
-    if output=$(${CLICKHOUSE_CLIENT} "${old_format[@]}" --distributed_ddl_task_timeout=0 \
-        --distributed_ddl_output_mode=none --allow_projection_column_list_in_replicated_metadata=0 \
+expect_disabled_on_worker() {
+    local label="$1" query="$2" allow_column_list="${3:-0}" output
+    if output=$(${CLICKHOUSE_CLIENT} "${old_format[@]}" "${wait_for_worker[@]}" \
+        --allow_projection_column_list_in_replicated_metadata="$allow_column_list" \
         -q "$query" 2>&1); then
         echo "$label unexpectedly succeeded" >&2
         exit 1
@@ -42,14 +42,14 @@ ${CLICKHOUSE_CLIENT} -q "
         (x UInt64, PROJECTION p (x UInt64) AS (SELECT x ORDER BY x))
         ENGINE = MergeTree ORDER BY x"
 
-expect_disabled_before_enqueue copy "
+expect_disabled_on_worker copy "
     CREATE TABLE ${copy_table} ON CLUSTER test_shard_localhost AS ${source_table}
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_projection_column_list_cluster_copy', 'r1')
         ORDER BY x"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
     WHERE database = currentDatabase() AND name = 't_projection_column_list_cluster_copy'"
 
-expect_disabled_before_enqueue inherited "
+expect_disabled_on_worker inherited "
     CREATE TABLE ${inherited_table} ON CLUSTER test_shard_localhost AS ${source_table}"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
     WHERE database = currentDatabase() AND name = 't_projection_column_list_cluster_inherited'"
@@ -61,8 +61,16 @@ ${CLICKHOUSE_CLIENT} "${old_format[@]}" "${wait_for_worker[@]}" \
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_memory'"
 
-# The worker receives neither the initiator's setting nor the expanded source definition in v1.
-${CLICKHOUSE_CLIENT} "${old_format[@]}" "${wait_for_worker[@]}" \
+# Version 1 does not carry the initiator's opt-in setting to the worker.
+expect_disabled_on_worker copy_v1 "
+    CREATE TABLE ${copy_table} ON CLUSTER test_shard_localhost AS ${source_table}
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_projection_column_list_cluster_copy', 'r1')
+        ORDER BY x" 1
+expect_disabled_on_worker inherited_v1 "
+    CREATE TABLE ${inherited_table} ON CLUSTER test_shard_localhost AS ${source_table}" 1
+
+# Version 2 carries the opt-in setting, so the worker can copy the accepted declaration.
+${CLICKHOUSE_CLIENT} --distributed_ddl_entry_format_version=2 "${wait_for_worker[@]}" \
     --allow_projection_column_list_in_replicated_metadata=1 -q "
     CREATE TABLE ${copy_table} ON CLUSTER test_shard_localhost AS ${source_table}
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_projection_column_list_cluster_copy', 'r1')
@@ -70,7 +78,7 @@ ${CLICKHOUSE_CLIENT} "${old_format[@]}" "${wait_for_worker[@]}" \
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_copy'"
 
-${CLICKHOUSE_CLIENT} "${old_format[@]}" "${wait_for_worker[@]}" \
+${CLICKHOUSE_CLIENT} --distributed_ddl_entry_format_version=2 "${wait_for_worker[@]}" \
     --allow_projection_column_list_in_replicated_metadata=1 -q "
     CREATE TABLE ${inherited_table} ON CLUSTER test_shard_localhost AS ${source_table} FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
@@ -92,8 +100,8 @@ if [[ "$output" != *BAD_ARGUMENTS* ]]; then
 fi
 echo "alias inheritance reached Alias validation"
 
-# The catalog returns a TableProxy after reattaching a lazy database. The initiator must
-# materialize it before inspecting projections, or it will see only cached columns.
+# The catalog returns a TableProxy after reattaching a lazy database. The worker must
+# materialize it before checking projections, or it will see only cached columns.
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${lazy_database} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${lazy_source}
     (x UInt64, PROJECTION p (x UInt64) AS (SELECT x ORDER BY x))
@@ -102,7 +110,7 @@ ${CLICKHOUSE_CLIENT} -q "DETACH DATABASE ${lazy_database}"
 ${CLICKHOUSE_CLIENT} -q "ATTACH DATABASE ${lazy_database}"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
     WHERE database = '${lazy_database}' AND name = 'src' AND engine = 'TableProxy'"
-expect_disabled_before_enqueue lazy_source "
+expect_disabled_on_worker lazy_source "
     CREATE TABLE ${lazy_copy} ON CLUSTER test_shard_localhost AS ${lazy_source}
         ENGINE = MergeTree ORDER BY x"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
