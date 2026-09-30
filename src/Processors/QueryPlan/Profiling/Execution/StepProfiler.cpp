@@ -8,7 +8,7 @@ namespace DB
 namespace
 {
 
-StepWallClocks createWallClocksForPlanSteps(const QueryPlan & plan)
+StepWallClocks collectWallClocksForPlanSteps(const QueryPlan & plan)
 {
     StepWallClocks clocks;
 
@@ -40,11 +40,11 @@ StepWallClocks createWallClocksForPlanSteps(const QueryPlan & plan)
 StepProfiler::StepProfiler(const QueryPlan & plan, bool collect_work_intervals_, UInt64 origin_ns_)
     : origin_ns(origin_ns_)
     , collect_work_intervals(collect_work_intervals_)
-    , clocks(createWallClocksForPlanSteps(plan))
+    , clocks(collectWallClocksForPlanSteps(plan))
 {
 }
 
-StepWallClock * StepProfiler::findClock(const IQueryPlanStep * step, size_t group) const
+StepWallClock * StepProfiler::findClockForStep(const IQueryPlanStep * step, size_t group) const
 {
     auto it = clocks.find({step, group});
     return it != clocks.end() ? it->second.get() : nullptr;

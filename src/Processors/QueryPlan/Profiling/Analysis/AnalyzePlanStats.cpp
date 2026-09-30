@@ -318,10 +318,8 @@ AnalyzeStepsStats::ElapsedTimesPerStepGroup AnalyzeStepsStats::collectTimingStat
         elapsed_per_step_group[step_group_key].insert(group_elapsed);
 
         if (group_stats.wall_clock_time_ns == 0)
-        {
-            if (const auto * clock = step_profiler.findClock(step, group))
+            if (const auto * clock = step_profiler.findClockForStep(step, group))
                 group_stats.wall_clock_time_ns = clock->getStepWallTime();
-        }
     }
 
     return elapsed_per_step_group;

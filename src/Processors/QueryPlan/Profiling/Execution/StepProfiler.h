@@ -14,7 +14,8 @@ namespace DB
 class IQueryPlanStep;
 class QueryPlan;
 
-using StepWallClocks = std::map<std::pair<const IQueryPlanStep *, size_t>, std::unique_ptr<StepWallClock>>;
+using PlanStepGroup = std::pair<const IQueryPlanStep *, size_t>;
+using StepWallClocks = std::map<PlanStepGroup, std::unique_ptr<StepWallClock>>;
 
 /// Statistics needed for EXPLAIN ANALYZE.
 class StepProfiler
@@ -22,7 +23,7 @@ class StepProfiler
 public:
     StepProfiler(const QueryPlan & plan, bool collect_work_intervals_, UInt64 origin_ns_);
 
-    StepWallClock * findClock(const IQueryPlanStep * step, size_t group) const;
+    StepWallClock * findClockForStep(const IQueryPlanStep * step, size_t group) const;
 
     bool needCollectWorkIntervals() const;
     void addWorkIntervals(WorkIntervals intervals);
