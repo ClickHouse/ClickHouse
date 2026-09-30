@@ -5,14 +5,10 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/CapturedPlan.h>
-#include <Processors/QueryPlan/QueryPlanToJSON.h>
-#include <mutex>
 namespace DB
 {
 
 class QueryPipeline;
-class QueryPlanProfiler;
-class StepStatisticsCollector;
 
 class QueryPlanProfiler
 {

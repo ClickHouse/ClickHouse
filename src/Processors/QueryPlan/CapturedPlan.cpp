@@ -1,5 +1,8 @@
 #include <Processors/QueryPlan/CapturedPlan.h>
 
+#include <base/find_symbols.h>
+#include <Common/typeid_cast.h>
+
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -41,24 +44,9 @@ std::vector<String> stepDetails(
 
     step.describeActions(settings);
 
-    /// Split the resulting lines into a vector of strings
-
+    /// Split the resulting lines into a vector of strings, dropping the empty ones.
     std::vector<String> details;
-
-    const auto & text = out.str();
-    size_t line_begin = 0;
-    while (line_begin < text.size())
-    {
-        size_t line_end = text.find('\n', line_begin);
-        if (line_end == String::npos)
-            line_end = text.size();
-
-        if (line_end > line_begin)
-            details.push_back(text.substr(line_begin, line_end - line_begin));
-
-        line_begin = line_end + 1;
-    }
-
+    splitInto<'\n'>(details, out.str(), /*token_compress=*/ true);
     return details;
 }
 
@@ -89,21 +77,11 @@ String stepDescription(
 /// `describeIndexes` is one rendering of it, this capture is another.
 PlanIndexStats stepIndexes(const IQueryPlanStep & step, const ExplainPlanOptions & options)
 {
-    const auto * read_from_merge_tree = dynamic_cast<const ReadFromMergeTree *>(&step);
+    const auto * read_from_merge_tree = typeid_cast<const ReadFromMergeTree *>(&step);
     if (!options.indexes || !read_from_merge_tree)
         return {};
 
     return read_from_merge_tree->getIndexStats();
-}
-
-/// See `stepIndexes`: the same data, from the same step.
-PlanProjectionStats stepProjections(const IQueryPlanStep & step, const ExplainPlanOptions & options)
-{
-    const auto * read_from_merge_tree = dynamic_cast<const ReadFromMergeTree *>(&step);
-    if (!options.projections || !read_from_merge_tree)
-        return {};
-
-    return read_from_merge_tree->getProjectionStats();
 }
 
 /// What the pipeline measured for this step. Absent when there was no pipeline to measure -- a
@@ -145,7 +123,6 @@ CapturedStep captureStep(
     captured.description = stepDescription(step, options, max_description_length);
     captured.details = stepDetails(step, options, plan_pretty_names);
     captured.indexes = stepIndexes(step, options);
-    captured.projections = stepProjections(step, options);
     captured.statistics = stepStatistics(step, steps_to_stats);
 
     return captured;

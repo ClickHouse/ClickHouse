@@ -36,8 +36,6 @@ JSONBuilder::ItemPtr capturedStepToJSON(const CapturedStep & step)
 
     if (auto indexes = indexStatsToJSON(step.indexes))
         map->add("Indexes", std::move(indexes));
-    if (auto projections = projectionStatsToJSON(step.projections))
-        map->add("Projections", std::move(projections));
 
     auto children = std::make_unique<JSONBuilder::JSONArray>();
     for (const auto & child : step.children)

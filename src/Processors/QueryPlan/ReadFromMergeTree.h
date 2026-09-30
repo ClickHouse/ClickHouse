@@ -250,8 +250,8 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
-    IndexStats getIndexStats() const;
-    ProjectionStats getProjectionStats() const;
+    const IndexStats & getIndexStats() const;
+    const ProjectionStats & getProjectionStats() const;
     void describeProjections(JSONBuilder::JSONMap & map) const override;
 
     const Names & getAllColumnNames() const { return all_column_names; }

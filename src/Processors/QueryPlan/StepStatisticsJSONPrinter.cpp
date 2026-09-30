@@ -134,11 +134,7 @@ std::unique_ptr<JSONBuilder::JSONMap> metricsToJSON(const MetricList & metrics)
 /// All values are empty when the work intervals were not collected; such a group is left out.
 std::unique_ptr<JSONBuilder::JSONMap> stepAndBranchGroupToJSON(const MetricGroup & group)
 {
-    bool collected = false;
-    for (const auto & metric : group.metrics)
-        if (!std::holds_alternative<std::monostate>(metric.value))
-            collected = true;
-    if (!collected)
+    if (!hasCollectedMetrics(group))
         return nullptr;
 
     auto map = std::make_unique<JSONBuilder::JSONMap>();

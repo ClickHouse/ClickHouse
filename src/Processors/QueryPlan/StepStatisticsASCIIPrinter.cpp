@@ -126,15 +126,6 @@ void printIOGroup(const MetricGroup & io_group, WriteBuffer & out, const std::st
     out << "\n";
 }
 
-/// A group of placeholders means the work intervals were not collected; such a group is not printed.
-bool hasCollectedMetrics(const MetricGroup & group)
-{
-    for (const auto & metric : group.metrics)
-        if (!std::holds_alternative<std::monostate>(metric.value))
-            return true;
-    return false;
-}
-
 /// The group is built by `makeTimingReport`: a (time, share) pair for the step, then one for its branch.
 void printTimeGroup(const MetricGroup & time_group, WriteBuffer & out, const std::string & prefix)
 {

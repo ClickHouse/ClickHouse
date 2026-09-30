@@ -5913,12 +5913,12 @@ void ReadFromMergeTree::describeProjections(JSONBuilder::JSONMap & map) const
         map.add("Projections", std::move(projections_json));
 }
 
-ReadFromMergeTree::IndexStats ReadFromMergeTree::getIndexStats() const
+const ReadFromMergeTree::IndexStats & ReadFromMergeTree::getIndexStats() const
 {
     return getAnalysisResult().index_stats;
 }
 
-ReadFromMergeTree::ProjectionStats ReadFromMergeTree::getProjectionStats() const
+const ReadFromMergeTree::ProjectionStats & ReadFromMergeTree::getProjectionStats() const
 {
     return getAnalysisResult().projection_stats;
 }

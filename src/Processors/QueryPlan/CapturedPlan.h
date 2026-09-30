@@ -32,9 +32,8 @@ struct CapturedStep
 
     std::optional<AnalyzedStepData> statistics;
 
-    /// What index and projection analysis decided. Only a `ReadFromMergeTree` has any.
+    /// What index analysis decided. Only a `ReadFromMergeTree` has any.
     PlanIndexStats indexes;
-    PlanProjectionStats projections;
 };
 
 /// A whole query: its own steps and the totals.
