@@ -25,6 +25,7 @@
 #include <Core/Settings.h>
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <base/EnumReflection.h>
@@ -44,6 +45,11 @@ extern const Event UniqueKeyConflictIgnoredRows;
 
 namespace DB
 {
+
+namespace FailPoints
+{
+extern const char unique_key_insert_pause_before_commit[];
+}
 
 namespace ErrorCodes
 {
@@ -243,6 +249,9 @@ public:
         const PartitionWriteGuard &, const MergeTreeTransactionPtr & txn, const StagedWrite &) override
     {
         addPartToActiveSet(storage, own_part, txn);
+
+        /// The window a read sees the part Active before its commit point, otherwise too narrow to hit.
+        FailPointInjection::pauseFailPoint(FailPoints::unique_key_insert_pause_before_commit);
         return *own_part;
     }
 
