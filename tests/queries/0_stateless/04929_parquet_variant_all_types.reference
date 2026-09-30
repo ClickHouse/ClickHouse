@@ -20,9 +20,9 @@
 20	DateTime64(9)	2026-08-28 12:34:56.789012000
 21	UUID	61f0c404-5cb3-11e7-907b-a6006ad3dba0
 22	String	hello
-23	Map(String, Dynamic)	{'a':1,'b':'x'}
+23	JSON	{"a":1,"b":"x"}
 24	Array(Dynamic)	[1,2,'three']
-25	Map(String, Dynamic)	{'arr':[1,2],'obj':{'k':7}}
-26	Map(String, Dynamic)	{}
+25	JSON	{"arr":[1,2],"obj":{"k":7}}
+26	JSON	{}
 27	Array(Dynamic)	[]
 28	None	\N

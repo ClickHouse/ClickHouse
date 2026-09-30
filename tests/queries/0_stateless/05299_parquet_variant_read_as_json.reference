@@ -1,0 +1,39 @@
+1	{"a":1,"b":{"c":"x"},"s":"hello"}	{'a':'Int8','b.c':'String','s':'String'}
+2	{"a":300,"tags":["x","y"]}	{'a':'Int16','tags':'Array(Dynamic)'}
+3	{}	{}
+4	{}	{}
+5	{}	{}
+6	{"a":5,"b":{"c":"y","d":1}}	{'a':'Int8','b.c':'String','b.d':'Int8'}
+--- typed path ---
+1	1	Int64	x	LowCardinality(String)
+2	300	Int64		LowCardinality(String)
+3	0	Int64		LowCardinality(String)
+4	0	Int64		LowCardinality(String)
+5	0	Int64		LowCardinality(String)
+6	5	Int64	y	LowCardinality(String)
+--- skip ---
+1	{"a":1,"s":"hello"}
+2	{"a":300}
+3	{}
+4	{}
+5	{}
+6	{"a":5}
+--- shared data ---
+1	{"a":1,"b":{"c":"x"},"s":"hello"}	['a']	['b.c','s']
+2	{"a":300,"tags":["x","y"]}	['a']	['tags']
+3	{}	[]	[]
+4	{}	[]	[]
+5	{}	[]	[]
+6	{"a":5,"b":{"c":"y","d":1}}	['a']	['b.c','b.d']
+--- insert into a table ---
+1	1	x
+2	300	\N
+3	0	\N
+4	0	\N
+5	0	\N
+6	5	y
+--- schema inference still gives Dynamic ---
+n	Nullable(Int64)					
+v	Dynamic					
+--- a non-object value ---
+Cannot read Parquet variant column 'v' as JSON: it contains a value of type Int32, but only objects can be read as JSON. Read the column as Dynamic instead

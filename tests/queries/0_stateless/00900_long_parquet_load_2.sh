@@ -74,6 +74,11 @@ EXCLUDE=(
     04932_variant_null.parquet
     04933_variant_binary_and_string.parquet
     05227_variant_nested_types.parquet
+    05296_variant_json_objects.parquet
+    05297_variant_json_shared_data.parquet
+    # Its object has a duplicate path on purpose, so loading it here would print an exception.
+    05298_variant_json_duplicate_path.parquet
+    05299_variant_read_as_json.parquet
     # Intentionally truncated variant blobs for the 05228 malformed-input test.
     05228_variant_malformed.parquet
 )

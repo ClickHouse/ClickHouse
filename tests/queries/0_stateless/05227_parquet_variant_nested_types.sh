@@ -6,12 +6,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Values nested inside a variant object keep their own type, and object/array offsets wider than
-# one signed byte are read as unsigned.
+# Values nested inside a variant object keep their own type, nested objects are flattened into
+# `JSON` paths, and object/array offsets wider than one signed byte are read as unsigned.
 DATA_FILE=$CUR_DIR/data_parquet/05227_variant_nested_types.parquet
 
 ${CLICKHOUSE_LOCAL} --query "
-    SELECT n, arrayMap(x -> dynamicType(x), mapValues(dynamicElement(v, 'Map(String, Dynamic)'))) AS nested_types
+    SELECT n, JSONAllPathsWithTypes(dynamicElement(v, 'JSON')) AS nested_types
     FROM file('${DATA_FILE}', Parquet)
     ORDER BY n
     SETTINGS session_timezone = 'UTC'
