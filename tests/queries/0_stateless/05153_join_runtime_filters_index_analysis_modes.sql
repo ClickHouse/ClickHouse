@@ -64,11 +64,15 @@ SETTINGS log_comment = '05153_parallel_replicas', enable_parallel_replicas = 1, 
 
 -- Parallel replicas where the replicas receive a serialized plan instead of the query text: the
 -- descriptors are not serialized with it, but the replica's own optimization of that plan attaches them.
+-- The local plan is pinned OFF so that the initiator reads nothing: the counters below can then only come
+-- from replicas that deserialized the plan, which is the claim this row exists to make. With a local plan
+-- the initiator alone would satisfy them and a replica that stopped attaching descriptors would go
+-- unnoticed.
 SELECT 'parallel_replicas_serialized_plan', count(), sum(f.v)
 FROM rf_idx_fact AS f INNER JOIN rf_idx_dim AS d ON f.id = d.id
 WHERE d.tag = 'hot'
 SETTINGS log_comment = '05153_parallel_replicas_serialized_plan', enable_parallel_replicas = 1,
-    parallel_replicas_plan_based = 0, serialize_query_plan = 1, parallel_replicas_local_plan = 1;
+    parallel_replicas_plan_based = 0, serialize_query_plan = 1, parallel_replicas_local_plan = 0;
 
 SELECT 'parallel_replicas_plan_based', count(), sum(f.v)
 FROM rf_idx_fact AS f INNER JOIN rf_idx_dim AS d ON f.id = d.id
