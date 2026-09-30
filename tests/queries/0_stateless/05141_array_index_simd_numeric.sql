@@ -119,3 +119,10 @@ SELECT 'UInt32 tail',
 SELECT 'UInt8 long missing',
     has(materialize(arrayMap(x -> toUInt8(x % 255), range(4096))), toUInt8(255)),
     indexOf(materialize(arrayMap(x -> toUInt8(x % 255), range(4096))), toUInt8(255));
+
+-- Exercise memchr hits beyond the scalar prefix, including signed bytes and first-match semantics.
+WITH materialize(arrayMap(x -> toUInt8(if(x = 72 OR x = 95, 255, 0)), range(96))) AS arr
+SELECT 'UInt8 long first duplicate', has(arr, 255), indexOf(arr, 255);
+
+WITH materialize(arrayMap(x -> toInt8(if(x = 72 OR x = 95, -128, 0)), range(96))) AS arr
+SELECT 'Int8 long first duplicate', has(arr, -128), indexOf(arr, -128);

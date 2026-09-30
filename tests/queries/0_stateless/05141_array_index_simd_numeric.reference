@@ -18,3 +18,5 @@ Bare UInt64 max	1	9
 First duplicate	1	17
 UInt32 tail	1	65	0	0
 UInt8 long missing	0	0
+UInt8 long first duplicate	1	73
+Int8 long first duplicate	1	73
