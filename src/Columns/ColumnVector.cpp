@@ -891,16 +891,41 @@ ALWAYS_INLINE UInt8x16 shuffleBytes(UInt8x16 source, UInt8x16 control)
 #endif
 }
 
-/// One shuffle handles 8 rows of 1-byte elements (a 256-entry table of 16 bytes would be too large for 16 rows),
-/// otherwise the 16 / `ELEMENT_WIDTH` rows of a 16-byte vector.
-template <size_t ELEMENT_WIDTH>
-constexpr size_t COMPRESS_ROWS = ELEMENT_WIDTH == 1 ? 8 : 16 / ELEMENT_WIDTH;
+#if defined(__AVX2__)
+using UInt32x8 = UInt32 __attribute__((vector_size(32)));
+using UInt8x8 = UInt8 __attribute__((vector_size(8)));
 
-/// For each mask of `COMPRESS_ROWS` rows, the shuffle control that moves the selected elements to the front.
+/// Returns `source[control[i]]` in lane `i`. Clang lowers this loop to a single `vpermd`.
+ALWAYS_INLINE UInt32x8 permuteDwords(UInt32x8 source, UInt32x8 control)
+{
+    UInt32x8 res{};
+    for (size_t i = 0; i < 8; ++i)
+        res[i] = source[control[i]];
+    return res;
+}
+
+/// 4 and 8-byte elements are permuted as dwords in a 32-byte vector (`vpermd`), which moves twice as many rows per lookup.
+/// It needs AVX2: without it the 32-byte permute is split or scalarized and is slower than two 16-byte shuffles.
+/// NEON has no such permute, so ARM keeps the 16-byte shuffle.
+template <size_t ELEMENT_WIDTH>
+constexpr bool COMPRESS_DWORDS = ELEMENT_WIDTH >= 4;
+#else
+template <size_t ELEMENT_WIDTH>
+constexpr bool COMPRESS_DWORDS = false;
+#endif
+
+/// One shuffle handles 8 rows of 1-byte elements (a 256-entry table of 16 bytes would be too large for 16 rows),
+/// otherwise the rows of a 16-byte vector (32-byte for `COMPRESS_DWORDS`).
+template <size_t ELEMENT_WIDTH>
+constexpr size_t COMPRESS_ROWS = ELEMENT_WIDTH == 1 ? 8 : (COMPRESS_DWORDS<ELEMENT_WIDTH> ? 32 : 16) / ELEMENT_WIDTH;
+
+/// For each mask of `COMPRESS_ROWS` rows, the control that moves the selected elements to the front: byte indices,
+/// or dword indices for `COMPRESS_DWORDS`.
 template <size_t ELEMENT_WIDTH>
 alignas(16) constexpr auto compress_table = []
 {
     constexpr size_t rows = COMPRESS_ROWS<ELEMENT_WIDTH>;
+    constexpr size_t units = COMPRESS_DWORDS<ELEMENT_WIDTH> ? ELEMENT_WIDTH / 4 : ELEMENT_WIDTH;
     std::array<std::array<UInt8, 16>, 1 << rows> table{};
     for (size_t mask = 0; mask < table.size(); ++mask)
     {
@@ -909,8 +934,8 @@ alignas(16) constexpr auto compress_table = []
         {
             if ((mask >> row) & 1)
             {
-                for (size_t byte = 0; byte < ELEMENT_WIDTH; ++byte)
-                    table[mask][out++] = static_cast<UInt8>(row * ELEMENT_WIDTH + byte);
+                for (size_t unit = 0; unit < units; ++unit)
+                    table[mask][out++] = static_cast<UInt8>(row * units + unit);
             }
         }
     }
@@ -949,6 +974,19 @@ ALWAYS_INLINE size_t compressBlock(UInt64 mask, const T * data_pos, T * res)
     for (size_t i = 0; i < SIMD_ELEMENTS; i += ROWS, mask >>= ROWS)
     {
         const UInt64 rows_mask = mask & ROWS_MASK;
+#if defined(__AVX2__)
+        if constexpr (COMPRESS_DWORDS<ELEMENT_WIDTH>)
+        {
+            UInt32x8 source;
+            memcpy(&source, data_pos + i, sizeof(source));
+            UInt8x8 control_bytes;
+            memcpy(&control_bytes, compress_table<ELEMENT_WIDTH>[rows_mask].data(), sizeof(control_bytes));
+            const UInt32x8 compressed = permuteDwords(source, __builtin_convertvector(control_bytes, UInt32x8));
+            memcpy(res + count, &compressed, sizeof(compressed));
+            count += std::popcount(rows_mask);
+            continue;
+        }
+#endif
         UInt8x16 source{};
         memcpy(&source, data_pos + i, BYTES);
         UInt8x16 control;
