@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+# Tags: no-parallel-replicas
+
 # A column referenced only inside `indexHint` is not read, but index analysis prunes granules by it,
 # so `count()` acts as an oracle for its values. It must require the same SELECT grant as a regular predicate.
 
