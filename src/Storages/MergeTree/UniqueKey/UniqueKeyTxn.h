@@ -35,6 +35,7 @@ class PartitionWriteGuard;
 ///       2. publish: register the part on the transaction. Active, not yet visible.
 ///       3. commit:  csn = TransactionLog::commitTransaction(). The bitmaps become visible.
 ///     Exit the critical section for the partition
+///     If the commit's Keeper reply was lost, wait until the transaction resolves
 ///
 /// A write may stage several bitmaps and publishes one part. `UniqueKeyTxnManager` drives the
 /// steps; the implementation supplies `stage` and `publish`.
@@ -93,6 +94,7 @@ public:
     DeleteBitmapStore & deleteBitmapStore() { return *delete_bitmap_store; }
 
     /// Commit a write under a transaction, returning the commit sequence number of the commit point.
+    /// Throws if a lost commit reply resolves to a rollback.
     CSN commitTransaction(MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & write);
 
 private:
