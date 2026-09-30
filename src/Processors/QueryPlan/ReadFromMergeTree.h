@@ -125,6 +125,8 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
+struct HypotheticalProjections;
+
 class ReadFromMergeTree final : public SourceStepWithFilter
 {
 public:
@@ -583,6 +585,10 @@ public:
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
+
+    /// `EXPLAIN WHATIF` candidates the projection optimization weighs next to the table's own projections
+    void setHypotheticalProjections(std::shared_ptr<HypotheticalProjections> projections) { hypothetical_projections = std::move(projections); }
+    const std::shared_ptr<HypotheticalProjections> & getHypotheticalProjections() const { return hypothetical_projections; }
     bool isTopKPrewhereQueryConditionCacheAllowed() const { return allow_top_k_prewhere_query_condition_cache; }
     bool isQueryConditionCacheAllowed() const { return allow_query_condition_cache; }
 
@@ -849,6 +855,7 @@ private:
     std::optional<size_t> number_of_current_replica;
 
     std::optional<TopKFilterInfo> top_k_filter_info;
+    std::shared_ptr<HypotheticalProjections> hypothetical_projections;
     ProjectionIndexReadDescription projection_index_read_desc;
     /// Number of tasks when this leaf read is distributed; each worker reads the lanes described by its
     /// per-read bucket parameter.
