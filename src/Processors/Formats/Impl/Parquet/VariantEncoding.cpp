@@ -32,6 +32,7 @@
 namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int NOT_IMPLEMENTED;
     extern const int TOO_DEEP_RECURSION;
     extern const int TYPE_MISMATCH;
 }
@@ -738,8 +739,22 @@ void decodeVariantColumn(
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        if ((metadata_nulls && (*metadata_nulls)[row]) || (value_nulls && (*value_nulls)[row]))
+        /// `metadata` is required by the spec, so it is null only if the whole variant is null.
+        if (metadata_nulls && (*metadata_nulls)[row])
         {
+            output.insertDefault();
+            continue;
+        }
+
+        /// A null `value` means that the value is stored in the shredded `typed_value` field.
+        if (value_nulls && (*value_nulls)[row])
+        {
+            if (output_object)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot read Parquet variant column '{}' as {}: a row has no `value`, so it is stored in the "
+                    "shredded `typed_value` field, which is not supported",
+                    column_name, output_type->getName());
             output.insertDefault();
             continue;
         }
