@@ -12,6 +12,11 @@
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
+namespace re2
+{
+class RE2;
+}
+
 namespace DB
 {
 
@@ -80,7 +85,8 @@ public:
         size_t max_dynamic_paths_upper_bound_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const StatisticsPtr & statistics_ = {});
+        const StatisticsPtr & statistics_ = {},
+        std::shared_ptr<const re2::RE2> shared_data_path_matcher_ = {});
 
     static MutablePtr create(
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
@@ -90,9 +96,14 @@ public:
         size_t max_dynamic_paths_upper_bound_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const StatisticsPtr & statistics_ = {});
+        const StatisticsPtr & statistics_ = {},
+        std::shared_ptr<const re2::RE2> shared_data_path_matcher_ = {});
 
-    static MutablePtr create(UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
+    static MutablePtr create(
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
+        size_t max_dynamic_paths_,
+        size_t max_dynamic_types_,
+        std::shared_ptr<const re2::RE2> shared_data_path_matcher_ = {});
 
     std::string getName() const override;
 
@@ -209,6 +220,10 @@ public:
     void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override;
 
+    /// Matcher of paths that are always stored in shared data (SHARED REGEXP in the type).
+    const std::shared_ptr<const re2::RE2> & getSharedDataPathMatcher() const { return shared_data_path_matcher; }
+    void setSharedDataPathMatcher(std::shared_ptr<const re2::RE2> matcher) { shared_data_path_matcher = std::move(matcher); }
+
     const PathToColumnMap & getTypedPaths() const { return typed_paths; }
     PathToColumnMap & getTypedPaths() { return typed_paths; }
 
@@ -271,12 +286,13 @@ public:
     size_t getGlobalMaxDynamicPaths() const { return global_max_dynamic_paths; }
     DataTypePtr getDynamicType() const { return std::make_shared<DataTypeDynamic>(max_dynamic_types); }
 
-    /// Try to add new dynamic path. Returns pointer to the new dynamic
-    /// path column or nullptr if limit on dynamic paths is reached.
+    /// Try to add new dynamic path. Returns pointer to the new dynamic path column or nullptr
+    /// if limit on dynamic paths is reached or the path must be stored in shared data.
     ColumnDynamic * tryToAddNewDynamicPath(std::string_view path);
+    /// Same, but adds the given column. Allowed only for an empty object column.
+    bool tryToAddNewDynamicPath(std::string_view path, MutableColumnPtr & column);
     /// Throws an exception if cannot add.
     void addNewDynamicPath(std::string_view path);
-    void addNewDynamicPath(std::string_view path, MutableColumnPtr column);
     bool canAddNewDynamicPath() const { return dynamic_paths.size() < max_dynamic_paths; }
 
     void setDynamicPaths(const VectorWithMemoryTracking<String> & paths);
@@ -432,6 +448,10 @@ private:
     /// Statistics on the number of non-null values for each dynamic path and for some shared data paths in the MergeTree data part.
     /// Calculated during serializing of data part in MergeTree. Used to determine the set of dynamic paths for the merged part.
     StatisticsPtr statistics;
+    /// Paths matching it are always stored in shared data. Taken from the type, nullptr if not set.
+    std::shared_ptr<const re2::RE2> shared_data_path_matcher;
+
+    bool isSharedDataPath(std::string_view path) const;
 };
 
 }

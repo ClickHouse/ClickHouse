@@ -1931,6 +1931,17 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
         };
     }
 
+    /// Types that differ only in SHARED REGEXP store values alike, so copy the column instead of the text round trip.
+    if (isJSONSharedDataPathRegexpsOnlyChange(*from_type, *to_object))
+    {
+        return [](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
+        {
+            auto result = result_type->createColumn();
+            result->insertRangeFrom(*arguments[0].column, 0, input_rows_count);
+            return result;
+        };
+    }
+
     /// Cast Tuple/Object/Map/JSON to JSON type through serializing into JSON string and parsing back into JSON column.
     /// Potentially we can do smarter conversion Tuple -> JSON with type preservation, but it's questionable how exactly Tuple should be
     /// converted to JSON (for example, should we recursively convert nested Array(Tuple) to Array(JSON) or not, should we infer types from String fields, etc).

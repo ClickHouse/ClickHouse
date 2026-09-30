@@ -1,0 +1,10 @@
+JSON(shared UInt32)
+JSON(`shared.foo` UInt32)
+JSON(SHARED REGEXP \'^a\', SHARED REGEXP \'^z\')
+partial ambient=0	['keep']	['foo','foobar']
+partial ambient=1	['keep']	['foo','foobar']
+nested objects and arrays	['arr','keep']	['a.b.tag_x']	[['tag_x']]
+7	[]	[]
+1
+1
+generateRandom	0	1
