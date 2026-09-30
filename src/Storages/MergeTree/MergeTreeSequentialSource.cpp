@@ -26,6 +26,11 @@
 #include <Common/ThrottlerArray.h>
 #include <base/sleep.h>
 
+namespace ProfileEvents
+{
+    extern const Event UniqueKeyMergeInputRowsSkipped;
+}
+
 namespace DB
 {
 
@@ -80,6 +85,10 @@ protected:
 
 private:
     void updateRowsToRead(size_t mark_number);
+
+    /// Drops the rows of `columns` whose part-local offset — `begin` for the first row —
+    /// is set in the task's `delete_bitmap`. Returns the surviving row count.
+    size_t applyDeleteBitmapFilter(Columns & columns, UInt64 begin, size_t num_rows);
 
     const MergeTreeData & storage;
     StorageSnapshotPtr storage_snapshot;
@@ -243,6 +252,8 @@ try
     if (read_result.num_rows > current_rows_to_read)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Read {} rows, more than requested to read: {}", read_result.num_rows, current_rows_to_read);
 
+    const UInt64 chunk_first_row
+        = index_granularity.getMarkStartingRow(current_mark) + index_granularity.getMarkRows(current_mark) - current_rows_to_read;
     current_rows_to_read -= read_result.num_rows;
 
     if (!current_rows_to_read)
@@ -293,7 +304,11 @@ try
         result_column = std::move(mutable_column);
     }
 
-    auto result = Chunk(std::move(result_columns), read_result.num_rows);
+    size_t result_rows = read_result.num_rows;
+    if (read_task_info->delete_bitmap && !read_task_info->delete_bitmap->empty())
+        result_rows = applyDeleteBitmapFilter(result_columns, chunk_first_row, result_rows);
+
+    auto result = Chunk(std::move(result_columns), result_rows);
     /// Part level is useful for next step for merging non-merge tree table
     bool add_part_level = storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
@@ -308,6 +323,22 @@ catch (...)
     if (!isRetryableException(std::current_exception()))
         read_task_info->data_part_info->reportBroken();
     throw;
+}
+
+size_t MergeTreeSequentialSource::applyDeleteBitmapFilter(Columns & columns, UInt64 begin, size_t num_rows)
+{
+    const auto & delete_bitmap = read_task_info->delete_bitmap;
+    if (delete_bitmap->rangeCardinality(begin, begin + num_rows) == 0)
+        return num_rows;
+
+    IColumn::Filter filter(num_rows);
+    const size_t kept = delete_bitmap->buildKeepFilterRange(begin, num_rows, filter.data());
+
+    ProfileEvents::increment(ProfileEvents::UniqueKeyMergeInputRowsSkipped, num_rows - kept);
+
+    for (auto & column : columns)
+        column = column->filter(filter, kept);
+    return kept;
 }
 
 void MergeTreeSequentialSource::finish()
@@ -343,6 +374,7 @@ Pipe createMergeTreeSequentialSource(
     info->merged_part_offsets = std::move(merged_part_offsets);
     info->part_index_in_query = data_part.part_index_in_query;
     info->part_starting_offset_in_query = data_part.part_starting_offset_in_query;
+    info->delete_bitmap = std::move(data_part.delete_bitmap);
     info->const_virtual_fields.emplace("_part_index", info->part_index_in_query);
     info->const_virtual_fields.emplace("_part_starting_offset", info->part_starting_offset_in_query);
     /// No `SAMPLE` clause reaches this path, so the sample factor is 1 - the same value

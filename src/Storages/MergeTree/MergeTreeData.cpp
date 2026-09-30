@@ -1344,13 +1344,7 @@ void MergeTreeData::checkProperties(
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
 
-    /// TTL on a UNIQUE KEY table cannot be honored: TTL delete / recompression /
-    /// GROUP BY are enforced during merges, and merges are disabled on UNIQUE KEY
-    /// tables until merge-side bitmap reconciliation lands. Reject at CREATE so the
-    /// combination cannot exist (`ALTER MODIFY TTL` is rejected in
-    /// `checkAlterIsPossible`); ATTACH must still load existing tables. Mirrors the
-    /// projection reject below.
-    /// TODO(unique-key): support TTL on UNIQUE KEY tables (lands with PR-14 merges).
+    /// Merge-time TTL expiration bypasses the delete bitmap; ATTACH must still load existing tables.
     if (new_metadata.hasAnyTTL() && new_metadata.hasUniqueKey() && !attach)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "TTL is not supported on tables with UNIQUE KEY");
@@ -4989,10 +4983,38 @@ ReadSnapshotPtr MergeTreeData::makeUniqueKeyReadSnapshot(const ContextPtr & loca
     return std::make_shared<const ReadSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), snapshot_csn, std::move(pin));
 }
 
+std::vector<ConstDeleteBitmapPtr> MergeTreeData::captureUniqueKeyMergeInputBitmaps(const DataPartsVector & parts) const
+{
+    const auto snapshot = makeUniqueKeyReadSnapshot(TransactionManager::instance().getLatestSnapshot());
+
+    std::vector<ConstDeleteBitmapPtr> bitmaps;
+    bitmaps.reserve(parts.size());
+    for (const auto & part : parts)
+        bitmaps.push_back(snapshot->bitmapAt(part->info));
+    return bitmaps;
+}
+
 UniqueKeyTxnManager & MergeTreeData::uniqueKeyTxnManager() const
 {
     chassert(unique_key_txn_manager);
     return *unique_key_txn_manager;
+}
+
+void MergeTreeData::checkUniqueKeyOptimizeIsPossible(const StorageInMemoryMetadata & metadata, bool deduplicate)
+{
+    if (!metadata.hasUniqueKey())
+        return;
+
+    if (metadata.hasAnyTTL())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "OPTIMIZE is not supported for UNIQUE KEY tables with TTL: merge-time TTL "
+                        "expiration does not route through the delete bitmap.");
+
+    /// A merge re-expresses late kills on its result assuming only its snapshot filter drops rows.
+    if (deduplicate)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "OPTIMIZE DEDUPLICATE is not supported for UNIQUE KEY tables: the unique key "
+                        "already keeps one live row per key");
 }
 
 void MergeTreeData::deleteByUniqueKey(const ASTPtr &, ContextPtr)
@@ -5612,13 +5634,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     "MODIFY ORDER BY is not supported on tables with UNIQUE KEY. "
                     "The dense-index SSTs produced at write time depend on the sort order.");
 
-            /// TTL is enforced during merges, which are disabled on UNIQUE KEY tables
-            /// until merge-side reconciliation lands (mirrors the CREATE-time reject in
-            /// `checkProperties`). Covers table TTL (MODIFY_TTL) and per-column TTL added
-            /// via ADD/MODIFY COLUMN (`command.ttl`). REMOVE TTL is allowed — it only
-            /// clears an expression, and a column ALTER with no TTL clause leaves
-            /// `command.ttl` null.
-            /// TODO(unique-key): support TTL on UNIQUE KEY tables (lands with PR-14 merges).
+            /// TODO(unique-key): support TTL; REMOVE TTL stays allowed.
             if (command.type == AlterCommand::MODIFY_TTL)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "MODIFY TTL is not supported on tables with UNIQUE KEY");
@@ -11407,10 +11423,7 @@ void MergeTreeData::optimizeDryRun(
     ContextPtr local_context)
 {
     /// DRY RUN PARTS executes a real merge task, bypassing StorageMergeTree::optimize's guard.
-    if (metadata_snapshot->hasUniqueKey())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "OPTIMIZE is not supported for UNIQUE KEY tables: merges are currently disabled "
-                        "to preserve DELETE correctness. Parts will not be compacted.");
+    checkUniqueKeyOptimizeIsPossible(*metadata_snapshot, deduplicate);
 
     if (part_names.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE DRY RUN requires at least one part name");

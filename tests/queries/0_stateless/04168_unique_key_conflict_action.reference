@@ -3,6 +3,11 @@ ignore_rows	1	a
 ignore_rows	2	b
 ignore_rows	3	c
 ignore_rows	4	d
+ignore_merged_count	4
+ignore_merged_rows	1	a
+ignore_merged_rows	2	b
+ignore_merged_rows	3	c
+ignore_merged_rows	4	d
 ignore_partitioned	0	2	b
 ignore_partitioned	0	4	d
 altered_policy	1	third

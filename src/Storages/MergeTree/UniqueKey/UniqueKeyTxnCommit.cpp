@@ -26,6 +26,7 @@
 #include <Core/Settings.h>
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <base/EnumReflection.h>
@@ -46,9 +47,15 @@ extern const Event UniqueKeyConflictIgnoredRows;
 namespace DB
 {
 
+namespace FailPoints
+{
+extern const char unique_key_merge_fail_after_publish[];
+}
+
 namespace ErrorCodes
 {
 extern const int ABORTED;
+extern const int FAULT_INJECTED;
 extern const int LOGICAL_ERROR;
 extern const int SUPPORT_IS_DISABLED;
 extern const int VIOLATED_CONSTRAINT;
@@ -540,6 +547,10 @@ protected:
         storage.merger_mutator.renameMergedTemporaryPart(
             own_part, request.source_parts, commit_txn, transaction);
         transaction.commit();
+
+        fiu_do_on(FailPoints::unique_key_merge_fail_after_publish,
+            { throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint unique_key_merge_fail_after_publish is triggered"); });
+
         return *own_part;
     }
 
@@ -613,10 +624,42 @@ DeleteBitmapPtr UniqueKeyTxnCommit::MergeCommit::computeMergeLateKills()
     return late_kills->empty() ? nullptr : late_kills;
 }
 
+namespace
+{
+
+/// A rolled-back part stays in the working set as Outdated until the cleanup thread gets to it, and
+/// until then a retry of the same merge or mutation cannot publish a part under its name.
+void dropRolledBackResult(StorageMergeTree & storage, MergeTreeMutableDataPartPtr & part)
+{
+    if (part->version->getInfo().creation_csn != Tx::RolledBackCSN || storage.isPinnedByDeleteBitmap(*part))
+        return;
+
+    try
+    {
+        storage.tryRemovePartImmediately(std::move(part));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("UniqueKeyTxnCommit"), "while removing a rolled-back merged part");
+    }
+}
+
+}
+
 void UniqueKeyTxnCommit::merge(StorageMergeTree & storage, MergeRequest request)
 {
-    MergeCommit op(storage, request);
-    storage.uniqueKeyTxnManager().commitTransaction(request.transaction, op);
+    DeleteBitmapPtr late_kills;
+    try
+    {
+        MergeCommit op(storage, request);
+        storage.uniqueKeyTxnManager().commitTransaction(request.transaction, op);
+        late_kills = op.lateKills();
+    }
+    catch (...)
+    {
+        dropRolledBackResult(storage, request.merged_part);
+        throw;
+    }
 
     const String & partition_id = request.merged_part->info.getPartitionId();
 
@@ -624,10 +667,10 @@ void UniqueKeyTxnCommit::merge(StorageMergeTree & storage, MergeRequest request)
         "UNIQUE KEY MERGE (partition {}): done, merged part {} from {} source part(s)",
         partition_id, request.merged_part->name, request.source_parts.size());
 
-    if (op.lateKills())
+    if (late_kills)
         LOG_DEBUG(getLogger("UniqueKeyTxnCommit"),
             "UNIQUE KEY merge (partition {}): reconciled {} late kill(s) into the merged part {}",
-            partition_id, op.lateKills()->cardinality(), request.merged_part->name);
+            partition_id, late_kills->cardinality(), request.merged_part->name);
 }
 
 class UniqueKeyTxnCommit::DeleteCommit : public UniqueKeyCommitBase

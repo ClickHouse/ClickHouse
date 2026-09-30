@@ -1,0 +1,15 @@
+delete_count_before	170
+delete_parts_after	1
+delete_count_after	170
+delete_distinct	170
+delete_min	30
+remerge_count_after_delete	160
+remerge_count	170
+remerge_max	209
+remerge_gone	0
+bg_parts_before	2
+bg_parts_after	1
+bg_count	80
+bg_distinct	80
+cap_before_merge	100	100
+cap_after_merge	100	100

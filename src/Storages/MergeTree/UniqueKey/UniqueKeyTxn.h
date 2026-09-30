@@ -84,7 +84,9 @@ MergeTreeTransactionHolder beginUniqueKeyTransaction(const ContextPtr & context,
 /// For a caller with no query context that knows the answer -- today only the background merge task,
 /// which is handed the OPTIMIZE query's transaction as a member. Prefer the overload above: it
 /// cannot be passed the wrong transaction.
-MergeTreeTransactionHolder beginUniqueKeyTransaction(const MergeTreeTransactionPtr & current, std::string_view operation);
+/// The snapshot covers every source part's creation csn.
+MergeTreeTransactionHolder beginUniqueKeyTransaction(
+    const MergeTreeTransactionPtr & current, std::string_view operation, const std::vector<MergeTreeDataPartPtr> & source_parts);
 
 class UniqueKeyTxnManager
 {
@@ -96,6 +98,9 @@ public:
     /// Commit a write under a transaction, returning the commit sequence number of the commit point.
     /// Throws if a lost commit reply resolves to a rollback.
     CSN commitTransaction(MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & write);
+
+    /// Returns once every write that published a part into @partition_id before the call has left its commit.
+    void waitForCommitsInFlight(const String & partition_id);
 
 private:
     /// The pessimistic write lock for a partition

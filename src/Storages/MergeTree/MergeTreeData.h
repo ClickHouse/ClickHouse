@@ -1090,6 +1090,9 @@ public:
 
     ReadSnapshotPtr makeUniqueKeyReadSnapshot(const ContextPtr & local_context) const;
 
+    /// The parts' current delete bitmaps, in `parts` order; immutable once returned.
+    std::vector<ConstDeleteBitmapPtr> captureUniqueKeyMergeInputBitmaps(const DataPartsVector & parts) const;
+
     UniqueKeyTxnManager & uniqueKeyTxnManager() const;
 
     /// A synchronous `DELETE FROM` on a unique-key table; the base throws.
@@ -1900,6 +1903,9 @@ protected:
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
         const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts, const ReadSnapshot * uk_read_snapshot = nullptr) const;
+
+    /// Throws for an OPTIMIZE a UNIQUE KEY table does not run: on a table with TTL, or DEDUPLICATE.
+    static void checkUniqueKeyOptimizeIsPossible(const StorageInMemoryMetadata & metadata, bool deduplicate);
 
     static decltype(auto) getStateModifier(DataPartState state)
     {

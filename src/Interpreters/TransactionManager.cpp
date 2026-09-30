@@ -50,6 +50,7 @@ namespace FailPoints
 {
     extern const char transaction_force_unknown_state_after_commit[];
     extern const char smt_force_txn_rollback_invalidation[];
+    extern const char transaction_hold_unknown_state[];
 }
 
 static void tryWriteEventToSystemLog(LoggerPtr log, ContextPtr context,
@@ -378,6 +379,9 @@ void TransactionManager::runUpdatingThread()
 
 void TransactionManager::tryFinalizeUnknownStateTransactions()
 {
+    /// Test-only: keeps the undetermined state observable; returning, not pausing, leaves `loadEntries` running.
+    fiu_do_on(FailPoints::transaction_hold_unknown_state, { return; });
+
     /// We just recovered connection to [Zoo]Keeper.
     /// Check if transactions in unknown state were actually committed or not and finalize or rollback them.
     UnknownStateList list;

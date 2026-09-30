@@ -1,6 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree
 -- UNIQUE KEY `unique_key_conflict_action = 'ignore'`, and repointing the policy. Overwrite is 04105's, abort 04174's.
---   1. ignore, mixed batch: only new keys land
+--   1. ignore, mixed batch: only new keys land, also after a merge
 --   1b. ignore on a partitioned table: the rewritten part keeps its partition
 --   2. ALTER MODIFY SETTING repoints the policy for later INSERTs
 
@@ -23,6 +23,11 @@ INSERT INTO uk_ig_mix
     VALUES (1, 'a_new'), (3, 'c'), (4, 'd');
 SELECT 'ignore_count', count() FROM uk_ig_mix;  -- 4
 SELECT 'ignore_rows', id, v FROM uk_ig_mix ORDER BY id;  -- 1 a / 2 b / 3 c / 4 d
+
+SYSTEM START MERGES uk_ig_mix;
+OPTIMIZE TABLE uk_ig_mix FINAL SETTINGS optimize_throw_if_noop = 1;
+SELECT 'ignore_merged_count', count() FROM uk_ig_mix;  -- 4
+SELECT 'ignore_merged_rows', id, v FROM uk_ig_mix ORDER BY id;  -- 1 a / 2 b / 3 c / 4 d
 
 -- 1b. ignore, partitioned: red if the rewrite takes the partition from the sink's block
 -- (LOGICAL_ERROR) instead of the written part.

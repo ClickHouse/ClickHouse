@@ -54,6 +54,7 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
+#include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <fmt/ranges.h>
 #include <Common/DimensionalMetrics.h>
 #include <Common/ErrorCodes.h>
@@ -351,6 +352,20 @@ void MergeTask::GlobalRuntimeContext::checkOperationIsNotCanceled() const
     }
 }
 
+/// Hold on to the merged block's UK columns, so the dense index is built without reading them
+/// back out of the written part.
+static void retainUniqueKeyColumns(const Names & unique_key_columns, const Block & block, Blocks & retained)
+{
+    Block unique_key_block;
+    for (const auto & name : unique_key_columns)
+    {
+        auto column = block.getByName(name);
+        column.column = column.column->convertToFullColumnIfSparse();
+        unique_key_block.insert(std::move(column));
+    }
+    retained.push_back(std::move(unique_key_block));
+}
+
 static String getColumnNameInStorage(const String & column_name, const NameSet & storage_columns, const NameSet & virtual_columns)
 {
     if (storage_columns.contains(column_name))
@@ -635,6 +650,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
     global_ctx->virtual_columns = global_ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
 
+    /// Pin each input part's delete bitmap at one snapshot for the per-part filter and the
+    /// commit-time late-kill diff. A projection sub-merge's metadata has no unique key.
+    global_ctx->is_unique_key_merge = global_ctx->metadata_snapshot->hasUniqueKey();
+
+    if (global_ctx->is_unique_key_merge)
+        global_ctx->unique_key_snapshot_bitmaps
+            = global_ctx->data->captureUniqueKeyMergeInputBitmaps(global_ctx->future_part->parts);
+
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
     for (const auto & part : global_ctx->future_part->parts)
@@ -841,7 +864,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->cleanup ||
         global_ctx->deduplicate ||
         hasLightweightDelete(global_ctx->future_part) ||
-        global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary;
+        global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary ||
+        /// The UNIQUE KEY input filter drops bitmap-dead rows, so projections and
+        /// minmax indexes must be rebuilt from the merge output, not inherited.
+        global_ctx->is_unique_key_merge;
 
     /// For TTLDrop merges, all source parts are fully expired.
     /// Skip creating the read pipeline to avoid opening source parts
@@ -1901,6 +1927,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         ProfileEvents::increment(ProfileEvents::MergeWrittenRows, block.rows());
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
+        if (global_ctx->is_unique_key_merge && block.rows() > 0)
+            retainUniqueKeyColumns(
+                global_ctx->metadata_snapshot->getUniqueKeyColumns(), block, global_ctx->unique_key_index_blocks);
+
         if (global_ctx->merge_may_reduce_rows)
         {
             /// Same rationale as the horizontal-stage `merge` above: keep the row-reducing merge's
@@ -2431,7 +2461,8 @@ bool MergeTask::MergeProjectionsStage::executeProjections() const
     }
 
     /// Release offset mapping when all projections with _part_offset has been merged.
-    if (global_ctx->merged_part_offsets && !(*ctx->projections_iterator)->global_ctx->merged_part_offsets)
+    if (global_ctx->merged_part_offsets && !(*ctx->projections_iterator)->global_ctx->merged_part_offsets
+        && !global_ctx->is_unique_key_merge)
         global_ctx->merged_part_offsets->clear();
 
     const auto & projection_name = (*ctx->projections_iterator)->global_ctx->future_part->name;
@@ -2491,6 +2522,30 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         auto part = task->getFuture().get();
         part->getDataPartStorage().commitTransaction();
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
+    }
+
+    /// Before `finalizePart`, so the dense index's checksum lands in `checksums.txt`, as on INSERT.
+    if (global_ctx->is_unique_key_merge && global_ctx->rows_written > 0)
+    {
+        const Block unique_key_index_columns = concatenateBlocks(global_ctx->unique_key_index_blocks);
+        global_ctx->unique_key_index_blocks.clear();
+        if (unique_key_index_columns.rows() != global_ctx->rows_written)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "UNIQUE KEY merged part {} wrote {} rows but the merge retained {} unique-key rows",
+                global_ctx->new_data_part->name, global_ctx->rows_written, unique_key_index_columns.rows());
+
+        const auto & metadata = *global_ctx->metadata_snapshot;
+        SSTIndexWriter::write(
+            global_ctx->new_data_part->getDataPartStorage(),
+            unique_key_index_columns,
+            metadata.getUniqueKeyColumns(),
+            metadata.getSortingKeyColumns(),
+            metadata.getSortingKeyReverseFlags(),
+            /*permutation=*/nullptr,
+            /*max_encoded_size=*/std::numeric_limits<UInt64>::max(),
+            global_ctx->gathered_data.checksums,
+            ctx->need_sync,
+            global_ctx->data->getContext());
     }
 
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
@@ -2680,7 +2735,8 @@ bool MergeTask::MergeTextIndexStage::prepare() const
             global_ctx->new_data_part,
             global_ctx->rows_written,
             index_ptr,
-            global_ctx->merged_part_offsets,
+            /// A rebuilt index already holds the merged part's offsets.
+            global_ctx->merge_may_reduce_rows ? nullptr : global_ctx->merged_part_offsets,
             reader_settings,
             global_ctx->to->getWriterSettings(),
             ctx->need_sync);
@@ -2713,7 +2769,8 @@ bool MergeTask::MergeTextIndexStage::finalize() const
     if (global_ctx->parent_part)
         return false;
 
-    if (global_ctx->merged_part_offsets && global_ctx->projections_to_merge.empty())
+    /// A unique-key merge still needs the mapping at its commit.
+    if (global_ctx->merged_part_offsets && global_ctx->projections_to_merge.empty() && !global_ctx->is_unique_key_merge)
         global_ctx->merged_part_offsets->clear();
 
     if (global_ctx->temporary_text_index_storage)
@@ -3382,25 +3439,25 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         ctx->column_sizes ? ctx->column_sizes->keyColumnsWeight() : 1.0);
 
     Names merging_column_names = global_ctx->merging_columns.getNames();
-    for (const auto * projection : global_ctx->projections_to_merge)
+    const bool projection_needs_part_offsets = std::ranges::any_of(
+        global_ctx->projections_to_merge, [](const auto * projection) { return projection->with_parent_part_offset; });
+
+    /// If projection needs part offset mapping, add _part_index column to build this mapping.
+    /// A unique-key merge maps the rows killed after its snapshot onto the merged part through it.
+    if (projection_needs_part_offsets || global_ctx->is_unique_key_merge)
     {
-        /// If projection needs part offset mapping, add _part_index column to build this mapping
-        if (projection->with_parent_part_offset)
+        if (global_ctx->metadata_snapshot->hasSortingKey())
         {
-            if (global_ctx->metadata_snapshot->hasSortingKey())
-            {
-                chassert(global_ctx->merged_part_offsets == nullptr);
-                chassert(std::find(merging_column_names.begin(), merging_column_names.end(), "_part_index") == merging_column_names.end());
-                global_ctx->merged_part_offsets
-                    = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Enabled);
-                merging_column_names.push_back("_part_index");
-            }
-            else
-            {
-                global_ctx->merged_part_offsets
-                    = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Disabled);
-            }
-            break;
+            chassert(global_ctx->merged_part_offsets == nullptr);
+            chassert(std::find(merging_column_names.begin(), merging_column_names.end(), "_part_index") == merging_column_names.end());
+            global_ctx->merged_part_offsets
+                = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Enabled);
+            merging_column_names.push_back("_part_index");
+        }
+        else
+        {
+            global_ctx->merged_part_offsets
+                = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Disabled);
         }
     }
 
@@ -3434,12 +3491,16 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         if (part->getMarksCount() == 0)
             LOG_TRACE(ctx->log, "Part {} is empty", part->name);
 
+        RangesInDataPart part_ranges(part, nullptr, i, part_starting_offset);
+        if (global_ctx->is_unique_key_merge)
+            part_ranges.delete_bitmap = global_ctx->unique_key_snapshot_bitmaps[i];
+
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Merge,
             *plan_for_part,
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            RangesInDataPart(part, nullptr, i, part_starting_offset),
+            std::move(part_ranges),
             global_ctx->alter_conversions[i],
             global_ctx->merged_part_offsets,
             merging_column_names,
@@ -3693,6 +3754,9 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
     if (global_ctx->future_part->part_format.storage_type != MergeTreeDataPartStorageType::Full)
         return MergeAlgorithm::Horizontal;
     if (global_ctx->cleanup)
+        return MergeAlgorithm::Horizontal;
+    /// TODO(unique-key): support vertical merges.
+    if (global_ctx->is_unique_key_merge)
         return MergeAlgorithm::Horizontal;
 
     if (!(*merge_tree_settings)[MergeTreeSetting::allow_vertical_merges_from_compact_to_wide_parts])
