@@ -1780,7 +1780,17 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document, co
 template <typename... Args>
 static PostingListBuilder & constructBuilder(TokenToPostingsBuilderMap::LookupResult it, Args &&... args)
 {
-    return *new (&it->getMapped()) PostingListBuilder(std::forward<Args>(args)...);
+    /// The map destroys every occupied cell, so a cell whose builder cannot be constructed gets a `Filtered` one.
+    auto * place = &it->getMapped();
+    try
+    {
+        return *new (place) PostingListBuilder(std::forward<Args>(args)...);
+    }
+    catch (...)
+    {
+        new (place) PostingListBuilder(PostingListBuilder::Filtered{});
+        throw;
+    }
 }
 
 void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
