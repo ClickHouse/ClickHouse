@@ -74,6 +74,33 @@ SELECT * FROM test_nullable_float_nan ORDER BY negate(c0) ASC NULLS LAST;
 SELECT * FROM test_nullable_float_nan ORDER BY negate(c0) DESC NULLS FIRST;
 SELECT * FROM test_nullable_float_nan ORDER BY negate(c0) DESC NULLS LAST;
 
+-- A leading NaN/NULL-capable key fixed by WHERE has a single value, so the NULLS direction
+-- requested for it (or the one of the next ORDER BY column) must not disable read-in-order:
+-- the read direction comes from the next key column.
+-- Regression for https://github.com/ClickHouse/ClickHouse/pull/106588#discussion_r4144175524
+DROP TABLE IF EXISTS test_lc_float_fixed;
+CREATE TABLE test_lc_float_fixed (k LowCardinality(Float64), ts UInt32) ENGINE = MergeTree() ORDER BY (k, ts);
+INSERT INTO test_lc_float_fixed SELECT arrayElement([0, 1, nan], number % 3 + 1), number FROM numbers(12);
+DROP TABLE IF EXISTS test_nullable_float_fixed;
+CREATE TABLE test_nullable_float_fixed (k Nullable(Float64), ts UInt32) ENGINE = MergeTree() ORDER BY (k, ts) SETTINGS allow_nullable_key = 1;
+INSERT INTO test_nullable_float_fixed SELECT arrayElement([0, 1, nan, NULL], number % 4 + 1), number FROM numbers(12);
+
+SELECT ts FROM test_lc_float_fixed WHERE k = 1 ORDER BY k DESC NULLS LAST, ts LIMIT 3;
+SELECT ts FROM test_lc_float_fixed WHERE k = 1 ORDER BY ts DESC LIMIT 3;
+SELECT ts FROM test_nullable_float_fixed WHERE k = 1 ORDER BY k ASC NULLS FIRST, ts DESC LIMIT 3;
+SELECT ts FROM test_nullable_float_fixed WHERE k = 1 ORDER BY ts DESC LIMIT 3;
+
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT ts FROM test_lc_float_fixed WHERE k = 1 ORDER BY k DESC NULLS LAST, ts LIMIT 3 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Read type%';
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT ts FROM test_lc_float_fixed WHERE k = 1 ORDER BY ts DESC LIMIT 3 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Read type%';
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT ts FROM test_nullable_float_fixed WHERE k = 1 ORDER BY k ASC NULLS FIRST, ts DESC LIMIT 3 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Read type%';
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT ts FROM test_nullable_float_fixed WHERE k = 1 ORDER BY ts DESC LIMIT 3 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Read type%';
+
+-- The key is not fixed here, so the unsupported NULLS direction must still disable read-in-order.
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT ts FROM test_lc_float_fixed WHERE ts > 0 ORDER BY k DESC NULLS LAST, ts LIMIT 3 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Read type%';
+
+DROP TABLE test_lc_float_fixed;
+DROP TABLE test_nullable_float_fixed;
+
 DROP TABLE test_lc_float_nan;
 DROP TABLE test_lc_float32_nan;
 DROP TABLE test_lc_bfloat16_nan;
