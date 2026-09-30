@@ -61,6 +61,7 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/StorageTimeSeries.h>
@@ -1308,6 +1309,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     create.columns_list->setOrReplace(create.columns_list->constraints, new_constraints);
     create.columns_list->setOrReplace(create.columns_list->projections, new_projections);
 
+    /// The inner table is created by the materialized view's constructor. Give that nested
+    /// CREATE the complete declaration set before it persists the inner table's metadata.
+    if (create.is_materialized_view_with_inner_table() && properties.projections.hasUnavailable())
+        create.columns_list->projections->children = properties.projections.getDefinitionsInDeclarationOrder();
+
     validateTableStructure(create, properties);
 
     chassert(as_database_saved.empty() && as_table_saved.empty());
@@ -2473,7 +2479,19 @@ void finalizeCreatedStorage(
     bool is_temporary)
 try
 {
-    if (candidate_projections.hasUnavailable())
+    /// A materialized view's projections belong to its inner table. Its constructor creates
+    /// that table through this same finalizer, so inspect the already-published inner metadata
+    /// without installing declarations on the view or rewriting the inner table after publication.
+    StoragePtr projection_storage = storage;
+    bool projections_belong_to_inner_table = false;
+    if (!candidate_projections.empty() || candidate_projections.hasUnavailable())
+        if (const auto * view = storage->as<StorageMaterializedView>(); view && view->hasInnerTable())
+        {
+            projection_storage = view->getTargetTable();
+            projections_belong_to_inner_table = true;
+        }
+
+    if (candidate_projections.hasUnavailable() && !projections_belong_to_inner_table)
     {
         if (!create.columns_list || !create.columns_list->projections)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "CREATE query is missing copied projection declarations");
@@ -2499,7 +2517,7 @@ try
 
     /// Check the complete prepared candidate, including analyzed definitions. A new creator
     /// must not publish a storage that silently omitted one of its prepared projections.
-    const auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
+    const auto metadata = projection_storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
     for (const auto & projection : candidate_projections)
         if (!metadata->projections.has(projection.name))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage omitted prepared projection {}", backQuote(projection.name));
@@ -2512,8 +2530,8 @@ try
 
     validateVirtualColumns(*storage, context);
     checkForUnsupportedColumns(*storage, mode, context, is_temporary);
-    if (projection_source == ProjectionDefinitionSource::NewQuery)
-        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+    if (projection_source == ProjectionDefinitionSource::NewQuery && !projections_belong_to_inner_table)
+        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(projection_storage.get()))
         {
             if (metadata->projections.hasUnavailable())
                 merge_tree->checkCopiedUnavailableProjections(*metadata, context);
