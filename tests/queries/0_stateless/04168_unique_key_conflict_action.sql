@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-ordinary-database, no-async-insert, no-replicated-database, no-shared-merge-tree
+-- Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree
 -- UNIQUE KEY `unique_key_conflict_action = 'ignore'`, and repointing the policy. Overwrite is 04105's, abort 04174's.
 --   1. ignore, mixed batch: only new keys land
 --   1b. ignore on a partitioned table: the rewritten part keeps its partition

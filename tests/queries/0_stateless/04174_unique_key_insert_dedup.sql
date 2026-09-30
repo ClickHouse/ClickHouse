@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas, no-replicated-database, no-shared-merge-tree
+-- Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree
 -- UNIQUE KEY insert deduplication against the conflict policy.
 --   2. abort: a committed replay is deduplicated, an aborted block's retry aborts again
 

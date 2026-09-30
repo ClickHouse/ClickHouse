@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database, no-async-insert, no-fasttest, no-object-storage, no-s3-storage
+-- Tags: no-ordinary-database, no-async-insert, no-fasttest
 -- UNIQUE KEY: which mutations run on the table and which are rejected.
 --   1. ALTER DELETE / UPDATE: rejected, heavy and lightweight
 --   2. MATERIALIZE / CLEAR COLUMN: rejected for any column, a Nested group included; CLEAR IF EXISTS of a missing one is a no-op

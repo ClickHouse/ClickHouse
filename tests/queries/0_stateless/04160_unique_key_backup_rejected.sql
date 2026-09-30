@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
+-- Tags: no-ordinary-database, no-replicated-database, no-shared-merge-tree
 -- UNIQUE KEY: BACKUP TABLE throws SUPPORT_IS_DISABLED.
 
 SET enable_unique_key = 1;

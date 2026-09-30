@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-ordinary-database, no-async-insert, no-object-storage, no-s3-storage
+-- Tags: no-fasttest, no-ordinary-database
 -- UNIQUE KEY: an INSERT block with a duplicate key is rejected and publishes nothing.
 --   1. sorted writer: UK is a sort prefix, duplicates are adjacent
 --   2. unsorted writer: UK is not a sort prefix, duplicates meet only after the UK sort

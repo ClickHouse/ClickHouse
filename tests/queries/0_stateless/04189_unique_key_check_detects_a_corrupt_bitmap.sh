@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-merge-tree-settings, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
+# Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
 # UNIQUE KEY: CHECK TABLE re-hashes a delete bitmap through its `checksums.txt` entry: the bitmap
 # is listed, CHECK passes, then fails once a byte of the bitmap is flipped.
 # no-object-storage, no-s3-storage: the test rewrites a byte of a part file in place.
