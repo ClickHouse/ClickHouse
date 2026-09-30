@@ -61,9 +61,14 @@ static std::array<const EngineSettingsToHide *, 6> engineSettingsToHide()
 /// setting but keeps its `type` argument, while every engine rule hides a value that is not a String whole.
 static std::optional<String> renderSecretChangeValue(const SettingChange & change)
 {
+    /// A queue engine also takes each of its settings with the legacy `s3queue_` prefix.
+    static constexpr std::string_view s3queue_prefix = "s3queue_";
+    const String engine_setting_name
+        = change.name.starts_with(s3queue_prefix) ? change.name.substr(s3queue_prefix.size()) : change.name;
+
     for (const auto * settings_to_hide : engineSettingsToHide())
     {
-        auto it = settings_to_hide->find(change.name);
+        auto it = settings_to_hide->find(engine_setting_name);
         if (it != settings_to_hide->end())
             return it->second(change.value);
     }

@@ -9,6 +9,10 @@ in query: SET rabbitmq_address = '[HIDDEN]'
 0
 in query: SET after_processing_move_connection_string = '[HIDDEN]'
 0
+in query: SET s3queue_after_processing_move_connection_string = '[HIDDEN]'
+0
+in query: SET s3queue_after_processing_move_secret_access_key = '[HIDDEN]'
+0
 in query: SET format_avro_schema_registry_url = '[HIDDEN]'
 0
 in query: SET url_base = '[HIDDEN]'
