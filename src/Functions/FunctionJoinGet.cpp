@@ -171,6 +171,8 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
     const auto qualified_name = QualifiedTableName::parseFromString(join_name);
     const auto storage_id = context->resolveStorageID({qualified_name.database, qualified_name.table});
 
+    /// Otherwise the errors below would reveal the existence and the engine of a table the user cannot see.
+    context->checkAccess(AccessType::SHOW_TABLES, storage_id);
     auto table = DatabaseCatalog::instance().getTable(storage_id, std::const_pointer_cast<Context>(context));
     auto storage_join = std::dynamic_pointer_cast<StorageJoin>(table);
     if (!storage_join)
