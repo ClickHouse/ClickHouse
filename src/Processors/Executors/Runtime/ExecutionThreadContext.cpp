@@ -23,9 +23,9 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
-ExecutionThreadContext::ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, StepProfiler * step_profiler_, ReadProgressCallback * callback)
+ExecutionThreadContext::ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback)
     : read_progress_callback(callback)
-    , step_profiler(step_profiler_)
+    , step_profiler(CurrentThread::getGroup() ? CurrentThread::getGroup()->step_profiler : nullptr)
     , thread_number(thread_number_)
     , profile_processors(profile_processors_)
     , trace_processors(trace_processors_)
@@ -195,9 +195,10 @@ void ExecutionThreadContext::rethrowExceptionIfHas()
         std::rethrow_exception(exception);
 }
 
-WorkIntervals ExecutionThreadContext::takeWorkIntervals()
+void ExecutionThreadContext::flushWorkIntervals()
 {
-    return std::move(work_intervals);
+    if (step_profiler)
+        step_profiler->addWorkIntervals(std::move(work_intervals));
 }
 
 }

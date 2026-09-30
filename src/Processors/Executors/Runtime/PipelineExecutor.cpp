@@ -13,12 +13,10 @@
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
-#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Processors/Executors/Runtime/ExecutionThreadContext.h>
 #include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/Executors/Runtime/ExecutingGraph.h>
-#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
@@ -291,9 +289,8 @@ void PipelineExecutor::finalizeExecution()
         cpu_slots.reset();
     }
 
-    if (step_profiler)
-        for (size_t thread_num = 0; thread_num < tasks.getNumThreads(); ++thread_num)
-            step_profiler->addWorkIntervals(tasks.getThreadContext(thread_num).takeWorkIntervals());
+    for (size_t thread_num = 0; thread_num < tasks.getNumThreads(); ++thread_num)
+        tasks.getThreadContext(thread_num).flushWorkIntervals();
 
     checkTimeLimit();
 
@@ -617,9 +614,6 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// to the full ceiling so the growth check in the block becomes a no-op.
     desired_threads = lazy_allocation ? 1 : num_threads;
 
-    if (const auto & thread_group = CurrentThread::getGroup())
-        step_profiler = thread_group->step_profiler;
-
     Queue queue;
     Queue async_queue;
     graph->initializeExecution(queue, async_queue);
@@ -628,7 +622,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// Starting from 1 instead of 0 is to tackle the single thread scenario, where no upscale() will
     /// be invoked but actually 1 thread used.
 
-    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, step_profiler.get(), read_progress_callback.get());
+    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, read_progress_callback.get());
     const size_t initial_parallel = tasks.fill(queue, async_queue);
 
     /// Initial queued parallelism never routes through `pushTasks`, so size setMax here to

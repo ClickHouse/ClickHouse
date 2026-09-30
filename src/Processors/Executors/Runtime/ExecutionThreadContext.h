@@ -6,6 +6,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <exception>
+#include <memory>
 #include <utility>
 
 namespace DB
@@ -14,6 +15,7 @@ namespace DB
 class IProcessor;
 class ReadProgressCallback;
 class StepProfiler;
+using StepProfilerPtr = std::shared_ptr<StepProfiler>;
 
 /// Context for each executing thread of PipelineExecutor.
 class ExecutionThreadContext
@@ -33,8 +35,8 @@ private:
     /// Callback for read progress.
     ReadProgressCallback * read_progress_callback = nullptr;
 
-    /// EXPLAIN ANALYZE: the step clocks and the intervals for computing the time per step
-    StepProfiler * step_profiler = nullptr;
+    /// EXPLAIN ANALYZE: the step clocks and the intervals for computing the time per step, taken from the thread group
+    StepProfilerPtr step_profiler;
     std::vector<WorkInterval> work_intervals;
 
 public:
@@ -73,9 +75,10 @@ public:
     std::exception_ptr getException();
     void rethrowExceptionIfHas();
 
-    WorkIntervals takeWorkIntervals();
+    /// Hands the recorded intervals to the profiler; called once, after the thread finished.
+    void flushWorkIntervals();
 
-    ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, StepProfiler * step_profiler_, ReadProgressCallback * callback);
+    ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback);
 };
 
 }
