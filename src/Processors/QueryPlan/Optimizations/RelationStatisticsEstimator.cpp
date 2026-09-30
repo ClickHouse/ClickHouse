@@ -31,6 +31,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool use_statistics;
+extern const SettingsBool use_iceberg_manifest_statistics;
 }
 
 namespace QueryPlanOptimizations
@@ -276,8 +277,40 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             .source = RowEstimateSource::PrimaryIndex};
     }
 
-    if (typeid_cast<const ReadFromObjectStorageStep *>(step))
-        return RelationStats{};
+    if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
+    {
+        if (!reading->getContext()->getSettingsRef()[Setting::use_iceberg_manifest_statistics])
+            return RelationStats{};
+
+        auto estimate = reading->estimateReadFromDataLakeMetadata();
+        if (!estimate)
+            return RelationStats{};
+
+        String table_display_name = reading->getStorageID().getTableName();
+        RelationStats unknown{
+            .estimated_rows = {},
+            .table_name = table_display_name,
+            .imprecise_estimate = true,
+            .source = RowEstimateSource::DataLakeMetadata};
+        if (!estimate->rows)
+            return unknown;
+
+        /// The step's filter also holds the `PREWHERE` and the row policy, so a read without it returns every row.
+        const bool has_filter = filter || reading->getFilterActionsDAG() || reading->getPrewhereInfo() || reading->getRowLevelFilter();
+
+        /// As for MergeTree without column statistics, a filter that pruned nothing gives no estimate.
+        if (has_filter && !estimate->pruned_data_files)
+            return unknown;
+
+        /// TODO: A filter only on identity-partition columns keeps every row of a remaining file, so it is exact too;
+        /// the walk would have to report that.
+        const bool exact = *estimate->rows == 0 || (!has_filter && !estimate->has_delete_files);
+        return RelationStats{
+            .estimated_rows = *estimate->rows,
+            .table_name = table_display_name,
+            .imprecise_estimate = !exact,
+            .source = RowEstimateSource::DataLakeMetadata};
+    }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
     {

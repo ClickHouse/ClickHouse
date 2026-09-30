@@ -72,8 +72,7 @@ public:
 
         std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
-        /// The partition key of the manifest's partition spec, or nullptr if the spec has no usable field.
-        /// Kept here so that the files can be pruned after the iterator is gone.
+        /// nullptr if the partition spec has no usable field. Kept in the handle so files can be pruned after the iterator is gone.
         const DB::KeyDescription * getPartitionKeyDescription() const { return partition_key.get(); }
 
     private:
@@ -164,7 +163,6 @@ private:
     const DB::ContextPtr context;
     const Int32 manifest_schema_id;
     const std::shared_ptr<const PartitionSpecification> common_partition_specification;
-    /// nullptr if the partition spec has no usable field.
     const std::shared_ptr<const DB::KeyDescription> partition_key_description;
     const size_t partition_spec_fields_count;
     const Int32 table_snapshot_schema_id;
