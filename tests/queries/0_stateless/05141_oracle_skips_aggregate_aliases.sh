@@ -2,9 +2,9 @@
 # Tags: no-fasttest, no-parallel
 # no-fasttest: SET ast_fuzzer_runs / ast_fuzzer_oracle are EXPERIMENTAL-tier settings and
 #              are not allowed when `allow_feature_tier=0` (the Fast test default).
-# no-parallel: the proof event `ASTFuzzerOracleChecks` is server-global, and the assertions
-#              below require it to stay put, so no other test may run oracle checks against
-#              the same server meanwhile.
+# no-parallel: the proof events below are server-global, and the assertions require them to
+#              stay put, so no other test may run oracle checks against the same server
+#              meanwhile.
 #
 # Companion of 05140_oracle_skips_approx_top_k, which covers the `approx_top_*` family itself.
 # This file covers the part that only a lookup through `AggregateFunctionFactory` can get
@@ -31,10 +31,15 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO oracle_alias_agg SELECT number FROM numbers(200);
 "
 
-# The oracle rejects any query reading `system.*`, so reading the counter can never move it.
+# `ASTFuzzerOracleChecks` counts every oracle path, `ASTFuzzerOracleTLPAggregateChecks` only the
+# TLP Aggregate one. The probes read the former because the denylist they pin is the screen
+# shared by all nine oracles; the TLP Aggregate control at the end reads the latter.
+# The oracle rejects any query reading `system.*`, so reading a counter can never move it.
 get_counter()
 {
-    $CLICKHOUSE_CLIENT --query "SELECT toInt64(sum(value)) FROM system.events WHERE event = 'ASTFuzzerOracleChecks'"
+    local event="${1:-ASTFuzzerOracleChecks}"
+
+    $CLICKHOUSE_CLIENT --query "SELECT toInt64(sum(value)) FROM system.events WHERE event = '$event'"
 }
 
 # `send_logs_level = 'fatal'` suppresses the expected error-level log lines from random
@@ -71,6 +76,7 @@ get_counter()
 run_fuzzed_rounds()
 {
     local query="$1"
+    local event="${2:-ASTFuzzerOracleChecks}"
 
     $CLICKHOUSE_CLIENT --ignore-error --query "
         SET send_logs_level = 'fatal';
@@ -80,7 +86,7 @@ run_fuzzed_rounds()
         $query
         $query
         SELECT toInt64(sum(value)) FROM system.events
-        WHERE event = 'ASTFuzzerOracleChecks' SETTINGS ast_fuzzer_runs = 0;
+        WHERE event = '$event' SETTINGS ast_fuzzer_runs = 0;
     " 2>/dev/null | tail -n 1
 }
 
@@ -112,7 +118,7 @@ probe()
 
     # A zero delta on its own does not prove the oracle gate rejected the spelling: it holds
     # just as well when the query never reached `QueryOracleChecker` at all. If, say,
-    # `anova` stopped resolving as an alias, the query would fail before the gate and the
+    # `min_by` stopped resolving as an alias, the query would fail before the gate and the
     # probe would still print `not checked`. So first run the very same query with no fuzzer
     # and no oracle and require it to succeed - that separates "unsafe spelling was skipped"
     # from "this spelling is broken". A `FORMAT Null` is fine here precisely because the
@@ -122,10 +128,15 @@ probe()
     # next one's baseline costs nothing - either way it is two invocations per probe - and
     # keeps every probe self-contained, which is worth more now that the probes are spread
     # over two files with positive controls in between.
+    #
+    # The gate's stderr is discarded rather than left to reach the test's stderr: its exit
+    # status is the whole signal this branch reads, and `clickhouse-test` fails a test whose
+    # stderr is non-empty regardless of stdout, so letting a server error through would turn
+    # the diagnosis this branch exists to print into an unconditional test failure.
     if ! before=$($CLICKHOUSE_CLIENT --query "
         SELECT $aggregates FROM oracle_alias_agg WHERE v > 5 FORMAT Null;
         SELECT toInt64(sum(value)) FROM system.events WHERE event = 'ASTFuzzerOracleChecks';
-    ")
+    " 2>/dev/null)
     then
         echo "$label is not a valid query"
         return
@@ -141,24 +152,17 @@ probe()
     fi
 }
 
+# Every aggregate named in a probe or a positive control below must be total - it must return a
+# row for any input shape, never throw - because the validity gate above cannot tell a spelling
+# that stopped resolving from one that threw on the rows it was given.
+#
 # `min_by` is an alias of `argMin`, `array_agg` of `groupArray`, `medianTDigest` of the
-# approximate `quantileTDigest`, `anova` of `analysisOfVariance`, and `array_concat_agg` of
-# `groupArrayArray` - which is itself `groupArray` plus an `Array` combinator, so the
-# expansion has to be stripped in turn.
+# approximate `quantileTDigest`, and `array_concat_agg` of `groupArrayArray` - which is itself
+# `groupArray` plus an `Array` combinator, so the expansion has to be stripped in turn.
 probe "min_by" "min_by(v, v), min_by(v + 1, v), min_by(v * 2, v)"
 probe "array_agg" "array_agg(v), array_agg(v + 1), array_agg(v * 2)"
 probe "array_concat_agg" "array_concat_agg([v]), array_concat_agg([v + 1]), array_concat_agg([v * 2])"
 probe "medianTDigest" "medianTDigest(v), medianTDigest(v + 1), medianTDigest(v * 2)"
-# `anova`'s group argument is written `toUInt8(v % 3)` rather than `(v % 3)::UInt8` on purpose.
-# A `CAST` node is itself a fuzzer target - `QueryFuzzer` rewrites the target type of a
-# `CAST` / `_CAST` / `accurateCast*` call to a random type once in 30 nodes (`cast_functions`) -
-# and a randomly retyped group argument makes `anova` fail to resolve, so the round errors out
-# before it ever reaches the oracle gate and the probe passes without having tested anything.
-# With three occurrences that happens often enough to matter: measured against a binary with no
-# alias resolution, the probe detects the regression in 8 of 12 runs spelled `toUInt8` and in
-# only 2 of 12 spelled with the cast. The rewrite can only ever turn a round into an error,
-# never into a checked query, so it was never a false-failure risk - just a blind spot.
-probe "anova" "anova(v, toUInt8(v % 3)), anova(v + 1, toUInt8(v % 3)), anova(v * 2, toUInt8(v % 3))"
 
 # One spelling that carries a combinator on top of the alias, which is what forces the alias
 # lookup to run at every combinator-stripping stage rather than once on the original name:
@@ -194,14 +198,15 @@ positive_control()
 {
     local label="$1"
     local aggregates="$2"
+    local event="${3:-ASTFuzzerOracleChecks}"
     local before
     local after
 
-    before=$(get_counter)
+    before=$(get_counter "$event")
     after=$before
     for _ in $(seq 1 10)
     do
-        after=$(run_fuzzed_rounds "SELECT $aggregates FROM oracle_alias_agg WHERE v > 5;")
+        after=$(run_fuzzed_rounds "SELECT $aggregates FROM oracle_alias_agg WHERE v > 5;" "$event")
         if [[ "$after" -gt "$before" ]]
         then
             break
@@ -226,16 +231,10 @@ positive_control()
 # `stddevPop`, not the oracle declining those shapes.
 positive_control "safe aliases" "Bit_And(v), BIT_OROrNull(v), BIT_XOR(v)"
 
-# And one alias whose canonical name is a `quantile*`: `medianDeterministic` resolves to
-# `quantileDeterministic`, which is NOT on the backstop list because
-# `ReservoirSamplerDeterministic` retains a sample purely by hash and re-thins on merge, so a
-# merged state equals the directly accumulated one. This is the probe that catches alias
-# resolution reaching a neighbouring `quantile*` entry (`median` and the approximate
-# `quantile*` families ARE listed) and skipping a checkable query.
-# The determinator is the constant `1` rather than `v`: with `v` in that position the oracle
-# skips the query for an unrelated reason (the `State`/`Merge` rewrite of a determinator
-# that is itself the aggregated column does not survive), which would make the probe
-# vacuous. A constant determinator still exercises the alias path, which is what is asserted.
-positive_control "medianDeterministic" "medianDeterministic(v, 1)"
+# The probes assert that no oracle accepted the query; this control adds that the TLP Aggregate
+# oracle is itself live here for alias spellings, so a probe's zero delta means that oracle
+# rejected the alias rather than being out of reach. It admits a query only while no aggregate
+# carries a combinator, which is why `BIT_OROrNull` stays in the all-paths control above.
+positive_control "TLP Aggregate path" "Bit_And(v), BIT_OR(v), BIT_XOR(v)" ASTFuzzerOracleTLPAggregateChecks
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE oracle_alias_agg"

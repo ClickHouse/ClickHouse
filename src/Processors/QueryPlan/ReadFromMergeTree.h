@@ -13,6 +13,9 @@
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Parsers/ASTFunction.h>
+#include <base/defines.h>
+
+#include <mutex>
 
 namespace DB
 {
@@ -42,10 +45,28 @@ struct UsefulSkipIndexes
     bool empty() const { return useful_indices.empty() && !skip_index_for_top_k_filtering; }
 
     std::vector<MergeTreeIndexWithCondition> useful_indices;
-    std::vector<std::vector<size_t>> per_part_index_orders;
     MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};
     TopKThresholdTrackerPtr threshold_tracker{nullptr};
 };
+
+/// The order in which the useful skip indexes are applied to a single part: cheapest and coarsest first.
+using SkipIndexOrder = std::shared_ptr<const std::vector<size_t>>;
+
+/// Memoizes `SkipIndexOrder` per part for one `ReadFromMergeTree::Indexes` object.
+/// The order is derived from the part's index formats and file sizes, so it is stable for a given part,
+/// and computing it walks that metadata. The walk is done lazily, for the parts that survive pruning
+/// (see `filterPartsByPrimaryKeyAndSkipIndexes`), and its result is reused when the same read step is
+/// analyzed again - estimation, parallel replicas and then the executed read all share one `Indexes`.
+struct SkipIndexOrderCache
+{
+    std::mutex mutex;
+    std::unordered_map<String, SkipIndexOrder> orders TSA_GUARDED_BY(mutex);
+
+    /// The key must be unique within the table: a projection part is named after the projection,
+    /// which repeats in every parent part, so it is qualified with the parent part name.
+    static String makeKey(const IMergeTreeDataPart & part);
+};
+using SkipIndexOrderCachePtr = std::shared_ptr<SkipIndexOrderCache>;
 
 /// Contains parts each from different projection index
 using ProjectionIndexReadRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
@@ -81,7 +102,19 @@ struct TopKFilterInfo
     /// query condition cache key so that QCC entries written under a TopK plan are partitioned
     /// by the TopK parameters and don't bleed across plans with different LIMIT, sort key, etc.
     UInt64 condition_hash = 0;
+
+    /// `tryOptimizeTopK` requested the `__topKFilter` PREWHERE condition and `installTopKDynamicFilter` has not run yet.
+    bool dynamic_filter_pending = false;
 };
+
+namespace QueryPlanOptimizations
+{
+/// The PREWHERE that `installTopKDynamicFilter` gives a read whose current PREWHERE is `existing_prewhere_info`
+/// (may be null): `__topKFilter` merged into it as the first conjunct. Null when the filter cannot share it.
+/// The query condition cache consults a read that still waits for the filter under this PREWHERE, because
+/// the executed read writes its entries under it.
+PrewhereInfoPtr buildTopKDynamicFilterPrewhere(const PrewhereInfoPtr & existing_prewhere_info, const TopKFilterInfo & top_k_filter_info);
+}
 
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
@@ -305,6 +338,8 @@ public:
         ConditionTemplate<KeyCondition>::Ptr total_offset_condition;
         std::optional<PartitionPruner> partition_pruner;
         UsefulSkipIndexes skip_indexes;
+        /// Shared by every index analysis of this step, see `SkipIndexOrderCache`.
+        SkipIndexOrderCachePtr skip_index_orders = std::make_shared<SkipIndexOrderCache>();
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;
         bool use_skip_indexes_if_final_exact_mode;
@@ -332,6 +367,7 @@ public:
         bool find_exact_ranges,
         bool is_parallel_reading_from_replicas_,
         bool allow_query_condition_cache_,
+        bool allow_top_k_prewhere_query_condition_cache_,
         bool supports_skip_indexes_on_data_read,
         bool check_row_limits);
 
@@ -399,6 +435,44 @@ public:
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
+    /// Adopt from another read of the same table, for the same query, everything that
+    /// `optimizePrimaryKeyConditionAndLimit` and `applyFilters` would have produced. A plan optimized
+    /// without that pass has none of it, and a read handed an analysis result never builds it later
+    /// either: `selectRangesToRead` returns the analysis it was given and stops. The ranges are not
+    /// enough on their own, because each of these is consumed separately while reading:
+    ///   - `indexes`, or `supportsSkipIndexesOnDataRead` is false and skip indexes are not applied to
+    ///     granules at all;
+    ///   - the filter actions, or the reader has no condition to record, so the query condition cache is
+    ///     never populated and every later query over the same predicate misses it;
+    ///   - `limit`, which nothing in `ReadFromMergeTree` reads today - the ordered read takes its bound
+    ///     from `query_info.input_order_info` - but which the pass does produce, so a read that skipped
+    ///     the pass is missing it and would diverge here the moment that changes.
+    /// They are adopted together rather than one at a time as each turns out to be needed.
+    /// Taken over wholesale rather than only where this read has nothing: it is called together with
+    /// `setAnalyzedResult`, which replaces the ranges outright, and these are the conditions those ranges
+    /// were selected by. Keeping anything of this read's own would pair one read's ranges with another's
+    /// conditions. Nothing here is built by a plan optimized without the pass named above, so in practice
+    /// there is nothing to replace; this makes that independent of whether something prefilled it.
+    void adoptFiltersFrom(const ReadFromMergeTree & other)
+    {
+        indexes = other.indexes;
+
+        filter_actions_dag = other.filter_actions_dag;
+        query_info.filter_actions_dag = filter_actions_dag;
+
+        limit = other.limit;
+
+        /// `FINAL` defers the row policy and `PREWHERE` past deduplication, and what does it is part of
+        /// `applyFilters`, so a read of a plan optimized without that pass applies them during reading
+        /// instead - before the rows they filter have been deduplicated. No caller reaches this with a
+        /// `FINAL` read today: `supportsDataflowStatisticsCollection` is false for one, and automatic
+        /// parallel replicas requires every step of the plan to support it. Redone here rather than
+        /// adopted from the other read, which would hold only as long as the two plans split the `WHERE`
+        /// into a `PREWHERE` the same way: a deferred filter is this read's own
+        /// `query_info.prewhere_info` or `query_info.row_level_filter` under another name.
+        deferFiltersAfterFinalIfNeeded();
+    }
+
     /// selectRangesToRead() will always re-analyze
     AnalysisResultPtr getOrCreateAnalyzedResult() const { return analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead(); }
 
@@ -433,6 +507,11 @@ public:
     bool isParallelReplicasLocalPlanForInitiator() const;
     bool isParallelReplicasLocalPlanForFollower() const;
 
+    /// A non-storage filter above this read, such as a join runtime `__applyFilter`, can affect the
+    /// dynamic TopK threshold without participating in the PREWHERE query condition cache key.
+    /// Keep the regular query condition cache enabled, but do not read or write TopK PREWHERE entries.
+    void disableTopKPrewhereQueryConditionCache() { allow_top_k_prewhere_query_condition_cache = false; }
+
     /// Mark a (non-executed) read as a parallel-replicas read purely so that serialization records it.
     /// No callbacks are attached: the read is only serialized on the initiator and shipped to replicas,
     /// where deserialize rebuilds it in parallel-reading mode and resolves the callbacks from the context.
@@ -445,10 +524,25 @@ public:
     void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
+    /// A temporary part snapshot for PREWHERE costs; does not publish range analysis.
+    RangesInDataParts getPartsForPrewhere() const;
+    IStorage::ColumnSizeByName getColumnSizesForPrewhere(const Names & columns, const RangesInDataParts & parts) const;
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const RangesInDataParts & parts) const;
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
     /// Compose statistics over the part set of the given partition/PK analysis result
     /// instead of all prepared parts. Passing nullptr falls back to getParts().
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const AnalysisResultPtr & analyzed_result) const;
+
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimatorForPrewhere(
+        const Names & required_columns, const ActionsDAG::Node * predicate) const;
+
+    static RangesInDataParts filterPartsForStatistics(
+        const RangesInDataParts & parts,
+        const ActionsDAG::Node * predicate,
+        const MergeTreeData & data,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & query_context,
+        bool skip_partition_pruning_ = false);
 
     static void buildIndexes(
         std::optional<ReadFromMergeTree::Indexes> & indexes,
@@ -487,6 +581,18 @@ public:
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
+    bool isTopKPrewhereQueryConditionCacheAllowed() const { return allow_top_k_prewhere_query_condition_cache; }
+    bool isQueryConditionCacheAllowed() const { return allow_query_condition_cache; }
+
+    bool hasPendingTopKDynamicFilter() const
+    {
+        return top_k_filter_info.has_value() && top_k_filter_info->dynamic_filter_pending;
+    }
+    void clearPendingTopKDynamicFilter()
+    {
+        if (top_k_filter_info.has_value())
+            top_k_filter_info->dynamic_filter_pending = false;
+    }
 
     /// Carries the TopK stamp and the query condition cache gate over from a read step that this
     /// step replaces (e.g. the projection read built by `optimizeUseNormalProjections`; `clone` and
@@ -498,7 +604,16 @@ public:
     {
         top_k_filter_info = replaced_step.top_k_filter_info;
         allow_query_condition_cache = replaced_step.allow_query_condition_cache;
+        allow_top_k_prewhere_query_condition_cache = replaced_step.allow_top_k_prewhere_query_condition_cache;
     }
+
+    /// Carries the join runtime filter descriptors for the second-pass index analysis over from a read
+    /// step that this step replaces (the projection read built by `optimizeUseNormalProjections`).
+    /// `registerLeftSideIndexAnalysisSecondPass` runs before the projection rewrite, so the descriptors
+    /// are attached to the base-table read and would be lost otherwise. Every descriptor is registered
+    /// anew through `addJoinRuntimeFilterIndexAnalysisOnDataRead`, so it is kept only if the key column
+    /// is prunable through this step's own metadata (the projection's primary key or skip indexes).
+    void copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step);
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
@@ -509,6 +624,7 @@ public:
 
     /// Whether PREWHERE (present or moved from WHERE later) is applied after FINAL instead of during reading
     bool isPrewhereDeferredAfterFinal() const;
+    bool canReadPrewhereColumnsAhead(const RangesInDataParts & parts) const;
 
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
@@ -542,6 +658,15 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
+    static void buildPartitionPruningIndexes(
+        Indexes & indexes,
+        const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
+        const MergeTreeData & data,
+        const ContextPtr & query_context,
+        const StorageMetadataPtr & metadata_snapshot,
+        bool skip_partition_pruning_,
+        bool require_ready_sets = false);
+
     MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
 
@@ -570,9 +695,12 @@ private:
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
-    /// optimization. Not carried by clone()/serialize()/deserialize(), so the pruning is intentionally
-    /// skipped when the step is rebuilt for distributed or parallel-replicas reads (results stay correct,
-    /// only the optimization is lost); propagating it there is a follow-up.
+    /// optimization. Carried over to a projection read by copyJoinRuntimeFilterIndexAnalysisDescriptors,
+    /// but not by clone()/serialize()/deserialize(), so the pruning is intentionally skipped when the step
+    /// is rebuilt for distributed or parallel-replicas reads (results stay correct, only the optimization
+    /// is lost); propagating it there is a follow-up. This is part of the setting's documented contract
+    /// (see its description in `Settings.cpp`) and is pinned by
+    /// `05153_join_runtime_filters_index_analysis_distributed_noop`.
     std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
@@ -710,6 +838,7 @@ private:
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
     bool allow_query_condition_cache = true;
+    bool allow_top_k_prewhere_query_condition_cache = true;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
 

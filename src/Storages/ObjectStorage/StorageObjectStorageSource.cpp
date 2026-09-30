@@ -31,6 +31,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
@@ -98,6 +99,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace FailPoints
+{
+extern const char object_storage_source_pause_before_virtual_columns[];
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
@@ -239,7 +245,7 @@ static bool hasAttachedDeletes(const ObjectInfo & object_info)
 #if USE_AVRO
     if (const auto * iceberg_object = dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
     {
-        if (!iceberg_object->info.position_deletes_objects.empty() || !iceberg_object->info.equality_deletes_objects.empty())
+        if (iceberg_object->info.hasPositionDeletes() || !iceberg_object->info.equality_deletes_objects.empty())
             return true;
     }
 #endif
@@ -831,6 +837,8 @@ Chunk StorageObjectStorageSource::generate()
             else if (object_metadata->is_size_known)
                 object_size = object_metadata->size_bytes;
 
+            FailPointInjection::pauseFailPoint(FailPoints::object_storage_source_pause_before_virtual_columns);
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
@@ -956,6 +964,11 @@ Chunk StorageObjectStorageSource::generate()
 
                                     const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
                                     auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
+                                    /// The `_delta_log` type differs from the declared one when the columns were
+                                    /// specified rather than inferred, and the block follows the declared schema.
+                                    const auto & declared_type = read_from_format_info.source_header.getByPosition(column_pos).type;
+                                    if (!name_and_type.type->equals(*declared_type))
+                                        partition_column = castColumn({partition_column, name_and_type.type, name_and_type.name}, declared_type);
                                     /// This column is filled with default value now, remove it.
                                     chunk.erase(column_pos);
                                     /// Add correct values.
@@ -1651,13 +1664,30 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// reader (which attaches `ChunkInfoRowNumbers`) and these filters preserves or maintains it.
         if (stripped_row_level_filter)
         {
-            auto row_level_actions = std::make_shared<ExpressionActions>(stripped_row_level_filter->actions.clone());
+            /// The row-level filter keeps its input columns, see the comment for `ReadFromFormatInfo::prewhere_info`.
+            /// The outputs are the filter column and all inputs. If the filter column is an input
+            /// itself (e.g. `USING a`), it must not be removed.
+            const auto & filter_node = stripped_row_level_filter->actions.findInOutputs(stripped_row_level_filter->column_name);
+            auto row_level_dag = ActionsDAG::cloneSubDAG({&filter_node}, /*remove_aliases=*/ true);
+            auto & row_level_outputs = row_level_dag.getOutputs();
+            const auto * row_level_filter_node = row_level_outputs.front();
+            row_level_outputs.clear();
+
+            bool remove_row_level_filter_column = stripped_row_level_filter->do_remove_column;
+            if (row_level_filter_node->type == ActionsDAG::ActionType::INPUT)
+                remove_row_level_filter_column = false;
+            else
+                row_level_outputs.push_back(row_level_filter_node);
+
+            row_level_outputs.insert(row_level_outputs.end(), row_level_dag.getInputs().begin(), row_level_dag.getInputs().end());
+
+            auto row_level_actions = std::make_shared<ExpressionActions>(std::move(row_level_dag));
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<FilterTransform>(
                     header, row_level_actions,
-                    stripped_row_level_filter->column_name,
-                    stripped_row_level_filter->do_remove_column,
+                    row_level_filter_node->result_name,
+                    remove_row_level_filter_column,
                     /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
                     /*update_row_numbers_info=*/true);
             });

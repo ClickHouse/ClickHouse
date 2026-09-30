@@ -10,6 +10,8 @@ endif ()
 
 include (../cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSION_OFFICIAL}")
+# Must precede configure_config.cmake, which sets USE_ANTLR4_GRAMMARS if the grammar target exists.
+add_subdirectory (Parsers/Prometheus/grammar)
 include (configure_config.cmake)
 configure_file (Common/config.h.in ${CONFIG_INCLUDE_PATH}/config.h)
 configure_file (Common/config_version.cpp.in ${CONFIG_INCLUDE_PATH}/config_version.cpp)
@@ -435,6 +437,7 @@ endif()
 
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
+add_object_library(clickhouse_server_iceberg_rest_catalog Server/IcebergRESTCatalog)
 
 # Track dependencies for #embed directives so that changes to embedded files trigger recompilation.
 set_source_files_properties(Server/WebUIRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
@@ -510,6 +513,8 @@ add_object_library(clickhouse_processors_formats Processors/Formats)
 add_object_library(clickhouse_processors_formats_framing Processors/Formats/Framing)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
 add_object_library(clickhouse_processors_transforms Processors/Transforms)
+add_object_library(clickhouse_processors_transforms_window Processors/Transforms/Window)
+add_object_library(clickhouse_window_functions WindowFunctions)
 add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_sinks Processors/Sinks)
 add_object_library(clickhouse_processors_merges Processors/Merges)
@@ -544,6 +549,17 @@ add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 set_property(SOURCE
     Columns/IColumn.cpp                        # hashjoin_with_large_output
     Processors/Transforms/WindowTransform.cpp  # window functions
+    Processors/Transforms/Window/WindowTransformParams.cpp  # window functions
+    WindowFunctions/WindowFunctionRank.cpp                   # window functions
+    WindowFunctions/WindowFunctionDenseRank.cpp              # window functions
+    WindowFunctions/WindowFunctionRowNumber.cpp              # window functions
+    WindowFunctions/WindowFunctionNtile.cpp                  # window functions
+    WindowFunctions/WindowFunctionPercentRank.cpp            # window functions
+    WindowFunctions/WindowFunctionCumeDist.cpp               # window functions
+    WindowFunctions/WindowFunctionNthValue.cpp               # window functions
+    WindowFunctions/WindowFunctionLagLead.cpp                # window functions
+    WindowFunctions/WindowFunctionExponentialTimeDecayed.cpp # window functions
+    WindowFunctions/WindowFunctionNonNegativeDerivative.cpp  # window functions
     Interpreters/Aggregator.cpp                # destroy_aggregate_states
     Common/IntervalTree.cpp                    # range_hashed_dictionary
     PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
@@ -840,6 +856,10 @@ endif()
 
 if (TARGET ch_contrib::vectorscan)
     target_link_libraries(dbms PRIVATE ch_contrib::vectorscan)
+endif()
+
+if (TARGET ch_contrib::simsimd)
+    target_link_libraries(dbms PRIVATE ch_contrib::simsimd)
 endif()
 
 if (TARGET ch_contrib::brotli)

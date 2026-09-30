@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-darwin, no-old-analyzer, no-flaky-check, no-distributed-cache
-# no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
-# no-old-analyzer: make_distributed_plan requires the analyzer.
+# Tags: no-flaky-check, no-distributed-cache
 # no-flaky-check: creating 600 parts across 300 partitions takes seconds on debug and sanitizer
 # builds; the flaky check's repeated runs exceed its budget.
 # no-distributed-cache: with the distributed cache each tiny part commit costs over a second on
