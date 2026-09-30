@@ -2,4 +2,5 @@ after the rejected inserts	0
 outside of a transaction	[1,2]
 inside a transaction	[1,2,3]
 after the rollback	[1,2]
+inside a transaction, INSERT SELECT	[1,2,4]
 without the deduplication window	[1,2]

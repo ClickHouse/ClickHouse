@@ -52,6 +52,18 @@ SELECT 'inside a transaction', arraySort(groupArray(x)) FROM t_dedup_txn;
 ROLLBACK;
 SELECT 'after the rollback', arraySort(groupArray(x)) FROM t_dedup_txn;
 
+-- For `INSERT SELECT`, `deduplicate_insert_select` takes precedence over `deduplicate_insert`: `force_enable` turns
+-- deduplication back on, and `disable` turns it off.
+BEGIN TRANSACTION;
+INSERT INTO t_dedup_txn SETTINGS deduplicate_insert = 'disable', deduplicate_insert_select = 'force_enable',
+    insert_deduplication_token = 'rejected' SELECT 4; -- { serverError NOT_IMPLEMENTED }
+ROLLBACK;
+
+BEGIN TRANSACTION;
+INSERT INTO t_dedup_txn SETTINGS deduplicate_insert_select = 'disable' SELECT 4;
+SELECT 'inside a transaction, INSERT SELECT', arraySort(groupArray(x)) FROM t_dedup_txn;
+ROLLBACK;
+
 -- A table without the deduplication window is not affected.
 CREATE TABLE t_no_dedup_txn (x UInt64) ENGINE = MergeTree ORDER BY x;
 BEGIN TRANSACTION;

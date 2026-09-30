@@ -423,7 +423,7 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Deduplication of inserts into table {} with `non_replicated_deduplication_window` is not supported inside "
             "transactions. Insert outside of the transaction, or disable deduplication for this insert with "
-            "`deduplicate_insert = 'disable'`",
+            "`deduplicate_insert = 'disable'` (for `INSERT SELECT`, with `deduplicate_insert_select = 'disable'`)",
             storage.getStorageID().getNameForLogs());
 
     /// It's important to create it outside of lock scope because
