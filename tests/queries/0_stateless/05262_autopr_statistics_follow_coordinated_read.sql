@@ -1,10 +1,11 @@
 -- The cost model divides the instrumented read's `input_bytes` by the replica count, so the read it
--- measures has to be the read parallel replicas actually coordinates. Those were chosen by two unrelated
--- rules: the statistics by descending the query *plan* to a join's probe side
--- (`children[isRight(kind) ? 1 : 0]`), the coordinated read by the left-most table expression of the
--- query *tree* (`findTableForParallelReplicas`). A join that swaps its sides moves the first without
--- moving the second, and the model then priced a table nobody splits - at sf=100 that adopted a plan 11%
--- slower on TPC-H q07 and declined one 62% faster on SSB q2.x.
+-- measures has to be the read parallel replicas actually coordinate. Which table that is, is not the
+-- optimization's decision - it only has to stay in step with the decision that was made. It used to derive
+-- the read instead, by descending the query *plan* to a join's probe side
+-- (`children[isRight(kind) ? 1 : 0]`), while the read being coordinated on this path is pinned to the
+-- left-most table expression of the query *tree* (`findTableForParallelReplicas`). A join that swaps its
+-- sides moves the first without moving the second, and the model then priced a table nobody splits - at
+-- sf=100 that adopted a plan 11% slower on TPC-H q07 and declined one 62% faster on SSB q2.x.
 --
 -- `query_plan_join_swap_table` is the knob that moves the plan side without touching the query text, so
 -- the same query is run with the swap off and forced on. The bytes recorded must be the same either way:
@@ -55,6 +56,14 @@ INSERT INTO t_coord_baseline
 SELECT sum(b.v) FROM t_coord_small AS s, t_coord_big AS b WHERE s.key = b.key AND b.key < 200000
 SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
+-- Query-based parallel replicas only. With `parallel_replicas_plan_based = 1` the coordinated read is
+-- chosen differently: `collectReadsToDistribute` descends a `JoinStepLogical` by `coordinatedJoinSide` and
+-- takes `children.at(side)` of the *post-swap* children, so the swap genuinely moves which relation is
+-- distributed and the two runs below would measure different reads - correctly. The invariant asserted here
+-- is that the coordinated read does not move, which holds only where the query tree pins it. Pinned rather
+-- than left to the default so that a change of default, or randomization of it, cannot turn that into a
+-- confusing failure. `05293` covers the plan-based path.
+SET parallel_replicas_plan_based = 0;
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 1;
 SET parallel_replicas_local_plan = 1;

@@ -46,6 +46,14 @@ INSERT INTO t_self_coord_baseline
 SELECT sum(l.v), sum(r.v) FROM t_self_coord AS l INNER JOIN t_self_coord AS r ON l.b = r.b WHERE r.a < 10
 SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
+-- Query-based parallel replicas only. With `parallel_replicas_plan_based = 1` the coordinated read is
+-- chosen differently: `collectReadsToDistribute` descends a `JoinStepLogical` by `coordinatedJoinSide` and
+-- takes `children.at(side)` of the *post-swap* children, so the swap genuinely moves which relation is
+-- distributed and the two runs below would measure different reads - correctly. The invariant asserted here
+-- is that the coordinated read does not move, which holds only where the query tree pins it. Pinned rather
+-- than left to the default so that a change of default, or randomization of it, cannot turn that into a
+-- confusing failure. `05293` covers the plan-based path.
+SET parallel_replicas_plan_based = 0;
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 1;
 SET parallel_replicas_local_plan = 1;
