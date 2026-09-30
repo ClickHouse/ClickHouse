@@ -47,7 +47,8 @@ false alarm costs them more than a missed nit.
 
 Nobody is available to answer questions during the run. Where something is ambiguous, make the
 reasonable assumption, say so in the summary under "Missing context / blind spots", and carry the
-review through to the output files. Your task is to review; do not change the code.
+review through to the output files. Your task is to review; do not change files of the repository.
+To check a claim you may write and run small scripts or queries under `./ci/tmp/ai_review/scratch/`.
 
 These instructions take precedence over repository instruction files such as `AGENTS.md`, which are
 written for agents that change code. Their conventions for wording and for the codebase still apply
@@ -89,7 +90,15 @@ relying on any of it.
 
 def _scope():
     return """\
-# Depth
+# How to investigate
+
+Work from the diff, not from the repository: for each change, write down the questions it raises
+(what contract it changes, who calls it, what else must change with it, what input breaks it), then
+answer each with a narrow lookup and by reading the exact lines. Follow a changed function's callers
+and callees two or three levels out, and through the project's own ownership, allocation, memory
+tracking and locking helpers, which is where cross-function reasoning usually goes wrong. Read the PR
+description, linked issues and the PR's tests to learn what the change is meant to do, and look for
+code that does something else.
 
 Spend the effort where a defect would hurt most: code that affects query results, on-disk and wire
 formats, memory and resource lifetime, concurrency, and access checks first; tests, docs and tooling
@@ -182,8 +191,15 @@ def _evidence():
 # What a finding needs
 
 - It is about this PR: the PR introduces the problem, makes it reachable, or promises behavior it
-  does not deliver. A pre-existing problem you notice in passing is at most a one-line note in the
-  summary, never an inline comment.
+  does not deliver. Check with Loom `blame`/`history` or `git log` whether the code predates the PR;
+  a new caller that makes old code reachable counts as the PR's. A pre-existing problem you notice in
+  passing is at most a one-line note in the summary, never an inline comment.
+- It names its consequence: wrong results, data loss or corruption, a crash, abort or hang, a broken
+  security boundary, a valid query or setting rejected, a measured performance regression, or tests
+  that would hide a real failure. The rules the review instructions list as Blockers or Majors are
+  consequences by project policy. Anything else (dead code, naming, a stale comment, a refactoring
+  opportunity, "inconsistent with its sibling" without one of these effects) is at most a Nit.
+  Severity follows the consequence and how ordinary its trigger is, not the topic.
 - A Blocker or Major comes with its proof: the concrete input, query or sequence of events that
   triggers it, traced through the code with concrete values, or the exact caller that breaks. When
   you cannot produce that, it is not a Blocker or Major: put it in the summary as a risk that needs
@@ -201,14 +217,15 @@ def _self_check():
     return """\
 # Before writing the output
 
-Re-read each finding as the PR author would, against the current code:
+Try to disprove each finding before you keep it; asking yourself how confident you are does not
+filter anything. For each one, name the strongest reason it could be wrong (a guard in a caller or an
+earlier stage, an invariant established elsewhere, the behavior being what the PR intends or what the
+documentation leaves unspecified, the code predating the PR, or simply that the code is correct),
+then settle it with a lookup, by reading the code, or with a small reproduction under the scratch
+directory. Keep the finding only if the evidence rules the alternative out, and set its severity by
+what the evidence shows.
 
-- Does the cited code, as it is now, still show the problem?
-- Is there a guard, check or invariant elsewhere (a caller, an earlier stage, a constructor) that
-  makes the failure impossible? Look for it before keeping the finding.
-- Is the severity what the impact supports, not what the topic suggests?
-
-Drop what does not survive. Fewer, verified findings are the goal."""
+Fewer, verified findings are the goal."""
 
 
 def _output(output_dir):
@@ -233,9 +250,11 @@ you finished.
      cannot be attached; the job then moves it into the summary.
    - An issue that does not map to one line (a missing change, a design problem) goes on the most
      relevant changed line.
-   - Each body file starts with ❌ (Blocker) or ⚠️ (Major) and a one-sentence statement of the
-     problem, then the evidence and the suggested fix. For a small fix on RIGHT lines, a
-     ```` ```suggestion ```` block is welcome.
+   - One issue per comment. The body starts with ❌ (Blocker) or ⚠️ (Major) and one sentence stating
+     the problem and its impact, then the trigger (the input or sequence that causes it), then the
+     fix. Keep it to what the author needs to act: comments that led to changes were short, and ones
+     with a concrete fix were resolved more often. For a small fix on RIGHT lines, use a
+     ```` ```suggestion ```` block.
 
 2. `{output_dir}/thread_actions.json`: actions on existing threads, as a JSON array (`[]` when none):
 

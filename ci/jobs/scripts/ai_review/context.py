@@ -26,6 +26,7 @@ import json
 import os
 import re
 import shlex
+import unicodedata
 
 from ci.praktika.gh import GH
 
@@ -44,6 +45,18 @@ _REVIEW_COMMENT_START = "<!-- CI automatic comment start :review: -->"
 _REVIEW_COMMENT_END = "<!-- CI automatic comment end :review: -->"
 
 _MAX_LINKED_ISSUES = 8
+
+
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+
+
+def untrusted(text):
+    """Contributor-written text as the agent should see it: HTML comments and
+    invisible format characters (zero-width, bidirectional controls) removed.
+    Both are invisible on GitHub, which makes them the usual carrier for
+    instructions aimed at an AI reviewer rather than at people."""
+    text = _HTML_COMMENT_RE.sub("", text or "")
+    return "".join(c for c in text if unicodedata.category(c) != "Cf" or c in "\n\t")
 
 
 def gh_json(endpoint, paginate=False, strict=False):
@@ -84,7 +97,7 @@ def _render_pr(pr, files):
     head = pr.get("head") or {}
     base = pr.get("base") or {}
     lines = [
-        f"# PR #{pr.get('number')}: {pr.get('title')}",
+        f"# PR #{pr.get('number')}: {untrusted(pr.get('title'))}",
         "",
         f"- Author: `{(pr.get('user') or {}).get('login')}`",
         f"- Base: `{base.get('ref')}` at `{base.get('sha')}`",
@@ -95,7 +108,7 @@ def _render_pr(pr, files):
         "",
         "## Description",
         "",
-        (pr.get("body") or "(empty)").strip(),
+        untrusted(pr.get("body") or "(empty)").strip(),
         "",
         "## Changed files",
         "",
@@ -138,7 +151,7 @@ def _render_threads(threads, repo, pr_number):
         for c in comments:
             who = (c.get("author") or {}).get("login") or "?"
             you = " (you)" if (c.get("viewerDidAuthor") or is_bot(who)) else ""
-            out.append(f"**{who}{you}** at {c.get('createdAt')}:\n\n{(c.get('body') or '').strip()}\n")
+            out.append(f"**{who}{you}** at {c.get('createdAt')}:\n\n{untrusted(c.get('body')).strip()}\n")
         out.append("")
     return "\n".join(out)
 
@@ -161,7 +174,7 @@ def _render_conversation(issue_comments, reviews):
     out = []
     for at, who, kind, body in events:
         you = " (you)" if is_bot(who) else ""
-        out.append(f"**{who}{you}**, {kind}, at {at}:\n\n{body.strip()}\n")
+        out.append(f"**{who}{you}**, {kind}, at {at}:\n\n{untrusted(body).strip()}\n")
     return "\n".join(out)
 
 
@@ -182,7 +195,7 @@ def _render_linked(repo, numbers):
         if not item:
             continue
         kind = "PR" if item.get("pull_request") else "Issue"
-        out.append(f"## {kind} #{n}: {item.get('title')} [{item.get('state')}]\n\n{(item.get('body') or '').strip()}\n")
+        out.append(f"## {kind} #{n}: {untrusted(item.get('title'))} [{item.get('state')}]\n\n{untrusted(item.get('body')).strip()}\n")
     return "\n".join(out) if out else "No linked issues.\n"
 
 
@@ -241,7 +254,7 @@ def _render_since_last_review(repo, pr_number, base_ref, last_sha, head_sha, fil
     if own:
         out += ["", "Commits pushed since:", ""]
         for c in own:
-            out.append(f"- `{c.get('sha', '')[:12]}` {((c.get('commit') or {}).get('message') or '').splitlines()[0]}")
+            out.append(f"- `{c.get('sha', '')[:12]}` {(untrusted((c.get('commit') or {}).get('message')).splitlines() or [''])[0]}")
     if merges:
         out += ["", f"{merges} merge(s) of the base branch since; changes that came with them are not part of the PR."]
 
