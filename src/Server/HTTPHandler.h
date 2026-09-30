@@ -264,6 +264,7 @@ class DynamicQueryHandler : public HTTPHandler
 {
 private:
     std::string param_name;
+    bool parse_http_path;
     /// Only the built-in catch-all handler enables the path-table upload mutation exception.
     bool allow_path_table_uploads = false;
 
@@ -275,13 +276,17 @@ public:
         const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt,
         const std::string & url_prefix_ = "",
         HTTPPathHintsPtr path_hints_ = nullptr,
+        bool parse_http_path_ = true,
         bool allow_path_table_uploads_ = false);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
     bool customizeQueryParam(NameToNameMap & query_parameters, const std::string &key, const std::string &value) override;
 
-    bool parsesHTTPPath() const override { return true; }
+    /// The catch-all query handler interprets the request path. A configured `dynamic_query_handler`
+    /// rule owns the path it is matched by, so it interprets only the part below its `url_prefix`,
+    /// and nothing at all when it has none.
+    bool parsesHTTPPath() const override { return parse_http_path; }
 
     bool allowMutatingIdempotentMethods(const HTTPServerRequest & request, const HTMLForm & params) const override;
 };

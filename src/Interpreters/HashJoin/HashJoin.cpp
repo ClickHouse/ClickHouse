@@ -52,7 +52,7 @@
 #include <numeric>
 
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 
 namespace DB
 {
