@@ -36,7 +36,7 @@ public:
     using HasBuiltinSettingFn = bool(std::string_view);
 
     /// Describes the settings of an engine for `system.engine_settings`
-    using EnumerateEngineSettingsFn = SettingDescriptions();
+    using EnumerateEngineSettingsFn = SettingDescriptions(ContextPtr);
 
     struct Arguments
     {

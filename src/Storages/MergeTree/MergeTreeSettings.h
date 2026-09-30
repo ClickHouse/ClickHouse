@@ -38,6 +38,7 @@ struct MergeTreeSettingsImpl;
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 struct MutableColumnsAndConstraints;
+class SettingsConstraints;
 
 /// List of available types supported in MergeTreeSettings object
 #define MERGETREE_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
@@ -114,6 +115,11 @@ struct MergeTreeSettings
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;
     SettingDescriptions enumerateSettings() const;
+    /// With `constraints` and `isReadonlySetting` applied, as `system.merge_tree_settings` shows them.
+    SettingDescriptions enumerateSettingsWithConstraints(const SettingsConstraints & constraints) const;
+    /// For `system.engine_settings`: the server-level instance a new table starts from.
+    static SettingDescriptions enumerateEngineSettings(ContextPtr context);
+    static SettingDescriptions enumerateReplicatedEngineSettings(ContextPtr context);
 
     void addToProgramOptionsIfNotPresent(boost::program_options::options_description & main_options, bool allow_repeated_settings);
 

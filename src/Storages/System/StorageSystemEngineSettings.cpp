@@ -44,15 +44,19 @@ development and the expectations one might have when using them:
     };
 }
 
-void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, ContextPtr /*context*/, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (const auto & [engine_name, creator] : StorageFactory::instance().getAllStorages())
     {
         if (!creator.features.enumerate_engine_settings_fn)
             continue;
 
-        for (const auto & setting : creator.features.enumerate_engine_settings_fn())
+        for (const auto & setting : creator.features.enumerate_engine_settings_fn(context))
         {
+            Array disallowed_values;
+            for (const auto & value : setting.disallowed_values)
+                disallowed_values.emplace_back(value);
+
             size_t col = 0;
             res_columns[col++]->insert(engine_name);
             res_columns[col++]->insert(setting.name);
@@ -60,10 +64,10 @@ void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, Context
             res_columns[col++]->insert(setting.default_value);
             res_columns[col++]->insert(setting.changed);
             res_columns[col++]->insert(setting.comment);
-            res_columns[col++]->insertDefault(); // min (NULL)
-            res_columns[col++]->insertDefault(); // max (NULL)
-            res_columns[col++]->insert(Array{}); // disallowed_values
-            res_columns[col++]->insert(UInt64(0)); // readonly
+            res_columns[col++]->insert(setting.min_value ? Field(*setting.min_value) : Field());
+            res_columns[col++]->insert(setting.max_value ? Field(*setting.max_value) : Field());
+            res_columns[col++]->insert(disallowed_values);
+            res_columns[col++]->insert(setting.readonly);
             res_columns[col++]->insert(setting.type);
             res_columns[col++]->insert(setting.tier == SettingsTierType::OBSOLETE);
             res_columns[col++]->insert(setting.tier);
