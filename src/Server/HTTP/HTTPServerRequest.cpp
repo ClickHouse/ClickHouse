@@ -77,9 +77,10 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     {
         /// Bounds the request line, the URI and the headers. Clearing it restores the body timeouts,
         /// which is also what the error response is written with, so it has to happen while unwinding.
+        /// It can fail there: macOS rejects `setsockopt` on a connection the peer has reset.
         if (headers_read_timeout > Poco::Timespan(0))
             socket_in->setHandshakeTimeout(headers_read_timeout.totalMilliseconds());
-        SCOPE_EXIT({ socket_in->clearHandshakeTimeout(); });
+        SCOPE_EXIT_SAFE({ socket_in->clearHandshakeTimeout(); });
 
         try
         {

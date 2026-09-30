@@ -25,7 +25,9 @@ using ExecutingGraphPtr = std::unique_ptr<ExecutingGraph>;
 class ReadProgressCallback;
 using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
 
-class StepWallClockRegistry;
+class StepProfiler;
+using StepProfilerPtr = std::shared_ptr<StepProfiler>;
+
 struct WorkloadResources;
 
 /// Executes query pipeline.
@@ -41,7 +43,7 @@ public:
     /// PipelineExecutor must be destroyed before the corresponding QueryPipeline, because
     /// QueryPlanResourceHolder may hold some resources referenced by processors and used in
     /// processor destructors.
-    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, const StepWallClockRegistry * step_wall_clock_registry = nullptr);
+    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem);
     ~PipelineExecutor();
 
     /// Execute pipeline in multiple threads. Must be called once.
@@ -66,9 +68,8 @@ public:
     /// It would be called every time when processor reports read progress.
     void setReadProgressCallback(ReadProgressCallbackPtr callback);
 
-    void setCollectWorkIntervals(bool collect_work_intervals_);
-
-    WorkIntervalsPerThread takeWorkIntervals();
+    /// Set the profiler of EXPLAIN ANALYZE.
+    void setStepProfiler(StepProfilerPtr step_profiler_);
 
 private:
     ExecutingGraphPtr graph;
@@ -80,7 +81,6 @@ private:
     AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeStep()
     std::unique_ptr<ThreadPool> pool;
     std::mutex spawn_mutex;
-    UInt64 query_start_ns = 0;
 
     /// Pipeline's max thread count (captured from execute(num_threads)).
     size_t max_pipeline_threads = 1;
@@ -104,9 +104,6 @@ private:
     /// system.opentelemetry_span_log
     bool trace_processors = false;
     bool trace_cpu_scheduling = false;
-    bool collect_work_intervals = false;
-    /// EXPLAIN ANALYZE
-    const StepWallClockRegistry * step_wall_clock_registry = nullptr;
 
     std::atomic<ExecutionStatus> execution_status = ExecutionStatus::NotStarted;
     std::atomic_bool cancelled_reading = false;
@@ -116,6 +113,7 @@ private:
     QueryStatusPtr process_list_element;
 
     ReadProgressCallbackPtr read_progress_callback;
+    StepProfilerPtr step_profiler;
 
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new

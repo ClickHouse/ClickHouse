@@ -52,6 +52,7 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
     {
         executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
         executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+        executor->setStepProfiler(pipeline.getStepProfiler());
     }
 
     if (pipeline.process_list_element && !pipeline.process_list_element->checkTimeLimitSoft())
