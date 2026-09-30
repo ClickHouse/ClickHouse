@@ -64,16 +64,16 @@ std::optional<UInt64> getExponentialTimeDecayingPrefixFromField(
 
     if (tuple.size() == 3)
     {
-        const Float64 sign = tuple[0].safeGet<Float64>();
-        const Float64 signed_unit_time = tuple[1].safeGet<Float64>();
+        const Float64 value = tuple[0].safeGet<Float64>();
+        const Float64 time = tuple[1].safeGet<Float64>();
         const Float64 decay_length = tuple[2].safeGet<Float64>();
-        if (decay_length != type.getDecayLength())
+        if (decay_length != type.getDecayLength()
+            || !std::isfinite(value)
+            || !std::isfinite(time)
+            || (value != 0 && !std::isfinite(getExponentialTimeDecayingUnitTimestamp(value, time, decay_length))))
             return std::nullopt;
-        if (sign == 0)
-            return shiftOneBitAndSign(0, 0);
-        if ((sign != -1 && sign != 1) || !std::isfinite(signed_unit_time))
-            return std::nullopt;
-        return shiftOneBitAndSign(sign * signed_unit_time, sign);
+
+        return getExponentialTimeDecayingOrderingKey(value, time, decay_length);
     }
 
     return std::nullopt;
