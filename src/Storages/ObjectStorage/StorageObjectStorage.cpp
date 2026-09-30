@@ -518,7 +518,10 @@ configuration->update(object_storage, query_context);
 
 bool StorageObjectStorage::isTransactionalRefreshTarget()
 {
-    /// Only Iceberg, and only on a compare-and-swap catalog (REST, or no catalog / `if-none-match`); Glue's overwrite commit is excluded and keeps the Keeper cursor.
+    /// Delta Lake commits by a put-if-absent of the next `_delta_log` entry, with the cursor as a `domainMetadata` action.
+    if (isDeltaLakeStorage())
+        return true;
+    /// Otherwise only Iceberg, and only on a compare-and-swap catalog (REST, or no catalog / `if-none-match`); Glue's overwrite commit is excluded and keeps the Keeper cursor.
     if (!isIcebergStorage())
         return false;
     if (catalog && !catalog->isTransactional())

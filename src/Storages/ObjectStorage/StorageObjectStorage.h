@@ -124,6 +124,7 @@ public:
     bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
 
     bool isIcebergStorage() const { return configuration->isIcebergConfiguration(); }
+    bool isDeltaLakeStorage() const { return configuration->isDeltaLakeConfiguration(); }
 
     bool isObjectStorage() const override { return true; }
 
@@ -172,7 +173,7 @@ public:
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
 
-    /// True when the target commits the refresh cursor atomically with the data (Iceberg on a CAS catalog),
+    /// True when the target commits the refresh cursor atomically with the data (Delta Lake, Iceberg on a CAS catalog),
     /// so the refresh reads/persists the cursor here instead of in the Keeper znode.
     bool isTransactionalRefreshTarget();
     CursorTreeNodePtr loadRefreshCursor(ContextPtr query_context);

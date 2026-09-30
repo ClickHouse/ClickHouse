@@ -61,6 +61,8 @@ public:
     /// but "read schema" would not.
     const DB::Names & getPartitionColumns() const;
     const DB::NameToNameMap & getPhysicalNamesMap() const;
+    /// Configuration of the `domainMetadata` action for `domain` in this snapshot, or nullopt if absent.
+    std::optional<std::string> getDomainMetadata(const std::string & domain) const;
 
     DB::ObjectStoragePtr getObjectStorage() const { return object_storage; }
 private:

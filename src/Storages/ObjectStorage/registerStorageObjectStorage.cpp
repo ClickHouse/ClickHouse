@@ -2268,6 +2268,8 @@ This engine provides an integration with existing [Delta Lake](https://github.co
 
 By default the Delta Lake table must already exist in S3, GCP or Azure storage, and the commands below attach to it without DDL column definitions. With `allow_delta_lake_create_table = 1`, a `CREATE TABLE` with explicit columns against a location that has no `_delta_log` instead creates a new Delta Lake table by writing the initial commit through `delta-kernel-rs` (creating a partitioned table is not supported yet), and inside a Unity `DataLakeCatalog` database the table is also registered in the catalog.
 
+The table setting `delta_lake_enable_domain_metadata = 1` enables the `domainMetadata` writer feature in the new table's protocol. An incremental refreshable materialized view (`REFRESH ... APPEND INCREMENTAL`) writing to a Delta Lake table requires this feature, because it commits its refresh cursor in the same commit as the data.
+
 <Tabs>
 <TabItem value="S3" label="S3" default>
 
