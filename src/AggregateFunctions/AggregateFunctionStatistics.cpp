@@ -72,8 +72,7 @@ struct AggregateFunctionVarianceData
 
     void mergeWith(const AggregateFunctionVarianceData & source)
     {
-        /// An empty side must stay out of the formula below: `factor` is zero then, and for a large `mean` `delta * delta`
-        /// overflows to infinity, so `m2` would become NaN. Every merge starts from an empty state.
+        /// With an empty side, `delta * delta * factor` is `x * 0`, which is NaN when `delta * delta` overflows.
         if (source.count == 0)
             return;
         if (count == 0)
@@ -146,8 +145,6 @@ private:
     {
         if (count == 0)
             return std::numeric_limits<Float64>::infinity();
-        if (count == 1)
-            return 0.0;
         return m2 / static_cast<Float64>(count);
     }
 
@@ -323,7 +320,7 @@ struct CovarianceData : public BaseCovarianceData<compute_marginal_moments>
 
     void mergeWith(const CovarianceData & source)
     {
-        /// An empty side must stay out of the formulas below, see `AggregateFunctionVarianceData::mergeWith`.
+        /// With an empty side, `left_delta * right_delta * factor` is `x * 0`, which is NaN when `left_delta * right_delta` overflows.
         if (source.count == 0)
             return;
         if (count == 0)
@@ -412,8 +409,6 @@ private:
     {
         if (count == 0)
             return std::numeric_limits<Float64>::infinity();
-        if (count == 1)
-            return 0.0;
         return co_moment / static_cast<Float64>(count);
     }
 
