@@ -20,7 +20,6 @@
 #include <Parsers/ASTRenameQuery.h>
 
 #include <algorithm>
-#include <limits>
 
 namespace fs = std::filesystem;
 
@@ -205,20 +204,18 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     /// substitute metadata from the recreated database during recovery.
     Coordination::Stat max_log_ptr_stat;
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr", &max_log_ptr_stat));
-    static constexpr UInt64 MAX_LOGS_TO_KEEP = std::numeric_limits<UInt32>::max();
-    /// `logs_to_keep` used to be 64-bit, so Keeper may contain values > `UInt32::max`. Clamp them to `UInt32::max`.
-    UInt64 keeper_logs_to_keep = parse<UInt64>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
-    logs_to_keep = static_cast<UInt32>(std::min(MAX_LOGS_TO_KEEP, keeper_logs_to_keep));
-    if (keeper_logs_to_keep > MAX_LOGS_TO_KEEP)
+
+    const UInt64 keeper_logs_to_keep = parse<UInt64>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
+    logs_to_keep = static_cast<UInt32>(std::min(DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP, keeper_logs_to_keep));
+    if (keeper_logs_to_keep > DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP)
     {
         LOG_WARNING(
             log,
             "The `logs_to_keep` node of the Replicated database in Keeper ({}) holds {}, which exceeds the maximum of {}, "
-            "so the maximum is used instead. The DDL log counter is 32-bit, so the stored value never took effect as written. "
-            "The node is left unchanged",
+            "so the maximum is used instead",
             database->zookeeper_path + "/logs_to_keep",
             keeper_logs_to_keep,
-            MAX_LOGS_TO_KEEP);
+            DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP);
     }
 
     UInt64 digest = 0;
