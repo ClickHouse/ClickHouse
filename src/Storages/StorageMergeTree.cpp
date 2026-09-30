@@ -3300,23 +3300,25 @@ DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(
             /// Only the precommit renames above are retried; from here on an exception is final.
             batch_precommitted = true;
 
-            transaction.renameParts();
-
-            /// Everything below still runs under the `part_lock` that was held while `covered_parts` was
-            /// computed, so it is exactly the set `commit` is about to remove: no part can be added to it
-            /// or taken out of it in between. That is what makes this order safe for `DETACH`:
-            ///  * the removal is refused, if it has to be, before anything is copied, so a refused
-            ///    statement leaves no orphan copy in `detached/` and no `_tryN` buildup on retries;
-            ///  * the copy is made while the parts are still in the working set, so an I/O error during
-            ///    the copy (`ENOSPC`, say) fails the statement with the data still in place, instead of
-            ///    leaving the partition removed and only partially present under `detached/`.
-            /// `StorageReplicatedMergeTree` clones inside the removal's parts lock for the same reason.
+            /// Under the lock `commit` reuses: check and copy exactly the parts it removes (computed the same
+            /// way), so a refused removal copies nothing and a failed copy removes nothing. The empty parts get
+            /// their final names only after the copy, because a `tmp_empty_*` directory covers nothing on load.
             if (clone_to_detached)
             {
-                checkPartsCanBeRemovedNonTransactionally(covered_parts, NonTransactionalRemovalKind::Discard);
-                clonePartsToDetached(covered_parts, query_context);
+                DataPartsVector parts_to_remove;
+                for (const auto & part : new_parts)
+                {
+                    DataPartPtr covering_part;
+                    auto parts_covered_by_one_part = getActivePartsToReplace(part->info, part->name, covering_part, part_lock);
+                    if (!covering_part)
+                        std::move(parts_covered_by_one_part.begin(), parts_covered_by_one_part.end(), std::back_inserter(parts_to_remove));
+                }
+
+                checkPartsCanBeRemovedNonTransactionally(parts_to_remove, NonTransactionalRemovalKind::Discard);
+                clonePartsToDetached(parts_to_remove, query_context);
             }
 
+            transaction.renameParts();
             removed_parts = transaction.commit(part_lock);
             break;
         }
@@ -3336,9 +3338,8 @@ DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(
         sleepForMilliseconds(200);
     } while (true);
 
-    /// `covered_parts` is the precommit selection while `removed_parts` is what `commit` recomputed,
-    /// which is the only authoritative answer to "what was removed". The two agree here because the
-    /// parts lock was held across both, but everything below still uses the authoritative one.
+    /// `covered_parts` is the precommit selection, accumulated across the retries above, while
+    /// `removed_parts` is what `commit` recomputed: the only authoritative answer to "what was removed".
     LOG_INFO(log, "Removed {} parts out of the {} selected by covering them with empty {} parts. With txn {}.",
              removed_parts.size(), covered_parts.size(), new_parts.size(), transaction.getTID());
 
