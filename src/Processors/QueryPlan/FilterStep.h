@@ -21,9 +21,9 @@ struct FilterDAGOutputPruningPlan
     /// DAG output positions to keep, before the filter column is erased from the header, the filter
     /// column included: it is needed to filter, whether or not anyone reads it.
     ///
-    /// Unlike the other two steps, these are not the caller's positions over again. The header the
-    /// caller counts in has the filter column erased from it, so its positions are shifted back over
-    /// that column first, and the filter column is then added whether or not it was asked for.
+    /// Unlike for the other steps, these are not just the positions the caller does not name. The header
+    /// the caller counts in has the filter column erased from it, so its positions are shifted back over
+    /// that column first, and the filter column is then kept whether or not anyone reads it.
     std::vector<size_t> required_dag_positions;
     /// One entry per column of the input header, in header order.
     std::vector<IQueryPlanStep::InputColumnUsage> input_columns;
@@ -45,10 +45,11 @@ FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
     const String & filter_column_name,
     bool remove_filter_column,
     const Block & input_header,
-    const std::vector<size_t> & required_output_positions);
+    const std::vector<size_t> & unneeded_output_positions);
 
 /// Prune filter DAG outputs by position and return the input positions needed to compute the remaining
-/// outputs and filter. The analysis above plus its application.
+/// outputs and filter. The analysis above plus its application, for a caller that counts what it keeps, as
+/// `ReadFromMergeTree` does for PREWHERE and the row policy filter.
 FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
     ActionsDAG & dag,
     const String & filter_column_name,
