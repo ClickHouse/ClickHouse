@@ -41,6 +41,10 @@ There are a variety of ways to store dictionaries in memory, each with CPU and R
 Caching layouts are not recommended due to potentially poor performance and difficulty tuning parameters — see [cache](/reference/statements/create/dictionary/layouts/cache) for details.
 </Tip>
 
+<Note>
+In ClickHouse Cloud, cache-based layouts are unsuitable for insert-time enrichment because their warmed entries are local to each server and do not survive node replacement. Use a fully loaded layout instead; see [Cloud dictionaries in ingestion paths](/concepts/features/dictionaries/best-practices#cloud-dictionaries-in-ingestion-path).
+</Note>
+
 ## Specify dictionary layout {#specify-dictionary-layout}
 
 <CloudDetails />
