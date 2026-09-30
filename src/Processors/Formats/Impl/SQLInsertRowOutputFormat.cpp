@@ -1,17 +1,137 @@
+#include <Core/Names.h>
+#include <Core/Settings.h>
 #include <Common/isValidUTF8.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 #include <Processors/Formats/Impl/SQLInsertRowOutputFormat.h>
 #include <Processors/Port.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/StorageFactory.h>
+#include <Common/Exception.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
 {
 
-SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_), column_names(header_->getNames()), format_settings(format_settings_)
+namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+    extern const int DUPLICATE_COLUMN;
+    extern const int ILLEGAL_COLUMN;
+}
+
+namespace
+{
+
+const DataTypeValidationSettings & getDefaultDataTypeValidationSettings()
+{
+    static const DataTypeValidationSettings settings = []
+    {
+        Settings default_settings;
+        return DataTypeValidationSettings(default_settings);
+    }();
+
+    return settings;
+}
+
+bool isMergeTreePersistentVirtualColumn(const String & column_name)
+{
+    return column_name == RowExistsColumn::name
+        || column_name == BlockNumberColumn::name
+        || column_name == BlockOffsetColumn::name;
+}
+
+String parseAndFormatSQLInsertTableName(const String & table_name, size_t max_parser_depth)
+{
+    ParserCompoundIdentifier parser(/*table_name_with_optional_uuid=*/ true);
+    const auto identifier = parseQuery(
+        parser,
+        table_name,
+        "table name in `output_format_sql_insert_table_name`",
+        0,
+        max_parser_depth,
+        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    const auto & table_identifier = identifier->as<const ASTTableIdentifier &>();
+    if (table_identifier.has_uuid)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting `output_format_sql_insert_table_name` cannot contain a UUID clause when "
+            "`output_format_sql_insert_include_table_schema` is enabled");
+
+    return table_identifier.formatWithSecretsOneLine();
+}
+
+}
+
+SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_)
+    , column_names(header_->getNames())
+    , format_settings(format_settings_)
+    , table_name(format_settings_.sql_insert.table_name)
+{
+    if (format_settings.sql_insert.include_table_schema && format_settings.sql_insert.use_replace)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Settings `output_format_sql_insert_include_table_schema` and `output_format_sql_insert_use_replace` cannot be enabled at the same time");
+
+    if (format_settings.sql_insert.include_table_schema)
+    {
+        table_name = parseAndFormatSQLInsertTableName(table_name, format_settings.max_parser_depth);
+
+        NameSet unique_column_names;
+        for (const auto & column_name : column_names)
+        {
+            if (!unique_column_names.emplace(column_name).second)
+                throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} already exists", backQuoteIfNeed(column_name));
+        }
+
+        for (const auto & column_name : column_names)
+        {
+            if (isMergeTreePersistentVirtualColumn(column_name))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create table with column '{}' for MergeTree engines because it is reserved for persistent virtual column",
+                    column_name);
+        }
+
+        for (const auto & type : types)
+            validateDataType(type, getDefaultDataTypeValidationSettings());
+
+        checkAllTypesAreAllowedInTable(header_->getNamesAndTypesList());
+    }
+}
+
+void SQLInsertRowOutputFormat::writePrefix()
+{
+    if (!format_settings.sql_insert.include_table_schema)
+        return;
+
+    writeCString("CREATE TABLE ", out);
+    writeString(table_name, out);
+    writeCString("\n(\n", out);
+
+    for (size_t i = 0; i != column_names.size(); ++i)
+    {
+        writeCString("    ", out);
+        printColumnName(column_names[i]);
+        writeChar(' ', out);
+        writeString(types[i]->getName(), out);
+
+        if (i + 1 != column_names.size())
+            writeChar(',', out);
+
+        writeChar('\n', out);
+    }
+
+    writeCString(")\nENGINE = MergeTree\nORDER BY tuple();\n", out);
 }
 
 void SQLInsertRowOutputFormat::writeRowStartDelimiter()
@@ -28,7 +148,7 @@ void SQLInsertRowOutputFormat::printLineStart()
     else
         writeCString("INSERT INTO ", out);
 
-    writeString(format_settings.sql_insert.table_name, out);
+    writeString(table_name, out);
 
     if (format_settings.sql_insert.include_column_names)
         printColumnNames();
@@ -41,18 +161,21 @@ void SQLInsertRowOutputFormat::printColumnNames()
     writeCString(" (", out);
     for (size_t i = 0; i != column_names.size(); ++i)
     {
-        if (format_settings.sql_insert.quote_names)
-            writeChar('`', out);
-
-        writeString(column_names[i], out);
-
-        if (format_settings.sql_insert.quote_names)
-            writeChar('`', out);
+        printColumnName(column_names[i]);
 
         if (i + 1 != column_names.size())
             writeCString(", ", out);
     }
     writeChar(')', out);
+}
+
+void SQLInsertRowOutputFormat::printColumnName(const String & column_name)
+{
+    /// Schema output must remain replayable even when a column name is not a valid unquoted identifier.
+    if (format_settings.sql_insert.quote_names || format_settings.sql_insert.include_table_schema)
+        writeBackQuotedString(column_name, out);
+    else
+        writeString(column_name, out);
 }
 
 void SQLInsertRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
@@ -86,7 +209,8 @@ void SQLInsertRowOutputFormat::writeRowBetweenDelimiter()
 
 void SQLInsertRowOutputFormat::writeSuffix()
 {
-    writeCString(";\n", out);
+    if (haveWrittenData() || !format_settings.sql_insert.include_table_schema)
+        writeCString(";\n", out);
 }
 
 void SQLInsertRowOutputFormat::resetFormatterImpl()
@@ -108,12 +232,11 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
 
     factory.setContentType("SQLInsert", "text/plain; charset=UTF-8");
 
-    /// `output_format_sql_insert_table_name` and the column names (when
-    /// `output_format_sql_insert_include_column_names` is enabled) are written verbatim, so a table or
-    /// column name that is not valid UTF-8 makes the output non-textual. Quoted identifiers can contain
-    /// arbitrary bytes, so a column name is not guaranteed to be valid UTF-8 either. Both are knowable
-    /// before any row is written (from the settings and the header), so they are detected here and the
-    /// text framings reject or base64-encode the output accordingly.
+    /// `output_format_sql_insert_table_name`, column names, and (with
+    /// `output_format_sql_insert_include_table_schema`) data type names can contain arbitrary bytes, so a value
+    /// that is not valid UTF-8 makes the output non-textual. All are knowable before any row is written
+    /// (from the settings and the header), so they are detected here and the text framings reject or
+    /// base64-encode the output accordingly.
     factory.registerOutputFormatMayProduceRawBytesChecker("SQLInsert", [](const FormatSettings & settings, const Block & header)
     {
         auto is_not_valid_utf8 = [](const std::string & s)
@@ -121,13 +244,26 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
             return !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size());
         };
 
-        if (is_not_valid_utf8(settings.sql_insert.table_name))
+        const String table_name = settings.sql_insert.include_table_schema
+            ? parseAndFormatSQLInsertTableName(settings.sql_insert.table_name, settings.max_parser_depth)
+            : settings.sql_insert.table_name;
+
+        if (is_not_valid_utf8(table_name))
             return true;
 
-        if (settings.sql_insert.include_column_names)
+        /// `output_format_sql_insert_include_table_schema` writes the column names in the
+        /// `CREATE TABLE` statement even when `output_format_sql_insert_include_column_names` is disabled.
+        if (settings.sql_insert.include_column_names || settings.sql_insert.include_table_schema)
         {
             for (const auto & column_name : header.getNames())
                 if (is_not_valid_utf8(column_name))
+                    return true;
+        }
+
+        if (settings.sql_insert.include_table_schema)
+        {
+            for (const auto & type : header.getDataTypes())
+                if (is_not_valid_utf8(type->getName()))
                     return true;
         }
 
@@ -143,6 +279,7 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
 ## Description {#description}
 
 Outputs data as a sequence of `INSERT INTO table (columns...) VALUES (...), (...) ...;` statements.
+Optionally, it can prepend a `CREATE TABLE` statement containing the result column names and types.
 
 ## Example usage {#example-usage}
 
@@ -160,7 +297,30 @@ INSERT INTO table (x, y, z) VALUES (6, 7, 'Hello'), (7, 8, 'Hello');
 INSERT INTO table (x, y, z) VALUES (8, 9, 'Hello'), (9, 10, 'Hello');
 ```
 
-To read data output by this format you can use [MySQLDump](/reference/formats/MySQLDump) input format.
+To include a table definition in the output:
+
+```sql
+SELECT number AS x, toString(number) AS y FROM numbers(2)
+FORMAT SQLInsert
+SETTINGS output_format_sql_insert_include_table_schema = 1, output_format_sql_insert_table_name = 'test'
+```
+
+```sql
+CREATE TABLE test
+(
+    `x` UInt64,
+    `y` String
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+INSERT INTO test (`x`, `y`) VALUES (0, '0'), (1, '1');
+```
+
+The generated table definition describes the query result. It does not preserve source table metadata such as keys, default expressions, codecs, TTLs, or indexes.
+
+Output without the table definition can be read using the [MySQLDump](/reference/formats/MySQLDump) input format.
+Output with the table definition can be executed as a ClickHouse SQL script instead.
+`output_format_sql_insert_include_table_schema` and `output_format_sql_insert_use_replace` cannot be enabled at the same time.
 
 ## Format settings {#format-settings}
 
@@ -170,7 +330,8 @@ To read data output by this format you can use [MySQLDump](/reference/formats/My
 | [`output_format_sql_insert_table_name`](/reference/settings/formats/output-format#output_format_sql_insert_table_name)            | The name of the table in the output INSERT query.   | `'table'` |
 | [`output_format_sql_insert_include_column_names`](/reference/settings/formats/output-format#output_format_sql_insert_include_column_names) | Include column names in INSERT query.               | `true`    |
 | [`output_format_sql_insert_use_replace`](/reference/settings/formats/output-format#output_format_sql_insert_use_replace)          | Use REPLACE statement instead of INSERT.            | `false`   |
-| [`output_format_sql_insert_quote_names`](/reference/settings/formats/output-format#output_format_sql_insert_quote_names)          | Quote column names with "\`" characters.            | `true`    |
+| [`output_format_sql_insert_quote_names`](/reference/settings/formats/output-format#output_format_sql_insert_quote_names)          | Quote column names with "\`" characters. Schema output always quotes column names. | `true` |
+| [`output_format_sql_insert_include_table_schema`](/reference/settings/formats/output-format#output_format_sql_insert_include_table_schema) | Include a `CREATE TABLE` statement before the data. | `false`   |
 )DOCS_MD"});
 }
 
