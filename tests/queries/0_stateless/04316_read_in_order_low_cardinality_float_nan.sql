@@ -32,7 +32,7 @@ DROP TABLE IF EXISTS test_nullable_int;
 CREATE TABLE test_nullable_int (c0 Nullable(Int32)) ENGINE = MergeTree() ORDER BY c0 SETTINGS allow_nullable_key = 1;
 INSERT INTO test_nullable_int VALUES (0), (1), (NULL);
 
--- Query-plan read-in-order path (new analyzer).
+-- Query-plan read-in-order path (analyzer).
 SET enable_analyzer = 1;
 SET query_plan_read_in_order = 1;
 
