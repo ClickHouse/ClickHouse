@@ -2505,8 +2505,15 @@ String replaySettingsPrelude(const std::set<String> & settings_known_to_server, 
         "allow_database_iceberg",
         "allow_experimental_database_paimon_rest_catalog",
     };
+    /// Read only by Iceberg INSERT, ALTER and EXECUTE, never by a replayed CREATE.
+    static const std::set<std::string_view> iceberg_write_settings = {
+        "allow_insert_into_iceberg",
+        "allow_iceberg_remove_orphan_files",
+        "allow_experimental_expire_snapshots",
+    };
     for (const auto & name : allExperimentalSettingNames())
         if (settings_known_to_server.contains(name) && !dead_settings.contains(name)
+            && !iceberg_write_settings.contains(name)
             && (!analyzer_settings.contains(name) || needs.analyzable_query_text)
             && (name != "allow_experimental_unique_key" || needs.unique_key)
             && (!data_lake_catalog_settings.contains(name) || needs.data_lake_catalog_database)
