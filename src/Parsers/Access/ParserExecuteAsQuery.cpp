@@ -93,6 +93,10 @@ import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBa
 
 Allows to execute queries on behalf of a different user.
 
+<Note>
+`EXECUTE AS` is not supported in ClickHouse Cloud. To run Cloud queries as an application or user identity, use [delegated access with JWT](/products/cloud/guides/security/cloud-access-management/jwt-impersonation) instead.
+</Note>
+
 ## Syntax {#syntax}
 
 ```sql
