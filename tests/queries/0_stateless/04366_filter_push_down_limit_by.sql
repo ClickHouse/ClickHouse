@@ -220,9 +220,9 @@ DROP TABLE t_04366_nonkey;
 
 -- `compatibility` with a version before the one the setting was added in turns it off, so the
 -- filter stays above the `LIMIT BY`; from that version on, and unset, it is on.
-SET compatibility = '26.9';
+SET compatibility = '26.7';
 SELECT getSetting('query_plan_filter_push_down_below_limit_by');
-SET compatibility = '26.10';
+SET compatibility = '26.8';
 SELECT getSetting('query_plan_filter_push_down_below_limit_by');
 SET compatibility = '';
 SELECT getSetting('query_plan_filter_push_down_below_limit_by');

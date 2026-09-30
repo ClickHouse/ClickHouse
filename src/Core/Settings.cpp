@@ -7409,7 +7409,8 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0, \
-        {"26.10", false, true, "New setting to control pushing a filter on the `LIMIT BY` key columns below the `LIMIT BY` step. Set it to false to keep the filter above the `LIMIT BY`."}) \
+        {"26.10", true, true, "New setting to control pushing a filter on the `LIMIT BY` key columns below the `LIMIT BY` step. Set it to false to keep the filter above the `LIMIT BY`."}, \
+        {"26.8", false, true, "New setting to control pushing a filter on the `LIMIT BY` key columns below the `LIMIT BY` step. Set it to false to keep the filter above the `LIMIT BY`."}) \
     DECLARE(Bool, query_plan_propagate_predicate_across_join, true, R"(
 Toggles a query-plan-level optimization which copies filter conjuncts from one side of an
 equi-join onto the other side via equi-key substitution, so that primary-key/index pruning
