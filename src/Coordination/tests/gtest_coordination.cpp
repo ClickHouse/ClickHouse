@@ -47,6 +47,7 @@
 
 namespace DB::CoordinationSetting
 {
+    extern const CoordinationSettingsUInt64 min_request_size_for_cache;
     extern const CoordinationSettingsInt64 snapshot_zstd_compression_level;
     extern const CoordinationSettingsUInt64 write_snapshot_version;
 }
@@ -766,6 +767,321 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     state_machine->commit(2, entry_d->get_buf());
 
     EXPECT_EQ(storage.committed_ephemerals.size(), 0);
+}
+
+/// One Raft log entry carrying several requests (`use_batched_log_entries`), driven through
+/// `KeeperStateMachine` the way `KeeperServer` does it. The leader parses the entry, assigns the
+/// zxid range and digest and patches them into the buffer in place (the PreAppendLogLeader
+/// callback), then goes through `pre_commit` and `commit`. A follower runs only `pre_commit` and
+/// `commit` on the patched buffer and checks its digest against the leader's.
+TEST_P(CoordinationTest, TestRequestBatchLogEntry)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    SnapshotsQueue snapshots_queue{1};
+
+    std::vector<KeeperResponseForSession> responses;
+    auto state_machine = std::make_shared<KeeperStateMachine>(
+        [&](KeeperResponseForSession response) { responses.push_back(std::move(response)); },
+        snapshots_queue,
+        this->keeper_context,
+        nullptr);
+    state_machine->init();
+    auto & storage = state_machine->getStorageUnsafe();
+    ASSERT_TRUE(this->keeper_context->digestEnabled());
+
+    /// Each request gets a distinct xid, like real client requests. (The parsed batch cache is
+    /// keyed by the session id and xid of the first request in the entry.)
+    int64_t next_xid = 1;
+    const auto make_request = [&](int64_t session_id, ZooKeeperRequestPtr request)
+    {
+        request->xid = next_xid++;
+        return KeeperRequestForSession{.session_id = session_id, .request = std::move(request)};
+    };
+    const auto make_create = [&](int64_t session_id, const std::string & path, const std::string & data)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        request->data = data;
+        return make_request(session_id, request);
+    };
+    const auto make_set = [&](int64_t session_id, const std::string & path, const std::string & data)
+    {
+        auto request = std::make_shared<ZooKeeperSetRequest>();
+        request->path = path;
+        request->data = data;
+        request->version = -1;
+        return make_request(session_id, request);
+    };
+    const auto make_remove = [&](int64_t session_id, const std::string & path)
+    {
+        auto request = std::make_shared<ZooKeeperRemoveRequest>();
+        request->path = path;
+        request->version = -1;
+        return make_request(session_id, request);
+    };
+    const auto make_get_with_watch = [&](int64_t session_id, const std::string & path)
+    {
+        auto request = std::make_shared<ZooKeeperGetRequest>();
+        request->path = path;
+        request->has_watch = true;
+        return make_request(session_id, request);
+    };
+    const auto make_session_id = [&]
+    {
+        auto request = std::make_shared<ZooKeeperSessionIDRequest>();
+        request->session_timeout_ms = 1000;
+        return make_request(-1, request);
+    };
+
+    /// The dispatcher side: serialize a batch as a single log entry in the batched format.
+    const auto make_batch_entry = [](std::vector<KeeperRequestForSession> requests, int32_t dispatcher_server_id)
+    {
+        KeeperRequestBatch batch;
+        batch.requests = std::move(requests);
+        batch.dispatcher_server_id = dispatcher_server_id;
+        auto buffers = KeeperStateMachine::serializeRequestBatch(batch, /*use_batched_format=*/true);
+        EXPECT_EQ(buffers.size(), 1);
+        return buffers.at(0);
+    };
+
+    /// The leader side, as in the PreAppendLogLeader branch of `KeeperServer::callbackFunc`: take
+    /// the next zxid range, preprocess, and patch zxid, digest and committed log idx into the entry.
+    const auto leader_pre_append = [](KeeperStateMachine & leader, nuraft::buffer & entry)
+    {
+        KeeperStateMachine::ZooKeeperLogSerializationVersion version{};
+        size_t patched_fields_offset = 0;
+        auto batch = leader.parseRequestBatch(entry, /*final=*/false, &version, &patched_fields_offset);
+        EXPECT_EQ(version, KeeperStateMachine::ZooKeeperLogSerializationVersion::REQUEST_BATCH);
+        EXPECT_EQ(patched_fields_offset, KeeperStateMachine::BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET);
+        EXPECT_EQ(batch->first_zxid, 0) << "the dispatcher must not assign zxids";
+        EXPECT_EQ(batch->digest.version, KeeperDigestVersion::NO_DIGEST);
+
+        batch->first_zxid = leader.getNextZxid();
+        auto digest = leader.preprocessBatch(*batch, /*lock_mutex=*/true);
+        EXPECT_TRUE(digest.has_value());
+        batch->digest = *digest;
+        batch->committed_log_idx = static_cast<int64_t>(leader.last_commit_index());
+        KeeperStateMachine::patchSerializedRequestBatch(entry, version, patched_fields_offset, *batch);
+        return batch;
+    };
+
+    /// 1. A batch of several requests from two sessions: requests that depend on earlier requests
+    ///    of the same batch, a request that fails, and a `SessionID` request in the middle.
+    ///    `dispatcher_server_id` is -1 (owner unknown), so responses are produced.
+    std::vector<KeeperRequestForSession> requests_1;
+    std::vector<Error> expected_errors_1;
+    requests_1.push_back(make_create(1, "/a", "a"));
+    expected_errors_1.push_back(Error::ZOK);
+    requests_1.push_back(make_create(2, "/b", "b"));
+    expected_errors_1.push_back(Error::ZOK);
+    requests_1.push_back(make_set(1, "/a", "a2"));
+    expected_errors_1.push_back(Error::ZOK);
+    requests_1.push_back(make_session_id());
+    expected_errors_1.push_back(Error::ZOK);
+    /// /a was created earlier in this batch.
+    requests_1.push_back(make_create(2, "/a", "duplicate"));
+    expected_errors_1.push_back(Error::ZNODEEXISTS);
+    /// Needs /a from this batch.
+    requests_1.push_back(make_create(1, "/a/child", ""));
+    expected_errors_1.push_back(Error::ZOK);
+    /// Removes a node created in this batch.
+    requests_1.push_back(make_remove(2, "/b"));
+    expected_errors_1.push_back(Error::ZOK);
+    /// Sees the data set in this batch. The watch is triggered in step 3.
+    requests_1.push_back(make_get_with_watch(2, "/a"));
+    expected_errors_1.push_back(Error::ZOK);
+    const int64_t batch_1_size = static_cast<int64_t>(requests_1.size());
+
+    auto entry_1 = make_batch_entry(requests_1, /*dispatcher_server_id=*/-1);
+    ASSERT_EQ(state_machine->getNextZxid(), 1);
+    auto batch_1 = leader_pre_append(*state_machine, *entry_1);
+    ASSERT_EQ(std::ssize(batch_1->requests), batch_1_size);
+    ASSERT_EQ(batch_1->first_zxid, 1);
+    ASSERT_EQ(batch_1->getLastZxid(), batch_1_size);
+    ASSERT_NE(batch_1->digest.version, KeeperDigestVersion::NO_DIGEST);
+    EXPECT_EQ(batch_1->committed_log_idx, 0);
+    /// The whole zxid range is reserved before anything is committed.
+    EXPECT_EQ(state_machine->getNextZxid(), batch_1_size + 1);
+    EXPECT_EQ(storage.getZXID(), 0);
+    EXPECT_EQ(uncommittedNodeData(storage, "/a"), "a2");
+    EXPECT_FALSE(committedNodeExists(storage, "/a"));
+
+    /// `pre_commit` on the leader finds the batch already preprocessed and only stamps the log idx.
+    state_machine->pre_commit(1, *entry_1);
+    EXPECT_EQ(state_machine->getNextZxid(), batch_1_size + 1);
+    EXPECT_EQ(storage.getLastUncommittedLogIdx(), 1);
+    EXPECT_EQ(storage.getZXID(), 0);
+
+    state_machine->commit(1, *entry_1);
+    EXPECT_EQ(state_machine->last_commit_index(), 1);
+    EXPECT_EQ(storage.getZXID(), batch_1_size);
+    EXPECT_EQ(state_machine->getNextZxid(), batch_1_size + 1);
+    EXPECT_EQ(storage.getLastUncommittedLogIdx(), 0);
+    EXPECT_EQ(committedNodeData(storage, "/a"), "a2");
+    EXPECT_TRUE(committedNodeExists(storage, "/a/child"));
+    EXPECT_FALSE(committedNodeExists(storage, "/b"));
+    EXPECT_EQ(storage.watches.size(), 1);
+
+    /// One response per request, in request order, each with its own zxid.
+    ASSERT_EQ(std::ssize(responses), batch_1_size);
+    for (size_t i = 0; i < requests_1.size(); ++i)
+    {
+        SCOPED_TRACE(fmt::format("request #{}", i));
+        const auto & request = requests_1[i];
+        const auto & response = responses[i];
+        EXPECT_EQ(response.session_id, request.session_id);
+        EXPECT_EQ(response.response->error, expected_errors_1[i]);
+        if (request.request->getOpNum() == OpNum::SessionID)
+        {
+            const auto * session_id_response = dynamic_cast<const ZooKeeperSessionIDResponse *>(response.response.get());
+            ASSERT_NE(session_id_response, nullptr);
+            EXPECT_GT(session_id_response->session_id, 0);
+            continue;
+        }
+        EXPECT_EQ(response.response->xid, request.request->xid);
+        EXPECT_EQ(response.response->zxid, batch_1->getZxid(i));
+    }
+    EXPECT_EQ(dynamic_cast<const ZooKeeperGetResponse &>(*responses.back().response).data, "a2");
+
+    /// 2. A follower gets the patched entry: it takes the zxids and the digest from the entry,
+    ///    preprocesses in `pre_commit` (comparing its digest to the leader's) and commits.
+    auto follower_context = this->makeKeeperContext();
+    follower_context->setSnapshotDisk(std::make_shared<DiskLocal>("SnapshotDisk", "./snapshots"));
+    SnapshotsQueue follower_snapshots_queue{1};
+    std::vector<KeeperResponseForSession> follower_responses;
+    auto follower = std::make_shared<KeeperStateMachine>(
+        [&](KeeperResponseForSession response) { follower_responses.push_back(std::move(response)); },
+        follower_snapshots_queue,
+        follower_context,
+        nullptr);
+    follower->init();
+    auto & follower_storage = follower->getStorageUnsafe();
+
+    {
+        /// What the patched entry contains, parsed by a state machine that hasn't seen it before.
+        auto parsed = follower->parseRequestBatch(*entry_1, /*final=*/false);
+        ASSERT_EQ(std::ssize(parsed->requests), batch_1_size);
+        EXPECT_EQ(parsed->first_zxid, 1);
+        EXPECT_EQ(parsed->digest.version, batch_1->digest.version);
+        EXPECT_EQ(parsed->digest.value, batch_1->digest.value);
+        EXPECT_EQ(parsed->committed_log_idx, 0);
+        EXPECT_EQ(parsed->dispatcher_server_id, -1);
+        for (size_t i = 0; i < requests_1.size(); ++i)
+        {
+            SCOPED_TRACE(fmt::format("request #{}", i));
+            EXPECT_EQ(parsed->requests[i].session_id, requests_1[i].session_id);
+            EXPECT_EQ(parsed->requests[i].request->xid, requests_1[i].request->xid);
+            EXPECT_EQ(parsed->requests[i].request->getOpNum(), requests_1[i].request->getOpNum());
+        }
+    }
+
+    follower->pre_commit(1, *entry_1);
+    EXPECT_EQ(follower->getNextZxid(), batch_1_size + 1);
+    EXPECT_EQ(follower_storage.getZXID(), 0);
+    follower->commit(1, *entry_1);
+    EXPECT_EQ(follower_storage.getZXID(), batch_1_size);
+    EXPECT_EQ(committedNodeData(follower_storage, "/a"), "a2");
+    EXPECT_TRUE(committedNodeExists(follower_storage, "/a/child"));
+    EXPECT_FALSE(committedNodeExists(follower_storage, "/b"));
+    EXPECT_EQ(follower->getNodesDigest().value, state_machine->getNodesDigest().value);
+    /// The owner is unknown, so the follower produces responses too (its response thread would
+    /// discard them).
+    EXPECT_EQ(std::ssize(follower_responses), batch_1_size);
+
+    /// 3. A batch owned by another server's dispatcher: the state is applied but no responses are
+    ///    produced for its requests. Watch notifications are still delivered, because the watching
+    ///    session may be local. The first request is big enough for the parsed batch cache.
+    const size_t big_data_size = 2 * this->keeper_context->getCoordinationSettings()[CoordinationSetting::min_request_size_for_cache];
+    std::vector<KeeperRequestForSession> requests_3;
+    requests_3.push_back(make_create(1, "/c", std::string(big_data_size, 'c')));
+    /// Triggers session 2's watch from batch 1.
+    requests_3.push_back(make_set(1, "/a", "a3"));
+    requests_3.push_back(make_remove(2, "/a/child"));
+    const int64_t batch_3_size = static_cast<int64_t>(requests_3.size());
+
+    const int32_t other_server_id = 5;
+    ASSERT_NE(this->keeper_context->getServerID(), other_server_id);
+    auto entry_3 = make_batch_entry(requests_3, other_server_id);
+    const size_t responses_before_3 = responses.size();
+    auto batch_3 = leader_pre_append(*state_machine, *entry_3);
+    EXPECT_EQ(batch_3->first_zxid, batch_1_size + 1);
+    EXPECT_EQ(batch_3->committed_log_idx, 1);
+    state_machine->pre_commit(2, *entry_3);
+    state_machine->commit(2, *entry_3);
+    EXPECT_EQ(state_machine->last_commit_index(), 2);
+    EXPECT_EQ(storage.getZXID(), batch_1_size + batch_3_size);
+    EXPECT_EQ(committedNodeData(storage, "/a"), "a3");
+    EXPECT_EQ(committedNodeData(storage, "/c").size(), big_data_size);
+    EXPECT_FALSE(committedNodeExists(storage, "/a/child"));
+    EXPECT_EQ(storage.watches.size(), 0);
+    ASSERT_EQ(responses.size(), responses_before_3 + 1) << "only the watch notification is expected";
+    {
+        const auto & watch = responses.back();
+        EXPECT_EQ(watch.session_id, 2);
+        EXPECT_EQ(watch.response->xid, WATCH_XID);
+        const auto * watch_response = dynamic_cast<const ZooKeeperWatchResponse *>(watch.response.get());
+        ASSERT_NE(watch_response, nullptr);
+        EXPECT_EQ(watch_response->path, "/a");
+        EXPECT_EQ(watch_response->type, Event::CHANGED);
+    }
+
+    /// 4. Rollback of a preprocessed multi-request batch (a log entry overwritten by a new leader)
+    ///    undoes all its requests and frees its zxid range.
+    std::vector<KeeperRequestForSession> requests_4;
+    requests_4.push_back(make_create(1, "/d", "d"));
+    requests_4.push_back(make_set(2, "/a", "rolled back"));
+    requests_4.push_back(make_create(1, "/d/e", "e"));
+    const int64_t batch_4_size = static_cast<int64_t>(requests_4.size());
+
+    auto entry_4 = make_batch_entry(requests_4, /*dispatcher_server_id=*/-1);
+    const int64_t next_zxid_before_4 = state_machine->getNextZxid();
+    auto batch_4 = leader_pre_append(*state_machine, *entry_4);
+    EXPECT_EQ(batch_4->first_zxid, next_zxid_before_4);
+    state_machine->pre_commit(3, *entry_4);
+    EXPECT_EQ(state_machine->getNextZxid(), next_zxid_before_4 + batch_4_size);
+    EXPECT_EQ(storage.getLastUncommittedLogIdx(), 3);
+    EXPECT_EQ(uncommittedNodeData(storage, "/d/e"), "e");
+    EXPECT_EQ(uncommittedNodeData(storage, "/a"), "rolled back");
+
+    state_machine->rollback(3, *entry_4);
+    EXPECT_EQ(state_machine->getNextZxid(), next_zxid_before_4);
+    EXPECT_EQ(storage.getLastUncommittedLogIdx(), 0);
+    EXPECT_EQ(uncommittedNodeData(storage, "/d"), "<NO NODE>");
+    EXPECT_EQ(uncommittedNodeData(storage, "/d/e"), "<NO NODE>");
+    EXPECT_EQ(uncommittedNodeData(storage, "/a"), "a3");
+
+    /// The replacement entry takes the same log idx and the freed zxids.
+    std::vector<KeeperRequestForSession> requests_5;
+    requests_5.push_back(make_create(1, "/d", "after rollback"));
+    requests_5.push_back(make_create(2, "/f", "f"));
+    const int64_t batch_5_size = static_cast<int64_t>(requests_5.size());
+
+    auto entry_5 = make_batch_entry(requests_5, /*dispatcher_server_id=*/-1);
+    auto batch_5 = leader_pre_append(*state_machine, *entry_5);
+    EXPECT_EQ(batch_5->first_zxid, next_zxid_before_4);
+    state_machine->pre_commit(3, *entry_5);
+    state_machine->commit(3, *entry_5);
+    EXPECT_EQ(state_machine->last_commit_index(), 3);
+    EXPECT_EQ(storage.getZXID(), next_zxid_before_4 + batch_5_size - 1);
+    EXPECT_EQ(committedNodeData(storage, "/d"), "after rollback");
+    EXPECT_TRUE(committedNodeExists(storage, "/f"));
+    EXPECT_EQ(committedNodeData(storage, "/a"), "a3");
+
+    /// The follower never saw the rolled back entry; after the two committed entries it must match
+    /// the leader.
+    follower->pre_commit(2, *entry_3);
+    follower->commit(2, *entry_3);
+    follower->pre_commit(3, *entry_5);
+    follower->commit(3, *entry_5);
+    EXPECT_EQ(follower_storage.getZXID(), storage.getZXID());
+    EXPECT_EQ(follower->last_commit_index(), 3);
+    EXPECT_EQ(committedNodeData(follower_storage, "/d"), "after rollback");
+    EXPECT_EQ(follower->getNodesDigest().value, state_machine->getNodesDigest().value);
 }
 
 
