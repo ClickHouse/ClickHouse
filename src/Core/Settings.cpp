@@ -10101,7 +10101,7 @@ Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
     DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
 Maximum number of posting lists the text index may read for a LIKE/ILIKE pattern when LIKE evaluation by the dictionary scan is enabled.
 
-Each matched token whose posting list is stored outside the dictionary counts once, regardless of its size; a token whose rows an earlier filter (for example, the primary key) has already ruled out is not counted. If the limit is exceeded, the dictionary scan stops, the pattern is not answered from the index, and the rows are read and filtered by the pattern as usual.
+Each matched token whose posting list is stored outside the dictionary counts once, regardless of its size; a token whose rows an earlier filter (for example, the primary key) has already ruled out is not counted. With `distributed_index_analysis` and `use_skip_indexes_on_data_read = 0`, every matched token counts. If the limit is exceeded, the dictionary scan stops, the pattern is not answered from the index, and the rows are read and filtered by the pattern as usual.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0, \
