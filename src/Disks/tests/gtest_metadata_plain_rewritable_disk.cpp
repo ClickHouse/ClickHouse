@@ -2553,6 +2553,8 @@ public:
         const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes) override
     {
+        if (object_from.remote_path == before_copy_of)
+            before_copy();
         if (!exists(object_from))
             throw std::runtime_error("The source object does not exist");
         if (object_from.remote_path == fail_copy_of)
@@ -2568,6 +2570,10 @@ public:
 
     /// The copy of this existing key fails after it wrote a part of the blob.
     std::string fail_copy_of;
+
+    /// Runs before the copy of this key, as an outside deleter does.
+    std::string before_copy_of;
+    std::function<void()> before_copy;
 };
 
 TEST_F(MetadataPlainRewritableDiskTest, UnlinkOfFileWithoutBlobOnForeignErrors)
@@ -2655,4 +2661,50 @@ TEST_F(MetadataPlainRewritableDiskTest, ForeignErrorRollsBackTransaction)
     EXPECT_TRUE(metadata->existsFile("/A/other"));
     EXPECT_TRUE(metadata->existsFile("/A/source"));
     EXPECT_TRUE(metadata->existsFile("/A/target"));
+}
+
+/// The cleanup of a terminated instance deletes its whole prefix while a transaction still runs.
+TEST_F(MetadataPlainRewritableDiskTest, PrefixRemovedDuringTransaction)
+{
+    thread_local_rng.seed(42);
+
+    const std::string key_prefix = "PrefixRemovedDuringTransaction";
+    fs::remove_all("./" + key_prefix);
+    SCOPE_EXIT(fs::remove_all("./" + key_prefix));
+
+    auto object_storage = std::make_shared<LocalObjectStorageWithForeignErrors>(
+        LocalObjectStorageSettings("test", "./" + key_prefix, /*read_only_=*/false));
+    auto metadata = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
+    SCOPE_EXIT(object_storage->shutdown());
+    SCOPE_EXIT(metadata->shutdown());
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto a_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/a").serialize(), "file a");
+        tx->createMetadataFile("/A/a", {StoredObject("/A/a", "a", a_size)});
+        auto b_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/b").serialize(), "file b");
+        tx->createMetadataFile("/A/b", {StoredObject("/A/b", "b", b_size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    object_storage->before_copy_of = metadata->getStorageObjects("/A/b").front().remote_path;
+    object_storage->before_copy = [&] { for (const auto & blob : listAllBlobs(key_prefix)) fs::remove(blob); };
+
+    /// The prefix goes after the unlink of `a` removed its blob, so its temporary copy goes too.
+    auto tx = metadata->createTransaction();
+    tx->unlinkFile("/A/a", /*if_exists=*/false, /*should_remove_objects=*/true);
+    tx->unlinkFile("/A/b", /*if_exists=*/false, /*should_remove_objects=*/true);
+    try
+    {
+        tx->commit(DB::NoCommitOptions{});
+        ADD_FAILURE() << "The commit of a transaction whose objects were deleted succeeded";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::CORRUPTED_DATA) << e.message();
+        EXPECT_THAT(e.message(), testing::HasSubstr("Cannot restore the blob of the file '/A/a'"));
+        EXPECT_THAT(e.message(), testing::HasSubstr("(CORRUPTED_DATA)"));
+        EXPECT_THAT(e.message(), testing::HasSubstr("did not complete"));
+    }
 }

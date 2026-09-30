@@ -466,7 +466,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
 
             if (!object_storage->exists(StoredObject(remote_tmp_path)))
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
+                    ErrorCodes::CORRUPTED_DATA,
                     "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
                     "temporary key '{}' the removal copied it to",
                     path,
@@ -674,7 +674,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
 
             if (!object_storage->exists(StoredObject(tmp_remote_path_from)))
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
+                    ErrorCodes::CORRUPTED_DATA,
                     "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
                     "temporary key '{}' the move copied it to",
                     path_from,
