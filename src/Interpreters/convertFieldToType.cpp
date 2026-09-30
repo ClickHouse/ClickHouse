@@ -495,6 +495,21 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return {};
         return seconds_to_datetime(seconds);
     }
+    /// As `DateTime` -> `Date` above, the day in the source time zone; a `DateTime64` also covers days a `Date` cannot hold.
+    if (which_type.isDate() && which_from_type.isDateTime64())
+    {
+        const Int64 day_num = static_cast<const DataTypeDateTime64 &>(*from_type_hint).getTimeZone().toDayNum(decimal64_to_seconds()).toUnderType();
+        if (strict && (day_num < 0 || day_num > DATE_LUT_MAX_DAY_NUM))
+            return {};
+        return static_cast<UInt16>(day_num);
+    }
+    if (which_type.isDate32() && which_from_type.isDateTime64())
+    {
+        const Int64 day_num = static_cast<const DataTypeDateTime64 &>(*from_type_hint).getTimeZone().toDayNum(decimal64_to_seconds()).toUnderType();
+        if (strict && (day_num < DATE_LUT_MIN_EXTEND_DAY_NUM || day_num > DATE_LUT_MAX_EXTEND_DAY_NUM))
+            return {};
+        return static_cast<Int32>(day_num);
+    }
     if (which_type.isTime() && which_from_type.isTime64())
     {
         /// Mirror `TransformTime64<ToTimeTransform64Signed<Int64, Int32, ...>>`: floor the

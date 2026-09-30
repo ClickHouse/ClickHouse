@@ -30,6 +30,21 @@ $CLICKHOUSE_CLIENT -q "
     SELECT count() = 0 FROM system.errors
     WHERE name = 'TYPE_MISMATCH' AND query_id = '${query_id}'"
 
+# A Date constant takes the same round trip through Date, and a Date column compared with a DateTime64 constant the reverse one.
+$CLICKHOUSE_CLIENT --query_id="${query_id}_date" -q "
+    SELECT count() FROM t_dt64_cmp
+    WHERE A = 'x' AND Timestamp >= today()"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_date_cmp"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_date_cmp (A String, d Date) ENGINE = MergeTree ORDER BY (A, d)"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_date_cmp VALUES ('x', '2020-01-01'), ('y', '2020-01-02')"
+$CLICKHOUSE_CLIENT --query_id="${query_id}_date32" -q "
+    SELECT count() FROM t_date_cmp
+    WHERE A = 'x' AND d >= toDateTime64('2019-01-01 00:00:00', 3)"
+$CLICKHOUSE_CLIENT -q "
+    SELECT count() = 0 FROM system.errors
+    WHERE name = 'TYPE_MISMATCH' AND query_id IN ('${query_id}_date', '${query_id}_date32')"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_date_cmp"
+
 # A DateTime constant is representable as DateTime64, so the fold applies and the result is right.
 $CLICKHOUSE_CLIENT -q "
     SELECT count() FROM t_dt64_cmp
