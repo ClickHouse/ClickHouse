@@ -1,4 +1,4 @@
--- Random settings limits: optimize_multiif_to_if=(1, 1)
+-- Random settings limits: optimize_multiif_to_if=(1, 1); optimize_rewrite_like_perfect_affix=(1, 1)
 
 -- A three-argument `multiIf` `GROUP BY` key with `ROLLUP`, `CUBE` or `GROUPING SETS` and `group_by_use_nulls`: the clauses
 -- that read the key after the aggregation return what they return with `optimize_multiif_to_if = 0`, i.e. `NULL` where
@@ -23,3 +23,9 @@ SELECT 'remote', multiIf(number > 0, number, 0) AS k, count() FROM remote('127.0
 
 -- `optimize_multiif_to_if` still applies: the key and the clauses that read it after the aggregation all become `if`.
 SELECT 'explain', countIf(explain ILIKE '%function_name: multiIf,%'), countIf(explain ILIKE '%function_name: if,%') FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT multiIf(number > 0, number, 0) FROM numbers(3) GROUP BY 1 WITH ROLLUP ORDER BY 1 SETTINGS enable_positional_arguments = 1);
+
+-- A `LIKE` key with `optimize_rewrite_like_perfect_affix`: the clauses that read it keep it `Nullable` as well.
+SELECT 'like', s LIKE '1%' AS k, count() FROM (SELECT toString(number) AS s FROM numbers(3)) GROUP BY k WITH ROLLUP ORDER BY ALL;
+SELECT 'not like', s NOT LIKE '%1' AS k, k = 0 OR k = 1 AS x, count() FROM (SELECT toLowCardinality(toString(number)) AS s FROM numbers(3)) GROUP BY k WITH CUBE ORDER BY ALL;
+SELECT 'like explain', countIf(explain ILIKE '%function_name: startsWith, function_type: ordinary, result_type: Nullable(UInt8)%'), countIf(explain ILIKE '%function_name: like,%') FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT s LIKE '1%' AS k, count() FROM (SELECT toString(number) AS s FROM numbers(3)) GROUP BY k WITH ROLLUP ORDER BY ALL);
+SELECT 'not like explain', countIf(explain ILIKE '%function_name: not, function_type: ordinary, result_type: LowCardinality(Nullable(UInt8))%'), countIf(explain ILIKE '%function_name: notLike,%') FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT s NOT LIKE '%1' AS k, k = 0 OR k = 1 AS x, count() FROM (SELECT toLowCardinality(toString(number)) AS s FROM numbers(3)) GROUP BY k WITH CUBE ORDER BY ALL);
