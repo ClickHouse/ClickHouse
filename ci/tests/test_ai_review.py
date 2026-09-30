@@ -400,3 +400,27 @@ def test_sandbox_workspace_copies_tree_and_collects_output_without_following_lin
             assert publish._read_body({"body_file": "./ci/tmp/ai_review/out/leak.md"}, "./ci/tmp/ai_review/out")[0] == ""
         finally:
             os.chdir(cwd)
+
+
+def test_recall_outcomes_and_dismissed_filter():
+    entries = [
+        {"memory_key": "k1", "updated_at": "2026-09-02", "tags": ["pr:7", "state:resolved_by_author", "author_replied",
+                                                                  "path:src/Foo.cpp", "kind:review_thread"],
+         "value": "Review finding on r#7 at src/Foo.cpp:12 (state: resolved_by_author).\n\n"
+                  "The `cache_key` ignores `use_uncompressed_cache`, so two plans share one entry.\n\n"
+                  "Reply by author:\nBy design, the cache is keyed by plan hash."},
+        {"memory_key": "k2", "updated_at": "2026-09-03", "tags": ["pr:5", "state:open", "path:src/Foo.cpp", "kind:review_thread"],
+         "value": "Review finding on r#5 (state: open).\n\nOwn PR thread"},
+    ]
+    cfg = loom.Config(base_url="http://loom", token="t", namespace="code-clickhouse", memory_namespace="clickhouse-gh")
+    with mock.patch.object(loom, "call", return_value={"entries": entries}) as call:
+        md, records = loom.recall_outcomes(cfg, 5, ["src/Foo.cpp"])
+    assert call.call_args.kwargs["namespace"] == "clickhouse-gh"
+    assert [r["pr"] for r in records] == ["7"]  # the PR's own threads are skipped
+    assert "PR #7, resolved by the author, the author replied" in md and "By design" in md
+    with tempfile.TemporaryDirectory() as d:
+        b = _body(d, "b.md", "⚠️ `cache_key` ignores `use_uncompressed_cache`: two plans can share one entry.")
+        postable, moved = publish.validate_comments(
+            [{"path": "src/Foo.cpp", "line": 12, "severity": "major", "body_file": b}], FILES, [], d,
+            publish.dismissed_findings(records))
+        assert postable == [] and "pushed back" in moved[0][2]

@@ -120,9 +120,22 @@ def _read_body(entry, base_dir):
         return f.read().strip(), resolved
 
 
-def validate_comments(entries, files, threads, base_dir):
+def dismissed_findings(records):
+    """From recalled review memory: the findings authors pushed back on (they
+    replied, and the review did not resolve the thread as fixed), per path."""
+    out = {}
+    for r in records or []:
+        if r.get("author_replied") and r.get("state") in ("resolved_by_author", "open"):
+            finding = (r.get("finding") or "").split("\n\nReply by", 1)[0]
+            out.setdefault(r.get("path"), []).append(finding)
+    return out
+
+
+def validate_comments(entries, files, threads, base_dir, dismissed=None):
     """Split the agent's inline comments into (postable, moved) where `moved`
-    are (entry, body, reason) to be listed in the summary instead."""
+    are (entry, body, reason) to be listed in the summary instead. `dismissed`
+    maps a path to findings authors pushed back on in earlier PRs; a new
+    comment that repeats one goes to the summary instead of inline."""
     lines_by_path = {f["filename"]: commentable_lines(f.get("patch")) for f in files}
     open_ours = set()
     open_texts = {}
@@ -166,6 +179,9 @@ def validate_comments(entries, files, threads, base_dir):
         if (path, line) in open_ours or (path, line, side) in seen or any(
                 _similar(body, other) for other in open_texts.get(path, [])):
             print(f"Skipping duplicate inline comment on {path}:{line}")
+            continue
+        if any(_similar(body, other) for other in (dismissed or {}).get(path, [])):
+            moved.append((e, body, "an author pushed back on the same finding in an earlier PR"))
             continue
         seen.add((path, line, side))
         open_texts.setdefault(path, []).append(body)
@@ -280,12 +296,13 @@ def local_links_to_github(text, repo, sha):
     return _LOCAL_LINK_RE.sub(repl, text or "")
 
 
-def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_text):
+def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_text, memory=None):
     """Post the inline review and the thread actions. `gh` is the praktika GH
     class (injected for tests). Returns the summary text to post, with the
     comments that could not be attached inline appended."""
     comments, moved = validate_comments(
-        _load_json_list(os.path.join(output_dir, "comments.json")), files, threads, output_dir)
+        _load_json_list(os.path.join(output_dir, "comments.json")), files, threads, output_dir,
+        dismissed_findings(memory))
     actions = validate_thread_actions(
         _load_json_list(os.path.join(output_dir, "thread_actions.json")), threads, output_dir)
 

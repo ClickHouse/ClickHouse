@@ -321,6 +321,12 @@ def review(run_once, agent_name):
     os.environ["LOOM_CALL_LOG"] = os.path.abspath(LOOM_CALL_LOG)
     brief = loom.write_brief(loom_config, ctx.pr, ctx.files, LOOM_DIR)
     print(f"Loom brief: {'written' if brief else 'not available'}")
+    memory_md, memory = loom.recall_outcomes(
+        loom_config, info.pr_number, loom.source_first([f["filename"] for f in ctx.files]))
+    if memory_md:
+        with open(f"{CONTEXT_DIR}/memory.md", "w", encoding="utf-8") as f:
+            f.write("# Earlier review findings on the files this PR changes\n\n" + memory_md)
+    print(f"Loom memory: {len(memory)} earlier finding(s) recalled")
 
     text = prompt.build(
         pr_url=info.pr_url,
@@ -358,7 +364,7 @@ def review(run_once, agent_name):
 
     with open(SUMMARY_FILE, "r", encoding="utf-8") as f:
         summary = f.read()
-    summary = publish.publish(GH, repo, info.pr_number, ctx.head_sha, ctx.files, threads, OUTPUT_DIR, summary)
+    summary = publish.publish(GH, repo, info.pr_number, ctx.head_sha, ctx.files, threads, OUTPUT_DIR, summary, memory)
     _post_summary(summary, ctx.head_sha, model)
 
     # Record every review thread of ours, with its current state and replies,

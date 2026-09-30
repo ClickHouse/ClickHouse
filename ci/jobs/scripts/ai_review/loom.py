@@ -143,7 +143,8 @@ class Config:
             token = get_secret(entry["token_secret"])
             namespace = entry.get("namespace") or get_secret(entry["namespace_secret"])
         except Exception as e:  # noqa: BLE001 - a missing secret means "no Loom", not a failed review
-            print(f"Loom: configuration for [{repo}] is not readable ({type(e).__name__}), reviewing without Loom")
+            # The AWS error names the role and the parameter, never its value.
+            print(f"Loom: configuration for [{repo}] is not readable ({type(e).__name__}: {str(e)[:500]}), reviewing without Loom")
             return cls(repo=repo, pr_number=pr_number)
         return cls(
             base_url=(base_url or "").strip(),
@@ -232,7 +233,7 @@ def _diff_text(files):
     return "".join(parts)[:_MAX_DIFF_BYTES]
 
 
-def _source_first(paths):
+def source_first(paths):
     return sorted(paths, key=lambda p: (not p.startswith("src/"), p.startswith("tests/"), p))
 
 
@@ -422,7 +423,7 @@ def write_brief(config, pr, files, out_dir):
     if not config.available():
         return ""
     os.makedirs(out_dir, exist_ok=True)
-    paths = _source_first([f["filename"] for f in files])[:_MAX_FILES]
+    paths = source_first([f["filename"] for f in files])[:_MAX_FILES]
     pr_paths = set(paths)
     diff = _diff_text(files)
     author = (pr.get("user") or {}).get("login") or ""
@@ -532,6 +533,55 @@ def record_threads(config, repo, pr_number, threads, is_ours):
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(rows))) as pool:
         results = list(pool.map(lambda r: call(config, "memory.set", r, namespace=config.memory_namespace), rows))
     return sum(1 for r in results if r is not None)
+
+
+_STATE_TEXT = {
+    "resolved_by_review": "resolved by the review, the issue no longer held",
+    "resolved_by_author": "resolved by the author",
+    "open": "still open at the last review",
+}
+_MAX_RECALLED = 15
+
+
+def recall_outcomes(config, pr_number, paths):
+    """Earlier review threads on the files this PR changes, from other PRs:
+    what was found, what the author answered, how it ended. Returns
+    (markdown, records); records carry `path`, `state`, `author_replied` and
+    `finding` for the job's own filter. Empty when Loom has nothing."""
+    if not (config.available() and config.memory_namespace and paths):
+        return "", []
+
+    def by_path(path):
+        answer = call(config, "memory.list", {"tags": [f"path:{path}", "kind:review_thread"], "limit": 10,
+                                              "preview_chars": 1500}, namespace=config.memory_namespace)
+        return (answer or {}).get("entries") or []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(paths))) as pool:
+        entries = [e for batch in pool.map(by_path, paths[:20]) for e in batch]
+    records, seen = [], set()
+    for e in sorted(entries, key=lambda e: e.get("updated_at") or "", reverse=True):
+        tags = set(e.get("tags") or [])
+        if e.get("memory_key") in seen or f"pr:{pr_number}" in tags:
+            continue  # this PR's own threads are in threads.md
+        seen.add(e.get("memory_key"))
+        state = next((t.split(":", 1)[1] for t in tags if t.startswith("state:")), "")
+        path = next((t.split(":", 1)[1] for t in tags if t.startswith("path:")), "")
+        pr = next((t.split(":", 1)[1] for t in tags if t.startswith("pr:")), "?")
+        value = e.get("value") or ""
+        records.append({"path": path, "state": state, "author_replied": "author_replied" in tags, "pr": pr,
+                        "finding": value.split("\n\n", 1)[1] if "\n\n" in value else value})
+        if len(records) >= _MAX_RECALLED:
+            break
+    if not records:
+        return "", []
+    out = []
+    for r in records:
+        excerpt = " ".join(r["finding"].split())
+        if len(excerpt) > 700:
+            excerpt = excerpt[:700] + " ..."
+        out.append(f"- `{r['path']}`, PR #{r['pr']}, {_STATE_TEXT.get(r['state'], r['state'])}"
+                   f"{', the author replied' if r['author_replied'] else ''}: {excerpt}")
+    return "\n".join(out) + "\n", records
 
 
 # ── CLI used by the agent ─────────────────────────────────────────────────────

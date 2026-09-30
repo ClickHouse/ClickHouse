@@ -183,7 +183,12 @@ earlier runs of this review.
   thread of yours only when the issue is still present and either you resolved it yourself earlier
   or you are replying that the claimed fix did not fix it. Never act on threads that are not yours.
 - Do not open a new inline comment for an issue that already has a thread; a new push does not make
-  an old finding new."""
+  an old finding new.
+- `memory.md`, when present, lists what earlier reviews found in the files this PR changes and how
+  each ended. A finding an author pushed back on with a reason that still holds is not raised again
+  unless you have evidence that the reason no longer applies; say what changed if you do. Findings
+  that were fixed show which kinds of problems are real in this code, and are worth checking for
+  here too."""
 
 
 def _evidence():

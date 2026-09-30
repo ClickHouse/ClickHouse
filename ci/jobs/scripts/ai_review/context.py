@@ -339,6 +339,7 @@ def index_markdown(directory):
         ("ci_status.md", "check runs on the head commit when the review started"),
         ("previous_review.md", "your previous summary on this PR"),
         ("since_last_review.md", "what changed in the PR since your previous review"),
+        ("memory.md", "earlier review findings on the files this PR changes, and how they ended"),
         ("loom/brief.md", "Loom code index brief (below)"),
     ]
     out = []
