@@ -1174,7 +1174,64 @@ tier:        Production
 .description
 Contains a list of all ReplicatedMergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query.
 )DOCS_MD");
-    attach<StorageSystemEngineSettings>(context, system_database, "engine_settings", "Contains a list of settings for all table engines that have engine-specific settings, along with their default values and descriptions.");
+    attach<StorageSystemEngineSettings>(context, system_database, "engine_settings", R"DOCS_MD(
+.description
+Contains the settings of every table engine that has engine-specific settings, one row per engine and setting, with their values, default values and descriptions.
+
+`value` is what a new table of the engine starts from, before the `SETTINGS` clause of its definition is applied:
+- For most engines, the compiled-in default.
+- For the `MergeTree` family, the same rows as [`system.merge_tree_settings`](/reference/system-tables/merge_tree_settings), and for the replicated family, the same rows as [`system.replicated_merge_tree_settings`](/reference/system-tables/replicated_merge_tree_settings): the `merge_tree` and `replicated_merge_tree` sections of the server configuration and the `compatibility` setting of the default profile are applied.
+- For `Distributed`, `Remote` and `RemoteSecure`, the `distributed` section of the server configuration is applied, and the `background_insert_*` settings are filled from the `distributed_background_insert_*` settings of the server, as a new table fills them.
+
+.columns_notes
+`min`, `max`, `disallowed_values` and `readonly` come from the [constraints](/concepts/features/configuration/settings/constraints-on-settings) of the current user, as in `system.merge_tree_settings`. Only the settings of the `MergeTree` family can be constrained, and some of them are always read-only, so for the other engines these columns are `NULL`, empty or `0`.
+
+For the `MergeTree` family and for `Distributed`, `Remote` and `RemoteSecure`, the rows show the configuration of the server, so grant `SELECT` on this table as you would on `system.merge_tree_settings`.
+
+.examples
+The settings of the `Memory` engine:
+
+```sql
+SELECT name, value, default, changed, type
+FROM system.engine_settings
+WHERE engine_name = 'Memory'
+ORDER BY name
+```
+
+```text
+┌─name──────────────┬─value─┬─default─┬─changed─┬─type───┐
+│ compress          │ 0     │ 0       │       0 │ Bool   │
+│ max_bytes_to_keep │ 0     │ 0       │       0 │ UInt64 │
+│ max_rows_to_keep  │ 0     │ 0       │       0 │ UInt64 │
+│ min_bytes_to_keep │ 0     │ 0       │       0 │ UInt64 │
+│ min_rows_to_keep  │ 0     │ 0       │       0 │ UInt64 │
+└───────────────────┴───────┴─────────┴─────────┴────────┘
+```
+
+A new `Distributed` table takes the `background_insert_*` settings that its definition does not specify from the server, so their values can differ from `default`:
+
+```sql
+SELECT name, value, default, changed
+FROM system.engine_settings
+WHERE engine_name = 'Distributed' AND name LIKE 'background_insert_%'
+ORDER BY name
+```
+
+```text
+┌─name─────────────────────────────────────┬─value─┬─default─┬─changed─┐
+│ background_insert_batch                  │ 0     │ 0       │       1 │
+│ background_insert_max_sleep_time_ms      │ 30000 │ 0       │       0 │
+│ background_insert_sleep_time_ms          │ 100   │ 0       │       0 │
+│ background_insert_split_batch_on_failure │ 0     │ 0       │       1 │
+└──────────────────────────────────────────┴───────┴─────────┴─────────┘
+```
+
+.see_also
+- [system.merge_tree_settings](/reference/system-tables/merge_tree_settings)
+- [system.replicated_merge_tree_settings](/reference/system-tables/replicated_merge_tree_settings)
+- [system.table_engines](/reference/system-tables/table_engines)
+- [Table engines](/reference/engines/table-engines/index)
+)DOCS_MD");
     attach<StorageSystemBuildOptions>(context, system_database, "build_options", R"DOCS_MD(
 .description
 Contains information about the ClickHouse server's build options.
