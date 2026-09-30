@@ -76,10 +76,18 @@ def test_default_database(test_cluster):
 def test_legacy_create_as_source_only_on_worker(test_cluster):
     initiator = test_cluster.instances["ch1"]
     worker = test_cluster.instances["ch2"]
+    worker.query("DROP TABLE IF EXISTS default.legacy_worker_safe_source SYNC")
+    worker.query("DROP TABLE IF EXISTS default.legacy_worker_safe_copy SYNC")
+    worker.query("DROP TABLE IF EXISTS default.legacy_worker_safe_inherited SYNC")
     worker.query("DROP TABLE IF EXISTS default.legacy_worker_source SYNC")
     worker.query("DROP TABLE IF EXISTS default.legacy_worker_copy SYNC")
     worker.query("DROP TABLE IF EXISTS default.legacy_worker_inherited SYNC")
     worker.query("DROP TABLE IF EXISTS default.legacy_worker_memory SYNC")
+    worker.query(
+        "CREATE TABLE default.legacy_worker_safe_source "
+        "(a UInt64, PROJECTION p (SELECT a ORDER BY a)) "
+        "ENGINE = MergeTree ORDER BY a"
+    )
     worker.query(
         "CREATE TABLE default.legacy_worker_source "
         "(a UInt64, PROJECTION p (a UInt64) AS (SELECT a ORDER BY a)) "
@@ -97,8 +105,29 @@ def test_legacy_create_as_source_only_on_worker(test_cluster):
             "distributed_ddl_entry_format_version": 1,
             "allow_projection_column_list_in_replicated_metadata": 0,
         }
+        test_cluster.ddl_check_query(
+            initiator,
+            "CREATE TABLE default.legacy_worker_safe_copy ON CLUSTER worker_only "
+            "AS default.legacy_worker_safe_source ENGINE = MergeTree ORDER BY a",
+            num_hosts=1,
+            settings=legacy_settings,
+        )
+        assert "PROJECTION p" in worker.query(
+            "SHOW CREATE TABLE default.legacy_worker_safe_copy"
+        )
+        test_cluster.ddl_check_query(
+            initiator,
+            "CREATE TABLE default.legacy_worker_safe_inherited ON CLUSTER worker_only "
+            "AS default.legacy_worker_safe_source",
+            num_hosts=1,
+            settings=legacy_settings,
+        )
+        assert "PROJECTION p" in worker.query(
+            "SHOW CREATE TABLE default.legacy_worker_safe_inherited"
+        )
+
         error = initiator.query_and_get_error(copy_query, settings=legacy_settings)
-        assert "Cannot verify projection metadata" in error, error
+        assert "Projection column lists in replicated metadata" in error, error
         assert worker.query("EXISTS TABLE default.legacy_worker_copy").strip() == "0"
 
         inherited_query = (
@@ -106,7 +135,7 @@ def test_legacy_create_as_source_only_on_worker(test_cluster):
             "AS default.legacy_worker_source"
         )
         error = initiator.query_and_get_error(inherited_query, settings=legacy_settings)
-        assert "Cannot verify projection metadata" in error, error
+        assert "Projection column lists in replicated metadata" in error, error
 
         error = initiator.query_and_get_error(
             copy_query,
@@ -115,7 +144,7 @@ def test_legacy_create_as_source_only_on_worker(test_cluster):
                 "allow_projection_column_list_in_replicated_metadata": 1,
             },
         )
-        assert "Cannot verify projection metadata" in error, error
+        assert "Projection column lists in replicated metadata" in error, error
         assert worker.query("EXISTS TABLE default.legacy_worker_copy").strip() == "0"
 
         initiator.query(
@@ -127,6 +156,9 @@ def test_legacy_create_as_source_only_on_worker(test_cluster):
             "SHOW CREATE TABLE default.legacy_worker_memory"
         )
     finally:
+        worker.query("DROP TABLE IF EXISTS default.legacy_worker_safe_inherited SYNC")
+        worker.query("DROP TABLE IF EXISTS default.legacy_worker_safe_copy SYNC")
+        worker.query("DROP TABLE IF EXISTS default.legacy_worker_safe_source SYNC")
         worker.query("DROP TABLE IF EXISTS default.legacy_worker_memory SYNC")
         worker.query("DROP TABLE IF EXISTS default.legacy_worker_inherited SYNC")
         worker.query("DROP TABLE IF EXISTS default.legacy_worker_copy SYNC")

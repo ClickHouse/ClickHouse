@@ -1,13 +1,10 @@
 #include <Interpreters/ProjectionMetadataValidation.h>
 
-#include <Access/ContextAccess.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -16,9 +13,7 @@
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Storages/IStorage.h>
 #include <Storages/ProjectionsDescription.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/StorageTableProxy.h>
 
 #include <unordered_set>
 
@@ -138,26 +133,30 @@ void validateProjectionMetadataAdmission(
     bool copies_source_projections,
     const ProjectionsDescription * copied_projections)
 {
-    /// Workers replay the DDL entry with their own settings when the old entry format is used.
-    /// The initiator must check the syntax before enqueueing it, not the worker during replay.
-    if (source == ProjectionDefinitionSource::PreviouslyAccepted || !isInitialProjectionMetadataQuery(context))
+    /// Old `ON CLUSTER` entries expand `AS source_table` on each worker. Check the copied
+    /// projections there too, since the source may not exist on the initiator.
+    const bool validate_distributed_source_copy = source == ProjectionDefinitionSource::NewQuery
+        && copies_source_projections && copied_projections && context->isDDLOrOnClusterInternal()
+        && !context->getClientInfo().is_replicated_database_internal && !isSecondaryProjectionMetadataReplay(context);
+    if (source == ProjectionDefinitionSource::PreviouslyAccepted
+        || (!isInitialProjectionMetadataQuery(context) && !validate_distributed_source_copy))
         return;
 
+    const bool is_distributed = !create.cluster.empty() || validate_distributed_source_copy;
     const bool reject_column_list = !context->getSettingsRef()[Setting::allow_projection_column_list_in_replicated_metadata]
-        && (isProjectionStorageReplicated(create) || !create.cluster.empty()
+        && (isProjectionStorageReplicated(create) || is_distributed
             || (database && (database->getEngineName() == "Replicated" || database->getEngineName() == "Shared")));
-    const bool reject_old_format_codec = !create.cluster.empty()
+    const bool reject_old_format_codec = is_distributed
         && context->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value == DDLLogEntry::OLDEST_VERSION
         && !copies_source_projections;
-    /// An old-format worker reads the source table itself. Its unavailable projections cannot
-    /// be copied into a distributed `CREATE`, even though no codec setting needs to be forwarded.
-    const bool reject_unavailable_copy = copies_source_projections && !create.cluster.empty() && !copied_projections;
+    /// For old `ON CLUSTER` entries, only workers know which source metadata is copied.
+    const bool reject_unavailable_copy = validate_distributed_source_copy;
     if (!reject_column_list && !reject_old_format_codec && !reject_unavailable_copy)
         return;
 
     bool has_projection_column_list = false;
     bool has_projection_column_codec = false;
-    bool has_unavailable_source_projection = false;
+    const bool has_unavailable_source_projection = copied_projections && copied_projections->hasUnavailable();
     if (create.columns_list && create.columns_list->projections)
     {
         for (const auto & projection_ast : create.columns_list->projections->children)
@@ -169,65 +168,6 @@ void validateProjectionMetadataAdmission(
                 has_projection_column_codec |= hasDeclaredProjectionColumnCodec(*declaration);
             }
         }
-    }
-    else if (!create.columns_list && !create.as_table.empty() && !create.isView() && !create.is_dictionary
-        && (!create.storage || !create.storage->engine || endsWith(create.storage->engine->name, "MergeTree")))
-    {
-        /// Old `ON CLUSTER` formats expand `AS source_table` on each worker. If the initiator
-        /// cannot inspect a source that may supply projections, reject the copy unless the
-        /// initiator explicitly opted in to projection column lists.
-        bool source_projection_safety_known = false;
-        const String source_database = context->resolveDatabase(create.as_database);
-        if (context->getAccess()->isGranted(AccessType::SHOW_COLUMNS, source_database, create.as_table))
-        {
-            auto source_table = DatabaseCatalog::instance().tryGetTable({source_database, create.as_table}, context);
-            /// A lazy table proxy only caches columns. Load the source before deciding whether it
-            /// can copy projections, or the preflight could approve metadata it never inspected.
-            if (const auto * proxy = source_table ? source_table->as<StorageTableProxy>() : nullptr)
-                source_table = proxy->getNested();
-            const auto * alias = source_table ? source_table->as<StorageAlias>() : nullptr;
-            if (source_table && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {})))
-            {
-                /// Without an explicit engine, AS alias inherits ENGINE = Alias rather than the
-                /// alias target's MergeTree engine, so it cannot copy the target's projections.
-                const bool copies_projections = (create.storage && create.storage->engine)
-                    || (!alias && source_table->isMergeTree());
-                if (copies_projections)
-                {
-                    /// An explicit MergeTree destination can copy through an alias. Resolve any
-                    /// lazy target before reading the alias's forwarded projection metadata.
-                    if (alias)
-                        alias->isMergeTree();
-                    /// Without an explicit engine, the destination inherits the source's engine.
-                    /// Only a `MergeTree` destination copies projections.
-                    const auto source_metadata = source_table->getInMemoryMetadataPtr(context, false);
-                    has_unavailable_source_projection = source_metadata->getProjections().hasUnavailable();
-                    auto inspect_projection = [&](const ASTPtr & definition)
-                    {
-                        if (const auto * declaration = definition ? definition->as<const ASTProjectionDeclaration>() : nullptr;
-                            declaration && declaration->columns)
-                        {
-                            has_projection_column_list = true;
-                            has_projection_column_codec |= hasDeclaredProjectionColumnCodec(*declaration);
-                        }
-                    };
-
-                    for (const auto & projection : source_metadata->getProjections())
-                        inspect_projection(projection.definition_ast);
-                    /// `ProjectionsDescription::clone` copies unavailable declarations too.
-                    for (const auto & definition : source_metadata->getProjections().getUnavailableDefinitions())
-                        inspect_projection(definition);
-                    source_projection_safety_known = true;
-                }
-                else
-                    source_projection_safety_known = true;
-            }
-        }
-        if ((reject_column_list || reject_unavailable_copy) && !source_projection_safety_known)
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Cannot verify projection metadata of the source table for ON CLUSTER AS. "
-                "Make the source visible to the initiator with SHOW COLUMNS access before copying it");
     }
     /// `CREATE AS` has already normalized its query at this call site. Unavailable source declarations
     /// remain in the copied properties, but have not yet been appended to the query for persistence.
