@@ -12,19 +12,13 @@ description: '이 문서에서는 손상된 Keeper 스냅샷에서 복구하는 
 * [문제가 어떻게 나타나는지](#symptoms)
 * [가능한 복구 전략](#recovery-strategies)과 각 전략의 의미
 
-<div id="overview">
-  ## Keeper 스냅샷 개요
-</div>
+## Keeper 스냅샷 개요 {#overview}
 
-<div id="what-is-snapshot">
-  ### 스냅샷이란 무엇입니까?
-</div>
+### 스냅샷이란 무엇입니까? {#what-is-snapshot}
 
 스냅샷은 특정 시점의 Keeper 내부 데이터(예: 클러스터 관련 메타데이터, 테이블 조정 경로, 구성)를 직렬화한 상태입니다. 스냅샷은 클러스터 내 Keeper 노드의 재동기화, 장애 발생 시 메타데이터 복구, 그리고 정상 상태로 확인된 Keeper 상태에 의존하는 시작 또는 재시작 과정에 매우 중요합니다.
 
-<div id="where-to-find-snapshots">
-  ### 스냅샷은 어디에서 찾을 수 있습니까?
-</div>
+### 스냅샷은 어디에서 찾을 수 있습니까? {#where-to-find-snapshots}
 
 스냅샷은 Keeper 노드의 로컬 파일 시스템에 파일 형태로 저장됩니다. 기본적으로 `/var/lib/clickhouse/coordination/snapshots/`에 저장되며, `keeper_server.xml` 파일의 `snapshot_storage_path`에 지정한 사용자 지정 경로에 저장될 수도 있습니다. 스냅샷 이름은 증가하는 순서로 지정되며(예: snapshot.23), 최신 스냅샷일수록 숫자가 더 큽니다.
 
@@ -34,9 +28,7 @@ description: '이 문서에서는 손상된 Keeper 스냅샷에서 복구하는 
   복구를 위해서는 노드 간 스냅샷의 일관성이 매우 중요합니다.
 </Note>
 
-<div id="symptoms">
-  ## 손상된 Keeper 스냅샷의 주요 증상과 징후
-</div>
+## 손상된 Keeper 스냅샷의 주요 증상과 징후 {#symptoms}
 
 아래 표는 손상된 Keeper 스냅샷에서 흔히 나타나는 몇 가지 주요 증상과 징후를 보여줍니다:
 
@@ -62,9 +54,7 @@ description: '이 문서에서는 손상된 Keeper 스냅샷에서 복구하는 
 | **스냅샷 손상 오류**    | • `Aborting because of failure to load from latest snapshot with index`<br />• `Failure to load from latest snapshot with index {}: {}. Manual intervention is necessary for recovery`<br />• `Failed to preprocess stored log at index {}, aborting to avoid inconsistent state`<br />• 시작 시 스냅샷 serialization/loading 실패 |
 | **기타 Keeper 문제** | • `Coordination::Exception`<br />• `Zookeeper::Session Timeout`<br />• 동기화 또는 리더 선출 문제<br />• 로그 컴팩션 경쟁 상태                                                                                                                                                                                                                 |
 
-<div id="recovery-strategies">
-  ## 손상된 Keeper 스냅샷에서 복구하기
-</div>
+## 손상된 Keeper 스냅샷에서 복구하기 {#recovery-strategies}
 
 파일을 건드리기 전에 항상 다음 사항을 수행하십시오:
 
@@ -74,9 +64,7 @@ description: '이 문서에서는 손상된 Keeper 스냅샷에서 복구하는 
 
 ***
 
-<div id="restore-from-existing-backup">
-  ### 1. 기존 Backup에서 복원
-</div>
+### 1. 기존 Backup에서 복원 {#restore-from-existing-backup}
 
 다음에 해당하면 이 절차를 따르십시오:
 
@@ -98,9 +86,7 @@ description: '이 문서에서는 손상된 Keeper 스냅샷에서 복구하는 
 
 ***
 
-<div id="rollback-to-older-snapshot">
-  ### 2. 이전 스냅샷으로 롤백
-</div>
+### 2. 이전 스냅샷으로 롤백 {#rollback-to-older-snapshot}
 
 다음과 같은 경우 이 절차를 따르십시오.
 
@@ -121,9 +107,7 @@ description: '이 문서에서는 손상된 Keeper 스냅샷에서 복구하는 
 
 ***
 
-<div id="restore-metadata-with-system-restore-replica">
-  ### 3. `SYSTEM RESTORE REPLICA`를 사용해 메타데이터 복원
-</div>
+### 3. `SYSTEM RESTORE REPLICA`를 사용해 메타데이터 복원 {#restore-metadata-with-system-restore-replica}
 
 다음과 같은 경우 이 절차를 따르십시오.
 
@@ -170,9 +154,7 @@ SYSTEM SYNC REPLICA [db.]table_name;
 
 ***
 
-<div id="drop-and-recreate-replica-metadata">
-  ### 4. Keeper에서 레플리카 메타데이터 삭제 및 재생성
-</div>
+### 4. Keeper에서 레플리카 메타데이터 삭제 및 재생성 {#drop-and-recreate-replica-metadata}
 
 다음과 같은 경우 이 절차를 따르십시오:
 
@@ -251,13 +233,11 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 ***
 
-<div id="rebuild-keeper-cluster">
-  ### 5. Keeper 클러스터 재구축
-</div>
+### 5. Keeper 클러스터 재구축 {#rebuild-keeper-cluster}
 
 다음과 같은 경우 이 절차를 따르십시오.
 
-* 복구에 사용할 수 있는 유효한 스냅샷, 로그 또는 백업이 없습니다.
+* 복구에 사용할 수 있는 유효한 스냅샷, 로그 또는 Backup이 없습니다.
 * 전체 Keeper 클러스터와 해당 메타데이터를 다시 생성해야 합니다.
 
 아래 단계에 따라 Keeper 클러스터를 재구축하십시오.
@@ -272,3 +252,62 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
   이 절차는 시간이 많이 소요되며 장시간 서비스 중단이 발생할 위험이 있습니다. 전체 데이터를 다시 구성해야 합니다.
 </Warning>
+
+***
+
+### 6. 시작 시 스냅샷에서 고아 노드 제거하기 {#remove-orphaned-nodes-on-startup}
+
+*고아(orphaned)* 노드란 스냅샷에 부모 노드가 없는 노드를 말합니다. Keeper는 이러한 스냅샷의 로드를 거부하고 `Failure to load from latest snapshot with index`라는 로그를 남깁니다.
+
+이 절차는 다음 조건에 모두 해당할 때 따르십시오.
+
+* 스냅샷이 정확히 이러한 방식으로 구조적 손상을 입었고,
+* 유효한 Backup이나 이전 스냅샷을 사용할 수 없는 경우(전략 1과 2를 적용할 수 있다면 항상 해당 전략을 우선 사용하는 것이 좋습니다).
+
+`<keeper_server>` 아래에 다음 두 설정을 모두 지정한 후 노드를 재시작하십시오.
+
+```xml
+<keeper_server>
+    <remove_orphaned_nodes_on_startup>true</remove_orphaned_nodes_on_startup>
+    <digest_enabled>false</digest_enabled>
+</keeper_server>
+```
+
+<Note>
+  **인메모리 노드 저장소 필요**
+
+  이 정리 작업은 인메모리 노드 저장소에서만 구현되어 있습니다. `<coordination_settings>` 아래에서 `use_lsmt_storage`가 활성화되어 있으면
+  `remove_orphaned_nodes_on_startup`이 설정된 상태에서 Keeper가 시작을 거부합니다. 복구를 위해 재시작할 때는
+  `use_lsmt_storage`를 비활성화하고, 정상적으로 시작된 후 다시 활성화하십시오.
+</Note>
+
+그러면 Keeper는 고아(orphaned) 하위 트리를 삭제하고 시작합니다. 삭제 내역은 로그에 `WARNING`
+레벨로 두 줄에 걸쳐 기록됩니다. 한 줄에는 삭제된 노드의 총 개수와 삭제된 고아 하위 트리의 루트가, 다른 한 줄에는
+스냅샷에서 누락되어 손상된 영역의 경계가 되는 경로가 기록됩니다. 해당 루트 아래의 하위 노드도 함께 삭제되지만 개별적으로 나열되지는 않습니다.
+
+<Warning>
+  **로컬 상태만 복구함**
+
+  이 작업은 *이* 노드가 가진 데이터 사본에서만 노드를 삭제합니다. 해당 노드를 아직 보유한 피어는 이 노드와 상태가 어긋나게 되며,
+  `digest_enabled`가 `false`로 설정되어 있으면 이후 이러한 불일치를 감지할 방법이 없습니다. 이 작업은
+  단일 노드 복구 용도로만 사용하거나, 클러스터의 모든 노드에 적용하십시오. 노드가 가동되면 두 설정을 모두
+  기본값으로 되돌리십시오.
+</Warning>
+
+스냅샷 이후의 로컬 로그 엔트리가 손상된 영역, 즉 삭제된 노드, 그 아래의 모든 노드, 또는 삭제된 하위 트리의 직계 부모를 참조하면
+Keeper는 의도적으로 시작을 거부합니다. 직계 부모를 충돌로 간주하는 이유는 해당 부모의 자식 집합이 로그 기록 당시의 트리와 더 이상 일치하지 않기 때문입니다.
+따라서 부모만 건드리는 엔트리라도 다르게 재생될 수 있으며, 여기에는 복구된 자식 카운터를 갱신하는 그 아래 *형제* 노드의 생성이나 삭제도 포함됩니다.
+반면 부모의 존재 여부, 버전 또는 수정 ID만 확인하는 엔트리는 영향을 받지 않으며 복구를 막지 않습니다. 예를 들어 `Check`, `CheckNotExists`, `numChildren`과 `cversion`을 모두 비교하지 않는 `CheckStat`,
+부모 자신의 데이터나 ACL만 다시 쓰는 `Set` 또는 `SetACL`,
+클라이언트가 재연결 후 다시 등록하는 data, child, exist watch가 이에 해당합니다.
+클라이언트가 다시 등록하는 영구(persistent) watch는 트리를 전혀 참조하지 않으므로 복구를 막지 않습니다.
+그보다 더 위쪽의 노드는
+영향을 받지 않습니다. 이 노드들은 정상 피어와 정확히 동일한 데이터, 버전, 자식을 유지하므로, 이러한 노드만
+건드리는 엔트리는 동일하게 재생되며 복구를 막지 않습니다. 단, 재귀적 삭제나 재귀적 목록 조회처럼 해당 경로 아래의 전체 하위 트리를
+순회하는 엔트리는 예외입니다. 이러한 엔트리는 삭제된 노드를 실제로 참조하므로 높이에 관계없이 충돌합니다. 다만 Keeper가 트리를 확인하기 전에
+요청을 거부하는 경우(예: `/`의 재귀적 삭제)는 여기에 해당하지 않습니다. 로그 끝부분의 세션 종료(`Close`)도
+해당 세션이 삭제된 임시(ephemeral) 노드를 소유했거나, 그러한 부모 바로 아래에 남아 있는 임시 노드를 소유하고 있다면 마찬가지입니다.
+세션을 종료하면 해당 세션의 임시 노드가 삭제되고 그 부모의 카운터가 갱신되기 때문입니다. 이러한 엔트리를
+복구된 트리에 재생하면 아무런 경고 없이 다른 상태가 만들어집니다. 이 경우에는 정상 피어로부터
+노드를 복구하십시오. 노드를 중지하고 조정 디렉터리를 비운 다음 리더로부터 다시 동기화하게 하거나,
+전략 1 또는 2를 사용하십시오.

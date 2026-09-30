@@ -7,42 +7,42 @@
       "versionId": "d32db41de0afcd9c73f863b43acae05eb332f8a5d948c665a343043032ed5f0d",
       "translations": {
         "ko": {
-          "updatedAt": "2026-09-30T02:02:49.033Z",
+          "updatedAt": "2026-09-30T05:37:48.639Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ja": {
-          "updatedAt": "2026-09-30T02:02:48.807Z",
+          "updatedAt": "2026-09-30T05:37:48.436Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ru": {
-          "updatedAt": "2026-09-30T02:02:49.451Z",
+          "updatedAt": "2026-09-30T05:37:49.060Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "es": {
-          "updatedAt": "2026-09-30T02:02:48.597Z",
+          "updatedAt": "2026-09-30T05:37:48.214Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-30T02:02:49.250Z",
+          "updatedAt": "2026-09-30T05:37:48.844Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "zh": {
-          "updatedAt": "2026-09-30T02:02:49.648Z",
+          "updatedAt": "2026-09-30T05:37:49.265Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "fr": {
-          "updatedAt": "2026-09-30T02:02:50.059Z",
+          "updatedAt": "2026-09-30T05:37:49.680Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ar": {
-          "updatedAt": "2026-09-30T02:02:49.856Z",
+          "updatedAt": "2026-09-30T05:37:49.469Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         }
@@ -76152,47 +76152,47 @@
     },
     {
       "fileId": "26ae50b88e6d3ab5f0fb62bb8181ef25c6580338c26d83abe3c95a86938df061",
-      "versionId": "a352400b050231e9beb890f4a22bf872919f817950ee57521136d09ae6c70a75",
+      "versionId": "a1cc45d3fcc7c745a15707d706a2a5309431f9778c19fa8fcdb7db8bea573921",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-24T10:24:06.987Z",
-          "fileName": "es/guides/oss/deployment-and-scaling/keeper/index.mdx",
-          "postProcessHash": "14fcdb4bfc201bdba81966cf4a34cb2ae42944ed14dbcaa35b8a512e01c569d4"
-        },
-        "ja": {
-          "updatedAt": "2026-09-24T10:24:06.988Z",
-          "fileName": "ja/guides/oss/deployment-and-scaling/keeper/index.mdx",
-          "postProcessHash": "4277ac46f266683b02dcbbfc1d3db5e82f9b9ce80645967c7ce4ba72ea8f9a19"
-        },
-        "ko": {
-          "updatedAt": "2026-09-24T10:24:06.989Z",
-          "fileName": "ko/guides/oss/deployment-and-scaling/keeper/index.mdx",
-          "postProcessHash": "0dad90fce197fbd329559bbbdc30918dccc1def96f135c0179850857427a78b0"
+        "zh": {
+          "updatedAt": "2026-09-30T05:37:53.444Z",
+          "fileName": "zh/guides/oss/deployment-and-scaling/keeper/index.mdx",
+          "postProcessHash": "49c2746dc1700b1f06c9114b8a14ac23f6ea49841901c6b782a16925324c5540"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-24T10:24:06.990Z",
+          "updatedAt": "2026-09-30T05:37:53.446Z",
           "fileName": "pt-BR/guides/oss/deployment-and-scaling/keeper/index.mdx",
-          "postProcessHash": "46d871877b0956352e6a0b54c912bd31b806d7a389eff4300e898b204047cf70"
+          "postProcessHash": "873cecfe12e40817ed5d8ba844ede0de89554604550216a7c9329ce349193478"
+        },
+        "ja": {
+          "updatedAt": "2026-09-30T05:37:53.448Z",
+          "fileName": "ja/guides/oss/deployment-and-scaling/keeper/index.mdx",
+          "postProcessHash": "f21e9c74989ce3ee1555c3f7f1c23130ee84064432c26f0e975e89010c5eb9a7"
         },
         "ru": {
-          "updatedAt": "2026-09-24T10:24:06.991Z",
+          "updatedAt": "2026-09-30T05:37:53.449Z",
           "fileName": "ru/guides/oss/deployment-and-scaling/keeper/index.mdx",
-          "postProcessHash": "70d47fbf9eab3efdcbc40143fb44f01818c3f0e220d0fb06716c61cee705c453"
+          "postProcessHash": "d7e605996f97b44f1ad86a37fdd8d19d0d617f2f70fb76e8ce1f8003fbd4f286"
         },
-        "zh": {
-          "updatedAt": "2026-09-24T10:24:06.992Z",
-          "fileName": "zh/guides/oss/deployment-and-scaling/keeper/index.mdx",
-          "postProcessHash": "562ddac7f0fb58b4587d52dd52b29daafd83f67f3e9b21e0f24c59d7631c29dc"
-        },
-        "ar": {
-          "updatedAt": "2026-09-24T10:24:06.992Z",
-          "fileName": "ar/guides/oss/deployment-and-scaling/keeper/index.mdx",
-          "postProcessHash": "7dd61d38e58a3d398bd06e1a01e9712b3b5ec486a1e411910d03d1ce5f924146"
+        "ko": {
+          "updatedAt": "2026-09-30T05:37:53.450Z",
+          "fileName": "ko/guides/oss/deployment-and-scaling/keeper/index.mdx",
+          "postProcessHash": "69d084b15ed83a2461e8c8f8e73a1c0f37866d06d8e6f0a07fb7f430ce36c485"
         },
         "fr": {
-          "updatedAt": "2026-09-24T10:24:06.993Z",
+          "updatedAt": "2026-09-30T05:37:53.451Z",
           "fileName": "fr/guides/oss/deployment-and-scaling/keeper/index.mdx",
-          "postProcessHash": "c7b0333924df05a4204df3243adc89e97699ac084c5aa6c22fcffbafa556f744"
+          "postProcessHash": "5afe9edfb1ed8af6fd67e75378c68658d1c60afefa11373ad6bfdce5e9a401e5"
+        },
+        "ar": {
+          "updatedAt": "2026-09-30T05:37:53.452Z",
+          "fileName": "ar/guides/oss/deployment-and-scaling/keeper/index.mdx",
+          "postProcessHash": "1e80377b02953116e8a4a3c85109f492adb874d44c2e9e6aaa56023859a13e9c"
+        },
+        "es": {
+          "updatedAt": "2026-09-30T05:37:53.453Z",
+          "fileName": "es/guides/oss/deployment-and-scaling/keeper/index.mdx",
+          "postProcessHash": "d2dfea120890d34d44c1bb5e46031114aa833ce6432a491747e395607c5cafab"
         }
       },
       "fileName": "guides/oss/deployment-and-scaling/keeper/index.mdx"
@@ -131580,51 +131580,50 @@
     },
     {
       "fileId": "8ae1fd80466ab6494b7765c352afe0e2d069b2aa1a4fac31c8b10f9a13b84e03",
-      "versionId": "8a680fd2a568e82f01eb49ec8600892be5a8eb6447656c96b5670c08c8198595",
+      "versionId": "3e05dc683b4e93517de18a682e506335e8d54e4fce79c28fd8adbc4745e80cb1",
       "translations": {
         "zh": {
-          "updatedAt": "2026-08-18T23:25:00.247Z",
+          "updatedAt": "2026-09-30T05:37:53.440Z",
           "fileName": "zh/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot.mdx",
-          "postProcessHash": "74363b154d6b6dd8900324fd3937e8f39a32b2d3da74c90476a49f2bf91d6265"
+          "postProcessHash": "76d96f2670978f6efceba697327615217431201bb57dcfc111c5759caf82bea2"
         },
         "ja": {
-          "updatedAt": "2026-08-18T23:25:00.279Z",
+          "updatedAt": "2026-09-30T05:37:53.441Z",
           "fileName": "ja/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot.mdx",
-          "postProcessHash": "63dd735f529bff34fc2ee18a0d2490ee3d84d70c451d7f52a46ff0a47d12dc73"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-18T23:25:00.283Z",
-          "fileName": "pt-BR/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot.mdx",
-          "postProcessHash": "b508d519c2408f86e48c11f669fce14c9599910b774752f05742f70542cc1d8c"
-        },
-        "ko": {
-          "updatedAt": "2026-08-18T23:25:00.290Z",
-          "fileName": "ko/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot.mdx",
-          "postProcessHash": "f4de1f28f3d7fdc76e86fff73a577b19ff7558f8e495d9bf8a91cf7e0ad848c6"
+          "postProcessHash": "9f43f501bd01c1f073b2d793318bd663c93e6f6d457315d160b7bc7d19f293ab"
         },
         "es": {
-          "updatedAt": "2026-08-18T23:25:00.335Z",
+          "updatedAt": "2026-09-30T05:37:53.441Z",
           "fileName": "es/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot.mdx",
-          "postProcessHash": "e1b25022292ce0403078dfcfe17ad13a369f6e7b9901f6936bbe234b8ccfe22d"
+          "postProcessHash": "8a6db0049cce922a1e34003fae1adec6447359e1f4d6f841da93b4cd5094d97e"
         },
-        "ru": {
-          "updatedAt": "2026-08-18T23:25:00.338Z",
-          "fileName": "ru/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot.mdx",
-          "postProcessHash": "34423937f2c69d23f678f4edfc1204e6f609471806cd6dfc5ed0bbe771d869ec"
+        "pt-BR": {
+          "updatedAt": "2026-09-30T05:37:53.442Z",
+          "fileName": "pt-BR/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot.mdx",
+          "postProcessHash": "edf28822de57c59067d653e8f7b82c0f3a91bd430733f368660679da79f63b36"
         },
         "fr": {
-          "updatedAt": "2026-08-18T23:25:00.352Z",
+          "updatedAt": "2026-09-30T05:37:53.442Z",
           "fileName": "fr/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot.mdx",
-          "postProcessHash": "2bc3d1e653522657b5deab54fa83ef4b46b3a3a0c7f6585dd972531ae730d77b"
+          "postProcessHash": "2c37d6f96aaf4829c160d6b748911c3e6c04fcb1197b3e1615b3fb2f24add354"
+        },
+        "ru": {
+          "updatedAt": "2026-09-30T05:37:53.443Z",
+          "fileName": "ru/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot.mdx",
+          "postProcessHash": "955d57c99a995b451625a828fa6693d58833f0a58ef79e6870da7c9830d21f95"
+        },
+        "ko": {
+          "updatedAt": "2026-09-30T05:37:53.443Z",
+          "fileName": "ko/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot.mdx",
+          "postProcessHash": "6948ce25b6259da93edf1353909a02269c3d19f05295d69cc7a5196e1d1cc671"
         },
         "ar": {
-          "updatedAt": "2026-08-18T23:25:00.379Z",
+          "updatedAt": "2026-09-30T05:37:53.447Z",
           "fileName": "ar/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot.mdx",
-          "postProcessHash": "6f1b3db4b969475976f1b8666e7d3a2a0d343abcea8177229b1ac632ccef9602"
+          "postProcessHash": "71d49a94c56376ad23308b8c95dcb7d09853271790a916d69895b4a61e94f482"
         }
       },
-      "fileName": "resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot.mdx",
-      "staged": false
+      "fileName": "resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot.mdx"
     },
     {
       "fileId": "e3626e776e0b58183e65cf239606bb3bf79c47e4860aec807a13785dbe2c4bfe",
