@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 # A row whose DELETE or column TTL is 0 never expires, even when every other row of its part has expired.
+# A column TTL of 0 does not keep a part whose rows have all expired from being dropped.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -153,4 +154,26 @@ done
 $CLICKHOUSE_CLIENT -q "
     SELECT count(), countIf(delete_at = 0) FROM t_background;
     DROP TABLE t_background;
+"
+
+echo "-- ttl_only_drop_parts drops an expired part whose column TTL is 0 for every row"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_drop_column_zero (id UInt64, ts DateTime, v_expire DateTime DEFAULT 0, v String TTL v_expire)
+    ENGINE = MergeTree ORDER BY id TTL ts + INTERVAL 1 DAY
+    SETTINGS merge_with_ttl_timeout = 0, ttl_only_drop_parts = 1;
+    SYSTEM STOP MERGES t_drop_column_zero;
+    INSERT INTO t_drop_column_zero (id, ts, v) SELECT number, now() - INTERVAL 5 DAY, 'x' FROM numbers(10);
+    SYSTEM START MERGES t_drop_column_zero;
+"
+for _ in $(seq 1 300); do
+    unmerged=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_drop_column_zero' AND active AND level = 0")
+    [ "$unmerged" = "0" ] && break
+    sleep 0.1
+done
+$CLICKHOUSE_CLIENT -q "
+    SELECT count() FROM t_drop_column_zero;
+    SYSTEM FLUSH LOGS part_log;
+    SELECT merge_reason FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_drop_column_zero' AND event_type = 'MergeParts';
+    DROP TABLE t_drop_column_zero;
 "

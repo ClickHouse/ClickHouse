@@ -82,10 +82,11 @@ struct MergeTreeDataPartTTLInfos
 
     void updatePartMinMaxTTL(const MergeTreeDataPartTTLInfo & ttl_info)
     {
-        if (ttl_info.finished())
+        /// A TTL whose every value is 0 never expires, so it does not make the part due.
+        if (ttl_info.finished() || !ttl_info.min)
             return;
 
-        if (ttl_info.min && (!part_min_ttl || ttl_info.min < part_min_ttl))
+        if (!part_min_ttl || ttl_info.min < part_min_ttl)
             part_min_ttl = ttl_info.min;
 
         if (ttl_info.max && (!part_max_ttl || ttl_info.max > part_max_ttl))
@@ -95,7 +96,7 @@ struct MergeTreeDataPartTTLInfos
     bool empty() const
     {
         /// part_min_ttl in minimum of rows, rows_where and group_by TTLs
-        return !part_min_ttl && !part_max_ttl && moves_ttl.empty() && recompression_ttl.empty() && columns_ttl.empty() && rows_where_ttl.empty() && group_by_ttl.empty();
+        return !part_min_ttl && !table_ttl.initialized() && moves_ttl.empty() && recompression_ttl.empty() && columns_ttl.empty() && rows_where_ttl.empty() && group_by_ttl.empty();
     }
 };
 

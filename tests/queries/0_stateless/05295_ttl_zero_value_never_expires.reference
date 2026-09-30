@@ -25,3 +25,6 @@
 5	5
 -- background TTL merge
 5	5
+-- ttl_only_drop_parts drops an expired part whose column TTL is 0 for every row
+0
+TTLDropMerge
