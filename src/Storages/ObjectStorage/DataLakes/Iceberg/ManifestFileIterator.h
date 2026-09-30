@@ -200,6 +200,13 @@ std::unordered_map<Int32, DB::Range> getDataFileHyperrectangles(
     const ProcessedManifestFileEntry & entry,
     const std::unordered_map<Int32, DB::DataTypePtr> & column_types,
     const IcebergPathFromMetadata & path_to_manifest_file);
+
+/// Lower and upper bounds of a data file exactly as its manifest declares them, for the columns of `column_types`
+/// (field id -> type in the file's schema) whose bounds decode. Empty for a delete file.
+std::unordered_map<Int32, std::pair<DB::Field, DB::Field>> getDataFileColumnBounds(
+    const ProcessedManifestFileEntry & entry,
+    const std::unordered_map<Int32, DB::DataTypePtr> & column_types,
+    const IcebergPathFromMetadata & path_to_manifest_file);
 }
 
 #endif
