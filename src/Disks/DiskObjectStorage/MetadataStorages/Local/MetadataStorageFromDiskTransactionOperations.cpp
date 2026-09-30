@@ -165,7 +165,7 @@ void UnlinkFileOperation::execute()
     /// We need to move file to the random name for the possible undo and to save the fs hardlink count
     auto tmp_path = getRandomASCIIString(32);
     disk.moveFile(path, tmp_path);
-    tmp_file_path = tmp_path;
+    tmp_file_path = std::move(tmp_path);
 
     if (!object_metadata.has_value())
         return;
@@ -287,7 +287,7 @@ void RemoveRecursiveOperation::traverseFile(const std::string & leaf)
 
     if (ref_count == 0)
     {
-        const auto relative_path = fs::relative(leaf, temp_file_path ? *temp_file_path : *temp_directory_path);
+        const auto relative_path = fs::path(leaf).lexically_relative(temp_file_path ? *temp_file_path : *temp_directory_path);
         if (!should_remove_objects || should_remove_objects(relative_path))
         {
             const std::string original_path = temp_file_path ? path : (fs::path(path) / relative_path).string();

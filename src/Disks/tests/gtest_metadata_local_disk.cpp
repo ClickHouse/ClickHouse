@@ -1338,7 +1338,11 @@ TEST_F(MetadataLocalDiskTest, TestUnlinkMoveFailureDoesNotUndercountHardlinks)
         auto tx = metadata->createTransaction();
         tx->unlinkFile("detached/a", /*if_exists=*/false, /*should_remove_objects=*/true);
         tx->commit(DB::NoCommitOptions{});
-        verifyBlobsToRemove(metadata, {"ka"});
+        auto blobs = getBlobsToRemove(metadata);
+        ASSERT_EQ(blobs.size(), 1);
+        EXPECT_EQ(blobs.begin()->first.remote_path, "ka");
+        EXPECT_EQ(blobs.begin()->first.local_path, "detached/a");
+        EXPECT_EQ(blobs.begin()->second, DB::LocationSet{"main"});
     }
 }
 
