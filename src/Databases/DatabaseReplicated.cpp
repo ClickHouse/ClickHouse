@@ -2648,9 +2648,12 @@ static void addInnerTableIds(const IStorage & table, const ContextPtr & context,
     else if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(&table); time_series && time_series->hasInnerTables())
     {
         for (auto kind : StorageTimeSeries::getTargetKinds())
-            if (time_series->isInnerTable(kind))
-                if (auto inner_table_id = time_series->tryGetTargetTableID(kind, context))
-                    inner_ids.push_back(std::move(inner_table_id));
+        {
+            if (!time_series->isInnerTable(kind))
+                continue;
+            auto inner_table_id = time_series->tryGetTargetTableID(kind, context);
+            inner_ids.push_back(inner_table_id ? std::move(inner_table_id) : time_series->getInnerTableID(kind));
+        }
     }
 
     for (auto & inner_id : inner_ids)
@@ -2723,8 +2726,7 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
                 txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, zk_statement_to, zkutil::CreateMode::Persistent));
         }
 
-        /// Inner tables of a table created by `CREATE OR REPLACE` before 26.5 have no metadata node,
-        /// and the node under the name of a detached inner table may belong to another table.
+        /// The node is missing for inner tables created by `CREATE OR REPLACE` before 26.5, and may belong to another table.
         for (const auto & inner_id : replaced_inner_tables)
         {
             String inner_metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(inner_id.table_name);
