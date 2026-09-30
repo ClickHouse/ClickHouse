@@ -1554,6 +1554,10 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
     if (!table_ptr->isMergeTree())
         return false;
 
+    /// TODO(unique-key): support parallel replicas.
+    if (table_ptr->hasUniqueKey())
+        return false;
+
     if (!table_ptr->supportsReplication() && !query_settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
         return false;
 
