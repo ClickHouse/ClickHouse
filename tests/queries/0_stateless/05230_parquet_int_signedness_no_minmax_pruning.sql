@@ -103,19 +103,23 @@ insert into function file(currentDatabase() || '_05230_i32d32.parquet', Parquet,
     select arrayJoin([toInt32(2932896), toInt32(2932897)]) as x;
 select count() from file(currentDatabase() || '_05230_i32n.parquet', Parquet, 'x Date')
     where x = toDate('1970-01-01')
-    settings input_format_parquet_dictionary_filter_push_down = 0,
+    settings session_timezone = 'UTC',
+             input_format_parquet_dictionary_filter_push_down = 0,
              input_format_parquet_bloom_filter_push_down = 0;
 select count() from file(currentDatabase() || '_05230_i64d.parquet', Parquet, 'x Date')
     where x = toDate('1970-01-01')
-    settings input_format_parquet_dictionary_filter_push_down = 0,
+    settings session_timezone = 'UTC',
+             input_format_parquet_dictionary_filter_push_down = 0,
              input_format_parquet_bloom_filter_push_down = 0;
 select count() from file(currentDatabase() || '_05230_i64d32.parquet', Parquet, 'x Date32')
     where x < toDate32('2243-10-17')
-    settings input_format_parquet_dictionary_filter_push_down = 0,
+    settings session_timezone = 'UTC',
+             input_format_parquet_dictionary_filter_push_down = 0,
              input_format_parquet_bloom_filter_push_down = 0;
 select count() from file(currentDatabase() || '_05230_i32d32.parquet', Parquet, 'x Date32')
     where x < toDate32('2000-01-01')
-    settings input_format_parquet_dictionary_filter_push_down = 0,
+    settings session_timezone = 'UTC',
+             input_format_parquet_dictionary_filter_push_down = 0,
              input_format_parquet_bloom_filter_push_down = 0;
 
 -- A parquet `DATE` column does carry a day-range check, but `convertField` only applied it to a signed
