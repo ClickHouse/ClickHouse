@@ -40,3 +40,16 @@ INSERT INTO test_whole_tuple_wrapped_set SELECT toString(number), number FROM nu
 
 -- With the multi-atom analysis disabled the leaf keeps only its direct atom and reads every granule.
 {{ check('test_whole_tuple_wrapped_set', "(s, x) IN (('7', 7))", settings = 'analyze_index_with_multiple_key_columns_per_condition = 0', condition = true) }}
+
+-- A key-side transform of the whole tuple can map distinct tuples to one value while claiming injectivity:
+-- `toString` prints both instants of a fall-back hour as the same local time. Its wrapped atom is relaxed for
+-- `has` as it is for `IN`, so the negated leaves keep the row whose instant differs from the constant.
+CREATE TABLE test_whole_tuple_folding (d DateTime('Europe/Berlin'), y UInt8) ENGINE = MergeTree ORDER BY toString(tuple(d, y))
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_whole_tuple_folding VALUES (1698532200, 1), (1698539400, 1);
+{% set folded = "(toDateTime(1698543000, 'Europe/Berlin'), 1)" -%}
+{{ check('test_whole_tuple_folding', "(d, y) NOT IN (" ~ folded ~ ")") }}
+{{ check('test_whole_tuple_folding', "notHas([" ~ folded ~ "], (d, y))") }}
+{{ check('test_whole_tuple_folding', "NOT has([" ~ folded ~ "], (d, y))") }}
+{{ check('test_whole_tuple_folding', "notHas([" ~ folded ~ "], (d, y))", settings = 'analyze_index_with_multiple_key_columns_per_condition = 0') }}
+{{ check('test_whole_tuple_folding', "has([" ~ folded ~ "], (d, y))") }}
