@@ -8,3 +8,8 @@
 1	499762
 AggregateFunction(1, quantileDeterministicMerge, AggregateFunction(quantileDeterministic, UInt64, UInt64))
 492708
+([1],[800])
+0	([1],[800])
+1	([1],[800])
+0	([1],[200])
+1	([1],[200])

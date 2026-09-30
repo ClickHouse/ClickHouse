@@ -6,6 +6,7 @@
 DROP TABLE IF EXISTS qd_raw;
 DROP TABLE IF EXISTS qd_states;
 DROP TABLE IF EXISTS qd_merge_states;
+DROP TABLE IF EXISTS sm_states;
 
 CREATE TABLE qd_raw (n UInt64) ENGINE = MergeTree ORDER BY n;
 INSERT INTO qd_raw SELECT number FROM numbers(1000000);
@@ -53,6 +54,31 @@ INSERT INTO qd_merge_states SELECT g, part, state FROM qd_states;
 -- `-Merge` does not nest, so the stored states are read back as states of `medianDeterministic`.
 SELECT medianDeterministicMerge(CAST(state, 'AggregateFunction(medianDeterministic, UInt64, UInt64)')) FROM qd_merge_states WHERE g = 0;
 
+-- Arm E. The same for a -Merge of sumMap states: a shard must send its sums without cutting them to the UInt8 value type.
+CREATE TABLE sm_states
+(
+    g UInt8,
+    part UInt8,
+    s AggregateFunction(sumMap, Array(UInt8), Array(UInt8)),
+    m AggregateFunction(maxMap, Array(UInt8), Array(UInt8))
+)
+ENGINE = MergeTree ORDER BY part;
+INSERT INTO sm_states
+SELECT g, part, sumMapState([toUInt8(1)], [toUInt8(200)]), maxMapState([toUInt8(1)], [toUInt8(200)])
+FROM (SELECT arrayJoin([0, 1]) AS g, arrayJoin([0, 1, 2, 3]) AS part)
+GROUP BY g, part;
+SELECT sumMapMerge(s) FROM remote('127.0.0.{1,2}', currentDatabase(), sm_states)
+WHERE g = 0 AND (part = 0) = (shardNum() = 1);
+SELECT g, sumMapMerge(s) FROM remote('127.0.0.{1,2}', currentDatabase(), sm_states)
+WHERE (part = 0) = (shardNum() = 1)
+GROUP BY g ORDER BY g
+SETTINGS enable_parallel_blocks_marshalling = 1, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0;
+SELECT g, maxMapMerge(m) FROM remote('127.0.0.{1,2}', currentDatabase(), sm_states)
+WHERE (part = 0) = (shardNum() = 1)
+GROUP BY g ORDER BY g
+SETTINGS enable_parallel_blocks_marshalling = 1, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0;
+
+DROP TABLE sm_states;
 DROP TABLE qd_merge_states;
 DROP TABLE qd_states;
 DROP TABLE qd_raw;
