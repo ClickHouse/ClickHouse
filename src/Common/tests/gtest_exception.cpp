@@ -63,6 +63,7 @@ TEST(Exception, CurrentExceptionWithoutHandledException)
 {
     EXPECT_EQ(getCurrentExceptionCode(), ErrorCodes::OK);
     EXPECT_EQ(getCurrentExceptionMessage(false), "");
+    tryLogCurrentException("Exception");
 }
 
 TEST(Exception, CurrentExceptionInDestructorDuringUnwinding)
@@ -74,6 +75,7 @@ TEST(Exception, CurrentExceptionInDestructorDuringUnwinding)
         SCOPE_EXIT({
             code = getCurrentExceptionCode();
             message = getCurrentExceptionMessage(false);
+            tryLogCurrentException("Exception");
         });
         throw std::runtime_error("unwinding");
     }
