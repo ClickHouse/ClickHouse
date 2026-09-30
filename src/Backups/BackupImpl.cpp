@@ -85,6 +85,7 @@ namespace
     /// We may use lightweight backup in version 2.
     const int CURRENT_BACKUP_VERSION = 2;
     constexpr auto BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP = "base_backup_copy_s3_credentials_from_backup";
+    constexpr auto METADATA_FILE_NAME = ".backup";
 
     using SizeAndChecksum = IBackup::SizeAndChecksum;
 
@@ -478,7 +479,6 @@ void BackupImpl::writeBackupMetadata()
     chassert(!params.is_internal_backup);
     checkLockFile(true);
 
-    constexpr char metadata_file[] = ".backup";
 #if CLICKHOUSE_CLOUD
     /// A Keeper session can expire while this upload is in flight. The progress fingerprint covers every
     /// input written to the manifest, so a new owner can only publish the same metadata bytes.
@@ -488,9 +488,9 @@ void BackupImpl::writeBackupMetadata()
 
     std::unique_ptr<WriteBuffer> out;
     if (use_archive)
-        out = archive_writer->writeFile(metadata_file);
+        out = archive_writer->writeFile(METADATA_FILE_NAME);
     else
-        out = writer->writeFile(metadata_file);
+        out = writer->writeFile(METADATA_FILE_NAME);
 
     /// A value XML cannot carry unchanged has no escaped form either, and writing it raw reported
     /// `BACKUP_CREATED` over a manifest that reads back wrong, or not at all.
@@ -559,7 +559,8 @@ void BackupImpl::writeBackupMetadata()
                 base_backup_can_use_this_backup_credentials = base_backup_info_with_this_backup_credentials.toString() == effective_base_backup_info.toString();
             }
 
-            /// Named rather than written inline so that the `std::string_view` does not point into a temporary.
+            /// Named for readability. Inline would be safe too: the temporary lives to the end of the
+            /// full-expression, which is the whole statement.
             const String base_backup_text = base_backup_info_for_metadata.toString();
             *out << "<base_backup>" << xml << xml_string("base_backup", base_backup_text) << "</base_backup>";
             *out << "<base_backup_uuid>" << getBaseBackupUnlocked()->getUUID() << "</base_backup_uuid>";
@@ -664,7 +665,7 @@ void BackupImpl::recalculateMetadataCounters()
         }
     });
 
-    uncompressed_size = size_of_entries + writer->getFileSize(".backup");
+    uncompressed_size = size_of_entries + writer->getFileSize(METADATA_FILE_NAME);
 #if USE_SSL
     uncompressed_size += encryption_sidecar->getFileSize();
 #endif
@@ -680,16 +681,16 @@ void BackupImpl::readBackupMetadata()
     std::unique_ptr<ReadBuffer> in;
     if (use_archive)
     {
-        if (!archive_reader->fileExists(".backup"))
+        if (!archive_reader->fileExists(METADATA_FILE_NAME))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Archive {} is not a backup", backup_name_for_logging);
         setCompressedSize();
-        in = archive_reader->readFile(".backup", /*throw_on_not_found=*/true);
+        in = archive_reader->readFile(METADATA_FILE_NAME, /*throw_on_not_found=*/true);
     }
     else
     {
-        if (!reader->fileExists(".backup"))
+        if (!reader->fileExists(METADATA_FILE_NAME))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name_for_logging);
-        in = reader->readFile(".backup");
+        in = reader->readFile(METADATA_FILE_NAME);
     }
 
     String str;
@@ -932,7 +933,7 @@ void BackupImpl::checkBackupDoesntExist() const
     if (use_archive)
         file_name_to_check_existence = archive_params.archive_name;
     else
-        file_name_to_check_existence = ".backup";
+        file_name_to_check_existence = METADATA_FILE_NAME;
 
     if (writer->fileExists(file_name_to_check_existence))
         throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
@@ -958,7 +959,7 @@ void BackupImpl::createLockFile()
     chassert(uuid);
     if (lock_file_contents.empty())
         lock_file_contents = toString(*uuid);
-    const String completed_file = use_archive ? archive_params.archive_name : ".backup";
+    const String completed_file = use_archive ? archive_params.archive_name : METADATA_FILE_NAME;
     FailPointInjection::pauseFailPoint(FailPoints::backup_pause_before_lock_file_creation);
     try
     {
@@ -1742,7 +1743,7 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
         }
         else
         {
-            files_to_remove.push_back(".backup");
+            files_to_remove.push_back(METADATA_FILE_NAME);
             coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & file_info)
             {
                 /// Skip entries with no data file — an empty file, or one wholly covered by the base backup.
