@@ -2633,26 +2633,33 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
 
 Names getColumnNamesAffectedByDrop(const ColumnsDescription & columns, const String & column_name, bool share_nested_offsets)
 {
-    if (!share_nested_offsets)
-        return {column_name};
+    /// With `flatten_nested = 0` (or any column with subcolumns), the column is one real column in storage,
+    /// but a materialized view or mutation query may reference its subcolumns (e.g. `n.a`, `n.b`). Dropping the
+    /// storage column removes all its subcolumns too, regardless of `share_nested_offsets`.
+    if (columns.has(column_name))
+    {
+        Names names{column_name};
+        for (const auto & subcolumn : columns.getSubcolumns(column_name))
+            names.push_back(subcolumn.name);
+        return names;
+    }
 
-    /// With `flatten_nested = 1` the group is stored as the flattened columns `<name>.*` and there is
-    /// no column named `<name>`, so the name denotes the whole group.
-    if (!columns.has(column_name) && columns.hasNested(column_name))
+    /// With `flatten_nested = 1`, the group is stored as the flattened columns `<name>.*` and there is
+    /// no column named `<name>`, so the name denotes the whole group. Include both the nested columns
+    /// and any deeper subcolumns (e.g. `n.a.b`) they may have.
+    if (share_nested_offsets && columns.hasNested(column_name))
     {
         Names nested_column_names;
         for (const auto & nested_column : columns.getNested(column_name))
+        {
             nested_column_names.push_back(nested_column.name);
+            for (const auto & subcolumn : columns.getSubcolumns(nested_column.name))
+                nested_column_names.push_back(subcolumn.name);
+        }
         return nested_column_names;
     }
 
-    /// With `flatten_nested = 0` the group is one real column, but a materialized view selects its
-    /// members by their full names (`<name>.<member>`), and dependent-view keys record those names
-    /// verbatim. Dropping the storage column removes the members too, so report them as well.
-    Names names{column_name};
-    for (const auto & subcolumn : columns.getSubcolumns(column_name))
-        names.push_back(subcolumn.name);
-    return names;
+    return {column_name};
 }
 
 }

@@ -163,3 +163,100 @@ FORMAT Null;
 
 SYSTEM START MERGES nested_drop_unfinished_clear;
 DROP TABLE nested_drop_unfinished_clear;
+
+DROP VIEW IF EXISTS nested_drop_unflattened_no_shared_mv;
+DROP TABLE IF EXISTS nested_drop_unflattened_no_shared_source;
+
+SET flatten_nested = 0;
+
+CREATE TABLE nested_drop_unflattened_no_shared_source
+(
+    n Nested(a UInt64, b UInt64),
+    x UInt64
+)
+ENGINE = MergeTree
+ORDER BY x
+SETTINGS share_nested_offsets = 0;
+
+CREATE MATERIALIZED VIEW nested_drop_unflattened_no_shared_mv
+ENGINE = Null
+AS SELECT `n.a` FROM nested_drop_unflattened_no_shared_source;
+
+ALTER TABLE nested_drop_unflattened_no_shared_source DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP VIEW nested_drop_unflattened_no_shared_mv;
+DROP TABLE nested_drop_unflattened_no_shared_source;
+
+DROP TABLE IF EXISTS nested_drop_unflattened_no_shared_mutation;
+
+CREATE TABLE nested_drop_unflattened_no_shared_mutation
+(
+    n Nested(a UInt64, b UInt64),
+    x UInt64,
+    c UInt64
+)
+ENGINE = MergeTree
+ORDER BY x
+SETTINGS share_nested_offsets = 0;
+
+INSERT INTO nested_drop_unflattened_no_shared_mutation VALUES ([(1, 10)], 1, 1);
+SYSTEM STOP MERGES nested_drop_unflattened_no_shared_mutation;
+ALTER TABLE nested_drop_unflattened_no_shared_mutation UPDATE c = length(`n.a`) + 1 WHERE 1 SETTINGS mutations_sync = 0;
+
+ALTER TABLE nested_drop_unflattened_no_shared_mutation DROP COLUMN n; -- { serverError BAD_ARGUMENTS }
+
+KILL MUTATION
+WHERE database = currentDatabase() AND table = 'nested_drop_unflattened_no_shared_mutation'
+SYNC
+FORMAT Null;
+
+SYSTEM START MERGES nested_drop_unflattened_no_shared_mutation;
+DROP TABLE nested_drop_unflattened_no_shared_mutation;
+
+SET flatten_nested = 1;
+
+DROP VIEW IF EXISTS nested_drop_deep_subcolumn_mv;
+DROP TABLE IF EXISTS nested_drop_deep_subcolumn_source;
+
+CREATE TABLE nested_drop_deep_subcolumn_source
+(
+    `n.a` Tuple(b UInt64),
+    x UInt64
+)
+ENGINE = MergeTree
+ORDER BY x;
+
+CREATE MATERIALIZED VIEW nested_drop_deep_subcolumn_mv
+ENGINE = Null
+AS SELECT `n.a.b` FROM nested_drop_deep_subcolumn_source;
+
+ALTER TABLE nested_drop_deep_subcolumn_source DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP VIEW nested_drop_deep_subcolumn_mv;
+DROP TABLE nested_drop_deep_subcolumn_source;
+
+DROP TABLE IF EXISTS nested_drop_deep_mutation;
+
+CREATE TABLE nested_drop_deep_mutation
+(
+    `n.a` Tuple(b UInt64),
+    x UInt64,
+    c UInt64
+)
+ENGINE = MergeTree
+ORDER BY x;
+
+INSERT INTO nested_drop_deep_mutation VALUES ((10,), 1, 1);
+SYSTEM STOP MERGES nested_drop_deep_mutation;
+ALTER TABLE nested_drop_deep_mutation UPDATE c = `n.a.b` + 1 WHERE 1 SETTINGS mutations_sync = 0;
+
+ALTER TABLE nested_drop_deep_mutation DROP COLUMN n; -- { serverError BAD_ARGUMENTS }
+
+KILL MUTATION
+WHERE database = currentDatabase() AND table = 'nested_drop_deep_mutation'
+SYNC
+FORMAT Null;
+
+SYSTEM START MERGES nested_drop_deep_mutation;
+DROP TABLE nested_drop_deep_mutation;
+
