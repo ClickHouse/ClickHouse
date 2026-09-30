@@ -121,7 +121,7 @@ namespace ErrorCodes
 class CompressionCodecDoubleDelta : public ICompressionCodec
 {
 public:
-    explicit CompressionCodecDoubleDelta(UInt8 data_bytes_size_);
+    CompressionCodecDoubleDelta(UInt8 data_bytes_size_, bool explicit_data_bytes_size_);
 
     uint8_t getMethodByte() const override;
     ASTPtr getCodecDescription() const override;
@@ -143,6 +143,7 @@ protected:
 
 private:
     UInt8 data_bytes_size;
+    bool explicit_data_bytes_size;
 };
 
 
@@ -501,13 +502,16 @@ UInt8 getDataBytesSize(const IDataType * column_type)
 }
 
 
-CompressionCodecDoubleDelta::CompressionCodecDoubleDelta(UInt8 data_bytes_size_)
+CompressionCodecDoubleDelta::CompressionCodecDoubleDelta(UInt8 data_bytes_size_, bool explicit_data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
+    , explicit_data_bytes_size(explicit_data_bytes_size_)
 {
 }
 
 ASTPtr CompressionCodecDoubleDelta::getCodecDescription() const
 {
+    if (explicit_data_bytes_size)
+        return makeCodecDescription("DoubleDelta", {make_intrusive<ASTLiteral>(static_cast<UInt64>(data_bytes_size))});
     return makeCodecDescription("DoubleDelta");
 }
 
@@ -518,7 +522,8 @@ uint8_t CompressionCodecDoubleDelta::getMethodByte() const
 
 void CompressionCodecDoubleDelta::updateHash(SipHash & hash) const
 {
-    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    /// An explicit width and an inferred width with the same value use the same codec on disk.
+    makeCodecDescription("DoubleDelta")->updateTreeHash(hash, /*ignore_aliases=*/ true);
     hash.update(data_bytes_size);
 }
 
@@ -605,6 +610,7 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
     {
         /// Default bytes size is 1
         UInt8 data_bytes_size = 1;
+        bool explicit_data_bytes_size = false;
 
         // But always check against column_type if available to ensure it is also a valid type
         if (column_type != nullptr)
@@ -613,6 +619,7 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
         // Finally try to use a user argument if specified.
         if (arguments && !arguments->children.empty())
         {
+            explicit_data_bytes_size = true;
             if (arguments->children.size() > 1)
                 throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "DoubleDelta codec must have 1 parameter, given {}", arguments->children.size());
 
@@ -629,15 +636,16 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
             data_bytes_size = static_cast<UInt8>(user_bytes_size);
         }
 
-        return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size);
+        return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size, explicit_data_bytes_size);
     };
 
-    factory.registerCompressionCodecWithType("DoubleDelta", method_code, reg_func);
+    /// Omitted width follows the column type; an explicit width is safe to canonicalize.
+    factory.registerCompressionCodecWithType("DoubleDelta", method_code, reg_func, [](size_t argument_count) { return argument_count == 1; });
 }
 
 CompressionCodecPtr getCompressionCodecDoubleDelta(UInt8 data_bytes_size)
 {
-    return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size);
+    return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size, false);
 }
 
 }
