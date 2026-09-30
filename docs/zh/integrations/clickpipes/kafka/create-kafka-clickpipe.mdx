@@ -37,11 +37,13 @@ Kafka ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以
 
   <Step title="配置 Schema Registry (可选)" id="4-configure-your-schema-registry">
     对于 Avro 和 Protobuf topic，需要提供有效的 schema。有关如何配置 Schema Registry 的更多信息，请参阅 [Schema registries](/zh/integrations/clickpipes/kafka/schema-registries)。
+
+    对于 Protobuf，你也可以不启用 **Schema registry**，改为[在选择 topic 时上传 schema](#7-select-your-topic)。
   </Step>
 
   <Step title="配置反向专用终结点 (可选)" id="5-configure-reverse-private-endpoint">
     配置反向专用终结点，使 ClickPipes 能够通过 AWS PrivateLink 连接到您的 Kafka 集群。
-    如需了解更多信息，请参阅我们的 [AWS PrivateLink 文档](/zh/integrations/clickpipes/aws-privatelink)。
+    如需了解更多信息，请参阅我们的 [AWS PrivateLink 文档](/zh/integrations/clickpipes/networking/aws-privatelink)。
   </Step>
 
   <Step title="配置 SSH 隧道 (可选)" id="6-configure-ssh-tunneling">
@@ -59,12 +61,14 @@ Kafka ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以
     4. 点击“Verify Connection”验证连接。
 
     <Note>
-      请确保在 SSH 堡垒机的防火墙规则中将 [ClickPipes IP addresses](/zh/integrations/clickpipes/home#list-of-static-ips) 加入白名单，以便 ClickPipes 能够建立 SSH 隧道。
+      请确保在 SSH 堡垒机的防火墙规则中将 [ClickPipes IP addresses](/zh/integrations/clickpipes/networking/static-ips) 加入白名单，以便 ClickPipes 能够建立 SSH 隧道。
     </Note>
   </Step>
 
   <Step title="选择你的 topic" id="7-select-your-topic">
-    选择 topic 后，UI 将显示该 topic 中的一个示例文档。
+    选择你的 topic。如果你没有使用 Schema Registry，请在 **Schema format** 下选择数据格式。对于 `Protobuf`，请上传 `.proto` 文件或序列化的 `FileDescriptorSet` (最大 768 KiB) 。
+
+    随后，UI 将显示该 topic 中的一个示例文档。
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="设置 topic" size="md" />
   </Step>

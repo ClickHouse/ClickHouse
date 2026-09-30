@@ -51,7 +51,9 @@ struct SerializationInfoSettings
     /// Build a settings object that enables the broadest set of serialization capabilities. This is intended for
     /// readers that operate on in-memory state (e.g. NativeReader), which must handle all serialization variants.
     /// Additional serialization versions can be added here in the future.
-    static SerializationInfoSettings enableAllSupportedSerializations();
+    /// `with_string_size_stream` also enables the size-stream String layout (including nested Strings); it is
+    /// not self-describing on the wire, so enable it only when the peer protocol revision supports it.
+    static SerializationInfoSettings enableAllSupportedSerializations(bool with_string_size_stream = false);
 };
 
 }

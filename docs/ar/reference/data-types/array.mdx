@@ -52,7 +52,7 @@ SELECT [1, 2] AS x, toTypeName(x)
   ## العمل مع أنواع البيانات
 </div>
 
-عند إنشاء مصفوفة مباشرةً، يحدّد ClickHouse تلقائيًا نوع الوسائط على أنه أضيق نوع بيانات يمكنه تخزين جميع الوسائط المُدرجة. وإذا وُجدت أي قيم [Nullable](/ar/reference/data-types/nullable) أو قيم [NULL](/ar/reference/settings/formats#input_format_null_as_default) حرفية، فإن نوع عنصر المصفوفة يصبح أيضًا [Nullable](/ar/reference/data-types/nullable).
+عند إنشاء مصفوفة مباشرةً، يحدّد ClickHouse تلقائيًا نوع الوسائط على أنه أضيق نوع بيانات يمكنه تخزين جميع الوسائط المُدرجة. وإذا وُجدت أي قيم [Nullable](/ar/reference/data-types/nullable) أو قيم [NULL](/ar/reference/settings/formats/input-format#input_format_null_as_default) حرفية، فإن نوع عنصر المصفوفة يصبح أيضًا [Nullable](/ar/reference/data-types/nullable).
 
 إذا لم يتمكن ClickHouse من تحديد نوع البيانات، فإنه يُنشئ استثناءً. ويحدث هذا، على سبيل المثال، عند محاولة إنشاء مصفوفة تضم سلاسل نصية وأرقامًا في الوقت نفسه (`SELECT array(1, 'a')`).
 

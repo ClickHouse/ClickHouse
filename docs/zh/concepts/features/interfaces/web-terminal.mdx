@@ -36,6 +36,8 @@ Web 终端会依据与 HTTP 协议相同的 `Session` 和访问控制机制对�
 {"type": "auth", "user": "<user>", "password": "<password>"}
 ```
 
+`user` 字段是可选的：省略或留空时，用户名将使用 `default_session_user` [服务器设置](/zh/reference/settings/server-settings/settings) (或[可组合协议](/zh/concepts/features/configuration/server-config/composable-protocols)配置中针对各端点的覆盖值) ，如未另行配置，则为 `default`。如果 `default_session_user` 设为空字符串，则不允许未提供用户名的连接：`auth` 消息中省略或留空 `user` 将导致身份验证失败，服务器会以代码 `1008` 关闭 WebSocket；如果服务器配置中启用了 `session_log` 部分，此拒绝会以 `user` 为空的 `LoginFailure` 事件记录在 [`system.session_log`](/zh/reference/system-tables/session_log) 中。
+
 这样可以避免将凭据放在 URL 查询参数中，或放在随升级请求发送的 `Authorization` 请求头中，因为这些信息可能会出现在浏览器历史记录、服务器访问日志以及反向代理日志里。`/webterminal` 会有意**忽略**升级请求中的 URL 参数、HTTP Basic 认证，以及 `X-ClickHouse-User`/`X-ClickHouse-Key` 请求头。
 
 无效的凭据会导致服务器以代码 `1008` 关闭 WebSocket；浏览器 UI 会重新提示输入凭据。
@@ -58,6 +60,16 @@ Web 终端会依据与 HTTP 协议相同的 `Session` 和访问控制机制对�
 </div>
 
 [`/play`](/zh/concepts/features/interfaces/http) Web SQL UI 将 Web 终端嵌入为可停靠面板。你可以通过侧边栏中的终端图标切换它，或者在查询编辑器为空时按 `~` 键。`/play` 页面会在加载时检测 `/webterminal` 是否可用，并在端点不可用时隐藏终端控件 (例如，当 `enable_webterminal` 设置为 `false` 时) 。
+
+<div id="docs-integration">
+  ## 与文档网站集成
+</div>
+
+该文档网站在页面底部的窄开发者托盘中嵌入了同一个终端，并以只读 `play` 用户身份连接到 [ClickHouse playground](https://play.clickhouse.com)，因此无需离开当前页面即可试用其中的示例。固定托盘会在页面末尾预留相应空间，以免遮挡页脚控件。终端打开时，文档页面会被锁定，滚动条也会隐藏。在终端上滚动时，滚动仅发生在其回滚缓冲区内，不会带动后方的文档页面。点击“ClickHouse 终端”栏或按 `~` 键，可打开该栏上方带内边距的面板。再次点击该栏、点击其折叠箭头、按 `~` 或 `Escape`，或向下拖动面板顶部边缘，均可将其折叠；该顶部边缘还可用于调整面板大小。结束会话 (使用 `exit` 或 `Ctrl+D`) 同样会折叠面板。
+
+关闭面板后，会话及其回滚缓冲区仍会保留：重新打开终端时会回到同一提示符。会话存储在页面中，因此在文档页面之间导航时仍会保留，但在重新加载浏览器选项卡后不会保留——重新加载后，面板会以新会话重新出现。
+
+终端托盘是网站桌面布局的一部分，在窄视口下不可用。
 
 <div id="security">
   ## 安全注意事项

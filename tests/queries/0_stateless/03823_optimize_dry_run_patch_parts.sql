@@ -21,13 +21,13 @@ SELECT 'data with patches applied';
 SELECT * FROM t_dry_run_patches ORDER BY id;
 
 SELECT 'parts before dry run';
-SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_dry_run_patches' AND active ORDER BY name;
+SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_dry_run_patches' AND active ORDER BY name;
 
 OPTIMIZE TABLE t_dry_run_patches DRY RUN PARTS 'all_1_1_0', 'all_2_2_0';
 
 -- After DRY RUN, parts and data must remain unchanged: no merge committed.
 SELECT 'parts after dry run with patches';
-SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_dry_run_patches' AND active ORDER BY name;
+SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_dry_run_patches' AND active ORDER BY name;
 
 SELECT 'data after dry run';
 SELECT * FROM t_dry_run_patches ORDER BY id;

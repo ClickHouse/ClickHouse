@@ -485,7 +485,7 @@ def retry(exception_types, max_attempts=5, max_interval=5):
     )
 
 
-class ClickhouseError(Exception):
+class ClickHouseError(Exception):
     """
     ClickHouse interaction error.
     """
@@ -495,7 +495,7 @@ class ClickhouseError(Exception):
         super().__init__(self.response.text.strip())
 
 
-class ClickhouseClient:
+class ClickHouseClient:
     """
     ClickHouse client.
     """
@@ -562,7 +562,7 @@ class ClickhouseClient:
 
             return response.text.strip()
         except requests.exceptions.HTTPError as e:
-            raise ClickhouseError(e.response) from None
+            raise ClickHouseError(e.response) from None
 
     def render_query(self, query, **kwargs):
         env = jinja2.Environment()
@@ -575,7 +575,7 @@ class ClickhouseClient:
         return template.render(kwargs)
 
 
-class ClickhouseConfig:
+class ClickHouseConfig:
     """
     ClickHouse server configuration.
     """
@@ -592,7 +592,7 @@ class ClickhouseConfig:
 
     @classmethod
     def load(cls):
-        return ClickhouseConfig(
+        return ClickHouseConfig(
             cls._load_config("/var/lib/clickhouse/preprocessed_configs/config.xml")
         )
 
@@ -777,10 +777,10 @@ def main():
     """
     args = parse_args()
     timestamp = datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S")
-    client = ClickhouseClient(
+    client = ClickHouseClient(
         host=args.host, port=args.port, user=args.user, password=args.password
     )
-    ch_config = ClickhouseConfig.load()
+    ch_config = ClickHouseConfig.load()
     version = client.clickhouse_version
     system_tables = [
         row[0]

@@ -1,118 +1,243 @@
+"""
+Tests for `FuzzerLogParser` (ci/jobs/scripts/log_parser.py).
+
+The synthetic server logs below reproduce the exact line format emitted by the
+server, in particular the AST Fuzzer oracle mismatch `<Fatal>` message logged by
+`executeQuery` (src/Interpreters/executeQuery.cpp). Before the parser learned to
+recognize it, such a `<Fatal>` produced a bare "Unknown error" in the report even
+though the message was right there in the log.
+"""
+
 import os
 import sys
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 
-_ASAN_CHECK_FAILED_STDERR = """\
-==2138==WARNING: ASan doesn't fully support makecontext/swapcontext functions and may produce false positives in some cases!
-AddressSanitizer: CHECK failed: sanitizer_allocator_secondary.h:200 "((nearest_chunk)) < ((h->map_beg + h->map_size))" (0x7b44c2461000, 0x0) (tid=3005)
-    #0 0x55b9822b6021 in __asan::CheckUnwind() asan_rtl.cpp
-    #1 0x55b9822cedcb in __sanitizer::CheckFailed(char const*, int, char const*, unsigned long long, unsigned long long) sanitizer_termination.cpp
-    #2 0x55b9b8db9bc7 in DB::ExceptionKeepingTransform::work() src/Processors/Transforms/ExceptionKeepingTransform.cpp:189:42
-    #3 0x55b9b85a724d in DB::executeJob(DB::ExecutingGraph::Node*, DB::ReadProgressCallback*) src/Processors/Executors/ExecutionThreadContext.cpp:54:28
-    #4 0x55b9b85a724d in DB::ExecutionThreadContext::executeTask() src/Processors/Executors/ExecutionThreadContext.cpp:103:9
-    #5 0x55b9b85728d8 in DB::PipelineExecutor::executeStepImpl(unsigned long, DB::IAcquiredSlot*, std::__1::atomic<bool>*) src/Processors/Executors/PipelineExecutor.cpp:363:26
-    #6 0x55b9b8571ae1 in DB::PipelineExecutor::executeStep(std::__1::atomic<bool>*) src/Processors/Executors/PipelineExecutor.cpp:191:5
-    #7 0x55b9b85cb318 in DB::PushingPipelineExecutor::finish() src/Processors/Executors/PushingPipelineExecutor.cpp:131:47
-    #8 0x7f4ae1fdb8cf  misc/../sysdeps/unix/sysv/linux/x86_64/clone3.S:81
-
-dpkg: error processing package clickhouse-server (--install):
+# The real message: "<Fatal> ASTFuzzer: AST Fuzzer oracle mismatch detected!"
+# followed by the reproducer query and the oracle-specific message.
+_ORACLE_MISMATCH_LOG = """\
+2026.09.04 00:44:57.900000 [ 1068 ] {7af77722-1ba2-40a2-aa08-54e577a54015} <Debug> executeQuery: (from 127.0.0.1) SELECT g, count(), min(v), approx_top_k(v) FROM oracle_tlp_agg_counter WHERE v > 50 GROUP BY g ORDER BY g ASC (stage: Complete)
+2026.09.04 00:44:57.972626 [ 1068 ] {7af77722-1ba2-40a2-aa08-54e577a54015} <Fatal> ASTFuzzer: AST Fuzzer oracle mismatch detected!
+Fuzzed query: SELECT g, count(), min(v), approx_top_k(v) FROM oracle_tlp_agg_counter WHERE v > 50 GROUP BY g ORDER BY g ASC
+TLP Aggregate oracle mismatch!
+Original result had 3 rows, partitioned result had 4 rows
+2026.09.04 00:44:58.000000 [ 1068 ] {} <Information> Application: shutting down
 """
 
 
-def test_parse_failure_prefers_asan_check_failed_over_server_assertion(tmp_path):
+def test_parse_ast_fuzzer_oracle_mismatch(tmp_path):
+    # The oracle kind ("TLP Aggregate") is folded into the failure name so that
+    # distinct oracles group separately in CI DB, and the reproducer query is
+    # kept in the info.
     server_log = tmp_path / "clickhouse-server.err.log"
-    stderr_log = tmp_path / "stderr.log"
+    server_log.write_text(_ORACLE_MISMATCH_LOG, encoding="utf-8")
 
+    parser = FuzzerLogParser(
+        server_log=str(server_log), stderr_log="", fuzzer_log=""
+    )
+    result_name, info, files = parser.parse_failure()
+
+    assert result_name == "AST Fuzzer oracle mismatch: TLP Aggregate"
+    assert result_name != FuzzerLogParser.UNKNOWN_ERROR
+    assert "AST Fuzzer oracle mismatch detected!" in info
+    assert "Fuzzed query: SELECT g, count(), min(v), approx_top_k(v)" in info
+    assert files == []
+
+
+# Every oracle-kind message emitted by `QueryOracleChecker` (src/Interpreters/
+# QueryOracleChecker.cpp), mapped to the kind the parser should extract. The
+# "Identity WHERE (...)" and DQP "Setting: <name>" variants are the tricky ones:
+# the kind carries a parenthesized label, and DQP appends a variable trailer
+# after the "!" that must be excluded.
+_ORACLE_KIND_CASES = [
+    ("TLP WHERE oracle mismatch!", "TLP WHERE"),
+    ("NoREC oracle mismatch!", "NoREC"),
+    ("TLP DISTINCT oracle mismatch!", "TLP DISTINCT"),
+    ("TLP GROUP BY oracle mismatch!", "TLP GROUP BY"),
+    ("TLP HAVING oracle mismatch!", "TLP HAVING"),
+    ("DQP oracle mismatch! Setting: allow_experimental_analyzer", "DQP"),
+    ("TLP Aggregate oracle mismatch!", "TLP Aggregate"),
+    ("Identity WHERE (NOT(NOT p)) oracle mismatch!", "Identity WHERE (NOT(NOT p))"),
+    ("Identity WHERE (p AND 1) oracle mismatch!", "Identity WHERE (p AND 1)"),
+    ("Identity WHERE (p OR 0) oracle mismatch!", "Identity WHERE (p OR 0)"),
+    ("Subquery wrap oracle mismatch!", "Subquery wrap"),
+]
+
+
+@pytest.mark.parametrize("oracle_line, expected_kind", _ORACLE_KIND_CASES)
+def test_oracle_kind_extraction(tmp_path, oracle_line, expected_kind):
+    # Each oracle kind must group under its own name, including the parenthesized
+    # "Identity WHERE (...)" variants that a word-only capture would have missed.
+    server_log = tmp_path / "clickhouse-server.err.log"
     server_log.write_text(
-        "2026.06.09 00:00:00.000000 [ 1 ] {} <Fatal> Application: "
-        "Assertion 'px != 0' failed.\n",
+        "2026.09.04 00:44:57.972626 [ 1068 ] {q} <Fatal> ASTFuzzer: "
+        "AST Fuzzer oracle mismatch detected!\n"
+        "Fuzzed query: SELECT 1\n"
+        f"{oracle_line}\n"
+        "2026.09.04 00:44:58.000000 [ 1068 ] {} <Information> Application: shutting down\n",
         encoding="utf-8",
     )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log), stderr_log="", fuzzer_log=""
+    )
+    result_name, _, _ = parser.parse_failure()
+
+    assert result_name == f"AST Fuzzer oracle mismatch: {expected_kind}"
+
+
+def test_sanitizer_wins_over_oracle_mismatch(tmp_path):
+    # When both a server-side oracle mismatch and a sanitizer report are present,
+    # the higher-signal sanitizer failure must be reported, not the oracle
+    # mismatch. `parse_failure` stops at the first matching pattern, so Sanitizer
+    # must stay ahead of the oracle pattern in ERROR_PATTERNS.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    stderr_log = tmp_path / "stderr.log"
+    server_log.write_text(_ORACLE_MISMATCH_LOG, encoding="utf-8")
     stderr_log.write_text(
-        "AddressSanitizer: CHECK failed: sanitizer_allocator_secondary.h:200 "
-        "\"((nearest_chunk)) < ((h->map_beg + h->map_size))\" "
-        "(0x7b44c2461000, 0x0) (tid=3005)\n"
-        "    <empty stack>\n"
-        "\n"
-        "dpkg: error processing package clickhouse-server (--install):\n",
+        "==1234==ERROR: AddressSanitizer: heap-use-after-free on address 0x1\n"
+        "    #0 0x55b9b8db9bc7 in DB::Foo::bar() src/Foo.cpp:10:5\n"
+        "SUMMARY: AddressSanitizer: heap-use-after-free src/Foo.cpp:10:5\n",
         encoding="utf-8",
     )
 
     parser = FuzzerLogParser(
-        server_log=str(server_log),
-        stderr_log=str(stderr_log),
-        fuzzer_log="",
+        server_log=str(server_log), stderr_log=str(stderr_log), fuzzer_log=""
     )
+    result_name, info, _ = parser.parse_failure()
 
-    result_name, info, files = parser.parse_failure()
-
-    assert result_name == "AddressSanitizer (STID: None)"
-    assert "AddressSanitizer: CHECK failed:" in info
-    assert "Assertion 'px != 0' failed" not in info
-    assert "dpkg" not in info
-    assert files == []
+    assert result_name.startswith("AddressSanitizer")
+    assert "oracle mismatch" not in result_name
+    assert "heap-use-after-free" in info
 
 
-def test_parse_failure_asan_check_failed_with_stack_trace(tmp_path):
+def test_parse_ast_fuzzer_oracle_mismatch_unknown_kind(tmp_path):
+    # If no "<kind> oracle mismatch!" line is present, the name stays generic but
+    # still classified (not "Unknown error").
     server_log = tmp_path / "clickhouse-server.err.log"
-    stderr_log = tmp_path / "stderr.log"
-
     server_log.write_text(
-        "2026.06.09 00:00:00.000000 [ 1 ] {} <Fatal> Application: "
-        "Assertion 'px != 0' failed.\n",
+        "2026.09.04 00:44:57.972626 [ 1068 ] {q} <Fatal> ASTFuzzer: "
+        "AST Fuzzer oracle mismatch detected!\n"
+        "Fuzzed query: SELECT 1\n"
+        "2026.09.04 00:44:58.000000 [ 1068 ] {} <Information> Application: shutting down\n",
         encoding="utf-8",
     )
-    stderr_log.write_text(_ASAN_CHECK_FAILED_STDERR, encoding="utf-8")
 
     parser = FuzzerLogParser(
-        server_log=str(server_log),
-        stderr_log=str(stderr_log),
-        fuzzer_log="",
+        server_log=str(server_log), stderr_log="", fuzzer_log=""
     )
-
     result_name, info, files = parser.parse_failure()
 
-    assert result_name == "AddressSanitizer (STID: 1288-3bd5)"
-    assert "AddressSanitizer: CHECK failed:" in info
-    assert "Assertion 'px != 0' failed" not in info
-    assert "dpkg" not in info
-    assert files == []
+    assert result_name == "AST Fuzzer oracle mismatch"
+    assert "Fuzzed query: SELECT 1" in info
 
 
-def test_parse_failure_logical_error_name_drops_dangling_stack_trace_marker(tmp_path):
+def test_generic_fatal_fallback_surfaces_message(tmp_path):
+    # An unrecognized <Fatal> message (no specific pattern matches) is surfaced
+    # verbatim instead of being reported as a bare "Unknown error".
     server_log = tmp_path / "clickhouse-server.err.log"
-
     server_log.write_text(
-        "2026.06.14 20:00:01.000000 [ 200 ] {} <Fatal> : Logical error: "
-        "'std::exception. Code: 1001, type: std::__1::future_error, "
-        "e.what() = The associated promise has been destructed prior to the "
-        "associated state becoming ready., Stack trace (when copying this "
-        "message, always include the lines below):\n"
-        "\n"
-        "0. ./contrib/llvm-project/libcxx/include/future:509:25: "
-        "std::promise<void>::~promise() @ 0x000000002cbf6d04\n"
-        "2026.06.14 20:00:02.000000 [ 200 ] {} <Fatal> BaseDaemon: Stack trace:\n"
-        "2026.06.14 20:00:02.000000 [ 200 ] {} <Fatal> BaseDaemon: "
-        "1. ./src/Common/Exception.cpp:60: DB::abortOnFailedAssertion() @ 0x14d2262e\n",
+        "2026.09.04 00:44:57.900000 [ 1068 ] {q} <Debug> executeQuery: SELECT 1\n"
+        "2026.09.04 00:44:57.972626 [ 1068 ] {q} <Fatal> SomeNewComponent: "
+        "Brand new fatal condition nobody parses yet\n"
+        "Extra detail line about the failure\n"
+        "2026.09.04 00:44:58.000000 [ 1068 ] {} <Information> Application: shutting down\n",
         encoding="utf-8",
     )
 
     parser = FuzzerLogParser(
-        server_log=str(server_log),
-        stderr_log="",
-        fuzzer_log="",
+        server_log=str(server_log), stderr_log="", fuzzer_log=""
     )
-
     result_name, info, files = parser.parse_failure()
 
-    # The failure name must not end with the "always include the lines below):"
-    # promise when no frames follow it (the first log line is all the name has).
-    assert "always include the lines below" not in result_name
-    assert result_name.startswith("Logical error: 'std::exception.")
-    assert "The associated promise has been destructed" in result_name
-    assert "(STID:" in result_name
-    # The frames are still preserved in the separate stack-trace section of the info.
-    assert "abortOnFailedAssertion" in info
+    assert result_name != FuzzerLogParser.UNKNOWN_ERROR
+    assert result_name == (
+        "SomeNewComponent: Brand new fatal condition nobody parses yet"
+    )
+    assert "Extra detail line about the failure" in info
+    # The "<Fatal> " prefix and the following unrelated log line are not folded in.
+    assert "<Fatal>" not in result_name
+    assert "Application: shutting down" not in info
+    # This is a lower-confidence result: callers scanning several logs must be able
+    # to tell it apart from a specific classification.
+    assert parser.is_generic_fatal is True
+
+
+def test_quoted_fatal_in_query_text_is_not_a_generic_fatal(tmp_path):
+    # A "<Fatal>" substring quoted inside query text (or a comment) on an ordinary
+    # <Debug>/<Error> line must not be mistaken for a fatal record: the generic
+    # fallback is anchored to the "[ <tid> ] {<qid>} <Fatal>" log-level prefix.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    server_log.write_text(
+        "2026.09.04 00:44:57.900000 [ 1068 ] {q} <Debug> executeQuery: "
+        "(from 127.0.0.1) SELECT '<Fatal> not an error' (stage: Complete)\n"
+        "2026.09.04 00:44:58.000000 [ 1068 ] {} <Information> Application: shutting down\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log), stderr_log="", fuzzer_log=""
+    )
+    result_name, info, _ = parser.parse_failure()
+
+    assert result_name == FuzzerLogParser.UNKNOWN_ERROR
+    assert parser.is_generic_fatal is False
+    assert "not an error" not in result_name
+
+
+def test_unknown_error_when_no_fatal(tmp_path):
+    # With neither a specific pattern nor any <Fatal> message, the parser still
+    # falls back to "Unknown error".
+    server_log = tmp_path / "clickhouse-server.err.log"
+    server_log.write_text(
+        "2026.09.04 00:44:57.900000 [ 1068 ] {q} <Debug> executeQuery: SELECT 1\n"
+        "2026.09.04 00:44:58.000000 [ 1068 ] {} <Information> Application: shutting down\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log), stderr_log="", fuzzer_log=""
+    )
+    result_name, info, _ = parser.parse_failure()
+
+    assert result_name == FuzzerLogParser.UNKNOWN_ERROR
+    assert "Lost connection to server" in info
+    assert parser.is_generic_fatal is False
+
+
+def test_generic_fatal_flag_not_set_for_specific_classification(tmp_path):
+    # A specific classification (here an oracle mismatch) must not be flagged as a
+    # generic fatal, so `stress_job.py` treats it as a definitive, higher-priority
+    # result than a generic <Fatal> on another replica.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    server_log.write_text(_ORACLE_MISMATCH_LOG, encoding="utf-8")
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log), stderr_log="", fuzzer_log=""
+    )
+    parser.parse_failure()
+
+    assert parser.is_generic_fatal is False
+
+
+def test_specific_pattern_wins_over_generic_fatal(tmp_path):
+    # A logical error is a <Fatal> too; the specific pattern must classify it
+    # rather than the generic fallback treating it as an opaque message.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    server_log.write_text(
+        "2026.09.04 00:44:57.972626 [ 1068 ] {q} <Fatal> : Logical error: "
+        "'Bad cast from type A to type B'.\n"
+        "2026.09.04 00:44:58.000000 [ 1068 ] {} <Information> Application: shutting down\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log), stderr_log="", fuzzer_log=""
+    )
+    result_name, _, _ = parser.parse_failure()
+
+    assert result_name.startswith("Logical error")
