@@ -8,6 +8,7 @@ from .prometheus_test_utils import (
     execute_query_via_http_api,
     get_response_to_remote_write,
     send_protobuf_to_remote_write,
+    types_pb2,
 )
 
 
@@ -176,6 +177,38 @@ def test_async_insert_flush_timeout_returns_503():
         '{"resultType": "vector", "result": '
         '[{"metric": {"__name__": "timeout_metric"}, "value": [1724112000, "1.5"]}]}'
     )
+
+
+def test_async_insert_flush_timeout_counts_dropped_exemplars():
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+
+    timestamp = 1724112000
+    write_request = convert_time_series_to_protobuf(
+        [({"__name__": "exemplar_timeout_metric"}, {timestamp: 1.5})]
+    )
+    write_request.timeseries[0].exemplars.append(
+        types_pb2.Exemplar(
+            labels=[types_pb2.Label(name="trace_id", value="abc")],
+            value=1.5,
+            timestamp=timestamp * 1000,
+        )
+    )
+
+    before = get_profile_event("PrometheusRemoteWriteDroppedExemplars")
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write?async_insert=1&wait_for_async_insert_timeout=0"
+        "&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_max_ms=3000",
+        write_request,
+    )
+    assert response.status_code == 503
+
+    # The sample is flushed later, so its exemplar is counted as dropped too.
+    assert_eq_with_retry(
+        node, "SELECT count() FROM timeSeriesSamples(prometheus)", "1", retry_count=60
+    )
+    assert get_profile_event("PrometheusRemoteWriteDroppedExemplars") - before == 1
 
 
 def test_async_insert_flush_timeout_is_clamped():
