@@ -28,11 +28,11 @@ ${CLICKHOUSE_CLIENT} --query "
 
 echo "Current snapshot with legacy history"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT c FROM icebergS3(s3_conn, filename='iceberg_optional_snapshot_schema_id') ORDER BY c"
+    SELECT c, extra FROM icebergS3(s3_conn, filename='iceberg_optional_snapshot_schema_id') ORDER BY c"
 
 echo "Historical snapshot without schema-id"
 ${CLICKHOUSE_CLIENT} --iceberg_snapshot_id="${HISTORICAL_SNAPSHOT_ID}" --query "
-    SELECT c FROM icebergS3(s3_conn, filename='iceberg_optional_snapshot_schema_id') ORDER BY c"
+    SELECT c, extra FROM icebergS3(s3_conn, filename='iceberg_optional_snapshot_schema_id') ORDER BY c"
 
 echo "Current snapshot with explicit null schema-id"
 python3 - "$CURDIR/data_minio/iceberg_optional_snapshot_schema_id/metadata/v4.metadata.json" <<'PY' | ${CLICKHOUSE_CLIENT} -q "

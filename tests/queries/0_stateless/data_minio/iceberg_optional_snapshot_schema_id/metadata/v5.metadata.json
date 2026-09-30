@@ -4,8 +4,8 @@
   "location" : "/tmp/clickhouse-iceberg-optional-snapshot-schema-id/default/iceberg_optional_snapshot_schema_id",
   "last-sequence-number" : 1,
   "last-updated-ms" : 1790216489640,
-  "last-column-id" : 1,
-  "current-schema-id" : 0,
+  "last-column-id" : 2,
+  "current-schema-id" : 1,
   "schemas" : [ {
     "type" : "struct",
     "schema-id" : 0,
@@ -14,6 +14,20 @@
       "name" : "c",
       "required" : false,
       "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 1,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "c",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "extra",
+      "required" : false,
+      "type" : "string"
     } ]
   } ],
   "default-spec-id" : 0,
@@ -86,7 +100,7 @@
       "total-equality-deletes" : "0"
     },
     "manifest-list" : "/tmp/clickhouse-iceberg-optional-snapshot-schema-id/default/iceberg_optional_snapshot_schema_id/metadata/snap-4742794137929535297-1-b55c9007-ba4a-42a0-9973-871d09b42c73.avro",
-    "schema-id" : 0
+    "schema-id" : 1
   } ],
   "snapshot-log" : [ {
     "timestamp-ms" : 1790216422831,

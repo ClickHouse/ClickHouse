@@ -2,11 +2,11 @@ Current snapshot without schema-id
 1
 2
 Current snapshot with legacy history
-1
-2
-3
+1	\N
+2	\N
+3	\N
 Historical snapshot without schema-id
-1
+1	\N
 Current snapshot with explicit null schema-id
 1
 2
