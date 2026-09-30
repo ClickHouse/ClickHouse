@@ -883,7 +883,8 @@ static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     result->set(Iceberg::f_spec_id, 0);
 
     Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
-    Int32 partition_iter = 1000;
+    /// Partition field ids start at 1000. The first field gets 1000 after the pre-increment.
+    Int32 partition_iter = 999;
     if (partition_by)
     {
         if (const auto * partition_function = partition_by->as<ASTFunction>(); partition_function && partition_function->name == "tuple")
@@ -903,11 +904,6 @@ static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
             auto partition_field = getPartitionField(partition_by, column_name_to_source_id, partition_iter);
             fields->add(partition_field);
         }
-    }
-    else
-    {
-        /// Partition field ids start at 1000. Iceberg Java assigns the next id from this value.
-        partition_iter = 999;
     }
 
     result->set(Iceberg::f_fields, fields);
