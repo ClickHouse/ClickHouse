@@ -2268,25 +2268,30 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     if (!database.empty())
         DatabaseCatalog::instance().assertDatabaseExists(database);
 
-    /// Apply user's profiles, constraints, settings, roles.
-    std::lock_guard lock(mutex);
-
-    setUserIDWithLock(user_id_, lock);
-
     /// Retroactively enforce constraints when applying a user's stored profiles at login: a user whose
     /// SQL-defined settings or SQL-defined profiles violate the constraints (or `allow_feature_tier`)
     /// must not be able to log in. Config-defined users are the admin's root configuration and are
     /// trusted. For SQL-defined users we check the raw profile elements (so min/max-only and
     /// writability-only elements are seen), but tolerate config-defined profiles in the chain for
     /// compatibility (see `SettingsConstraints::check`).
-    if (!isUserDefinedInConfigWithLock(user_id_))
+    /// The check uses what a new session starts from, before this context changes: `setUser` also switches
+    /// an existing context (`EXECUTE AS`, a view's definer), whose own settings say nothing about the target.
+    if (!isUserDefinedInConfig(user_id_))
     {
-        auto current_constraints = getSettingsConstraintsAndCurrentProfilesWithLock();
-        current_constraints->constraints.check(
-            *settings, user->settings, SettingSource::USER, /* skip_config_defined_profiles= */ true);
-        current_constraints->constraints.check(
-            *settings, enabled_roles->settings_from_enabled_roles, SettingSource::ROLE, /* skip_config_defined_profiles= */ true);
+        auto global_context = getGlobalContext();
+        const auto & new_session_settings = global_context->getSettingsRef();
+        auto new_session_constraints = global_context->getSettingsConstraintsAndCurrentProfiles();
+        new_session_constraints->constraints.check(
+            new_session_settings, user->settings, SettingSource::USER, /* skip_config_defined_profiles= */ true);
+        new_session_constraints->constraints.check(
+            new_session_settings, enabled_roles->settings_from_enabled_roles, SettingSource::ROLE,
+            /* skip_config_defined_profiles= */ true);
     }
+
+    /// Apply user's profiles, constraints, settings, roles.
+    std::lock_guard lock(mutex);
+
+    setUserIDWithLock(user_id_, lock);
 
     setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
@@ -2316,7 +2321,7 @@ void Context::setUserIDWithLock(const UUID & user_id_, const std::lock_guard<Con
     need_recalculate_access = true;
 }
 
-bool Context::isUserDefinedInConfigWithLock(const UUID & user_id_) const
+bool Context::isUserDefinedInConfig(const UUID & user_id_) const
 {
     auto storage = getAccessControl().findStorage(user_id_);
     return storage && storage->getStorageType() == UsersConfigAccessStorage::STORAGE_TYPE;
@@ -2327,7 +2332,7 @@ bool Context::isCurrentUserDefinedInConfigWithLock() const
     /// No acting user means an internal/server-initiated operation, which is trusted.
     if (!user_id)
         return true;
-    return isUserDefinedInConfigWithLock(*user_id);
+    return isUserDefinedInConfig(*user_id);
 }
 
 void Context::setUserID(const UUID & user_id_)
