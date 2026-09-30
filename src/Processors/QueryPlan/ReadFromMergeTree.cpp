@@ -6485,7 +6485,7 @@ ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_outp
     bool removed_output_from_prewhere = false;
     if (query_info.prewhere_info)
     {
-        auto prewhere_pruning = pruneFilterDAGOutputsByPosition(
+        auto prewhere_pruning = FilterStep::pruneDAGOutputsByPosition(
             query_info.prewhere_info->prewhere_actions,
             query_info.prewhere_info->prewhere_column_name,
             query_info.prewhere_info->remove_prewhere_column,
@@ -6504,7 +6504,7 @@ ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_outp
     std::vector<size_t> required_storage_positions_from_filters;
     if (query_info.row_level_filter)
     {
-        auto row_level_pruning = pruneFilterDAGOutputsByPosition(
+        auto row_level_pruning = FilterStep::pruneDAGOutputsByPosition(
             query_info.row_level_filter->actions,
             query_info.row_level_filter->column_name,
             query_info.row_level_filter->do_remove_column,

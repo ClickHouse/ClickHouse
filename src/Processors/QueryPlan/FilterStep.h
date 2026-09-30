@@ -6,56 +6,13 @@
 namespace DB
 {
 
+/// What `FilterStep::pruneDAGOutputsByPosition` did.
 struct FilterDAGOutputPruningResult
 {
     bool changed = false;
     bool input_positions_changed = false;
     std::vector<size_t> required_input_positions;
 };
-
-/// What pruneFilterDAGOutputsByPosition would do, computed without touching the DAG.
-struct FilterDAGOutputPruningPlan
-{
-    /// The value the filter column flag takes.
-    bool remove_filter_column = false;
-    /// DAG output positions to keep, before the filter column is erased from the header, the filter
-    /// column included: it is needed to filter, whether or not anyone reads it.
-    ///
-    /// Unlike for the other steps, these are not just the positions the caller does not name. The header
-    /// the caller counts in has the filter column erased from it, so its positions are shifted back over
-    /// that column first, and the filter column is then kept whether or not anyone reads it.
-    std::vector<size_t> required_dag_positions;
-    /// One entry per column of the input header, in header order.
-    std::vector<IQueryPlanStep::InputColumnUsage> input_columns;
-    /// Whether the output header changes - a DAG output goes away, or the filter column is dropped from
-    /// it now - and whether removeUnusedActions would erase any node.
-    bool changes_output_header = false;
-    bool removes_any_action = false;
-    /// Whether the filter predicate folds to a constant through `materialize` once the filter column is
-    /// dropped; the rest of the plan is worked out on the folded DAG.
-    bool fold_filter_predicate = false;
-    /// The position of the filter column in the DAG's outputs, before any is removed.
-    size_t filter_output_position = 0;
-
-    FilterDAGOutputPruningResult toResult() const;
-};
-
-FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
-    const ActionsDAG & dag,
-    const String & filter_column_name,
-    bool remove_filter_column,
-    const Block & input_header,
-    const std::vector<size_t> & unneeded_output_positions);
-
-/// Prune filter DAG outputs by position and return the input positions needed to compute the remaining
-/// outputs and filter. The analysis above plus its application, for a caller that counts what it keeps, as
-/// `ReadFromMergeTree` does for PREWHERE and the row policy filter.
-FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
-    ActionsDAG & dag,
-    const String & filter_column_name,
-    bool & remove_filter_column,
-    const Block & input_header,
-    const std::vector<size_t> & required_output_positions);
 
 /// Implements WHERE, HAVING operations. See FilterTransform.
 class FilterStep : public ITransformingStep
@@ -110,12 +67,61 @@ public:
 
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
+    /// Prunes the outputs of a filter DAG to the columns at `required_output_positions` of its output header, and says
+    /// which input positions the remaining outputs and the filter need. For a caller that counts what it keeps, as
+    /// `ReadFromMergeTree` does for PREWHERE and the row policy filter.
+    static FilterDAGOutputPruningResult pruneDAGOutputsByPosition(
+        ActionsDAG & dag,
+        const String & filter_column_name,
+        bool & remove_filter_column,
+        const Block & input_header,
+        const std::vector<size_t> & required_output_positions);
+
 private:
     void updateOutputHeader() override;
 
-    /// Everything removeUnusedColumns needs to know, computed without touching the step. Shared by
-    /// removeUnusedColumns and getUnneededColumns so their answers cannot differ.
-    FilterDAGOutputPruningPlan analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const;
+    /// Everything removeUnusedColumns needs to know, computed without touching the DAG. Shared by removeUnusedColumns,
+    /// getUnneededColumns and pruneDAGOutputsByPosition so their answers cannot differ.
+    struct UnneededColumnsPlan
+    {
+        /// The value the filter column flag takes.
+        bool remove_filter_column = false;
+        /// The DAG outputs nobody needs, as positions in `getOutputs` before any is removed, sorted. Never the filter
+        /// column: it is needed to filter, whether or not anyone reads it.
+        ///
+        /// Unlike for the other steps, these are not just the caller's positions. The header the caller counts in
+        /// has the filter column erased from it, so its positions are shifted back over that column first.
+        std::vector<size_t> unneeded_dag_positions;
+        /// One entry per column of the input header, in header order.
+        std::vector<InputColumnUsage> input_columns;
+        /// Whether the output header changes - a DAG output goes away, or the filter column is dropped from it now -
+        /// and whether removeUnusedActions would erase any node.
+        bool changes_output_header = false;
+        bool removes_any_action = false;
+        /// Whether the filter predicate folds to a constant through `materialize` once the filter column is dropped;
+        /// the rest of the plan is worked out on the folded DAG.
+        bool fold_filter_predicate = false;
+        /// The position of the filter column in the DAG's outputs, before any is removed.
+        size_t filter_output_position = 0;
+
+        /// The DAG outputs that remain, in their order.
+        ActionsDAG::NodeRawConstPtrs neededDAGOutputs(const ActionsDAG::NodeRawConstPtrs & outputs) const;
+
+        /// The part of the pruning that concerns the outputs: the fold of the predicate, the outputs that remain, and
+        /// the filter column flag.
+        void applyToOutputs(ActionsDAG & dag, bool & remove_filter_column_) const;
+
+        FilterDAGOutputPruningResult toResult() const;
+    };
+
+    static UnneededColumnsPlan analyzeUnneededColumns(
+        const ActionsDAG & dag,
+        const String & filter_column_name,
+        bool remove_filter_column,
+        const Block & input_header,
+        const std::vector<size_t> & unneeded_output_positions);
+
+    UnneededColumnsPlan analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const;
 
     ActionsDAG actions_dag;
     String filter_column_name;
