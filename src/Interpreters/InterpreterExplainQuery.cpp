@@ -55,9 +55,9 @@
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/QueryPlan/AnalyzePlanStats.h>
+#include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/StepWallClockRegistry.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/CurrentThread.h>
@@ -1443,12 +1443,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             planning_ns += watch.elapsed();
 
-            auto step_wall_clock_registry = std::make_unique<StepWallClockRegistry>();
-            step_wall_clock_registry->populateFromPlan(plan);
-            pipeline.setStepWallClockRegistry(std::move(step_wall_clock_registry));
-
-            pipeline.setCollectWorkIntervals(analyzed.time);
-
             CompletedPipelineExecutor executor(pipeline);
 
             if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
@@ -1460,10 +1454,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!outer_thread_group)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN ANALYZE: current thread is not attached to a thread group");
 
-            auto analyze_thread_group = ThreadGroup::createForExplainAnalyze(outer_thread_group);
+            watch.restart();
+            auto step_profiler = std::make_shared<StepProfiler>(plan, analyzed.time, watch.getStart());
+            auto analyze_thread_group = ThreadGroup::createForExplainAnalyze(outer_thread_group, step_profiler);
             analyze_thread_group->memory_tracker.setDescription("EXPLAIN ANALYZE");
 
-            watch.restart();
             {
                 ThreadGroupSwitcher switcher(analyze_thread_group, ThreadName::COMPLETED_PIPELINE_EXECUTOR, /*allow_existing_group=*/true);
                 executor.execute();
@@ -1476,7 +1471,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             UInt64 read_bytes  = analyze_thread_group->performance_counters[ProfileEvents::SelectedBytes];
             Int64  peak_memory = analyze_thread_group->memory_tracker.getPeak();
 
-            AnalyzeStepsStats steps_to_stats(pipeline, plan, execute_ns);
+            AnalyzeStepsStats steps_to_stats(pipeline, plan, *step_profiler, execute_ns);
 
             formatHeaderExplainAnalyze(
                 total_time_ns, planning_ns, execute_ns, steps_to_stats.executionTimeBreakdown(), read_rows, read_bytes, peak_memory, buf);
