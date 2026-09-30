@@ -20,11 +20,16 @@ struct HypotheticalProjections
 
     struct Outcome
     {
-        /// marks the projection read would take, set once the projection was analyzed
+        /// marks and rows the projection read would take, set once the projection was analyzed
         std::optional<UInt64> marks;
+        UInt64 rows = 0;
         bool chosen = false;
         /// chosen only because `force_optimize_projection` or `prefer_optimize_projection` lifted a rejection
         bool forced = false;
+        /// the projection order serves the query's ORDER BY
+        bool serves_order = false;
+        /// the query has neither a filter nor an ORDER BY a projection could serve
+        bool nothing_to_serve = false;
         String reason;
     };
     std::unordered_map<String, Outcome> outcomes;

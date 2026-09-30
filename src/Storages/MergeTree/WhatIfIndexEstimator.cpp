@@ -19,6 +19,7 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
+#include <Storages/MergeTree/HypotheticalProjections.h>
 #include <Storages/MergeTree/WhatIfProjectionEstimator.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
 #include <Storages/MergeTree/WhatIfStatisticalEstimator.h>
@@ -549,9 +550,24 @@ WhatIfResult estimateHypotheticalIndexes(
         result.candidates.push_back(std::move(combined));
     }
 
+    auto weigh = [&](const HypotheticalProjectionsPtr & hypothetical)
+    {
+        InterpreterSelectQueryAnalyzer interpreter(select_query_copy->clone(), local_context, query_options);
+        interpreter.applyDistributedPlanFallbackIfNeeded();
+        auto weigh_context = interpreter.getContext();
+        auto weigh_plan = std::move(interpreter).extractQueryPlan();
+        std::vector<ReadFromMergeTree *> weigh_reads;
+        collectReadSteps(weigh_plan.getRootNode(), weigh_reads);
+        for (auto * weigh_read : weigh_reads)
+            if (weigh_read->getMergeTreeData().getStorageID() == data.getStorageID())
+                weigh_read->setHypotheticalProjections(hypothetical);
+        QueryPlanOptimizationSettings weigh_settings(weigh_context);
+        weigh_settings.force_use_projection = false;
+        weigh_plan.optimize(weigh_settings);
+    };
+
     for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
-        result.candidates.push_back(
-            evaluateProjection(projection, read_step, analysis, baseline_parts, settings, plan.getRootNode(), plan_context));
+        result.candidates.push_back(evaluateProjection(projection, read_step, analysis, baseline_parts, settings, weigh, plan_context));
 
     if (result.candidates.empty())
         appendNoCandidatesRow(result);

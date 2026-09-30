@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/WhatIfResult.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <functional>
 #include <optional>
 
 namespace DB
@@ -15,6 +16,10 @@ namespace DB
 class MergeTreeData;
 struct ProjectionDescription;
 struct WhatIfSettings;
+struct HypotheticalProjections;
+
+/// plans the query again with these hypothetical projections weighed by the optimizer, filling their outcomes
+using WeighHypotheticalProjections = std::function<void(const std::shared_ptr<HypotheticalProjections> &)>;
 
 /// the stored definition re-checked against the current table, empty with reason set when it no longer fits
 std::optional<ProjectionDescription> refreshHypotheticalProjection(
@@ -31,7 +36,7 @@ WhatIfCandidateResult evaluateProjection(
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & baseline_parts,
     const WhatIfSettings & settings,
-    QueryPlan::Node * plan_root,
+    const WeighHypotheticalProjections & weigh,
     ContextPtr context);
 
 }

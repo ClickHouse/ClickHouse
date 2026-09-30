@@ -298,18 +298,28 @@ struct NormalProjectionCandidate : public ProjectionCandidate
 {
 };
 
-/// how each hypothetical projection fared, for `EXPLAIN WHATIF`
+/// what the chooser learned about each candidate beyond its marks, for `EXPLAIN WHATIF`
+struct CandidateTraits
+{
+    std::unordered_set<const ProjectionDescription *> forced;
+    std::unordered_set<const ProjectionDescription *> serving_order;
+    bool nothing_to_serve = false;
+};
+
+/// how each hypothetical projection fared
 static void recordHypotheticalOutcomes(
     HypotheticalProjections & hypothetical,
     const UseProjectionsResult & result,
     const std::list<NormalProjectionCandidate> & candidates,
     const NormalProjectionCandidate * best_candidate,
-    const std::unordered_set<const ProjectionDescription *> & forced)
+    const CandidateTraits & traits)
 {
     for (const auto & projection : hypothetical.projections)
     {
         auto & outcome = hypothetical.outcomes[projection.name];
         outcome = {};
+        outcome.nothing_to_serve = traits.nothing_to_serve;
+        outcome.serves_order = traits.serving_order.contains(&projection);
         if (auto it = result.projection_reject_reasons.find(projection.name); it != result.projection_reject_reasons.end())
             outcome.reason = it->second;
         for (const auto & candidate : candidates)
@@ -317,8 +327,9 @@ static void recordHypotheticalOutcomes(
             if (candidate.projection != &projection || !candidate.stat)
                 continue;
             outcome.marks = candidate.sum_marks;
+            outcome.rows = candidate.selected_rows;
             outcome.chosen = &candidate == best_candidate;
-            outcome.forced = outcome.chosen && forced.contains(&projection);
+            outcome.forced = outcome.chosen && traits.forced.contains(&projection);
             if (!candidate.stat->description.empty())
                 outcome.reason = candidate.stat->description;
         }
@@ -386,13 +397,13 @@ UseProjectionsResult optimizeUseNormalProjections(
     if (hypothetical)
         for (const auto & projection : hypothetical->projections)
             normal_projections.push_back(&projection);
-    std::unordered_set<const ProjectionDescription *> forced;
+    CandidateTraits traits;
 
     auto reject_all = [&](const String & reason)
     {
         rejectProjections(result.projection_reject_reasons, normal_projections, {}, reason);
         if (hypothetical)
-            recordHypotheticalOutcomes(*hypothetical, result, {}, nullptr, forced);
+            recordHypotheticalOutcomes(*hypothetical, result, {}, nullptr, traits);
         return std::move(result);
     };
 
@@ -488,6 +499,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     const bool has_filter = query.dag && query.filter_node;
     const bool can_use_sort_order = outer_sorting_step && optimization_settings.read_in_order;
     const bool helps_nothing = !has_filter && !can_use_sort_order;
+    traits.nothing_to_serve = helps_nothing;
     if (!relax_projection_checks && helps_nothing)
         return reject_all("the query has neither a filter nor an ORDER BY a projection could serve");
 
@@ -682,7 +694,9 @@ UseProjectionsResult optimizeUseNormalProjections(
         const bool worse_by_cost = candidate.sum_marks > parent_reading_marks
             || (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !sort_order_helps);
         if (relax_projection_checks && (helps_nothing || worse_by_cost))
-            forced.insert(projection);
+            traits.forced.insert(projection);
+        if (sort_order_helps)
+            traits.serving_order.insert(projection);
 
         /// Consider projections with equal read cost only if:
         /// - `force_optimize_projection` or `prefer_optimize_projection` is enabled, or
@@ -725,7 +739,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     if (!best_candidate)
     {
         if (hypothetical)
-            recordHypotheticalOutcomes(*hypothetical, result, candidates, nullptr, forced);
+            recordHypotheticalOutcomes(*hypothetical, result, candidates, nullptr, traits);
         return result;
     }
 
@@ -758,7 +772,7 @@ UseProjectionsResult optimizeUseNormalProjections(
 
     if (hypothetical)
     {
-        recordHypotheticalOutcomes(*hypothetical, result, candidates, best_candidate, forced);
+        recordHypotheticalOutcomes(*hypothetical, result, candidates, best_candidate, traits);
         /// a hypothetical projection is weighed, never read
         if (hypothetical->contains(best_candidate->projection))
             return result;

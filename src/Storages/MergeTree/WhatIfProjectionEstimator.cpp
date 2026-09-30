@@ -5,7 +5,6 @@
 #include <Columns/ColumnSparse.h>
 #include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -13,19 +12,13 @@
 #include <Interpreters/sortBlock.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/IProcessor.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
-#include <Processors/QueryPlan/SortingStep.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/HypotheticalProjections.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
-#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
@@ -47,8 +40,6 @@ namespace Setting
     extern const SettingsBool optimize_use_projections;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool prefer_optimize_projection;
-    extern const SettingsBool use_primary_key;
-    extern const SettingsBool use_constant_folding_in_index_analysis;
 }
 
 namespace MergeTreeSetting
@@ -99,74 +90,6 @@ void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, const Block & block)
 }
 
 /// why the ORDER BY tie-break is or is not available
-enum class SortOrderHelp
-{
-    Helps,
-    NotUseful,
-    NoOrderBy,
-    ReadInOrderDisabled,
-};
-
-String describe(SortOrderHelp help)
-{
-    switch (help)
-    {
-        case SortOrderHelp::Helps:
-            return "the projection order serves the ORDER BY";
-        case SortOrderHelp::NotUseful:
-            return "the projection order does not serve the ORDER BY";
-        case SortOrderHelp::NoOrderBy:
-            return "the query has no ORDER BY to serve";
-        case SortOrderHelp::ReadInOrderDisabled:
-            return "reading in order is disabled";
-    }
-}
-
-bool findPath(QueryPlan::Node * node, const IQueryPlanStep * target, std::vector<QueryPlan::Node *> & path)
-{
-    if (!node)
-        return false;
-    path.push_back(node);
-    if (node->step.get() == target)
-        return true;
-    for (auto * child : node->children)
-        if (findPath(child, target, path))
-            return true;
-    path.pop_back();
-    return false;
-}
-
-/// The slice `optimizeUseNormalProjections` would replace: the chain of filters and expressions above
-/// the read, taken as the node the chooser hands to `QueryDAG::build`, plus the full sort right above
-/// it when there is one.
-struct ReadSlice
-{
-    QueryPlan::Node * root = nullptr;
-    const SortingStep * outer_sorting = nullptr;
-};
-
-ReadSlice findReadSlice(QueryPlan::Node * root, const ReadFromMergeTree * read_step)
-{
-    std::vector<QueryPlan::Node *> path;
-    if (!findPath(root, read_step, path) || path.size() < 2)
-        return {};
-
-    size_t i = path.size() - 1;
-    while (i > 0)
-    {
-        --i;
-        const auto * step = path[i]->step.get();
-        if (!typeid_cast<const FilterStep *>(step) && !typeid_cast<const ExpressionStep *>(step))
-            break;
-    }
-
-    ReadSlice slice{path[i + 1], nullptr};
-    const auto * sort = typeid_cast<const SortingStep *>(path[i]->step.get());
-    if (sort && sort->getType() == SortingStep::Type::Full)
-        slice.outer_sorting = sort;
-    return slice;
-}
-
 /// reads the whole part, wired like the empirical index scan
 Pipe makeWholePartPipe(const DataPartPtr & part, const Names & columns_to_read, ReadFromMergeTree * read_step, const ContextPtr & context)
 {
@@ -354,26 +277,17 @@ std::vector<size_t> simulateWriterMarks(
     return mark_rows;
 }
 
-/// build the primary index in memory and prune it with the engine's own PK-range pruning, nothing is written
-/// `marks_low_out` and `marks_high_out` take the range the layouts of the other write paths span.
-/// With rows of one width the merge's own block size sets the granule size; once the widths vary it is
-/// where the merge cut its blocks that sets it, and a merge cuts at every source it drains, so the
-/// short runs follow the width - hence `uneven_rows` picks the layout to estimate with.
-MarkRanges pruneSyntheticProjectionPart(
+/// the projection part as each layout the writer could leave it: in memory, with its primary index, never written.
+/// With rows of one width the merge's own block size sets the granule size; once the widths vary it is where
+/// the merge cut its blocks, and a merge cuts at every source it drains - hence `uneven_rows` picks the likeliest.
+std::array<MergeTreeDataPartPtr, 3> buildSyntheticProjectionParts(
     ProjectionPartData & data,
     const ProjectionDescription & projection,
     const MergeTreeData & merge_tree,
-    const RangesInDataPart & parent_ranges,
-    const KeyCondition * key_condition,
-    const ConditionTemplate<KeyCondition>::Ptr & part_offset_condition,
-    const ConditionTemplate<KeyCondition>::Ptr & total_offset_condition,
+    const DataPartPtr & parent_part,
     const MergeTreeSettings & mt_settings,
-    const Settings & query_settings,
     bool uneven_rows,
-    MergeTreeIndexGranularityPtr & granularity_out,
-    UInt64 & marks_low_out,
-    UInt64 & marks_high_out,
-    LoggerPtr log)
+    size_t & primary)
 {
     const auto & proj_key = projection.metadata->getSortingKey();
 
@@ -384,40 +298,36 @@ MarkRanges pruneSyntheticProjectionPart(
 
     /// sorted order via one permutation
     stableGetPermutation(data.key_block, sort_description, data.order);
-    const auto part_type
-        = merge_tree.choosePartFormat(data.bytes, data.rows, parent_ranges.data_part->info.level, &projection).part_type;
-    const bool adaptive_marks = parent_ranges.data_part->index_granularity_info.mark_type.adaptive;
+    const auto part_type = merge_tree.choosePartFormat(data.bytes, data.rows, parent_part->info.level, &projection).part_type;
+    const bool adaptive_marks = parent_part->index_granularity_info.mark_type.adaptive;
     /// a constant granularity object pins one granule size for the whole part, an adaptive one lets
     /// every block the writer stores size its own granules, so only then do the blocks matter
     const bool granularity_per_block = part_type == MergeTreeDataPartType::Compact
         || (adaptive_marks && !mt_settings[MergeTreeSetting::use_const_adaptive_granularity]);
 
-    /// The granule sizes follow the blocks the writer was handed, and nothing in a part records them:
-    /// an insert or a materialization writes one squashed block, a merge writes runs of at most
-    /// `merge_max_block_size` and cuts them shorter at every source it drains. So estimate with the
-    /// chunking of the path that wrote the parent and take the others as the spread of the estimate.
+    /// an insert or a materialization writes one squashed block, a merge runs of `merge_max_block_size`
+    /// cut shorter at every source it drains; a part records none of it, so build each
     const size_t merge_rows = mt_settings[MergeTreeSetting::merge_max_block_size];
     const size_t merge_bytes = mt_settings[MergeTreeSetting::merge_max_block_size_bytes];
     /// one granule worth of bytes is the shortest run whose width can still move the granule size
     const size_t granule_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
     std::vector<std::pair<size_t, size_t>> chunkings;
-    size_t primary = 0;
-    chunkings.emplace_back(data.rows, 0); /// one squashed block, as an insert or a materialization writes
+    primary = 0;
+    chunkings.emplace_back(data.rows, 0);
     if (granularity_per_block)
     {
-        chunkings.emplace_back(merge_rows, merge_bytes); /// the blocks a merge is bounded to
-        chunkings.emplace_back(merge_rows, granule_bytes); /// a merge that cuts a block short at every source
+        chunkings.emplace_back(merge_rows, merge_bytes);
+        chunkings.emplace_back(merge_rows, granule_bytes);
         /// a level-zero part was written in one go, a merged one block by block
-        if (parent_ranges.data_part->info.level > 0)
+        if (parent_part->info.level > 0)
             primary = uneven_rows ? chunkings.size() - 1 : chunkings.size() - 2;
     }
 
     std::vector<std::vector<size_t>> layouts;
-    layouts.reserve(chunkings.size());
     for (const auto & [rows_limit, bytes_limit] : chunkings)
         layouts.push_back(simulateWriterMarks(data, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit));
 
-    auto prune = [&](const std::vector<size_t> & rows_per_mark, MergeTreeIndexGranularityPtr & granularity)
+    auto build = [&](const std::vector<size_t> & rows_per_mark) -> MergeTreeDataPartPtr
     {
         const size_t num_marks = rows_per_mark.size();
         std::vector<size_t> partial_sums(num_marks);
@@ -426,10 +336,6 @@ MarkRanges pruneSyntheticProjectionPart(
             row += rows_per_mark[mark];
             partial_sums[mark] = row;
         }
-        granularity = std::make_shared<MergeTreeIndexGranularityAdaptive>(partial_sums);
-
-        if (!key_condition)
-            return MarkRanges{{0, num_marks}};
 
         /// primary index = the key at the first row of every granule
         Columns index_columns;
@@ -442,61 +348,45 @@ MarkRanges pruneSyntheticProjectionPart(
             index_columns.push_back(std::move(index_column));
         }
 
-        /// `Synthetic` keeps the part off its directory: `CreateFresh` would reclaim a `.tmp_proj` left
-        /// by an interrupted materialization, and an estimate must not write to storage at all
-        auto synthetic_part = const_cast<IMergeTreeDataPart &>(*parent_ranges.data_part)
-                                  .getProjectionPartBuilder(
-                                      projection.name, &projection, PartDirIntent::Synthetic, /* is_temp_projection */ true)
-                                  .withPartType(MergeTreeDataPartType::Compact)
-                                  .withBytesAndRows(0, data.rows, 0)
-                                  .build();
-        synthetic_part->index_granularity = granularity;
-        synthetic_part->setIndex(index_columns);
-
-        RangesInDataPart synthetic_ranges(
-            synthetic_part, parent_ranges.data_part, parent_ranges.part_index_in_query, parent_ranges.part_starting_offset_in_query);
-        synthetic_ranges.ranges = MarkRanges{{0, num_marks}};
-
-        return MergeTreeDataSelectExecutor::markRangesFromPKRange(
-            synthetic_ranges,
-            projection.metadata,
-            *key_condition,
-            part_offset_condition ? &part_offset_condition->generateForPart(synthetic_part) : nullptr,
-            total_offset_condition ? &total_offset_condition->generateForPart(synthetic_part) : nullptr,
-            nullptr,
-            nullptr,
-            query_settings,
-            log);
+        /// `Synthetic` never touches the part directory, `CreateFresh` could delete a leftover `.tmp_proj`
+        auto part = const_cast<IMergeTreeDataPart &>(*parent_part)
+                        .getProjectionPartBuilder(projection.name, &projection, PartDirIntent::Synthetic, /* is_temp_projection */ true)
+                        .withPartType(MergeTreeDataPartType::Compact)
+                        .withBytesAndRows(0, data.rows, 0)
+                        .build();
+        part->setColumns(
+            projection.metadata->getColumns().getAllPhysical(),
+            SerializationInfoByName(SerializationInfoSettings{}),
+            projection.metadata->getMetadataVersion());
+        part->index_granularity = std::make_shared<MergeTreeIndexGranularityAdaptive>(partial_sums);
+        part->setIndex(index_columns);
+        return part;
     };
 
-    MarkRanges pruned = prune(layouts[primary], granularity_out);
-    marks_low_out = pruned.getNumberOfMarks();
-    marks_high_out = marks_low_out;
+    /// equal layouts share one part, and a single layout stands in for all three
+    std::vector<MergeTreeDataPartPtr> built(layouts.size());
     for (size_t i = 0; i < layouts.size(); ++i)
     {
-        /// the same layout prunes to the same marks, and a chunking often repeats one
-        if (i == primary || layouts[i] == layouts[primary])
-            continue;
-        MergeTreeIndexGranularityPtr other_granularity;
-        const UInt64 other_marks = prune(layouts[i], other_granularity).getNumberOfMarks();
-        marks_low_out = std::min(marks_low_out, other_marks);
-        marks_high_out = std::max(marks_high_out, other_marks);
+        for (size_t j = 0; j < i && !built[i]; ++j)
+            if (layouts[j] == layouts[i])
+                built[i] = built[j];
+        if (!built[i])
+            built[i] = build(layouts[i]);
     }
-    return pruned;
+    std::array<MergeTreeDataPartPtr, 3> parts;
+    for (size_t i = 0; i < parts.size(); ++i)
+        parts[i] = built[std::min(i, built.size() - 1)];
+    return parts;
 }
 
 bool tryEstimateProjection(
     WhatIfCandidateResult & result,
     const ProjectionDescription & projection,
-    const KeyCondition * key_condition,
-    const ConditionTemplate<KeyCondition>::Ptr & part_offset_condition,
-    const ConditionTemplate<KeyCondition>::Ptr & total_offset_condition,
-    SortOrderHelp sort_help,
-    bool has_filter,
     std::string_view relaxing_setting,
     ReadFromMergeTree * read_step,
     const RangesInDataParts & baseline_parts,
     UInt64 baseline_marks,
+    const WeighHypotheticalProjections & weigh,
     const ContextPtr & context)
 {
     const auto & data = read_step->getMergeTreeData();
@@ -511,14 +401,18 @@ bool tryEstimateProjection(
     UInt64 total_bytes_read = 0;
 
     Stopwatch watch;
-    auto log = getLogger("WhatIfProjectionEstimator");
 
-    UInt64 projection_marks = 0;
-    UInt64 projection_rows = 0;
+    /// the optimizer weighs the projection as if materialized: first every part in its likeliest layout,
+    /// then every part in each layout the writer could leave, to see if the choice depends on the layout
+    std::array<HypotheticalProjectionsPtr, 4> scenarios;
+    for (auto & scenario : scenarios)
+    {
+        scenario = std::make_shared<HypotheticalProjections>();
+        scenario->projections.push_back(projection.clone());
+    }
+    bool layouts_differ = false;
     UInt64 scanned_parts = 0;
     UInt64 scanned_marks = 0;
-    UInt64 marks_low = 0;
-    UInt64 marks_high = 0;
     UInt64 uneven_width_parts = 0;
 
     for (const auto & part_with_ranges : baseline_parts)
@@ -563,40 +457,67 @@ bool tryEstimateProjection(
         if (part_data.rows == 0)
             continue;
 
-        MergeTreeIndexGranularityPtr granularity;
-        UInt64 part_marks_low = 0;
-        UInt64 part_marks_high = 0;
-        MarkRanges pruned = pruneSyntheticProjectionPart(
-            part_data,
-            projection,
-            data,
-            part_with_ranges,
-            key_condition,
-            part_offset_condition,
-            total_offset_condition,
-            mt_settings,
-            query_settings,
-            uneven_rows,
-            granularity,
-            part_marks_low,
-            part_marks_high,
-            log);
+        size_t primary = 0;
+        const auto parts = buildSyntheticProjectionParts(part_data, projection, data, part, mt_settings, uneven_rows, primary);
+        scenarios[0]->parts[part->name][projection.name] = parts[primary];
+        for (size_t layout = 0; layout < parts.size(); ++layout)
+        {
+            scenarios[1 + layout]->parts[part->name][projection.name] = parts[layout];
+            layouts_differ |= parts[layout] != parts[primary];
+        }
+    }
 
-        projection_marks += pruned.getNumberOfMarks();
-        projection_rows += granularity->getRowsCountInRanges(pruned);
-        marks_low += part_marks_low;
-        marks_high += part_marks_high;
+    const size_t weighed = layouts_differ ? scenarios.size() : 1;
+    for (size_t i = 0; i < weighed; ++i)
+        weigh(scenarios[i]);
+
+    const auto & outcome = scenarios[0]->outcomes[projection.name];
+    result.sampled_parts = scanned_parts;
+    result.sampled_marks = scanned_marks;
+    result.elapsed_us = watch.elapsedMicroseconds();
+    if (!outcome.marks)
+    {
+        result.status = WhatIfCandidateResult::NotApplicable;
+        result.not_applicable_reason = outcome.reason.empty() ? "The optimizer did not weigh the projection for this read" : outcome.reason;
+        result.not_applicable_reason[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(result.not_applicable_reason[0])));
+        return true;
+    }
+
+    const UInt64 projection_marks = *outcome.marks;
+    UInt64 marks_low = projection_marks;
+    UInt64 marks_high = projection_marks;
+    size_t chosen_in = 0;
+    for (size_t i = 0; i < weighed; ++i)
+    {
+        const auto & scenario_outcome = scenarios[i]->outcomes[projection.name];
+        chosen_in += scenario_outcome.chosen;
+        if (scenario_outcome.marks)
+        {
+            marks_low = std::min(marks_low, *scenario_outcome.marks);
+            marks_high = std::max(marks_high, *scenario_outcome.marks);
+        }
     }
 
     result.estimated_marks = projection_marks;
-    result.estimated_rows = projection_rows;
+    result.estimated_rows = outcome.rows;
     result.estimated_marks_low = marks_low;
     result.estimated_marks_high = marks_high;
     auto marks_text = [](UInt64 marks) { return fmt::format("{} mark{}", marks, marks == 1 ? "" : "s"); };
-    /// fewer marks never loses, so the estimate decides only when both layouts agree
-    auto would_win = [&](UInt64 marks)
-    { return marks < baseline_marks || (marks == baseline_marks && sort_help == SortOrderHelp::Helps); };
-    if (uneven_width_parts != 0)
+    if (chosen_in == weighed && outcome.forced)
+    {
+        String cost;
+        if (outcome.nothing_to_serve)
+            cost = "the query has no filter or ORDER BY for the projection to help with";
+        else if (projection_marks > baseline_marks)
+            cost = fmt::format("the projection reads {} instead of {} from the base table", marks_text(projection_marks), baseline_marks);
+        else if (projection_marks == baseline_marks && !outcome.serves_order)
+            cost = fmt::format("the projection reads the same {} as the base table and serves no ORDER BY", marks_text(projection_marks));
+        else
+            cost = fmt::format("the projection reads {} against {} from the base table", marks_text(projection_marks), baseline_marks);
+        result.verdict = "chosen (forced)";
+        result.verdict_reason = fmt::format("`{} = 1` overrides the cost; {}", relaxing_setting, cost);
+    }
+    else if (uneven_width_parts != 0)
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
@@ -607,7 +528,7 @@ bool tryEstimateProjection(
             uneven_width_parts,
             scanned_parts);
     }
-    else if (would_win(marks_low) != would_win(marks_high))
+    else if (chosen_in != 0 && chosen_in != weighed)
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
@@ -616,40 +537,23 @@ bool tryEstimateProjection(
             marks_text(projection_marks),
             baseline_marks);
     }
-    else if (projection_marks != baseline_marks)
-    {
-        result.verdict = projection_marks < baseline_marks ? "chosen" : "not chosen";
-        result.verdict_reason
-            = fmt::format("{} would be read instead of {} from the base table", marks_text(projection_marks), baseline_marks);
-    }
     else
     {
-        result.verdict = sort_help == SortOrderHelp::Helps ? "chosen" : "not chosen";
-        result.verdict_reason
-            = fmt::format("the same {} would be read, and {}", marks_text(projection_marks), describe(sort_help));
-    }
-
-    /// with `relaxing_setting` the optimizer takes any usable projection
-    const bool nothing_to_serve = !has_filter && sort_help != SortOrderHelp::Helps;
-    if (!relaxing_setting.empty() && (result.verdict != "chosen" || nothing_to_serve))
-    {
-        String cost;
-        if (nothing_to_serve)
-            cost = "the query has no filter or ORDER BY for the projection to help with";
-        else if (projection_marks > baseline_marks)
-            cost = fmt::format("the projection reads {} instead of {} from the base table", marks_text(projection_marks), baseline_marks);
-        else if (projection_marks == baseline_marks && sort_help != SortOrderHelp::Helps)
-            cost = fmt::format("the projection reads the same {} as the base table and serves no ORDER BY", marks_text(projection_marks));
+        result.verdict = chosen_in != 0 ? "chosen" : "not chosen";
+        if (projection_marks != baseline_marks)
+            result.verdict_reason
+                = fmt::format("{} would be read instead of {} from the base table", marks_text(projection_marks), baseline_marks);
         else
-            cost = fmt::format("the projection reads {} against {} from the base table", marks_text(projection_marks), baseline_marks);
-        result.verdict = "chosen (forced)";
-        result.verdict_reason = fmt::format("`{} = 1` overrides the cost; {}", relaxing_setting, cost);
+            result.verdict_reason = fmt::format(
+                "the same {} would be read, and the projection order {}",
+                marks_text(projection_marks),
+                outcome.serves_order ? "serves the ORDER BY" : "serves no ORDER BY");
+        /// another projection can win without the base table losing
+        if (chosen_in == 0 && projection_marks < baseline_marks)
+            result.verdict_reason = outcome.reason;
     }
     result.estimate_source = WhatIfCandidateResult::Empirical;
     result.empirical_status = WhatIfCandidateResult::Ok;
-    result.sampled_parts = scanned_parts;
-    result.sampled_marks = scanned_marks;
-    result.elapsed_us = watch.elapsedMicroseconds();
     return true;
 }
 
@@ -692,7 +596,7 @@ WhatIfCandidateResult evaluateProjection(
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & baseline_parts,
     const WhatIfSettings & settings,
-    QueryPlan::Node * plan_root,
+    const WeighHypotheticalProjections & weigh,
     ContextPtr context)
 {
     const auto & data = read_step->getMergeTreeData();
@@ -808,85 +712,16 @@ WhatIfCandidateResult evaluateProjection(
         return result;
     }
 
-    const auto slice = findReadSlice(plan_root, read_step);
-
-    /// the chooser replays the slice on the projection, and `QueryDAG::build` refuses one it cannot
-    /// replay - an array join inside a filter or an expression, for one - so no projection is used there
-    if (slice.root)
-    {
-        QueryPlanOptimizations::QueryDAG replay;
-        if (!replay.build(*slice.root))
-        {
-            result.not_applicable_reason
-                = "The filters and expressions above the read cannot be replayed on a projection (an ARRAY JOIN in one of "
-                  "them, for example), so the optimizer would not use a projection for this read";
-            return result;
-        }
-    }
-
-    SortOrderHelp sort_help = SortOrderHelp::NoOrderBy;
-    if (slice.outer_sorting)
-    {
-        if (!QueryPlanOptimizationSettings(context).read_in_order)
-            sort_help = SortOrderHelp::ReadInOrderDisabled;
-        else if (QueryPlanOptimizations::wouldReadInOrderBeUseful(*slice.outer_sorting, proj_key, *slice.root))
-            sort_help = SortOrderHelp::Helps;
-        else
-            sort_help = SortOrderHelp::NotUseful;
-    }
-
-    /// PK-range condition over the projection key, from the query predicate
-    const auto & filter_dag = read_step->getFilterActionsDAG();
-    std::shared_ptr<ActionsDAGWithInversionPushDown> predicate_dag;
-    std::optional<KeyCondition> key_condition;
-    ConditionTemplate<KeyCondition>::Ptr part_offset_condition;
-    ConditionTemplate<KeyCondition>::Ptr total_offset_condition;
-    if (filter_dag)
-    {
-        predicate_dag = std::make_shared<ActionsDAGWithInversionPushDown>(
-            filter_dag->getOutputs().front(), context, /* boolean_context */ true);
-        key_condition.emplace(
-            *predicate_dag, context, proj_key, /* single_point */ false, !context->getSettingsRef()[Setting::use_primary_key]);
-
-        /// an offset predicate prunes a real projection read too, so build the same conditions
-        /// `ReadFromMergeTree::buildIndexes` does, over the projection the read would go through.
-        /// a projection that stores parent offsets is the exception: `optimizeUseNormalProjections`
-        /// rewrites the predicate to `_parent_part_offset` first, which leaves nothing to prune by
-        const bool skip_folding = !context->getSettingsRef()[Setting::use_constant_folding_in_index_analysis];
-        const auto & proj_columns = projection->metadata->getColumns();
-        const bool offsets_are_the_parent_s = projection->with_parent_part_offset;
-        if (!offsets_are_the_parent_s && !proj_columns.has("_part_offset") && !proj_columns.has("_part"))
-            part_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
-                predicate_dag, projection->metadata, skip_folding, context);
-        if (!offsets_are_the_parent_s && !proj_columns.has("_part_offset") && !proj_columns.has("_part_starting_offset"))
-            total_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
-                predicate_dag, projection->metadata, skip_folding, context);
-
-        if (key_condition->alwaysUnknownOrTrue() && !part_offset_condition && !total_offset_condition)
-            key_condition.reset();
-    }
-
-    /// both lift the gate below; read from the read's own context, as the optimizer does
+    /// named in the reason when it overrides the cost; the optimizer reads it from the read's own context
     const auto & read_settings = read_step->getContext()->getSettingsRef();
     const std::string_view relaxing_setting = read_settings[Setting::force_optimize_projection] ? "force_optimize_projection"
         : read_settings[Setting::prefer_optimize_projection] ? "prefer_optimize_projection" : "";
-
-    /// the same gate as `optimizeUseNormalProjections`: a filter has to exist or the order has to help,
-    /// but a filter the projection key cannot prune still leaves a full projection scan worth measuring,
-    /// which wins whenever the projection stores less per row than the table does
-    if (!filter_dag && sort_help != SortOrderHelp::Helps && relaxing_setting.empty())
-    {
-        result.not_applicable_reason = fmt::format("Query has no filter predicate, and {}", describe(sort_help));
-        return result;
-    }
 
     result.status = WhatIfCandidateResult::Applicable;
 
     if (settings.empirical)
     {
-        if (tryEstimateProjection(
-                result, *projection, key_condition ? &*key_condition : nullptr, part_offset_condition, total_offset_condition,
-                sort_help, filter_dag != nullptr, relaxing_setting, read_step, baseline_parts, analysis.selected_marks, context))
+        if (tryEstimateProjection(result, *projection, relaxing_setting, read_step, baseline_parts, analysis.selected_marks, weigh, context))
             return result;
         result.empirical_status = WhatIfCandidateResult::Unsupported;
     }
