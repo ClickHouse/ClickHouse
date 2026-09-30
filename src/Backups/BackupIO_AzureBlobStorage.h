@@ -17,7 +17,9 @@ namespace DB
 /// it is split back into a container and a blob prefix: used as a container name, `<container>/<prefix>`
 /// gives every container-level request extra path segments, which Azure rejects with `400 InvalidUri`.
 /// A connection string cannot be pointed at another account, so with connection-string auth the recorded
-/// endpoint has to be the backup's own account, otherwise `BAD_ARGUMENTS` is thrown.
+/// endpoint has to name the backup's own storage account, otherwise `BAD_ARGUMENTS` is thrown. Accounts are
+/// compared by name (one account is reachable through several hosts); an endpoint that does not reveal its
+/// account is let through.
 AzureBlobStorage::ConnectionParams makeSnapshotSourceConnectionParams(
     const AzureBlobStorage::ConnectionParams & backup_connection_params, const String & endpoint, const String & blob_namespace);
 

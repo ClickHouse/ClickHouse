@@ -12,10 +12,13 @@
 #include <Disks/IDisk.h>
 #include <Disks/DiskType.h>
 
+#include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <boost/algorithm/string.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
 #include <azure/core/context.hpp>
 #include <azure/core/url.hpp>
+#include <azure/storage/common/storage_credential.hpp>
 
 #include <filesystem>
 
@@ -64,22 +67,42 @@ namespace
         };
     }
 
-    /// Storage account URLs as the SDK canonicalizes them, without trailing slashes, so that a
-    /// manifest endpoint and a connection string's blob endpoint compare equal for the same account.
-    String canonicalStorageAccountURL(const String & url)
+    /// The storage account a blob endpoint URL names, lower-cased, or an empty string when the URL does not
+    /// reveal it: the first host label for `<account>.blob.<suffix>` and `<account>.privatelink.blob.<suffix>`
+    /// hosts (any Azure cloud), the first path segment for path-style endpoints such as Azurite's
+    /// `http://127.0.0.1:10000/devstoreaccount1`. A custom domain reveals nothing.
+    String storageAccountOfURL(const String & url)
     {
-        String canonical;
+        Azure::Core::Url parsed;
         try
         {
-            canonical = Azure::Core::Url(url).GetAbsoluteUrl();
+            parsed = Azure::Core::Url(url);
         }
         catch (const std::logic_error & e)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse Azure storage account URL {}: {}", url, e.what());
         }
-        while (canonical.ends_with('/'))
-            canonical.pop_back();
-        return canonical;
+
+        const String & path = parsed.GetPath();
+        if (!path.empty())
+            return Poco::toLower(path.substr(0, path.find('/')));
+
+        const String host = Poco::toLower(parsed.GetHost());
+        std::vector<String> labels;
+        boost::split(labels, host, boost::is_any_of("."));
+        const bool names_account = labels.size() >= 3
+            && (labels[1] == "blob" || (labels.size() >= 4 && labels[1] == "privatelink" && labels[2] == "blob"));
+        return names_account ? labels[0] : "";
+    }
+
+    /// The storage account of a connection string: its `AccountName`, or the account its blob endpoint names.
+    /// `ConnectionParams::getConnectionURL()` has already parsed the string, so it is well-formed here.
+    String storageAccountOfConnectionString(const String & connection_string, const String & blob_service_url)
+    {
+        const auto account_name = Azure::Storage::_internal::ParseConnectionString(connection_string).AccountName;
+        if (!account_name.empty())
+            return Poco::toLower(account_name);
+        return storageAccountOfURL(blob_service_url);
     }
 }
 
@@ -91,14 +114,23 @@ AzureBlobStorage::ConnectionParams makeSnapshotSourceConnectionParams(
     if (std::holds_alternative<AzureBlobStorage::ConnectionString>(connection_params.auth_method))
     {
         /// A connection string carries one account and its key, so it cannot be pointed at another
-        /// account: the snapshot's objects must live in the account the backup is read from.
+        /// account: the snapshot's objects must live in the account the backup is read from. The accounts
+        /// are compared by name, not by URL: one account is reachable through several hosts (a private
+        /// link alias, Azurite by IP or by host name), and the manifest may record a different one than
+        /// the connection string uses. A URL that does not reveal its account (a custom domain) is let
+        /// through; a wrong account then fails at the first read.
         const String backup_account_url = connection_params.getConnectionURL();
-        if (canonicalStorageAccountURL(endpoint) != canonicalStorageAccountURL(backup_account_url))
+        const String snapshot_account = storageAccountOfURL(endpoint);
+        const String backup_account = storageAccountOfConnectionString(
+            std::get<AzureBlobStorage::ConnectionString>(connection_params.auth_method).toUnderType(), backup_account_url);
+        if (!snapshot_account.empty() && !backup_account.empty() && snapshot_account != backup_account)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Cannot read the objects of a lightweight snapshot from {}: the backup is read with a connection string for {}, "
-                "which cannot access another storage account",
+                "Cannot read the objects of a lightweight snapshot from {} (storage account {}): the backup is read with a "
+                "connection string for storage account {} ({}), which cannot access another storage account",
                 endpoint,
+                snapshot_account,
+                backup_account,
                 backup_account_url);
     }
     else
