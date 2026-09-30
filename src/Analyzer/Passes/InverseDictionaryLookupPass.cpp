@@ -324,31 +324,44 @@ bool convertSimpleKeyProbe(QueryTreeNodePtr & key_expr_node, const ContextPtr & 
 /// Check whether equality with this key column value differs from a dictionary lookup, which matches
 /// keys by their stored representation, as membership in a set does.
 /// Equality with a null key column can produce `NULL` for a non-null probe, whereas a dictionary
-/// lookup misses that key. Nulls inside `Array` or `Map` values do not propagate through the
-/// container comparison.
+/// lookup misses that key. The same holds for a null inside a `Tuple` value, but nulls inside `Array`
+/// or `Map` values do not propagate through the container comparison, so `nulls_propagate` is reset
+/// below them.
 /// Equality compares floating-point values numerically: `NaN` equals nothing, although the lookup
-/// finds a `NaN` key, and `0` equals `-0`, although the lookup tells them apart.
-bool keyColumnDiffersUnderEquality(const Field & component)
+/// finds a `NaN` key, and `0` equals `-0`, although the lookup tells them apart. `Array`, `Map` and
+/// `Tuple` comparisons recurse into the same numeric comparison of their elements, so floating-point
+/// values are checked at any nesting depth.
+bool keyColumnDiffersUnderEquality(const Field & component, bool nulls_propagate)
 {
-    if (component.isNull())
-        return true;
-
-    if (component.getType() == Field::Types::Float64)
+    switch (component.getType())
     {
-        const Float64 value = component.safeGet<Float64>();
-        return std::isnan(value) || value == 0;
+        case Field::Types::Null:
+            return nulls_propagate;
+        case Field::Types::Float64:
+        {
+            const Float64 value = component.safeGet<Float64>();
+            return std::isnan(value) || value == 0;
+        }
+        case Field::Types::Tuple:
+            return std::ranges::any_of(
+                component.safeGet<Tuple>(),
+                [nulls_propagate](const Field & element) { return keyColumnDiffersUnderEquality(element, nulls_propagate); });
+        case Field::Types::Array:
+            return std::ranges::any_of(
+                component.safeGet<Array>(), [](const Field & element) { return keyColumnDiffersUnderEquality(element, false); });
+        case Field::Types::Map:
+            /// Each element of a `Map` field is a `(key, value)` tuple.
+            return std::ranges::any_of(
+                component.safeGet<Map>(), [](const Field & element) { return keyColumnDiffersUnderEquality(element, false); });
+        default:
+            return false;
     }
-
-    return false;
 }
 
 /// Each key returned by `dictGetKeys` is a key-column value or a tuple of key-column values.
 bool keyDiffersUnderEquality(const Field & key)
 {
-    if (key.getType() == Field::Types::Tuple)
-        return std::ranges::any_of(key.safeGet<Tuple>(), keyColumnDiffersUnderEquality);
-
-    return keyColumnDiffersUnderEquality(key);
+    return keyColumnDiffersUnderEquality(key, true);
 }
 
 bool isRewriteSemanticallySafe(
