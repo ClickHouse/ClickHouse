@@ -184,8 +184,6 @@ private:
 
     void sendStagedToDevice();
 
-    void makeStagingWritable();
-
     const GPUElementType column_type;
     const size_t stage_bytes;
     const rmm::cuda_stream_view stream;
