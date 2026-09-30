@@ -4647,11 +4647,8 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     return cloned_step;
 }
 
-std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs)
+Names ReadFromMergeTree::getLazilyReadColumns(const NameSet & required_outputs) const
 {
-    if (output_header == nullptr)
-        return {};
-
     NameSet columns_to_keep;
 
     for (const auto & column_name : required_outputs)
@@ -4672,18 +4669,28 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
 
     const auto & virtuals = getStorageMetadata()->virtuals;
 
-    Names new_column_names;
     Names columns_to_remove;
     for (const auto & column_name : all_column_names)
-    {
-        if (columns_to_keep.contains(column_name) || virtuals.has(column_name))
-            new_column_names.push_back(column_name);
-        else
+        if (!columns_to_keep.contains(column_name) && !virtuals.has(column_name))
             columns_to_remove.push_back(column_name);
-    }
 
+    return columns_to_remove;
+}
+
+std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs)
+{
+    if (output_header == nullptr)
+        return {};
+
+    const Names columns_to_remove = getLazilyReadColumns(required_outputs);
     if (columns_to_remove.empty())
         return {};
+
+    const NameSet removed(columns_to_remove.begin(), columns_to_remove.end());
+    Names new_column_names;
+    for (const auto & column_name : all_column_names)
+        if (!removed.contains(column_name))
+            new_column_names.push_back(column_name);
 
     auto lazy_reading_header = std::make_shared<const Block>(
         MergeTreeSelectProcessor::transformHeader(
@@ -4716,6 +4723,7 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
         analyzed_result_ptr->column_names_to_read = all_column_names;
 
     required_source_columns = all_column_names;
+    has_lazily_read_columns = true;
 
     return new_reading;
 }
@@ -6449,10 +6457,15 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
     return true;
 }
 
-ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool /*remove_inputs*/)
+ReadFromMergeTree::RemoveUnusedColumnsResult
+ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & /*inputs*/)
 {
     if (output_header == nullptr)
         return {};
+
+    const size_t former_output_column_count = output_header->columns();
+    /// The read works out what it keeps, which can be more than it is asked for.
+    const auto required_output_positions = complementPositions(former_output_column_count, unneeded_output_positions);
 
     /// Positions in the final RFMT output that must be preserved for the parent step or FINAL.
     std::set<size_t> required_final_output_positions(required_output_positions.begin(), required_output_positions.end());
@@ -6499,8 +6512,7 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
             query_info.prewhere_info->prewhere_column_name,
             query_info.prewhere_info->remove_prewhere_column,
             row_level_output_header,
-            final_output_positions,
-            true);
+            final_output_positions);
         removed_output_from_prewhere = prewhere_pruning.changed;
         required_row_level_output_positions = std::move(prewhere_pruning.required_input_positions);
     }
@@ -6519,8 +6531,7 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
             query_info.row_level_filter->column_name,
             query_info.row_level_filter->do_remove_column,
             storage_header,
-            required_row_level_output_positions,
-            true);
+            required_row_level_output_positions);
         removed_output_from_row_level_filter = row_level_pruning.changed;
         required_storage_positions_from_filters = std::move(row_level_pruning.required_input_positions);
     }
@@ -6561,16 +6572,12 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
 
     required_source_columns = all_column_names;
 
-    return {true, {}, std::move(kept_output_positions)};
+    RemoveUnusedColumnsResult result;
+    result.step_changed = true;
+    result.dropped_output_positions = complementPositions(former_output_column_count, kept_output_positions);
+    return result;
 }
 
-bool ReadFromMergeTree::canRemoveColumnsFromOutput() const
-{
-    if (output_header == nullptr)
-        return false;
-
-    return canRemoveUnusedColumns() && output_header->columns() > 0;
-}
 
 void ReadFromMergeTree::setDistributedRead(size_t bucket_count)
 {

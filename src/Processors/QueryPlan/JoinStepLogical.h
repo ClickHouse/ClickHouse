@@ -6,6 +6,8 @@
 #include <utility>
 #include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+
+#include <span>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -198,8 +200,21 @@ public:
     void setTableStatsHint(String table_stats_hint_) { table_stats_hint = std::move(table_stats_hint_); }
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
-    bool canRemoveColumnsFromOutput() const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
+
+    bool canGetUnneededColumns() const override { return true; }
+    UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
+
+    /// Passes a column of one side through the join unchanged: the join reads it from that side and outputs
+    /// it under the same name, last. For the side the join can leave unmatched it comes out the way the join
+    /// stands such a column - NULL where it is Nullable, the default otherwise - so a `Nullable` column
+    /// passed through here tells which rows matched. Only the expressions change: the caller updates the
+    /// input headers once it has passed what it needs.
+    void addPassThroughColumn(const ColumnWithTypeAndName & column, JoinTableSide side);
+
+    /// Makes an input the join already reads one of its outputs as well, last, the way
+    /// `addPassThroughColumn` passes a new one. `input` must be an input of `getActionsDAG`.
+    void addInputToOutputs(const ActionsDAG::Node * input);
 
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
@@ -218,6 +233,28 @@ protected:
     void updateOutputHeader() override;
 
     bool isDummyColumnOfThisStep(const ActionsDAG::Node * node) const;
+
+    /// Everything removeUnusedColumns needs to know, computed without touching the step. Shared by
+    /// removeUnusedColumns and getUnneededColumns so their answers cannot differ.
+    struct UnneededColumnsPlan
+    {
+        /// What the join does not need of each side.
+        UnneededInputPositions unneeded_input_positions;
+
+        /// Set when no output is left and the step has to put its dummy column back.
+        bool adds_dummy_output = false;
+        /// Nodes that have to survive pruning besides the kept outputs: the join conditions, and one
+        /// input per side that would otherwise lose every column.
+        ActionsDAG::NodeRawConstPtrs extra_pruning_roots;
+        /// Whether removeUnusedActions would erase any node.
+        bool removes_any_action = false;
+
+        /// The DAG outputs that survive, as positions in `getOutputs()`. The dummy column, when one is added, has no position of its own: it
+        /// is appended after them. An output not in here goes away, and leaves `actions_after_join` with it.
+        std::vector<size_t> kept_output_positions;
+    };
+
+    UnneededColumnsPlan analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const;
 
     std::vector<std::pair<String, String>> describeJoinProperties() const;
     JoinEstimation getEstimation() const;

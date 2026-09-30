@@ -1,7 +1,8 @@
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
-#include <algorithm>
 #include <limits>
+#include <optional>
 #include <ranges>
 #include <set>
 #include <stack>
@@ -48,20 +49,18 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
-    ActionsDAG & dag,
+FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
+    const ActionsDAG & dag,
     const String & filter_column_name,
-    bool & remove_filter_column,
+    bool remove_filter_column,
     const Block & input_header,
-    const std::vector<size_t> & required_output_positions,
-    bool remove_inputs)
+    const std::vector<size_t> & required_output_positions)
 {
-    FilterDAGOutputPruningResult result;
+    FilterDAGOutputPruningPlan plan;
+    plan.remove_filter_column = remove_filter_column;
 
-    const bool was_remove_filter_column = remove_filter_column;
     const auto & old_outputs = dag.getOutputs();
     const size_t old_dag_outputs_size = old_outputs.size();
-    const auto actions_dag_input_count_before = dag.getInputs().size();
 
     /// The pre-erase output header (from ActionsDAG::updateHeader) is:
     /// [DAG output 0, ..., DAG output N-1, pass-through input 0, ...]
@@ -86,12 +85,11 @@ FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
             filter_column_name,
             fmt::join(dag.getNames(), ", "));
 
-    /// Map positions from the final (post-erase) header to the pre-erase header.
-    /// remove_filter_column is captured by value because the mapping depends on the original value of the flag, not on
-    /// whether the filter column is still present at the time of mapping.
-    auto map_to_pre_erase_pos = [filter_col_pre_erase_pos, was_remove_filter_column](size_t pos) -> size_t
+    /// Map positions from the final (post-erase) header to the pre-erase header. The mapping depends on
+    /// the incoming value of the flag, not on the value the pruning settles on.
+    auto map_to_pre_erase_pos = [filter_col_pre_erase_pos, remove_filter_column](size_t pos) -> size_t
     {
-        if (!was_remove_filter_column)
+        if (!remove_filter_column)
             return pos;
         return pos >= filter_col_pre_erase_pos ? pos + 1 : pos;
     };
@@ -104,87 +102,162 @@ FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
 
     auto [required_dag_indices, required_passthrough_indices] = dag.splitOutputPositions(pre_erase_positions);
 
-    /// Build the list of pass-through input columns.
-    const auto passthrough_input_header_positions = dag.matchInputPositionsToHeader(input_header).passthrough;
+    /// One entry per column of the input header: the input reading it, or nothing when it passes by.
+    /// The caller's pass-through indices ascend, and so do the pass-through columns, so one walk over
+    /// the header splits them into the columns to keep and the columns to drop.
+    const auto header_columns = mapHeaderColumnsToInputs(dag.getInputs(), input_header);
 
-    std::set<size_t> required_passthrough_input_header_positions;
-    for (size_t passthrough_index : required_passthrough_indices)
+    plan.input_columns.resize(header_columns.size());
+    size_t passthrough_index = 0;
+    size_t next_required_passthrough = 0;
+    for (size_t position = 0; position < header_columns.size(); ++position)
     {
-        if (passthrough_index >= passthrough_input_header_positions.size())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Required output position {} is out of range for pass-through inputs", passthrough_index);
-        required_passthrough_input_header_positions.insert(passthrough_input_header_positions[passthrough_index]);
+        if (!header_columns.passesThrough(position))
+            continue;
+
+        if (next_required_passthrough < required_passthrough_indices.size()
+            && required_passthrough_indices[next_required_passthrough] == passthrough_index)
+        {
+            ++next_required_passthrough;
+            plan.input_columns[position] = IQueryPlanStep::InputColumnUsage::PassesThroughNeeded;
+        }
+        else
+            plan.input_columns[position] = IQueryPlanStep::InputColumnUsage::PassesThroughDropped;
+
+        ++passthrough_index;
     }
 
-    const auto has_to_remove_any_pass_through
-        = passthrough_input_header_positions.size() > required_passthrough_input_header_positions.size();
+    if (next_required_passthrough != required_passthrough_indices.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Required output position {} is out of range for pass-through inputs",
+            required_passthrough_indices[next_required_passthrough]);
 
     std::set<size_t> required_dag_index_set(required_dag_indices.begin(), required_dag_indices.end());
 
     /// Check if the filter column is required by the caller. If not, we can remove it.
-    if (!remove_filter_column && !required_dag_index_set.contains(filter_col_pre_erase_pos))
+    if (!plan.remove_filter_column && !required_dag_index_set.contains(filter_col_pre_erase_pos))
+        plan.remove_filter_column = true;
+
+    /// The filter column is dropped, so its `materialize` wrapper is no longer observable, and
+    /// `applyFilterDAGOutputPruning` folds it away. That changes what survives the pruning, so the rest of
+    /// this looks at the DAG as it is going to be. This includes filters that were already marked for
+    /// removal by `ReadFromMergeTree`. The fold only looks through `materialize` and aliases, so without a
+    /// `materialize` in the predicate there is nothing to fold.
+    std::optional<ActionsDAG> folded_dag;
+    if (plan.remove_filter_column)
     {
-        remove_filter_column = true;
+        const auto predicate_nodes = findReachableNodes({old_outputs[filter_col_pre_erase_pos]});
+        const bool has_materialize = std::ranges::any_of(predicate_nodes, [](const auto * node)
+        {
+            return node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "materialize";
+        });
+
+        if (has_materialize)
+        {
+            folded_dag = dag.clone();
+            folded_dag->foldFilterPredicateThroughMaterialize(filter_col_pre_erase_pos);
+            /// The fold only ever replaces the filter output by a constant.
+            plan.fold_filter_predicate = folded_dag->getOutputs()[filter_col_pre_erase_pos]->type == ActionsDAG::ActionType::COLUMN
+                && old_outputs[filter_col_pre_erase_pos]->type != ActionsDAG::ActionType::COLUMN;
+            if (!plan.fold_filter_predicate)
+                folded_dag.reset();
+        }
     }
-
-    /// The filter column is dropped, so its `materialize` wrapper is no longer observable. This
-    /// includes filters that were already marked for removal by `ReadFromMergeTree`.
-    if (remove_filter_column)
-        dag.foldFilterPredicateThroughMaterialize(filter_column_name);
-
-    required_dag_index_set.insert(filter_col_pre_erase_pos);
+    const auto & analyzed_dag = folded_dag ? *folded_dag : dag;
+    const auto & analyzed_outputs = analyzed_dag.getOutputs();
 
     /// Keep only the required DAG output nodes, plus always keep the filter column.
-    ActionsDAG::NodeRawConstPtrs new_dag_outputs;
-    new_dag_outputs.reserve(required_dag_index_set.size());
+    required_dag_index_set.insert(filter_col_pre_erase_pos);
+    plan.required_dag_positions.assign(required_dag_index_set.begin(), required_dag_index_set.end());
 
-    for (size_t i = 0; i < old_dag_outputs_size; ++i)
-    {
-        if (required_dag_index_set.contains(i))
-            new_dag_outputs.push_back(old_outputs[i]);
-    }
+    plan.filter_output_position = filter_col_pre_erase_pos;
+    plan.changes_output_header
+        = plan.required_dag_positions.size() != old_dag_outputs_size || remove_filter_column != plan.remove_filter_column;
 
-    auto & dag_outputs = dag.getOutputs();
-    if (new_dag_outputs.size() != dag_outputs.size())
-        result.changed = true;
-    dag_outputs = std::move(new_dag_outputs);
+    /// What removeUnusedActions would keep once the outputs are pruned. It folds constants before it
+    /// collects the nodes to keep, and folding clears the children of a folded node, so stop at such a
+    /// node to see the same set. ARRAY_JOIN is always a root there.
+    ActionsDAG::NodeRawConstPtrs roots;
+    for (size_t position : plan.required_dag_positions)
+        roots.push_back(analyzed_outputs[position]);
+    for (const auto & node : analyzed_dag.getNodes())
+        if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
+            roots.push_back(&node);
 
-    if (was_remove_filter_column != remove_filter_column)
-        result.changed = true;
+    const auto is_folded_constant = [](const ActionsDAG::Node * node) { return node->column && !node->children.empty(); };
+    const auto surviving_nodes = findReachableNodes(roots, is_folded_constant);
 
-    if (dag.removeUnusedActions(remove_inputs))
-        result.changed = true;
+    plan.removes_any_action = surviving_nodes.size() < analyzed_dag.getNodes().size();
 
-    if (!remove_inputs && has_to_remove_any_pass_through)
-    {
-        for (size_t passthrough_input_header_position : passthrough_input_header_positions)
-        {
-            if (!required_passthrough_input_header_positions.contains(passthrough_input_header_position))
-            {
-                const auto & column = input_header.getByPosition(passthrough_input_header_position);
-                dag.addInput(column);
-            }
-        }
-        result.changed = true;
-    }
+    /// Every input reads a header position of its own, so the column it reads is needed exactly when the
+    /// input survives. A clone keeps the inputs in their order. While inputs may not be removed, every
+    /// input is a root, and so survives.
+    const auto & inputs = analyzed_dag.getInputs();
+    for (size_t position = 0; position < header_columns.size(); ++position)
+        if (!header_columns.passesThrough(position))
+            plan.input_columns[position] = surviving_nodes.contains(inputs[header_columns.read_by[position]])
+                ? IQueryPlanStep::InputColumnUsage::ReadNeeded
+                : IQueryPlanStep::InputColumnUsage::ReadDropped;
 
-    if (remove_inputs)
-    {
-        auto required_input_positions = dag.matchInputPositionsToHeader(input_header).matched;
-        required_input_positions.insert(
-            required_input_positions.end(),
-            required_passthrough_input_header_positions.begin(),
-            required_passthrough_input_header_positions.end());
+    return plan;
+}
 
-        std::sort(required_input_positions.begin(), required_input_positions.end());
-        result.required_input_positions = std::move(required_input_positions);
-        result.input_positions_changed = dag.getInputs().size() != actions_dag_input_count_before || has_to_remove_any_pass_through;
+FilterDAGOutputPruningResult FilterDAGOutputPruningPlan::toResult() const
+{
+    using InputColumnUsage = IQueryPlanStep::InputColumnUsage;
 
-        if (result.input_positions_changed)
-            result.changed = true;
-    }
+    const bool drops_a_passthrough = std::ranges::contains(input_columns, InputColumnUsage::PassesThroughDropped);
+    const bool drops_an_input = std::ranges::contains(input_columns, InputColumnUsage::ReadDropped);
+
+    FilterDAGOutputPruningResult result;
+    result.input_positions_changed = drops_an_input || drops_a_passthrough;
+    result.changed = changes_output_header || fold_filter_predicate || removes_any_action || result.input_positions_changed;
+
+    for (size_t position = 0; position < input_columns.size(); ++position)
+        if (input_columns[position] == InputColumnUsage::ReadNeeded || input_columns[position] == InputColumnUsage::PassesThroughNeeded)
+            result.required_input_positions.push_back(position);
 
     return result;
+}
+
+/// The part of the pruning that concerns the outputs: the fold of the predicate, the outputs that remain,
+/// and the filter column flag.
+static void applyFilterDAGOutputPruningToOutputs(ActionsDAG & dag, bool & remove_filter_column, const FilterDAGOutputPruningPlan & plan)
+{
+    if (plan.fold_filter_predicate)
+        dag.foldFilterPredicateThroughMaterialize(plan.filter_output_position);
+
+    auto & dag_outputs = dag.getOutputs();
+    ActionsDAG::NodeRawConstPtrs new_dag_outputs;
+    new_dag_outputs.reserve(plan.required_dag_positions.size());
+    for (size_t position : plan.required_dag_positions)
+        new_dag_outputs.push_back(dag_outputs[position]);
+    dag_outputs = std::move(new_dag_outputs);
+
+    remove_filter_column = plan.remove_filter_column;
+}
+
+static void applyFilterDAGOutputPruning(ActionsDAG & dag, bool & remove_filter_column, const FilterDAGOutputPruningPlan & plan)
+{
+    applyFilterDAGOutputPruningToOutputs(dag, remove_filter_column, plan);
+
+    const auto removed_any_action = dag.removeUnusedActions();
+    chassert(removed_any_action == plan.removes_any_action);
+}
+
+FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
+    ActionsDAG & dag,
+    const String & filter_column_name,
+    bool & remove_filter_column,
+    const Block & input_header,
+    const std::vector<size_t> & required_output_positions)
+{
+    const auto plan = analyzeFilterDAGOutputPruning(
+        dag, filter_column_name, remove_filter_column, input_header, required_output_positions);
+
+    applyFilterDAGOutputPruning(dag, remove_filter_column, plan);
+
+    return plan.toResult();
 }
 
 static bool isTrivialSubtree(const ActionsDAG::Node * node)
@@ -474,56 +547,59 @@ bool FilterStep::canRemoveUnusedColumns() const
     return true;
 }
 
-FilterStep::RemoveUnusedColumnsResult FilterStep::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs)
+FilterDAGOutputPruningPlan FilterStep::analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in FilterStep");
-
-    /// When extra columns were absorbed from a child step that cannot reduce its output,
-    /// prevent input removal to avoid re-creating the mismatch on subsequent optimization passes.
-    if (prevent_input_removal)
-        remove_inputs = false;
 
     chassert(
         actions_dag.getInputs().size() <= getInputHeaders().at(0)->columns()
         && "There cannot be more DAG inputs than columns in the input header");
 
-    const auto & input_header = input_headers.front();
-    auto pruning_result = pruneFilterDAGOutputsByPosition(
-        actions_dag, filter_column_name, remove_filter_column, *input_header, required_output_positions, remove_inputs);
-
-    if (!pruning_result.changed && output_header->columns() == required_output_positions.size())
-        return {};
-
-    if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There cannot be more inputs in the DAG than columns in the input header");
-
-    if (pruning_result.input_positions_changed)
-    {
-        Block new_input_header{};
-        for (size_t pos : pruning_result.required_input_positions)
-            new_input_header.insert(input_header->getByPosition(pos));
-
-        SharedHeader new_shared_input_header = std::make_shared<const Block>(std::move(new_input_header));
-        updateInputHeader(std::move(new_shared_input_header), 0);
-        return {true, {std::move(pruning_result.required_input_positions)}, required_output_positions};
-    }
-
-    updateOutputHeader();
-
-    return {true, {}, required_output_positions};
+    /// The analysis counts what it keeps, the filter column included whether or not anyone reads it, as
+    /// `ReadFromMergeTree` asks it to for PREWHERE.
+    return analyzeFilterDAGOutputPruning(
+        actions_dag,
+        filter_column_name,
+        remove_filter_column,
+        *input_headers.front(),
+        complementPositions(output_header->columns(), unneeded_output_positions));
 }
 
-bool FilterStep::canRemoveColumnsFromOutput() const
+FilterStep::UnneededInputPositions FilterStep::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
 {
-    if (output_header == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in FilterStep");
+    const auto plan = analyzeUnneededColumns(unneeded_output_positions);
 
-    if (!remove_filter_column && output_header->columns() == 1)
-        return false;
+    std::vector<size_t> positions;
+    for (size_t position = 0; position < plan.input_columns.size(); ++position)
+        if (plan.input_columns[position] == InputColumnUsage::ReadDropped || plan.input_columns[position] == InputColumnUsage::PassesThroughDropped)
+            positions.push_back(position);
 
-    return canRemoveUnusedColumns();
+    return {std::move(positions)};
 }
+
+FilterStep::RemoveUnusedColumnsResult
+FilterStep::removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs)
+{
+    const auto plan = analyzeUnneededColumns(unneeded_output_positions);
+    const auto & pruned = inputs.at(0);
+    const auto input_header = input_headers.front();
+
+    applyFilterDAGOutputPruningToOutputs(actions_dag, remove_filter_column, plan);
+
+    RemoveUnusedColumnsResult result;
+    result.dropped_output_positions = unneeded_output_positions;
+
+    const bool dag_changed = alignInputsWithPrunedChild(actions_dag, plan.input_columns, *input_header, pruned);
+    result.step_changed = plan.changes_output_header || plan.fold_filter_predicate || dag_changed
+        || !blocksHaveEqualStructure(*input_header, *pruned.header);
+
+    if (result.step_changed)
+        updateInputHeader(pruned.header, 0);
+
+    return result;
+}
+
 
 QueryPlanStepPtr FilterStep::clone() const
 {

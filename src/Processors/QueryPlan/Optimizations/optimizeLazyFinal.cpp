@@ -694,7 +694,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
     /// Compute primary key expression and project to PK columns only.
     /// Add all header columns as inputs so that unused ones are properly consumed
-    /// and can be dropped by tryRemoveUnusedColumns.
+    /// and can be dropped by `removeUnusedColumns`.
     {
         auto dag = primary_key_dag.clone();
         NamesWithAliases projection;

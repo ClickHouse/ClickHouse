@@ -126,94 +126,124 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         size_t next_child = 0;
     };
 
-    std::stack<Frame> stack;
-    stack.push({.node = &root});
-
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     size_t total_applied_optimizations = 0;
 
 
     const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings);
 
-    while (!stack.empty())
+    /// Applies the local optimizations bottom-up until none applies any more. Returns false where EXPLAIN is to stop
+    /// at the limit of optimizations.
+    const auto apply_local_optimizations = [&]() -> bool
     {
-        auto & frame = stack.top();
+        std::stack<Frame> stack;
+        stack.push({.node = &root});
 
-        /// If traverse_depth_limit == 0, then traverse without limit (first entrance)
-        /// If traverse_depth_limit > 1, then traverse with (limit - 1)
-        if (frame.depth_limit != 1)
+        while (!stack.empty())
         {
-            /// Traverse all children first.
-            if (frame.next_child < frame.node->children.size())
+            auto & frame = stack.top();
+
+            /// If traverse_depth_limit == 0, then traverse without limit (first entrance)
+            /// If traverse_depth_limit > 1, then traverse with (limit - 1)
+            if (frame.depth_limit != 1)
             {
-                stack.push({
-                    .node = frame.node->children[frame.next_child],
-                    .depth_limit = frame.depth_limit ? (frame.depth_limit - 1) : 0,
-                });
+                /// Traverse all children first.
+                if (frame.next_child < frame.node->children.size())
+                {
+                    stack.push({
+                        .node = frame.node->children[frame.next_child],
+                        .depth_limit = frame.depth_limit ? (frame.depth_limit - 1) : 0,
+                    });
 
-                ++frame.next_child;
-                continue;
-            }
-        }
-
-        /// An optimization applied to a child node may have changed a grandchild's
-        /// output header (e.g., filter push-down modifies a filter step's DAG, which
-        /// changes its output constness). The intermediate child step's cached input
-        /// header becomes stale. Refresh it before running optimizations on this node,
-        /// so that steps like mergeExpressions see consistent headers.
-        for (size_t i = 0; i < frame.node->children.size(); ++i)
-        {
-            auto child_output = frame.node->children[i]->step->getOutputHeader();
-            if (!blocksHaveEqualStructure(*frame.node->step->getInputHeaders()[i], *child_output))
-                frame.node->step->updateInputHeader(std::move(child_output), i);
-        }
-
-        size_t max_update_depth = 0;
-
-        /// Apply all optimizations.
-        for (const auto & optimization : getOptimizations())
-        {
-            if (!(optimization_settings.*(optimization.is_enabled)))
-                continue;
-
-            /// Just in case, skip optimization if it is not initialized.
-            if (!optimization.apply)
-                continue;
-
-            if (max_optimizations_to_apply && max_optimizations_to_apply < total_applied_optimizations)
-            {
-                if (optimization_settings.is_explain)
-                    return;
-
-                throw Exception(
-                    ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                    "Too many optimizations applied to query plan. Current limit {}",
-                    max_optimizations_to_apply);
+                    ++frame.next_child;
+                    continue;
+                }
             }
 
-
-            /// Try to apply optimization.
-            auto update_depth = optimization.apply(frame.node, nodes, extra_settings);
-            if (update_depth)
+            /// An optimization applied to a child node may have changed a grandchild's
+            /// output header (e.g., filter push-down modifies a filter step's DAG, which
+            /// changes its output constness). The intermediate child step's cached input
+            /// header becomes stale. Refresh it before running optimizations on this node,
+            /// so that steps like mergeExpressions see consistent headers.
+            for (size_t i = 0; i < frame.node->children.size(); ++i)
             {
+                auto child_output = frame.node->children[i]->step->getOutputHeader();
+                if (!blocksHaveEqualStructure(*frame.node->step->getInputHeaders()[i], *child_output))
+                    frame.node->step->updateInputHeader(std::move(child_output), i);
+            }
+
+            size_t max_update_depth = 0;
+
+            /// Apply all optimizations.
+            for (const auto & optimization : getOptimizations())
+            {
+                if (!(optimization_settings.*(optimization.is_enabled)))
+                    continue;
+
+                /// Just in case, skip optimization if it is not initialized.
+                if (!optimization.apply)
+                    continue;
+
+                if (max_optimizations_to_apply && max_optimizations_to_apply < total_applied_optimizations)
+                {
+                    if (optimization_settings.is_explain)
+                        return false;
+
+                    throw Exception(
+                        ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                        "Too many optimizations applied to query plan. Current limit {}",
+                        max_optimizations_to_apply);
+                }
+
+
+                /// Try to apply optimization.
+                auto update_depth = optimization.apply(frame.node, nodes, extra_settings);
+                if (update_depth)
+                {
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-                checkHeaders(*frame.node, String("after optimization ") + optimization.name, update_depth);
+                    checkHeaders(*frame.node, String("after optimization ") + optimization.name, update_depth);
 #endif
-                ++total_applied_optimizations;
+                    ++total_applied_optimizations;
+                }
+                max_update_depth = std::max<size_t>(max_update_depth, update_depth);
             }
-            max_update_depth = std::max<size_t>(max_update_depth, update_depth);
+
+            /// Traverse `max_update_depth` layers of tree again.
+            if (max_update_depth)
+            {
+                frame.depth_limit = max_update_depth;
+                frame.next_child = 0;
+                continue;
+            }
+
+            /// Nothing was applied.
+            stack.pop();
         }
 
-        /// Traverse `max_update_depth` layers of tree again.
-        if (max_update_depth)
+        return true;
+    };
+
+    if (!apply_local_optimizations())
+        return;
+
+    /// Removing unused columns looks at the whole plan at once, so it runs after the local optimizations, and they run
+    /// again after it has removed anything, since fewer columns can let more of them apply.
+    while (optimization_settings.remove_unused_columns && removeUnusedColumns(root))
+    {
+        ++total_applied_optimizations;
+        if (max_optimizations_to_apply && max_optimizations_to_apply < total_applied_optimizations)
         {
-            frame.depth_limit = max_update_depth;
-            frame.next_child = 0;
-            continue;
+            if (optimization_settings.is_explain)
+                return;
+
+            throw Exception(
+                ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                "Too many optimizations applied to query plan. Current limit {}",
+                max_optimizations_to_apply);
         }
 
-        /// Nothing was applied.
-        stack.pop();
+        if (!apply_local_optimizations())
+            return;
     }
 }
 
@@ -336,13 +366,11 @@ void optimizeTreeSecondPass(
         },
         [&](auto & frame_node)
         {
+            /// The joins stay logical until after `applyParallelReplicas` below: it needs the final
+            /// (reordered, runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical`
+            /// supports, and lazy materialization for joins reads the join expressions from it.
             if (optimization_settings.enable_join_runtime_filters)
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
-            /// Keep joins logical for `applyParallelReplicas` below: it needs the final (reordered,
-            /// runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical` supports.
-            /// Joins left in the outer plan are converted right after the fragment is created.
-            if (!optimization_settings.enable_parallel_replicas)
-                convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
     /// A new filter node has to be pushed down. Runtime filters are re-merged unconditionally as
@@ -405,24 +433,6 @@ void optimizeTreeSecondPass(
         }
     }
 
-    /// Run after runtime filter push-down so that chains of joins are detected correctly. The pass only
-    /// recognizes physical JoinStep, so with parallel replicas - where the conversion is deferred until
-    /// after `applyParallelReplicas` - it runs there instead, see below.
-    const auto optimize_join_lazy_indexing = [&]
-    {
-        if (optimization_settings.min_columns_for_join_lazy_indexing == 0)
-            return;
-
-        traverseQueryPlan(stack, root,
-            [&](auto & frame_node)
-            {
-                optimizeJoinLazyIndexing(frame_node, nodes, optimization_settings);
-            });
-    };
-
-    if (!optimization_settings.enable_parallel_replicas)
-        optimize_join_lazy_indexing();
-
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
     if (optimization_settings.optimize_prewhere)
     {
@@ -445,6 +455,41 @@ void optimizeTreeSecondPass(
     const bool cascades_active = make_distributed_plan && optimization_settings.enable_cascades_optimizer;
 
     applyParallelReplicas(query_plan, nodes, optimization_settings);
+
+    /// Lazy materialization for plans with joins works on the join expressions, so it runs while the joins
+    /// are still logical. That is after PREWHERE optimization, which needs a filter right above the read,
+    /// and before reading in order, which would turn the full sorting it starts from into a partial one.
+    /// Not for a plan whose parts run elsewhere, since the lazy read has to run where the main one does.
+    bool lazy_materialization_applied = false;
+    if (optimization_settings.optimize_lazy_materialization && optimization_settings.lazy_materialization_for_join
+        && !optimization_settings.enable_parallel_replicas && !make_distributed_plan)
+    {
+        chassert(stack.empty());
+        stack.push_back({.node = &root});
+        while (!stack.empty())
+        {
+            auto & frame = stack.back();
+
+            if (frame.next_child == 0
+                && optimizeLazyMaterialization3(
+                    *frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
+            {
+                lazy_materialization_applied = true;
+                stack.pop_back();
+                continue;
+            }
+
+            if (frame.next_child < frame.node->children.size())
+            {
+                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+                ++frame.next_child;
+                stack.push_back(next_frame);
+                continue;
+            }
+
+            stack.pop_back();
+        }
+    }
 
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
@@ -469,17 +514,35 @@ void optimizeTreeSecondPass(
 
     /// Distributed joins now live inside fragments and are converted by each fragment's own
     /// re-optimization. Convert the joins left in the outer plan (non-distributed kinds, or all of them
-    /// when nothing was distributed), which the traversal above skipped.
-    if (optimization_settings.enable_parallel_replicas)
+    /// when nothing was distributed).
+    traverseQueryPlan(stack, root,
+        [&](auto &) {},
+        [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
+
+    /// The runtime filters were pushed down while the joins were logical, so merge what the conversion
+    /// added around the joins, as that push-down did when the joins were converted before it. With the
+    /// same `extra_settings`: a default-constructed one truncates the description of a merged step.
+    if (join_runtime_filters_were_added)
     {
         traverseQueryPlan(stack, root,
-            [&](auto &) {},
-            [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
+            [&](auto & frame_node)
+            {
+                while (tryMergeExpressions(&frame_node, nodes, extra_settings) + tryMergeFilters(&frame_node, nodes, extra_settings))
+                {
+                }
+            });
+    }
 
-        /// The joins are physical only now, so this is the first point where lazy column indexing can be
-        /// applied to the joins left in the outer plan. Joins inside a shipped fragment get it from the
-        /// fragment's own re-optimization on the replica.
-        optimize_join_lazy_indexing();
+    /// The pass only recognizes physical `JoinStep`, so this is the first point where lazy column indexing
+    /// can be applied. Joins inside a shipped fragment get it from the fragment's own re-optimization on
+    /// the replica.
+    if (optimization_settings.min_columns_for_join_lazy_indexing != 0)
+    {
+        traverseQueryPlan(stack, root,
+            [&](auto & frame_node)
+            {
+                optimizeJoinLazyIndexing(frame_node, nodes, optimization_settings);
+            });
     }
 
     /// Run Cascades optimizer after all push down and join order optimizations.
@@ -771,7 +834,6 @@ void optimizeTreeSecondPass(
 
     /// projection optimizations can introduce additional reading step
     /// so, applying lazy materialization after it, since it's dependent on reading step
-    bool lazy_materialization_applied = false;
     if ((optimization_settings.optimize_lazy_materialization || optimization_settings.optimize_lazy_final) && !optimization_settings.make_distributed_plan)
     {
         chassert(stack.empty());
@@ -789,7 +851,8 @@ void optimizeTreeSecondPass(
 
             if (frame.next_child == 0 && optimization_settings.optimize_lazy_materialization)
             {
-                if (optimizeLazyMaterialization2(*frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
+                if (optimizeLazyMaterialization2(
+                        *frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
                 {
                     lazy_materialization_applied = true;
 

@@ -1,4 +1,5 @@
 #include <Processors/Transforms/LazyMaterializingTransform.h>
+#include <Columns/ColumnNullable.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Interpreters/Squashing.h>
@@ -19,9 +20,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Block LazyMaterializingTransform::transformHeader(const Block & main_header, const Block & lazy_header)
+Block LazyMaterializingTransform::transformHeader(const Block & main_header, const Block & lazy_header, const String & index_column_name)
 {
-    auto pos = main_header.getPositionByName("__global_row_index");
+    auto pos = main_header.getPositionByName(index_column_name);
     ColumnsWithTypeAndName columns = main_header.getColumnsWithTypeAndName();
     columns.erase(columns.begin() + pos);
     const auto & lazy_columns = lazy_header.getColumnsWithTypeAndName();
@@ -29,12 +30,18 @@ Block LazyMaterializingTransform::transformHeader(const Block & main_header, con
     return Block(std::move(columns));
 }
 
-LazyMaterializingTransform::LazyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, ILazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+LazyMaterializingTransform::LazyMaterializingTransform(
+    SharedHeader main_header,
+    SharedHeader lazy_header,
+    ILazyMaterializingRowsPtr lazy_materializing_rows_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+    String index_column_name_)
     : IProcessor(
         InputPorts({main_header, lazy_header}),
-        OutputPorts({OutputPort(std::make_shared<Block>(transformHeader(*main_header, *lazy_header)))}))
+        OutputPorts({OutputPort(std::make_shared<Block>(transformHeader(*main_header, *lazy_header, index_column_name_)))}))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
     , updater(std::move(updater_))
+    , index_column_name(std::move(index_column_name_))
 {
 }
 
@@ -125,7 +132,9 @@ LazyMaterializingTransform::Status LazyMaterializingTransform::prepare()
             return Status::NeedData;
     }
 
-    if (!chunks.empty())
+    /// With a Nullable index every surviving row can be unmatched, and then the lazy input delivers nothing,
+    /// but the lazy columns still have to be added, at their defaults.
+    if (!chunks.empty() || !lazy_chunk_prepared)
         return Status::Ready;
 
     output.push(std::move(*result_chunk));
@@ -272,12 +281,27 @@ void LazyMaterializingTransform::prepareMainChunk()
         squash_ms = squashing_watch.elapsedMilliseconds();
     }
 
-    auto rows = result_chunk->getNumRows();
-    auto pos = getInputs().front().getHeader().getPositionByName("__global_row_index");
+    auto total_rows = result_chunk->getNumRows();
+    auto pos = getInputs().front().getHeader().getPositionByName(index_column_name);
     auto columns = result_chunk->detachColumns();
     auto index_col = columns[pos];
     columns.erase(columns.begin() + pos);
-    result_chunk = Chunk(std::move(columns), rows);
+    result_chunk = Chunk(std::move(columns), total_rows);
+
+    /// A NULL index is a row a join matched nothing for. Only the other rows are looked up, and the
+    /// defaults go in at these positions once the lazy columns are read.
+    index_col = index_col->convertToFullColumnIfConst();
+    if (const auto * nullable_index = typeid_cast<const ColumnNullable *>(index_col.get()))
+    {
+        const auto & null_map = nullable_index->getNullMapData();
+        matched_rows.emplace(null_map.size());
+        for (size_t row = 0; row < null_map.size(); ++row)
+            (*matched_rows)[row] = !null_map[row];
+
+        index_col = nullable_index->getNestedColumnPtr()->filter(*matched_rows, -1);
+    }
+
+    auto rows = index_col->size();
 
     if (pass_through)
     {
@@ -365,6 +389,8 @@ void LazyMaterializingTransform::prepareLazyChunk()
     // for (auto & chunk : chunks)
     //     std::cerr << "Chunk with " << chunk.getNumRows() << " rows\n";
 
+    lazy_chunk_prepared = true;
+
     Chunk chunk;
     {
         Stopwatch squash_watch;
@@ -375,6 +401,10 @@ void LazyMaterializingTransform::prepareLazyChunk()
 
         squash_ms = squash_watch.elapsedMilliseconds();
     }
+
+    /// Nothing arrived, which happens when no surviving row had a row of the source to read.
+    if (chunk.getNumColumns() == 0)
+        chunk = Chunk(getInputs().back().getHeader().cloneEmptyColumns(), 0);
 
     if (chunk.getNumRows() != offsets.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -410,6 +440,17 @@ void LazyMaterializingTransform::prepareLazyChunk()
                 col = col->permute(inverted_permutation, rows);
         }
         permute_ms = permute_watch.elapsedMilliseconds();
+    }
+
+    if (matched_rows)
+    {
+        for (auto & col : lazy_columns)
+        {
+            auto expanded = IColumn::mutate(std::move(col));
+            expanded->expand(*matched_rows, /*inverted=*/false);
+            col = std::move(expanded);
+        }
+        rows = matched_rows->size();
     }
 
     auto columns = result_chunk->detachColumns();

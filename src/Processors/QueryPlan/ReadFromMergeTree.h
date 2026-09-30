@@ -578,8 +578,7 @@ public:
     Strings getShardsForDistributedRead() const;
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
-    bool canRemoveColumnsFromOutput() const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
@@ -618,6 +617,12 @@ public:
     void copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step);
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
+    /// The columns `keepOnlyRequiredColumnsAndCreateLazyReadStep` would move to the lazy read, without moving
+    /// them: the read keeps more than it is asked to, such as the inputs of PREWHERE and virtual columns.
+    Names getLazilyReadColumns(const NameSet & required_outputs) const;
+    /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by
+    /// their part offsets. Reading a projection instead would address other rows.
+    bool hasLazilyReadColumns() const { return has_lazily_read_columns; }
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
 
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_) { lazy_materializing_rows = std::move(lazy_materializing_rows_); }
@@ -843,6 +848,7 @@ private:
     bool allow_top_k_prewhere_query_condition_cache = true;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
+    bool has_lazily_read_columns = false;
 
     ExpressionActionsPtr virtual_row_conversion;
 
