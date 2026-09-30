@@ -296,8 +296,7 @@ static constexpr auto DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE 
 /// Send String columns in the native protocol with a separate stream of cumulative byte offsets.
 static constexpr auto DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION = 54492;
 
-/// A `-Merge` aggregate function state takes the state version of the function it merges,
-/// instead of always version 0 (which dropped e.g. the skip degree of `quantileDeterministicMerge`).
+/// A `-Merge` aggregate function state takes the state version of the function it merges, instead of always 0.
 static constexpr auto DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION = 54493;
 
 

@@ -124,7 +124,6 @@ public:
     {
         WriteBufferFromVector<BLOB> wbuf(blob);
         CompressedWriteBuffer compressed_buffer(wbuf, codec);
-        /// The payload has the aggregate function state versions `NativeWriter::write` announces for `client_revision`.
         NativeWriter::setAggregateFunctionStateVersions(wrapped_column.type, client_revision);
         auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(client_revision, wrapped_column);
         NativeWriter::writeData(
