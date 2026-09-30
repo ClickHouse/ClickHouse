@@ -485,4 +485,43 @@ bool isAlreadySorted(const Block & block, const SortDescription & description)
     return isAlreadySortedImpl(rows, less);
 }
 
+bool hasUniqueSortingKey(const Block & block, const SortDescription & description, const IColumn::Permutation * permutation)
+{
+    const size_t rows = permutation ? permutation->size() : block.rows();
+    if (rows < 2)
+        return true;
+
+    ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
+    bool is_collation_required = false;
+
+    for (const auto & column_with_sort_desc : columns_with_sort_desc)
+    {
+        if (isCollationRequired(column_with_sort_desc.description))
+        {
+            is_collation_required = true;
+            break;
+        }
+    }
+
+    const auto row_at = [&](size_t i)
+    {
+        return permutation ? (*permutation)[i] : i;
+    };
+
+    if (is_collation_required)
+    {
+        PartialSortingLessWithCollation less(columns_with_sort_desc);
+        for (size_t i = 1; i < rows; ++i)
+            if (less.compare(row_at(i - 1), row_at(i)) == 0)
+                return false;
+        return true;
+    }
+
+    PartialSortingLess less(columns_with_sort_desc);
+    for (size_t i = 1; i < rows; ++i)
+        if (less.compare(row_at(i - 1), row_at(i)) == 0)
+            return false;
+    return true;
+}
+
 }

@@ -1,5 +1,6 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
@@ -58,6 +59,7 @@ namespace ProfileEvents
 {
     extern const Event MergeTreeDataWriterBlocks;
     extern const Event MergeTreeDataWriterBlocksAlreadySorted;
+    extern const Event MergeTreeDataWriterAggregatingBlocksWithUniqueKeys;
     extern const Event MergeTreeDataWriterRows;
     extern const Event MergeTreeDataWriterUncompressedBytes;
     extern const Event MergeTreeDataWriterCompressedBytes;
@@ -592,6 +594,22 @@ Block MergeTreeDataWriter::mergeBlock(
     size_t block_size = header->rows();
     span.addAttribute("clickhouse.rows", block_size);
     span.addAttribute("clickhouse.columns", header->columns());
+
+    if (merging_params.mode == MergeTreeData::MergingParams::Aggregating
+        && hasUniqueSortingKey(*header, sort_description, permutation))
+    {
+        Block result = *header;
+        if (permutation)
+        {
+            Columns columns = result.getColumns();
+            transformColumnsWithSharedIndex(columns, [&](const ColumnPtr & col) { return col->permute(*permutation, permutation->size()); });
+            result.setColumns(columns);
+            permutation = nullptr;
+        }
+
+        ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterAggregatingBlocksWithUniqueKeys);
+        return result;
+    }
 
     auto get_merging_algorithm = [&]() -> std::shared_ptr<IMergingAlgorithm>
     {
