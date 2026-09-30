@@ -235,3 +235,44 @@ def test_since_last_review_is_an_interdiff_of_the_pr():
         assert "`src/Gone.cpp` (no longer changed by the PR)" in text and "`src/New.cpp` (new in the PR)" in text
         assert context._render_since_last_review("r/r", 1, "master", "d" * 12, "d" * 40, now) == ""
         assert "force-pushed" in context._render_since_last_review("r/r", 1, "master", "e" * 12, "d" * 40, now)
+
+
+def test_failed_reply_does_not_reopen_and_failed_actions_are_reported():
+    with tempfile.TemporaryDirectory() as d:
+        r = _body(d, "r.md", "still broken")
+        threads = [_thread("T", resolved=True, resolved_by="author"), _thread("U")]
+        with open(os.path.join(d, "thread_actions.json"), "w") as f:
+            json.dump([{"action": "reply", "thread_id": "T", "body_file": r},
+                       {"action": "unresolve", "thread_id": "T"},
+                       {"action": "resolve", "thread_id": "U"}], f)
+        gh = mock.MagicMock()
+        gh.post_pr_line_comment.return_value = False
+        gh.resolve_pr_review_thread.return_value = False
+        summary = publish.publish(gh, "ClickHouse/ClickHouse", 5, "abc", FILES, threads, d, "---\n#### AI Review\n")
+        assert not gh.unresolve_pr_review_thread.called
+        assert "Thread actions that could not be applied (2)" in summary
+        assert "reply on https://github.com/ClickHouse/ClickHouse/pull/5#discussion_r7" in summary and "still broken" in summary
+
+
+def test_local_links_are_rewritten_to_github():
+    text = ("[ci/jobs/x.py:120](/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/ci/jobs/x.py:120) "
+            "and [f](src/A.cpp) and [web](https://example.com/src/A.cpp)")
+    out = publish.local_links_to_github(text, "ClickHouse/ClickHouse", "abc")
+    assert "](https://github.com/ClickHouse/ClickHouse/blob/abc/ci/jobs/x.py#L120)" in out
+    assert "](https://github.com/ClickHouse/ClickHouse/blob/abc/src/A.cpp)" in out
+    assert "](https://example.com/src/A.cpp)" in out
+
+
+def test_outputs_require_every_file():
+    from ci.jobs import copilot_review_job as job
+
+    with tempfile.TemporaryDirectory() as d:
+        with mock.patch.object(job, "OUTPUT_DIR", d), mock.patch.object(job, "SUMMARY_FILE", os.path.join(d, "summary.md")):
+            _body(d, "summary.md", "---\n#### AI Review\n")
+            assert "comments.json" in job._outputs_problem()
+            _body(d, "comments.json", "[]")
+            assert "thread_actions.json" in job._outputs_problem()
+            _body(d, "thread_actions.json", "{}")
+            assert "not a JSON array" in job._outputs_problem()
+            _body(d, "thread_actions.json", "[]")
+            assert job._outputs_problem() == ""

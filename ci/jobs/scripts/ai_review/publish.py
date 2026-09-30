@@ -199,6 +199,36 @@ def moved_findings_markdown(moved):
     return "\n".join(out) + "\n"
 
 
+def failed_actions_markdown(failed, repo, pr_number, base_dir):
+    """Thread actions GitHub did not accept, so the posted summary says what
+    was meant to happen instead of silently dropping it."""
+    if not failed:
+        return ""
+    out = ["", f"<details><summary>Thread actions that could not be applied ({len(failed)})</summary>", ""]
+    for action, thread, body_file in failed:
+        first = ((thread.get("comments") or {}).get("nodes") or [{}])[0]
+        link = (f"https://github.com/{repo}/pull/{pr_number}#discussion_r{first['databaseId']}"
+                if first.get("databaseId") else thread.get("id"))
+        out.append(f"- {action} on {link}")
+        if action == "reply" and body_file:
+            body, _ = _read_body({"body_file": body_file}, base_dir)
+            out += ["", "  " + body.replace("\n", "\n  "), ""]
+    out.append("</details>")
+    return "\n".join(out) + "\n"
+
+
+# `[text](/abs/checkout/path/src/X.cpp:12)` or `(src/X.cpp:12)`-style links the
+# agent writes to files in its checkout. Rewritten to GitHub at the reviewed commit.
+_LOCAL_LINK_RE = re.compile(r"\]\((?:/[^)\s]*?/)?((?:src|base|programs|tests|ci|utils|docs|cmake|contrib|\.claude)/[^):\s#]+)(?::(\d+)(?:-\d+)?)?\)")
+
+
+def local_links_to_github(text, repo, sha):
+    def repl(m):
+        anchor = f"#L{m.group(2)}" if m.group(2) else ""
+        return f"](https://github.com/{repo}/blob/{sha}/{m.group(1)}{anchor})"
+    return _LOCAL_LINK_RE.sub(repl, text or "")
+
+
 def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_text):
     """Post the inline review and the thread actions. `gh` is the praktika GH
     class (injected for tests). Returns the summary text to post, with the
@@ -216,20 +246,30 @@ def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_t
                 body, _ = _read_body(c, output_dir)
                 moved.append((c, body, "GitHub rejected the inline review"))
 
+    failed = []
+    replied = set()
     for action, thread, body_file in actions:
         tid = thread["id"]
         if action == "reply":
             first = ((thread.get("comments") or {}).get("nodes") or [{}])[0]
             parent = first.get("databaseId")
-            if parent is None:
-                continue
-            ok = gh.post_pr_line_comment(body_file=body_file, in_reply_to=parent, pr=pr_number, repo=repo)
+            ok = parent is not None and gh.post_pr_line_comment(
+                body_file=body_file, in_reply_to=parent, pr=pr_number, repo=repo)
+            if ok:
+                replied.add(tid)
         elif action == "resolve":
             ok = gh.resolve_pr_review_thread(tid)
         else:
+            resolved_by = (thread.get("resolvedBy") or {}).get("login")
+            if not is_bot(resolved_by) and tid not in replied:
+                # Allowed only together with a reply, which did not get posted.
+                print(f"Not re-opening thread {tid}: its reply was not posted")
+                continue
             ok = gh.unresolve_pr_review_thread(tid)
         if not ok:
             print(f"WARNING: thread action {action} on {tid} failed")
+            failed.append((action, thread, body_file))
 
-    summary = summary_text.rstrip() + "\n" + moved_findings_markdown(moved)
+    summary = local_links_to_github(summary_text, repo, head_sha)
+    summary = summary.rstrip() + "\n" + moved_findings_markdown(moved) + failed_actions_markdown(failed, repo, pr_number, output_dir)
     return summary

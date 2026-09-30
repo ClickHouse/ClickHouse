@@ -15,8 +15,10 @@ A run has three stages, and only the middle one involves the agent:
 2. Review. The agent reads the context and the checkout, may query Loom through
    `python3 -m ci.jobs.scripts.ai_review.loom`, and writes its summary, inline
    comments and thread actions as files into `OUTPUT_DIR`. The Codex agent runs
-   with no GitHub credentials. An attempt is retried when the agent fails or
-   writes no summary; nothing has been posted at that point, so a retry cannot
+   with no GitHub credentials; the Copilot CLI needs its robot login for its own
+   model access, so a Copilot agent could reach `gh` and relies on the prompt
+   not to post. An attempt is retried when the agent fails or its output is
+   incomplete; nothing has been posted at that point, so a retry cannot
    duplicate comments.
 3. Publish. The job validates the inline comments against the diff and the
    thread actions against the thread ownership rules (`ai_review/publish.py`),
@@ -189,20 +191,23 @@ def _run_codex_once(loom_config, _robot_name):
 
 
 def _outputs_problem():
-    """Why the agent's output cannot be published, or "" when it can."""
+    """Why the agent's output cannot be published, or "" when it can. All three
+    files are required (the JSON ones as `[]` when empty): the prompt has the
+    agent write the summary last, so a complete set means the run finished."""
+    for name in ("comments.json", "thread_actions.json"):
+        path = f"{OUTPUT_DIR}/{name}"
+        if not os.path.exists(path):
+            return f"agent did not write {path}"
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                if not isinstance(json.load(f), list):
+                    return f"{path} is not a JSON array"
+        except ValueError as e:
+            return f"{path} is not valid JSON: {e}"
     if not os.path.exists(SUMMARY_FILE):
         return f"agent did not write {SUMMARY_FILE}"
     if os.path.getsize(SUMMARY_FILE) == 0:
         return f"{SUMMARY_FILE} is empty"
-    for name in ("comments.json", "thread_actions.json"):
-        path = f"{OUTPUT_DIR}/{name}"
-        if os.path.exists(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    if not isinstance(json.load(f), list):
-                        return f"{path} is not a JSON array"
-            except ValueError as e:
-                return f"{path} is not valid JSON: {e}"
     return ""
 
 
@@ -226,8 +231,9 @@ def _run_agent(run_once, agent_name, loom_config):
                 last_error = problem
             else:
                 if exit_code != 0:
-                    # The outputs are complete (they are written last); a
-                    # non-zero exit after that is a CLI shutdown issue.
+                    # All outputs are there and the summary is written last,
+                    # so the run finished; a non-zero exit after that is a CLI
+                    # shutdown issue.
                     print(f"WARNING: {agent_name} exited with code {exit_code} after writing complete output")
                 return
         except Exception as e:  # noqa: BLE001 — broad catch: any exception is retryable here
