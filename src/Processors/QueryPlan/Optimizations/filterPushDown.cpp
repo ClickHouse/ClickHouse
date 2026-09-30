@@ -150,7 +150,7 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(
     QueryPlan::Node * parent_node,
     bool step_changes_the_number_of_rows,
     const Names & available_inputs,
-    bool index_hint_needs_available_inputs,
+    bool allow_index_hints,
     size_t child_idx = 0)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
@@ -174,7 +174,7 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(
         original_filter_const_column = filter->getOutputHeader()->getByName(filter_column_name).column;
 
     auto result = expression.splitActionsForFilterPushDown(
-        filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions, index_hint_needs_available_inputs);
+        filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions, allow_index_hints);
     if (result)
     {
         if (is_filter_column_const_before && !result->is_filter_const_after_push_down)
@@ -271,10 +271,10 @@ static size_t tryAddNewFilterStep(
     bool step_changes_the_number_of_rows,
     QueryPlan::Nodes & nodes,
     const Names & allowed_inputs,
-    bool index_hint_needs_available_inputs = false,
+    bool allow_index_hints = true,
     size_t child_idx = 0)
 {
-    if (auto split_filter = splitFilter(parent_node, step_changes_the_number_of_rows, allowed_inputs, index_hint_needs_available_inputs, child_idx))
+    if (auto split_filter = splitFilter(parent_node, step_changes_the_number_of_rows, allowed_inputs, allow_index_hints, child_idx))
         return addNewFilterStepOrThrow(parent_node, nodes, std::move(*split_filter), child_idx);
     return 0;
 }
@@ -1213,7 +1213,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (keys.empty())
             return 0;
 
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, /*index_hint_needs_available_inputs=*/true))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, /*allow_index_hints=*/false))
             return updated_steps;
     }
 
@@ -1236,7 +1236,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// inside a surviving partition before the window runs, which can change which row
         /// becomes row_number() = 1. Unlike SortingStep, the window value depends on the set of
         /// rows in the partition, so non-deterministic filters are not safe to move below it.
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, partition_keys, /*index_hint_needs_available_inputs=*/true))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, partition_keys, /*allow_index_hints=*/false))
             return updated_steps;
     }
 
@@ -1257,7 +1257,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (keys.empty() || limit_by->getGroupOffset() != 0 || limit_by->getGroupLength() == 0)
             return 0;
 
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, /*index_hint_needs_available_inputs=*/true))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, /*allow_index_hints=*/false))
             return updated_steps;
     }
 

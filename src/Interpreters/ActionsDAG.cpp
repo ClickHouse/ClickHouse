@@ -3510,7 +3510,7 @@ ConjunctionNodes getConjunctionNodes(
     const ActionsDAG::NodeRawConstPtrs & inputs,
     std::unordered_set<const ActionsDAG::Node *> allowed_nodes,
     bool allow_non_deterministic_functions,
-    const Names * index_hint_allowed_inputs = nullptr)
+    bool allow_index_hints = true)
 {
     ConjunctionNodes conjunction;
     std::unordered_set<const ActionsDAG::Node *> allowed;
@@ -3523,9 +3523,7 @@ ConjunctionNodes getConjunctionNodes(
 
     auto is_index_hint_input_allowed = [&](const ActionsDAG::Node * input)
     {
-        if (index_hint_allowed_inputs)
-            return std::ranges::contains(*index_hint_allowed_inputs, input->result_name);
-        return !rejected_input_names.contains(input->result_name);
+        return allow_index_hints && !rejected_input_names.contains(input->result_name);
     };
 
     /// Parts of predicate in case predicate is conjunction (or just predicate itself).
@@ -3808,7 +3806,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     const Names & available_inputs,
     const ColumnsWithTypeAndName & all_inputs,
     bool allow_non_deterministic_functions,
-    bool index_hint_needs_available_inputs)
+    bool allow_index_hints)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -3841,8 +3839,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
         }
     }
 
-    auto conjunction = getConjunctionNodes(
-        predicate, inputs, allowed_nodes, allow_non_deterministic_functions, index_hint_needs_available_inputs ? &available_inputs : nullptr);
+    auto conjunction = getConjunctionNodes(predicate, inputs, allowed_nodes, allow_non_deterministic_functions, allow_index_hints);
 
     if (conjunction.allowed.empty())
         return {};
