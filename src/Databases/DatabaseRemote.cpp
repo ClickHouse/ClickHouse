@@ -82,6 +82,10 @@ DatabaseRemote::DatabaseRemote(
     , secure(secure_)
     , db_uuid(uuid)
 {
+    if (remote_database.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Engine `{}` requires a non-empty remote database name", database_engine_define_->engine->name);
+
     persistent = !context_->getClientInfo().is_shared_catalog_internal;
     if (persistent)
     {
