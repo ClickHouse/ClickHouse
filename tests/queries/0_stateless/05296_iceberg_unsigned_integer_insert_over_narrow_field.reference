@@ -1,6 +1,5 @@
-Cannot write column a of type UInt32
 Cannot write column b of type UInt64
-Cannot write column c of type Array(UInt32)
+Cannot write column c of type Array(UInt64)
 1	2	[3]
 4000000000
 4000000000
