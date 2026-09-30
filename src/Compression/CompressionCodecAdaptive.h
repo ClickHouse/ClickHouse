@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Compression/ICompressionCodec.h>
+
+#include <Compression/ICodecSelector.h>
 #include <DataTypes/IDataType_fwd.h>
 
 namespace DB
@@ -8,7 +10,6 @@ namespace DB
 
 class CompressionCodecMultiple;
 
-/// Decision logic for adaptive CODEC(Default) resolution
 namespace AdaptiveCodec
 {
 
@@ -40,14 +41,13 @@ public:
     ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
-    /// Compresses the block with whichever candidate produces the smallest output. Decompression cannot tell adaptive was involved.
-    /// A candidate must beat the raw block, and ties go to the earliest pool entry, so a codec beats its own chain.
-    /// Selection cost scales with the block size, so there is no small-block skip.
+    /// Compresses the block with the candidates the selector picks. After a run the selector sees the sizes and may pick more candidates.
     UInt32 compress(const char * source, UInt32 source_size, char * dest, CompressionState * state) const override;
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
     String getDescription() const override { return "Resolve CODEC(Default) to the best per-block codec from a type-appropriate pool."; }
+    CompressionStatePtr createCompressionState() const override;
 
 protected:
     /// Max across `NONE` and every codec and chain in the pool. Exceeds `uncompressed_size` as this reserves the memory codecs need while compressing.
@@ -59,6 +59,7 @@ protected:
 
 private:
     AdaptiveCodec::Pool pool;
+    std::unique_ptr<const AdaptiveCodec::ICodecSelector> selector;
 };
 
 }

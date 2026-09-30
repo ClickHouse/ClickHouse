@@ -5,6 +5,7 @@
 #include <cstring>
 #include <span>
 #include <string_view>
+#include <Compression/CodecSelectorSampled.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionCodecNone.h>
 #include <Compression/CompressionFactory.h>
@@ -52,6 +53,25 @@ constexpr auto SPECIALIZED_CODECS = std::to_array<SpecializedCodec>({
     {"T64", T64_TYPES},
     {"ALP(AUTO)", ALP_TYPES},
 });
+
+constexpr size_t codecPosition(size_t entry) { return 2 * entry; }
+constexpr size_t chainPosition(size_t entry) { return 2 * entry + 1; }
+
+/// The default and every specialized codec, each with its chain, fit the positions.
+static_assert(chainPosition(SPECIALIZED_CODECS.size()) < AdaptiveCodec::MAX_POSITIONS);
+
+/// Every candidate the pool offers: each entry's codec, and its chain where it has one.
+AdaptiveCodec::Candidates candidatesOf(const AdaptiveCodec::Pool & pool)
+{
+    AdaptiveCodec::Candidates all;
+    for (size_t entry = 0; entry < pool.size(); ++entry)
+    {
+        all.set(codecPosition(entry));
+        if (pool[entry].chain)
+            all.set(chainPosition(entry));
+    }
+    return all;
+}
 
 /// Build the codec described by `expr` for `type` so type-aware codecs get the type they need.
 /// E.g. `T64` derives its `type_idx` from it to compress.
@@ -143,40 +163,66 @@ AdaptiveCodec::Pool AdaptiveCodec::poolForType(const DataTypePtr & type, const C
 
 CompressionCodecAdaptive::CompressionCodecAdaptive(const DataTypePtr & type, const CompressionCodecPtr & deployment_default)
     : pool(AdaptiveCodec::poolForType(type, deployment_default))
+    , selector(std::make_unique<AdaptiveCodec::CodecSelectorSampled>(candidatesOf(pool)))
 {
     chassert(!pool.empty());
 }
 
 ASTPtr CompressionCodecAdaptive::getCodecDescription() const { return makeCodecDescription("Adaptive"); }
+CompressionStatePtr CompressionCodecAdaptive::createCompressionState() const { return selector->createState(); }
 
-UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_size, char * dest, CompressionState *) const
+UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_size, char * dest, CompressionState * state) const
 {
     chassert(dest != nullptr);
     CompressionDestinationMultiplexer multiplexer(dest, getMaxCompressedDataSize(source_size));
-    /// The raw block is the baseline
-    UInt32 best_size = getHeaderSize() + source_size;
+    AdaptiveCodec::Outcome outcome(source_size);
 
-    auto update_best = [&](UInt32 size, char * block)
+    auto record = [&](size_t position, UInt32 size, char * block)
     {
-        if (size >= best_size)
+        if (outcome.ran[position])
             return;
-        best_size = size;
-        multiplexer.setBestDestination(block);
+        outcome.ran.set(position);
+
+        /// The smallest size wins. Among equals the raw block wins, then the lowest pool position.
+        if (size < outcome.best_size || (size == outcome.best_size && outcome.best && position < *outcome.best))
+        {
+            outcome.runner_up_size = outcome.best_size;
+            outcome.best_size = size;
+            outcome.best = position;
+            multiplexer.setBestDestination(block);
+        }
+        else
+            outcome.runner_up_size = std::min(outcome.runner_up_size, size);
     };
 
-    /// Try every candidate in the pool and choose best.
-    for (const auto & [codec, chain] : pool)
+    /// Runs the candidates the selector picks until it picks none.
+    AdaptiveCodec::Candidates plan = selector->select(state, outcome);
+    while (plan.any())
     {
-        char * block = multiplexer.takeWriteDestination();
-        const UInt32 size = codec->compress(source, source_size, block);
-        update_best(size, block);
+        if ((plan & outcome.ran).any())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Adaptive codec selector asked for a candidate that already ran on this block");
 
-        /// A chain applies only its second codec, to the block its first one (also a candidate) just produced.
-        if (chain)
+        for (size_t entry = 0; entry < pool.size(); ++entry)
         {
-            char * chained = multiplexer.takeWriteDestination(/*in_use=*/block);
-            update_best(chain->compressRemainingStages(/*completed_stages=*/1, block, size, source_size, chained), chained);
+            const auto & [codec, chain] = pool[entry];
+            const bool with_chain = chain && plan[chainPosition(entry)];
+            if (!plan[codecPosition(entry)] && !with_chain)
+                continue;
+
+            char * block = multiplexer.takeWriteDestination();
+            const UInt32 size = codec->compress(source, source_size, block);
+            record(codecPosition(entry), size, block);
+
+            /// A chain applies only its second codec, to the block its first one (also a candidate) just produced.
+            if (with_chain)
+            {
+                char * chained = multiplexer.takeWriteDestination(block);
+                const UInt32 chained_size = chain->compressRemainingStages(/*completed_stages=*/1, block, size, source_size, chained);
+                record(chainPosition(entry), chained_size, chained);
+            }
         }
+
+        plan = selector->select(state, outcome);
     }
 
     /// Nothing beat the raw block: `NONE` writes it. Else the winner is already in `dest` or is copied over from scratch.
@@ -185,8 +231,8 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
         return getNoneCodec().compress(source, source_size, dest);
 
     if (best_compressed != dest)
-        memcpy(dest, best_compressed, best_size);
-    return best_size;
+        memcpy(dest, best_compressed, outcome.best_size);
+    return outcome.best_size;
 }
 
 UInt32 CompressionCodecAdaptive::getMaxCompressedDataSize(UInt32 uncompressed_size) const
