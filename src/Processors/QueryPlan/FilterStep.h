@@ -99,9 +99,8 @@ private:
         /// reads it any more.
         bool remove_filter_column = false;
 
-        /// Whether the output header changes, and whether removeUnusedActions would erase any node.
+        /// Whether the output header changes.
         bool changes_output_header = false;
-        bool removes_any_action = false;
         /// Whether the filter predicate folds to a constant through `materialize` once the filter column is dropped;
         /// the rest of the plan is worked out on the folded DAG.
         bool fold_filter_predicate = false;
@@ -113,7 +112,8 @@ private:
         /// the filter column flag.
         void applyToOutputs(ActionsDAG & dag, bool & remove_filter_column_) const;
 
-        FilterDAGOutputPruningResult toResult() const;
+        /// What the pruning did, once the outputs are pruned and removeUnusedActions has said whether it erased a node.
+        FilterDAGOutputPruningResult toResult(bool removed_any_action) const;
     };
 
     static UnneededColumnsPlan analyzeUnneededColumns(

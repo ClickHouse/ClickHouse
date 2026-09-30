@@ -183,11 +183,8 @@ FilterStep::UnneededColumnsPlan FilterStep::analyzeUnneededColumns(
     const auto is_folded_constant = [](const ActionsDAG::Node * node) { return node->column && !node->children.empty(); };
     const auto surviving_nodes = findReachableNodes(roots, is_folded_constant);
 
-    plan.removes_any_action = surviving_nodes.size() < analyzed_dag.getNodes().size();
-
     /// Every input reads a header position of its own, so the column it reads is needed exactly when the
-    /// input survives. A clone keeps the inputs in their order. While inputs may not be removed, every
-    /// input is a root, and so survives.
+    /// input survives. A clone keeps the inputs in their order.
     const auto & inputs = analyzed_dag.getInputs();
     for (size_t position = 0; position < header_columns.size(); ++position)
         if (!header_columns.passesThrough(position))
@@ -215,14 +212,14 @@ ActionsDAG::NodeRawConstPtrs FilterStep::UnneededColumnsPlan::neededDAGOutputs(c
     return needed;
 }
 
-FilterDAGOutputPruningResult FilterStep::UnneededColumnsPlan::toResult() const
+FilterDAGOutputPruningResult FilterStep::UnneededColumnsPlan::toResult(bool removed_any_action) const
 {
     const bool drops_a_passthrough = std::ranges::contains(input_columns, InputColumnUsage::PassesThroughDropped);
     const bool drops_an_input = std::ranges::contains(input_columns, InputColumnUsage::ReadDropped);
 
     FilterDAGOutputPruningResult result;
     result.input_positions_changed = drops_an_input || drops_a_passthrough;
-    result.changed = changes_output_header || fold_filter_predicate || removes_any_action || result.input_positions_changed;
+    result.changed = changes_output_header || fold_filter_predicate || removed_any_action || result.input_positions_changed;
 
     for (size_t position = 0; position < input_columns.size(); ++position)
         if (input_columns[position] == InputColumnUsage::ReadNeeded || input_columns[position] == InputColumnUsage::PassesThroughNeeded)
@@ -257,10 +254,8 @@ FilterDAGOutputPruningResult FilterStep::pruneDAGOutputsByPosition(
         dag, filter_column_name, remove_filter_column, input_header, complementPositions(output_count, required_output_positions));
 
     plan.applyToOutputs(dag, remove_filter_column);
-    [[maybe_unused]] const bool removed_any_action = dag.removeUnusedActions();
-    chassert(removed_any_action == plan.removes_any_action);
-
-    return plan.toResult();
+    const bool removed_any_action = dag.removeUnusedActions();
+    return plan.toResult(removed_any_action);
 }
 
 static bool isTrivialSubtree(const ActionsDAG::Node * node)
