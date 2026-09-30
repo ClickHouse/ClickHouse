@@ -6586,6 +6586,7 @@ Default value for Iceberg table property `history.expire.max-ref-age-ms` used by
 )", 0, \
         {"26.3", 9223372036854775807, 9223372036854775807, "New setting."}) \
     DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 384_MiB, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Data files smaller than this are selected for compaction.
 
 The default is `0.75` of the documented default of the Iceberg table property `write.target-file-size-bytes`
@@ -6595,6 +6596,7 @@ see https://iceberg.apache.org/docs/1.5.2/configuration/.
         {"26.9", 10 * 1024 * 1024, 384 * 1024 * 1024, "Aligned with how the Iceberg `rewrite_data_files` procedure derives `min-file-size-bytes`: 0.75 of the target file size (512 MiB). Compaction now selects files below 384 MiB instead of below 10 MiB."}, \
         {"26.5", 10_MiB, 10_MiB, "New setting"}) \
     DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Data files larger than this are selected for compaction.
 
 The default is `1.8` of the documented default of the Iceberg table property `write.target-file-size-bytes`
@@ -6604,6 +6606,7 @@ see https://iceberg.apache.org/docs/1.5.2/configuration/.
         {"26.9", 10ULL * 1024 * 1024 * 1024, 512ULL * 1024 * 1024 * 9 / 5, "Aligned with how the Iceberg `rewrite_data_files` procedure derives `max-file-size-bytes`: 1.8 of the target file size (512 MiB)."}, \
         {"26.5", 10_GiB, 10_GiB, "New setting"}) \
     DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Threshold for compaction data files in iceberg.
 )", 0, \
         {"26.5", 1000, 1000, "New setting"}) \
@@ -6660,14 +6663,17 @@ Possible values:
 )", 0, \
         {"26.3", false, true, "Enables cache of parquet file metadata."}) \
     DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Minimum time of delay between 2 background compaction operations.
 )", 0, \
         {"26.5", 60 * 60 * 3, 60 * 60 * 3, "New setting"}) \
     DECLARE(Seconds, iceberg_compaction_data_cleanup, 60 * 60 * 3, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 The time after which the data will be deleted.
 )", 0, \
         {"26.5", 60 * 60 * 3, 60 * 60 * 3, "New setting"}) \
     DECLARE(UInt64, iceberg_compaction_commit_batch_size, 100, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Number of merged data files that background Iceberg compaction accumulates before publishing them in a new snapshot.
 
 Compaction results are published in any case once there are no candidates left to compact, so this setting only bounds
@@ -9643,6 +9649,7 @@ resulting file, and that `iceberg_insert_max_rows_in_data_file` caps the file in
         {"26.9", 1024 * 1024 * 1024, 512 * 1024 * 1024, "Aligned with the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB), see https://iceberg.apache.org/docs/1.5.2/configuration/."}, \
         {"25.9", 1_GiB, 1_GiB, "New setting."}) \
     DECLARE(UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Max rows of an iceberg parquet data file produced by compaction. Defaults to the maximum, so the size limit
 `iceberg_compaction_max_bytes_in_data_file` alone decides how much data goes into an output file, the same way
 Iceberg has no row-count counterpart of `write.target-file-size-bytes`.
@@ -9650,6 +9657,7 @@ Iceberg has no row-count counterpart of `write.target-file-size-bytes`.
         {"26.9", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."}, \
         {"26.7", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."}) \
     DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, 512_MiB, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Max bytes of an iceberg parquet data file produced by compaction.
 
 The default mirrors the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB),
@@ -10272,6 +10280,7 @@ Allow to execute `insert` queries into iceberg.
         {"26.2", false, false, "Insert into iceberg was moved to Beta. This also applies to the alias `allow_experimental_insert_into_iceberg`."}, \
         {"25.7", false, false, "New setting."}) \
     DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Allow to clean up old data files during Iceberg compaction.
 )", EXPERIMENTAL, \
         {"26.5", false, false, "New setting"}) \
