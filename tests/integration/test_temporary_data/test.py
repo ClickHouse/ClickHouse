@@ -183,7 +183,10 @@ def test_distinct_partial_cancellation_drains_suppression(start_cluster):
         rows = request.get_answer().splitlines()
     finally:
         node_distinct.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-        node_distinct.query(f"KILL QUERY WHERE query_id = '{query_id}' SYNC")
+        node_distinct.query(
+            f"KILL QUERY WHERE query_id = '{query_id}' SYNC "
+            "SETTINGS kill_throw_if_noop = false"
+        )
 
     assert 0 < len(rows) < 8192
     assert len(rows) == len(set(rows))
