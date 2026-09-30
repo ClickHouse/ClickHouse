@@ -148,7 +148,7 @@ static void processDirectory(const fs::path & directory_path, const String & dst
 
 static void processTableFiles(const fs::path & data_path, String dst_path, bool test_mode, bool link)
 {
-    std::cerr << "Data path: " << data_path << ", destination path: " << dst_path << std::endl;
+    std::cerr << "Data path: " << pathToString(data_path) << ", destination path: " << dst_path << std::endl;
 
     if (test_mode)
         dst_path = joinDestinationPath(dst_path, "store");
@@ -193,7 +193,7 @@ try
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No metadata-path option passed");
 
-    fs::path fs_path = fs::weakly_canonical(metadata_path);
+    fs::path fs_path = fs::weakly_canonical(pathFromString(metadata_path));
     if (!fs::exists(fs_path))
     {
         std::cerr << fmt::format("Data path ({}) does not exist", pathToString(fs_path));
