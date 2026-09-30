@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/QueryPlan/StepStatsModel.h>
+#include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
 #include <base/types.h>
 
 namespace DB

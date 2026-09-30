@@ -4,18 +4,18 @@
 #include <unordered_map>
 #include <variant>
 #include <Processors/Port.h>
-#include <Processors/QueryPlan/AnalyzePlanStats.h>
+#include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/JoinBranchCosts.h>
-#include <Processors/QueryPlan/JoinStatsAnalyzer.h>
+#include <Processors/QueryPlan/Profiling/Analysis/JoinBranchCosts.h>
+#include <Processors/QueryPlan/Profiling/Analysis/JoinStatsAnalyzer.h>
 #include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
-#include <Processors/QueryPlan/StepStatsAnalyzer.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Analysis/StepStatsAnalyzer.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/typeid_cast.h>
-#include <Processors/StepWallClock.h>
-#include <Processors/StepWallClockRegistry.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
 #include <base/defines.h>
 #include <base/types.h>
 
@@ -226,19 +226,19 @@ void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & ou
 
 }
 
-AnalyzeStepsStats::AnalyzeStepsStats(QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_)
+AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, const QueryPlan & plan, StepProfiler & step_profiler, UInt64 execution_start_ns, UInt64 execution_query_time_ns_)
 : max_num_threads_per_query(pipeline.getNumThreads())
 , execution_query_time_ns(execution_query_time_ns_)
 {
     const auto & processors = pipeline.getProcessors();
 
     collectIOStats(processors);
-    const auto elapsed_per_step_group = collectTimingStats(pipeline, processors);
+    const auto elapsed_per_step_group = collectTimingStats(step_profiler, processors);
     computeDistribution(elapsed_per_step_group);
     computeJoinBranchCosts(plan);
 
     /// Work intervals are collected only when EXPLAIN ANALYZE requests the `time` setting.
-    if (const auto work_intervals = pipeline.takeWorkIntervals(); !work_intervals.empty())
+    if (const auto work_intervals = step_profiler.extractWorkIntervals(execution_start_ns); !work_intervals.empty())
         interval_timings.emplace(work_intervals, plan);
 }
 
@@ -295,7 +295,7 @@ void AnalyzeStepsStats::collectIOStats(const Processors & processors)
     }
 }
 
-AnalyzeStepsStats::ElapsedTimesPerStepGroup AnalyzeStepsStats::collectTimingStats(const QueryPipeline & pipeline, const Processors & processors)
+AnalyzeStepsStats::ElapsedTimesPerStepGroup AnalyzeStepsStats::collectTimingStats(const StepProfiler & step_profiler, const Processors & processors)
 {
     ElapsedTimesPerStepGroup elapsed_per_step_group;
 
@@ -318,11 +318,8 @@ AnalyzeStepsStats::ElapsedTimesPerStepGroup AnalyzeStepsStats::collectTimingStat
         elapsed_per_step_group[step_group_key].insert(group_elapsed);
 
         if (group_stats.wall_clock_time_ns == 0)
-        {
-            if (const auto * registry = pipeline.getStepClocks())
-                if (const auto * clock = registry->find(step, group))
-                    group_stats.wall_clock_time_ns = clock->getStepWallTime();
-        }
+            if (const auto * clock = step_profiler.findClockForStep(step, group))
+                group_stats.wall_clock_time_ns = clock->getStepWallTime();
     }
 
     return elapsed_per_step_group;

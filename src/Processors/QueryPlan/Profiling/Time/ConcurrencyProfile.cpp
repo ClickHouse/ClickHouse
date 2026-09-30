@@ -1,4 +1,4 @@
-#include <Processors/QueryPlan/ConcurrencyProfile.h>
+#include <Processors/QueryPlan/Profiling/Time/ConcurrencyProfile.h>
 #include <base/defines.h>
 
 #include <algorithm>

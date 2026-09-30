@@ -1,7 +1,7 @@
 #include <algorithm>
 #include <optional>
 #include <vector>
-#include <Processors/QueryPlan/JoinBranchCosts.h>
+#include <Processors/QueryPlan/Profiling/Analysis/JoinBranchCosts.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/typeid_cast.h>
