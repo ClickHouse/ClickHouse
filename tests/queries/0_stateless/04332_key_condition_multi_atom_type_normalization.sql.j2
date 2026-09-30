@@ -102,8 +102,8 @@ INSERT INTO test_tn_overflow SELECT toDateTime64('2026-03-01 00:00:00', 3, 'UTC'
 
 -- Type normalization through multi-atom candidates: each candidate normalizes its constant independently.
 -- Integer key with a monotonic conversion sibling. An integral float produces both atoms with per-candidate
--- bounds: the direct atom is rewritten exactly (> 5.0 becomes >= 6), the transformed candidate is weakened
--- (toUInt64(x) >= 5).
+-- bounds: the direct atom is rewritten exactly (> 5.0 becomes >= 6), and the transformed candidate pushes
+-- the inclusive bound 6 through `toUInt64` (toUInt64(x) >= 6).
 CREATE TABLE test_tn_multi_int (x UInt8) ENGINE = MergeTree ORDER BY (toUInt64(x), x)
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_tn_multi_int SELECT number FROM numbers(20);

@@ -3,7 +3,7 @@ ts NOT IN (toDateTime('2026-03-02 06:00:00', 'UTC'), toDateTime('2026-03-03 12:0
 NOT has([toDateTime('2026-03-02 06:00:00', 'UTC')], ts)	11	11	12
 ts > toDateTime('2026-03-02 06:00:00', 'UTC')	6	6	9
 ts < toDateTime('2026-03-02 06:00:00', 'UTC')	5	5	8
-toDate(ts) != toDate('2026-03-02')	8	8	12	Condition: or((toDate(ts) in [20515, +Inf)), (toDate(ts) in (-Inf, 20514]))
+toDate(ts) != toDate('2026-03-02')	8	8	9	Condition: or((toDate(ts) in [20515, +Inf)), (toDate(ts) in (-Inf, 20513]))
 toDate(ts) != toDate('2026-03-02')	8	8	9
 (i, i) NOT IN ((1, 2))	5	5	5	Condition: (i notIn 1-element set)
 (i, i) IN ((1, 1))	1	1	1

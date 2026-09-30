@@ -34,8 +34,9 @@ INSERT INTO test_relax SELECT toDateTime('2026-03-01 00:00:00', 'UTC') + INTERVA
 
 -- A negated equality against the key expression is rewritten by the preimage optimization
 -- (`optimize_time_filter_with_preimage`) into a disjunction of two `ts` range comparisons.
--- Pushing their constants back through `toDate` weakens the strict bounds, so the branches
--- overlap and no granules are pruned; the result must still be correct.
+-- The strict bound `ts < '2026-03-02 00:00:00'` goes through `toDate` as the inclusive bound
+-- `'2026-03-01 23:59:59'`, so the branches stay apart and the granules of the negated day are
+-- pruned; the result must still be correct.
 {{ check('test_relax', "toDate(ts) != toDate('2026-03-02')", condition = true) }}
 -- With the preimage rewrite disabled, the same negation reaches the index analysis as a direct
 -- predicate on the key expression and stays exact, pruning the granules of the negated day.
