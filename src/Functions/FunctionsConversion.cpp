@@ -1089,7 +1089,6 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             }
 
             const auto & storage_type = decaying_type->getNestedType();
-            const auto & storage_tuple = assert_cast<const DataTypeTuple &>(*storage_type);
             auto storage_wrapper = createTupleWrapper(storage_type, to_type);
             return [wrapper = std::move(storage_wrapper), storage_type]
                 (ColumnsWithTypeAndName & arguments,
