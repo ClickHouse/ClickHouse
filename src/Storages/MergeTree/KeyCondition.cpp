@@ -53,6 +53,7 @@
 
 #include <algorithm>
 #include <ranges>
+#include <span>
 #include <stack>
 
 #include <absl/container/inlined_vector.h>
@@ -92,6 +93,19 @@ void makeComparisonNonStrict(std::string & func_name)
         func_name = "lessOrEquals";
     else if (func_name == "greater")
         func_name = "greaterOrEquals";
+}
+
+/// The elements with every atom group replaced by its atoms, for walks that treat each atom on its own.
+template <std::ranges::viewable_range Elements>
+auto expandAtomGroups(Elements && elements)
+{
+    const auto atoms_of = []<typename Element>(Element & element)
+    {
+        if (element.function == KeyCondition::RPNElement::FUNCTION_ATOM_GROUP)
+            return std::span<Element>(element.group_atoms);
+        return std::span<Element>(&element, 1);
+    };
+    return std::views::all(std::forward<Elements>(elements)) | std::views::transform(atoms_of) | std::views::join;
 }
 
 }
@@ -1620,21 +1634,14 @@ KeyCondition::KeyCondition(
 
     has_filter = true;
 
-    RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, AtomGroup & group)
+    RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {
-        extractAtomsFromTree(node, info, group);
+        return extractAtomFromTree(node, info, out);
     });
 
     rpn = std::move(builder).extractRPN();
 
-    dropCoveredRelaxedAtomsFromNegatedGroups();
-
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
-
-    /// The collapse above rewrites an exact curve-argument range into a relaxed hyperrectangle
-    /// atom, which can put a relaxed atom back into a negated multi-atom group. Run the cleanup
-    /// once more so such a group keeps pruning through its exact atoms.
-    dropCoveredRelaxedAtomsFromNegatedGroups();
 }
 
 KeyCondition::KeyCondition(
@@ -1669,113 +1676,21 @@ KeyCondition::KeyCondition(
     , date_time_overflow_behavior_ignore(date_time_overflow_behavior_ignore_)
 {}
 
-void KeyCondition::dropCoveredRelaxedAtomsFromNegatedGroups()
-{
-    /// Negation cannot prune through a relaxed atom: evaluation forces its `can_be_false` to
-    /// `true`, and that force propagates through the ANDs of a multi-atom group, so one relaxed
-    /// atom would also disable pruning through the exact atoms of its group under `NOT`. (Such a
-    /// `NOT` reaches the RPN for the leaves with no complement function — for example, a negated
-    /// `has`, unlike `NOT IN`, which arrives as the complement leaf `notIn`.) Dropping the
-    /// relaxed atoms of such groups keeps their extra pruning for the non-negated groups and
-    /// restores the pruning of the exact atoms for the negated ones.
-    if (auto filtered = dropCoveredRelaxedAtoms(rpn, /*only_negated_groups*/ true))
-        rpn = std::move(*filtered);
-}
-
-bool KeyCondition::isAtomGroupEnd(const RPN & rpn, size_t position)
-{
-    chassert(position < rpn.size());
-    return position + 1 == rpn.size() || !rpn[position + 1].continues_multi_atom_group;
-}
-
-std::optional<KeyCondition::RPN> KeyCondition::dropCoveredRelaxedAtoms(const RPN & rpn, bool only_negated_groups)
-{
-    const auto find_group_end = [&](size_t i)
-    {
-        chassert(!rpn[i].continues_multi_atom_group);
-        while (!isAtomGroupEnd(rpn, i))
-            ++i;
-        return i + 1;
-    };
-
-    const auto group_qualifies = [&](size_t i, size_t group_end)
-    {
-        if (group_end - i <= 1)
-            return false;
-
-        if (only_negated_groups && !(group_end < rpn.size() && rpn[group_end].function == RPNElement::FUNCTION_NOT))
-            return false;
-
-        bool has_exact_atom = false;
-        bool has_relaxed_atom = false;
-        for (size_t j = i; j < group_end; ++j)
-        {
-            const auto & element = rpn[j];
-
-            if (element.function == RPNElement::FUNCTION_AND)
-                continue;
-
-            /// A constant-folded element proves nothing about the leaf: a fold of a candidate
-            /// with a transformed constant is not marked relaxed, yet e.g. its ALWAYS_TRUE
-            /// variant only bounds the superset of the leaf's matches. It neither counts as an
-            /// exact atom nor needs to be dropped.
-            if (element.function == RPNElement::ALWAYS_TRUE || element.function == RPNElement::ALWAYS_FALSE)
-                continue;
-
-            (element.relaxed ? has_relaxed_atom : has_exact_atom) = true;
-        }
-
-        return has_exact_atom && has_relaxed_atom;
-    };
-
-    bool any_group_qualifies = false;
-    for (size_t i = 0; i < rpn.size() && !any_group_qualifies;)
-    {
-        const size_t group_end = find_group_end(i);
-        any_group_qualifies = group_qualifies(i, group_end);
-        i = group_end;
-    }
-
-    if (!any_group_qualifies)
-        return std::nullopt;
-
-    RPN filtered;
-    filtered.reserve(rpn.size());
-
-    size_t i = 0;
-    while (i < rpn.size())
-    {
-        const size_t group_end = find_group_end(i);
-
-        if (group_qualifies(i, group_end))
-        {
-            auto atoms = std::ranges::subrange(rpn.begin() + i, rpn.begin() + group_end)
-                | std::views::filter([](const RPNElement & element)
-                {
-                    return element.function != RPNElement::FUNCTION_AND && !element.relaxed;
-                });
-            RPNBuilder<RPNElement>::appendAtomGroup(filtered, atoms.begin(), atoms.end());
-        }
-        else
-        {
-            for (size_t j = i; j < group_end; ++j)
-                filtered.push_back(rpn[j]);
-        }
-
-        i = group_end;
-    }
-
-    return filtered;
-}
-
 bool KeyCondition::isRelaxed() const
 {
-    return std::any_of(rpn.begin(), rpn.end(), [](const auto & elem)
+    const auto is_relaxed_atom = [](const RPNElement & elem)
     {
         return elem.relaxed
             || elem.function == RPNElement::FUNCTION_UNKNOWN
             || ((elem.function == RPNElement::FUNCTION_IN_SET || elem.function == RPNElement::FUNCTION_NOT_IN_SET)
                 && elem.set_index->size() > 1);
+    };
+
+    return std::any_of(rpn.begin(), rpn.end(), [&](const RPNElement & elem)
+    {
+        if (elem.function == RPNElement::FUNCTION_ATOM_GROUP)
+            return std::all_of(elem.group_atoms.begin(), elem.group_atoms.end(), is_relaxed_atom);
+        return is_relaxed_atom(elem);
     });
 }
 
@@ -1819,7 +1734,7 @@ void KeyCondition::relaxAtomsOverNaNHidingColumns(const DataTypes & key_types)
         return false;
     };
 
-    for (auto & element : rpn)
+    for (auto & element : expandAtomGroups(rpn))
     {
         switch (element.function)
         {
@@ -1904,8 +1819,6 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
 {
     if (!key_columns.contains(column))
         return false;
-
-    /// The bound is an independent leaf, so its outer `AND` does not continue the preceding group.
     rpn.emplace_back(RPNElement::FUNCTION_IN_RANGE, std::vector<size_t>{key_columns[column]}, range);
     rpn.emplace_back(RPNElement::FUNCTION_AND);
     return true;
@@ -1921,7 +1834,7 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
 
 bool KeyCondition::hasOnlyConjunctions() const
 {
-    return std::ranges::none_of(rpn, [](RPNElement element) { return element.function == RPNElement::FUNCTION_OR; });
+    return std::ranges::none_of(rpn, [](const RPNElement & element) { return element.function == RPNElement::FUNCTION_OR; });
 }
 
 
@@ -4686,19 +4599,46 @@ static bool tryRewriteFloatLiteralForIntKeyComparison(
     UNREACHABLE();
 }
 
-/// This function is called by `RPNBuilder` once for every leaf of the predicate tree. `RPNBuilder` walks
-/// the `WHERE` expression and handles the logical operators itself, so only the nodes between them reach
-/// this function. For example, `WHERE a = 1 AND (b < 2 OR c IN (1, 2))` has three leaves, and this function
-/// is called separately for `a = 1`, for `b < 2` and for `c IN (1, 2)`.
+bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out)
+{
+    AtomGroup group;
+    extractAtomsFromTree(node, info, group);
+
+    if (group.atoms.empty())
+        return false;
+
+    if (group.atoms.size() == 1)
+    {
+        out = std::move(group.atoms.front());
+        return true;
+    }
+
+    /// A group intersects the masks of its atoms (see `pushAtomGroupMask`), so each of them must be an atom
+    /// or a constant.
+    chassert(std::ranges::none_of(group.atoms, [](const RPNElement & atom)
+    {
+        return atom.function == RPNElement::FUNCTION_AND || atom.function == RPNElement::FUNCTION_OR
+            || atom.function == RPNElement::FUNCTION_NOT || atom.function == RPNElement::FUNCTION_ATOM_GROUP;
+    }));
+    out.function = RPNElement::FUNCTION_ATOM_GROUP;
+    out.group_atoms = std::move(group.atoms);
+    return true;
+}
+
+/// This function is called once for every leaf of the predicate tree, through `extractAtomFromTree`, the
+/// callback of `RPNBuilder`. `RPNBuilder` walks the `WHERE` expression and handles the logical operators
+/// itself, so only the nodes between them reach this function. For example, `WHERE a = 1 AND (b < 2 OR
+/// c IN (1, 2))` has three leaves, and this function is called separately for `a = 1`, for `b < 2` and for
+/// `c IN (1, 2)`.
 ///
 /// For each leaf, it tries to build the atoms for all key columns that the leaf can constrain, one after
 /// another. For example, for a table with `ORDER BY (toYYYYMM(ts), toDate(ts), ts)` and the simple
 /// condition `WHERE ts >= X`, this call fills `group` with three atoms: `toYYYYMM(ts) >= toYYYYMM(X)`,
 /// `toDate(ts) >= toDate(X)` and `ts >= X`.
 ///
-/// `RPNBuilder` then combines the produced atoms with `AND` in place of the leaf (it emits
-/// `atom0 atom1 AND atom2 AND ...` in the RPN). An empty group means that the leaf could not be analyzed,
-/// and `RPNBuilder` turns it into `FUNCTION_UNKNOWN`.
+/// `extractAtomFromTree` then makes the leaf one element of the RPN: its only atom, or a
+/// `FUNCTION_ATOM_GROUP` of several. An empty group means that the leaf could not be analyzed, and
+/// `RPNBuilder` turns it into `FUNCTION_UNKNOWN`.
 void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group)
 {
     chassert(group.atoms.empty());
@@ -5662,40 +5602,51 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
         return 0uz;
     };
 
+    auto is_range_of_curve_argument = [](const RPNElement & elem)
+    {
+        return elem.function == RPNElement::FUNCTION_IN_RANGE && elem.argument_num_of_space_filling_curve.has_value();
+    };
+
+    /// A range of an argument of a space-filling curve
+    auto collapse_range_of_curve_argument = [&](const RPNElement & elem)
+    {
+        size_t arg_num = *elem.argument_num_of_space_filling_curve;
+        size_t curve_total_args = num_arguments_of_a_curve(elem.getKeyColumn());
+
+        /// If we didn't find a space-filling curve - replace the condition to unknown.
+        if (!curve_total_args)
+            return RPNElement();
+
+        chassert(arg_num < curve_total_args);
+
+        /// Replace the condition to a hyperrectangle
+
+        Hyperrectangle hyperrectangle(curve_total_args, Range::createWholeUniverseWithoutNull());
+        hyperrectangle[arg_num] = elem.range;
+
+        RPNElement collapsed_elem;
+        collapsed_elem.function = RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE;
+        collapsed_elem.relaxed = true;
+        collapsed_elem.key_columns = elem.key_columns;
+        collapsed_elem.space_filling_curve_args_hyperrectangle = std::move(hyperrectangle);
+        return collapsed_elem;
+    };
+
     for (const auto & elem : rpn)
     {
-        if (elem.function == RPNElement::FUNCTION_IN_RANGE && elem.argument_num_of_space_filling_curve.has_value())
+        if (is_range_of_curve_argument(elem))
         {
-            /// A range of an argument of a space-filling curve
-
-            size_t arg_num = *elem.argument_num_of_space_filling_curve;
-            size_t curve_total_args = num_arguments_of_a_curve(elem.getKeyColumn());
-
-            if (!curve_total_args)
-            {
-                /// If we didn't find a space-filling curve - replace the condition to unknown.
-                auto & unknown_elem = new_rpn.emplace_back();
-                unknown_elem.continues_multi_atom_group = elem.continues_multi_atom_group;
-                continue;
-            }
-
-            chassert(arg_num < curve_total_args);
-
-            /// Replace the condition to a hyperrectangle
-
-            Hyperrectangle hyperrectangle(curve_total_args, Range::createWholeUniverseWithoutNull());
-            hyperrectangle[arg_num] = elem.range;
-
-            RPNElement collapsed_elem;
-            collapsed_elem.function = RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE;
-            collapsed_elem.relaxed = true;
-            collapsed_elem.key_columns = elem.key_columns;
-            collapsed_elem.space_filling_curve_args_hyperrectangle = std::move(hyperrectangle);
-            /// The collapsed atom stands at the position of the one it replaces, so it stays in
-            /// the multi-atom group of the predicate leaf that produced it.
-            collapsed_elem.continues_multi_atom_group = elem.continues_multi_atom_group;
-
-            new_rpn.push_back(std::move(collapsed_elem));
+            new_rpn.push_back(collapse_range_of_curve_argument(elem));
+            continue;
+        }
+        if (elem.function == RPNElement::FUNCTION_ATOM_GROUP)
+        {
+            /// The hyperrectangle stays an atom of its group, so it is not intersected with the conditions
+            /// of other predicate leaves below.
+            auto & group = new_rpn.emplace_back(elem);
+            for (auto & atom : group.group_atoms)
+                if (is_range_of_curve_argument(atom))
+                    atom = collapse_range_of_curve_argument(atom);
             continue;
         }
         if (elem.function == RPNElement::FUNCTION_AND && new_rpn.size() >= 2)
@@ -5718,8 +5669,6 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
                 collapsed_elem.key_columns = cond1.key_columns;
                 collapsed_elem.space_filling_curve_args_hyperrectangle
                     = intersect(cond1.space_filling_curve_args_hyperrectangle, cond2.space_filling_curve_args_hyperrectangle);
-                /// The intersection takes the position of the first of the two conditions.
-                collapsed_elem.continues_multi_atom_group = cond1.continues_multi_atom_group;
 
                 /// Replace the AND operation with its arguments to the collapsed condition
 
@@ -5841,9 +5790,29 @@ KeyCondition::Description KeyCondition::getDescription() const
             });
     };
 
-    std::vector<Frame> rpn_stack;
+    /// An atom group is described as the conjunction of its atoms: `atom0 atom1 AND atom2 AND ...` in RPN.
+    const RPNElement and_element(RPNElement::FUNCTION_AND);
+    std::vector<const RPNElement *> elements;
     for (const auto & element : rpn)
     {
+        if (element.function != RPNElement::FUNCTION_ATOM_GROUP)
+        {
+            elements.push_back(&element);
+            continue;
+        }
+
+        for (size_t i = 0; i < element.group_atoms.size(); ++i)
+        {
+            elements.push_back(&element.group_atoms[i]);
+            if (i)
+                elements.push_back(&and_element);
+        }
+    }
+
+    std::vector<Frame> rpn_stack;
+    for (const auto * element_ptr : elements)
+    {
+        const auto & element = *element_ptr;
         switch (element.function)
         {
             case RPNElement::FUNCTION_UNKNOWN:
@@ -5921,6 +5890,9 @@ KeyCondition::Description KeyCondition::getDescription() const
                 rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
                 break;
             }
+            case RPNElement::FUNCTION_ATOM_GROUP:
+                /// Groups are expanded into their atoms above.
+                UNREACHABLE();
             /// No `default:` to make the compiler warn if not all enum values are handled.
         }
     }
@@ -6678,7 +6650,7 @@ bool KeyCondition::matchesExactContinuousRange() const
 
     std::vector<Constraint> column_constraints(num_key_columns, Constraint::UNKNOWN);
 
-    for (const auto & element : rpn)
+    for (const auto & element : expandAtomGroups(rpn))
     {
         if (element.function == RPNElement::Function::FUNCTION_AND || element.function == RPNElement::Function::FUNCTION_UNKNOWN
             || element.function == RPNElement::Function::ALWAYS_TRUE)
@@ -6932,8 +6904,10 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             {
                 rpn_stack.push(PlainRanges::makeUniverse());
             }
-            else /// FUNCTION_UNKNOWN or functions not supported by this method (FUNCTION_ARGS_IN_HYPERRECTANGLE, FUNCTION_POINT_IN_POLYGON)
+            else
             {
+                /// FUNCTION_UNKNOWN or functions not supported by this method
+                /// (FUNCTION_ARGS_IN_HYPERRECTANGLE, FUNCTION_POINT_IN_POLYGON, FUNCTION_ATOM_GROUP)
                 if (!has_filter)
                     rpn_stack.push(PlainRanges::makeUniverse());
                 else
@@ -7055,6 +7029,22 @@ bool rangeOfKeyColumnMayHoldNull(const Range & key_range, const DataTypes & key_
         && isNullableOrLowCardinalityNullable(key_types[key_position]);
 }
 
+/// Pushes the mask of an atom group, given `apply_element`, which pushes the mask of one atom. Each atom
+/// bounds the mask of the whole predicate leaf, so the group's mask is their intersection (see
+/// `KeyCondition::RPNElement::group_atoms`).
+template <typename ApplyElement, typename Stack>
+void pushAtomGroupMask(const KeyCondition::RPNElement & group, const ApplyElement & apply_element, Stack & rpn_stack)
+{
+    BoolMask group_mask(true, true);
+    for (const auto & atom : group.group_atoms)
+    {
+        apply_element(atom);
+        group_mask = BoolMask::intersect(group_mask, rpn_stack.back());
+        rpn_stack.pop_back();
+    }
+    rpn_stack.push_back(group_mask);
+}
+
 /// Whether the atom answers NULL - and hence "not true" to `WHERE` - for a NULL argument, instead of
 /// answering true or false as `IS NULL` and `IS NOT NULL` do.
 bool atomIsNullForNullArgument(KeyCondition::RPNElement::Function function)
@@ -7070,6 +7060,7 @@ bool atomIsNullForNullArgument(KeyCondition::RPNElement::Function function)
             return true;
         case KeyCondition::RPNElement::FUNCTION_IS_NULL:
         case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL:
+        case KeyCondition::RPNElement::FUNCTION_ATOM_GROUP:
         case KeyCondition::RPNElement::FUNCTION_UNKNOWN:
         case KeyCondition::RPNElement::FUNCTION_NOT:
         case KeyCondition::RPNElement::FUNCTION_AND:
@@ -7093,7 +7084,7 @@ bool atomIsNullForNullArgument(KeyCondition::RPNElement::Function function)
 /// every pruning decision, is left alone.
 bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const
 {
-    for (const auto & element : rpn)
+    for (const auto & element : expandAtomGroups(rpn))
     {
         if (!atomIsNullForNullArgument(element.function))
             continue;
@@ -7111,7 +7102,7 @@ bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, co
 bool KeyCondition::mayReadNullKeyValue(
     const std::vector<int> & key_col_to_sparse_pos, const Hyperrectangle & sparse_hyperrectangle, const DataTypes & sparse_key_types) const
 {
-    for (const auto & element : rpn)
+    for (const auto & element : expandAtomGroups(rpn))
     {
         if (!atomIsNullForNullArgument(element.function))
             continue;
@@ -7147,8 +7138,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
-    size_t template_position = 0;
-    for (const auto & element : rpn)
+    /// Pushes the mask of an atom or a constant onto `rpn_stack`, or applies a logical operator to it.
+    const auto apply_element = [&](const RPNElement & element)
     {
         if (element.argument_num_of_space_filling_curve.has_value())
         {
@@ -7167,7 +7158,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (key_column >= hyperrectangle.size())
             {
                 rpn_stack.emplace_back(true, true);
-                continue;
+                return;
             }
 
             /// Avoid copying Range when there is no monotonic function chain (the common case).
@@ -7188,7 +7179,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 if (!new_range)
                 {
                     rpn_stack.emplace_back(true, true);
-                    continue;
+                    return;
                 }
                 key_range_storage = *new_range;
                 key_range_ptr = &*key_range_storage;
@@ -7271,7 +7262,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (key_column >= hyperrectangle.size())
             {
                 rpn_stack.emplace_back(true, true);
-                continue;
+                return;
             }
 
             Range key_range = hyperrectangle[key_column];
@@ -7376,7 +7367,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 if (element.key_columns[0] >= hyperrectangle.size())
                 {
                     rpn_stack.emplace_back(true, true);
-                    continue;
+                    return;
                 }
 
                 tupleRangeToBoundingBox(hyperrectangle[element.key_columns[0]], x_min, x_max, y_min, y_max);
@@ -7386,7 +7377,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 if (element.key_columns[0] >= hyperrectangle.size() || element.key_columns[1] >= hyperrectangle.size())
                 {
                     rpn_stack.emplace_back(true, true);
-                    continue;
+                    return;
                 }
 
                 const auto & range_x = hyperrectangle[element.key_columns[0]];
@@ -7401,7 +7392,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))
             {
                 rpn_stack.emplace_back(true, true);
-                continue;
+                return;
             }
 
             using Point = KeyCondition::RPNElement::Polygon::PointT;
@@ -7423,7 +7414,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             {
                 // Indices box does not overlap with polygon bbox. So we can skip expensive `boost::geometry::intersects` call
                 rpn_stack.emplace_back(false, true);
-                continue;
+                return;
             }
 
             /// Because the polygon may have a hole so the "can_be_false" should always be true.
@@ -7438,7 +7429,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (key_column >= hyperrectangle.size())
             {
                 rpn_stack.emplace_back(true, true);
-                continue;
+                return;
             }
 
             const Range * key_range = &hyperrectangle[key_column];
@@ -7553,19 +7544,20 @@ BoolMask KeyCondition::checkInHyperrectangle(
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
+    };
+
+    size_t element_idx = 0;
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::FUNCTION_ATOM_GROUP)
+            pushAtomGroupMask(element, apply_element, rpn_stack);
+        else
+            apply_element(element);
 
         if (update_partial_disjunction_result_fn)
         {
-            /// The empty-key RPN template used by `mergePartialResultsForDisjunctions` has one
-            /// element per predicate leaf; constant leaves can remain constants. Report each group's
-            /// combined result once, at its last element, under that leaf's template position.
-            const size_t rpn_position = static_cast<size_t>(&element - rpn.data());
-            if (isAtomGroupEnd(rpn, rpn_position))
-            {
-                update_partial_disjunction_result_fn(
-                    template_position, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
-                ++template_position;
-            }
+            update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
+            ++element_idx;
         }
     }
 
@@ -7600,7 +7592,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
-    for (const auto & element : rpn)
+    /// Pushes the mask of an atom or a constant onto `rpn_stack`, or applies a logical operator to it.
+    const auto apply_element = [&](const RPNElement & element)
     {
         if (element.argument_num_of_space_filling_curve.has_value())
         {
@@ -7827,7 +7820,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 if (!is_key_col_present)
                 {
                     rpn_stack.emplace_back(true, true);
-                    continue;
+                    return;
                 }
 
                 tupleRangeToBoundingBox(sparse_hyperrectangle[sparse_pos], x_min, x_max, y_min, y_max);
@@ -7844,7 +7837,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 {
                     /// Neither coordinate is available — nothing to prune on.
                     rpn_stack.emplace_back(true, true);
-                    continue;
+                    return;
                 }
 
                 /// For missing coordinates, assume (-inf, +inf) — we can still prune on the available coordinate.
@@ -7875,7 +7868,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))
             {
                 rpn_stack.emplace_back(true, true);
-                continue;
+                return;
             }
 
             using Point = KeyCondition::RPNElement::Polygon::PointT;
@@ -7897,7 +7890,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             {
                 // Index box does not overlap with polygon bbox. So we can skip expensive `boost::geometry::intersects` call
                 rpn_stack.emplace_back(false, true);
-                continue;
+                return;
             }
 
             /// Because the polygon may have a hole so the "can_be_false" should always be true.
@@ -8027,7 +8020,14 @@ BoolMask KeyCondition::checkInHyperrectangle(
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
         }
+    };
 
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::FUNCTION_ATOM_GROUP)
+            pushAtomGroupMask(element, apply_element, rpn_stack);
+        else
+            apply_element(element);
     }
 
     if (rpn_stack.size() != 1)
@@ -8042,7 +8042,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
                                           std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
 {
-    for (auto & rpn_element : rpn)
+    for (auto & rpn_element : expandAtomGroups(rpn))
     {
         if (!rpn_element.monotonic_functions_chain.empty())
         {
@@ -8223,6 +8223,18 @@ String KeyCondition::RPNElement::toString(const std::vector<String> & key_names)
             return "not";
         case FUNCTION_UNKNOWN:
             return "unknown";
+        case FUNCTION_ATOM_GROUP:
+        {
+            buf << "atom_group(";
+            for (size_t i = 0; i < group_atoms.size(); ++i)
+            {
+                if (i)
+                    buf << ", ";
+                buf << group_atoms[i].toString(key_names);
+            }
+            buf << ")";
+            return buf.str();
+        }
         case FUNCTION_NOT_IN_SET:
         case FUNCTION_IN_SET:
         {
@@ -8328,6 +8340,20 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
             case RPNElement::ALWAYS_FALSE:
                 rpn_stack.push_back(false);
                 break;
+            case RPNElement::FUNCTION_ATOM_GROUP:
+            {
+                /// A group can be used unless all its atoms are unknown or always true.
+                bool all_atoms_unknown_or_always_true = true;
+                for (const auto & atom : element.group_atoms)
+                {
+                    if (atom.function == RPNElement::FUNCTION_UNKNOWN && unknown_any)
+                        return true;
+                    if (atom.function != RPNElement::FUNCTION_UNKNOWN && atom.function != RPNElement::ALWAYS_TRUE)
+                        all_atoms_unknown_or_always_true = false;
+                }
+                rpn_stack.push_back(all_atoms_unknown_or_always_true);
+                break;
+            }
             case RPNElement::FUNCTION_NOT:
                 break;
             case RPNElement::FUNCTION_AND:
@@ -8386,6 +8412,18 @@ bool KeyCondition::alwaysFalse() const
             case RPNElement::FUNCTION_UNKNOWN:
                 rpn_stack.push_back(2);
                 break;
+            case RPNElement::FUNCTION_ATOM_GROUP:
+            {
+                /// A group is always false if one of its atoms is, and always true if all of them are.
+                const auto & atoms = element.group_atoms;
+                if (std::ranges::any_of(atoms, [](const auto & atom) { return atom.function == RPNElement::ALWAYS_FALSE; }))
+                    rpn_stack.push_back(0);
+                else if (std::ranges::all_of(atoms, [](const auto & atom) { return atom.function == RPNElement::ALWAYS_TRUE; }))
+                    rpn_stack.push_back(1);
+                else
+                    rpn_stack.push_back(2);
+                break;
+            }
             case RPNElement::FUNCTION_NOT:
             {
                 auto & arg = rpn_stack.back();
@@ -8439,7 +8477,7 @@ bool KeyCondition::alwaysFalse() const
 
 bool KeyCondition::hasMonotonicFunctionsChain() const
 {
-    for (const auto & element : rpn)
+    for (const auto & element : expandAtomGroups(rpn))
         if (!element.monotonic_functions_chain.empty()
             || (element.set_index && element.set_index->hasMonotonicFunctionsChain()))
             return true;
@@ -8468,6 +8506,7 @@ std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> KeyCondition::topLevelC
             case RPNElement::FUNCTION_IS_NOT_NULL:
             case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
             case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_ATOM_GROUP:
             case RPNElement::FUNCTION_UNKNOWN:
             case RPNElement::ALWAYS_FALSE:
             case RPNElement::ALWAYS_TRUE:
@@ -8525,10 +8564,8 @@ void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, s
     {
         std::optional<size_t> key_column;
         bool is_complex = false;
-        for (size_t i = range.first; i < range.second; ++i)
+        for (const RPNElement & element : expandAtomGroups(std::span(rpn).subspan(range.first, range.second - range.first)))
         {
-            const RPNElement & element = rpn[i];
-
             if (element.key_columns.size() > 1)
                 is_complex = true;
 
@@ -8563,11 +8600,7 @@ void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, s
         for (size_t j = 0; j < ranges.size(); ++j)
         {
             const auto & range = ranges[j];
-            chassert(range.first < range.second);
-            auto first = target.rpn.insert(target.rpn.end(), source.rpn.begin() + range.first, source.rpn.begin() + range.second);
-            /// A conjunct can start at a later atom of a leaf. Start a new group while preserving
-            /// the internal group boundaries of intact subexpressions, such as disjunctions.
-            first->continues_multi_atom_group = false;
+            target.rpn.insert(target.rpn.end(), source.rpn.begin() + range.first, source.rpn.begin() + range.second);
             if (j > 0)
                 target.rpn.emplace_back(RPNElement::FUNCTION_AND);
         }
@@ -8610,7 +8643,7 @@ void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, s
 std::unordered_set<size_t> KeyCondition::getUsedColumns() const
 {
     std::unordered_set<size_t> res;
-    for (const RPNElement & element : rpn)
+    for (const RPNElement & element : expandAtomGroups(rpn))
         res.insert(element.key_columns.begin(), element.key_columns.end());
     return res;
 }
@@ -8618,7 +8651,7 @@ std::unordered_set<size_t> KeyCondition::getUsedColumns() const
 size_t KeyCondition::getUsedKeyPrefixSize() const
 {
     size_t res = 0;
-    for (const RPNElement & element : rpn)
+    for (const RPNElement & element : expandAtomGroups(rpn))
         for (size_t key_column : element.key_columns)
             res = std::max(res, key_column + 1);
     return res;

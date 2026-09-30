@@ -339,6 +339,10 @@ public:
             /// where x, y are key columns, or pointInPolygon(coord, [...])
             /// where coord is a key column of type Point (Tuple of two coordinates).
             FUNCTION_POINT_IN_POLYGON,
+            /// The atoms of one predicate leaf that constrains several key columns (see `group_atoms`).
+            /// For example, with the key `(toDate(ts), ts)`, the leaf `ts = '2026-01-10 00:00:00'`
+            /// becomes the group of `toDate(ts) = '2026-01-10'` and `ts = '2026-01-10 00:00:00'`.
+            FUNCTION_ATOM_GROUP,
             /// Can take any value.
             FUNCTION_UNKNOWN,
             /// Operators of the logical expression.
@@ -365,13 +369,6 @@ public:
         /// Whether to relax the key condition (e.g., for LIKE queries without a perfect prefix).
         bool relaxed = false;
 
-        /// Continues the preceding predicate leaf's atom group; `RPNBuilder::appendAtomGroup`
-        /// defines its layout. The whole group occupies one position in the RPN built with an empty key
-        /// (`key_condition_rpn_template`), which the skip-index disjunction machinery uses for positions
-        /// (see `KeyCondition::checkInHyperrectangle` and
-        /// `mergePartialResultsForDisjunctions`).
-        bool continues_multi_atom_group = false;
-
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
 
@@ -381,7 +378,8 @@ public:
         ///    set_index->getIndexesMapping()[..].key_index,
         ///  * if FUNCTION_POINT_IN_POLYGON: two elements (x, y) describing the point,
         ///    as in pointInPolygon((x, y), ...), or one element if the point is a whole
-        ///    key column of type Tuple of two coordinates, as in pointInPolygon(coord, ...).
+        ///    key column of type Tuple of two coordinates, as in pointInPolygon(coord, ...),
+        ///  * if FUNCTION_ATOM_GROUP: none, each atom of the group has its own.
         std::vector<size_t> key_columns;
 
         /// If a key column is a space filling curve, e.g. mortonEncode(x, y),
@@ -404,6 +402,17 @@ public:
         /// `key_columns` has two elements for the point coordinates (x, y),
         /// or one element if the point is a whole key column of Tuple type.
         std::shared_ptr<Polygon> polygon;
+
+        /// For FUNCTION_ATOM_GROUP: two or more atoms of one predicate leaf, each constraining its own key
+        /// columns. The group stands for the leaf as a single element, so the RPN keeps one element per leaf,
+        /// as the skip-index disjunction machinery expects (see `mergePartialResultsForDisjunctions`).
+        ///
+        /// Each atom's mask bounds the mask of the whole leaf: a component that an atom cannot decide is
+        /// reported as `true`, as for an atom that stands alone (for example, `can_be_false` of a relaxed
+        /// atom). So the leaf can be true, or false, only where all its atoms allow it, and the group's mask
+        /// is the intersection of the atoms' masks (see `BoolMask::intersect`). One exact atom keeps the
+        /// group exact, and an additional atom can only narrow the group's mask.
+        std::vector<RPNElement> group_atoms;
 
         /// What functions are applied to the key column before doing the range/set/etc check.
         /// E.g. toDate(key) > '2025-09-12'.
@@ -476,6 +485,11 @@ public:
     /// simplicity, as there may be "gaps" within the atom's hyperrectangle that the
     /// granule's hyperrectangle may or may not intersect.
     ///
+    /// 4. Relaxed only if all its atoms are: FUNCTION_ATOM_GROUP
+    ///
+    /// One exact atom represents the whole predicate leaf of the group (see
+    /// `RPNElement::group_atoms`).
+    ///
     /// NOTE: we also need to examine special functions that generate atoms. For
     /// example, the `match` function can produce a FUNCTION_IN_RANGE atom based
     /// on a given regular expression. Such an atom is relaxed unless the regular
@@ -535,7 +549,13 @@ private:
         const Hyperrectangle & sparse_hyperrectangle,
         const DataTypes & sparse_key_types) const;
 
-    using AtomGroup = RPNBuilder<RPNElement>::AtomGroup;
+    /// The atoms extracted from one predicate leaf, which become one element of the RPN: none makes
+    /// `FUNCTION_UNKNOWN`, one is the element itself, and several make a `FUNCTION_ATOM_GROUP` (see
+    /// `extractAtomFromTree`).
+    struct AtomGroup
+    {
+        RPN atoms;
+    };
 
     /// Information used when building a KeyCondition out of ActionsDAG.
     struct BuildInfo
@@ -626,10 +646,13 @@ private:
         bool reverse_comparison = false;
     };
 
+    /// The callback of `RPNBuilder`: builds the element of one predicate leaf from its atoms. Returns false
+    /// when the leaf has none.
+    bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);
+
     /// The `extractAtoms*` family fills `group` with the atoms of one predicate leaf.
     /// A comparison like `ts >= X` may produce atoms for `toYYYYMM(ts)`, `toDate(ts)` and `ts`
-    /// at once; a set atom may itself constrain several key columns. `RPNBuilder` combines the
-    /// group's atoms with `AND` (emitting `atom0 atom1 AND atom2 AND ...`). An empty group means
+    /// at once; a set atom may itself constrain several key columns. An empty group means
     /// that the leaf could not be analyzed; such a leaf becomes `FUNCTION_UNKNOWN`.
     void extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group);
     void extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group);
@@ -774,8 +797,8 @@ private:
         bool & out_is_injective) const;
 
     /// Appends prepared set-membership atoms for this predicate to `group`. Each atom may constrain
-    /// several key columns. The caller finalizes their function kinds before `RPNBuilder` combines
-    /// the group's atoms with `AND`. An empty group means the predicate could not be analyzed.
+    /// several key columns. The caller finalizes their function kinds. An empty group means the
+    /// predicate could not be analyzed.
     void prepareSetAtomsForIn(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
@@ -886,23 +909,6 @@ private:
     /// Marks range atoms that cannot exclude tuple-contained NaNs as inexact and refreshes derived exactness.
     /// Requires the full primary-key types in key-column order.
     void relaxRangeAtomsForTupleNaNs(const DataTypes & key_types);
-
-    /// In every multi-atom group that stands directly under `FUNCTION_NOT` and has at least one
-    /// exact atom, drops the relaxed atoms: a relaxed atom forces the group's `can_be_false` to
-    /// `true`, which would disable pruning through the exact atoms of the group under `NOT`.
-    void dropCoveredRelaxedAtomsFromNegatedGroups();
-
-    /// Whether this element completes a predicate's atom group or is an independent logical operator.
-    static bool isAtomGroupEnd(const RPN & rpn, size_t position);
-
-    /// Returns `rpn` with the relaxed atoms dropped from every multi-atom group that contains
-    /// both an exact atom and a relaxed one (with `only_negated_groups`, only from the groups
-    /// standing directly under `FUNCTION_NOT`), or nothing when no group qualifies. Every atom
-    /// of a group is a necessary condition of the same predicate leaf, and an exact atom is an
-    /// exact index approximation of that leaf on its own, so the result describes the same
-    /// predicate: the dropped atoms only added pruning (`can_be_true`) at the cost of an
-    /// unreliable `can_be_false`.
-    static std::optional<RPN> dropCoveredRelaxedAtoms(const RPN & rpn, bool only_negated_groups);
 
     /** Iterates over RPN and collapses FUNCTION_IN_RANGE over the arguments of space-filling curve function
       * into atom of type FUNCTION_ARGS_IN_HYPERRECTANGLE.

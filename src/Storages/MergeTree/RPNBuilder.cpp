@@ -32,6 +32,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -559,65 +560,22 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
     return RPNBuilderTreeNode(dag_node->children[index], tree_context);
 }
 
-namespace
-{
-
-template <typename RPNElement>
-typename RPNBuilder<RPNElement>::ExtractAtomsFromTreeFunction
-adaptSingleAtomExtractor(const typename RPNBuilder<RPNElement>::ExtractAtomFromTreeFunction & extract_atom_from_tree_function)
-{
-    return [&](const RPNBuilderTreeNode & node, typename RPNBuilder<RPNElement>::AtomGroup & group)
-    {
-        chassert(group.atoms.empty());
-
-        RPNElement element;
-        if (!extract_atom_from_tree_function(node, element))
-        {
-            /// The callback may have pre-set fields (e.g. selectivity, finalized) on `element`
-            /// even when returning false. Preserve the element as FUNCTION_UNKNOWN.
-            element.function = RPNElement::FUNCTION_UNKNOWN;
-        }
-
-        group.atoms.emplace_back(std::move(element));
-    };
-}
-}
-
 template <typename RPNElement>
 RPNBuilder<RPNElement>::RPNBuilder(
     const ActionsDAG::Node * filter_actions_dag_node,
     ContextPtr query_context_,
     const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
+    : extract_atom_from_tree_function(extract_atom_from_tree_function_)
 {
     RPNBuilderTreeContext tree_context(query_context_);
-
-    auto extract_atoms_from_tree_function = adaptSingleAtomExtractor<RPNElement>(extract_atom_from_tree_function_);
-
-    traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, tree_context), extract_atoms_from_tree_function);
-}
-
-template <typename RPNElement>
-RPNBuilder<RPNElement>::RPNBuilder(
-    const ActionsDAG::Node * filter_actions_dag_node,
-    ContextPtr query_context_,
-    const ExtractAtomsFromTreeFunction & extract_atoms_from_tree_function_)
-{
-    RPNBuilderTreeContext tree_context(query_context_);
-    traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, tree_context), extract_atoms_from_tree_function_);
+    traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, tree_context));
 }
 
 template <typename RPNElement>
 RPNBuilder<RPNElement>::RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
+    : extract_atom_from_tree_function(extract_atom_from_tree_function_)
 {
-    auto extract_atoms_from_tree_function = adaptSingleAtomExtractor<RPNElement>(extract_atom_from_tree_function_);
-
-    traverseTree(node, extract_atoms_from_tree_function);
-}
-
-template <typename RPNElement>
-RPNBuilder<RPNElement>::RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomsFromTreeFunction & extract_atoms_from_tree_function_)
-{
-    traverseTree(node, extract_atoms_from_tree_function_);
+    traverseTree(node);
 }
 
 template <typename RPNElement>
@@ -627,10 +585,10 @@ RPNBuilder<RPNElement>::RPNElements && RPNBuilder<RPNElement>::extractRPN() &&
 }
 
 template <typename RPNElement>
-void RPNBuilder<RPNElement>::traverseTree(
-    const RPNBuilderTreeNode & node,
-    const ExtractAtomsFromTreeFunction & extract_atoms_from_tree_function)
+void RPNBuilder<RPNElement>::traverseTree(const RPNBuilderTreeNode & node)
 {
+    RPNElement element;
+
     if (node.isFunction())
     {
         auto function_node = node.toFunctionNode();
@@ -639,58 +597,42 @@ void RPNBuilder<RPNElement>::traverseTree(
         {
             if (function_node.getFunctionName() == "indexHint")
             {
-                RPNElement always_true;
-                always_true.function = RPNElement::ALWAYS_TRUE;
-                rpn_elements.emplace_back(std::move(always_true));
+                element.function = RPNElement::ALWAYS_TRUE;
+                rpn_elements.emplace_back(std::move(element));
                 return;
             }
         }
 
-        RPNElement operator_element;
-        if (extractLogicalOperatorFromTree(function_node, operator_element))
+        if (extractLogicalOperatorFromTree(function_node, element))
         {
-            const auto operator_function = operator_element.function;
             size_t arguments_size = function_node.getArgumentsSize();
 
             for (size_t argument_index = 0; argument_index < arguments_size; ++argument_index)
             {
                 auto function_node_argument = function_node.getArgumentAt(argument_index);
-                traverseTree(function_node_argument, extract_atoms_from_tree_function);
+                traverseTree(function_node_argument);
 
                 /** The first part of the condition is for the correct support of `and` and `or` functions of arbitrary arity
                       * - in this case `n - 1` elements are added (where `n` is the number of arguments).
                       */
-                if (argument_index != 0 || operator_function == RPNElement::FUNCTION_NOT)
-                {
-                    RPNElement op;
-                    op.function = operator_function;
-                    rpn_elements.emplace_back(std::move(op));
-                }
+                if (argument_index != 0 || element.function == RPNElement::FUNCTION_NOT)
+                    rpn_elements.emplace_back(std::move(element)); /// NOLINT(bugprone-use-after-move,hicpp-invalid-access-moved)
             }
 
             if (arguments_size == 0 && function_node.getFunctionName() == "indexHint")
             {
-                RPNElement always_true;
-                always_true.function = RPNElement::ALWAYS_TRUE;
-                rpn_elements.emplace_back(std::move(always_true));
+                element.function = RPNElement::ALWAYS_TRUE;
+                rpn_elements.emplace_back(std::move(element));
             }
 
             return;
         }
     }
 
-    AtomGroup group;
-    extract_atoms_from_tree_function(node, group);
+    if (!extract_atom_from_tree_function(node, element))
+        element.function = RPNElement::FUNCTION_UNKNOWN;
 
-    if (!group.atoms.empty())
-    {
-        appendAtomGroup(rpn_elements, std::make_move_iterator(group.atoms.begin()), std::make_move_iterator(group.atoms.end()));
-        return;
-    }
-
-    RPNElement unknown;
-    unknown.function = RPNElement::FUNCTION_UNKNOWN;
-    rpn_elements.emplace_back(std::move(unknown));
+    rpn_elements.emplace_back(std::move(element));
 }
 
 template <typename RPNElement>
