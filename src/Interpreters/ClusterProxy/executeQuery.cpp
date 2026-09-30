@@ -1168,7 +1168,6 @@ void executeQueryWithParallelReplicas(
         }
 
         /// The replicas read these CTEs by name, so their writer must be gated above both branches.
-        /// The local plan is optimized first and would otherwise claim the writer and gate only itself.
         removeDelayedMaterializingCTEsStepFor(*local_plan, collectMaterializedCTEsFromQueryTree(query_tree));
 
         std::shared_ptr<const QueryPlan> remote_query_plan;
