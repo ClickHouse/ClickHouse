@@ -56,9 +56,7 @@ static std::array<const EngineSettingsToHide *, 6> engineSettingsToHide()
 /// Renders a change whose value is a secret as the SQL text that hides it, and returns `nullopt` for
 /// a change that carries none. `formatImpl` and `hasSecretParts` both go through this, so they cannot
 /// disagree on what is secret.
-///
-/// An engine rule is asked before the Core one: the Core renderer masks a `disk(...)` value of any
-/// setting but keeps its `type` argument, while every engine rule hides a value that is not a String whole.
+/// Engine rules go first: each hides a non-String value whole, while the Core `disk(...)` masking keeps `type`.
 static std::optional<String> renderSecretChangeValue(const SettingChange & change)
 {
     /// A queue engine also takes each of its settings, a format setting included, with the legacy `s3queue_` prefix.

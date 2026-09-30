@@ -18,8 +18,7 @@ bool maskSettingValue(const String & setting_name, const Field & field, String &
 
 std::optional<String> renderSecretSettingValue(const String & setting_name, const Field & value)
 {
-    /// A value that is not a String can nest a credential no masker below recognizes (the `disk(...)`
-    /// masking keeps `type`), so for a setting of `SETTINGS_TO_HIDE` it is hidden whole.
+    /// A non-String value is hidden whole: the `disk(...)` masking below keeps its `type` argument.
     if (value.getType() != Field::Types::String && SETTINGS_TO_HIDE.contains(setting_name))
         return "'[HIDDEN]'";
 
