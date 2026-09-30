@@ -974,15 +974,6 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Интерфейсы",
-      "pages": [
-        "ru/resources/develop-contribute/native-protocol/protocol",
-        "ru/resources/develop-contribute/native-protocol/format"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
       "group": "Настройки",
       "pages": [
         "ru/reference/settings/index",

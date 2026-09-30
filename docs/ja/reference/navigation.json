@@ -974,15 +974,6 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "インターフェイス",
-      "pages": [
-        "ja/resources/develop-contribute/native-protocol/protocol",
-        "ja/resources/develop-contribute/native-protocol/format"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
       "group": "設定",
       "pages": [
         "ja/reference/settings/index",

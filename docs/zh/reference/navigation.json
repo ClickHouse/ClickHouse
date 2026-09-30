@@ -974,15 +974,6 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "接口",
-      "pages": [
-        "zh/resources/develop-contribute/native-protocol/protocol",
-        "zh/resources/develop-contribute/native-protocol/format"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
       "group": "设置",
       "pages": [
         "zh/reference/settings/index",

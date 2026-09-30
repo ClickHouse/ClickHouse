@@ -974,15 +974,6 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Interfaces",
-      "pages": [
-        "pt-BR/resources/develop-contribute/native-protocol/protocol",
-        "pt-BR/resources/develop-contribute/native-protocol/format"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
       "group": "Configurações",
       "pages": [
         "pt-BR/reference/settings/index",
