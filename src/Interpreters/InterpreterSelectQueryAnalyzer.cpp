@@ -37,6 +37,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
+#include <Storages/buildQueryTreeForShard.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -217,13 +218,42 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// the other replicas and the optimization would give up. Settings written after `FORMAT` land on
     /// `ASTQueryWithOutput` and are not re-applied, which is why the very same query used to be
     /// optimized or not depending on where its `SETTINGS` clause was written. Drop the overridden
-    /// settings from the (cloned) AST so that the overrides above actually hold.
+    /// settings from the top-level `SETTINGS` carriers of the (cloned) AST so that the overrides above
+    /// actually hold. A subquery's `SETTINGS` clause is part of its query-node tree hash, and that hash
+    /// is the identity its prepared set and its read step are matched by against the single-node plan.
     static constexpr std::array settings_overridden_for_this_plan{
         std::string_view{"automatic_parallel_replicas_mode"},
         std::string_view{"force_primary_key"},
     };
-    removeSettingsFromQuery(ast, settings_overridden_for_this_plan);
+    removeSettingsFromQueryTopLevel(ast, settings_overridden_for_this_plan);
+
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);
+
+    /// This plan exists to be costed and is usually thrown away. Shipping a `GLOBAL IN` / `GLOBAL JOIN`
+    /// would execute its subquery into a temporary table while the plan is built, and those rows would
+    /// be discarded with it - on TPC-H q15 the probe's copy of the `revenue0` view was a third of every
+    /// mark the query read. Such a plan could not be adopted anyway: it names its sets after the
+    /// temporary tables that replaced the subqueries, so it never hashes equal to the single-node plan
+    /// and the match that gates the cost model always fails. Do not build it.
+    ///
+    /// Deliberately coarse. It asks about the whole query, while only one chosen node is shipped, so
+    /// a `GLOBAL IN` outside that node skips the optimization for a query it would never have
+    /// materialized anything for. That costs reach - such a query would otherwise match, since only a
+    /// shipped `_data_` table breaks the hash match - but the answer is not known before planning,
+    /// which is what this exists to skip. Erring towards skipping loses an optimization; erring the
+    /// other way pays for rows that are thrown away.
+    ///
+    /// This has to stay below the interpreter. The answer turns on `distributed_product_mode`,
+    /// `prefer_global_in_and_join` and `parallel_replicas_prefer_local_join`, and a query carries its
+    /// own `SETTINGS` for those. `QueryTreeBuilder::buildSelectExpression` applies them to the context
+    /// it is handed - `ctx` - while building the tree above, which is the same mechanism
+    /// `removeSettingsFromQueryTopLevel` had to counteract. Asking before that would read pre-query settings
+    /// and could answer no for a query that does materialize.
+    if (shippingQueryMaterializesSubqueries(interpreter.getQueryTree(), ctx))
+    {
+        LOG_DEBUG(logger, "Shipping this query would materialize its subqueries. Skipping building a plan to cost");
+        return QueryPlanPtr{};
+    }
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);
     // We should build sets and create `CreatingSetsStep` only in the original plan. The automatic parallel replicas optimization happens before building sets,

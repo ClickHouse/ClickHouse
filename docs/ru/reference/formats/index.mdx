@@ -11,9 +11,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 ClickHouse поддерживает большинство известных текстовых и двоичных форматов данных. Это позволяет легко интегрировать его практически в любой
 конвейер обработки данных, чтобы использовать преимущества ClickHouse.
 
-<div id="input-formats">
-  ## Форматы ввода
-</div>
+## Форматы ввода {#input-formats}
 
 Форматы ввода используются для:
 
@@ -36,18 +34,14 @@ ClickHouse поддерживает большинство известных т
 прочитайте полный [анализ бенчмарка](https://www.clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient).
 Полные результаты тестов доступны на онлайн-панели мониторинга [FastFormats](https://fastformats.clickhouse.com/).
 
-<div id="output-formats">
-  ## Форматы вывода
-</div>
+## Форматы вывода {#output-formats}
 
 Поддерживаемые форматы вывода используются для:
 
 * Представления результатов запроса `SELECT`
 * Выполнения операций `INSERT` в таблицы с файловой поддержкой
 
-<div id="formats-overview">
-  ## Обзор форматов
-</div>
+## Обзор форматов {#formats-overview}
 
 Поддерживаемые форматы:
 
@@ -150,14 +144,15 @@ ClickHouse поддерживает большинство известных т
 | [DWARF](/ru/reference/formats/DWARF)                                                                                               | ✔    | ✗     |
 | [Markdown](/ru/reference/formats/Markdown)                                                                                         | ✗    | ✔     |
 | [Form](/ru/reference/formats/Form)                                                                                                 | ✔    | ✗     |
+| [PNG](/ru/reference/formats/PNG)                                                                                                   | ✗    | ✔     |
+| [Puffin](/ru/reference/formats/Puffin/Puffin)                                                                                      | ✔    | ✗     |
+| [PuffinMetadata](/ru/reference/formats/Puffin/PuffinMetadata)                                                                      | ✔    | ✗     |
 
 Некоторыми параметрами обработки форматов можно управлять с помощью настроек ClickHouse. Подробнее см. раздел [Настройки](/ru/reference/settings/formats).
 
 Дополнительные настройки для JSON описаны на странице [Настройки формата JSON](/ru/reference/formats/JSON/format-settings).
 
-<div id="formatschema">
-  ## Схема формата
-</div>
+## Схема формата {#formatschema}
 
 Имя файла, содержащего схему формата, задаётся настройкой `format_schema`.
 Эту настройку необходимо указать при использовании форматов `Cap'n Proto` и `Protobuf`.
@@ -174,9 +169,7 @@ ClickHouse поддерживает большинство известных т
 должно находиться в каталоге, указанном в [format&#95;schema&#95;path](/ru/reference/settings/server-settings/settings/format#format_schema_path)
 в конфигурации сервера.
 
-<div id="skippingerrors">
-  ## Пропуск ошибок
-</div>
+## Пропуск ошибок {#skippingerrors}
 
 Некоторые форматы, такие как `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` и `Protobuf`, могут пропускать некорректную строку, если возникает ошибка разбора, и продолжать разбор с начала следующей строки. См. настройки [input&#95;format&#95;allow&#95;errors&#95;num](/ru/reference/settings/formats/input-format#input_format_allow_errors_num) и
 [input&#95;format&#95;allow&#95;errors&#95;ratio](/ru/reference/settings/formats/input-format#input_format_allow_errors_ratio).

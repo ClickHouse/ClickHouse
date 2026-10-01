@@ -27,7 +27,7 @@ namespace Setting
 {
     /// There are way too many format settings to handle extern declarations manually.
 #define DECLARE_FORMAT_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    extern Settings ## TYPE NAME;
+    extern const Settings ## TYPE NAME;
 FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
 #undef DECLARE_FORMAT_EXTERN
 
