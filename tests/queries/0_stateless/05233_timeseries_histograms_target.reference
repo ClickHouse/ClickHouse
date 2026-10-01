@@ -30,6 +30,8 @@ samples	1024
 0
 0
 --- the histograms table cannot be customized yet ---
+--- a table of version 7 rejects a declared histograms table, but drops an inherited one ---
+0
 --- a copy of a table of version 5 gets the latest version and a histograms table ---
 1	1
 0

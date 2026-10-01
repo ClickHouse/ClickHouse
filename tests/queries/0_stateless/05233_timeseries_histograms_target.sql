@@ -56,6 +56,15 @@ CREATE TABLE ts_hist_explicit ENGINE = TimeSeries HISTOGRAMS ENGINE = MergeTree 
 CREATE TABLE ts_hist_explicit ENGINE = TimeSeries HISTOGRAMS INNER COLUMNS (extra UInt8); -- { serverError NOT_IMPLEMENTED }
 CREATE TABLE ts_hist_external ENGINE = MergeTree ORDER BY (id, timestamp) AS SELECT * FROM timeSeriesHistograms(ts_hist);
 CREATE TABLE ts_hist_explicit ENGINE = TimeSeries HISTOGRAMS ts_hist_external; -- { serverError NOT_IMPLEMENTED }
+
+SELECT '--- a table of version 7 rejects a declared histograms table, but drops an inherited one ---';
+CREATE TABLE ts_hist_explicit ENGINE = TimeSeries SETTINGS version = 7 HISTOGRAMS ENGINE = MergeTree; -- { serverError INCORRECT_QUERY }
+CREATE TABLE ts_hist_explicit ENGINE = TimeSeries SETTINGS version = 7 HISTOGRAMS INNER COLUMNS (sum Float64); -- { serverError INCORRECT_QUERY }
+CREATE TABLE ts_hist_explicit ENGINE = TimeSeries SETTINGS version = 7 HISTOGRAMS ts_hist_external; -- { serverError INCORRECT_QUERY }
+CREATE TABLE ts_hist_explicit AS ts_hist ENGINE = TimeSeries SETTINGS version = 7 HISTOGRAMS ENGINE = MergeTree; -- { serverError INCORRECT_QUERY }
+CREATE TABLE ts_hist_explicit AS ts_hist ENGINE = TimeSeries SETTINGS version = 7;
+SELECT position(create_table_query, 'HISTOGRAMS') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 'ts_hist_explicit';
+DROP TABLE ts_hist_explicit;
 DROP TABLE ts_hist_external;
 
 SELECT '--- a copy of a table of version 5 gets the latest version and a histograms table ---';

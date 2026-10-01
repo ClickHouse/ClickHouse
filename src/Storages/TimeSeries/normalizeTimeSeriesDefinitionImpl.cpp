@@ -2225,13 +2225,17 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
         }
     }
 
-    /// Whether the query itself declares a RECENT SAMPLES target. This is checked before applyASClause,
+    /// Whether the query itself declares a target of the specified kind. This is checked before applyASClause,
     /// so the flag doesn't count a target copied from the `AS <other_table>` clause. An inner UUID doesn't
     /// count either: it's not written by users, it's stamped by UUID generation - which can legitimately
     /// happen before normalization (e.g. for an ON CLUSTER query using an old DDL entry format).
-    bool has_recent_samples_definition
-        = hasInnerColumns(create_query, ViewTarget::RecentSamples) || hasInnerEngine(create_query, ViewTarget::RecentSamples)
-        || hasTargetTableID(create_query, ViewTarget::RecentSamples);
+    const auto has_target_definition = [&create_query](ViewTarget::Kind kind)
+    {
+        return hasInnerColumns(create_query, kind) || hasInnerEngine(create_query, kind) || hasTargetTableID(create_query, kind);
+    };
+
+    const bool has_recent_samples_definition = has_target_definition(ViewTarget::RecentSamples);
+    const bool has_histograms_definition = has_target_definition(ViewTarget::Histograms);
 
     /// The definition of the table from the clause `AS <other_table>` if any, and its resolved types.
     /// The clause is used only for a new table: the stored definition of an existing table has no such clause.
@@ -2326,8 +2330,16 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
         }
 
         const bool histograms_enabled = timeSeriesVersionSupportsHistograms(settings[TimeSeriesSetting::version]);
-        if (!histograms_enabled && create_query.targets)
-            create_query.targets->removeTarget(ViewTarget::Histograms);
+        if (!histograms_enabled)
+        {
+            if (has_histograms_definition)
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "The HISTOGRAMS target requires the setting `version` to be at least {}, but the table has version {}",
+                    TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET, settings[TimeSeriesSetting::version].value);
+
+            if (create_query.targets)
+                create_query.targets->removeTarget(ViewTarget::Histograms);
+        }
 
         for (auto kind : getTimeSeriesTargetKinds())
         {
