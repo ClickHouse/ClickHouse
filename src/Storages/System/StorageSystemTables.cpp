@@ -675,11 +675,19 @@ protected:
                     if (can_expose_metadata)
                     {
                         chassert(lock != nullptr);
-                        if (auto paths = table->tryGetDataPaths())
+                        try
                         {
-                            table_paths_array.reserve(paths->size());
-                            for (const String & path : *paths)
-                                table_paths_array.push_back(path);
+                            if (auto paths = table->tryGetDataPaths())
+                            {
+                                table_paths_array.reserve(paths->size());
+                                for (const String & path : *paths)
+                                    table_paths_array.push_back(path);
+                            }
+                        }
+                        catch (const Exception &)
+                        {
+                            /// Even if the method throws, it should not prevent querying system.tables.
+                            tryLogCurrentException("StorageSystemTables");
                         }
                     }
                     res_columns[res_index++]->insert(table_paths_array);
@@ -699,10 +707,20 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && table->supportsReplication())
-                        res_columns[res_index++]->insert(metadata_snapshot->metadata_version);
-                    else
-                        res_columns[res_index++]->insertDefault();
+                    try
+                    {
+                        if (metadata_snapshot && table->supportsReplication())
+                            res_columns[res_index]->insert(metadata_snapshot->metadata_version);
+                        else
+                            res_columns[res_index]->insertDefault();
+                    }
+                    catch (const Exception &)
+                    {
+                        /// Even if the method throws, it should not prevent querying system.tables.
+                        tryLogCurrentException("StorageSystemTables");
+                        res_columns[res_index]->insertDefault();
+                    }
+                    ++res_index;
                 }
 
                 {
