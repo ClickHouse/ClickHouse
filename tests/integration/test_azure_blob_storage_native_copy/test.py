@@ -599,10 +599,11 @@ def test_blob_storage_log_copy_events(cluster):
     azure_query(node, f"RESTORE TABLE {table} AS {restored} FROM {backup_destination}", query_id=restore_query_id)
     assert (
         blob_log(
-            f"countIf(event_type = 'Copy' AND error_code = 0 AND source_bucket = 'cont' AND source_remote_path LIKE '{backup_dir}/%') > 0",
+            f"countIf(event_type = 'Copy' AND error_code = 0 AND source_bucket = 'cont' AND source_remote_path LIKE '{backup_dir}/%') > 0, "
+            f"countIf(event_type = 'Copy' AND source_remote_path LIKE '{backup_dir}/%' AND (disk_name != 'disk_azure' OR local_path = '')) = 0",
             f"query_id = '{restore_query_id}'",
         )
-        == "1"
+        == "1\t1"
     )
     assert azure_query(node, f"SELECT count(), sum(key) FROM {restored}") == azure_query(
         node, f"SELECT count(), sum(key) FROM {table}"
