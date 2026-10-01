@@ -64,6 +64,7 @@ Endpoints:
       the opposite of the `max_tokens` case.
   POST /v1/anthropic/tool_use        — Anthropic-shaped HTTP 200 with `stop_reason="tool_use"`, a
       successful structured-output (forced tool call) response that must NOT be rejected.
+  POST /v1/rate_limited              — always returns HTTP 429, a provider rate limit.
   POST /v1/error                     — always returns HTTP 500, a transient/server-side error that
       the url table function (and so the AI functions) retries.
   POST /v1/bad_request               — always returns HTTP 400, a deterministic client error that
@@ -464,6 +465,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # Anthropic-shaped 200 with `stop_reason="tool_use"`: a successful structured-output
             # response (forced tool call). Must NOT be rejected as incomplete.
             self._send_json(200, make_anthropic_tool_use_response(body))
+            return
+
+        if parsed.path == "/v1/rate_limited":
+            self._send_json(429, make_error_response("rate limit exceeded", error_type="rate_limit_error"))
             return
 
         if parsed.path == "/v1/error":

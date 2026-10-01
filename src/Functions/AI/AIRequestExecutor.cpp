@@ -22,6 +22,9 @@ namespace ProfileEvents
     extern const Event AIInputTokens;
     extern const Event AIOutputTokens;
     extern const Event AIAPICalls;
+    extern const Event AIAPICallsRetried;
+    extern const Event AIAPICallsFailed;
+    extern const Event AIAPICallsThrottled;
 }
 
 namespace DB
@@ -89,6 +92,22 @@ bool isRetriableProviderError(std::exception_ptr exception)
     }
 }
 
+bool isThrottledProviderError(std::exception_ptr exception)
+{
+    try
+    {
+        std::rethrow_exception(exception);
+    }
+    catch (const AIProviderHTTPException & http_exception)
+    {
+        return http_exception.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS;
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
 /// Reject a response the model did not finish. Throws a plain `Exception`, which
 /// `isRetriableProviderError` classifies as non-retriable.
 void checkResponseIsComplete(const AIResponse & response)
@@ -148,11 +167,17 @@ std::optional<Response> runRequest(const AIRequestPolicy & policy, AIQuotaTracke
         }
         catch (...)
         {
+            if (isThrottledProviderError(std::current_exception()))
+                ProfileEvents::increment(ProfileEvents::AIAPICallsThrottled);
+
             if (attempt < policy.max_retries && isRetriableProviderError(std::current_exception()))
             {
+                ProfileEvents::increment(ProfileEvents::AIAPICallsRetried);
                 std::this_thread::sleep_for(std::chrono::milliseconds(computeRetryBackoffMs(policy.retry_initial_delay_ms, attempt)));
                 continue;
             }
+
+            ProfileEvents::increment(ProfileEvents::AIAPICallsFailed);
 
             if (!policy.throw_on_error)
                 return {};

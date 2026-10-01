@@ -282,6 +282,14 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_wrong_count', "
             f"api_key = 'test-key'"
         )
+        # Endpoint that always replies HTTP 429, as a rate-limited provider would.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_rate_limited AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/rate_limited', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
         # Endpoints that drop the connection for the first N requests (armed via /set-flaky),
         # used to test that transient network failures are retried like the url table function.
         instance.query(
@@ -1671,6 +1679,62 @@ def test_generate_retries_on_network_error(started_cluster):
     # 2 failed attempts + 1 successful attempt for the single row.
     assert int(events["api_calls"]) == 3
     assert int(events["rows_processed"]) == 1
+
+
+def _request_outcome_events(query_id):
+    instance.query("SYSTEM FLUSH LOGS")
+    return [
+        int(v)
+        for v in instance.query(
+            f"SELECT ProfileEvents['AIAPICallsRetried'], ProfileEvents['AIAPICallsFailed'], "
+            f"ProfileEvents['AIAPICallsThrottled'] FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        ).split()
+    ]
+
+
+def _server_event(name):
+    return int(instance.query(f"SELECT sum(value) FROM system.events WHERE event = '{name}'").strip() or 0)
+
+
+def test_request_outcome_profile_events(started_cluster):
+    """`AIAPICallsRetried`, `AIAPICallsFailed` and `AIAPICallsThrottled` count request outcomes per query
+    and for the whole server, including failures swallowed by `ai_function_throw_on_error = 0`."""
+    settings = {"ai_function_throw_on_error": 0, "ai_function_retry_initial_delay_ms": 1}
+
+    # Two dropped connections, then success: two retries, no failure.
+    set_flaky(2)
+    qid = unique_query_id("outcome_recovered")
+    instance.query(
+        "SELECT aiGenerate('x', map('credentials', 'ai_flaky')) FORMAT Null",
+        settings={**settings, "ai_function_max_retries": 5},
+        query_id=qid,
+    )
+    assert _request_outcome_events(qid) == [2, 0, 0]
+
+    # Every attempt dropped: one retry, then the request fails and the row gets a default value.
+    set_flaky(10)
+    try:
+        qid = unique_query_id("outcome_failed")
+        instance.query(
+            "SELECT aiGenerate('x', map('credentials', 'ai_flaky')) FORMAT Null",
+            settings={**settings, "ai_function_max_retries": 1},
+            query_id=qid,
+        )
+    finally:
+        set_flaky(0)
+    assert _request_outcome_events(qid) == [1, 1, 0]
+
+    # HTTP 429 on both attempts: both are throttled, one is retried, the request fails.
+    throttled_before = _server_event("AIAPICallsThrottled")
+    qid = unique_query_id("outcome_throttled")
+    instance.query(
+        "SELECT aiGenerate('x', map('credentials', 'ai_rate_limited')) FORMAT Null",
+        settings={**settings, "ai_function_max_retries": 1},
+        query_id=qid,
+    )
+    assert _request_outcome_events(qid) == [1, 1, 2]
+    assert _server_event("AIAPICallsThrottled") - throttled_before == 2
 
 
 def test_generate_network_error_not_retried_when_disabled(started_cluster):
