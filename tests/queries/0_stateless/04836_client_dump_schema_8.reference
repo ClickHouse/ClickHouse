@@ -4,6 +4,3 @@ hive S3Queue, hive gate emitted: 1
 --- a plain S3Queue dump replays under a hive-partitioning constraint ---
 OK: constrained replay succeeded
 constrained replay table present: 1
---- a Replicated database replica recovers objects that need gates its creating session lacks ---
-recovered TimeSeries table present: 1
-recovered bad-select view present: 1

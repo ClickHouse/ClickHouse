@@ -199,7 +199,7 @@ echo "text index, full-text-index gate emitted: $(grep -c '^SET allow_experiment
 replay_local 'text index' '%'
 make_dump "
 SET allow_suspicious_primary_key = 1;
-CREATE TABLE ${DB}.pk (k SimpleAggregateFunction(sum, UInt64), v Int64) ENGINE = AggregatingMergeTree ORDER BY k;
+CREATE TABLE ${DB}.pk (k SimpleAggregateFunction(sum, UInt64), v SimpleAggregateFunction(sum, Int64)) ENGINE = AggregatingMergeTree ORDER BY k;
 "
 echo "SimpleAggregateFunction key, suspicious-primary-key gate emitted: $(grep -c '^SET allow_suspicious_primary_key = 1;' "$DUMP_FILE")"
 replay_local 'SimpleAggregateFunction key' '%'
