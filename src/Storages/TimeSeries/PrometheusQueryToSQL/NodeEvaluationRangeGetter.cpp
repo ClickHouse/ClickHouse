@@ -2,7 +2,6 @@
 
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/IDataType.h>
 #include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/alignTimestampWithStep.h>
 
@@ -29,7 +28,6 @@ namespace
 NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const PrometheusQueryTree> promql_tree_,
                                                      const PrometheusQueryEvaluationSettings & settings_)
     : promql_tree(promql_tree_)
-    , table_timestamp_type(settings_.table_timestamp_type)
     , time_scale(settings_.time_scale)
 {
     if (promql_tree->getTimeScale() != time_scale)
@@ -153,12 +151,6 @@ void NodeEvaluationRangeGetter::visitChildren(const Node * node, const NodeEvalu
             expression_range.start_time = alignTimestampWithStep(range.start_time - subquery_range + step, step);
             expression_range.end_time = alignTimestampWithStep(range.end_time, step);
             expression_range.step = step;
-
-            /// Clip before visiting children, which can materialize the grid even without a selector.
-            /// Zero is aligned with every subquery step. A wholly pre-epoch range becomes empty.
-            WhichDataType which_data_type{table_timestamp_type};
-            if ((which_data_type.isDateTime() || which_data_type.isUInt32()) && expression_range.start_time < 0)
-                expression_range.start_time = 0;
 
             visitNode(expression, expression_range);
             break;
