@@ -59,9 +59,6 @@ REPO_CONFIG = {
     "ClickHouse/ClickHouse": {
         "base_url_secret": "/ci/loom/base_url",
         "token_secret": "/ci/loom/api_key",
-        # Read-only token for the agent, which reads untrusted PR text with
-        # network access; the job keeps the token that writes review memory.
-        "agent_token_secret": "/ci/loom/agent_api_key",
         "namespace": PUBLIC_NAMESPACE,
         # The review's own memory: one record per review thread and its outcome.
         "memory_namespace": "clickhouse-gh",
@@ -100,10 +97,9 @@ _MAX_FILES = 50
 
 class Config:
     def __init__(self, base_url="", token="", namespace="", repo="", pr_number=0, private=False, pr_overlay=False,
-                 memory_namespace="", agent_token=""):
+                 memory_namespace=""):
         self.base_url = (base_url or "").rstrip("/")
         self.token = token or ""
-        self.agent_token = agent_token or ""
         self.namespace = namespace or ""
         self.memory_namespace = memory_namespace or ""
         self.repo = repo or ""
@@ -116,11 +112,12 @@ class Config:
 
     def env(self):
         """Environment for the agent process, so the CLI sees the same config.
-        The agent gets the read-only token when one is configured, never the
-        memory namespace."""
+        The token can also write review memory; what the job reads back from
+        memory is checked against GitHub before it affects anything (see
+        `verified_dismissals` in the job)."""
         return {
             "LOOM_BASE_URL": self.base_url,
-            "LOOM_TOKEN": self.agent_token or self.token,
+            "LOOM_TOKEN": self.token,
             "LOOM_NAMESPACE": self.namespace,
             "LOOM_REPO": self.repo,
             "LOOM_PR_NUMBER": str(self.pr_number),
@@ -157,16 +154,9 @@ class Config:
             # The AWS error names the role and the parameter, never its value.
             print(f"Loom: configuration for [{repo}] is not readable ({type(e).__name__}: {str(e)[:500]}), reviewing without Loom")
             return cls(repo=repo, pr_number=pr_number)
-        agent_token = ""
-        if entry.get("agent_token_secret"):
-            try:
-                agent_token = get_secret(entry["agent_token_secret"])
-            except Exception as e:  # noqa: BLE001
-                print(f"Loom: no read-only agent token ({type(e).__name__}); the agent gets the job's token")
         return cls(
             base_url=(base_url or "").strip(),
             token=(token or "").strip(),
-            agent_token=(agent_token or "").strip(),
             namespace=(namespace or "").strip(),
             repo=repo,
             pr_number=pr_number,
@@ -704,7 +694,10 @@ def recall_outcomes(config, pr_number, paths):
         path = next((t.split(":", 1)[1] for t in tags if t.startswith("path:")), "")
         pr = next((t.split(":", 1)[1] for t in tags if t.startswith("pr:")), "?")
         value = e.get("value") if isinstance(e.get("value"), str) else ""
+        key = str(e.get("memory_key") or "")
+        comment_id = key.rsplit(":", 1)[-1] if key.startswith("review-thread:") else ""
         records.append({"path": path, "state": state, "author_replied": "author_replied" in tags, "pr": pr,
+                        "comment_id": int(comment_id) if comment_id.isdigit() else 0,
                         "finding": value.split("\n\n", 1)[1] if "\n\n" in value else value})
         if len(records) >= _MAX_RECALLED:
             break

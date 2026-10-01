@@ -288,6 +288,35 @@ def _run_agent(loom_config, watch=None):
 _MARKER_RE = re.compile(r"\n*<!-- ai-review-(?:reviewed-sha|model|state): [^>]*-->")
 
 
+def _verified_dismissals(repo, records):
+    """The memory records that may suppress a finding, checked against GitHub.
+
+    The agent holds the Loom token, so a prompt-injected agent could write a
+    record that claims an author dismissed some finding. A record counts only
+    if its review comment exists, was posted by the app on that file, and has
+    a reply by a person in its thread. Other records are kept for the prompt's
+    context (which treats them as untrusted) but cannot drive the job's filter."""
+    out = []
+    pr_comments = {}  # one listing per earlier PR, however many of its threads were recalled
+    for r in records or []:
+        dismissal = r.get("author_replied") and r.get("state") in ("resolved_by_author", "open")
+        if not dismissal or not r.get("comment_id"):
+            out.append({**r, "author_replied": False})
+            continue
+        comment = review_context.gh_json(f"/repos/{repo}/pulls/comments/{r['comment_id']}") or {}
+        pr = (comment.get("pull_request_url") or "").rsplit("/", 1)[-1]
+        if comment and pr not in pr_comments:
+            pr_comments[pr] = review_context.gh_json(f"/repos/{repo}/pulls/{pr}/comments?per_page=100", paginate=True) or []
+        replies = pr_comments.get(pr, [])
+        real = (review_context.is_bot((comment.get("user") or {}).get("login")) and comment.get("path") == r.get("path")
+                and any(c.get("in_reply_to_id") == r["comment_id"] and not review_context.is_automation(
+                    (c.get("user") or {}).get("login")) for c in replies or []))
+        if not real:
+            print(f"Memory record for comment {r['comment_id']} not confirmed by GitHub; not used as a dismissal")
+        out.append(r if real else {**r, "author_replied": False})
+    return out
+
+
 def _strip_markers(text):
     return _MARKER_RE.sub("", text or "").rstrip()
 
@@ -358,6 +387,7 @@ def review():
     except Exception as e:  # noqa: BLE001
         print(f"WARNING: Loom memory recall failed: {type(e).__name__}: {e}")
         memory_md, memory = "", []
+    memory = _verified_dismissals(repo, memory)
     if memory_md:
         with open(f"{CONTEXT_DIR}/memory.md", "w", encoding="utf-8") as f:
             f.write("# Earlier review findings on the files this PR changes\n\n" + memory_md)
