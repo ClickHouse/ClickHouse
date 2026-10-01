@@ -67,7 +67,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->all_mark_ranges,
         main_reader_->settings)
     , index(std::move(index_))
-    , main_reader_can_read_incomplete_granules(main_reader_->canReadIncompleteGranules())
+    , can_read_incomplete_granules(main_reader_->canReadIncompleteGranules())
     , condition_text(std::dynamic_pointer_cast<MergeTreeIndexConditionText>(index.condition_template->generateUnsubstituted()))
 {
     search_queries.reserve(columns_.size());
@@ -425,13 +425,13 @@ size_t MergeTreeReaderTextIndex::readRows(
     }
     else
     {
+        from_row = index_granularity.getMarkStartingRow(from_mark);
+
         /// Backward jump invalidates the per-token cursor cache: cached cursors are
         /// forward-only (their `linearOr` / `linearAnd` / `advance` walk segments from
         /// `current_segment_idx` onward), so they cannot serve an earlier row.
-        if (from_mark < current_mark)
+        if (from_row < current_row)
             resetCursors();
-
-        from_row = index_granularity.getMarkStartingRow(from_mark);
     }
 
     size_t total_rows = data_part_info_for_read->getRowCount();
@@ -440,16 +440,21 @@ size_t MergeTreeReaderTextIndex::readRows(
     else
         max_rows_to_read = 0;
 
+    size_t total_marks = index_granularity.getMarksCountWithoutFinal();
+
     if (res_columns.empty())
     {
-        ++current_mark;
-        current_row += max_rows_to_read;
+        /// Keep `current_mark` the mark containing `current_row`, as the main loop does.
+        current_row = from_row + max_rows_to_read;
+        current_mark = from_mark;
+        while (current_mark < total_marks && index_granularity.getMarkStartingRow(current_mark + 1) <= current_row)
+            ++current_mark;
+
         return max_rows_to_read;
     }
 
     size_t read_rows = 0;
     createEmptyColumns(res_columns, max_rows_to_read);
-    size_t total_marks = data_part_info_for_read->getIndexGranularity().getMarksCountWithoutFinal();
 
     if (!is_initialized && max_rows_to_read > 0)
     {
@@ -486,11 +491,17 @@ size_t MergeTreeReaderTextIndex::readRows(
     {
         /// Postings are addressed per mark: rows past a mark's last row belong to the next mark
         /// and would resolve against the wrong posting lists.
-        size_t mark_end_row = index_granularity.getMarkStartingRow(from_mark) + index_granularity.getMarkRows(from_mark);
-        size_t rows_left_in_mark = mark_end_row > from_row ? mark_end_row - from_row : 0;
-        if (rows_left_in_mark == 0)
-            break;
+        size_t mark_begin_row = index_granularity.getMarkStartingRow(from_mark);
+        size_t mark_end_row = mark_begin_row + index_granularity.getMarkRows(from_mark);
 
+        if (from_row < mark_begin_row || from_row >= mark_end_row)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Text index reader position is out of sync: row {} is outside of mark {} with rows [{}, {})",
+                from_row, from_mark, mark_begin_row, mark_end_row);
+        }
+
+        size_t rows_left_in_mark = mark_end_row - from_row;
         size_t rows_to_read = std::min(rows_left_in_mark, max_rows_to_read - read_rows);
 
         /// In lazy mode skip per-mark Roaring Bitmap materialization — cursors decode on demand.
