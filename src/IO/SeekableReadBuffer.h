@@ -137,8 +137,4 @@ std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBu
 /// Updates *out_bytes_copied after each call to the callback, as well as at the end.
 void copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled = nullptr);
 
-/// Reads exactly `size` bytes at `offset`. Uses readBigAt when allowed, otherwise seek and readStrict.
-/// Pass `use_read_at` when supportsReadAt() was already queried for this buffer, to avoid calling it on every read.
-void readBytesAtOffset(SeekableReadBuffer & buf, char * to, size_t size, size_t offset, std::optional<bool> use_read_at = std::nullopt);
-
 }

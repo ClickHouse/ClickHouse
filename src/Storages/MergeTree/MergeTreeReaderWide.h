@@ -141,27 +141,20 @@ private:
     clockid_t clock_type;
     bool read_without_marks = false;
 
-    /// Only the requested rows get data; the other rows are returned as empty arrays and filtered out by the reader chain.
-    struct PointReadColumn
+    /// Lazy materialization of a `Quantized` column: the writer stores every vector as its own compressed block
+    /// (see `MergeTreeDataPartWriterWide`), so only the requested rows are read, each with one positional read.
+    struct PointRead
     {
         std::unique_ptr<ReadBufferFromFileBase> buf;
-        bool use_read_at = false;
-        size_t row_bytes = 0;
-        size_t elements_per_row = 0;
-        SerializationPtr nested_serialization;
-        PaddedPODArray<char> on_disk_block;
-        PaddedPODArray<char> decompressed;
+        SerializationPtr element_serialization;
+        size_t dimensions = 0;
+        std::string block;
     };
+    void readPointRows(PointRead & point_read, IColumn & column, size_t from_row, size_t num_rows);
 
-    std::unique_ptr<PointReadColumn> tryCreatePointReadColumn(size_t pos) const;
-    void readPointRows(PointReadColumn & point_read, IColumn & column, size_t from_row, size_t num_rows);
-
-    const PaddedPODArray<UInt64> * lazy_rows = nullptr;
-    /// Indexed by column position; nullptr means the column is read in the usual way.
-    std::vector<std::unique_ptr<PointReadColumn>> point_read_columns;
-    size_t point_read_current_row = 0;
-
-    bool isPointReadColumn(size_t pos) const { return pos < point_read_columns.size() && point_read_columns[pos]; }
+    const PaddedPODArray<UInt64> * lazy_rows = nullptr; /// Sorted part offsets requested by lazy materialization.
+    std::unordered_map<size_t, PointRead> point_reads;  /// Column position -> point read.
+    size_t point_read_row = 0;                          /// Part offset of the next row `readRows` returns.
 };
 
 }
