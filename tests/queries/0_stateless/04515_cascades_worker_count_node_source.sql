@@ -1,5 +1,3 @@
--- Tags: no-darwin
--- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- `distributed_plan_workers_num` sets the node count Cascades plans for under
 -- `distributed_plan_execute_locally`: one worker stays single-node, four distribute

@@ -54,6 +54,7 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/NetException.h>
+#include <Common/checkSSLReturnCode.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/quoteString.h>
 #include <Common/SettingSource.h>
@@ -418,7 +419,9 @@ void TCPHandler::runImpl()
         /// client observes 'Connection reset by peer' without any explanation. Send the
         /// exception into the socket directly instead.
         tryLogCurrentException(log, "Cannot initialize connection");
-        trySendExceptionWithoutConnectionBuffers(e);
+        /// Writing to a timed-out TLS handshake would start it over for another window.
+        if (e.code() != ErrorCodes::SOCKET_TIMEOUT || !secureHandshakePending(socket().impl()))
+            trySendExceptionWithoutConnectionBuffers(e);
         return;
     }
 
