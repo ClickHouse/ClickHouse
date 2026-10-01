@@ -10,8 +10,6 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSystemQuery.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 namespace DB
 {
@@ -191,14 +189,11 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserExplainQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementExplain(StatementFactory & factory)
-{
-    factory.registerStatement("EXPLAIN",
+    documentation["EXPLAIN"] =
     {
         .description = R"DOCS_MD(
 Shows the execution plan of a statement.
@@ -1459,7 +1454,9 @@ EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABL
     [FORMAT ...]
 )",
         .related = {"SELECT", "HYPOTHETICAL INDEX", "ALTER TABLE ... STATISTICS"},
-    });
+    };
+
+    return documentation;
 }
 
 }
