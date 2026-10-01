@@ -85,7 +85,7 @@ size_t removeUnusedColumns(QueryPlan::Node & root, RemoveUnusedColumnsMode mode)
         return 0;
 
     size_t changed_depth = 0;
-    while (true)
+    while (!stack.empty())
     {
         /// A reference stays valid while frames are pushed above it: the stack is a `std::deque`.
         auto & frame = stack.top();
@@ -125,10 +125,8 @@ size_t removeUnusedColumns(QueryPlan::Node & root, RemoveUnusedColumnsMode mode)
             changed_depth = std::max(changed_depth, frame.depth + 1);
 
         stack.pop();
-        if (stack.empty())
-            break;
-
-        stack.top().children.push_back(std::move(pruned));
+        if (!stack.empty())
+            stack.top().children.push_back(std::move(pruned));
     }
 
     return changed_depth;
