@@ -106,6 +106,9 @@ ${CLICKHOUSE_CLIENT} -m --query "
 "
 as_user "CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(${CLICKHOUSE_DATABASE}.d)"
 status
+# An unqualified name is resolved against the current database, like when the table is read.
+as_user "CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(d)"
+status
 
 echo "--- no grants, naiveBayesClassifier"
 status nb
@@ -157,6 +160,11 @@ status
 # Creating a Dictionary table only validates the columns against the definition, it does not load the dictionary.
 unload
 as_user "CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(${CLICKHOUSE_DATABASE}.d)"
+status
+as_user "CREATE TABLE w_unqualified_by_user (id UInt64, value String) ENGINE = Dictionary(d)"
+status
+# Reading the table resolves the same dictionary.
+query "SELECT * FROM w_unqualified_by_user"
 status
 
 echo "--- dictGet, naiveBayesClassifier"

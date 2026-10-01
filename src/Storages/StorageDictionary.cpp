@@ -407,10 +407,11 @@ void registerStorageDictionary(StorageFactory & factory)
         {
             /// Validate the columns against the dictionary definition without loading the dictionary, because loading
             /// contacts the dictionary source. The user creating the table must be allowed to read the dictionary,
-            /// otherwise the definition must not be revealed.
-            const auto & external_loader = args.getContext()->getExternalDictionariesLoader();
-            StorageDictionary::checkDictionaryAccess(external_loader.getDictionaryID(dictionary_name, args.getContext()), local_context);
-            auto dictionary_structure = external_loader.getDictionaryStructure(dictionary_name, args.getContext());
+            /// otherwise the definition must not be revealed. The name is resolved with the query context,
+            /// like when the table is read.
+            const auto & external_loader = local_context->getExternalDictionariesLoader();
+            StorageDictionary::checkDictionaryAccess(external_loader.getDictionaryID(dictionary_name, local_context), local_context);
+            auto dictionary_structure = external_loader.getDictionaryStructure(dictionary_name, local_context);
             checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
         }
 

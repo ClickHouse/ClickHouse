@@ -59,6 +59,9 @@ NOT_LOADED
 CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(db.d)
 ACCESS_DENIED
 NOT_LOADED
+CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(d)
+ACCESS_DENIED
+NOT_LOADED
 --- no grants, naiveBayesClassifier
 NOT_LOADED
 SELECT naiveBayesClassifier('nb', 'good')
@@ -120,6 +123,11 @@ NOT_LOADED
 CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(db.d)
 
 NOT_LOADED
+CREATE TABLE w_unqualified_by_user (id UInt64, value String) ENGINE = Dictionary(d)
+
+NOT_LOADED
+1	a
+LOADED
 --- dictGet, naiveBayesClassifier
 SELECT naiveBayesClassifier('nb', 'good')
 0
