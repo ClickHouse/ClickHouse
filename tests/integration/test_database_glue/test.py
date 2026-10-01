@@ -32,7 +32,6 @@ from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
 
 import boto3
-import botocore.config
 
 
 def run_s3_mocks(started_cluster, args=[]):
@@ -241,7 +240,7 @@ CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = Ice
 {settings_suffix}
 """,
         settings={
-            "allow_database_glue_catalog": 1,
+            "allow_experimental_database_glue_catalog": 1,
             "write_full_path_in_iceberg_metadata": 1,
         },
     )
@@ -460,7 +459,7 @@ SETTINGS {",".join((k + "=" + repr(v) for k, v in db_settings.items()))}""",
         f"""CREATE TABLE {db_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')""",
         query_id=qid_table,
         settings={
-            "allow_database_glue_catalog": 1,
+            "allow_experimental_database_glue_catalog": 1,
             "write_full_path_in_iceberg_metadata": 1,
         },
     )
@@ -1371,102 +1370,9 @@ def test_sts_smoke(started_cluster):
     result = node.query(f"SELECT sum(value) FROM {db_name_success}.`{root_namespace}.{table_name}`")
     assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
 
-    # `aws_role_session_name` can act as a shared secret (the trust policy can pin it, which is what the
-    # STS mock does), so every display surface hides it while `aws_role_arn` stays visible. This database
-    # carries no other secret, so `[HIDDEN]` can only come from the session name.
-    show_create = node.query(f"SHOW CREATE DATABASE {db_name_success}")
-    assert "miniorole" not in show_create
-    assert "arn::role" in show_create
-    assert "[HIDDEN]" in show_create
-
-    engine_full = node.query(
-        f"SELECT engine_full FROM system.databases WHERE name = '{db_name_success}'"
-    )
-    assert "miniorole" not in engine_full
-    assert "[HIDDEN]" in engine_full
-
-    node.query("SYSTEM FLUSH LOGS system.query_log")
-    logged_create = node.query(
-        f"SELECT arrayStringConcat(groupArray(query), '\\n') FROM system.query_log "
-        f"WHERE query_kind = 'Create' AND type = 'QueryFinish' AND query LIKE '%{db_name_success}%'"
-    )
-    assert "[HIDDEN]" in logged_create
-    assert "miniorole" not in logged_create
-
     # Cleanup
     node.query(f"DROP DATABASE IF EXISTS {db_name_fail} SYNC")
     node.query(f"DROP DATABASE IF EXISTS {db_name_success} SYNC")
-
-
-def test_sts_backup_restore_keeps_role_session_name(started_cluster):
-    """A backup archives the database definition with the real `aws_role_session_name`, although every
-    display surface shows `[HIDDEN]`. The STS mock grants the role only for the session name `miniorole`,
-    so the restored catalog can read its table only if the archived value was the real one."""
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_sts_backup_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(root_namespace)
-
-    schema = Schema(
-        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
-        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
-    )
-    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
-    table.append(
-        pa.Table.from_pylist(
-            [
-                {"id": "row1", "value": 10.0},
-                {"id": "row2", "value": 20.0},
-                {"id": "row3", "value": 30.0},
-            ]
-        )
-    )
-
-    db_name = f"db_backup_{test_ref.replace('-', '_')}"
-    restored_db_name = f"{db_name}_restored"
-    create_clickhouse_glue_database(
-        started_cluster,
-        node,
-        db_name,
-        additional_settings={
-            "aws_role_arn": "arn::role",
-            "aws_role_session_name": "miniorole",
-        },
-        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
-        with_credentials=False,
-    )
-    result = node.query(f"SELECT sum(value) FROM {db_name}.`{root_namespace}.{table_name}`")
-    assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
-
-    # A DataLakeCatalog database owns no tables, so the backup holds just the database definition. The
-    # default server config allows File backups under its `backups` directory.
-    backup = f"File('{db_name}')"
-    node.query(f"BACKUP DATABASE {db_name} TO {backup}")
-    node.query(f"DROP DATABASE IF EXISTS {restored_db_name} SYNC")
-    node.query(
-        f"RESTORE DATABASE {db_name} AS {restored_db_name} FROM {backup}",
-        settings={
-            "allow_database_glue_catalog": 1,
-            "s3_allow_server_credentials_in_user_queries": 1,
-        },
-    )
-
-    # Readable only with the real session name: the STS mock rejects any other value.
-    result = node.query(f"SELECT sum(value) FROM {restored_db_name}.`{root_namespace}.{table_name}`")
-    assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
-
-    # The archived value came back, and the display of the restored definition is masked like any other.
-    show_create = node.query(f"SHOW CREATE DATABASE {restored_db_name}")
-    assert "miniorole" not in show_create
-    assert "arn::role" in show_create
-    assert "[HIDDEN]" in show_create
-
-    node.query(f"DROP DATABASE IF EXISTS {restored_db_name} SYNC")
-    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
 def test_sts_smoke_no_opt_in(started_cluster):
@@ -1922,104 +1828,3 @@ def test_exists_table_answers_only_from_not_found(started_cluster):
         ), error
     finally:
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
-
-
-def test_catalog_schema_with_empty_column_name_is_rejected(started_cluster):
-    """
-    A Glue catalog column whose `Name` is empty must be refused where the table structure is
-    built. Related to https://github.com/ClickHouse/ClickHouse/issues/114350.
-
-    A read alone does not distinguish the behaviours: the empty name also reaches
-    `Block::insert`, which raises the same AMBIGUOUS_COLUMN_NAME. SHOW CREATE TABLE is the
-    arm that does - it answers with an empty-named column unless the schema is validated.
-
-    boto3 refuses a blank `Column.Name` client-side (the Glue service model declares
-    `min: 1`), so the malformed state is written through a client with parameter validation
-    disabled.
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_empty_column_name_{uuid.uuid4().hex[:8]}"
-    table_name = f"{test_ref}_table"
-    namespace = f"{test_ref}_namespace"
-    # Own database: this rewrites Glue metadata, so it must not disturb other tests.
-    db_name = f"db_{test_ref}"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-
-    schema = Schema(
-        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
-        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
-    )
-    table = create_table(
-        catalog, namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name
-    )
-    table.append(pa.Table.from_pylist([{"id": "row1", "value": 1.5}]))
-
-    glue_client = boto3.client(
-        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
-    )
-    # Same endpoint, validation off, used only for the malformed write below.
-    raw_glue_client = boto3.client(
-        "glue",
-        region_name="us-east-1",
-        endpoint_url=get_glue_local_url(started_cluster),
-        config=botocore.config.Config(parameter_validation=False),
-    )
-
-    create_clickhouse_glue_database(started_cluster, node, db_name)
-    qualified = f"{db_name}.`{namespace}.{table_name}`"
-
-    # Control: the table reads before the catalog is corrupted. Without this, a later
-    # failure could equally be a broken fixture rather than the guard firing.
-    assert node.query(f"SELECT id, value FROM {qualified}") == "row1\t1.5\n"
-
-    table_info = glue_client.get_table(DatabaseName=namespace, Name=table_name)["Table"]
-    columns = table_info["StorageDescriptor"]["Columns"]
-    assert [column["Name"] for column in columns] == ["id", "value"], columns
-
-    storage_descriptor = dict(table_info["StorageDescriptor"])
-    blanked = [dict(column) for column in columns]
-    blanked[1]["Name"] = ""
-    storage_descriptor["Columns"] = blanked
-    raw_glue_client.update_table(
-        DatabaseName=namespace,
-        TableInput={
-            "Name": table_name,
-            "StorageDescriptor": storage_descriptor,
-            "Parameters": table_info.get("Parameters", {}),
-            "TableType": table_info.get("TableType", "EXTERNAL_TABLE"),
-        },
-    )
-    # The mock must actually serve the empty name, otherwise the assertions below pass
-    # without the server ever seeing malformed input.
-    served = glue_client.get_table(DatabaseName=namespace, Name=table_name)["Table"]
-    assert [c["Name"] for c in served["StorageDescriptor"]["Columns"]] == ["id", ""], served
-
-    # Re-attach so the corrupted catalog state is fetched rather than served from cache.
-    create_clickhouse_glue_database(started_cluster, node, db_name)
-
-    # The discriminating arm: the structure must not be handed out at all. Without the
-    # check this answers with an empty-named column instead of failing.
-    show_create_error = node.query_and_get_error(f"SHOW CREATE TABLE {qualified}")
-    assert "AMBIGUOUS_COLUMN_NAME" in show_create_error, show_create_error
-    assert (
-        "Column name in data lake catalog table schema cannot be empty" in show_create_error
-    ), show_create_error
-    assert "position 1" in show_create_error, show_create_error
-
-    for statement in (f"SELECT * FROM {qualified}", f"SELECT id FROM {qualified}", f"DESCRIBE TABLE {qualified}"):
-        error = node.query_and_get_error(statement)
-        assert "AMBIGUOUS_COLUMN_NAME" in error, (statement, error)
-        assert (
-            "Column name in data lake catalog table schema cannot be empty" in error
-        ), (statement, error)
-
-    # Repeat: rejecting must be stable, not a one-shot that leaves the schema half built.
-    error_again = node.query_and_get_error(f"SELECT * FROM {qualified}")
-    assert "AMBIGUOUS_COLUMN_NAME" in error_again, error_again
-
-    assert node.query("SELECT 1") == "1\n"
-
-    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")

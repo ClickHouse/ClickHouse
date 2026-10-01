@@ -7,7 +7,7 @@ doc_type: 'guide'
 keywords: ['clickstack', 'observability', 'logs', 'performance', 'optimization']
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 import OtelLogsSchema from '/snippets/clickstack/_schema_otel_logs.mdx';
 import OtelTracesSchema from '/snippets/clickstack/_schema_otel_traces.mdx';
@@ -68,7 +68,7 @@ You're recommended to review the following ClickHouse documentation before under
 - [How ClickHouse stores data: parts and granules](/guides/clickhouse/data-modelling/sparse-primary-indexes) - More advanced guide on how data is structured and queried in ClickHouse, covering granules and primary keys in detail.
 - [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree)- Advanced MergeTree reference guide useful for commands and for internal specifics.
 
-All optimizations described below can be applied directly to the underlying tables using standard ClickHouse SQL, either through the [ClickHouse Cloud SQL console](/integrations/connectors/sql-clients/sql-console) or via the [ClickHouse client](/concepts/features/interfaces/client).
+All optimizations described below can be applied directly to the underlying tables using standard ClickHouse SQL, either through the [ClickHouse Cloud SQL console](/integrations/connectors/sql-clients/sql-console) or via the [ClickHouse client](/concepts/features/interfaces/cli).
 
 ## Optimization 1. Materialize frequently queried attributes {#materialize-frequently-queried-attributes}
 
@@ -557,38 +557,15 @@ reference `LogAttributes['key']` see the speedup without any change.
 The query rewrite requires a ClickHouse version that supports direct
 token-level pruning on text-indexed array columns. ClickStack detects the
 connected server version (`SELECT version()`, cached per connection) and only
-emits the rewritten form when the server meets the corresponding threshold
-below. Older versions fall back to the original Map subscript form
-automatically.
+emits the rewritten form when the server is at or above the threshold. Older
+servers fall back to the original Map subscript form automatically.
 
-<Tabs>
-<Tab title="ClickHouse Cloud">
-
-ClickHouse Cloud builds and open-source releases use independent version lines.
-Use the Cloud minimum versions below.
-
-| ClickHouse branch | Minimum Cloud version |
+| ClickHouse branch | Minimum version |
 |---|---|
-| 26.2 | `26.2.1.307` |
-| 26.3 | `26.3.0.0` |
-| 26.4 | `26.4.1.1740` |
+| 26.2 | 26.2.19.43 |
+| 26.3 | 26.3.12.3 |
+| 26.4 | 26.4.3.37 |
 | 26.5+ | All versions |
-
-The `26.3.0.0` minimum is the floor of the branch, so all `26.3` builds are
-supported.
-
-</Tab>
-<Tab title="Open source">
-
-| ClickHouse branch | Minimum open-source version |
-|---|---|
-| 26.2 | `26.2.19.43` |
-| 26.3 | `26.3.12.3` |
-| 26.4 | `26.4.3.37` |
-| 26.5+ | All versions |
-
-</Tab>
-</Tabs>
 
 <Info>
 **Why ALIAS, not MATERIALIZED**

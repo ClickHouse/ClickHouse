@@ -44,12 +44,8 @@ namespace DB
 
         /// The list of hive partition columns. It shall be read from the path regardless if it is present in the file
         NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-        /// A row-level filter (row policy) is not stored here and does not change the headers. The source
-        /// applies it via `FormatFilterInfo` and keeps its input columns, because:
-        /// - `DEFAULT` expressions are computed after the format applied the filter and can depend on these columns;
-        /// - the output header of the reading step must not change when `optimizePrewhere` adds PREWHERE,
-        ///   because the steps above were built for the initial header.
         PrewhereInfoPtr prewhere_info;
+        FilterDAGInfoPtr row_level_filter;
     };
 
     /// Inputs reachable by storage-level pushdown consumers. Pass to splitFilterDagForAllowedInputs to drop IN-subqueries which can't be used.
@@ -99,18 +95,7 @@ namespace DB
     /// Returns columns_to_read from file.
     Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns);
 
-    ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info);
-
-    /// Lazy materialization (see optimizeLazyMaterialization2): split `info` into the info for the
-    /// main reading pass and the info for the lazy reading pass. The physical columns that the
-    /// format reads and nothing needs before the LIMIT (i.e. that are not in `required_names`, not
-    /// inputs of the PREWHERE, not virtual or hive partition columns, and not
-    /// pinned by a `DEFAULT` expression dependency) are deferred to the lazy pass. On success,
-    /// `info` is reduced to the remaining columns with a `__global_row_index` UInt64 column
-    /// appended to its source header, and the returned info describes the deferred columns alone
-    /// (no virtual columns, no filters). Returns std::nullopt (leaving `info` untouched) if there
-    /// is nothing to defer.
-    std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromFormatInfo & info, const NameSet & required_names);
+    ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info);
 
     /// Returns the serialization hints from the insertion table (if it's set in the Context).
     SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);

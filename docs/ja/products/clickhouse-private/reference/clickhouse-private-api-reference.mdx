@@ -1,0 +1,380 @@
+---
+noindex: true
+title: "ClickHouse Private API リファレンス"
+sidebarTitle: "API リファレンス"
+description: "ClickHouse Private API は、ClickHouse Private クラスターを管理するためのスタンドアロンのオプション コンポーネントです。"
+---
+
+ClickHouse Private API は、ClickHouse Private クラスターを管理するためのスタンドアロンのオプション コンポーネントです。バックアップ、垂直スケーリング、パスワードのリセット、クラスターの状態監視のための REST エンドポイントを提供します。
+
+***
+
+<div id="configuration-options">
+  ## 設定オプション
+</div>
+
+API は Helm チャート (`helm/airgap-management`) 経由でインストールされます。
+
+| Helm 値                       | 型       | デフォルト        | 説明                                  |
+| ---------------------------- | ------- | ------------ | ----------------------------------- |
+| `image.repository`           | string  | --           | Private API イメージ用の ECR/GAR リポジトリ    |
+| `image.tag`                  | string  | --           | デプロイするイメージタグ                        |
+| `api.port`                   | integer | `8080`       | API が待ち受けるポート                       |
+| `api.basicAuth.enabled`      | boolean | `false`      | HTTP Basic認証を有効にする                  |
+| `api.basicAuth.username`     | string  | `"admin"`    | Basic認証用のユーザー名                      |
+| `api.basicAuth.password`     | string  | `"password"` | Basic認証用のパスワード                      |
+| `serviceAccount.enabled`     | boolean | `true`       | API 用のサービスアカウントを作成する                |
+| `serviceAccount.annotations` | map     | `{}`         | サービスアカウントの annotations (例: IRSA 用)  |
+
+***
+
+<div id="authentication">
+  ## 認証
+</div>
+
+デフォルトでは、Basic認証は無効になっています。本番環境では、Helm で有効にしてください。
+
+```text
+--set-json='api.basicAuth.enabled=true'
+--set-json='api.basicAuth.username="admin"'
+--set-json='api.basicAuth.password="YOUR_SECURE_PASSWORD"'
+```
+
+有効な場合、リクエストに認証情報を含めます：
+
+```bash
+curl -u admin:YOUR_SECURE_PASSWORD http://localhost:8080/api/v1/...
+```
+
+***
+
+<div id="resource-quantity-format">
+  ## リソース量の指定形式
+</div>
+
+API は、CPU フィールドとメモリ フィールドで Kubernetes のリソース量の指定形式を受け付けます。
+
+<div id="cpu-quantities">
+  ### CPU の数量
+</div>
+
+| 形式   | 例        | 意味         |
+| ---- | -------- | ---------- |
+| 整数   | `"4"`    | 4 CPU コア   |
+| 小数   | `"2.5"`  | 2.5 CPU コア |
+| ミリコア | `"500m"` | 0.5 CPU コア |
+
+<div id="memory-quantities">
+  ### メモリ容量
+</div>
+
+| フォーマット     | 例          | 意味         |
+| ---------- | ---------- | ---------- |
+| バイナリ (推奨)  | `"16Gi"`   | 16ギビバイト    |
+| バイナリ       | `"4096Mi"` | 4096メビバイト  |
+| 10進        | `"16G"`    | 16ギガバイト    |
+| 10進        | `"16000M"` | 16000メガバイト |
+
+メモリには、Kubernetes の慣例に合わせて、バイナリ単位 (Ki、Mi、Gi) を使用することを推奨します。
+
+***
+
+<div id="endpoints">
+  ## エンドポイント
+</div>
+
+<div id="health-check">
+  ### ヘルスチェック
+</div>
+
+<div id="get-readiness">
+  #### `GET /readiness`
+</div>
+
+API のヘルスおよび readiness のステータスを返します。
+
+**レスポンス:** `200 OK`
+
+***
+
+<div id="backups">
+  ### バックアップ
+</div>
+
+<div id="create-backup">
+  #### バックアップを作成
+</div>
+
+`POST /api/v1/backups?instance_id={instance_id}`
+
+指定した ClickHouse クラスターの新しいバックアップを作成します。
+
+**クエリパラメータ:**
+
+| パラメータ         | 型      | 必須 | 説明                                      |
+| ------------- | ------ | -- | --------------------------------------- |
+| `instance_id` | string | はい | ClickHouse クラスター名 (例: `default-xx-01`)  |
+
+**リクエストボディ:**
+
+```json
+{
+    "incremental": false,
+    "baseBackupUuid": "uuid-of-previous-backup",
+    "databases": ["mydb"],
+    "tables": ["mydb2.table"]
+}
+```
+
+| フィールド            | 型                | 必須  | 説明                                                                       |
+| ---------------- | ---------------- | --- | ------------------------------------------------------------------------ |
+| `incremental`    | boolean          | いいえ | 完全バックアップの場合は `false`、インクリメンタルバックアップの場合は `true` です。デフォルトは `false` です。     |
+| `baseBackupUuid` | string           | いいえ | 直前のバックアップの UUID (`incremental` が `true` の場合は必須)                          |
+| `databases`      | array of strings | いいえ | バックアップ対象の特定のデータベース。すべてのデータベースを対象にする場合は省略します。                             |
+| `tables`         | array of strings | いいえ | バックアップ対象の特定のテーブル。完全修飾名 (`db.table`) を使用する必要があります。すべてのテーブルを対象にする場合は省略します。 |
+
+**レスポンス:** `201 Created` -- UUID を含む作成済みのバックアップオブジェクトを返します。
+
+**動作:** ClickHouse クラスターのネームスペースに `Backup` カスタムリソースを作成します。オペレーターは新しい `Backup` オブジェクトを監視し、関連するバックアップ SQL ステートメントを実行して、システムテーブル経由でステータスを監視します。
+
+***
+
+<div id="get-backup">
+  #### バックアップの取得
+</div>
+
+`GET /api/v1/backups/{backup_id}?instance_id={instance_id}`
+
+特定のバックアップのステータスと詳細を返します。
+
+**パスパラメータ:**
+
+| Parameter   | Type   | Required | Description  |
+| ----------- | ------ | -------- | ------------ |
+| `backup_id` | string | Yes      | バックアップの UUID |
+
+**クエリパラメータ:**
+
+| Parameter     | Type   | Required | Description       |
+| ------------- | ------ | -------- | ----------------- |
+| `instance_id` | string | Yes      | ClickHouse クラスター名 |
+
+**レスポンス:** `200 OK` -- バックアップオブジェクトを返します。`status.state` フィールドは完了状態を示します (例: 完了すると `Ready`) 。
+
+***
+
+<div id="list-backups">
+  #### バックアップ一覧
+</div>
+
+`GET /api/v1/backups?instance_id={instance_id}`
+
+指定したクラスターのすべてのバックアップを一覧表示します。
+
+**クエリパラメータ:**
+
+| Parameter           | Type    | Required | Description                            |
+| ------------------- | ------- | -------- | -------------------------------------- |
+| `instance_id`       | string  | Yes      | ClickHouse クラスター名                      |
+| `status__state__eq` | string  | No       | バックアップの状態で絞り込み (例: `Ready`)            |
+| `sort`              | string  | No       | ソート対象のフィールド (例: `status__finishTime`)  |
+| `limit`             | integer | No       | 返される結果の最大件数                            |
+
+**レスポンス:** `200 OK` -- バックアップオブジェクトの配列を返します。
+
+**例:** 直近で成功したバックアップの UUID を取得します:
+
+```text
+GET /api/v1/backups?instance_id=default-xx-01&status__state__eq=Ready&sort=status__finishTime&limit=1
+```
+
+***
+
+<div id="restore-backup">
+  #### バックアップの復元
+</div>
+
+`POST /api/v1/backups/{backup_id}/restore?instance_id={instance_id}&target_instance_id={target_instance_id}`
+
+バックアップを対象の ClickHouse クラスターに復元します。バックアップに対して `RESTORE ALL` を実行します。
+
+**パスパラメータ:**
+
+| パラメータ       | 型      | 必須 | 説明               |
+| ----------- | ------ | -- | ---------------- |
+| `backup_id` | string | はい | 復元するバックアップの UUID |
+
+**クエリパラメータ:**
+
+| パラメータ                | 型      | 必須 | 説明                                  |
+| -------------------- | ------ | -- | ----------------------------------- |
+| `instance_id`        | string | はい | ソース ClickHouse クラスター名 (バックアップの作成元)  |
+| `target_instance_id` | string | はい | 対象 ClickHouse クラスター名 (復元先)          |
+
+**制約:** - 安全上の理由により、同一インスタンスへの復元 (`instance_id == target_instance_id`) は **許可されていません**。 - 元のクラスターに負荷をかけすぎないよう、新しいクラスターに復元することを推奨します。
+
+**レスポンス:** `202 Accepted` -- 復元操作 ID を返します。
+
+***
+
+<div id="vertical-scaling">
+  ### 垂直スケーリング
+</div>
+
+<div id="scale-cluster">
+  #### クラスターのスケール
+</div>
+
+`POST /api/v1/instances/{instance_id}/scale`
+
+CPU とメモリのリソースを調整して、ClickHouse クラスターを垂直スケールします。
+
+**パスパラメータ:**
+
+| Parameter     | Type   | Required | Description       |
+| ------------- | ------ | -------- | ----------------- |
+| `instance_id` | string | Yes      | ClickHouse クラスター名 |
+
+**リクエストボディ:**
+
+```json
+{
+  "vertical": {
+    "resources": {
+      "cpu": "4",
+      "memory": "16Gi"
+    }
+  }
+}
+```
+
+| フィールド                       | 型      | 必須   | 説明                                                |
+| --------------------------- | ------ | ---- | ------------------------------------------------- |
+| `vertical.resources.cpu`    | string | いいえ* | Kubernetes の リソース量の指定形式で指定する CPU の割り当て量 |
+| `vertical.resources.memory` | string | いいえ* | Kubernetes の リソース量の指定形式で指定するメモリの割り当て量   |
+
+*`cpu` または `memory` の少なくとも一方を指定する必要があります。
+
+**CPU とメモリの比率:** API は **1:4 の比率** (CPU 1 コアあたりメモリ 4 GiB) を 5% の許容幅付きで適用します。いずれか一方のリソースのみを指定した場合、もう一方はこの比率を維持するよう自動的に算出されます。
+
+**動作:** `ClickhouseCluster` カスタムリソースの `ServerPodPolicy` を更新します。オペレーターは、新しいリソース割り当てを反映するために StatefulSet の **ローリング再起動** をトリガーします。
+
+**重要:** ClickHouse Cloud とは異なり、ClickHouse Private では **Make Before Break (MBB) スケーリングは使用されません**。垂直スケーリングを行うとローリング再起動が発生し、一時的にサービスが中断する可能性があります。
+
+**レスポンス:** `201 Created`
+
+***
+
+<div id="password-reset">
+  ### パスワードのリセット
+</div>
+
+<div id="reset-user-password">
+  #### ユーザーパスワードのリセット
+</div>
+
+`POST /api/v1/instances/{instance_id}/reset-user-password`
+
+ClickHouse クラスターのユーザーのパスワードをリセットします。
+
+**パスパラメータ:**
+
+| パラメーター        | 型      | 必須 | 説明                |
+| ------------- | ------ | -- | ----------------- |
+| `instance_id` | string | はい | ClickHouse クラスター名 |
+
+**リクエストボディ:**
+
+```json
+{
+  "user_hashed_password": "<base64-encoded-sha256-hash>",
+  "hashing_function": "sha256",
+  "username": "default"
+}
+```
+
+| フィールド                  | 型      | 必須  | デフォルト       | 説明                         |
+| ---------------------- | ------ | --- | ----------- | -------------------------- |
+| `user_hashed_password` | string | はい  | --          | 新しいパスワードのBase64エンコード済みハッシュ |
+| `hashing_function`     | string | いいえ | `"sha256"`  | 使用するハッシュアルゴリズム             |
+| `username`             | string | いいえ | `"default"` | パスワードをリセットする対象のユーザー名       |
+
+**パスワードハッシュの生成:**
+
+```ini
+PASSWORD='My super secret p@$$w0rd'
+HASHED_PASSWORD=$(echo -n "$PASSWORD" | shasum -a 256 | awk '{printf $1}' | base64)
+```
+
+**制約:** - Hydra の子インスタンスでは、パスワードのリセットは**できません**。代わりに親インスタンスでリセットしてください。
+
+**応答:**
+
+```json
+{
+  "message": "User password reset successfully"
+}
+```
+
+**動作:** `ClickhouseCluster` カスタムリソース内の `CustomerAccount` フィールドを更新します。オペレーターがこの認証情報の変更をクラスターに適用します。パスワードは、オペレーターが変更を処理した後に有効になります。
+
+***
+
+<div id="cluster-status">
+  ### クラスターのステータス
+</div>
+
+<div id="get-cluster-status">
+  #### クラスターのステータスを取得
+</div>
+
+`GET /api/v1/instances/{instance_id}/status`
+
+指定したClickHouseクラスターの現在のステータスを返します。
+
+**パスパラメータ:**
+
+| パラメータ         | 型      | 必須 | 説明               |
+| ------------- | ------ | -- | ---------------- |
+| `instance_id` | string | はい | ClickHouseクラスター名 |
+
+**レスポンス:**
+
+```json
+{
+  "state": "Running",
+  "previousState": "Provisioning",
+  "message": "Cluster is healthy",
+  "stateProvidedBy": "operator"
+}
+```
+
+| フィールド             | 型      | 説明                    |
+| ----------------- | ------ | --------------------- |
+| `state`           | string | ClickHouseクラスターの現在の状態 |
+| `previousState`   | string | クラスターが遷移前にあった状態       |
+| `message`         | string | クラスターが状態遷移した理由の詳細     |
+| `stateProvidedBy` | string | 状態遷移の原因となったプロセス       |
+
+**ユースケース:** - 垂直スケーリング操作の完了を確認する。 - パスワードのリセットがクラスター全体に適用されたことを確認する。 - クラスターのProvisioningの進行状況を監視する。
+
+***
+
+<div id="endpoint-summary">
+  ## エンドポイントの概要
+</div>
+
+| メソッド   | パス                                                                             | 説明                 |
+| ------ | ------------------------------------------------------------------------------ | ------------------ |
+| `GET`  | `/readiness`                                                                   | ヘルス／readiness チェック |
+| `GET`  | `/liveness`                                                                    | liveness チェック      |
+| `POST` | `/api/v1/backups?instance_id={id}`                                             | バックアップを作成          |
+| `GET`  | `/api/v1/backups/{backup_id}?instance_id={id}`                                 | バックアップのステータスを取得    |
+| `GET`  | `/api/v1/backups?instance_id={id}`                                             | バックアップの一覧を取得       |
+| `POST` | `/api/v1/backups/{backup_id}/restore?instance_id={id}&target_instance_id={id}` | バックアップを復元          |
+| `POST` | `/api/v1/instances/{id}/scale`                                                 | クラスターを垂直方向にスケール    |
+| `POST` | `/api/v1/instances/{id}/reset-user-password`                                   | ユーザーのパスワードをリセット    |
+| `GET`  | `/api/v1/instances/{id}/status`                                                | クラスターのステータスを取得     |
+| `GET`  | `/api/v1/license`                                                              | ライセンス情報を取得         |
+| `PUT`  | `/api/v1/license`                                                              | ライセンスを作成または更新      |
+| `POST` | `/api/v1/license/fingerprint`                                                  | ライセンスのフィンガープリントを取得 |

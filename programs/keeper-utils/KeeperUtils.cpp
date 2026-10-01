@@ -285,7 +285,7 @@ void analyzeChangelogs(const std::string & log_path, const std::string & specifi
                 {
                     desc->disk = std::make_shared<DB::DiskLocal>("LogDisk", log_path);
                     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-                    LogEntryStorage entry_storage{LogFileSettings{}, ReadAheadSettings{}, std::make_shared<KeeperContext>(true, settings)};
+                    LogEntryStorage entry_storage{LogFileSettings{}, std::make_shared<KeeperContext>(true, settings)};
                     Changelog::readChangelog(desc, entry_storage);
 
                     auto last_log_index = desc->from_log_index + entry_storage.size();
@@ -359,7 +359,6 @@ void spliceChangelogFile(const std::string & source_path, const std::string & de
         dest_desc->from_log_index = start_index;
         dest_desc->to_log_index = end_index - 1; // end_index is exclusive
         dest_desc->extension = source_desc->extension;
-        dest_desc->is_compressed = source_desc->is_compressed;
         dest_desc->disk = std::make_shared<DiskLocal>("LogDisk", dest_dir_path.string());
 
         // Write the spliced changelog
@@ -640,7 +639,6 @@ auto op_num_enum = std::make_shared<DataTypeEnum16>(DataTypeEnum16::Values
     {"Auth", static_cast<Int16>(Coordination::OpNum::Auth)},
     {"SessionID", static_cast<Int16>(Coordination::OpNum::SessionID)},
     {"FilteredList", static_cast<Int16>(Coordination::OpNum::FilteredList)},
-    {"ListWithOptions", static_cast<Int16>(Coordination::OpNum::ListWithOptions)},
     {"CheckNotExists", static_cast<Int16>(Coordination::OpNum::CheckNotExists)},
     {"CreateIfNotExists", static_cast<Int16>(Coordination::OpNum::CreateIfNotExists)},
     {"RemoveRecursive", static_cast<Int16>(Coordination::OpNum::RemoveRecursive)},
@@ -681,7 +679,6 @@ int dumpStateMachine(
         LogFileSettings{
             .force_sync = true, .compress_logs = (*settings)[DB::CoordinationSetting::compress_logs], .rotate_interval = 10000000},
         FlushSettings(),
-        ReadAheadSettings{},
         keeper_context);
 
     changelog.init(last_committed_index, 10000000000UL); // collect all logs
@@ -744,7 +741,7 @@ int deserializeChangelog(
         desc->disk = std::make_shared<DB::DiskLocal>("LogDisk", fs::path(changelog_path).parent_path().string());
 
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        LogEntryStorage entry_storage{LogFileSettings{}, ReadAheadSettings{}, std::make_shared<KeeperContext>(true, settings)};
+        LogEntryStorage entry_storage{LogFileSettings{}, std::make_shared<KeeperContext>(true, settings)};
         Changelog::readChangelog(desc, entry_storage);
 
         if (start_index == 0)

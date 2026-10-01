@@ -7,7 +7,7 @@ title: 'INFORMATION_SCHEMA'
 doc_type: 'reference'
 ---
 
-`INFORMATION_SCHEMA` (ou `information_schema`) é um banco de dados de sistema que fornece uma [visão independente de SGBD](https://en.wikipedia.org/wiki/Information_schema) (em certa medida) padronizada dos metadados de objetos de banco de dados. As VIEWs em `INFORMATION_SCHEMA` geralmente são inferiores às tabelas de sistema normais, mas ferramentas podem usá-las para obter informações básicas de forma compatível entre diferentes SGBDs. Espera-se que a estrutura e o conteúdo das VIEWs em `INFORMATION_SCHEMA` evoluam de maneira retrocompatível, ou seja, apenas novas funcionalidades sejam adicionadas, sem que as funcionalidades existentes sejam alteradas ou removidas. Em termos de implementação interna, as VIEWs em `INFORMATION_SCHEMA` normalmente mapeiam para tabelas de sistema normais, como [system.columns](/pt-BR/reference/system-tables/columns), [system.databases](/pt-BR/reference/system-tables/databases) e [system.tables](/pt-BR/reference/system-tables/tables).
+`INFORMATION_SCHEMA` (ou `information_schema`) é um banco de dados de sistema que fornece uma [visão independente de SGBD](https://en.wikipedia.org/wiki/Information_schema) (em certa medida) padronizada dos metadados de objetos de banco de dados. As views em `INFORMATION_SCHEMA` geralmente são inferiores às tabelas de sistema normais, mas ferramentas podem usá-las para obter informações básicas de forma compatível entre diferentes SGBDs. Espera-se que a estrutura e o conteúdo das views em `INFORMATION_SCHEMA` evoluam de maneira retrocompatível, ou seja, apenas novas funcionalidades sejam adicionadas, sem que as funcionalidades existentes sejam alteradas ou removidas. Em termos de implementação interna, as views em `INFORMATION_SCHEMA` normalmente mapeiam para tabelas de sistema normais, como [system.columns](/pt-BR/reference/system-tables/columns), [system.databases](/pt-BR/reference/system-tables/databases) e [system.tables](/pt-BR/reference/system-tables/tables).
 
 ```sql
 SHOW TABLES FROM INFORMATION_SCHEMA;
@@ -18,7 +18,6 @@ SHOW TABLES FROM information_schema;
 
 ```text
 ┌─name────────────────────┐
-│ COLLATIONS              │
 │ COLUMNS                 │
 │ KEY_COLUMN_USAGE        │
 │ REFERENTIAL_CONSTRAINTS │
@@ -36,10 +35,9 @@ SHOW TABLES FROM information_schema;
 └─────────────────────────┘
 ```
 
-`INFORMATION_SCHEMA` contém as seguintes VIEWs:
+`INFORMATION_SCHEMA` contém as seguintes views:
 
 * [COLUMNS](#columns)
-* [COLLATIONS](#collations)
 * [KEY&#95;COLUMN&#95;USAGE](#key_column_usage)
 * [REFERENTIAL&#95;CONSTRAINTS](#referential_constraints)
 * [SCHEMATA](#schemata)
@@ -47,7 +45,7 @@ SHOW TABLES FROM information_schema;
 * [TABLES](#tables)
 * [VIEWS](#views)
 
-VIEWs equivalentes sem distinção entre maiúsculas e minúsculas, por exemplo `INFORMATION_SCHEMA.columns`, são fornecidas por motivos de compatibilidade com outros bancos de dados. O mesmo se aplica a todas as colunas dessas VIEWs: são fornecidas variantes tanto em minúsculas (por exemplo, `table_name`) quanto em maiúsculas (`TABLE_NAME`).
+Views equivalentes sem distinção entre maiúsculas e minúsculas, por exemplo `INFORMATION_SCHEMA.columns`, são fornecidas por motivos de compatibilidade com outros bancos de dados. O mesmo se aplica a todas as colunas dessas views: são fornecidas variantes tanto em minúsculas (por exemplo, `table_name`) quanto em maiúsculas (`TABLE_NAME`).
 
 <div id="columns">
   ## COLUMNS
@@ -382,19 +380,3 @@ Colunas:
 </div>
 
 Fornece informações sobre os índices da tabela. Atualmente, retorna um resultado vazio (nenhuma linha), o suficiente apenas para garantir compatibilidade com ferramentas de terceiros, como o Tableau Online.
-
-<div id="collations">
-  ## COLLATIONS
-</div>
-
-Fornece informações sobre as collations disponíveis. Contém as collations de [system.collations](/pt-BR/reference/system-tables/collations), além de duas linhas para compatibilidade com MySQL: `utf8mb4_0900_ai_ci` — a collation anunciada pelo protocolo MySQL durante o handshake, em `SCHEMATA.DEFAULT_COLLATION_NAME` e em `TABLES.TABLE_COLLATION` — e `binary` — a pseudocollation atribuída pelo protocolo MySQL a colunas numéricas e outras colunas que não são do tipo String nos metadados do conjunto de resultados — para que clientes compatíveis com MySQL que consultem as collations anunciadas nesta VIEW possam encontrá-las.
-
-Colunas:
-
-* `collation_name` ([String](/pt-BR/reference/data-types/string)) — O nome da collation.
-* `character_set_name` ([Nullable](/pt-BR/reference/data-types/nullable)([String](/pt-BR/reference/data-types/string))) — O conjunto de caracteres associado (`utf8mb4` para `utf8mb4_0900_ai_ci`, `binary` para `binary` e `NULL` nos demais casos). Fornecido para compatibilidade com MySQL.
-* `id` ([Nullable](/pt-BR/reference/data-types/nullable)([UInt64](/pt-BR/reference/data-types/int-uint))) — O ID da collation do MySQL (`255` para `utf8mb4_0900_ai_ci`, `63` para `binary` e `NULL` nos demais casos). Fornecido para compatibilidade com MySQL.
-* `is_default` ([Nullable](/pt-BR/reference/data-types/nullable)([String](/pt-BR/reference/data-types/string))) — Indica se a collation é a padrão do respectivo conjunto de caracteres (`Yes` para ambas as linhas de compatibilidade com MySQL e `NULL` nos demais casos). Fornecido para compatibilidade com MySQL.
-* `is_compiled` ([Nullable](/pt-BR/reference/data-types/nullable)([String](/pt-BR/reference/data-types/string))) — Indica se a collation está compilada no servidor (`Yes` para ambas as linhas de compatibilidade com MySQL e `NULL` nos demais casos). Fornecido para compatibilidade com MySQL.
-* `sortlen` ([Nullable](/pt-BR/reference/data-types/nullable)([UInt64](/pt-BR/reference/data-types/int-uint))) — O comprimento mínimo de ordenação (`0` para `utf8mb4_0900_ai_ci`, `1` para `binary` e `NULL` nos demais casos). Fornecido para compatibilidade com MySQL.
-* `pad_attribute` ([Nullable](/pt-BR/reference/data-types/nullable)([String](/pt-BR/reference/data-types/string))) — O atributo de preenchimento, `NO PAD` ou `PAD SPACE` (`NO PAD` para ambas as linhas de compatibilidade com MySQL e `NULL` nos demais casos). Fornecido para compatibilidade com MySQL.
