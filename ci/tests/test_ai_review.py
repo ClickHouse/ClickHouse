@@ -113,16 +113,14 @@ def test_validate_comments_skips_a_repeat_of_an_open_thread_on_another_line():
         assert postable == []
 
 
-def test_inline_comments_are_capped_blockers_first():
+def test_every_inline_comment_is_posted_blockers_first():
     with tempfile.TemporaryDirectory() as d:
         entries = []
         for i, line in enumerate([10, 11, 12, 13, 41, 42, 43]):
             entries.append({"path": "src/Foo.cpp", "line": line, "severity": "blocker" if line == 43 else "major",
                             "body_file": _body(d, f"c{i}.md", _TOPICS[i])})
-        with mock.patch.object(publish, "MAX_INLINE_COMMENTS", 3):
-            postable, moved = publish.validate_comments(entries, FILES, [], d)
-        assert [c["line"] for c in postable] == [43, 10, 11]
-        assert len(moved) == 4 and all("more than 3" in r for _, _, r in moved)
+        postable, moved = publish.validate_comments(entries, FILES, [], d)
+        assert [c["line"] for c in postable] == [43, 10, 11, 12, 13, 41, 42] and not moved
 
 
 def test_thread_action_policy():

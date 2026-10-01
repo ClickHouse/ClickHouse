@@ -22,9 +22,8 @@ prompt rules:
   * Nits are never posted inline; they stay in the summary.
   * A new comment that repeats an open thread of ours (same line, or the same
     file and mostly the same words) is dropped as a duplicate.
-  * At most MAX_INLINE_COMMENTS are posted per run, Blockers first; the rest
-    stay in the summary. A review that posts a dozen comments at once is
-    read as noise, and the summary already lists every finding.
+  * Every Blocker and Major that passes these checks is posted inline,
+    Blockers first; they have already passed the evidence bar.
   * Only threads the review created may be resolved; a thread is re-opened only
     when the review resolved it itself, or together with a reply in the same
     run. At most one reply per thread per run.
@@ -39,7 +38,6 @@ from ci.jobs.scripts.ai_review.context import thread_is_ours, is_bot
 
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
-MAX_INLINE_COMMENTS = 6
 # How far from a changed line a comment about unchanged code in the same file
 # may be anchored on it.
 _REANCHOR_DISTANCE = 40
@@ -223,12 +221,8 @@ def validate_comments(entries, files, threads, base_dir, dismissed=None, units=N
             comment["start_line"] = start
             comment["start_side"] = side
         postable.append(comment)
-    # Blockers first, then in the agent's order; the overflow stays in the summary.
+    # Blockers first, then in the agent's order.
     postable.sort(key=lambda c: not c["_blocker"])
-    for c in postable[MAX_INLINE_COMMENTS:]:
-        body, _ = _read_body(c, base_dir)
-        moved.append((c, body, f"more than {MAX_INLINE_COMMENTS} inline comments in one review"))
-    postable = postable[:MAX_INLINE_COMMENTS]
     for c in postable:
         del c["_blocker"]
     return postable, moved
