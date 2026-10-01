@@ -1066,6 +1066,7 @@ public:
     void setClientName(const String & client_name);
     void setClientInterface(ClientInfo::Interface interface);
     void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
+    void setInitiatorVersionIfUnset();
     void setClientConnectionId(uint32_t connection_id);
     void setScriptQueryAndLineNumber(uint32_t query_number, uint32_t line_number);
     void setHTTPClientInfo(const Poco::Net::HTTPRequest & request);
@@ -1226,6 +1227,7 @@ public:
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
+    void clearViewSource();
 
     String getCurrentDatabase() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
@@ -1782,6 +1784,7 @@ public:
 
     std::map<String, std::shared_ptr<Cluster>> getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
+    std::shared_ptr<Cluster> getCluster(const std::string & cluster_name, bool treat_local_port_as_remote) const;
     std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
     void setClustersConfig(const ConfigurationPtr & config, bool enable_discovery = false, const String & config_name = "remote_servers");
     size_t getClustersVersion() const;
@@ -2201,11 +2204,14 @@ public:
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
 
-    ThrottlerPtr getRemoteReadThrottler() const;
-    ThrottlerPtr getRemoteWriteThrottler() const;
+    /// `bandwidth` is the matching `max_*_bandwidth` setting, read by the caller under the settings
+    /// lock and passed in once that lock is released, never while it is held: these getters take
+    /// `mutex` exclusively themselves. Without it the setting is read here under a shared lock.
+    ThrottlerPtr getRemoteReadThrottler(std::optional<UInt64> bandwidth = {}) const;
+    ThrottlerPtr getRemoteWriteThrottler(std::optional<UInt64> bandwidth = {}) const;
 
-    ThrottlerPtr getLocalReadThrottler() const;
-    ThrottlerPtr getLocalWriteThrottler() const;
+    ThrottlerPtr getLocalReadThrottler(std::optional<UInt64> bandwidth = {}) const;
+    ThrottlerPtr getLocalWriteThrottler(std::optional<UInt64> bandwidth = {}) const;
 
     ThrottlerPtr getBackupsThrottler() const;
 
