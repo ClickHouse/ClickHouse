@@ -1009,6 +1009,16 @@ String likePatternOf(const InfixPhraseWord & phrase_word)
     return phrase_word.is_token ? String(phrase_word.word) : String(phrase_word.word) + "%";
 }
 
+/// Only prunes granules: the original predicate is still evaluated for every row read.
+template <bool case_insensitive>
+TextSearchQueryPtr makePhraseWordQuery(const String & function_name, const InfixPhraseWord & phrase_word)
+{
+    std::vector<OptimizedRegularExpression> patterns;
+    patterns.emplace_back(Regexps::createRegexp</*like=*/ true, /*no_capture=*/ true, case_insensitive>(likePatternOf(phrase_word)));
+    return std::make_shared<TextSearchQuery>(
+        function_name, TextSearchMode::Any, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>(), std::move(patterns));
+}
+
 }
 
 /// Returns one pattern, or nothing when the pattern is not eligible for a dictionary scan.
@@ -1731,15 +1741,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             const size_t min_length = settings[Setting::text_index_like_min_pattern_length];
             if (auto phrase_word = chooseInfixPhraseWord(value_field.safeGet<String>(), /*case_insensitive=*/ false, min_length))
             {
-                std::vector<OptimizedRegularExpression> patterns;
-                patterns.emplace_back(
-                    Regexps::createRegexp</*like=*/ true, /*no_capture=*/ true, /*case_insensitive=*/ false>(likePatternOf(*phrase_word)));
-
                 out.function = RPNElement::FUNCTION_LIKE;
-                out.text_search_queries.emplace_back(
-                    std::make_shared<TextSearchQuery>(
-                        function_name, TextSearchMode::Any, TextIndexDirectReadMode::None,
-                        VectorWithMemoryTracking<String>(), std::move(patterns)));
+                out.text_search_queries.emplace_back(makePhraseWordQuery</*case_insensitive=*/ false>(function_name, *phrase_word));
                 return true;
             }
         }
@@ -1779,15 +1782,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             const size_t min_length = settings[Setting::text_index_like_min_pattern_length];
             if (auto phrase_word = chooseInfixPhraseWord(like_pattern, /*case_insensitive=*/ true, min_length))
             {
-                std::vector<OptimizedRegularExpression> word_patterns;
-                word_patterns.emplace_back(
-                    Regexps::createRegexp</*like=*/ true, /*no_capture=*/ true, /*case_insensitive=*/ true>(likePatternOf(*phrase_word)));
-
                 out.function = RPNElement::FUNCTION_LIKE;
-                out.text_search_queries.emplace_back(
-                    std::make_shared<TextSearchQuery>(
-                        function_name, TextSearchMode::Any, TextIndexDirectReadMode::None,
-                        VectorWithMemoryTracking<String>(), std::move(word_patterns)));
+                out.text_search_queries.emplace_back(makePhraseWordQuery</*case_insensitive=*/ true>(function_name, *phrase_word));
                 return true;
             }
         }

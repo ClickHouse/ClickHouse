@@ -4,7 +4,6 @@
 -- and reads fewer dictionary blocks for a case-insensitive prefix such as ILIKE 'ab01%', and that neither
 -- changes which rows are returned. Every query is compared against the same query with use_skip_indexes = 0.
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;
@@ -61,8 +60,7 @@ SELECT 'ilike, three words, no index', groupArray(id) FROM tab WHERE message ILI
 SELECT 'ilike, kelvin sign', groupArray(id) FROM tab WHERE message ILIKE '%Kelvin heap%' SETTINGS log_comment = '05315_ilike_kelvin';
 SELECT 'ilike, kelvin sign, no index', groupArray(id) FROM tab WHERE message ILIKE '%Kelvin heap%' SETTINGS use_skip_indexes = 0;
 
--- A word with 'k' or starting with 's' is not searched, as ILIKE may treat U+212A as 'k' and U+017F as 's'.
--- Here no other word is left, so nothing is pruned.
+-- A word containing 'k' or starting with 's' is not searched; here no other word is left, so nothing is pruned.
 SELECT 'ilike, only word with k', groupArray(id) FROM tab WHERE message ILIKE '%java kafka%' SETTINGS log_comment = '05315_ilike_k';
 SELECT 'ilike, only word with k, no index', groupArray(id) FROM tab WHERE message ILIKE '%java kafka%' SETTINGS use_skip_indexes = 0;
 SELECT 'ilike, only word with s', groupArray(id) FROM tab WHERE message ILIKE '%java sunrise%' SETTINGS log_comment = '05315_ilike_s';
