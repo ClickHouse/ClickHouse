@@ -2216,50 +2216,49 @@ bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
 
 bool ActionsDAG::removeUnusedResult(const std::string & column_name)
 {
-    /// Find column in output nodes and remove.
-    const Node * col = nullptr;
+    auto output_it = std::ranges::find_if(outputs, [&](const Node * node) { return node->result_name == column_name; });
+    if (output_it == outputs.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found result {} in ActionsDAG\n{}", column_name, dumpDAG());
+
+    /// The nodes the result is computed by, each the only child of the one before, down to an input or a column.
+    std::vector<const Node *> chain;
+    for (const Node * node = *output_it;; node = node->children.front())
     {
-        auto it = outputs.begin();
-        for (; it != outputs.end(); ++it)
-            if ((*it)->result_name == column_name)
-                break;
+        if (node->children.size() > 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Result {} is not a chain of nodes down to an input or a column: {} has {} children\n{}",
+                column_name, node->result_name, node->children.size(), dumpDAG());
 
-        if (it == outputs.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found result {} in ActionsDAG\n{}", column_name, dumpDAG());
-
-        col = *it;
-        outputs.erase(it);
+        chain.push_back(node);
+        if (node->children.empty())
+            break;
     }
 
-    /// Check if column is in input.
-    auto it = inputs.begin();
-    for (; it != inputs.end(); ++it)
-        if (*it == col)
-            break;
+    outputs.erase(output_it);
 
-    /// Check column has no dependent.
+    std::unordered_map<const Node *, size_t> uses;
     for (const auto & node : nodes)
         for (const auto * child : node.children)
-            if (col == child)
-                return false;
+            ++uses[child];
+    for (const auto * output : outputs)
+        ++uses[output];
 
-    /// Do not remove input if it was mentioned in output nodes several times.
-    for (const auto * output_node : outputs)
-        if (col == output_node)
+    /// Remove the chain from the top while nothing else uses a node: another node, or an output of the same name or of
+    /// another one.
+    for (const auto * node : chain)
+    {
+        if (uses[node] != 0)
             return false;
 
-    /// Remove from nodes and inputs.
-    for (auto jt = nodes.begin(); jt != nodes.end(); ++jt)
-    {
-        if (&(*jt) == col)
-        {
-            nodes.erase(jt);
-            break;
-        }
+        if (!node->children.empty())
+            --uses[node->children.front()];
+
+        if (node->type == ActionType::INPUT)
+            std::erase(inputs, node);
+
+        nodes.remove_if([&](const Node & candidate) { return &candidate == node; });
     }
 
-    if (it != inputs.end())
-        inputs.erase(it);
     return true;
 }
 

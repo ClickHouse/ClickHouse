@@ -71,28 +71,11 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     /// The filter node may have been renamed by the split to avoid clashing with an input of the same name.
     std::string split_filter_name = split.split_nodes_mapping.at(filter_dag_node)->result_name;
 
+    /// A renamed filter column reaches the second half as an input under the new name, with an alias back to the old
+    /// one, and removeUnusedResult removes the alias together with the input.
     bool remove_filter = false;
     if (filter_step->removesFilterColumn())
-    {
         remove_filter = split.second.removeUnusedResult(filter_column_name);
-
-        /// A renamed filter column reaches the second half as an input under the new name, with an alias back to the
-        /// old one. removeUnusedResult removes only the alias, so remove the input as well: the filter step does not
-        /// output the column any more, and an input with no column in the header would be left behind.
-        if (remove_filter && split_filter_name != filter_column_name)
-        {
-            std::unordered_set<const ActionsDAG::Node *> kept_inputs;
-            for (const auto * input : split.second.getInputs())
-                if (input->result_name != split_filter_name)
-                    kept_inputs.insert(input);
-
-            split.second.removeUnusedActions(kept_inputs, /*allow_constant_folding=*/ false);
-
-            /// Should the second half still read the column, the filter step keeps it.
-            remove_filter = std::ranges::none_of(
-                split.second.getInputs(), [&](const auto * input) { return input->result_name == split_filter_name; });
-        }
-    }
 
     auto description = filter_step->getStepDescription();
 
