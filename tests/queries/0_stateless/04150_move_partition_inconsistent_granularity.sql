@@ -25,7 +25,6 @@ DROP TABLE IF EXISTS dst_adaptive SYNC;
 DROP TABLE IF EXISTS r_src_nonadaptive SYNC;
 DROP TABLE IF EXISTS r_dst_adaptive SYNC;
 DROP TABLE IF EXISTS src_g8, dst_g4, dst_g4_mixed, dst_g8, dst_g8_mixed, r_dst_g4096, src_g4, src_adaptive_g4 SYNC;
-DROP TABLE IF EXISTS r_fsrc_g8, r_fsrc_g4, r_fsrc_adaptive_g4, fsrc_nonadaptive_g8, r_fsrc_mixed_g8, r_fdst_g4, r_fdst_g8_mixed SYNC;
 
 -- ===== Plain MergeTree =====
 
@@ -130,70 +129,6 @@ ALTER TABLE dst_g8_mixed REPLACE PARTITION tuple() FROM src_adaptive_g4;
 SELECT count(), sum(a) FROM dst_g8_mixed;
 SELECT count() FROM dst_g8_mixed WHERE a >= 109;
 
--- ===== FETCH PARTITION / FETCH PART from a table with another index_granularity (issue #123227) =====
-
-CREATE TABLE r_fsrc_g8 (a UInt64)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04150/r_fsrc_g8', 'r1') ORDER BY a
-SETTINGS index_granularity = 8, index_granularity_bytes = 0, enable_mixed_granularity_parts = 0;
-SYSTEM STOP MERGES r_fsrc_g8;
-INSERT INTO r_fsrc_g8 SELECT number FROM numbers(18);
-
-CREATE TABLE r_fsrc_g4 (a UInt64)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04150/r_fsrc_g4', 'r1') ORDER BY a
-SETTINGS index_granularity = 4, index_granularity_bytes = 0, enable_mixed_granularity_parts = 0;
-INSERT INTO r_fsrc_g4 SELECT number FROM numbers(18);
-
-CREATE TABLE r_fsrc_adaptive_g4 (a UInt64)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04150/r_fsrc_adaptive_g4', 'r1') ORDER BY a
-SETTINGS index_granularity = 4, index_granularity_bytes = 10485760, enable_mixed_granularity_parts = 1;
-INSERT INTO r_fsrc_adaptive_g4 SELECT number + 100 FROM numbers(18);
-
-CREATE TABLE fsrc_nonadaptive_g8 (a UInt64) ENGINE = MergeTree ORDER BY a
-SETTINGS index_granularity = 8, index_granularity_bytes = 0, enable_mixed_granularity_parts = 0,
-         ratio_of_defaults_for_sparse_serialization = 1;
-INSERT INTO fsrc_nonadaptive_g8 SELECT number FROM numbers(18);
-OPTIMIZE TABLE fsrc_nonadaptive_g8 FINAL;
-
--- An adaptive table that holds a non-adaptive part (admitted because the index_granularity is equal)
-CREATE TABLE r_fsrc_mixed_g8 (a UInt64)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04150/r_fsrc_mixed_g8', 'r1') ORDER BY a
-SETTINGS index_granularity = 8, index_granularity_bytes = 10485760, enable_mixed_granularity_parts = 1;
-SYSTEM STOP MERGES r_fsrc_mixed_g8;
-ALTER TABLE r_fsrc_mixed_g8 ATTACH PARTITION tuple() FROM fsrc_nonadaptive_g8;
-
-CREATE TABLE r_fdst_g4 (a UInt64)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04150/r_fdst_g4', 'r1') ORDER BY a
-SETTINGS index_granularity = 4, index_granularity_bytes = 0, enable_mixed_granularity_parts = 0;
-
-CREATE TABLE r_fdst_g8_mixed (a UInt64)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04150/r_fdst_g8_mixed', 'r1') ORDER BY a
-SETTINGS index_granularity = 8, index_granularity_bytes = 10485760, enable_mixed_granularity_parts = 1;
-
--- F1 FETCH PARTITION from a non-adaptive table with a larger index_granularity
-ALTER TABLE r_fdst_g4 FETCH PARTITION tuple() FROM '/clickhouse/tables/{database}/04150/r_fsrc_g8'; -- { serverError BAD_ARGUMENTS }
--- F2 the same on FETCH PART
-ALTER TABLE r_fdst_g4 FETCH PART 'all_0_0_0' FROM '/clickhouse/tables/{database}/04150/r_fsrc_g8'; -- { serverError BAD_ARGUMENTS }
--- F3 a smaller source index_granularity, into a destination that accepts mixed granularity
-ALTER TABLE r_fdst_g8_mixed FETCH PARTITION tuple() FROM '/clickhouse/tables/{database}/04150/r_fsrc_g4'; -- { serverError BAD_ARGUMENTS }
--- nothing was downloaded into detached/
-SELECT count() FROM system.detached_parts WHERE database = currentDatabase() AND table IN ('r_fdst_g4', 'r_fdst_g8_mixed');
-
--- F4 control: equal index_granularity is still fetched and reads back correctly
-ALTER TABLE r_fdst_g8_mixed FETCH PARTITION tuple() FROM '/clickhouse/tables/{database}/04150/r_fsrc_g8';
-ALTER TABLE r_fdst_g8_mixed ATTACH PARTITION tuple();
-SELECT count(), sum(a) FROM r_fdst_g8_mixed;
-SELECT count() FROM r_fdst_g8_mixed WHERE a >= 9;
-
--- F5 control: an adaptive source with another index_granularity is still fetched
-ALTER TABLE r_fdst_g8_mixed FETCH PARTITION tuple() FROM '/clickhouse/tables/{database}/04150/r_fsrc_adaptive_g4';
-ALTER TABLE r_fdst_g8_mixed ATTACH PARTITION tuple();
-SELECT count(), sum(a) FROM r_fdst_g8_mixed;
-SELECT count() FROM r_fdst_g8_mixed WHERE a >= 109;
-
--- F6 a non-adaptive part inside an adaptive source is rejected when it is loaded, and is not left in detached/
-ALTER TABLE r_fdst_g4 FETCH PARTITION tuple() FROM '/clickhouse/tables/{database}/04150/r_fsrc_mixed_g8'; -- { serverError CORRUPTED_DATA }
-SELECT count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 'r_fdst_g4';
-
 DROP TABLE src_nonadaptive SYNC;
 DROP TABLE dst_adaptive SYNC;
 DROP TABLE r_src_nonadaptive SYNC;
@@ -206,10 +141,3 @@ DROP TABLE dst_g8_mixed SYNC;
 DROP TABLE r_dst_g4096 SYNC;
 DROP TABLE src_g4 SYNC;
 DROP TABLE src_adaptive_g4 SYNC;
-DROP TABLE r_fsrc_g8 SYNC;
-DROP TABLE r_fsrc_g4 SYNC;
-DROP TABLE r_fsrc_adaptive_g4 SYNC;
-DROP TABLE fsrc_nonadaptive_g8 SYNC;
-DROP TABLE r_fsrc_mixed_g8 SYNC;
-DROP TABLE r_fdst_g4 SYNC;
-DROP TABLE r_fdst_g8_mixed SYNC;

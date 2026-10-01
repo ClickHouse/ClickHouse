@@ -2466,15 +2466,15 @@ void IMergeTreeDataPart::loadRowsCount()
         else
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No count.txt in part {}", name);
 
-        const bool from_detached = parent_part ? parent_part->is_loaded_from_detached : is_loaded_from_detached;
+        const bool verify = parent_part ? parent_part->verify_rows_against_marks : verify_rows_against_marks;
 #ifdef NDEBUG
-        const bool check_rows_against_marks = from_detached;
+        const bool check_rows_against_marks = verify;
 #else
         const bool check_rows_against_marks = true;
 #endif
         if (check_rows_against_marks)
         {
-            const int error_code = from_detached ? ErrorCodes::CORRUPTED_DATA : ErrorCodes::LOGICAL_ERROR;
+            const int error_code = verify ? ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART : ErrorCodes::LOGICAL_ERROR;
             /// columns have to be loaded
             for (const auto & column : getColumns())
             {

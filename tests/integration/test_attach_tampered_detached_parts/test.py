@@ -648,7 +648,7 @@ def test_mutate_mixed_legacy_idx_minmax(started_cluster):
 
 def test_attach_part_written_with_other_index_granularity(started_cluster):
     # A non-adaptive part does not record rows per mark, so it is read with the attaching table's
-    # `index_granularity`. A part written with another value must be rejected as corrupted.
+    # `index_granularity`. A part written with another value must be rejected.
     for table, granularity in (("src_g8", 8), ("dst_g4", 4), ("dst_g8", 8)):
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
         node.query(
@@ -667,7 +667,7 @@ def test_attach_part_written_with_other_index_granularity(started_cluster):
         exec_root(f"cp -a {src_part_dir} {table_data_path(table)}detached/{part}")
 
     error = node.query_and_get_error(f"ALTER TABLE dst_g4 ATTACH PART '{part}'")
-    assert "CORRUPTED_DATA" in error, error
+    assert "BAD_SIZE_OF_FILE_IN_DATA_PART" in error, error
     assert node.query("SELECT 1") == "1\n"
     # The failed ATTACH leaves the part in detached/ under its original name.
     assert (

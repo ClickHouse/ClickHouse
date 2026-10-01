@@ -334,9 +334,9 @@ public:
     bool is_temp = false;
     std::atomic<bool> is_removed = false;
 
-    /// Set before loading files fetched into or attached from `detached/`,
-    /// which may have been written by a table with another `index_granularity`.
-    bool is_loaded_from_detached = false;
+    /// Set before loading files this table may not have written (attached from or fetched into `detached/`, restored from a backup):
+    /// `loadRowsCount` then checks the rows against the marks in every build.
+    bool verify_rows_against_marks = false;
 
     /// This type and the field remove_tmp_policy is used as a hint
     /// to help avoid communication with keeper when temporary part is deleting.
