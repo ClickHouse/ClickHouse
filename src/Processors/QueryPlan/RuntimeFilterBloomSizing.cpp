@@ -36,6 +36,16 @@ RuntimeBloomFilterParameters resolveRuntimeBloomFilterDefaults(RuntimeBloomFilte
     return parameters;
 }
 
+RuntimeBloomFilterParameters
+sizeRuntimeBloomFilter(RuntimeBloomFilterParameters parameters, std::optional<UInt64> distinct_keys_hint, Float64 max_ratio_of_set_bits)
+{
+    parameters = resolveRuntimeBloomFilterDefaults(parameters);
+    if (distinct_keys_hint)
+        parameters.bytes
+            = growRuntimeBloomFilterBytesFromStats(*distinct_keys_hint, parameters.hash_functions, parameters.bytes, max_ratio_of_set_bits);
+    return parameters;
+}
+
 void validateRuntimeBloomFilterParameters(RuntimeBloomFilterParameters parameters)
 {
     if (parameters.bytes > MAX_RUNTIME_BLOOM_FILTER_BYTES)

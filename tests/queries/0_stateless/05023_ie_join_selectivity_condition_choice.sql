@@ -87,6 +87,67 @@ SELECT count(), sum(a1 + a3 + lo + hi + b3) FROM t_sel_l AS l, t_sel_band AS r
 WHERE r.lo < l.a1 AND l.a1 < r.hi AND l.a3 < r.b3
 SETTINGS join_algorithm = 'hash';
 
+SELECT '-- plain group by: propagated ranges still choose by selectivity';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_l AS l JOIN
+    (
+        SELECT b1, b2, b3
+        FROM t_sel_r
+        GROUP BY b1, b2, b3
+    ) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
+-- The input statistics report null_fraction = 0.9 for b3, but GROUP BY collapses all NULLs
+-- into one of 101 output rows. That input fraction must not make the third condition look selective.
+DROP TABLE IF EXISTS t_sel_null_group;
+CREATE TABLE t_sel_null_group (b1 UInt32, b2 UInt32, b3 Nullable(UInt32))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS auto_statistics_types = 'basic, uniq_v2';
+
+INSERT INTO t_sel_null_group
+SELECT 150, 300, if(number < 900, NULL, toNullable(toUInt32(80000 + number)))
+FROM numbers(1000);
+
+SELECT '-- NULL-heavy grouped key: input NULL fraction is not propagated';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_l AS l JOIN
+    (
+        SELECT b1, b2, b3
+        FROM t_sel_null_group
+        GROUP BY b1, b2, b3
+    ) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT '-- grouping sets: generated default keys make ranges non-representative';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_l AS l JOIN
+    (
+        SELECT b1, b2, b3
+        FROM t_sel_r
+        GROUP BY GROUPING SETS ((b1, b2, b3), ())
+    ) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT '-- overflow rows: generated default keys make ranges non-representative';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_l AS l JOIN
+    (
+        SELECT b1, b2, b3
+        FROM t_sel_r
+        GROUP BY b1, b2, b3 WITH TOTALS
+        SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'any', totals_mode = 'before_having'
+    ) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
 DROP TABLE t_sel_l;
 DROP TABLE t_sel_r;
 DROP TABLE t_sel_band;
+DROP TABLE t_sel_null_group;

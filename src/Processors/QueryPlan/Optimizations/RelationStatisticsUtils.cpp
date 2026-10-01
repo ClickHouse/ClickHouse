@@ -116,7 +116,9 @@ RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const Strin
     for (const auto & col : header)
     {
         UInt64 ndv = 1 + (rng() % stats.estimated_rows.value());
-        stats.column_stats[col.name] = ColumnStats{.num_distinct_values = ndv};
+        auto & column_stats = stats.column_stats[col.name];
+        column_stats.num_distinct_values = ndv;
+        column_stats.ndv_provenance.origin = ColumnStatsOrigin::SyntheticFallback;
     }
 
     LOG_DEBUG(

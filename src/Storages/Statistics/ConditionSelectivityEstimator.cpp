@@ -43,11 +43,49 @@ namespace Setting
     extern const SettingsUInt64 statistics_max_set_size_for_exact_selectivity_estimation;
 }
 
+/// Stable spelling used by optimizer trace diagnostics and tests.
+String ColumnStatsProvenance::toString() const
+{
+    String result;
+    switch (origin)
+    {
+        case ColumnStatsOrigin::Unknown: result = "unknown"; break;
+        case ColumnStatsOrigin::PartStatistics: result = "part-statistics"; break;
+        case ColumnStatsOrigin::SyntheticFallback: result = "synthetic-fallback"; break;
+        case ColumnStatsOrigin::ExactRowCount: result = "exact-row-count"; break;
+    }
+
+    if (!transformations)
+        return result;
+
+    result += '[';
+    bool first = true;
+    auto append = [&](ColumnStatsTransformation transformation, const char * name)
+    {
+        if (!has(transformation))
+            return;
+        if (!first)
+            result += ',';
+        result += name;
+        first = false;
+    };
+    append(RowSubset, "row-subset");
+    append(NonUniformRowSubset, "non-uniform-row-subset");
+    append(ExactRowCountClamp, "exact-row-clamp");
+    append(EstimatedRowCountClamp, "estimated-row-clamp");
+    append(NDVBoundExpression, "ndv-bound-expression");
+    append(ValuePreservingExpression, "value-preserving-expression");
+    append(PartialPartCoverage, "partial-part-coverage");
+    append(Unsupported, "unsupported");
+    result += ']';
+    return result;
+}
+
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
 {
     if (filter == nullptr && prewhere == nullptr)
     {
-        return estimateRelationProfile();
+        return estimateRelationProfile(metadata);
     }
     else if (filter == nullptr)
     {
@@ -86,7 +124,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
     const std::vector<RPNBuilderTreeNode> & nodes) const
 {
     if (nodes.empty())
-        return estimateRelationProfile();
+        return estimateRelationProfile(metadata);
 
     /// Build a combined RPN sequence by concatenating per-node RPNs and inserting an
     /// FUNCTION_AND token after every node past the first (standard postfix AND for
@@ -127,19 +165,39 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
 }
 
 /// NDV is clamped by the caller to the estimated row count; the value range and NULL fraction
-/// describe the whole relation regardless of the filter.
-static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStatisticsPtr & stats)
+/// describe the selected parts regardless of the filter. Provenance applies independently to
+/// cardinality and range statistics because `basic` may be present without a cardinality sketch.
+static ColumnStats makeColumnStats(
+    UInt64 num_distinct_values,
+    const ColumnStatisticsPtr & stats,
+    UInt64 total_rows,
+    bool row_subset)
 {
     ColumnStats result;
     result.num_distinct_values = num_distinct_values;
     if (!stats)
         return result;
 
+    result.ndv_provenance.origin
+        = stats->hasCardinality() ? ColumnStatsOrigin::PartStatistics : ColumnStatsOrigin::SyntheticFallback;
     auto estimate = stats->getEstimate();
     result.min_value = std::move(estimate.estimated_min);
     result.max_value = std::move(estimate.estimated_max);
+    if (result.min_value && result.max_value)
+        result.range_provenance.origin = ColumnStatsOrigin::PartStatistics;
     if (estimate.estimated_null_count && estimate.rows_count)
         result.null_fraction = std::min(1.0, static_cast<Float64>(*estimate.estimated_null_count) / static_cast<Float64>(estimate.rows_count));
+
+    if (row_subset)
+    {
+        result.ndv_provenance.add(RowSubset);
+        result.range_provenance.add(RowSubset);
+    }
+    if (stats->getNumRows() < total_rows)
+    {
+        result.ndv_provenance.add(PartialPartCoverage);
+        result.range_provenance.add(PartialPartCoverage);
+    }
     return result;
 }
 
@@ -238,19 +296,28 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
         if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
             continue;
 
-        UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
-        result.column_stats.emplace(column_name, makeColumnStats(cardinality, estimator.stats));
+        const UInt64 estimated_cardinality = estimator.estimateCardinality();
+        UInt64 cardinality = std::min(result.rows, estimated_cardinality);
+        /// Filtering can collapse the key domain independently of its estimated row selectivity.
+        auto column_stats = makeColumnStats(cardinality, estimator.stats, total_rows, /*row_subset=*/true);
+        if (result.rows < estimated_cardinality)
+            column_stats.ndv_provenance.add(EstimatedRowCountClamp);
+        result.column_stats.emplace(column_name, std::move(column_stats));
     }
     return result;
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata) const
 {
+    /// Unfiltered profiles must also reject sketches for an outdated column type.
     RelationProfile result;
     result.rows = total_rows;
     for (const auto & [column_name, estimator] : column_estimators)
     {
-        result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats));
+        if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
+            continue;
+        result.column_stats.emplace(
+            column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats, total_rows, /*row_subset=*/false));
     }
     return result;
 }

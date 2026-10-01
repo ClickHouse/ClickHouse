@@ -65,10 +65,9 @@ SELECT extract(explain, 'Conditions: .*') FROM (
     ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
 ) WHERE explain LIKE '%Conditions:%';
 
--- The row estimate cannot prove a limit does not truncate (e.g. a TopN read is already
--- scaled down by its `__topKFilter` prewhere), so even a limit above the table size drops
--- the value ranges.
-SELECT '-- limit above the table size also drops value ranges';
+-- Exact row tracking proves that a limit above the table size does not truncate,
+-- so the value ranges remain valid for selecting the most selective conditions.
+SELECT '-- limit above the table size preserves value ranges';
 SELECT extract(explain, 'Conditions: .*') FROM (
     EXPLAIN actions = 1
     SELECT count() FROM t_sel_edge_l AS l JOIN (SELECT * FROM t_sel_edge_r ORDER BY b3 LIMIT 1000000) AS r

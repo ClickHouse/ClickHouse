@@ -675,31 +675,26 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
     if (!exact_filter)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of AdaptiveSetRuntimeFilter");
     auto values = exact_filter->getValuesColumn();
-    UInt64 bytes_limit = exact_filter->getBytesLimit();
+    const auto bloom = sizeRuntimeBloomFilter(
+        RuntimeBloomFilterParameters{exact_filter->getBytesLimit(), bloom_filter_hash_functions},
+        distinct_keys_hint,
+        max_ratio_of_set_bits_in_bloom_filter);
 
-    if (distinct_keys_hint)
+    /// The filter size is capped, so a build side with more distinct keys would produce a Bloom filter
+    /// that `finishInsert` discards. Predict that fill rate before constructing it.
+    if (distinct_keys_hint && distinct_keys_hint_matches_filter_key)
     {
-        bytes_limit = growRuntimeBloomFilterBytesFromStats(
-            *distinct_keys_hint, bloom_filter_hash_functions, bytes_limit, max_ratio_of_set_bits_in_bloom_filter);
-
-        /// The filter size is capped, so a build side with more distinct keys would produce a Bloom filter
-        /// that `checkApproximateFilterWorthiness` discards. Predict that fill rate before constructing it.
-        if (distinct_keys_hint_matches_filter_key)
+        const double least_distinct_keys = static_cast<double>(*distinct_keys_hint) / HashJoinEntry::MAX_OVERESTIMATION_FACTOR;
+        const double predicted_fill_rate = estimateRuntimeBloomFilterSetBitsRatio(least_distinct_keys, bloom);
+        if (predicted_fill_rate > max_ratio_of_set_bits_in_bloom_filter)
         {
-            const double least_distinct_keys
-                = static_cast<double>(*distinct_keys_hint) / HashJoinEntry::MAX_OVERESTIMATION_FACTOR;
-            const double predicted_fill_rate = estimateRuntimeBloomFilterSetBitsRatio(
-                least_distinct_keys, RuntimeBloomFilterParameters{bytes_limit, bloom_filter_hash_functions});
-            if (predicted_fill_rate > max_ratio_of_set_bits_in_bloom_filter)
-            {
-                ProfileEvents::increment(ProfileEvents::RuntimeFilterBloomFilterBuildsSkipped);
-                dropKeySet(filter_);
-                return nullptr;
-            }
+            ProfileEvents::increment(ProfileEvents::RuntimeFilterBloomFilterBuildsSkipped);
+            dropKeySet(filter_);
+            return nullptr;
         }
     }
 
-    auto & approximate_filter = filter_.emplace<ApproximateSetRuntimeFilter>(bytes_limit, bloom_filter_hash_functions);
+    auto & approximate_filter = filter_.emplace<ApproximateSetRuntimeFilter>(bloom.bytes, bloom.hash_functions);
     approximate_filter.insert(values);
     return &approximate_filter;
 }
