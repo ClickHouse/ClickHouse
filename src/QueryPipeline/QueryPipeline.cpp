@@ -14,7 +14,6 @@
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
 #include <Processors/LimitTransform.h>
-#include <Processors/LimitRangeTransform.h>
 #include <Processors/NegativeLimitTransform.h>
 #include <Processors/FractionalLimitTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -39,6 +38,7 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/StreamInQueryResultCacheTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
+#include <Processors/StepWallClockRegistry.h>
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -219,17 +219,6 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         if ((typeid_cast<RemoteSource *>(processor) || typeid_cast<DelayedSource *>(processor)) && !limit_being_counted)
         {
             processors.emplace(processor);
-            continue;
-        }
-
-        if (typeid_cast<LimitRangeTransform *>(processor))
-        {
-            has_limit = true;
-            /// LimitRangeTransform is a single-input simple transform that keeps its own counter
-            /// over all rows it reads (i.e. rows before the AFTER/UNTIL range is applied). Like any
-            /// other limiting operation, it does not take the counter over from a limit downstream.
-            if (!limit_being_counted)
-                processors.emplace(processor);
             continue;
         }
 
@@ -686,11 +675,6 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
     progress_callback = callback;
 }
 
-void QueryPipeline::setStepProfiler(StepProfilerPtr step_profiler_)
-{
-    step_profiler = std::move(step_profiler_);
-}
-
 void QueryPipeline::setProcessListElement(QueryStatusPtr elem)
 {
     process_list_element = elem;
@@ -732,6 +716,11 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
     result_rows = output_format->getResultRows();
     result_bytes = output_format->getResultBytes();
     return true;
+}
+
+void QueryPipeline::setStepWallClockRegistry(StepWallClockRegistryPtr step_wall_clock_registry_)
+{
+    step_wall_clock_registry = std::move(step_wall_clock_registry_);
 }
 
 void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer)
@@ -882,9 +871,6 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns, c
 
 std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() const
 {
-    if (!report_read_progress)
-        return nullptr;
-
     auto callback = std::make_unique<ReadProgressCallback>();
 
     callback->setProgressCallback(progress_callback);

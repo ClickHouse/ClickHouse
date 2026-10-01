@@ -8,7 +8,7 @@
       ]
     },
     {
-      "group": "Возможности",
+      "group": "Функции",
       "pages": [
         "ru/products/managed-postgres/connection",
         "ru/products/managed-postgres/settings",
@@ -29,14 +29,6 @@
             "ru/products/managed-postgres/extensions/pg_clickhouse/tutorial"
           ]
         },
-        {
-          "group": "pg_chdb",
-          "pages": [
-            "ru/products/managed-postgres/extensions/chdb/introduction",
-            "ru/products/managed-postgres/extensions/chdb/chdb",
-            "ru/products/managed-postgres/extensions/chdb/chdb_hook"
-          ]
-        },
         "ru/products/managed-postgres/upgrades",
         "ru/products/managed-postgres/openapi",
         "ru/products/managed-postgres/terraform"
@@ -49,22 +41,20 @@
       ]
     },
     {
-      "group": "Интеграция с ClickHouse",
+      "group": "Интеграция ClickHouse",
       "pages": [
-        "ru/products/managed-postgres/sync-to-clickhouse/clickpipes",
-        "ru/products/managed-postgres/sync-to-clickhouse/walshadow"
+        "ru/products/managed-postgres/clickhouse-integration"
       ]
     },
     {
       "group": "Миграции",
       "pages": [
         "ru/products/managed-postgres/migrations/overview",
+        "ru/products/managed-postgres/migrations/pg_dump-pg_restore",
+        "ru/products/managed-postgres/migrations/logical-replication",
+        "ru/products/managed-postgres/migrations/peerdb",
         "ru/products/managed-postgres/migrations/clickpipes",
         "ru/products/managed-postgres/migrations/data-validation",
-        "ru/products/managed-postgres/migrations/logical-replication",
-        "ru/products/managed-postgres/migrations/neon",
-        "ru/products/managed-postgres/migrations/pg_dump-pg_restore",
-        "ru/products/managed-postgres/migrations/peerdb",
         "ru/products/managed-postgres/migrations/faq"
       ]
     },
@@ -80,7 +70,7 @@
       ]
     },
     {
-      "group": "Часто задаваемые вопросы",
+      "group": "FAQ",
       "pages": [
         "ru/products/managed-postgres/faq"
       ]

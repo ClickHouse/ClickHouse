@@ -12,7 +12,7 @@
         {
           "expandable": true,
           "expanded": false,
-          "group": "구문",
+          "group": "SQL 문",
           "pages": [
             "ko/reference/statements/index",
             {
@@ -85,7 +85,7 @@
                     },
                     {
                       "expanded": false,
-                      "group": "소스",
+                      "group": "SOURCES",
                       "pages": [
                         "ko/reference/statements/create/dictionary/sources/overview",
                         "ko/reference/statements/create/dictionary/sources/local-file",
@@ -108,7 +108,6 @@
                 },
                 "ko/reference/statements/create/masking-policy",
                 "ko/reference/statements/create/function",
-                "ko/reference/statements/create/handler",
                 "ko/reference/statements/create/named-collection",
                 "ko/reference/statements/create/quota",
                 "ko/reference/statements/create/role",
@@ -116,7 +115,7 @@
                 "ko/reference/statements/create/settings-profile",
                 {
                   "expanded": false,
-                  "group": "TABLE",
+                  "group": "테이블",
                   "pages": [
                     "ko/reference/statements/create/table",
                     "ko/reference/statements/create/table/codec",
@@ -124,7 +123,6 @@
                     "ko/reference/statements/create/table/replace-table"
                   ]
                 },
-                "ko/reference/statements/create/token",
                 "ko/reference/statements/create/user",
                 "ko/reference/statements/create/view"
               ]
@@ -140,7 +138,6 @@
             "ko/reference/statements/explain",
             "ko/reference/statements/grant",
             "ko/reference/statements/hypothetical-index",
-            "ko/reference/statements/hypothetical-projection",
             "ko/reference/statements/in",
             "ko/reference/statements/insert-into",
             "ko/reference/statements/kill",
@@ -188,7 +185,8 @@
             "ko/reference/statements/truncate",
             "ko/reference/statements/undrop",
             "ko/reference/statements/update",
-            "ko/reference/statements/use"
+            "ko/reference/statements/use",
+            "ko/reference/statements/watch"
           ]
         },
         {
@@ -268,7 +266,7 @@
         },
         {
           "expanded": false,
-          "group": "Nullable 및 선택적 타입",
+          "group": "널 허용 및 옵셔널 타입",
           "pages": [
             "ko/reference/data-types/nullable",
             "ko/reference/data-types/lowcardinality"
@@ -276,7 +274,7 @@
         },
         {
           "expanded": false,
-          "group": "특수 목적 타입",
+          "group": "특수 타입",
           "pages": [
             "ko/reference/data-types/uuid",
             "ko/reference/data-types/enum",
@@ -359,7 +357,7 @@
             },
             {
               "expanded": false,
-              "group": "Log 엔진 계열",
+              "group": "Log 계열",
               "pages": [
                 "ko/reference/engines/table-engines/log-family/index",
                 "ko/reference/engines/table-engines/log-family/log",
@@ -421,20 +419,13 @@
             "ko/reference/engines/database-engines/atomic",
             "ko/reference/engines/database-engines/backup",
             "ko/reference/engines/database-engines/datalake",
-            "ko/reference/engines/database-engines/dictionary",
-            "ko/reference/engines/database-engines/filesystem",
-            "ko/reference/engines/database-engines/hdfs",
             "ko/reference/engines/database-engines/materialized-postgresql",
-            "ko/reference/engines/database-engines/memory",
             "ko/reference/engines/database-engines/mysql",
-            "ko/reference/engines/database-engines/ordinary",
             "ko/reference/engines/database-engines/postgresql",
             "ko/reference/engines/database-engines/remote",
             "ko/reference/engines/database-engines/replicated",
-            "ko/reference/engines/database-engines/s3",
             "ko/reference/engines/database-engines/shared",
-            "ko/reference/engines/database-engines/sqlite",
-            "ko/reference/engines/database-engines/url"
+            "ko/reference/engines/database-engines/sqlite"
           ]
         }
       ]
@@ -566,7 +557,6 @@
                 "ko/reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "ko/reference/functions/aggregate-functions/first_value",
                 "ko/reference/functions/aggregate-functions/flame_graph",
-                "ko/reference/functions/aggregate-functions/gini",
                 "ko/reference/functions/aggregate-functions/groupArray",
                 "ko/reference/functions/aggregate-functions/groupArrayArray",
                 "ko/reference/functions/aggregate-functions/groupArrayInsertAt",
@@ -742,7 +732,7 @@
             "ko/reference/functions/table-functions/s3Cluster",
             "ko/reference/functions/table-functions/sqlite",
             "ko/reference/functions/table-functions/timeSeriesData",
-            "ko/reference/functions/table-functions/timeSeriesMetricFamilies",
+            "ko/reference/functions/table-functions/timeSeriesMetrics",
             "ko/reference/functions/table-functions/timeSeriesSamples",
             "ko/reference/functions/table-functions/timeSeriesSelector",
             "ko/reference/functions/table-functions/timeSeriesTags",
@@ -916,7 +906,7 @@
         "ko/reference/formats/Prometheus",
         {
           "expanded": false,
-          "group": "Protobuf",
+          "group": "형식",
           "pages": [
             "ko/reference/formats/Protobuf/Protobuf",
             "ko/reference/formats/Protobuf/ProtobufList",
@@ -1075,17 +1065,14 @@
         "ko/reference/system-tables/histogram_metric_log",
         "ko/reference/system-tables/histogram_metrics",
         "ko/reference/system-tables/hypothetical_indexes",
-        "ko/reference/system-tables/hypothetical_projections",
         "ko/reference/system-tables/iceberg_files",
         "ko/reference/system-tables/iceberg_history",
         "ko/reference/system-tables/iceberg_metadata_log",
         "ko/reference/system-tables/information_schema",
         "ko/reference/system-tables/instrumentation",
-        "ko/reference/system-tables/jemalloc_arena_bins",
         "ko/reference/system-tables/jemalloc_bins",
-        "ko/reference/system-tables/jemalloc_profile_text",
-        "ko/reference/system-tables/jemalloc_sampled_allocations",
         "ko/reference/system-tables/jemalloc_stats",
+        "ko/reference/system-tables/jemalloc_profile_text",
         "ko/reference/system-tables/kafka_consumers",
         "ko/reference/system-tables/keeper_changelogs",
         "ko/reference/system-tables/keeper_cluster",
@@ -1147,13 +1134,11 @@
         "ko/reference/system-tables/schema_inference_cache",
         "ko/reference/system-tables/server_settings",
         "ko/reference/system-tables/session_log",
-        "ko/reference/system-tables/session_query_ids",
         "ko/reference/system-tables/settings",
         "ko/reference/system-tables/settings_changes",
         "ko/reference/system-tables/settings_profile_elements",
         "ko/reference/system-tables/settings_profiles",
         "ko/reference/system-tables/stack_trace",
-        "ko/reference/system-tables/statements",
         "ko/reference/system-tables/stemmers",
         "ko/reference/system-tables/storage_policies",
         "ko/reference/system-tables/symbols",
