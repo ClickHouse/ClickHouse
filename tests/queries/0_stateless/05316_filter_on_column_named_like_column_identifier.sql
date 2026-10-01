@@ -1,4 +1,5 @@
--- Tags: no-fasttest, use-rocksdb, no-parallel-replicas
+-- Tags: no-fasttest, no-parallel, use-rocksdb, no-parallel-replicas
+-- Tag no-parallel: another test's SYSTEM CLEAR QUERY CONDITION CACHE would remove the entry the repeated JOIN must hit.
 -- A filter on a column named like another column's qualified name (`__table1.k` next to `k`) must use that column in
 -- primary key, partition, skip index, PREWHERE, row policy, query condition cache and storage key analysis.
 
@@ -60,10 +61,10 @@ INSERT INTO t_qcc_build VALUES (1), (2), (19998), (19999);
 -- A JOIN filter on `__table1.k` must not write a query condition cache entry that a later filter on `k` reads.
 SELECT count() FROM t_qcc AS a INNER JOIN t_qcc_build AS b ON a.k = b.k WHERE a.`__table1.k` IN (1, 2) AND b.k IN (1, 2) SETTINGS use_query_condition_cache = 1, enable_join_runtime_filters = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, join_algorithm = 'hash', query_plan_join_swap_table = 0, enable_parallel_replicas = 0 FORMAT Null;
 -- The same JOIN again finds that entry, so the cache is in use.
-SELECT count() FROM t_qcc AS a INNER JOIN t_qcc_build AS b ON a.k = b.k WHERE a.`__table1.k` IN (1, 2) AND b.k IN (1, 2) SETTINGS use_query_condition_cache = 1, enable_join_runtime_filters = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, join_algorithm = 'hash', query_plan_join_swap_table = 0, enable_parallel_replicas = 0, log_comment = '05315_qcc_writer_again' FORMAT Null;
+SELECT count() FROM t_qcc AS a INNER JOIN t_qcc_build AS b ON a.k = b.k WHERE a.`__table1.k` IN (1, 2) AND b.k IN (1, 2) SETTINGS use_query_condition_cache = 1, enable_join_runtime_filters = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, join_algorithm = 'hash', query_plan_join_swap_table = 0, enable_parallel_replicas = 0, log_comment = '05316_qcc_writer_again' FORMAT Null;
 SELECT count() FROM t_qcc WHERE k IN (1, 2) AND k IN (1, 2) SETTINGS use_query_condition_cache = 1, enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_join_runtime_filters_index_analysis = 0, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, enable_multiple_prewhere_read_steps = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, enable_parallel_replicas = 0;
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['QueryConditionCacheHits'] > 0 FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05315_qcc_writer_again';
+SELECT ProfileEvents['QueryConditionCacheHits'] > 0 FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05316_qcc_writer_again';
 
 DROP TABLE t_dotted;
 DROP TABLE t_part;
