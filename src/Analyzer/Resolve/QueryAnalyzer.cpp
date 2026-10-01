@@ -7038,6 +7038,17 @@ private:
                     return true;
                 if (function_node.getFunctionName() == "grouping")
                     return false;
+
+                /// The value of a column is computed for every row, so it is determined by GROUP BY keys only
+                /// if the expression is. Computed after aggregation, `rand` would give a value per group,
+                /// and `rowNumberInAllBlocks` would count the groups instead of the rows.
+                /// A folded constant (e.g. `now`) has one value in the query, so it is not checked.
+                if (function_node.isOrdinaryFunction())
+                {
+                    auto function_base = function_node.getFunction();
+                    if (!function_base || function_base->isStateful() || !function_base->isDeterministicInScopeOfQuery())
+                        return false;
+                }
                 break;
             }
             default:

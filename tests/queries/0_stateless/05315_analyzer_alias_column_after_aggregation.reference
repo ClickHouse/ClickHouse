@@ -21,6 +21,9 @@ b	2	UInt8	20
 bb	3	UInt8	30
 -- constant ALIAS expression
 42	4
+a	1
+b	1
+bb	1
 -- HAVING, ORDER BY, LIMIT BY
 bb	30
 a	50

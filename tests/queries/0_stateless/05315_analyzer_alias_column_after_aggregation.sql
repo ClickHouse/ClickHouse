@@ -32,7 +32,11 @@ CREATE TABLE t
     upper_k_same String ALIAS upper_k,
     len_k UInt8 ALIAS length(k) + 1,
     n_mod UInt64 ALIAS n % 3,
-    const_alias UInt8 ALIAS 42
+    const_alias UInt8 ALIAS 42,
+    today_alias Date ALIAS today(),
+    rand_alias UInt32 ALIAS rand(),
+    k_rand_alias String ALIAS concat(k, toString(rand())),
+    row_number_alias UInt64 ALIAS rowNumberInAllBlocks()
 ) ENGINE = MergeTree ORDER BY k;
 
 INSERT INTO t VALUES ('a', 1, 10), ('b', 2, 20), ('bb', 3, 30), ('a', 4, 40);
@@ -50,6 +54,7 @@ SELECT k, len_k, toTypeName(len_k), sum(v) FROM t GROUP BY k ORDER BY k;
 
 SELECT '-- constant ALIAS expression';
 SELECT const_alias, count() FROM t;
+SELECT k, today_alias = today() FROM t GROUP BY k ORDER BY k;
 
 SELECT '-- HAVING, ORDER BY, LIMIT BY';
 SELECT k, sum(v) AS s FROM t GROUP BY k HAVING upper_k != 'B' AND s > 0 ORDER BY upper_k DESC;
@@ -76,6 +81,10 @@ SELECT k, upper_k, sum(v) FROM remote('127.0.0.{1,2}', currentDatabase(), t) GRO
 SELECT '-- errors';
 SELECT k, n_mod FROM t GROUP BY k; -- { serverError NOT_AN_AGGREGATE }
 SELECT upper_k, count() FROM t; -- { serverError NOT_AN_AGGREGATE }
+-- The value of a non-deterministic or stateful expression is not determined by GROUP BY keys.
+SELECT k, rand_alias FROM t GROUP BY k; -- { serverError NOT_AN_AGGREGATE }
+SELECT k, k_rand_alias FROM t GROUP BY k; -- { serverError NOT_AN_AGGREGATE }
+SELECT k, row_number_alias FROM t GROUP BY k; -- { serverError NOT_AN_AGGREGATE }
 SELECT k, upper_k, sum(v) FROM t GROUP BY k WITH ROLLUP SETTINGS group_by_use_nulls = 1; -- { serverError NOT_AN_AGGREGATE }
 
 DROP TABLE t;
