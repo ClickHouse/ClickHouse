@@ -200,8 +200,9 @@ public:
     /// Fails closed: anything that cannot be verified (missing log store, truncated log range,
     /// unparseable entry, unrecognised request type) is reported as a conflict.
     ///
-    /// Returns `nullopt` when nothing was removed or when the tail is provably clean; clears the
-    /// recorded roots in that case, so a second call is a no-op.
+    /// Returns `nullopt` when nothing was removed or when the tail is provably clean. In the latter
+    /// case, persists the repaired snapshot before clearing the recorded roots. A write failure
+    /// propagates to abort startup; a second successful call is a no-op.
     std::optional<OrphanLogTailConflict> findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end_idx);
 
     /// Non-empty only between `init()` and `findOrphanConflictInLogTail()`. For tests/introspection.
@@ -209,6 +210,9 @@ public:
     const std::vector<int64_t> & getRemovedOrphanEphemeralSessions() const { return removed_orphan_ephemeral_sessions; }
 
 private:
+    /// Persist the repaired tree at the loaded snapshot's index before Raft can serve it to peers.
+    void persistRepairedSnapshot();
+
     /// Advance the mark (no-op if older; LOGICAL_ERROR backstop on equal index with a
     /// different term) and re-point retention protection at its backing snapshot file.
     void advanceLatestSnapshotMeta(const SnapshotMetadataPtr & candidate) TSA_REQUIRES(snapshots_lock);
