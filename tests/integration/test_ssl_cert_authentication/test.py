@@ -566,6 +566,21 @@ def test_x509_cn_wildcard_single_label():
     assert "403" in str(err.value)
 
 
+def test_x509_wildcard_nul_byte_no_bypass():
+    # Authentication bypass: client14's CN and DNS SAN are both "evil\0.corp.example.com". Users
+    # 'wildcard_cn' and 'wildcard_dns' are configured with '*.corp.example.com' and
+    # 'DNS:*.corp.example.com'. The '*' must not match the span "evil\0", so both must fail.
+    for user in ["wildcard_cn", "wildcard_dns"]:
+        with pytest.raises(Exception) as err:
+            execute_query_native(
+                instance, "SELECT currentUser()", user=user, cert_name="client14"
+            )
+        assert "AUTHENTICATION_FAILED" in str(err.value)
+        with pytest.raises(Exception) as err:
+            execute_query_https("SELECT currentUser()", user=user, cert_name="client14")
+        assert "403" in str(err.value)
+
+
 def test_x509_uri_san_wildcard_dot_in_segment():
     # Non-regression: '.' separates labels for DNS/CN but is NOT a separator for URI SANs,
     # whose separator is '/'. A wildcard URI path segment may legitimately contain dots, so
