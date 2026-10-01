@@ -1,0 +1,15 @@
+<clickhouse>
+    <!--
+        A `GraphiteMergeTree` rollup section that ONLY overrides the column names and defines no
+        `<pattern>`/`<default>` rollup rules. `setGraphitePatternsFromConfig` accepts such a section
+        (it keeps the custom column names and `selectPatternForPath` simply yields no rollup rule),
+        so it was a valid config before this check existed. The validator must recognize the shape
+        by its column-name overrides and accept it, instead of requiring a rollup rule.
+    -->
+    <retention_columns_only>
+        <path_column_name>metric</path_column_name>
+        <time_column_name>timestamp</time_column_name>
+        <value_column_name>value</value_column_name>
+        <version_column_name>updated</version_column_name>
+    </retention_columns_only>
+</clickhouse>
