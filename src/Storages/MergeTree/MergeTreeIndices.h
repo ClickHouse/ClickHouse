@@ -359,8 +359,6 @@ struct IMergeTreeIndex
     Names getColumnsRequiredForIndexCalc() const;
     const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
 
-    NameSet getColumnsShadowingMapSubcolumns() const;
-
     StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;
 };
@@ -451,4 +449,10 @@ bool indexFileExistsInChecksums(
     const std::string & path_prefix,
     const std::string & extension,
     const IDataPartStorage * storage = nullptr);
+
+/// Whether @column_name resolves to a key subcolumn of the Map @map_column_name. The `<map>.key_<key>`
+/// spelling cannot tell: names are flat and resolve through the shortest column prefix, so a column, a
+/// Tuple element or a JSON path can claim it, and only substream paths identify the key and its map.
+bool isKeySubcolumnOfMap(
+    const ColumnsDescription & columns, const String & column_name, const String & map_column_name);
 }
