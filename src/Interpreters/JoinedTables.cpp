@@ -1,5 +1,7 @@
 #include <Interpreters/JoinedTables.h>
 
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 
@@ -343,6 +345,14 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     {
         auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name);
         StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
+
+        /// A special storage replaces the right-side plan, and with it the `FilterStep` carrying the
+        /// table's row policy, so such a table has to be joined as an ordinary stream.
+        auto joined_table_row_policy = context->getRowPolicyFilter(
+            joined_table_id.getDatabaseName(), joined_table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        if (joined_table_row_policy && !joined_table_row_policy->isAlwaysTrue())
+            storage = nullptr;
+
         if (storage)
         {
             if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)
