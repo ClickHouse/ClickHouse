@@ -2172,17 +2172,19 @@ void ClientBase::onProfileEvents(Block & block)
             /// (workload resource requests), summed up into a single "waited" figure.
             else if (event_name == throttler_sleep_name || event_name == scheduler_io_read_wait_name || event_name == scheduler_io_write_wait_name)
                 thread_times[host_name].waited_us += value;
-            /// The gauges below can also come in several rows for one host, e.g. from several
-            /// shards on one server. Sum the current usage like the CPU time above, so that the
-            /// `RAM` and `disk` figures stay comparable with it. The peak is not additive over
-            /// time, so take the maximum: it remains the peak of the largest single source.
+            /// The rows below are `GAUGE` snapshots and can also come in several rows for one host:
+            /// from several queued snapshots of one source, or from several shards on one server.
+            /// Summing would multiply one source's usage by the number of coalesced snapshots,
+            /// and the packet carries no per-source identifier to tell the two cases apart, so
+            /// keep the gauge semantics and take the maximum. For several shards on one host this
+            /// shows the usage of the largest one.
             else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
-                thread_times[host_name].memory_usage += value;
+                thread_times[host_name].memory_usage = std::max(thread_times[host_name].memory_usage, static_cast<UInt64>(value));
             else if (event_name == MemoryTracker::PEAK_USAGE_EVENT_NAME)
                 thread_times[host_name].peak_memory_usage = std::max(thread_times[host_name].peak_memory_usage, value);
             /// Keep the literal in sync with TemporaryDataOnDiskScope::USAGE_EVENT_NAME.
             else if (event_name == "TemporaryDataOnDiskUsage")
-                thread_times[host_name].temp_data_on_disk_usage += value;
+                thread_times[host_name].temp_data_on_disk_usage = std::max(thread_times[host_name].temp_data_on_disk_usage, static_cast<UInt64>(value));
         }
         progress_indication.updateThreadEventData(thread_times);
         progress_table.updateTable(block);
