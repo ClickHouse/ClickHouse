@@ -3300,9 +3300,8 @@ DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(
             /// Only the precommit renames above are retried; from here on an exception is final.
             batch_precommitted = true;
 
-            /// Under the lock `commit` reuses: check and copy exactly the parts it removes (computed the same
-            /// way), so a refused removal copies nothing and a failed copy removes nothing. The empty parts get
-            /// their final names only after the copy, because a `tmp_empty_*` directory covers nothing on load.
+            /// Check and copy exactly the parts `commit` removes, under the lock it reuses, before the empty parts are
+            /// renamed: a failed copy then removes nothing, and a `tmp_empty_*` directory covers nothing on load.
             if (clone_to_detached)
             {
                 DataPartsVector parts_to_remove;

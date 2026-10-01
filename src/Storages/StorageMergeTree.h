@@ -210,9 +210,7 @@ private:
             bool optimize_skip_merged_partitions = false);
 
     /// Returns the parts that the new empty parts covered, i.e. the parts this call removed.
-    /// With `clone_to_detached`, the covered parts are copied to `detached/` as part of the same
-    /// operation, under the parts lock that decides the removal -- see the body for why the copy
-    /// cannot be made either before or after it.
+    /// With `clone_to_detached`, they are first copied to `detached/` under the parts lock that decides the removal.
     DataPartsVector renameAndCommitEmptyParts(
         MutableDataPartsVector & new_parts, Transaction & transaction, bool clone_to_detached, ContextPtr query_context);
 
