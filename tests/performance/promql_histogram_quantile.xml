@@ -11,7 +11,7 @@
     </create_query>
 
     <fill_query>
-        INSERT INTO promql_histogram_quantile_ts (metric_name, tags, time_series)
+        INSERT INTO promql_histogram_quantile_ts (metric_name, tags, samples)
         SELECT
             'http_request_duration_seconds_bucket',
             map(
@@ -34,7 +34,7 @@
     </create_query>
 
     <fill_query>
-        INSERT INTO promql_histogram_quantile_sparse_ts (metric_name, tags, time_series)
+        INSERT INTO promql_histogram_quantile_sparse_ts (metric_name, tags, samples)
         SELECT
             'http_request_duration_seconds_bucket',
             map(
