@@ -39,6 +39,24 @@ CreateQuery t (children 3)
     DataType UInt8
  Storage definition (children 1)
   Function Memory
+Explain EXPLAIN SYNTAX (children 1)
+ InsertQuery   (children 2)
+  Identifier t
+  SelectWithUnionQuery (children 1)
+   ExpressionList (children 1)
+    SelectQuery (children 1)
+     ExpressionList (children 1)
+      Literal UInt64_1
+Explain EXPLAIN SYNTAX (children 2)
+ InsertQuery   (children 2)
+  Identifier t
+  SelectWithUnionQuery (children 1)
+   ExpressionList (children 1)
+    SelectQuery (children 1)
+     ExpressionList (children 1)
+      Literal UInt64_1
+ Identifier JSON
+SYSTEM CLEAR MARK CACHE
 InsertQuery   (children 3)
  Identifier t
  SelectWithUnionQuery (children 1)
@@ -61,3 +79,7 @@ EXPLAIN AST (DELETE FROM t WHERE 1) SETTINGS max_threads = 1	1
 EXPLAIN AST (CREATE TABLE t (`x` UInt8) ENGINE = Memory) FORMAT TSV	1
 EXPLAIN AST SELECT 1 FORMAT TSV	1
 EXPLAIN AST INSERT INTO t SELECT 1 FORMAT Null	1
+EXPLAIN AST (EXPLAIN SYNTAX INSERT INTO t SELECT 1) FORMAT TSV	1
+EXPLAIN AST (EXPLAIN SYNTAX INSERT INTO t SELECT 1 FORMAT JSON) FORMAT TSV	1
+EXPLAIN AST SELECT * FROM viewExplain(\'EXPLAIN SYNTAX\', \'\', (SELECT 1)) FORMAT TSV	1
+EXPLAIN SYNTAX SYSTEM CLEAR MARK CACHE FORMAT TSV	1

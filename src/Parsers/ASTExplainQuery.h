@@ -181,16 +181,27 @@ protected:
             ostr << settings.nl_or_ws;
 
             /// Trailing output options belong to the EXPLAIN only if the inner query cannot take them on re-parse.
-            /// EXPLAIN AST accepts any parenthesized query, but `(SELECT ...)` and `(EXPLAIN ...)` re-parse as a subquery.
+            /// EXPLAIN AST accepts any parenthesized query, except the ones the subquery parser reads instead:
+            /// a SELECT, an EXPLAIN AST, an EXPLAIN without a query, and an EXPLAIN of a SELECT.
+            /// Other kinds have a parenthesized form only for a SELECT.
             bool need_parens = false;
             if (frame.has_trailing_output_options)
             {
                 const auto inner_kind = query->getQueryKind();
                 const bool inner_has_output = dynamic_cast<const ASTQueryWithOutput *>(query.get()) != nullptr;
                 if (kind == ParsedAST)
-                    need_parens = !inner_has_output || (inner_kind != QueryKind::Select && inner_kind != QueryKind::Explain);
+                {
+                    bool parsed_as_subquery = inner_kind == QueryKind::Select;
+                    if (const auto * inner_explain = query->as<ASTExplainQuery>())
+                    {
+                        const auto & explained = inner_explain->getExplainedQuery();
+                        parsed_as_subquery = inner_explain->getKind() == ParsedAST || !explained
+                            || explained->getQueryKind() == QueryKind::Select;
+                    }
+                    need_parens = !inner_has_output || !parsed_as_subquery;
+                }
                 else
-                    need_parens = !inner_has_output && inner_kind != QueryKind::Insert && inner_kind != QueryKind::AsyncInsertFlush;
+                    need_parens = !inner_has_output && inner_kind == QueryKind::Select;
             }
 
             if (need_parens)
