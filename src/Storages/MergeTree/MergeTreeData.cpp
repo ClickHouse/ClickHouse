@@ -1510,10 +1510,10 @@ void MergeTreeData::checkProperties(
                 projection.name);
     }
 
-    /// An unavailable declaration has no ProjectionDescription flags. Inspect its stored SELECT
-    /// outputs and settings before an ALTER disables a gate or adds a column that would change
-    /// the meaning of a virtual output when the declaration can be analyzed again. Do not reject
-    /// an unrelated ALTER merely because an existing, unavailable declaration was loaded with a
+    /// An unavailable declaration has no `ProjectionDescription` flags. Inspect its source-column
+    /// references and settings before an `ALTER` disables a gate or adds a column that would change
+    /// the meaning of a virtual input when the declaration can be analyzed again. Do not reject
+    /// an unrelated `ALTER` merely because an existing, unavailable declaration was loaded with a
     /// disabled gate.
     if (!attach)
     {
@@ -1534,16 +1534,14 @@ void MergeTreeData::checkProperties(
                 with_block_number = declaration.type->name == "commit_order";
                 with_block_offset = with_block_number;
             }
-            if (const auto * query = declaration.query ? declaration.query->as<const ASTProjectionSelectQuery>() : nullptr;
-                query && query->select())
+            if (declaration.query)
             {
-                for (const auto & output : query->select()->children)
-                {
-                    const String name = output->getAliasOrColumnName();
-                    with_parent_part_offset |= name == "_part_offset" || name.ends_with("._part_offset");
-                    with_block_number |= name == "_block_number" || name.ends_with("._block_number");
-                    with_block_offset |= name == "_block_offset" || name.ends_with("._block_offset");
-                }
+                with_parent_part_offset |= projectionDeclarationReferencesColumn(
+                    declaration, "_part_offset", old_metadata.columns);
+                with_block_number |= projectionDeclarationReferencesColumn(
+                    declaration, "_block_number", old_metadata.columns);
+                with_block_offset |= projectionDeclarationReferencesColumn(
+                    declaration, "_block_offset", old_metadata.columns);
             }
 
             with_parent_part_offset &= !old_metadata.columns.has("_part_index") && !old_metadata.columns.has("_part_offset")

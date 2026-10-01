@@ -1077,6 +1077,20 @@ void checkColumnDeclarationIsSupportedByAlter(const ASTColumnDeclaration & ast_c
 
 }
 
+bool projectionDeclarationReferencesColumn(
+    const ASTProjectionDeclaration & declaration, const String & column_name, const ColumnsDescription & columns)
+{
+    if (!declaration.query)
+        return false;
+    const auto aliases = getProjectionAliases(declaration);
+    const auto & query = declaration.query->as<const ASTProjectionSelectQuery &>();
+    for (const auto & expression : {query.select(), query.where(), query.groupBy(), query.orderBy()})
+        if (expression && projectionQueryReferencesColumn(
+                *expression, column_name, columns, aliases, /*expand_table_aliases=*/true))
+            return true;
+    return false;
+}
+
 std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();

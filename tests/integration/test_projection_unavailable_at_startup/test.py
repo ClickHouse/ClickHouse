@@ -257,7 +257,8 @@ def test_restore_codec_projection_with_missing_dictionary(started_cluster):
     )
 
 
-def test_restore_unavailable_projection_checks_destination_requirements(started_cluster):
+@pytest.mark.parametrize("part_offset_expression", ["_part_offset", "_part_offset AS parent_offset"])
+def test_restore_unavailable_projection_checks_destination_requirements(started_cluster, part_offset_expression):
     node.query("DROP DATABASE IF EXISTS restore_unavailable_gate SYNC")
     node.query("CREATE DATABASE restore_unavailable_gate")
     node.query(
@@ -273,7 +274,7 @@ def test_restore_unavailable_projection_checks_destination_requirements(started_
     )
     node.query(
         "CREATE TABLE restore_unavailable_gate.source "
-        "(a UInt64, PROJECTION pp (SELECT a, _part_offset, "
+        f"(a UInt64, PROJECTION pp (SELECT a, {part_offset_expression}, "
         "dictGet('restore_unavailable_gate.lookup', 'value', a) AS d ORDER BY a)) "
         "ENGINE = MergeTree ORDER BY a "
         "SETTINGS allow_part_offset_column_in_projections = 1",
@@ -316,6 +317,99 @@ def test_restore_unavailable_projection_checks_destination_requirements(started_
     )
     assert "allow_part_offset_column_in_projections" in error, error
     assert node.query("EXISTS TABLE restore_unavailable_gate.restored").strip() == "0"
+
+
+def test_aliased_block_virtual_columns_require_projection_gates(started_cluster):
+    node.query("DROP DATABASE IF EXISTS aliased_block_gate SYNC")
+    node.query("CREATE DATABASE aliased_block_gate")
+    projection = (
+        "PROJECTION pp (SELECT a, _block_number AS bn, _block_offset AS bo ORDER BY a)"
+    )
+    for setting in (
+        "allow_commit_order_projection",
+        "enable_block_number_column",
+        "enable_block_offset_column",
+    ):
+        settings = {
+            "allow_commit_order_projection": 1,
+            "enable_block_number_column": 1,
+            "enable_block_offset_column": 1,
+        }
+        settings[setting] = 0
+        settings_sql = ", ".join(f"{name} = {value}" for name, value in settings.items())
+        error = node.query_and_get_error(
+            f"CREATE TABLE aliased_block_gate.{setting} (a UInt64, {projection}) "
+            f"ENGINE = MergeTree ORDER BY a SETTINGS {settings_sql}"
+        )
+        assert setting in error, error
+        assert node.query(
+            f"EXISTS TABLE aliased_block_gate.{setting}"
+        ).strip() == "0"
+
+
+def test_restore_unavailable_aliased_block_columns_checks_gates(started_cluster):
+    node.query("DROP DATABASE IF EXISTS restore_aliased_block_gate SYNC")
+    node.query("CREATE DATABASE restore_aliased_block_gate")
+    node.query(
+        "CREATE TABLE restore_aliased_block_gate.lookup_source "
+        "(id UInt64, value UInt64) ENGINE = Memory"
+    )
+    node.query(
+        "CREATE DICTIONARY restore_aliased_block_gate.lookup "
+        "(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id "
+        "SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() "
+        "DB 'restore_aliased_block_gate' TABLE 'lookup_source')) "
+        "LAYOUT(FLAT()) LIFETIME(0)"
+    )
+    node.query(
+        "CREATE TABLE restore_aliased_block_gate.source "
+        "(a UInt64, PROJECTION pp (SELECT a, _block_number AS bn, "
+        "_block_offset AS bo, "
+        "dictGet('restore_aliased_block_gate.lookup', 'value', a) AS d ORDER BY a)) "
+        "ENGINE = MergeTree ORDER BY a SETTINGS allow_commit_order_projection = 1, "
+        "enable_block_number_column = 1, enable_block_offset_column = 1"
+    )
+
+    metadata_path = node.query(
+        "SELECT metadata_path FROM system.tables "
+        "WHERE database = 'restore_aliased_block_gate' AND name = 'source'"
+    ).strip()
+    node.query("DETACH TABLE restore_aliased_block_gate.source")
+    metadata = read_metadata(node, metadata_path)
+    assert "allow_commit_order_projection = 1" in metadata
+    write_metadata(
+        node,
+        metadata_path,
+        metadata.replace("allow_commit_order_projection = 1", "allow_commit_order_projection = 0"),
+    )
+    node.query("ATTACH TABLE restore_aliased_block_gate.source")
+    node.query(
+        "DROP DICTIONARY restore_aliased_block_gate.lookup "
+        "SETTINGS check_table_dependencies = 0"
+    )
+    node.restart_clickhouse()
+    assert node.query(
+        "SELECT count() FROM system.projections "
+        "WHERE database = 'restore_aliased_block_gate' AND table = 'source'"
+    ).strip() == "0"
+
+    backup = f"restore_aliased_block_gate_{uuid.uuid4().hex}"
+    node.query(
+        f"BACKUP TABLE restore_aliased_block_gate.source TO Disk('backups', '{backup}')"
+    )
+    error = node.query_and_get_error(
+        "RESTORE TABLE restore_aliased_block_gate.source "
+        f"AS restore_aliased_block_gate.restored FROM Disk('backups', '{backup}')"
+    )
+    assert "allow_commit_order_projection" in error, error
+    assert node.query("EXISTS TABLE restore_aliased_block_gate.restored").strip() == "0"
+
+    for setting in ("enable_block_number_column", "enable_block_offset_column"):
+        error = node.query_and_get_error(
+            "ALTER TABLE restore_aliased_block_gate.source "
+            f"MODIFY SETTING {setting} = 0"
+        )
+        assert setting in error, error
 
 
 def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
