@@ -19,8 +19,8 @@ to the merged PR when it can (`Caused by: <PR>` in the issue), and puts the
 issue link plus reproducer into the job report.
 
 Fail-close: the downgrade to OK happens only on PR runs, on an explicit
-`unrelated` verdict whose GitHub issue is verified to carry the failure's
-fingerprint and the `fuzz` label, and only when every failure shares the
+`unrelated` verdict whose GitHub issue is verified to be open in this repository
+and to carry the failure's fingerprint and the `fuzz` label, and only when every failure shares the
 stable signature (a stack trace ID) that fingerprint is built from; a generic
 name such as `Server died` gets no issue at all. Any triage problem
 (agent CLI missing, secrets unavailable, malformed verdict, timeout) leaves the
@@ -329,7 +329,7 @@ similar two titles look - decides whether an issue already exists.
 def _build_prompt(
     info, job_kind, failures, evidence_paths, repro_hint, pr_mode, fingerprint
 ):
-    repo_name = repo_from_pr_url(info.pr_url) or info.repo_name
+    repo_name = _triage_repo(info)
     try:
         report_url = info.get_report_url(latest=True)
     except Exception:
@@ -544,14 +544,19 @@ def _github_reachable():
         return False
 
 
-def _verify_issue_marker(issue_url, fingerprint):
-    """Check the issue really carries the dedup marker and the `fuzz` label.
+def _triage_repo(info):
+    return repo_from_pr_url(info.pr_url) or info.repo_name
+
+
+def _verify_issue_marker(issue_url, fingerprint, repo_name):
+    """Check the issue is open in `repo_name` with the dedup marker and `fuzz` label.
 
     Taking the agent's word for this is how duplicates get back in: an issue
     missing the marker line, or missing the label the lookup filters on, is
     invisible to the next job that hits the same bug. Verifying also catches the
-    other failure mode - referencing a similar-looking issue that has a
-    different fingerprint.
+    other failure modes - referencing a similar-looking issue that has a
+    different fingerprint, or a closed one, which means the bug regressed and
+    needs a new issue.
 
     Returns `(verified, problems)`; `verified` is False when the check itself
     could not run, which must not be reported as a missing marker.
@@ -562,9 +567,16 @@ def _verify_issue_marker(issue_url, fingerprint):
     if not match:
         return False, [f"AI triage: cannot verify {issue_url}: unrecognized issue URL"]
     repo, number = match.group(1), match.group(2)
+    if not repo_name:
+        return False, [f"AI triage: cannot verify {issue_url}: repository unknown"]
+    if repo.lower() != repo_name.lower():
+        return True, [
+            f"AI triage WARNING: {issue_url} is not in `{repo_name}`, where "
+            f"this failure is tracked"
+        ]
     try:
         output = _robot_gh(
-            "issue", "view", number, "--repo", repo, "--json", "body,labels"
+            "issue", "view", number, "--repo", repo, "--json", "body,labels,state"
         )
         issue = json.loads(output) if output else None
     except Exception as e:  # noqa: BLE001 - never lose a valid verdict over this
@@ -574,6 +586,11 @@ def _verify_issue_marker(issue_url, fingerprint):
         return False, [f"AI triage: could not verify the dedup marker on {issue_url}"]
 
     problems = []
+    if issue.get("state") != "OPEN":
+        problems.append(
+            f"AI triage WARNING: {issue_url} is not open, so the bug regressed "
+            f"and needs a new issue carrying this fingerprint"
+        )
     if f"{FINGERPRINT_FIELD}: {fingerprint}" not in (issue.get("body") or ""):
         problems.append(
             f"AI triage WARNING: {issue_url} does not carry "
@@ -589,7 +606,9 @@ def _verify_issue_marker(issue_url, fingerprint):
     return True, problems
 
 
-def _apply_verdict(result, verdict, pr_mode, fingerprint="", uncovered=()):
+def _apply_verdict(
+    result, verdict, pr_mode, fingerprint="", uncovered=(), repo_name=""
+):
     kind = verdict["verdict"]
     reasoning = (verdict.get("reasoning") or "").strip()[:1200]
     signature = (verdict.get("signature") or "").strip()
@@ -609,7 +628,7 @@ def _apply_verdict(result, verdict, pr_mode, fingerprint="", uncovered=()):
     # Check the issue itself rather than trusting the verdict; fall back to the
     # agent's own claim only when the check could not run. A missing key counts as
     # not applied: silence must not read as success.
-    verified, marker_problems = _verify_issue_marker(issue_url, fingerprint)
+    verified, marker_problems = _verify_issue_marker(issue_url, fingerprint, repo_name)
     lines.extend(marker_problems)
     if (
         not verified
@@ -642,8 +661,9 @@ def _apply_verdict(result, verdict, pr_mode, fingerprint="", uncovered=()):
         )
     elif pr_mode and kind == "unrelated" and issue_url and marker_problems:
         lines.append(
-            f"AI triage: verdict was `unrelated`, but {issue_url} is not tracked "
-            f"under this failure's fingerprint - keeping the job red (fail-close)"
+            f"AI triage: verdict was `unrelated`, but {issue_url} is not an open "
+            f"issue tracking this failure's fingerprint - keeping the job red "
+            f"(fail-close)"
         )
     elif pr_mode and kind == "unrelated" and issue_url:
         # The only path that turns the job green, mirroring the established
@@ -682,7 +702,7 @@ def _apply_verdict(result, verdict, pr_mode, fingerprint="", uncovered=()):
         elif issue_url and not verified:
             not_tracked = "it could not be checked for this failure's fingerprint"
         elif issue_url and marker_problems:
-            not_tracked = "it is not tracked under this failure's fingerprint"
+            not_tracked = "it is not an open issue tracking this failure's fingerprint"
         elif issue_url and uncovered:
             names = ", ".join(f"`{name}`" for name in uncovered)
             not_tracked = f"its fingerprint does not cover {names}"
@@ -773,7 +793,9 @@ def triage_and_apply(
         )
         timeout_sec = int(os.environ.get("AI_FUZZ_TRIAGE_TIMEOUT", agent_timeout_sec))
         verdict = _run_agent(prompt, timeout_sec)
-        _apply_verdict(result, verdict, pr_mode, fingerprint, uncovered)
+        _apply_verdict(
+            result, verdict, pr_mode, fingerprint, uncovered, _triage_repo(info)
+        )
     except Exception as e:  # noqa: BLE001 - triage must never break the job
         print(f"WARNING: AI fuzz triage unavailable: {e}")
         traceback.print_exc()
