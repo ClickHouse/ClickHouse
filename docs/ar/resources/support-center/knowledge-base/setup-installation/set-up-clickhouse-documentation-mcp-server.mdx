@@ -5,90 +5,88 @@ slug: /resources/support-center/knowledge-base/setup-installation/set-up-clickho
 description: 'اربط أدوات الذكاء الاصطناعي بوثائق ClickHouse عبر Model Context Protocol.'
 doc_type: 'guide'
 date: 2026-08-20
-tags: ['Tools and Utilities']
+tags: ['الأدوات والمرافق']
 keywords: ['MCP', 'Model Context Protocol', 'أدوات الذكاء الاصطناعي', 'الوثائق']
 ---
 
 <Info>
-توضح هذه الصفحة كيفية إعداد خادم MCP للبحث في وثائق ClickHouse. للاستعلام عن بيانات ClickHouse بدلاً من ذلك، استخدم [خادم ClickHouse MCP مفتوح المصدر](/ar/guides/use-cases/ai-ml/MCP) أو [خادم ClickHouse Cloud MCP البعيد](/ar/products/cloud/features/ai-ml/remote-mcp).
+  تُهيّئ هذه الصفحة خادم MCP للبحث في وثائق ClickHouse. وللاستعلام عن بيانات ClickHouse بدلاً من ذلك، استخدم [خادم MCP مفتوح المصدر لـ ClickHouse](/ar/guides/use-cases/ai-ml/MCP) أو [خادم MCP البعيد لـ ClickHouse Cloud](/ar/products/cloud/features/ai-ml/remote-mcp).
 </Info>
 
-استعلِم من وثائق ClickHouse مباشرةً عبر أدوات الذكاء الاصطناعي لديك باستخدام Model Context Protocol (MCP).
+استعلم مباشرةً من أدوات الذكاء الاصطناعي عن وثائق ClickHouse باستخدام Model Context Protocol ‏(MCP).
 
-## ربط أداة الذكاء الاصطناعي {#connect-your-ai-tool}
+<div id="connect-your-ai-tool">
+  ## اربط أداة الذكاء الاصطناعي الخاصة بك
+</div>
 
 <Tabs>
-<Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
+  <Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
+    شغّل الأمر التالي في الطرفية:
 
-شغّل في الطرفية:
+    ```bash
+    claude mcp add --transport http clickhouse-docs https://clickhouse.com/docs/mcp --scope user
+    ```
+  </Tab>
 
-```bash
-claude mcp add --transport http clickhouse-docs https://clickhouse.com/docs/mcp --scope user
-```
+  <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
+    أضف ما يلي إلى `claude_desktop_config.json`:
 
-</Tab>
-<Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
-
-أضف إلى `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "clickhouse-docs": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+    ```json
+    {
+      "mcpServers": {
+        "clickhouse-docs": {
+          "command": "npx",
+          "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+        }
+      }
     }
-  }
-}
-```
+    ```
+  </Tab>
 
-</Tab>
-<Tab title="Codex" icon="/images/logo-codex.svg">
+  <Tab title="Codex" icon="/images/logo-codex.svg">
+    شغّل الأمر التالي في الطرفية:
 
-شغّل في الطرفية:
+    ```bash
+    codex mcp add clickhouse-docs --url https://clickhouse.com/docs/mcp
+    ```
+  </Tab>
 
-```bash
-codex mcp add clickhouse-docs --url https://clickhouse.com/docs/mcp
-```
+  <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
+    أضف ما يلي إلى `.cursor/mcp.json`:
 
-</Tab>
-<Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
-
-أضف إلى `.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "clickhouse-docs": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+    ```json
+    {
+      "mcpServers": {
+        "clickhouse-docs": {
+          "command": "npx",
+          "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+        }
+      }
     }
-  }
-}
-```
+    ```
+  </Tab>
 
-</Tab>
-<Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
+  <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
+    أضف ما يلي إلى `~/.codeium/windsurf/mcp_config.json`:
 
-أضف إلى `~/.codeium/windsurf/mcp_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "clickhouse-docs": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+    ```json
+    {
+      "mcpServers": {
+        "clickhouse-docs": {
+          "command": "npx",
+          "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+        }
+      }
     }
-  }
-}
-```
-
-</Tab>
+    ```
+  </Tab>
 </Tabs>
 
-## إضافة مهارات ClickHouse إلى وكيل البرمجة {#add-clickhouse-skills}
+<div id="add-clickhouse-skills">
+  ## أضف مهارات ClickHouse إلى وكيل البرمجة
+</div>
 
-ثبّت مهارات ClickHouse لمنح وكيلك معرفة متخصصة بـ ClickHouse وأفضل الممارسات:
+ثبّت مهارات ClickHouse لتزويد وكيلك بمعرفة متخصصة بـ ClickHouse وأفضل الممارسات:
 
 ```bash
 npx skills add https://clickhouse.com

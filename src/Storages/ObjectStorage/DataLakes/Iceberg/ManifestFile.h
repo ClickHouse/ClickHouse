@@ -60,6 +60,16 @@ struct PartitionSpecsEntry
 };
 using PartitionSpecification = std::vector<PartitionSpecsEntry>;
 
+struct PartitionFieldSummary
+{
+    bool contains_null = false;
+    bool contains_nan = false;
+    std::optional<String> lower_bound;
+    std::optional<String> upper_bound;
+};
+
+using PartitionFieldSummaries = std::vector<PartitionFieldSummary>;
+
 struct ManifestFileCacheableInfo
 {
     std::shared_ptr<AvroForIcebergDeserializer> deserializer;
@@ -79,6 +89,7 @@ struct ParsedManifestFileEntry : boost::noncopyable
     std::optional<Int64> parsed_sequence_number;
     std::optional<Int64> parsed_file_sequence_number;
     std::optional<Int64> parsed_snapshot_id;
+    std::optional<UInt64> parsed_first_row_id;
 
     DB::Row partition_key_value;
     std::unordered_map<Int32, ColumnInfo> columns_infos;
@@ -87,6 +98,9 @@ struct ParsedManifestFileEntry : boost::noncopyable
     String file_format;
     std::optional<IcebergPathFromMetadata> lower_reference_data_file_path; // For position delete files only.
     std::optional<IcebergPathFromMetadata> upper_reference_data_file_path; // For position delete files only.
+    std::optional<IcebergPathFromMetadata> referenced_data_file_path; // Required for deletion vectors.
+    std::optional<Int64> content_offset; // Required for deletion vectors.
+    std::optional<Int64> content_size_in_bytes; // Required for deletion vectors.
     std::optional<std::vector<Int32>> equality_ids;
 
     /// Data file is sorted with this sort_order_id (can be read from metadata.json)
@@ -96,6 +110,8 @@ struct ParsedManifestFileEntry : boost::noncopyable
     Int64 record_count;
     Int64 file_size_in_bytes;
 
+    bool isDeletionVector() const;
+
     ParsedManifestFileEntry(
         FileContentType content_type_,
         IcebergPathFromMetadata file_path_key_,
@@ -104,12 +120,16 @@ struct ParsedManifestFileEntry : boost::noncopyable
         std::optional<Int64> written_sequence_number_,
         std::optional<Int64> written_file_sequence_number_,
         std::optional<Int64> written_snapshot_id_,
+        std::optional<UInt64> written_first_row_id_,
         DB::Row partition_key_value_,
         std::unordered_map<Int32, ColumnInfo> columns_infos_,
         std::unordered_map<Int32, std::pair<Field, Field>> value_bounds_,
         String file_format_,
         std::optional<IcebergPathFromMetadata> lower_reference_data_file_path_,
         std::optional<IcebergPathFromMetadata> upper_reference_data_file_path_,
+        std::optional<IcebergPathFromMetadata> referenced_data_file_path_,
+        std::optional<Int64> content_offset_,
+        std::optional<Int64> content_size_in_bytes_,
         std::optional<std::vector<Int32>> equality_ids_,
         std::optional<Int32> sort_order_id_,
         Int64 record_count_,
@@ -121,12 +141,16 @@ struct ParsedManifestFileEntry : boost::noncopyable
         , parsed_sequence_number(written_sequence_number_)
         , parsed_file_sequence_number(written_file_sequence_number_)
         , parsed_snapshot_id(written_snapshot_id_)
+        , parsed_first_row_id(written_first_row_id_)
         , partition_key_value(std::move(partition_key_value_))
         , columns_infos(std::move(columns_infos_))
         , value_bounds(std::move(value_bounds_))
         , file_format(std::move(file_format_))
         , lower_reference_data_file_path(std::move(lower_reference_data_file_path_))
         , upper_reference_data_file_path(std::move(upper_reference_data_file_path_))
+        , referenced_data_file_path(std::move(referenced_data_file_path_))
+        , content_offset(content_offset_)
+        , content_size_in_bytes(content_size_in_bytes_)
         , equality_ids(std::move(equality_ids_))
         , sort_order_id(sort_order_id_)
         , record_count(record_count_)
@@ -144,6 +168,7 @@ struct ProcessedManifestFileEntry
     Int64 sequence_number;
     Int32 resolved_schema_id;
     String manifest_file_path;
+    std::optional<UInt64> first_row_id;
 
     String dumpDeletesMatchingInfo() const;
 };

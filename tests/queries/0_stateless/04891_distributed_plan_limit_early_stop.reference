@@ -1,2 +1,4 @@
 1
+local exchanges: stop propagated on every expected exchange stream
 1
+remote exchanges: stop propagated on every expected exchange stream

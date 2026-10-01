@@ -1,7 +1,4 @@
--- Tags: no-old-analyzer
-
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 -- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so pin it to 0.
 SET max_rows_to_group_by = 0;
 
@@ -18,7 +15,7 @@ CREATE TABLE t_global_in_dst (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_global_in_dst SELECT number FROM numbers(100);
 
 SELECT count() FROM t_global_in_dst WHERE k GLOBAL IN (SELECT a FROM t_global_in_src) SETTINGS make_distributed_plan = 0;
-SELECT count() FROM t_global_in_dst WHERE k GLOBAL IN (SELECT a FROM t_global_in_src) SETTINGS make_distributed_plan = 1;
+SELECT count() FROM t_global_in_dst WHERE k GLOBAL IN (SELECT a FROM t_global_in_src) SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_global_in_src;
 DROP TABLE t_global_in_dst;

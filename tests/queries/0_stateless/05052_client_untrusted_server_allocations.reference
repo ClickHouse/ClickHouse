@@ -1,0 +1,4 @@
+block declaring a 2 GiB decompressed size: Too large size_decompressed
+block declaring 1e12 rows: TOO_LARGE_ARRAY_SIZE
+exception from the server: reported
+exception with a 1 GiB message that is not sent: reported

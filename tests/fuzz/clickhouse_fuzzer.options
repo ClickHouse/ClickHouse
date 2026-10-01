@@ -1,7 +1,13 @@
 [libfuzzer]
 timeout = 20
 rss_limit_mb = 4096
+dict = all.dict
 
 [fuzzer_arguments]
 --max_execution_time=10
 --max_parser_backtracks=10000
+--max_query_size=0
+--http_connection_timeout=1
+--http_send_timeout=1
+--http_receive_timeout=1
+--http_max_tries=1
