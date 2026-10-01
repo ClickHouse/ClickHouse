@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long
+# Tags: no-fasttest, long, no-tsan
 # Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 # Tag long: about 70 PromQL queries, which take more than 180s in the flaky check.
+# Tag no-tsan: the 20-operator query needs more stack than the 5% that TSan allows.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -129,7 +130,7 @@ selectors 'lim / on(job) group_left sum by (job) (req{job="api"})'
 selectors '(-lim) / on(job) group_left sum by (job) (req{job="api"})'
 selectors 'abs(lim) / on(job) group_left sum by (job) (req{job="api"})'
 
-# Prints $1 `lim` selectors joined by `and` as a balanced tree, so the SQL is not nested too deep for TSan.
+# Prints $1 `lim` selectors joined by `and` as a balanced tree, to keep the SQL nesting shallow.
 function and_of_lim()
 {
     if [ "$1" -eq 1 ]; then echo "lim"; return; fi
