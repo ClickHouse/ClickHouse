@@ -6,12 +6,19 @@
 #include <IO/WriteBuffer.h>
 #include <base/arithmeticOverflow.h>
 
+#include <limits>
+#include <type_traits>
+
 namespace DB
 {
 
 /// Variable-Length Quantity (VLQ) Base-128 compression, also known as Variable Byte (VB) or Varint encoding.
 
 [[noreturn]] void throwReadAfterEOF();
+
+[[noreturn]] void throwVarUIntOutOfRange(UInt64 value, UInt64 max_value);
+
+[[noreturn]] void throwVarIntOutOfRange(Int64 value, Int64 min_value, Int64 max_value);
 
 
 /// The most bytes writeVarUInt emits for a UInt64: nine continuation bytes plus a final one.
@@ -112,6 +119,31 @@ inline void ALWAYS_INLINE ignoreVarUInt(ReadBuffer & istr)
     }
 }
 
+template <typename T>
+inline void ALWAYS_INLINE checkVarUIntFits(UInt64 value)
+{
+    static_assert(std::is_integral_v<T>);
+
+    constexpr UInt64 max_value = static_cast<UInt64>(std::numeric_limits<T>::max());
+    if (value > max_value) [[unlikely]]
+    {
+        throwVarUIntOutOfRange(value, max_value);
+    }
+}
+
+template <typename T>
+inline void ALWAYS_INLINE checkVarIntFits(Int64 value)
+{
+    static_assert(std::is_integral_v<T> && std::is_signed_v<T>);
+
+    constexpr Int64 min_value = static_cast<Int64>(std::numeric_limits<T>::min());
+    constexpr Int64 max_value = static_cast<Int64>(std::numeric_limits<T>::max());
+    if (value < min_value || value > max_value) [[unlikely]]
+    {
+        throwVarIntOutOfRange(value, min_value, max_value);
+    }
+}
+
 }
 
 inline void ALWAYS_INLINE readVarUInt(UInt64 & x, ReadBuffer & istr)
@@ -186,6 +218,7 @@ inline void ALWAYS_INLINE readVarUInt(UInt32 & x, ReadBuffer & istr)
 {
     UInt64 tmp = 0;
     readVarUInt(tmp, istr);
+    varint_impl::checkVarUIntFits<UInt32>(tmp);
     x = static_cast<UInt32>(tmp);
 }
 
@@ -193,6 +226,7 @@ inline void ALWAYS_INLINE readVarInt(Int32 & x, ReadBuffer & istr)
 {
     Int64 tmp = 0;
     readVarInt(tmp, istr);
+    varint_impl::checkVarIntFits<Int32>(tmp);
     x = static_cast<Int32>(tmp);
 }
 
@@ -200,6 +234,7 @@ inline void ALWAYS_INLINE readVarUInt(UInt16 & x, ReadBuffer & istr)
 {
     UInt64 tmp = 0;
     readVarUInt(tmp, istr);
+    varint_impl::checkVarUIntFits<UInt16>(tmp);
     x = static_cast<UInt16>(tmp);
 }
 
@@ -207,6 +242,7 @@ inline void ALWAYS_INLINE readVarInt(Int16 & x, ReadBuffer & istr)
 {
     Int64 tmp = 0;
     readVarInt(tmp, istr);
+    varint_impl::checkVarIntFits<Int16>(tmp);
     x = static_cast<Int16>(tmp);
 }
 
@@ -216,6 +252,10 @@ inline void ALWAYS_INLINE readVarUInt(T & x, ReadBuffer & istr)
 {
     UInt64 tmp = 0;
     readVarUInt(tmp, istr);
+
+    if constexpr (std::is_integral_v<T>)
+        varint_impl::checkVarUIntFits<T>(tmp);
+
     x = static_cast<T>(tmp);
 }
 
