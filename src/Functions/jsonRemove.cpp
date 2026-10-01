@@ -27,7 +27,6 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
-
 namespace DB
 {
 namespace Setting
