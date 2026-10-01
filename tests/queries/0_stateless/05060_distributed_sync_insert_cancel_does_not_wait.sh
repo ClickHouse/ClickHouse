@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, shard, no-fasttest, no-darwin
+# Tags: no-parallel, shard, no-fasttest
 # Tag no-parallel: waits on a server-global PAUSEABLE failpoint, so a concurrent instance would
 #   consume this one's pause and release the writing job early.
 # Tag shard: inserts into a Distributed table.
-# Tag no-darwin: on the macOS CI runner the cancelled initiator's connection close is not observed promptly,
-#   so the shard-side INSERT blocks until `max_execution_time` and the wait loop hits the 60s test timeout.
 
 # Regression test for cancellation of a synchronous distributed INSERT. `DistributedSink::onCancel`
 # used to take the mutex that `writeSync` holds across its wait for the writing jobs, and then wait
