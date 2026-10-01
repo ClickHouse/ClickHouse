@@ -26,6 +26,7 @@
 #include <cctype>
 #include <charconv>
 #include <cmath>
+#include <limits>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -826,13 +827,19 @@ void LogsQLParser::applySortWithExtras(
         UInt64 offset = sort_offset.value_or(0);
         if (offset > 0)
             conditions.push_back(makeASTFunction("greater", rank_column, makeUInt64Literal(offset)));
-        conditions.push_back(makeASTFunction("lessOrEquals", rank_column->clone(), makeUInt64Literal(offset + *sort_limit)));
-        layer.where = conditions.size() == 1 ? conditions[0] : [&]
+        /// When `offset + limit` exceeds the `UInt64` range, every rank after the offset is kept.
+        if (*sort_limit <= std::numeric_limits<UInt64>::max() - offset)
+            conditions.push_back(makeASTFunction("lessOrEquals", rank_column->clone(), makeUInt64Literal(offset + *sort_limit)));
+        if (conditions.size() == 1)
+        {
+            layer.where = conditions[0];
+        }
+        else if (conditions.size() > 1)
         {
             auto conjunction = makeASTFunction("and");
             conjunction->arguments->children = std::move(conditions);
-            return ASTPtr(conjunction);
-        }();
+            layer.where = conjunction;
+        }
 
         auto except = make_intrusive<ASTColumnsExceptTransformer>();
         except->children.push_back(make_intrusive<ASTIdentifier>("__logsql_rank"));

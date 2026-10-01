@@ -17,6 +17,9 @@
 #include <Common/re2.h>
 #include <Poco/String.h>
 
+#include <algorithm>
+#include <limits>
+
 namespace DB
 {
 
@@ -864,8 +867,11 @@ void LogsQLParser::parsePipeRunningStats(Layer & layer, bool is_total)
             /// nth_value over the _time order; `last` uses the reversed order.
             /// For running_stats the frame ends at the current row, which yields ""
             /// until enough rows are seen - the same as in VictoriaLogs.
+            /// The window functions accept offsets up to `Int64` max. No frame holds that many
+            /// rows, so clamping a larger offset keeps its meaning: past the end of the frame.
+            UInt64 window_offset = std::min<UInt64>(offset.value_or(0), std::numeric_limits<Int64>::max() - 1);
             expression = makeWindowCall("nth_value",
-                {arguments[0], makeNumber(offset.value_or(0) + 1)},
+                {arguments[0], makeNumber(window_offset + 1)},
                 std::move(partition_by), std::move(order_by),
                 /*running_frame=*/ !is_total && aggregate != "last");
             if (!is_total && aggregate == "last")
@@ -877,7 +883,7 @@ void LogsQLParser::parsePipeRunningStats(Layer & layer, bool is_total)
                 for (const auto & field : by_fields)
                     partition_again.push_back(columnExpr(field));
                 expression = makeWindowCall("lagInFrame",
-                    {arguments[0]->clone(), makeNumber(offset.value_or(0))},
+                    {arguments[0]->clone(), makeNumber(window_offset)},
                     std::move(partition_again), std::move(asc_order),
                     /*running_frame=*/ true);
             }

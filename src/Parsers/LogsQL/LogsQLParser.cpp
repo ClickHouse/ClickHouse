@@ -109,6 +109,55 @@ bool isPlainNumber(const String & text)
     return seen_digit;
 }
 
+/// The exact plain decimal text of a decimal number written either plainly ("+10.5") or in
+/// scientific notation ("10.50000000000000000001e0", "105E-1"), with the leading '+' dropped.
+/// Returns nothing for other spellings (byte sizes, durations, base prefixes, "inf") and for
+/// exponents whose expansion would be longer than any `Decimal256` value.
+std::optional<String> tryGetExactDecimalText(const String & text)
+{
+    size_t e_pos = text.find_first_of("eE");
+    String mantissa = text.substr(0, e_pos);
+    if (!isPlainNumber(mantissa))
+        return {};
+    if (mantissa[0] == '+')
+        mantissa.erase(0, 1);
+    if (e_pos == String::npos)
+        return mantissa;
+
+    std::string_view exponent_text = std::string_view(text).substr(e_pos + 1);
+    if (exponent_text.starts_with('+'))
+        exponent_text.remove_prefix(1);
+    Int64 exponent = 0;
+    auto [end, ec] = std::from_chars(exponent_text.data(), exponent_text.data() + exponent_text.size(), exponent);
+    if (exponent_text.empty() || ec != std::errc() || end != exponent_text.data() + exponent_text.size())
+        return {};
+
+    String sign;
+    if (mantissa[0] == '-')
+    {
+        sign = "-";
+        mantissa.erase(0, 1);
+    }
+    size_t dot = mantissa.find('.');
+    Int64 integer_digits = static_cast<Int64>(dot == String::npos ? mantissa.size() : dot);
+    String digits = mantissa;
+    if (dot != String::npos)
+        digits.erase(dot, 1);
+
+    /// `Decimal256` holds 76 digits; anything longer cannot be compared through it anyway.
+    if (exponent > 100 || exponent < -100)
+        return {};
+    Int64 point = integer_digits + exponent;
+    String result;
+    if (point <= 0)
+        result = "0." + String(static_cast<size_t>(-point), '0') + digits;
+    else if (point >= static_cast<Int64>(digits.size()))
+        result = digits + String(static_cast<size_t>(point) - digits.size(), '0');
+    else
+        result = digits.substr(0, static_cast<size_t>(point)) + "." + digits.substr(static_cast<size_t>(point));
+    return sign + result;
+}
+
 const std::vector<std::string_view> field_name_stop_tokens = {":"};
 
 }
@@ -893,10 +942,15 @@ ASTPtr LogsQLParser::parseFilterContains(const String & field_name, bool need_al
             output_name = identifier->shortName();
         }
 
-        /// (SELECT groupUniqArray(<field>) FROM (<subquery>))
+        /// (SELECT groupUniqArray(ifNull(toString(<field>), '')) FROM (<subquery>))
+        /// The values are normalized to LogsQL strings, as the field values are in `stringValueExpr`:
+        /// a typed subquery output is rendered as text, and a missing `Nullable` value is empty.
         Layer values_layer;
         values_layer.source_subquery = buildSelectWithUnion(subquery_layer);
-        auto values_aggregate = makeASTFunction("groupUniqArray", make_intrusive<ASTIdentifier>(output_name));
+        auto values_aggregate = makeASTFunction("groupUniqArray",
+            makeASTFunction("ifNull",
+                makeASTFunction("toString", make_intrusive<ASTIdentifier>(output_name)),
+                make_intrusive<ASTLiteral>(Field(String()))));
         values_layer.select = {values_aggregate};
         values_layer.has_aggregation = true;
         values_layer.has_projection = true;
@@ -919,7 +973,14 @@ ASTPtr LogsQLParser::parseFilterContains(const String & field_name, bool need_al
             make_intrusive<ASTLiteral>(Field(static_cast<UInt8>(1))),
             makeASTFunction("match", stringValueExpr(field_name), std::move(pattern)));
         auto lambda = makeASTFunction("lambda", makeASTFunction("tuple", lambda_argument->clone()), lambda_body);
-        return makeASTFunction(need_all ? "arrayAll" : "arrayExists", lambda, values_subquery);
+        if (!need_all)
+            return makeASTFunction("arrayExists", lambda, values_subquery);
+        /// `arrayAll` is true for an empty array, but `contains_all` without values matches
+        /// nothing, like the literal `contains_all()`. Both references to the scalar subquery
+        /// are the same tree, so it is evaluated once.
+        return makeASTFunction("and",
+            makeASTFunction("notEmpty", values_subquery->clone()),
+            makeASTFunction("arrayAll", lambda, values_subquery));
     }
     if (wildcard)
         return nullptr;  /// contains_any(*) and contains_all(*) match all logs.
@@ -1556,13 +1617,17 @@ ASTPtr LogsQLParser::makeNumericComparison(const String & field_name, const Stri
     bool literal_fits_decimal = literal_value.getType() != Field::Types::Float64
         || (std::isfinite(literal_value.safeGet<Float64>()) && std::abs(literal_value.safeGet<Float64>()) < 1e38);
 
-    /// A plain decimal literal is compared with its exact original text: high-precision
-    /// values like `10.50000000000000000002` would otherwise be rounded through the
-    /// `Float64` literal field. For rich forms (`10.5KiB`) the shortest round-trip
-    /// formatting of the `Float64` value restores its exact decimal text.
+    /// A decimal literal is compared with the exact decimal text of its original spelling,
+    /// plain or scientific: high-precision values like `10.50000000000000000002` or
+    /// `10.50000000000000000001e0` would otherwise be rounded through the `Float64` literal
+    /// field. For rich forms (`10.5KiB`) the shortest round-trip formatting of the `Float64`
+    /// value restores its exact decimal text.
     String literal_text;
-    if (!original_text.empty() && isPlainNumber(original_text))
-        literal_text = original_text[0] == '+' ? original_text.substr(1) : original_text;
+    std::optional<String> exact_text;
+    if (!original_text.empty())
+        exact_text = tryGetExactDecimalText(original_text);
+    if (exact_text)
+        literal_text = std::move(*exact_text);
     else if (literal_value.getType() == Field::Types::Float64)
         literal_text = fmt::format("{}", literal_value.safeGet<Float64>());
     else if (literal_value.getType() == Field::Types::Int64)
