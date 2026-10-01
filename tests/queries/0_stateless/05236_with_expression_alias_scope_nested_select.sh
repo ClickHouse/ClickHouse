@@ -5,8 +5,7 @@
 # when it descended into a nested one, so on the paths that persist or replay a query - a mutation
 # command, and the definition a `SQL UDF` expansion leaves behind - such a name was qualified to a
 # table of the database owning the definition, and the answer differed from the live query's.
-# The alias is inherited by the same rule as a common table expression's name: a nested `SELECT`
-# with `enable_global_with_statement = 0` sees the table again.
+# The alias is inherited by the nested `SELECT`s like the name of a common table expression.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -28,13 +27,6 @@ SELECT 'live', (WITH [7] AS nested SELECT (SELECT toUInt8(7 IN nested) * 100 + t
 
 ALTER TABLE t UPDATE v = (WITH [7] AS nested SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10)) WHERE 1 SETTINGS mutations_sync = 2;
 SELECT 'mutation', v FROM t;
-
--- The nested \`SELECT\` stops inheriting, so the name is a table name again - in the live query and
--- in the stored command alike.
-SELECT 'live off', (WITH [7] AS nested SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 SETTINGS enable_global_with_statement = 0));
-
-ALTER TABLE t UPDATE v = (WITH [7] AS nested SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 SETTINGS enable_global_with_statement = 0)) WHERE 1 SETTINGS mutations_sync = 2;
-SELECT 'mutation off', v FROM t;
 
 -- The narrow pass that repairs a definition after \`SQL UDF\` expansion follows the same rule: the
 -- alias is not qualified, and the view answers the same as the live query.

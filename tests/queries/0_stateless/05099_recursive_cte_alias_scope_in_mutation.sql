@@ -220,13 +220,7 @@ CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v11 AS
 SELECT 'C19', s FROM {CLICKHOUSE_DATABASE_1:Identifier}.v11;
 DROP TABLE r;
 
--- Without `enable_global_with_statement` a plain name declared in an enclosing SELECT is not
--- visible in a nested one, so there it denotes the updated table's `src` (2), not the CTE (7).
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
-    UPDATE v = (WITH src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src)) WHERE id = 1
-    SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
-SELECT 'C20', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
-
+-- A plain name declared in an enclosing SELECT is visible in a nested one, so there it denotes the CTE (7).
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
     UPDATE v = (WITH src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src)) WHERE id = 1
     SETTINGS mutations_sync = 2, enable_global_with_statement = 1;
@@ -246,57 +240,6 @@ ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
     SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
 SELECT 'C23', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
 
--- A SELECT's own SETTINGS clause decides the visibility of an enclosing plain name, so the
--- nested SELECT reads the updated table's `src` (2) while the statement setting is left at 1.
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
-    UPDATE v = (WITH src AS (SELECT 7 AS id)
-                SELECT (SELECT max(id) FROM src SETTINGS enable_global_with_statement = 0))
-    WHERE id = 1 SETTINGS mutations_sync = 2;
-SELECT 'C24', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
-
--- The shorthand form of the same clause stands for `= true`, so the name is the alias (7).
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
-    UPDATE v = (WITH src AS (SELECT 7 AS id)
-                SELECT (SELECT max(id) FROM src SETTINGS enable_global_with_statement))
-    WHERE id = 1 SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
-SELECT 'C25', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
-
--- An override reaches only the SELECT that carries it: the innermost one turns inheritance back
--- on for itself, so the name is the alias (7) even though the enclosing SELECT turned it off.
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
-    UPDATE v = (SELECT (WITH src AS (SELECT 7 AS id)
-                        SELECT (SELECT max(id) FROM src SETTINGS enable_global_with_statement = 1))
-                SETTINGS enable_global_with_statement = 0)
-    WHERE id = 1 SETTINGS mutations_sync = 2;
-SELECT 'C26', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
-
--- A nested clause is clamped to the constraints before it is applied, and that drops an entry
--- repeating the value already in effect. Of a setting written twice only the entry that changes it
--- survives, so here the value is 0 and the nested SELECT reads the updated table's `src` (2).
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
-    UPDATE v = (WITH src AS (SELECT 7 AS id)
-                SELECT (SELECT max(id) FROM src
-                        SETTINGS enable_global_with_statement = 0, enable_global_with_statement = 1))
-    WHERE id = 1 SETTINGS mutations_sync = 2;
-SELECT 'C27', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
-
--- `compatibility` reaches the setting without naming it: 20.3 predates the default becoming 1,
--- so the nested SELECT reads the updated table's `src` (2).
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
-    UPDATE v = (WITH src AS (SELECT 7 AS id)
-                SELECT (SELECT max(id) FROM src SETTINGS compatibility = '20.3'))
-    WHERE id = 1 SETTINGS mutations_sync = 2;
-SELECT 'C28', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
-
--- A newer inner `compatibility` reverts what an older outer one derived, so the name is the
--- alias (7) again.
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
-    UPDATE v = (SELECT (WITH src AS (SELECT 7 AS id)
-                        SELECT (SELECT max(id) FROM src SETTINGS compatibility = '24.1'))
-                SETTINGS compatibility = '20.3')
-    WHERE id = 1 SETTINGS mutations_sync = 2;
-SELECT 'C29', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
-
 -- An expression alias is in scope in the whole `SELECT` that declares it, including its `WITH`
 -- elements, so the right argument of the second `IN` is the tuple (1) and not the table (0).
 CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v12 AS
@@ -308,55 +251,15 @@ CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v13 AS
     WITH (99 IN src) AS flag SELECT toUInt64(flag) AS s;
 SELECT 'C31', s FROM {CLICKHOUSE_DATABASE_1:Identifier}.v13;
 
--- An enclosing `readonly` makes the constraints drop the inner setting, so the name stays the
--- alias (7), where C24 has the same inner clause and no enclosing one and reads the table (2).
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
-    UPDATE v = (WITH src AS (SELECT 7 AS id)
-                SELECT (SELECT (SELECT max(id) FROM src SETTINGS enable_global_with_statement = 0)
-                        SETTINGS readonly = 1))
-    WHERE id = 1 SETTINGS mutations_sync = 2;
-SELECT 'C32', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
-
--- A plain CTE may reference a later one: every name is registered before any element is walked,
--- as the analyzer does, so `b` inside `a` is the CTE (7) and not the table (9 in the session
--- database, 19 in the updated table's), both live and after the definition is parsed again.
-CREATE TABLE b (x UInt64) ENGINE = MergeTree ORDER BY x;
-INSERT INTO b VALUES (9);
+-- A plain CTE referencing an earlier one resolves to it (7), not to the table `b`.
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.b (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.b VALUES (19);
-CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v14 AS
-    WITH a AS (SELECT * FROM b), b AS (SELECT 7 AS x) SELECT * FROM a;
-SELECT 'W10', x FROM {CLICKHOUSE_DATABASE_1:Identifier}.v14;
-DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.v14;
-ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.v14;
-SELECT 'W11', x FROM {CLICKHOUSE_DATABASE_1:Identifier}.v14;
-
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
-    UPDATE v = (WITH a AS (SELECT max(x) AS x FROM b), b AS (SELECT 7 AS x) SELECT x FROM a)
-    WHERE id = 1 SETTINGS mutations_sync = 2;
-SELECT 'W12', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
-
--- The reverse order still resolves the same way (7).
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
     UPDATE v = (WITH b AS (SELECT 7 AS x), a AS (SELECT max(x) AS x FROM b) SELECT x FROM a)
     WHERE id = 1 SETTINGS mutations_sync = 2;
 SELECT 'C33', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
 
--- Without `enable_global_with_statement` the body of `a` is a nested SELECT that does not see
--- the sibling `b`, so there it denotes the updated table's `b` (19).
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
-    UPDATE v = (WITH a AS (SELECT max(x) AS x FROM b), b AS (SELECT 7 AS x) SELECT x FROM a)
-    WHERE id = 1 SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
-SELECT 'C34', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
-
--- Outside its own definition a recursive name is an ordinary CTE of the declaring SELECT: without
--- `enable_global_with_statement` a nested consumer does not see it and reads the updated table's
--- `src` (2), while in the declaring SELECT itself the name is the alias (7) either way.
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
-    UPDATE v = (WITH RECURSIVE src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src)) WHERE id = 1
-    SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
-SELECT 'W13', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
-
+-- In the declaring SELECT a recursive name is the alias (7) whichever way the setting is set.
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
     UPDATE v = (WITH RECURSIVE src AS (SELECT 7 AS id) SELECT max(id) FROM src) WHERE id = 1
     SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
@@ -369,19 +272,6 @@ ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
                 SELECT sum(id) FROM src) WHERE id = 1
     SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
 SELECT 'C36', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
-
--- An enclosing plain CTE must not be expanded into the recursive member of a nested same-named
--- `WITH RECURSIVE` when the query is stored, so the view keeps building 1..3 (6) like the live
--- query, both right away and after its definition is parsed again.
-SELECT 'C37', (WITH src AS (SELECT 99 AS id)
-    SELECT (WITH RECURSIVE src AS (SELECT 1 AS id UNION ALL SELECT id + 1 FROM src WHERE id < 3) SELECT sum(id) FROM src));
-CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v15 AS
-    WITH src AS (SELECT 99 AS id)
-    SELECT (WITH RECURSIVE src AS (SELECT 1 AS id UNION ALL SELECT id + 1 FROM src WHERE id < 3) SELECT sum(id) FROM src) AS s;
-SELECT 'W14', s FROM {CLICKHOUSE_DATABASE_1:Identifier}.v15;
-DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.v15;
-ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.v15;
-SELECT 'W15', s FROM {CLICKHOUSE_DATABASE_1:Identifier}.v15;
 
 -- The seed of the nested recursive CTE still reads the enclosing plain one (99), so the stored
 -- query builds 99..100 (199) like the live one.

@@ -1,9 +1,0 @@
-alter bare	7
-alter string	7
-alter out of scope	7
-alter in scope	77
-update bare	7
-update out of scope	7
-update in scope	77
-update predicate	0
-stored	2

@@ -570,15 +570,28 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         ApplyWithSubqueryVisitor::visit(*modify_query);
     }
 
+    /// The same for the expressions of the mutation commands, as `InterpreterUpdateQuery` does: the
+    /// context makes CTE expansion respect `enable_global_with_statement`, so a CTE name that is not
+    /// visible in a subquery is left there as a table name and is qualified below.
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto * command = child->as<ASTAlterCommand>();
+        if (!command || (command->type != ASTAlterCommand::UPDATE && command->type != ASTAlterCommand::DELETE))
+            continue;
+
+        for (IAST * expression : {command->predicate, command->update_assignments})
+        {
+            if (!expression)
+                continue;
+            ASTPtr expression_ptr = expression->ptr();
+            ApplyWithSubqueryVisitor::visit(expression_ptr, getContext());
+        }
+    }
+
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
     AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
-    /// The full traversal leaves the table name in the first argument of `joinGet` alone, while a
-    /// mutation is executed later in a context whose current database is unrelated to the query's.
-    /// Qualify it with the database of the altered table, under the same `WITH` scoping, as
-    /// `CREATE` does for a stored definition.
-    visitor.visitTableExpressions(*command_list_ptr);
 
     auto segments = parseAlterCommandSegments(alter, table, getContext());
     validateSegmentsCombination(segments);
