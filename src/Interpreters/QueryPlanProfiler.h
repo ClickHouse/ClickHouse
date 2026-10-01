@@ -71,7 +71,6 @@ private:
         /// Attached to the pipeline so the processors can time their steps; kept so the statistics
         /// can be read back off it once the query has run.
         StepProfilerPtr step_profiler;
-        UInt64 execution_start_ns = 0;
         std::optional<PrettyNamesPerPlan> pretty_names;
 
         void release()

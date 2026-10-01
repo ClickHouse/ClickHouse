@@ -16,6 +16,7 @@
 #include <Common/logger_useful.h>
 #include <Processors/Executors/Runtime/ExecutionThreadContext.h>
 #include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/Executors/Runtime/ExecutingGraph.h>
 #include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -287,6 +288,9 @@ void PipelineExecutor::setStepProfiler(StepProfilerPtr step_profiler_)
 
 void PipelineExecutor::finalizeExecution()
 {
+    if (step_profiler)
+        step_profiler->markExecutionFinished();
+
     single_thread_cpu_slot.reset();
     tasks.freeCPU();
     {

@@ -145,7 +145,6 @@ void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline)
     /// does not make a step build anything.
     running.step_profiler = std::make_shared<StepProfiler>(
         *running.query_plan, /*collect_work_intervals_=*/ false, /*only_built_child_plans=*/ true);
-    running.execution_start_ns = clock_gettime_ns();
     pipeline.setStepProfiler(running.step_profiler);
 }
 
@@ -187,9 +186,10 @@ void QueryPlanProfiler::capture(QueryPipeline * pipeline)
         std::optional<AnalyzeStepsStats> stats;
         if (pipeline && running.step_profiler)
         {
-            const UInt64 execution_time_ns = clock_gettime_ns() - running.execution_start_ns;
+            /// Both come from the profiler: the executor stamped the end when it finished, so the
+            /// duration does not include whatever the query-finish path does afterwards.
             stats.emplace(*pipeline, *running.query_plan, *running.step_profiler,
-                running.execution_start_ns, execution_time_ns);
+                running.step_profiler->getExecutionStartNs(), running.step_profiler->getExecutionTimeNs());
         }
 
         auto result = capturePlan(

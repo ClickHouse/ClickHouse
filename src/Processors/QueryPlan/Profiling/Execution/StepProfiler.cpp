@@ -49,6 +49,11 @@ StepWallClock * StepProfiler::findClockForStep(const IQueryPlanStep * step, size
     return it != clocks.end() ? it->second.get() : nullptr;
 }
 
+void StepProfiler::markExecutionFinished()
+{
+    execution_time_ns.store(clock_gettime_ns() - execution_start_ns, std::memory_order_release);
+}
+
 bool StepProfiler::needCollectWorkIntervals() const
 {
     return collect_work_intervals;
@@ -63,13 +68,13 @@ void StepProfiler::addWorkIntervals(WorkIntervals intervals)
     intervals_per_thread.push_back(std::move(intervals));
 }
 
-WorkIntervalsPerThread StepProfiler::extractWorkIntervals(UInt64 execution_start_ns)
+WorkIntervalsPerThread StepProfiler::extractWorkIntervals(UInt64 rebase_origin_ns)
 {
     std::lock_guard lock(mutex);
 
     for (auto & thread_intervals : intervals_per_thread)
         for (auto & interval : thread_intervals)
-            interval.start_of_interval_ns -= execution_start_ns;
+            interval.start_of_interval_ns -= rebase_origin_ns;
 
     return std::move(intervals_per_thread);
 }
