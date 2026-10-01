@@ -5832,6 +5832,15 @@ bool StorageReplicatedMergeTree::fetchPart(
         }
         else
         {
+            /// An adaptive table can hold a non-adaptive part, which is read with this table's `index_granularity`.
+            if (!part->index_granularity_info.mark_type.adaptive)
+            {
+                auto source_metadata = ReplicatedMergeTreeTableMetadata::parseRaw(
+                    zookeeper->get(fs::path(source_replica_path).parent_path().parent_path() / "metadata"));
+                if (source_metadata.index_granularity != (*settings_ptr)[MergeTreeSetting::index_granularity])
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot fetch part '{}' because it has inconsistent granularity with table", part_name);
+            }
+
             // The fetched part is valuable and should not be cleaned like a temp part.
             part->is_temp = false;
             part->renameTo(fs::path(DETACHED_DIR_NAME) / part_name, true);

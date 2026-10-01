@@ -2,7 +2,7 @@
 -- no-shared-merge-tree: the tables must be ReplicatedMergeTree with a ZooKeeper path to fetch from
 -- no-replicated-database: FETCH ... FROM needs the source table's literal ZooKeeper path, which a Replicated database rewrites
 
-DROP TABLE IF EXISTS r_fsrc_g8, r_fsrc_g4, r_fsrc_adaptive_g4, fsrc_nonadaptive_g8, r_fsrc_mixed_g8, r_fdst_g4, r_fdst_g8_mixed, dst_g4, restored_g8 SYNC;
+DROP TABLE IF EXISTS r_fsrc_g8, r_fsrc_g4, r_fsrc_adaptive_g4, fsrc_nonadaptive_g8, r_fsrc_mixed_g8, r_fdst_g4, r_fdst_g8_mixed, dst_g4, restored_g8, fsrc_nonadaptive9_g8, r_fsrc_mixed9_g8, r_fdst_g6, src_s_g8, dst_s_g4 SYNC;
 
 -- ===== FETCH PARTITION / FETCH PART from a table with another index_granularity (issue #123227) =====
 
@@ -68,6 +68,22 @@ SELECT count() FROM r_fdst_g8_mixed WHERE a >= 109;
 ALTER TABLE r_fdst_g4 FETCH PARTITION tuple() FROM '/clickhouse/tables/{database}/05315/r_fsrc_mixed_g8'; -- { serverError BAD_SIZE_OF_FILE_IN_DATA_PART }
 SELECT count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 'r_fdst_g4';
 
+-- F7 the same with a row count that fits the destination's marks (9 rows written with 8, read with 6)
+CREATE TABLE fsrc_nonadaptive9_g8 (a UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 8, index_granularity_bytes = 0, enable_mixed_granularity_parts = 0;
+INSERT INTO fsrc_nonadaptive9_g8 SELECT number FROM numbers(9);
+OPTIMIZE TABLE fsrc_nonadaptive9_g8 FINAL;
+CREATE TABLE r_fsrc_mixed9_g8 (a UInt64)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05315/r_fsrc_mixed9_g8', 'r1') ORDER BY a
+SETTINGS index_granularity = 8, index_granularity_bytes = 10485760, enable_mixed_granularity_parts = 1;
+SYSTEM STOP MERGES r_fsrc_mixed9_g8;
+ALTER TABLE r_fsrc_mixed9_g8 ATTACH PARTITION tuple() FROM fsrc_nonadaptive9_g8;
+CREATE TABLE r_fdst_g6 (a UInt64)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05315/r_fdst_g6', 'r1') ORDER BY a
+SETTINGS index_granularity = 6, index_granularity_bytes = 0, enable_mixed_granularity_parts = 0;
+ALTER TABLE r_fdst_g6 FETCH PARTITION tuple() FROM '/clickhouse/tables/{database}/05315/r_fsrc_mixed9_g8'; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 'r_fdst_g6';
+
 -- ===== RESTORE into a table with another index_granularity =====
 CREATE TABLE dst_g4 (a UInt64) ENGINE = MergeTree ORDER BY a
 SETTINGS index_granularity = 4, index_granularity_bytes = 0, enable_mixed_granularity_parts = 0;
@@ -79,6 +95,17 @@ SELECT count() FROM dst_g4;
 RESTORE TABLE fsrc_nonadaptive_g8 AS restored_g8 FROM Memory('05315_backup') FORMAT Null;
 SELECT count(), sum(a) FROM restored_g8;
 SELECT count() FROM restored_g8 WHERE a >= 9;
+-- R3 a part without numeric columns is rejected too
+CREATE TABLE src_s_g8 (s String) ENGINE = MergeTree ORDER BY s
+SETTINGS index_granularity = 8, index_granularity_bytes = 0, enable_mixed_granularity_parts = 0,
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO src_s_g8 SELECT toString(number) FROM numbers(18);
+OPTIMIZE TABLE src_s_g8 FINAL;
+CREATE TABLE dst_s_g4 (s String) ENGINE = MergeTree ORDER BY s
+SETTINGS index_granularity = 4, index_granularity_bytes = 0, enable_mixed_granularity_parts = 0;
+BACKUP TABLE src_s_g8 TO Memory('05315_backup_s') FORMAT Null;
+RESTORE TABLE src_s_g8 AS dst_s_g4 FROM Memory('05315_backup_s') SETTINGS allow_different_table_def = 1; -- { serverError BACKUP_DAMAGED }
+SELECT count() FROM dst_s_g4;
 
 DROP TABLE r_fsrc_g8 SYNC;
 DROP TABLE r_fsrc_g4 SYNC;
@@ -89,3 +116,8 @@ DROP TABLE r_fdst_g4 SYNC;
 DROP TABLE r_fdst_g8_mixed SYNC;
 DROP TABLE dst_g4 SYNC;
 DROP TABLE restored_g8 SYNC;
+DROP TABLE fsrc_nonadaptive9_g8 SYNC;
+DROP TABLE r_fsrc_mixed9_g8 SYNC;
+DROP TABLE r_fdst_g6 SYNC;
+DROP TABLE src_s_g8 SYNC;
+DROP TABLE dst_s_g4 SYNC;
