@@ -57,6 +57,8 @@ public:
 
     virtual bool operator==(const IDataLakeMetadata & other) const = 0;
 
+    virtual std::string getTableLocation() const { return {}; }
+
     /// Return iterator to `data files`.
     using FileProgressCallback = std::function<void(FileProgress)>;
     virtual ObjectIterator iterate(

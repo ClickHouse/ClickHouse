@@ -463,6 +463,8 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         );
     }
 
+    iterator->setTasksGoToOtherReplicas(true);
+
     std::vector<std::string> ids_of_hosts;
     for (const auto & shard : cluster->getShardsInfo())
     {

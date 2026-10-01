@@ -35,10 +35,8 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
         data_lake_metadata = object->data_lake_metadata.value();
 
 #if USE_AVRO
-    if (std::dynamic_pointer_cast<IcebergDataObjectInfo>(object))
-    {
-        iceberg_info = dynamic_cast<IcebergDataObjectInfo &>(*object).info;
-    }
+    if (auto iceberg_object = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object))
+        iceberg_info = iceberg_object->info;
 #endif
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];

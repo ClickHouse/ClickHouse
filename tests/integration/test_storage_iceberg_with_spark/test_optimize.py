@@ -186,3 +186,59 @@ def test_optimize_manifest_per_file_stats(started_cluster_iceberg_with_spark):
             data_entries_checked += 1
 
     assert data_entries_checked > 0
+
+
+def test_optimize_keeps_data_when_it_cannot_remove_metadata(started_cluster_iceberg_with_spark):
+    storage_type = "local"
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_failed_cleanup_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg
+        TBLPROPERTIES ('format-version' = '2', 'write.delete.mode'='merge-on-read')
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10, 100)")
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
+    table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+
+    def list_dir(subdir):
+        return set(instance.exec_in_container(["bash", "-c", f"ls {table_dir}/{subdir}"]).split())
+
+    metadata_before = list_dir("metadata")
+    data_before = list_dir("data")
+
+    # The failpoint throws after removal; the head must be removed last to remain readable.
+    instance.query("SYSTEM ENABLE FAILPOINT local_object_storage_network_error_during_remove")
+    try:
+        error = instance.query_and_get_error(
+            f"OPTIMIZE TABLE {TABLE_NAME};", settings={"allow_experimental_iceberg_compaction": 1}
+        )
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT local_object_storage_network_error_during_remove")
+
+    assert "the metadata files the compaction replaced" in error, error
+
+    assert list_dir("metadata") & metadata_before, \
+        "The whole old `metadata` prefix was removed even though one of its removals failed"
+    assert data_before <= list_dir("data"), \
+        f"Data files of the still-current snapshot were deleted: {sorted(data_before - list_dir('data'))}"
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
