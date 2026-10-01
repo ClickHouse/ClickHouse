@@ -39,8 +39,23 @@ void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistic
     stats_cache->set(key, std::make_shared<RuntimeDataflowStatistics>(stats));
 }
 
+std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>
+RuntimeDataflowStatisticsCacheUpdater::makeReplicatedBytesSatellite(
+    const std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater> & primary)
+{
+    chassert(primary);
+    chassert(!primary->replicated_bytes_primary); /// A satellite of a satellite would record nowhere.
+    auto satellite = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(primary->cache_key, primary->total_rows_to_read);
+    satellite->replicated_bytes_primary = primary;
+    return satellite;
+}
+
 RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 {
+    /// A satellite has already recorded into its primary, which owns the cache entry.
+    if (replicated_bytes_primary)
+        return;
+
     if (unsupported_case)
     {
         LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "Unsupported case encountered, skipping statistics update.");
@@ -71,6 +86,16 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             res.input_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
         }
     }
+    for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
+    {
+        const auto & stats = replicated_bytes_statistics[i];
+        if (stats.compressed_bytes)
+        {
+            log_stats(stats, toString(static_cast<InputStatisticsType>(i)));
+            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes);
+            res.replicated_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
+        }
+    }
     for (size_t i = 0; i < OutputStatisticsType::MaxOutputType; ++i)
     {
         const auto & stats = output_bytes_statistics[i];
@@ -84,8 +109,9 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 
     LOG_DEBUG(
         getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-        "Collected statistics: input bytes={}, output bytes={}",
+        "Collected statistics: input bytes={}, replicated bytes={}, output bytes={}",
         res.input_bytes,
+        res.replicated_bytes,
         res.output_bytes);
 
     if (res.input_bytes == 0 && res.output_bytes == 0)
@@ -288,7 +314,10 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
 
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
-    auto & statistics = input_bytes_statistics[type];
+    /// A satellite records a read parallel replicas would not coordinate, so its bytes belong to the
+    /// primary's replicated bucket rather than to anybody's `input_bytes`.
+    auto & statistics
+        = replicated_bytes_primary ? replicated_bytes_primary->replicated_bytes_statistics[type] : input_bytes_statistics[type];
     if (read_bytes && !input_columns.empty())
     {
         if (!column_sizes.empty())
