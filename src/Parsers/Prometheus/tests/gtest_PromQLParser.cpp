@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 
 #include <fmt/format.h>
 
