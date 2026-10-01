@@ -232,9 +232,7 @@ PARTITION BY key;
 " 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
 
 # The check is for new definitions only: metadata that already exists (`ATTACH`, server startup)
-# must still load, and the misspelled codec surfaces when the table is read. `count()` too: the earlier
-# reads cached the per-file row counts, and `count()` is answered from that cache without opening (and so
-# without decompressing) the files, so the codec must be validated before the cache is consulted.
+# must still load, and the misspelled codec surfaces when the table is read, `count()` included.
 echo 'invalid compression method on ATTACH:'
 attach_db="${CLICKHOUSE_DATABASE}_attach"
 attach_uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
@@ -245,15 +243,20 @@ ENGINE = S3('$path/gz_lake', 'test', 'testtest', format = 'JSONEachRow', compres
 PARTITION BY key;
 "
 $CLICKHOUSE_CLIENT -q "SELECT id, key FROM $attach_db.bad_codec" 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
+$CLICKHOUSE_CLIENT --use_cache_for_count_from_files=1 -q "SELECT count() FROM $attach_db.bad_codec" 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
+
+# `count()` can be answered from a per-file row-count cache without opening the file, and the cache
+# key does not include the compression method. A row count cached through autodetection (here: an
+# uncompressed file) must not answer `count()` under an explicit codec, which has to read the file
+# and fail on the bytes that are not gzip.
+echo 'row-count cache and an explicit compression method:'
+$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION s3('$path/count_cache/data.jsonl', 'test', 'testtest', 'JSONEachRow') SELECT 16 AS id"
 # A cached row count is only trusted for a file last modified before the second the count was cached
-# in, so let the lake age past that before warming the cache through a valid definition.
-while [ "$($CLICKHOUSE_CLIENT -q "SELECT now() > (SELECT max(_time) FROM s3('$path/gz_lake/**', 'test', 'testtest', 'One'))")" != 1 ]
+# in, so let the file age past that before warming the cache.
+while [ "$($CLICKHOUSE_CLIENT -q "SELECT now() > (SELECT max(_time) FROM s3('$path/count_cache/data.jsonl', 'test', 'testtest', 'One'))")" != 1 ]
 do
     sleep 0.1
 done
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM s3('$path/gz_lake/**', 'test', 'testtest', format = 'JSONEachRow', compression_method = 'gzip')"
-$CLICKHOUSE_CLIENT --use_cache_for_count_from_files=1 -q "SELECT count() FROM $attach_db.bad_codec" 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
-# Nor may a row count read through an explicit codec answer `count()` for another codec: with
-# `compression_method = 'none'` the gzipped files are not valid `JSONEachRow`, warm cache or not.
-$CLICKHOUSE_CLIENT --use_cache_for_count_from_files=1 -q "SELECT count() FROM s3('$path/gz_lake/key=9/data.jsonl.custom', 'test', 'testtest', format = 'JSONEachRow', structure = 'id UInt64', compression_method = 'none')" 2>&1 | grep -cm1 "Code: "
+$CLICKHOUSE_CLIENT --use_cache_for_count_from_files=1 --optimize_count_from_files=1 -q "SELECT count() FROM s3('$path/count_cache/data.jsonl', 'test', 'testtest', 'JSONEachRow', 'id UInt64')"
+$CLICKHOUSE_CLIENT --use_cache_for_count_from_files=1 --optimize_count_from_files=1 -q "SELECT count() FROM s3('$path/count_cache/data.jsonl', 'test', 'testtest', 'JSONEachRow', 'id UInt64', 'gzip')" 2>&1 | grep -cm1 "Code: "
 $CLICKHOUSE_CLIENT -q "DROP DATABASE $attach_db"
