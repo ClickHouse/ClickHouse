@@ -1,0 +1,12 @@
+
+0
+
+0	0
+5
+6
+
+0
+aggregation in order refused when the overflow row is needed	1
+aggregation in order still forced without the overflow row	1
+mutation scalar subquery	1	\N
+mutation scalar subquery	3	\N
