@@ -75,7 +75,7 @@ inline bool isAllASCIIChunk([[maybe_unused]] const UInt8 * data)
 #elif defined(__SSE2__)
     return _mm_movemask_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data))) == 0;
 #elif defined(__aarch64__) && defined(__ARM_NEON)
-    return vmaxvq_u8(vld1q_u8(data)) < 0x80;
+    return vmaxvq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(data))) < 0x80;
 #else
     return false;
 #endif
