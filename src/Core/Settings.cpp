@@ -10382,6 +10382,10 @@ order. Only shapes where no exchange survives between the read and the sort are 
 Serialize the distributed query plan for execution at replicas.
 )", PRIVATE_PREVIEW, \
         {"26.4", false, false, "New setting to serialize distributed plan for replicas"}) \
+    DECLARE(Bool, distributed_plan_join_runtime_filters, false, R"(
+Send join runtime filters between stages of a distributed query plan. Probe-side tasks prune before the exchange.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New experimental setting: ship join runtime filters between distributed-plan stages."}) \
     DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
 Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL, \

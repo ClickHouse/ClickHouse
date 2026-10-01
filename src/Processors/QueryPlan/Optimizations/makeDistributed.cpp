@@ -30,6 +30,7 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeFilterExchangeWiring.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
@@ -1416,6 +1417,23 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
     /// and memory (see the TODO at the bucket_count reads) instead of using the raw setting value.
     validateDistributedPlanBucketCounts(optimization_settings);
 
+    if (optimization_settings.distributed_plan_join_runtime_filters)
+    {
+        /// Stamp build-side row estimates before the cut. After the cut a build that is another
+        /// stage's output ends at an exchange source and has nothing to estimate from.
+        std::vector<QueryPlan::Node *> annotation_stack{root};
+        while (!annotation_stack.empty())
+        {
+            auto * node = annotation_stack.back();
+            annotation_stack.pop_back();
+            if (auto * build_step = typeid_cast<BuildRuntimeFilterStep *>(node->step.get()); build_step && !node->children.empty())
+                build_step->setEstimatedBuildRows(
+                    estimateReadRowsCount(*node->children.front(), nullptr, /*for_runtime_filter_transport=*/true).estimated_rows);
+            for (auto * child : node->children)
+                annotation_stack.push_back(child);
+        }
+    }
+
     size_t exchange_id = 0;
 
     DistributedQueryPlan distributed_plan;
@@ -1758,6 +1776,17 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
         distributed_plan.stages["main"] = std::move(stage);
         distributed_plan.stage_depends_on["main"] = main_stage_depends_on;
     }
+
+    /// Now that the stages and their tasks exist, wire exchanges for runtime filters whose build and
+    /// apply sites landed in different stages. The filter exchanges start from the same kind as the
+    /// data exchanges above, and the wiring switches a chain to `Persisted` when a receiving stage
+    /// reads the build stage over a persisted data edge.
+    if (optimization_settings.distributed_plan_join_runtime_filters)
+        wireRuntimeFilterExchangeTopology(
+            distributed_plan,
+            exchange_id,
+            optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ? ExchangeDescription::Kind::Persisted
+                                                                                      : ExchangeDescription::Kind::Streaming);
 
     return distributed_plan;
 }

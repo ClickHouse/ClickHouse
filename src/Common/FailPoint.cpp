@@ -401,6 +401,9 @@ static struct InitFiu
     ONCE(keeper_changelog_preallocate_no_space) \
     ONCE(distributed_plan_record_failure_while_starting_tasks) \
     ONCE(distributed_plan_delay_root_cause_report) \
+    REGULAR(distributed_plan_runtime_filter_receive_branch_fails_before_connect) \
+    PAUSEABLE_ONCE(distributed_plan_runtime_filter_merge_pause_before_finalize) \
+    REGULAR(distributed_plan_runtime_filter_merge_fails_before_finalize) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
     REGULAR(replicated_database_status_finished_node_missing) \

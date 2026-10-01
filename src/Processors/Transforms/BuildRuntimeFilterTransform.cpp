@@ -23,7 +23,6 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     String filter_key_,
     size_t filters_to_merge_,
     const RuntimeFilterBuildOptions & build_options_,
-    const RuntimeFilterConfig & runtime_filter_config_,
     ContextPtr query_context_)
     : ISimpleTransform(header_, header_, true)
     , filter_column_name(filter_column_name_)
@@ -38,19 +37,19 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     if (!filter_column_target_type->equals(*filter_column_original_type))
         cast_to_target_type = createInternalCast(filter_column, filter_column_target_type, CastType::nonAccurate, {}, nullptr);
 
+    const auto & geometry = build_options_.geometry;
+    const RuntimeFilterConfig runtime_filter_config{geometry.pass_ratio_threshold_for_disabling, geometry.blocks_to_skip_before_reenabling};
+
     if (build_options_.polarity == RuntimeFilterPolarity::Contains)
     {
         if (AdaptiveSetRuntimeFilter::isDataTypeSupported(filter_column_target_type))
         {
             built_filter = std::make_unique<RuntimeFilter>(
                 filters_to_merge_,
-                runtime_filter_config_,
+                runtime_filter_config,
                 RuntimeFilter::Adaptive(
                     filter_column_target_type,
-                    build_options_.bloom.bytes,
-                    build_options_.exact_values_limit,
-                    build_options_.bloom.hash_functions,
-                    build_options_.max_ratio_of_set_bits,
+                    geometry,
                     build_options_.distinct_keys_hint,
                     build_options_.distinct_keys_hint_matches_filter_key));
         }
@@ -58,22 +57,16 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
         {
             built_filter = std::make_unique<RuntimeFilter>(
                 filters_to_merge_,
-                runtime_filter_config_,
-                RuntimeFilter::ExactContains(
-                    filter_column_target_type,
-                    build_options_.bloom.bytes,
-                    build_options_.exact_values_limit));
+                runtime_filter_config,
+                RuntimeFilter::ExactContains(filter_column_target_type, geometry.exact_bytes_limit, geometry.exact_values_limit));
         }
     }
     else
     {
         built_filter = std::make_unique<RuntimeFilter>(
             filters_to_merge_,
-            runtime_filter_config_,
-            RuntimeFilter::ExactNotContains(
-                filter_column_target_type,
-                build_options_.bloom.bytes,
-                build_options_.exact_values_limit));
+            runtime_filter_config,
+            RuntimeFilter::ExactNotContains(filter_column_target_type, geometry.exact_bytes_limit, geometry.exact_values_limit));
     }
 
     /// Only pay the extra min/max scan of the build side when the left side will use it for index analysis.
@@ -109,7 +102,7 @@ void BuildRuntimeFilterTransform::transform(Chunk & chunk)
 
 void BuildRuntimeFilterTransform::finish()
 {
-    /// A deserialized step has no random key and is never executed in practice; nothing to register.
+    /// Without a rendezvous key no `__applyFilter` can look the filter up, so there is nothing to register.
     if (filter_key.empty())
         return;
     if (!query_context)
