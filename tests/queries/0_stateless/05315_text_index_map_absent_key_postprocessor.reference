@@ -35,6 +35,8 @@ ngrams	no index	[1]	[1]
 ngrams control pruned	1
 ngrams phrase control	[2]
 ngrams phrase control pruned	1
+ngrams all control pruned	1
+ngrams phrase all control pruned	1
 preprocessor	[1]	[2]	[1]
 preprocessor	no index	[1]	[2]	[1]
 string	[]

@@ -201,6 +201,11 @@ FROM (EXPLAIN indexes = 1 SELECT id FROM tab_ngrams WHERE hasAnyTokens(m['k'], '
 SELECT 'ngrams phrase control', groupArray(id) FROM (SELECT id FROM tab_ngrams WHERE hasPhrase(m['k'], 'hello') ORDER BY id);
 SELECT 'ngrams phrase control pruned', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT id FROM tab_ngrams WHERE hasPhrase(m['k'], 'hello')) WHERE explain LIKE '%Granules: 1/2%';
+-- The default gives only one of this needle's two tokens: `hasAnyTokens` keeps the row, these still prune.
+SELECT 'ngrams all control pruned', count() > 0
+FROM (EXPLAIN indexes = 1 SELECT id FROM tab_ngrams WHERE hasAllTokens(m['k'], concat('a', char(0), char(0), char(0)))) WHERE explain LIKE '%Granules: 0/2%';
+SELECT 'ngrams phrase all control pruned', count() > 0
+FROM (EXPLAIN indexes = 1 SELECT id FROM tab_ngrams WHERE hasPhrase(m['k'], concat('a', char(0), char(0), char(0)))) WHERE explain LIKE '%Granules: 0/2%';
 
 -- The preprocessor is applied to the indexed values only, never to `m['k']`.
 CREATE TABLE tab_pre_lower (id UInt32, m Map(String, FixedString(6)),
