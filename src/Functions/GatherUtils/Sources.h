@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnArray.h>
@@ -525,14 +527,12 @@ struct UTF8StringSource : public StringSource
     {
         if constexpr (UTF8::ascii_chunk_size != 0)
         {
-            /// A full, in-bounds ASCII load can also satisfy a request shorter than one chunk.
-            if (size >= min_ascii_skip && size < UTF8::ascii_chunk_size && pos < end
-                && static_cast<size_t>(end - pos) >= UTF8::ascii_chunk_size && UTF8::isAllASCIIChunk(pos))
-                return pos + size;
-
-            while (size >= UTF8::ascii_chunk_size && pos < end && static_cast<size_t>(end - pos) >= UTF8::ascii_chunk_size
+            /// A full, in-bounds ASCII load can also satisfy the remainder of a request.
+            while (size >= min_ascii_skip && end - pos >= static_cast<std::ptrdiff_t>(UTF8::ascii_chunk_size)
                    && UTF8::isAllASCIIChunk(pos))
             {
+                if (size <= UTF8::ascii_chunk_size)
+                    return pos + size;
                 pos += UTF8::ascii_chunk_size;
                 size -= UTF8::ascii_chunk_size;
             }
@@ -549,17 +549,15 @@ struct UTF8StringSource : public StringSource
         const size_t requested = size;
         if constexpr (UTF8::ascii_chunk_size != 0)
         {
-            if (size >= min_ascii_skip && size < UTF8::ascii_chunk_size && pos > begin
-                && static_cast<size_t>(pos - begin) >= UTF8::ascii_chunk_size && UTF8::isAllASCIIChunk(pos - UTF8::ascii_chunk_size))
-            {
-                if (skipped)
-                    *skipped = size;
-                return pos - size;
-            }
-
-            while (size >= UTF8::ascii_chunk_size && pos > begin && static_cast<size_t>(pos - begin) >= UTF8::ascii_chunk_size
+            while (size >= min_ascii_skip && pos - begin >= static_cast<std::ptrdiff_t>(UTF8::ascii_chunk_size)
                    && UTF8::isAllASCIIChunk(pos - UTF8::ascii_chunk_size))
             {
+                if (size <= UTF8::ascii_chunk_size)
+                {
+                    pos -= size;
+                    size = 0;
+                    break;
+                }
                 pos -= UTF8::ascii_chunk_size;
                 size -= UTF8::ascii_chunk_size;
             }

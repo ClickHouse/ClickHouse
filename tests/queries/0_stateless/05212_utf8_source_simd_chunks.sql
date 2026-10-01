@@ -41,6 +41,7 @@ FROM
 FORMAT Null;
 
 -- Exercise both SIMD widths, short requests, mixed chunks, and clipped negative offsets.
+-- Include non-aligned multi-chunk requests to exercise the final partial ASCII chunk.
 -- Construct expected results from code-point arrays, independently of UTF-8 string traversal.
 WITH
     arrayConcat(arrayMap(x -> 'a', range(prefix)), [code_point], arrayMap(x -> 'b', range(suffix))) AS code_points,
@@ -58,7 +59,7 @@ FROM
 CROSS JOIN
     (SELECT arrayJoin([0, 7, 15, 31, 64]) AS suffix)
 CROSS JOIN
-    (SELECT arrayJoin([0, 1, 7, 8, 9, 15, 16, 17, 24, 31, 32, 33, 64, 128]) AS skip)
+    (SELECT arrayJoin([0, 1, 7, 8, 9, 15, 16, 17, 24, 31, 32, 33, 39, 40, 41, 47, 48, 49, 55, 56, 57, 63, 64, 65, 71, 72, 73, 95, 96, 97, 127, 128, 129]) AS skip)
 CROSS JOIN
     (SELECT arrayJoin([unhex('00'), 'a', unhex('C3A9'), unhex('E4BDA0'), unhex('F09F9880')]) AS code_point)
 FORMAT Null;

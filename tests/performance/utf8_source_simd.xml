@@ -4,7 +4,7 @@
     </settings>
 
     <substitutions>
-        <!-- Keep the SIMD boundary cases as separate measurements. -->
+        <!-- Keep SIMD boundaries and non-aligned multi-chunk requests as separate measurements. -->
         <substitution>
             <name>skip</name>
             <values>
@@ -16,7 +16,14 @@
                 <value>31</value>
                 <value>32</value>
                 <value>33</value>
+                <value>40</value>
+                <value>48</value>
+                <value>56</value>
+                <value>63</value>
                 <value>64</value>
+                <value>72</value>
+                <value>95</value>
+                <value>127</value>
             </values>
         </substitution>
         <!-- Positions are measured in code points from the traversal origin. -->
@@ -39,7 +46,7 @@
     <query>SELECT sum(length(rightUTF8(concat(repeat('a', 127), toString(number % 10)), 64))) FROM numbers(1000000) FORMAT Null</query>
     <query>SELECT sum(length(substringUTF8(concat(repeat('a', 127), toString(number % 10)), 33, 64))) FROM numbers(1000000) FORMAT Null</query>
 
-    <!-- Exercise short scalar tails and the AVX2 32-byte threshold independently. -->
+    <!-- Exercise short scalar tails, partial ASCII chunks, and the AVX2 32-byte threshold independently. -->
     <query>SELECT sum(length(leftUTF8(concat(repeat('a', 127), toString(number % 10)), {skip}))) FROM numbers(1000000) FORMAT Null</query>
     <query>SELECT sum(length(rightUTF8(concat(repeat('a', 127), toString(number % 10)), {skip}))) FROM numbers(1000000) FORMAT Null</query>
     <query>SELECT sum(length(substringUTF8(concat(repeat('a', 127), toString(number % 10)), 33, {skip}))) FROM numbers(1000000) FORMAT Null</query>
