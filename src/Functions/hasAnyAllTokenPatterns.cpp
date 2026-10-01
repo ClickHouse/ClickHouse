@@ -5,7 +5,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/FunctionDocumentation.h>
 #include <Common/StringSearcher.h>
+#include <Common/StringUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -13,7 +15,9 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
+#include <Interpreters/JIT/CompileRegexp.h>
 #include <Interpreters/TokenizerFactory.h>
 
 #include <mutex>
@@ -24,6 +28,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+}
+
+namespace Setting
+{
+    extern const SettingsBool compile_regular_expressions;
+    extern const SettingsUInt64 min_count_to_compile_regular_expression;
 }
 
 namespace
@@ -42,7 +52,7 @@ bool containsLiteral(std::string_view haystack, std::string_view literal)
 /// The patterns `abc`, `abc%`, `%abc` and `%abc%` are compared as bytes, the others use re2.
 struct TokenLikeMatcher
 {
-    explicit TokenLikeMatcher(const String & pattern)
+    TokenLikeMatcher(const String & pattern, size_t /*regexp_jit_min_count*/)
     {
         std::string_view rest = pattern;
         while (rest.starts_with('%'))
@@ -89,6 +99,45 @@ struct TokenLikeMatcher
     std::optional<OptimizedRegularExpression> regexp;
 };
 
+/// Uses the JIT-compiled matcher of `match` if the pattern supports it, and re2 otherwise.
+struct TokenRegexpMatcher
+{
+    TokenRegexpMatcher(const String & pattern, size_t regexp_jit_min_count)
+        : regexp(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(pattern))
+        , jit(getRegexpJITMatcher(pattern, /*case_insensitive*/ false, /*dot_all*/ true, regexp_jit_min_count))
+        , capture_starts(jit.num_captures)
+        , capture_ends(jit.num_captures)
+    {
+    }
+
+    bool startValue(std::string_view value, bool check_literal) const
+    {
+        if (check_literal && !containsLiteral(value, regexp.getRequiredSubstring()))
+            return false;
+
+        /// The JIT agrees with re2 only on valid UTF-8, and the text index uses re2, so other values use re2 too.
+        use_jit = jit && isAllASCII(reinterpret_cast<const UInt8 *>(value.data()), value.size());
+        return true;
+    }
+
+    bool operator()(std::string_view token) const
+    {
+        if (!use_jit)
+            return regexp.match(token.data(), token.size());
+
+        const auto * begin = reinterpret_cast<const uint8_t *>(token.data());
+        const bool matched = jit.func(begin, begin + token.size(), begin, capture_starts.data(), capture_ends.data()) == 1;
+        chassert(matched == regexp.match(token.data(), token.size()));
+        return matched;
+    }
+
+    OptimizedRegularExpression regexp;
+    RegexpJITMatcher jit;
+    mutable bool use_jit = false;
+    mutable VectorWithMemoryTracking<const uint8_t *> capture_starts;
+    mutable VectorWithMemoryTracking<const uint8_t *> capture_ends;
+};
+
 struct HasAnyTokenLikeTraits
 {
     static constexpr auto name = "hasAnyTokenLike";
@@ -101,6 +150,13 @@ struct HasAllTokenLikeTraits
     static constexpr auto name = "hasAllTokenLike";
     using Matcher = TokenLikeMatcher;
     static constexpr bool match_all = true;
+};
+
+struct HasAnyTokenRegexpTraits
+{
+    static constexpr auto name = "hasAnyTokenRegexp";
+    using Matcher = TokenRegexpMatcher;
+    static constexpr bool match_all = false;
 };
 
 bool isStringOrFixedStringOrArrayOfStringOrFixedString(const IDataType & type)
@@ -131,7 +187,13 @@ class FunctionHasAnyAllTokenPatterns : public IFunction
 public:
     static constexpr auto name = Traits::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionHasAnyAllTokenPatterns>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionHasAnyAllTokenPatterns>(context); }
+
+    explicit FunctionHasAnyAllTokenPatterns(ContextPtr context)
+    {
+        if (context && context->getSettingsRef()[Setting::compile_regular_expressions])
+            regexp_jit_min_count = context->getSettingsRef()[Setting::min_count_to_compile_regular_expression];
+    }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -188,7 +250,7 @@ public:
         VectorWithMemoryTracking<typename Traits::Matcher> matchers;
         matchers.reserve(patterns.size());
         for (const auto & pattern : patterns)
-            matchers.emplace_back(pattern);
+            matchers.emplace_back(pattern, regexp_jit_min_count);
 
         /// A stateful tokenizer is not thread-safe, so each call gets its own copy.
         const auto cloned_tokenizer = shared_tokenizer->isStateful() ? shared_tokenizer->clone() : nullptr;
@@ -298,6 +360,9 @@ private:
     {
         return checkAndGetColumn<ColumnString>(&column) || checkAndGetColumn<ColumnFixedString>(&column);
     }
+
+    /// As for `match`, the threshold to JIT-compile a regular expression, or the maximum to disable it.
+    size_t regexp_jit_min_count = std::numeric_limits<size_t>::max();
 
     mutable std::once_flag init_flag;
     mutable std::unique_ptr<ITokenizer> shared_tokenizer;
@@ -430,6 +495,60 @@ With several patterns, the text index selects the rows where some pattern matche
     FunctionDocumentation documentation = {description, syntax, commonArguments("patterns", "The `LIKE` pattern, or an array of `LIKE` patterns, that must each match a token."), {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionHasAnyAllTokenPatterns<HasAllTokenLikeTraits>>(documentation);
+}
+
+REGISTER_FUNCTION(HasAnyTokenRegexp)
+{
+    FunctionDocumentation::Description description = String(R"(
+Returns 1 if at least one token of `input` matches one of the regular expressions `patterns`, and 0 otherwise.
+
+`patterns` is one regular expression (`String`) or several (`Array(String)`).
+The regular expressions use the [re2 syntax](https://github.com/google/re2/wiki/Syntax) and are applied to each token separately, like function [`match`](#match):
+a regular expression may match any part of the token, and the anchors `^` and `$` refer to the start and the end of the token.
+So `hasAnyTokenRegexp(input, 'err')` finds a token that contains `err`, while `hasAnyTokenLike(input, 'err')` finds a token equal to `err`.
+An empty regular expression matches every token; an empty array matches nothing.
+
+If `input` is not an array and has no text index, `hasAnyTokenRegexp(input, patterns)` with an array `patterns` is equivalent to `arrayExists(t -> arrayExists(p -> match(t, p), patterns), tokens(input))`, and a single regular expression `p` is the same as `[p]`.
+
+With a text index, a regular expression of the form `^literal` reads only the matching range of the dictionary, and one that contains a literal checks only the tokens holding it;
+any other one is checked against every token in the dictionary of each part.
+)") + tokenizer_description + text_index_note;
+    FunctionDocumentation::Syntax syntax = "hasAnyTokenRegexp(input, patterns[, tokenizer])";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if some token matches one of `patterns`, `0` otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Basic usage",
+        "SELECT hasAnyTokenRegexp('order 12345 shipped', '^[0-9]{5}$')",
+        R"(
+┌─hasAnyTokenRegexp('order 12345 shipped', '^[0-9]{5}$')─┐
+│                                                      1 │
+└────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Anchors refer to token boundaries",
+        "SELECT hasAnyTokenRegexp('order 123456 shipped', '^[0-9]{5}$')",
+        R"(
+┌─hasAnyTokenRegexp('order 123456 shipped', '^[0-9]{5}$')─┐
+│                                                       0 │
+└─────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Several regular expressions",
+        "SELECT hasAnyTokenRegexp('order 123456 shipped', ['^[0-9]{5}$', '^ship'])",
+        R"(
+┌─hasAnyTokenRegexp('order 123456 shipped', ['^[0-9]{5}$', '^ship'])─┐
+│                                                                  1 │
+└────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation = {description, syntax, commonArguments("patterns", "The regular expression, or an array of regular expressions, each token is matched against."), {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionHasAnyAllTokenPatterns<HasAnyTokenRegexpTraits>>(documentation);
 }
 
 }

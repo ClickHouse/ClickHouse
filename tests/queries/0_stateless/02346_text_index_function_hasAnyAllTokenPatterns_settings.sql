@@ -1,5 +1,5 @@
 -- Tags: no-parallel-replicas
--- `hasAnyTokenLike` and `hasAllTokenLike` give the same result for any settings and for several text indexes on one column.
+-- `hasAnyTokenLike`, `hasAllTokenLike` and `hasAnyTokenRegexp` give the same result for any settings and for several text indexes on one column.
 
 SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
@@ -44,6 +44,13 @@ SELECT 'hasAnyTokenLike(tag, \'env:%-eu\')', count() FROM tab_array WHERE hasAny
 SELECT 'hasAnyTokenLike(tag, \'env:%-eu\')', count() FROM tab_array WHERE hasAnyTokenLike(tag, 'env:%-eu') SETTINGS use_skip_indexes_on_data_read = 0;
 SELECT 'hasAnyTokenLike(tag, \'env:%-eu\')', count() FROM tab_array WHERE hasAnyTokenLike(tag, 'env:%-eu') SETTINGS text_index_like_max_matched_tokens = 1;
 SELECT 'hasAnyTokenLike(tag, \'env:%-eu\')', count() FROM tab_array WHERE hasAnyTokenLike(tag, 'env:%-eu') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'hasAnyTokenRegexp(tag, \'^env:[a-z]+-\')', count() FROM tab_array WHERE hasAnyTokenRegexp(tag, '^env:[a-z]+-');
+SELECT 'hasAnyTokenRegexp(tag, \'^env:[a-z]+-\')', count() FROM tab_array WHERE hasAnyTokenRegexp(tag, '^env:[a-z]+-') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasAnyTokenRegexp(tag, \'^env:[a-z]+-\')', count() FROM tab_array WHERE hasAnyTokenRegexp(tag, '^env:[a-z]+-') SETTINGS use_skip_indexes = 0;
+SELECT 'hasAnyTokenRegexp(tag, \'^env:[a-z]+-\')', count() FROM tab_array WHERE hasAnyTokenRegexp(tag, '^env:[a-z]+-') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasAnyTokenRegexp(tag, \'^env:[a-z]+-\')', count() FROM tab_array WHERE hasAnyTokenRegexp(tag, '^env:[a-z]+-') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasAnyTokenRegexp(tag, \'^env:[a-z]+-\')', count() FROM tab_array WHERE hasAnyTokenRegexp(tag, '^env:[a-z]+-') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasAnyTokenRegexp(tag, \'^env:[a-z]+-\')', count() FROM tab_array WHERE hasAnyTokenRegexp(tag, '^env:[a-z]+-') SETTINGS text_index_like_max_postings_to_read = 0;
 SELECT 'hasAnyTokenLike(tag, \'%\')', count() FROM tab_array WHERE hasAnyTokenLike(tag, '%');
 SELECT 'hasAnyTokenLike(tag, \'%\')', count() FROM tab_array WHERE hasAnyTokenLike(tag, '%') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
 SELECT 'hasAnyTokenLike(tag, \'%\')', count() FROM tab_array WHERE hasAnyTokenLike(tag, '%') SETTINGS use_skip_indexes = 0;
@@ -74,6 +81,14 @@ SELECT 'hasAllTokenLike(tag, [\'env:%\', \'%-eu\'])', count() FROM tab_array WHE
 SELECT 'hasAllTokenLike(tag, [\'env:%\', \'%-eu\'])', count() FROM tab_array WHERE hasAllTokenLike(tag, ['env:%', '%-eu']) SETTINGS text_index_like_max_matched_tokens = 1;
 SELECT 'hasAllTokenLike(tag, [\'env:%\', \'%-eu\'])', count() FROM tab_array WHERE hasAllTokenLike(tag, ['env:%', '%-eu']) SETTINGS text_index_like_max_postings_to_read = 0;
 SELECT 'hasAllTokenLike(tag, [\'env:%\', \'%-eu\'])', count() FROM tab_array WHERE hasAllTokenLike(tag, ['env:%', '%-eu']) SETTINGS query_plan_text_index_add_hint = 0;
+SELECT 'hasAnyTokenRegexp(tag, [\'^env:[a-z]+-\', \'zzz\'])', count() FROM tab_array WHERE hasAnyTokenRegexp(tag, ['^env:[a-z]+-', 'zzz']);
+SELECT 'hasAnyTokenRegexp(tag, [\'^env:[a-z]+-\', \'zzz\'])', count() FROM tab_array WHERE hasAnyTokenRegexp(tag, ['^env:[a-z]+-', 'zzz']) SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasAnyTokenRegexp(tag, [\'^env:[a-z]+-\', \'zzz\'])', count() FROM tab_array WHERE hasAnyTokenRegexp(tag, ['^env:[a-z]+-', 'zzz']) SETTINGS use_skip_indexes = 0;
+SELECT 'hasAnyTokenRegexp(tag, [\'^env:[a-z]+-\', \'zzz\'])', count() FROM tab_array WHERE hasAnyTokenRegexp(tag, ['^env:[a-z]+-', 'zzz']) SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasAnyTokenRegexp(tag, [\'^env:[a-z]+-\', \'zzz\'])', count() FROM tab_array WHERE hasAnyTokenRegexp(tag, ['^env:[a-z]+-', 'zzz']) SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasAnyTokenRegexp(tag, [\'^env:[a-z]+-\', \'zzz\'])', count() FROM tab_array WHERE hasAnyTokenRegexp(tag, ['^env:[a-z]+-', 'zzz']) SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasAnyTokenRegexp(tag, [\'^env:[a-z]+-\', \'zzz\'])', count() FROM tab_array WHERE hasAnyTokenRegexp(tag, ['^env:[a-z]+-', 'zzz']) SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'hasAnyTokenRegexp(tag, [\'^env:[a-z]+-\', \'zzz\'])', count() FROM tab_array WHERE hasAnyTokenRegexp(tag, ['^env:[a-z]+-', 'zzz']) SETTINGS query_plan_text_index_add_hint = 0;
 
 DROP TABLE tab_array;
 
@@ -96,6 +111,20 @@ SELECT 'hasAnyTokenLike(msg, \'Charg%\')', count() FROM tab_lower WHERE hasAnyTo
 SELECT 'hasAnyTokenLike(msg, \'Charg%\')', count() FROM tab_lower WHERE hasAnyTokenLike(msg, 'Charg%') SETTINGS use_skip_indexes_on_data_read = 0;
 SELECT 'hasAnyTokenLike(msg, \'Charg%\')', count() FROM tab_lower WHERE hasAnyTokenLike(msg, 'Charg%') SETTINGS text_index_like_max_matched_tokens = 1;
 SELECT 'hasAnyTokenLike(msg, \'Charg%\')', count() FROM tab_lower WHERE hasAnyTokenLike(msg, 'Charg%') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'hasAnyTokenRegexp(msg, \'^C\')', count() FROM tab_lower WHERE hasAnyTokenRegexp(msg, '^C');
+SELECT 'hasAnyTokenRegexp(msg, \'^C\')', count() FROM tab_lower WHERE hasAnyTokenRegexp(msg, '^C') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasAnyTokenRegexp(msg, \'^C\')', count() FROM tab_lower WHERE hasAnyTokenRegexp(msg, '^C') SETTINGS use_skip_indexes = 0;
+SELECT 'hasAnyTokenRegexp(msg, \'^C\')', count() FROM tab_lower WHERE hasAnyTokenRegexp(msg, '^C') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasAnyTokenRegexp(msg, \'^C\')', count() FROM tab_lower WHERE hasAnyTokenRegexp(msg, '^C') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasAnyTokenRegexp(msg, \'^C\')', count() FROM tab_lower WHERE hasAnyTokenRegexp(msg, '^C') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasAnyTokenRegexp(msg, \'^C\')', count() FROM tab_lower WHERE hasAnyTokenRegexp(msg, '^C') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'hasAnyTokenRegexp(msg, \'^c\')', count() FROM tab_lower WHERE hasAnyTokenRegexp(msg, '^c');
+SELECT 'hasAnyTokenRegexp(msg, \'^c\')', count() FROM tab_lower WHERE hasAnyTokenRegexp(msg, '^c') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasAnyTokenRegexp(msg, \'^c\')', count() FROM tab_lower WHERE hasAnyTokenRegexp(msg, '^c') SETTINGS use_skip_indexes = 0;
+SELECT 'hasAnyTokenRegexp(msg, \'^c\')', count() FROM tab_lower WHERE hasAnyTokenRegexp(msg, '^c') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasAnyTokenRegexp(msg, \'^c\')', count() FROM tab_lower WHERE hasAnyTokenRegexp(msg, '^c') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasAnyTokenRegexp(msg, \'^c\')', count() FROM tab_lower WHERE hasAnyTokenRegexp(msg, '^c') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasAnyTokenRegexp(msg, \'^c\')', count() FROM tab_lower WHERE hasAnyTokenRegexp(msg, '^c') SETTINGS text_index_like_max_postings_to_read = 0;
 SELECT 'hasAnyTokenLike(msg, \'CHARG%\')', count() FROM tab_lower WHERE hasAnyTokenLike(msg, 'CHARG%');
 SELECT 'hasAnyTokenLike(msg, \'CHARG%\')', count() FROM tab_lower WHERE hasAnyTokenLike(msg, 'CHARG%') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
 SELECT 'hasAnyTokenLike(msg, \'CHARG%\')', count() FROM tab_lower WHERE hasAnyTokenLike(msg, 'CHARG%') SETTINGS use_skip_indexes = 0;
@@ -217,6 +246,7 @@ SELECT count() FROM tab_tokenizers WHERE hasAnyTokenLike(if(notEmpty(tag), tag, 
 SELECT count() FROM tab_tokenizers WHERE hasAnyTokenLike(if(notEmpty(tag), tag, 'none'), 'prod%') SETTINGS query_plan_direct_read_from_text_index = 0; -- { serverError BAD_ARGUMENTS }
 SELECT countIf(hasAnyTokenLike(if(notEmpty(tag), tag, 'none'), 'prod%')) FROM tab_tokenizers; -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM tab_tokenizers WHERE hasAnyTokenLike(if(notEmpty(tag), tag, 'none'), 'env:%'); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab_tokenizers WHERE hasAnyTokenRegexp(if(notEmpty(tag), tag, 'none'), '^env'); -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM tab_tokenizers WHERE hasAllTokenLike(if(notEmpty(tag), tag, 'none'), ['env:%', '%eu']); -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM tab_tokenizers_swapped WHERE hasAnyTokenLike(if(notEmpty(tag), tag, 'none'), 'prod%'); -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM tab_tokenizers_swapped WHERE hasAnyTokenLike(if(notEmpty(tag), tag, 'none'), 'prod%') SETTINGS use_skip_indexes = 0; -- { serverError BAD_ARGUMENTS }
@@ -273,6 +303,8 @@ SELECT 'hasAnyTokenLike', countIf(hasAnyTokenLike(if(notEmpty(msg), msg, 'none')
 SELECT 'hasAnyTokenLike', count() FROM tab_preprocessors WHERE hasAnyTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%', 'splitByNonAlpha');
 SELECT 'hasAnyTokenLike', count() FROM tab_preprocessors_swapped WHERE hasAnyTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%');
 SELECT 'hasAnyTokenLike', count() FROM tab_preprocessors_swapped WHERE hasAnyTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%') SETTINGS use_skip_indexes = 0;
+SELECT 'hasAnyTokenRegexp', count() FROM tab_preprocessors WHERE hasAnyTokenRegexp(if(notEmpty(msg), msg, 'none'), '^C');
+SELECT 'hasAnyTokenRegexp', count() FROM tab_preprocessors_swapped WHERE hasAnyTokenRegexp(if(notEmpty(msg), msg, 'none'), '^C') SETTINGS use_skip_indexes = 0;
 SELECT 'hasAnyTokenLike', countIf(hasAnyTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%')) FROM tab_preprocessors_swapped;
 SELECT 'hasAnyTokenLike', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasAnyTokenLike(%') > 0
 FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab_preprocessors_swapped WHERE hasAnyTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%'));

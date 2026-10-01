@@ -5,10 +5,15 @@
 [0,1,2,3,4,5,6,7,400,401,402,403,404,405,406,407,1016,1017,1018,1019,1020,1021,1022,1023]
 [0,1,2,3,4,5,6,7,400,401,402,403,404,405,406,407,1016,1017,1018,1019,1020,1021,1022,1023]
 [0,1,2,3,4,5,6,7,400,401,402,403,404,405,406,407,1016,1017,1018,1019,1020,1021,1022,1023]
+[400,401,402,403,404,405,406,407]
+[400,401,402,403,404,405,406,407]
+[400,401,402,403,404,405,406,407]
 500
 0
 24
 24
+16
+16
 16
 16
 500
@@ -20,14 +25,20 @@ Granules: 1/128
 Parts: 1 | Granules: 3
 Granules: 128/128
 Granules: 3/128
+Parts: 1 | Granules: 1
+Granules: 128/128
+Granules: 1/128
 -- direct read replaces the function
 hasAnyTokenLike	1	0
 hasAnyTokenLike	1	0
+hasAnyTokenRegexp	1	0
 -- arrays of patterns
 [0,1,2,3,4,5,6,7,400,401,402,403,404,405,406,407,1016,1017,1018,1019,1020,1021,1022,1023]
 [0,1,2,3,4,5,6,7,400,401,402,403,404,405,406,407,1016,1017,1018,1019,1020,1021,1022,1023]
 [0,1,2,3,4,5,6,7,1016,1017,1018,1019,1020,1021,1022,1023]
 [0,1,2,3,4,5,6,7,1016,1017,1018,1019,1020,1021,1022,1023]
+[400,401,402,403,404,405,406,407,1016,1017,1018,1019,1020,1021,1022,1023]
+[400,401,402,403,404,405,406,407,1016,1017,1018,1019,1020,1021,1022,1023]
 Parts: 1 | Granules: 3
 Granules: 128/128
 Granules: 3/128
@@ -53,6 +64,7 @@ two patterns, no hint	0	1
 1024
 1024
 0
+1024
 Parts: 1 | Granules: 128
 Granules: 128/128
 -- a different tokenizer does not use the index
@@ -61,6 +73,7 @@ Granules: 128/128
 Parts: 1 | Granules: 128
 Granules: 128/128
 8
+-- invalid patterns raise an exception with the index as well
 -- too many matching posting lists: the functions are evaluated on the column
 1000
 1000
@@ -98,12 +111,14 @@ Parts: 1 | Granules: 8
 Granules: 8/8
 8
 8
+8
 0
 0
 -- without the tokenizer argument, the tokenizer of the index is used (as for hasAnyTokens)
 8
 8
 0
+8
 8
 8
 Parts: 1 | Granules: 1
@@ -115,6 +130,7 @@ Granules: 8/8
 1	8
 -- text_index_like_max_matched_tokens: a per-token pattern matching too many tokens is evaluated on the column
 1111
+200
 1111
 111
 111
@@ -128,6 +144,7 @@ Parts: 1 | Granules: 200
 Granules: 500/500
 Granules: 200/500
 1111
+200
 111
 122
 111
@@ -141,6 +158,7 @@ has_any_all_token_patterns_matched_tokens_ends_with	0
 has_any_all_token_patterns_matched_tokens_ilike	0
 has_any_all_token_patterns_matched_tokens_like	0
 has_any_all_token_patterns_matched_tokens_like_or_prefix	0
+has_any_all_token_patterns_matched_tokens_match	1
 has_any_all_token_patterns_matched_tokens_starts_with	0
 has_any_all_token_patterns_matched_tokens_token_like	1
 has_any_all_token_patterns_matched_tokens_unlimited	0
@@ -154,3 +172,8 @@ has_any_all_token_patterns_scan_size_default	0
 has_any_all_token_patterns_scan_size_seek	0
 has_any_all_token_patterns_scan_size_unlimited	0
 has_any_all_token_patterns_scan_size_whole	1
+-- regular expressions give the same result with and without the index, also on invalid UTF-8
+331
+331
+331
+331

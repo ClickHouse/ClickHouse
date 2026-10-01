@@ -785,7 +785,7 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
             }
 
             /// Reading postings for very many tokens is slower than checking the column, so the tokens of
-            /// hasAnyTokenLike and hasAllTokenLike are capped (not those of `LIKE`).
+            /// hasAnyTokenLike, hasAllTokenLike and hasAnyTokenRegexp are capped (not those of `LIKE`).
             if (postings_to_read > max_postings_to_read
                 || (max_matched_tokens && analyzer->getNumPerTokenPatternTokens() > max_matched_tokens))
             {

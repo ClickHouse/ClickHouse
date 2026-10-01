@@ -3,6 +3,8 @@
 8
 8
 8
+8
+8
 Parts: 1 | Granules: 8
 Granules: 8/8
 8
@@ -14,6 +16,8 @@ Granules: 8/8
 16
 16
 16
+16
+16
 8
 8
 16
@@ -22,6 +26,7 @@ Granules: 8/8
 Name: idx_keys
 Granules: 7/8
 -- JSON path: an index on JSONAllPaths(j) prunes by the path, an index on JSONAllValues(j) is not used, the functions keep splitByNonAlpha
+16
 16
 16
 16
@@ -39,6 +44,8 @@ Granules: 7/8
 56
 16
 16
+8
+8
 16
 16
 8
@@ -48,6 +55,7 @@ Granules: 8/8
 Granules: 1/8
 hasAnyTokenLike	1	0
 hasAnyTokenLike	1	0
+hasAnyTokenRegexp	1	0
 -- ngrams, sparseGrams, splitByString and asciiCJK: the functions use the tokenizer of the index, as arrayExists over tokens
 ngrams	32
 ngrams	32
@@ -57,10 +65,13 @@ ngrams	0
 ngrams	32
 ngrams	32
 ngrams	32
+ngrams	16
+ngrams	16
+ngrams	16
 ngrams	8
 ngrams	8
 ngrams	8
-ngrams	32	0	32
+ngrams	32	0	32	16
 Parts: 1 | Granules: 4
 Granules: 8/8
 Name: idx_ngrams
@@ -69,13 +80,20 @@ Parts: 1 | Granules: 4
 Granules: 8/8
 Name: idx_ngrams
 Granules: 4/8
+Parts: 1 | Granules: 2
+Granules: 8/8
+Name: idx_ngrams
+Granules: 2/8
 sparseGrams	8
 sparseGrams	8
 sparseGrams	8
 sparseGrams	16
 sparseGrams	16
 sparseGrams	16
-sparseGrams	8	16
+sparseGrams	8
+sparseGrams	8
+sparseGrams	8
+sparseGrams	8	16	8
 Parts: 1 | Granules: 1
 Granules: 8/8
 Name: idx_sparse
@@ -84,13 +102,20 @@ Parts: 1 | Granules: 2
 Granules: 8/8
 Name: idx_sparse
 Granules: 2/8
+Parts: 1 | Granules: 1
+Granules: 8/8
+Name: idx_sparse
+Granules: 1/8
 splitByString	8
 splitByString	8
 splitByString	8
 splitByString	8
 splitByString	8
 splitByString	8
-splitByString	8	8
+splitByString	8
+splitByString	8
+splitByString	8
+splitByString	8	8	8
 Parts: 1 | Granules: 1
 Granules: 8/8
 Name: idx_split
@@ -99,13 +124,24 @@ Parts: 1 | Granules: 1
 Granules: 8/8
 Name: idx_split
 Granules: 1/8
+Parts: 1 | Granules: 1
+Granules: 8/8
+Name: idx_split
+Granules: 1/8
 asciiCJK	8
 asciiCJK	8
 asciiCJK	8
 asciiCJK	8
 asciiCJK	8
 asciiCJK	8
-asciiCJK	8	8
+asciiCJK	8
+asciiCJK	8
+asciiCJK	8
+asciiCJK	8	8	8
+Parts: 1 | Granules: 1
+Granules: 8/8
+Name: idx_cjk
+Granules: 1/8
 Parts: 1 | Granules: 1
 Granules: 8/8
 Name: idx_cjk

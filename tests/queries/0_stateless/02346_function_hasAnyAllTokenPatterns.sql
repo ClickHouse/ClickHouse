@@ -1,4 +1,4 @@
--- Semantics of `hasAnyTokenLike` and `hasAllTokenLike` without a text index.
+-- Semantics of `hasAnyTokenLike`, `hasAllTokenLike` and `hasAnyTokenRegexp` without a text index.
 
 SELECT '-- hasAnyTokenLike';
 SELECT hasAnyTokenLike('Payment charged twice', 'ch%ed');
@@ -35,9 +35,25 @@ SELECT hasAllTokenLike(['abc', 'def'], ['a%', 'd%']);
 SELECT hasAllTokenLike(['abc', 'def'], ['a%', 'x%']);
 SELECT hasAllTokenLike('a b', 'a b');
 
+SELECT '-- hasAnyTokenRegexp';
+SELECT hasAnyTokenRegexp('order 12345 shipped', '^[0-9]{5}$');
+SELECT hasAnyTokenRegexp('order 123456 shipped', '^[0-9]{5}$');
+SELECT hasAnyTokenRegexp('order 123456 shipped', '[0-9]{5}');
+SELECT hasAnyTokenRegexp('abc123', '^[a-z]+$');
+SELECT hasAnyTokenRegexp('abc123 def', '^[a-z]+$');
+SELECT hasAnyTokenRegexp('abc', '');
+SELECT hasAnyTokenRegexp('', '');
+SELECT hasAnyTokenRegexp('error warning', 'err|fatal');
+SELECT hasAnyTokenRegexp('Error', '(?i)^error$');
+SELECT hasAnyTokenRegexp('order 123456 shipped', ['^[0-9]{5}$', '^ship']);
+SELECT hasAnyTokenRegexp('order 123456 shipped', ['^[0-9]{5}$', '^x']);
+SELECT hasAnyTokenRegexp('abc', ['', 'x']);
+-- Partial match, unlike LIKE.
+SELECT hasAnyTokenRegexp('error', 'rro'), hasAnyTokenLike('error', 'rro');
+
 SELECT '-- empty array';
-SELECT hasAnyTokenLike('abc', []), hasAllTokenLike('abc', []);
-SELECT hasAnyTokenLike(NULL::Nullable(String), []), hasAllTokenLike(NULL::Nullable(String), []);
+SELECT hasAnyTokenLike('abc', []), hasAllTokenLike('abc', []), hasAnyTokenRegexp('abc', []);
+SELECT hasAnyTokenLike(NULL::Nullable(String), []), hasAllTokenLike(NULL::Nullable(String), []), hasAnyTokenRegexp(NULL::Nullable(String), []);
 SELECT hasAllTokenLike(toNullable('abc'), []), toTypeName(hasAllTokenLike(toNullable('abc'), []));
 
 SELECT '-- types';
@@ -46,23 +62,28 @@ SELECT hasAnyTokenLike(NULL::Nullable(String), 'de%');
 SELECT hasAnyTokenLike('abc', NULL);
 SELECT hasAnyTokenLike(toLowCardinality('abc def'), 'd%'), toTypeName(hasAnyTokenLike(toLowCardinality('abc def'), 'd%'));
 SELECT hasAnyTokenLike(toFixedString('abc def', 10), 'def');
+SELECT hasAnyTokenRegexp(toFixedString('abc def', 10), '^def$');
 SELECT hasAnyTokenLike(['abc', 'def ghi'], 'gh%');
 SELECT hasAnyTokenLike(['abc', 'def ghi'], 'xy%');
 SELECT hasAnyTokenLike(CAST([], 'Array(String)'), '%');
 SELECT hasAnyTokenLike([NULL, 'abc def'], 'd_f');
 SELECT hasAnyTokenLike([toFixedString('ab', 3), toFixedString('cd', 3)], 'cd');
+SELECT hasAnyTokenRegexp([toFixedString('ab', 3), toFixedString('cd', 3)], '^cd$');
 SELECT hasAllTokenLike(toNullable('abc def'), ['a%', 'd%']), toTypeName(hasAllTokenLike(toNullable('abc def'), ['a%', 'd%']));
 
 SELECT '-- tokenizers';
 SELECT hasAnyTokenLike('abc-def', 'c-d%', 'array');
 SELECT hasAnyTokenLike('abc-def', 'abc-%', 'array');
 SELECT hasAnyTokenLike('abcdef', 'bc_', 'ngrams(3)');
+SELECT hasAnyTokenRegexp('key=value;flag', '^val', 'splitByString([\'=\', \';\'])');
+SELECT hasAnyTokenRegexp('key=value;flag', '^val', 'splitByNonAlpha');
 SELECT hasAllTokenLike('abcdef', ['ab_', '_ef'], 'ngrams(3)');
 
 SELECT '-- same as arrayExists over tokens';
 SELECT
     countIf(hasAnyTokenLike(s, 'ab%') != arrayExists(t -> startsWith(t, 'ab'), tokens(s))),
     countIf(hasAnyTokenLike(s, 'a%c') != arrayExists(t -> like(t, 'a%c'), tokens(s))),
+    countIf(hasAnyTokenRegexp(s, '^[ab]+c$') != arrayExists(t -> match(t, '^[ab]+c$'), tokens(s))),
     countIf(hasAnyTokenLike(s, 'ab%'))
 FROM (SELECT arrayStringConcat(arrayMap(x -> ['ab', 'abc', 'bac', 'ca', 'aac', ' ', '-'][x % 7 + 1], range(number % 5)), '') AS s FROM numbers(1000));
 
@@ -70,6 +91,7 @@ SELECT
     countIf(hasAnyTokenLike(s, ['ab%', 'ca%']) != arrayExists(t -> arrayExists(p -> startsWith(t, p), ['ab', 'ca']), tokens(s))),
     countIf(hasAnyTokenLike(s, ['a%c', 'b_']) != arrayExists(t -> arrayExists(p -> like(t, p), ['a%c', 'b_']), tokens(s))),
     countIf(hasAllTokenLike(s, ['a%c', 'b%']) != (notEmpty(['a%c', 'b%']) AND arrayAll(p -> arrayExists(t -> like(t, p), tokens(s)), ['a%c', 'b%']))),
+    countIf(hasAnyTokenRegexp(s, ['^[ab]+c$', 'ca']) != arrayExists(t -> arrayExists(p -> match(t, p), ['^[ab]+c$', 'ca']), tokens(s))),
     countIf(hasAllTokenLike(s, ['a%c', 'b%']))
 FROM (SELECT arrayStringConcat(arrayMap(x -> ['ab', 'abc', 'bac', 'ca', 'aac', ' ', '-'][(x * 3 + number) % 7 + 1], range(number % 6)), '') AS s FROM numbers(1000));
 
@@ -86,7 +108,7 @@ FROM (SELECT arrayStringConcat(arrayMap(x -> ['a%', '%a', 'a_', 'a\\', '\\', 'a%
 SELECT hasAnyTokenLike('ab', 'a\\'); -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
 
 SELECT '-- a value without the literal of a pattern has no token that matches it';
-SELECT hasAnyTokenLike('ab cd', '%b c%'), hasAnyTokenLike('fa iled', 'fail_d');
+SELECT hasAnyTokenLike('ab cd', '%b c%'), hasAnyTokenLike('fa iled', 'fail_d'), hasAnyTokenRegexp('fail ed', 'l e'), hasAnyTokenRegexp('failed', '(?i)FAIL'), hasAnyTokenRegexp('user ok', 'fail|ok');
 SELECT hasAllTokenLike('charged twice', ['ch%', 'tw%']), hasAllTokenLike('charged once', ['ch%', 'tw%']), hasAllTokenLike(['charged', 'twice'], ['ch%', 'tw%']), hasAllTokenLike(['charged', 'once'], ['ch%', 'tw%']);
 
 SELECT '-- long tokens';
@@ -98,12 +120,26 @@ SELECT
     countIf(hasAnyTokenLike(s, '%needle%', 'array'))
 FROM (SELECT concat(repeat('x', number % 97), if(number % 3 = 0, 'needle', 'needl'), repeat(' x', number % 13)) AS s FROM numbers(1000));
 
+SELECT '-- the JIT and re2 give the same result, also on invalid UTF-8';
+SELECT
+    countIf(hasAnyTokenRegexp(s, '^a[^b]+$')), countIf(hasAnyTokenRegexp(s, '^.+$')), countIf(hasAnyTokenRegexp(s, '^[^b]*b$')),
+    countIf(hasAnyTokenRegexp(s, '^a.*$')), countIf(hasAnyTokenRegexp(s, '^0x[0-9a-f]{2}$'))
+FROM (SELECT multiIf(number % 7 = 0, 'b a\xFF', number % 7 = 1, 'x\xFFb c', number % 3 = 0, concat('b a', char(113 + number % 5), ' 0x1f'), 'b') AS s FROM numbers(1000))
+SETTINGS compile_regular_expressions = 1, min_count_to_compile_regular_expression = 0;
+SELECT
+    countIf(hasAnyTokenRegexp(s, '^a[^b]+$')), countIf(hasAnyTokenRegexp(s, '^.+$')), countIf(hasAnyTokenRegexp(s, '^[^b]*b$')),
+    countIf(hasAnyTokenRegexp(s, '^a.*$')), countIf(hasAnyTokenRegexp(s, '^0x[0-9a-f]{2}$'))
+FROM (SELECT multiIf(number % 7 = 0, 'b a\xFF', number % 7 = 1, 'x\xFFb c', number % 3 = 0, concat('b a', char(113 + number % 5), ' 0x1f'), 'b') AS s FROM numbers(1000))
+SETTINGS compile_regular_expressions = 0;
+
 SELECT '-- many blocks and threads with a stateful tokenizer';
 SELECT
     countIf(hasAnyTokenLike(s, '12%', 'sparseGrams(3, 5)') != arrayExists(t -> startsWith(t, '12'), tokens(s, 'sparseGrams', 3, 5))),
     countIf(hasAnyTokenLike(s, '1_3%', 'sparseGrams(3, 5)') != arrayExists(t -> like(t, '1_3%'), tokens(s, 'sparseGrams', 3, 5))),
+    countIf(hasAnyTokenRegexp(s, '^1.3', 'sparseGrams(3, 5)') != arrayExists(t -> match(t, '^1.3'), tokens(s, 'sparseGrams', 3, 5))),
     countIf(hasAnyTokenLike(s, '12%', 'sparseGrams(3, 5)')),
     countIf(hasAnyTokenLike(s, '1_3%', 'sparseGrams(3, 5)')),
+    countIf(hasAnyTokenRegexp(s, '^1.3', 'sparseGrams(3, 5)'))
 FROM (SELECT toString(number * 7919) AS s FROM numbers_mt(100000))
 SETTINGS max_block_size = 100, max_threads = 4;
 
@@ -116,10 +152,11 @@ FROM (SELECT toString(number * 7919) AS s FROM numbers_mt(100000))
 SETTINGS max_block_size = 100, max_threads = 4;
 
 SELECT '-- arrays in a full column, the first row included';
-SELECT n, hasAnyTokenLike(arr, 'ab%'), hasAnyTokenLike(arr, 'a_c'), hasAllTokenLike(arr, ['a%', 'x%'])
+SELECT n, hasAnyTokenLike(arr, 'ab%'), hasAnyTokenLike(arr, 'a_c'), hasAnyTokenRegexp(arr, '^abc$'), hasAllTokenLike(arr, ['a%', 'x%'])
 FROM values('n UInt8, arr Array(String)', (0, ['xy', 'abc']), (1, []), (2, ['ab']), (3, ['xy abc']), (4, ['xy'])) ORDER BY n;
 SELECT n, hasAnyTokenLike(arr, 'a_c') FROM values('n UInt8, arr Array(Nullable(String))', (0, [NULL, 'abc']), (1, [NULL]), (2, ['xbc'])) ORDER BY n;
 SELECT n, hasAnyTokenLike(arr, 'cd') FROM values('n UInt8, arr Array(FixedString(2))', (0, ['ab', 'cd']), (1, ['ab'])) ORDER BY n;
+SELECT n, hasAnyTokenRegexp(arr, '^cd$') FROM values('n UInt8, arr Array(FixedString(2))', (0, ['ab', 'cd']), (1, ['ab'])) ORDER BY n;
 
 SELECT '-- hasAllTokenLike starts every row afresh';
 SELECT n, hasAllTokenLike(s, ['a%', 'x%']) FROM values('n UInt8, s String', (0, 'ab'), (1, 'xy'), (2, 'ab xy')) ORDER BY n;
@@ -133,7 +170,10 @@ SELECT hasAnyTokenLike('abc', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hasAnyTokenLike('abc', [NULL, 'a']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hasAnyTokenLike('abc', [1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hasAllTokenLike('abc', toFixedString('a', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT hasAnyTokenRegexp('abc', [toFixedString('a', 1)]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hasAnyTokenLike('abc', materialize('a')); -- { serverError ILLEGAL_COLUMN }
 SELECT hasAllTokenLike('abc', materialize(['a'])); -- { serverError ILLEGAL_COLUMN }
 SELECT hasAnyTokenLike('abc', 'a', materialize('splitByNonAlpha')); -- { serverError ILLEGAL_COLUMN }
 SELECT hasAnyTokenLike('abc', 'a', 'unknownTokenizer'); -- { serverError BAD_ARGUMENTS }
+SELECT hasAnyTokenRegexp('abc', '('); -- { serverError CANNOT_COMPILE_REGEXP }
+SELECT hasAnyTokenRegexp('abc', ['a', '(']); -- { serverError CANNOT_COMPILE_REGEXP }

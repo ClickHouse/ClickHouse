@@ -20,6 +20,13 @@ hasAnyTokenLike(tag, \'env:%-eu\')	8
 hasAnyTokenLike(tag, \'env:%-eu\')	8
 hasAnyTokenLike(tag, \'env:%-eu\')	8
 hasAnyTokenLike(tag, \'env:%-eu\')	8
+hasAnyTokenRegexp(tag, \'^env:[a-z]+-\')	8
+hasAnyTokenRegexp(tag, \'^env:[a-z]+-\')	8
+hasAnyTokenRegexp(tag, \'^env:[a-z]+-\')	8
+hasAnyTokenRegexp(tag, \'^env:[a-z]+-\')	8
+hasAnyTokenRegexp(tag, \'^env:[a-z]+-\')	8
+hasAnyTokenRegexp(tag, \'^env:[a-z]+-\')	8
+hasAnyTokenRegexp(tag, \'^env:[a-z]+-\')	8
 hasAnyTokenLike(tag, \'%\')	64
 hasAnyTokenLike(tag, \'%\')	64
 hasAnyTokenLike(tag, \'%\')	64
@@ -50,6 +57,14 @@ hasAllTokenLike(tag, [\'env:%\', \'%-eu\'])	8
 hasAllTokenLike(tag, [\'env:%\', \'%-eu\'])	8
 hasAllTokenLike(tag, [\'env:%\', \'%-eu\'])	8
 hasAllTokenLike(tag, [\'env:%\', \'%-eu\'])	8
+hasAnyTokenRegexp(tag, [\'^env:[a-z]+-\', \'zzz\'])	8
+hasAnyTokenRegexp(tag, [\'^env:[a-z]+-\', \'zzz\'])	8
+hasAnyTokenRegexp(tag, [\'^env:[a-z]+-\', \'zzz\'])	8
+hasAnyTokenRegexp(tag, [\'^env:[a-z]+-\', \'zzz\'])	8
+hasAnyTokenRegexp(tag, [\'^env:[a-z]+-\', \'zzz\'])	8
+hasAnyTokenRegexp(tag, [\'^env:[a-z]+-\', \'zzz\'])	8
+hasAnyTokenRegexp(tag, [\'^env:[a-z]+-\', \'zzz\'])	8
+hasAnyTokenRegexp(tag, [\'^env:[a-z]+-\', \'zzz\'])	8
 hasAnyTokenLike(msg, \'Charg%\')	8
 hasAnyTokenLike(msg, \'Charg%\')	8
 hasAnyTokenLike(msg, \'Charg%\')	8
@@ -57,6 +72,20 @@ hasAnyTokenLike(msg, \'Charg%\')	8
 hasAnyTokenLike(msg, \'Charg%\')	8
 hasAnyTokenLike(msg, \'Charg%\')	8
 hasAnyTokenLike(msg, \'Charg%\')	8
+hasAnyTokenRegexp(msg, \'^C\')	8
+hasAnyTokenRegexp(msg, \'^C\')	8
+hasAnyTokenRegexp(msg, \'^C\')	8
+hasAnyTokenRegexp(msg, \'^C\')	8
+hasAnyTokenRegexp(msg, \'^C\')	8
+hasAnyTokenRegexp(msg, \'^C\')	8
+hasAnyTokenRegexp(msg, \'^C\')	8
+hasAnyTokenRegexp(msg, \'^c\')	0
+hasAnyTokenRegexp(msg, \'^c\')	0
+hasAnyTokenRegexp(msg, \'^c\')	0
+hasAnyTokenRegexp(msg, \'^c\')	0
+hasAnyTokenRegexp(msg, \'^c\')	0
+hasAnyTokenRegexp(msg, \'^c\')	0
+hasAnyTokenRegexp(msg, \'^c\')	0
 hasAnyTokenLike(msg, \'CHARG%\')	0
 hasAnyTokenLike(msg, \'CHARG%\')	0
 hasAnyTokenLike(msg, \'CHARG%\')	0
@@ -142,6 +171,8 @@ hasAnyTokenLike	8
 hasAnyTokenLike	8
 hasAnyTokenLike	8
 hasAnyTokenLike	8
+hasAnyTokenRegexp	8
+hasAnyTokenRegexp	8
 hasAnyTokenLike	8
 hasAnyTokenLike	1	0
 env:prod	8
