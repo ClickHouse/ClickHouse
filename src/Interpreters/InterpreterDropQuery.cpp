@@ -223,8 +223,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= static_cast<double>(settings[Setting::ignore_drop_queries_probability]))
         {
             ast_drop_query.sync = false;
-            /// TRUNCATE is kept only for rows the table itself holds in the server: these tables keep
-            /// their data elsewhere or hold none, and a real DROP leaves that data alone.
+            /// A real DROP of an object storage, alias or table function table does not delete its data, so do not TRUNCATE it.
             if (table->storesDataOnDisk() || table->isObjectStorage()
                 || typeid_cast<const StorageAlias *>(table.get()) || typeid_cast<const StorageTableFunctionProxy *>(table.get()))
             {
