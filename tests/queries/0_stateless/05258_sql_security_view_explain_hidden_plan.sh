@@ -82,7 +82,15 @@ for view in definer_view none_view; do
     echo "$(explain_flags "$reader" "--format_display_secrets_in_show_and_select 1" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.$view")"
 
     echo "-- $view: the reader still queries it"
-    ${CLICKHOUSE_CLIENT} --user "$reader" --query "SELECT count() FROM $db.$view"
+    query_id="${db}_${view}_$RANDOM"
+    ${CLICKHOUSE_CLIENT} --user "$reader" --query_id "$query_id" --log_processors_profiles 1 --query "SELECT count() FROM $db.$view"
+
+    echo "-- $view: the processors of its plan are logged under the sealed step"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS processors_profile_log"
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT countIf(plan_step_name = 'ReadFromSealedView') > 0, countIf(plan_step_name = 'ReadFromSystemNumbers')
+        FROM system.processors_profile_log
+        WHERE event_date >= yesterday() AND query_id = '$query_id'"
 done
 
 echo "-- the default user holds every privilege, so it sees both plans"

@@ -391,6 +391,17 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override
     {
         pipeline = std::move(*view_plan.buildQueryPipeline(optimization_settings, settings, /*do_optimize=*/ false));
+
+        /// The processors name the steps they come from and carry their descriptions, which show up in
+        /// `EXPLAIN PIPELINE graph = 1` and in `system.processors_profile_log`. Attribute them to this step instead.
+        if (!show_plan)
+        {
+            for (const auto & processor : pipeline.getProcessors())
+            {
+                processor->setQueryPlanStep(this);
+                processor->setDescription({});
+            }
+        }
     }
 
     QueryPlanRawPtrs getChildPlans(bool for_explain) override
