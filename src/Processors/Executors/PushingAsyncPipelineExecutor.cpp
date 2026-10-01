@@ -160,6 +160,7 @@ void PushingAsyncPipelineExecutor::start()
     data = std::make_unique<Data>();
     data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
     data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+    data->executor->setStepProfiler(pipeline.getStepProfiler());
     data->source = pushing_source.get();
 
     auto func = [&, thread_group = CurrentThread::getGroup()]()
