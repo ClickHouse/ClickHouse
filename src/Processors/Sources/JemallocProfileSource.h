@@ -1,8 +1,6 @@
 #pragma once
 
 #include "config.h"
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #if USE_JEMALLOC
 
@@ -10,6 +8,7 @@
 #    include <optional>
 #    include <string>
 #    include <unordered_map>
+#    include <Common/UnorderedMapWithMemoryTracking.h>
 #    include <Common/VectorWithMemoryTracking.h>
 #    include <Core/SettingsEnums.h>
 #    include <IO/ReadBufferFromFile.h>
