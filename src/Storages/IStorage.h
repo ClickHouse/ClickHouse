@@ -266,6 +266,9 @@ public:
         return metadata.get();
     }
 
+    /// Whether this table has a unique-key constraint.
+    virtual bool hasUniqueKey() const;
+
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
     /// any locks.
@@ -804,9 +807,11 @@ public:
     /// - For total_rows column in system.tables
     ///
     /// Does takes underlying Storage (if any) into account.
+    /// Passed context pointer must not be `nullptr`.
     virtual std::optional<UInt64> totalRows(ContextPtr) const { return {}; }
 
     /// Same as above but also take partition predicate into account.
+    /// Passed context pointer must not be `nullptr`.
     virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
 
     /// Aggregated `(num_rows, num_defaults)` for `column_name` across all visible parts,

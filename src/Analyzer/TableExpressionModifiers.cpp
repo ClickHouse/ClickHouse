@@ -121,10 +121,10 @@ String TableExpressionModifiers::formatForErrorMessage() const
 
 StorageMetadataPtr extendMetadataWithModifiers(const StorageMetadataPtr & metadata, const TableExpressionModifiers & modifiers)
 {
-    if (!modifiers.hasStream())
-        return metadata;
+    if (modifiers.hasStream())
+        return extendMetadataWithStream(metadata, *modifiers.getStreamSettings());
 
-    return extendMetadataWithStream(metadata, *modifiers.getStreamSettings());
+    return metadata;
 }
 
 }

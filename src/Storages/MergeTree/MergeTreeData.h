@@ -66,6 +66,7 @@ class MutationCommands;
 class Context;
 struct JobAndPool;
 class MergeTreeTransaction;
+class UniqueKeyTxnManager;
 struct ZeroCopyLock;
 struct ZooKeeperRetriesInfo;
 
@@ -671,8 +672,6 @@ public:
         MaskingPolicy,
     };
 
-    static ColumnDefaultnessStatsUnavailableReason
-    getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context, const MutationsSnapshotPtr & mutations_snapshot);
     ColumnDefaultnessStatsUnavailableReason getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context) const;
     static const char * columnDefaultnessStatsUnavailableReasonToString(ColumnDefaultnessStatsUnavailableReason reason);
 
@@ -1084,6 +1083,19 @@ public:
 
     size_t clearEmptyParts();
 
+    UniqueKeyTxnManager & uniqueKeyTxnManager() const;
+
+    /// Whether `part` holds the only copy of some other part's kills, in which case no removal
+    /// path may take it. The overload taking a lock is for a caller that already holds one.
+    bool isPinnedByDeleteBitmap(const IMergeTreeDataPart & part) const;
+    bool isPinnedByDeleteBitmap(const IMergeTreeDataPart & part, const DataPartsAnyLock & lock) const;
+
+    /// Announce a part's directory to the bitmap store, which indexes the sidecars in it.
+    void loadUniqueKeyBitmaps(const DataPartPtr & part);
+
+    /// Forget the bitmap-store bookkeeping of parts that have left the part set.
+    void dropUniqueKeyBitmaps(const DataPartsVector & parts);
+
     /// Moves to outdated state patch parts that do not need to be applied to regular parts.
     virtual size_t clearUnusedPatchParts();
 
@@ -1381,6 +1393,7 @@ public:
     /// Reserves space for the part based on the distribution of "big parts" in the same partition.
     /// Parts with estimated size larger than `min_bytes_to_rebalance_partition_over_jbod` are
     /// considered as big. The priority is lower than TTL. If reservation fails, return nullptr.
+    /// `time_of_move` is the moment the move TTL rules are evaluated at; 0 means the local clock.
     ReservationPtr balancedReservation(
         const StorageMetadataPtr & metadata_snapshot,
         size_t part_size,
@@ -1390,7 +1403,8 @@ public:
         MergeTreeData::DataPartsVector covered_parts,
         std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
         const IMergeTreeDataPart::TTLInfos * ttl_infos,
-        bool is_insert = false);
+        bool is_insert = false,
+        time_t time_of_move = 0);
 
     /// Choose disk with max available free space
     /// Reserves 0 bytes
@@ -1449,11 +1463,14 @@ public:
     /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
     /// For a part in a patch partition, `patch_part_index` must be seeded from a covered or
     /// sibling part (see `PatchPartIndex::cloneEmpty`) to keep the partition uniform.
+    /// With `precommit_storage = false` the returned part's storage transaction is still open, so
+    /// the caller can add files to the part; it then owns the `precommitTransaction()` that seals it.
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeTransactionPtr & txn,
-        std::optional<PatchPartIndex> patch_part_index) const;
+        std::optional<PatchPartIndex> patch_part_index,
+        bool precommit_storage = true) const;
 
     MergeTreeDataFormatVersion format_version;
 
@@ -1667,6 +1684,7 @@ protected:
     friend class VersionMetadataOnKeeper; // for access to log
     friend class MutationsState; // for access to log
     friend class UniqueKeyDenseIndexOps; // for access to log + data_parts_by_info
+    friend class DeleteBitmapStore; // for access to outdated_data_parts_loading_finished
 
     bool require_part_metadata;
 
@@ -1738,6 +1756,12 @@ public:
     size_t getColumnsDescriptionsCacheSize() const;
 
 protected:
+    /// The table's unique-key write surface: partition locks, the delete-bitmap store, and the
+    /// commit protocol that uses them. Null on a table without a unique key, and constructed once
+    /// in the constructor rather than on first use -- every caller already sits behind
+    /// `hasUniqueKey()`, so there is nothing for a lazy path to protect.
+    std::unique_ptr<UniqueKeyTxnManager> unique_key_txn_manager;
+
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
 
@@ -2032,6 +2056,11 @@ protected:
         const Strings & mutation_ids,
         const std::map<String, UInt64> & projections_duration_ms);
 
+    /// Writes a RemovePart event to system.part_log for each of the parts. Best-effort: a failed
+    /// write is logged, never thrown, so it cannot fail the removal or, in dropAllData(), replace
+    /// the exception the drop itself is reporting.
+    void writePartRemovalLog(const DataPartsVector & parts) const;
+
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different
     /// mechanisms for parts locking
@@ -2170,6 +2199,13 @@ protected:
     std::atomic_bool outdated_data_parts_loading_finished = true;
     std::atomic_bool unexpected_data_parts_loading_finished = true;
 
+    bool isStorageWritable() const
+    {
+        return storage_is_writable.load(std::memory_order_relaxed);
+    }
+
+    std::atomic_bool storage_is_writable = false;
+
     void loadOutdatedDataParts(bool is_async);
     void startOutdatedAndUnexpectedDataPartsLoadingTask();
     void stopOutdatedAndUnexpectedDataPartsLoadingTask();
@@ -2291,6 +2327,25 @@ private:
     bool canUsePolymorphicParts(const MergeTreeSettings & settings, String & out_reason) const;
 
     virtual void startBackgroundMovesIfNeeded() = 0;
+
+    /// Whether the started background workers may modify the table. `StorageMergeTree` keeps it unset
+    /// while the table is read-only, including while a settings `ALTER` of a read-only table is between
+    /// making `table_readonly = 0` visible in memory and committing it durably: the asynchronous
+    /// outdated and unexpected part loaders check it before touching the disk and between parts, and
+    /// the waits for them return at once while it is unset, exactly as for a read-only table, because
+    /// nothing is loading.
+    virtual bool areBackgroundWorkersEnabled() const { return true; }
+
+    /// Whether the table is still durably read-only. `StorageMergeTree` keeps it set while a settings
+    /// `ALTER` of a read-only table is between making `table_readonly = 0` visible in memory and
+    /// committing it durably. Foreground queries that modify data must keep seeing the table as
+    /// read-only in that window: a rolled-back commit restores `table_readonly = 1`, and an `INSERT`,
+    /// mutation, `TRUNCATE` or partition command that slipped through would have written to a table
+    /// that is durably read-only.
+    virtual bool isReadonlyCommitInFlight() const { return false; }
+
+    /// Re-arm period of an asynchronous part loader that woke up while the workers are disabled.
+    static constexpr size_t DISABLED_PARTS_LOADING_RETRY_MS = 1000;
 
     bool allow_nullable_key = false;
 
