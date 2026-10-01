@@ -34,22 +34,15 @@
 02884_create_view_with_sql_security_option
 
     Transactions
-02421_truncate_isolation_no_merges
-02421_truncate_isolation_with_mutations
     Storage StorageDummy (table test_8yblzvrs.mt1 (560aada5-04ba-4faa-9297-c032a1798def)) does not support transactions. (NOT_IMPLEMENTED)
     query: select 'commit', arraySort(groupArray(n)) from (select n from mt1 union all select * from mt2);
 01173_transaction_control_queries
 01171_mv_select_insert_isolation_long
-01174_select_insert_isolation
 
     https://github.com/ClickHouse/clickhouse-private/issues/13900
 03075_shared_merge_tree_recursive_cte_smoke_test
 03034_recursive_cte_tree_merge_tree
 03154_recursive_cte_distributed
-
-    analyzer=0 (partially supported)
-01049_join_low_card_bug_long.gen
-01721_join_implicit_cast_long.gen
 
     EXPLAIN / PLAN / ProfileEvents
 02676_distinct_reading_in_order_analyzer
@@ -86,6 +79,7 @@
 00443_preferred_block_size_bytes
 02149_read_in_order_fixed_prefix
 02151_hash_table_sizes_stats
+02151_hash_table_sizes_stats_joins_reordered
 02156_storage_merge_prewhere
 02354_vector_search_subquery
 02451_order_by_monotonic
@@ -108,7 +102,6 @@
 
     # NOT BUGS
     Not a bug
-02494_query_cache_user_isolation
 02346_non_negative_derivative
 01913_exact_rows_before_limit
 03203_optimize_disjunctions_chain_to_in
@@ -123,12 +116,8 @@
 
 
     Limit for rows (controlled by 'max_rows_to_read' setting) exceeded
-    !!!max rows: 20.00 million, current rows: 21.00 million
-02275_full_sort_join_long.gen
     !!!max rows: 8.00, current rows: 16.38 thousand
 01414_push_predicate_when_contains_with_clause
-    !!!max rows: 20.00 million, current rows: 22.00 million
-02435_rollback_cancelled_queries
     max rows: 1.00, current rows: 10.00
 01576_alias_column_rewrite
     max rows: 4.00, current rows: 10.00
