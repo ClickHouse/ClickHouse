@@ -266,6 +266,14 @@ def _evidence():
   reported. Severity follows the consequence and how ordinary its trigger is, not the topic.
 - A missing test goes in the summary's Tests section, not inline, except an access check with no
   test at all (a Major).
+- Project conventions the review holds code to (from the repository's agent instructions, which are
+  not loaded here): a `sleep` is never a fix for a race; fallback paths that swallow an error and
+  substitute a default or a slower path hide bugs, so errors should propagate (a `try`/`catch` that
+  falls back to a less optimized case is one); functional `.sql`/`.sh` tests are preferred to gtest
+  unit tests; `no-*` test tags only when strictly necessary; every header in `docs/` ends with an
+  explicit `{#kebab-case-anchor}`, and a new docs page starts with frontmatter (`description`,
+  `sidebarTitle`, `slug`, `title`, `doc_type`); ARM CI machines are not slower than x86, so slowness
+  there is not an excuse; dates are written as YYYY-MM-DD.
 - A Blocker or Major comes with its proof: the concrete input, query or sequence of events that
   triggers it, traced through the code with concrete values, or the exact caller that breaks. When
   you cannot produce that, it is not a Blocker or Major: put it in the summary as a risk that needs
