@@ -170,7 +170,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isDeterministic() const override { return executable_function->getConfiguration().is_deterministic; }
-    bool isDeterministicInScopeOfQuery() const override { return executable_function->getConfiguration().is_deterministic; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
@@ -459,18 +459,6 @@ bool UserDefinedExecutableFunctionFactory::has(const String & function_name, Con
 
     bool result = load_result.object != nullptr;
     return result;
-}
-
-std::optional<bool> UserDefinedExecutableFunctionFactory::tryGetIsDeterministic(const String & function_name, ContextPtr context)
-{
-    const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
-    auto load_result = loader.getLoadResult(function_name);
-
-    if (!load_result.object)
-        return std::nullopt;
-
-    auto executable_function = std::static_pointer_cast<const UserDefinedExecutableFunction>(load_result.object);
-    return executable_function->getConfiguration().is_deterministic;
 }
 
 VectorWithMemoryTracking<String> UserDefinedExecutableFunctionFactory::getRegisteredNames(ContextPtr context)

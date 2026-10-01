@@ -6,7 +6,7 @@
     {
       "expandable": true,
       "expanded": true,
-      "group": "Referência de SQL",
+      "group": "Referência SQL",
       "pages": [
         "pt-BR/reference/syntax",
         {
@@ -58,7 +58,7 @@
                 "pt-BR/reference/statements/create/database",
                 {
                   "expanded": false,
-                  "group": "DICTIONARY",
+                  "group": "DICIONÁRIO",
                   "pages": [
                     "pt-BR/reference/statements/create/dictionary",
                     "pt-BR/reference/statements/create/dictionary/attributes",
@@ -108,7 +108,6 @@
                 },
                 "pt-BR/reference/statements/create/masking-policy",
                 "pt-BR/reference/statements/create/function",
-                "pt-BR/reference/statements/create/handler",
                 "pt-BR/reference/statements/create/named-collection",
                 "pt-BR/reference/statements/create/quota",
                 "pt-BR/reference/statements/create/role",
@@ -124,7 +123,6 @@
                     "pt-BR/reference/statements/create/table/replace-table"
                   ]
                 },
-                "pt-BR/reference/statements/create/token",
                 "pt-BR/reference/statements/create/user",
                 "pt-BR/reference/statements/create/view"
               ]
@@ -140,7 +138,6 @@
             "pt-BR/reference/statements/explain",
             "pt-BR/reference/statements/grant",
             "pt-BR/reference/statements/hypothetical-index",
-            "pt-BR/reference/statements/hypothetical-projection",
             "pt-BR/reference/statements/in",
             "pt-BR/reference/statements/insert-into",
             "pt-BR/reference/statements/kill",
@@ -188,7 +185,8 @@
             "pt-BR/reference/statements/truncate",
             "pt-BR/reference/statements/undrop",
             "pt-BR/reference/statements/update",
-            "pt-BR/reference/statements/use"
+            "pt-BR/reference/statements/use",
+            "pt-BR/reference/statements/watch"
           ]
         },
         {
@@ -221,7 +219,7 @@
         },
         {
           "expanded": false,
-          "group": "Tipos de string",
+          "group": "Tipos String",
           "pages": [
             "pt-BR/reference/data-types/string",
             "pt-BR/reference/data-types/fixedstring"
@@ -268,7 +266,7 @@
         },
         {
           "expanded": false,
-          "group": "Tipos anuláveis e opcionais",
+          "group": "Tipos Nullable e opcionais",
           "pages": [
             "pt-BR/reference/data-types/nullable",
             "pt-BR/reference/data-types/lowcardinality"
@@ -287,7 +285,7 @@
         },
         {
           "expanded": false,
-          "group": "Tipos de função de agregação",
+          "group": "Tipos de funções de agregação",
           "pages": [
             "pt-BR/reference/data-types/aggregatefunction",
             "pt-BR/reference/data-types/simpleaggregatefunction"
@@ -388,7 +386,7 @@
             },
             {
               "expanded": false,
-              "group": "Especiais",
+              "group": "Especial",
               "pages": [
                 "pt-BR/reference/engines/table-engines/special/index",
                 "pt-BR/reference/engines/table-engines/special/alias",
@@ -421,20 +419,13 @@
             "pt-BR/reference/engines/database-engines/atomic",
             "pt-BR/reference/engines/database-engines/backup",
             "pt-BR/reference/engines/database-engines/datalake",
-            "pt-BR/reference/engines/database-engines/dictionary",
-            "pt-BR/reference/engines/database-engines/filesystem",
-            "pt-BR/reference/engines/database-engines/hdfs",
             "pt-BR/reference/engines/database-engines/materialized-postgresql",
-            "pt-BR/reference/engines/database-engines/memory",
             "pt-BR/reference/engines/database-engines/mysql",
-            "pt-BR/reference/engines/database-engines/ordinary",
             "pt-BR/reference/engines/database-engines/postgresql",
             "pt-BR/reference/engines/database-engines/remote",
             "pt-BR/reference/engines/database-engines/replicated",
-            "pt-BR/reference/engines/database-engines/s3",
             "pt-BR/reference/engines/database-engines/shared",
-            "pt-BR/reference/engines/database-engines/sqlite",
-            "pt-BR/reference/engines/database-engines/url"
+            "pt-BR/reference/engines/database-engines/sqlite"
           ]
         }
       ]
@@ -469,7 +460,7 @@
             "pt-BR/reference/functions/regular-functions/functions-for-nulls",
             {
               "expanded": false,
-              "group": "Geoespacial",
+              "group": "Geo",
               "pages": [
                 "pt-BR/reference/functions/regular-functions/geo/index",
                 "pt-BR/reference/functions/regular-functions/geo/coordinates",
@@ -566,7 +557,6 @@
                 "pt-BR/reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "pt-BR/reference/functions/aggregate-functions/first_value",
                 "pt-BR/reference/functions/aggregate-functions/flame_graph",
-                "pt-BR/reference/functions/aggregate-functions/gini",
                 "pt-BR/reference/functions/aggregate-functions/groupArray",
                 "pt-BR/reference/functions/aggregate-functions/groupArrayArray",
                 "pt-BR/reference/functions/aggregate-functions/groupArrayInsertAt",
@@ -742,7 +732,7 @@
             "pt-BR/reference/functions/table-functions/s3Cluster",
             "pt-BR/reference/functions/table-functions/sqlite",
             "pt-BR/reference/functions/table-functions/timeSeriesData",
-            "pt-BR/reference/functions/table-functions/timeSeriesMetricFamilies",
+            "pt-BR/reference/functions/table-functions/timeSeriesMetrics",
             "pt-BR/reference/functions/table-functions/timeSeriesSamples",
             "pt-BR/reference/functions/table-functions/timeSeriesSelector",
             "pt-BR/reference/functions/table-functions/timeSeriesTags",
@@ -1075,17 +1065,14 @@
         "pt-BR/reference/system-tables/histogram_metric_log",
         "pt-BR/reference/system-tables/histogram_metrics",
         "pt-BR/reference/system-tables/hypothetical_indexes",
-        "pt-BR/reference/system-tables/hypothetical_projections",
         "pt-BR/reference/system-tables/iceberg_files",
         "pt-BR/reference/system-tables/iceberg_history",
         "pt-BR/reference/system-tables/iceberg_metadata_log",
         "pt-BR/reference/system-tables/information_schema",
         "pt-BR/reference/system-tables/instrumentation",
-        "pt-BR/reference/system-tables/jemalloc_arena_bins",
         "pt-BR/reference/system-tables/jemalloc_bins",
-        "pt-BR/reference/system-tables/jemalloc_profile_text",
-        "pt-BR/reference/system-tables/jemalloc_sampled_allocations",
         "pt-BR/reference/system-tables/jemalloc_stats",
+        "pt-BR/reference/system-tables/jemalloc_profile_text",
         "pt-BR/reference/system-tables/kafka_consumers",
         "pt-BR/reference/system-tables/keeper_changelogs",
         "pt-BR/reference/system-tables/keeper_cluster",
@@ -1147,13 +1134,11 @@
         "pt-BR/reference/system-tables/schema_inference_cache",
         "pt-BR/reference/system-tables/server_settings",
         "pt-BR/reference/system-tables/session_log",
-        "pt-BR/reference/system-tables/session_query_ids",
         "pt-BR/reference/system-tables/settings",
         "pt-BR/reference/system-tables/settings_changes",
         "pt-BR/reference/system-tables/settings_profile_elements",
         "pt-BR/reference/system-tables/settings_profiles",
         "pt-BR/reference/system-tables/stack_trace",
-        "pt-BR/reference/system-tables/statements",
         "pt-BR/reference/system-tables/stemmers",
         "pt-BR/reference/system-tables/storage_policies",
         "pt-BR/reference/system-tables/symbols",

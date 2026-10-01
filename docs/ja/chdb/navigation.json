@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "はじめる",
+      "group": "はじめに",
       "pages": [
         "ja/chdb/index",
         "ja/chdb/getting-started"
       ]
     },
     {
-      "group": "言語別インテグレーション",
+      "group": "各言語向けインテグレーション",
       "pages": [
         "ja/chdb/install/index",
         "ja/chdb/install/python",
@@ -54,7 +54,7 @@
       ]
     },
     {
-      "group": "開発者向けガイド",
+      "group": "開発者ガイド",
       "pages": [
         "ja/chdb/guides/index",
         "ja/chdb/guides/jupysql",

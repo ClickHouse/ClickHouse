@@ -15,8 +15,6 @@ public:
 
     ASTPtr clone() const override;
 
-    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
-
     enum class Operator : uint8_t
     {
         UNKNOWN,

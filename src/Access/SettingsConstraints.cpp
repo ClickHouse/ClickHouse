@@ -3,7 +3,6 @@
 #include <Access/resolveSetting.h>
 #include <Access/AccessControl.h>
 #include <Core/Settings.h>
-#include <Core/SettingsFields.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
@@ -63,16 +62,6 @@ SettingSourceRestrictions getSettingSourceRestrictions(std::string_view name)
     return SettingSourceRestrictions(); // allows everything
 }
 
-/// The analyzer became mandatory in v26.9: `enable_analyzer` (canonically
-/// `allow_experimental_analyzer`) is an obsolete setting frozen at its default value, and the query
-/// analysis it used to switch to has been removed. A change that would disable it is accepted and
-/// rewritten to `1`, so that queries, sessions, settings profiles, clients and drivers that still
-/// carry `enable_analyzer = 0` keep working after an upgrade instead of failing.
-bool isChangeDisablingTheAnalyzer(std::string_view resolved_name, const Field & new_value)
-{
-    return resolved_name == "allow_experimental_analyzer" && !SettingFieldBool{new_value}.value;
-}
-
 /// Settings that are always allowed to change in readonly mode, regardless of the user profile's
 /// `<constraints>` block. These are per-request HTTP routing, query-construction, and output
 /// shaping settings (formerly special URL parameters like `?database=` and `?default_format=`)
@@ -87,10 +76,6 @@ bool isAlwaysChangeableInReadonly(std::string_view name)
 {
     /// HTTP routing / session.
     if (name == "database" || name == "default_format")
-        return true;
-    /// Selects which of `output_format` / `default_format` the `X-ClickHouse-Format` header aliases;
-    /// both targets are changeable here, so the switch between them must be too.
-    if (name == "http_x_clickhouse_format_overrides_output_format")
         return true;
     /// Output format selection and response compression.
     if (name == "format" || name == "input_format" || name == "output_format" || name == "compression")
@@ -460,16 +445,6 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
         if (getCurrentValueOfSetting(current_settings, change.name, current_value)
             && new_value == castValueOfSetting<Settings>(change.name, current_value))
             return true;
-    }
-
-    if (isChangeDisablingTheAnalyzer(setting_name, new_value))
-    {
-        /// Store the only supported value instead of the requested one. Other constraints are not
-        /// consulted: the value that ends up stored is the default one. `executeQuery` normalizes the
-        /// setting again for the paths that do not consult the constraints at all (a settings profile
-        /// from the server configuration, `clickhouse-local` on the command line, a secondary query).
-        change.value = Field(true);
-        return true;
     }
 
     return getChecker(current_settings, setting_name).check(change, new_value, reaction, source);
