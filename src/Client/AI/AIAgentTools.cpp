@@ -208,8 +208,8 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
         });
 
     /// The contract this description states has to match what the validator accepts: with schema
-    /// access disabled `validateReadOnlyQueryForAIAgent` rejects the schema-exploration statements
-    /// by their type and blocks every read of the `system` and `information_schema` databases, so
+    /// access disabled `validateReadOnlyQueryForAIAgent` rejects every statement other than `SELECT`
+    /// and `EXPLAIN` and blocks every read of the `system` and `information_schema` databases, so
     /// advertising them here would steer the model into calls that have to fail.
     const String readonly_query_description = String(
         enable_schema_access
@@ -221,7 +221,8 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
         + (enable_schema_access
                ? "It can select from any ordinary table of the server: the MergeTree and Log families, Memory, and the "
                  "`system` and `information_schema` tables. "
-               : "The user disabled schema access for this session: SHOW, DESCRIBE and EXISTS, and every read of the "
+               : "The user disabled schema access for this session: SHOW (including SHOW PROCESSLIST and SHOW GRANTS), "
+                 "DESCRIBE and EXISTS, and every read of the "
                  "`system` and `information_schema` databases, are rejected here - only SELECT and EXPLAIN over the "
                  "tables of the user remain, and anything that needs the schema has to go through run_query, which "
                  "the user confirms. It can select from any ordinary table of the server: the MergeTree and Log "

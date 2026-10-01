@@ -267,7 +267,7 @@ bool isKnownBuiltinFunction(const String & name)
 /// here - see `collectNamedTablesForAIAgent`.
 ///
 /// Autonomous access to metadata is a separate concern, gated by `allow_schema_access`, which
-/// rejects the schema-exploration statements by their type in `isSchemaExplorationStatement`.
+/// leaves only `SELECT` and `EXPLAIN` to the read-only tool in `validateReadOnlyQueryForAIAgent`.
 void checkNoExternalAccess(const IAST & ast)
 {
     if (const auto * table_expression = ast.as<ASTTableExpression>())
@@ -341,27 +341,6 @@ void checkNoSchemaAccess(const IAST & ast)
 
     for (const auto & child : ast.children)
         checkNoSchemaAccess(*child);
-}
-
-bool isSchemaExplorationStatement(const IAST & ast)
-{
-    return isAnyOf<
-        ASTDescribeQuery,
-        ASTDescribeCacheQuery,
-        ASTShowTablesQuery,
-        ASTShowColumnsQuery,
-        ASTShowIndexesQuery,
-        ASTShowEnginesQuery,
-        ASTShowFunctionsQuery,
-        ASTShowSettingQuery,
-        ASTExistsDatabaseQuery,
-        ASTExistsTableQuery,
-        ASTExistsViewQuery,
-        ASTExistsDictionaryQuery,
-        ASTShowCreateTableQuery,
-        ASTShowCreateViewQuery,
-        ASTShowCreateDatabaseQuery,
-        ASTShowCreateDictionaryQuery>(ast);
 }
 
 }
@@ -638,7 +617,11 @@ void validateReadOnlyQueryForAIAgent(const IAST & ast, bool allow_schema_access)
     checkNoExternalAccess(ast);
     if (!allow_schema_access)
     {
-        if (isSchemaExplorationStatement(ast))
+        /// Every other statement of the allowlist shows metadata: the schema (`SHOW TABLES`,
+        /// `DESCRIBE`, `EXISTS`, `SHOW CREATE`), but also the running queries (`SHOW PROCESSLIST`)
+        /// and the access entities (`SHOW GRANTS`, `SHOW CREATE USER`, `SHOW ACCESS`). Only the
+        /// statements that read the tables of the user are kept, rather than listing the others.
+        if (!isAnyOf<ASTSelectWithUnionQuery, ASTExplainQuery>(ast))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Schema access is disabled for the read-only tool. Use the run_query tool for this query");

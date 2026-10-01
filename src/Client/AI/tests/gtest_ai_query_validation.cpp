@@ -143,6 +143,25 @@ TEST(AIQueryValidation, DisablingSchemaAccessBlocksAutonomousSchemaExploration)
 
     /// Reading a user table is not schema access, so it stays allowed with schema access off.
     EXPECT_TRUE(isAllowedWithoutSchemaAccess("SELECT count() FROM default.events"));
+    EXPECT_TRUE(isAllowedWithoutSchemaAccess("EXPLAIN SELECT count() FROM default.events"));
+}
+
+TEST(AIQueryValidation, DisablingSchemaAccessBlocksOtherMetadataStatements)
+{
+    /// The running queries and the access entities are metadata too: with schema access off, they
+    /// must not reach the model without confirmation either.
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SHOW PROCESSLIST"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SHOW GRANTS"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SHOW CREATE USER default"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SHOW ACCESS"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SHOW USERS"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SHOW PRIVILEGES"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SHOW SETTING max_threads"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SHOW ENGINES"));
+
+    EXPECT_TRUE(isAllowed("SHOW PROCESSLIST"));
+    EXPECT_TRUE(isAllowed("SHOW GRANTS"));
+    EXPECT_TRUE(isAllowed("SHOW CREATE USER default"));
 }
 
 TEST(AIQueryValidation, RejectsExternalServerOwnedTables)

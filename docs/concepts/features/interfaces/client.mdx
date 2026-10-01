@@ -581,7 +581,7 @@ ai:
 </Accordion>
 
 <Accordion title="Behavior">
-- `enable_schema_access` - Let the assistant explore database schemas without confirmation. When disabled, the schema tools and the unconfirmed schema metadata queries are unavailable: the `SHOW`, `DESCRIBE` and `EXISTS` statements are refused, and so is reading the databases the server owns - `system` and both spellings of `information_schema`, which is views over `system` (default: `true`).
+- `enable_schema_access` - Let the assistant explore database schemas without confirmation. When disabled, the schema tools and the unconfirmed schema metadata queries are unavailable: only `SELECT` and `EXPLAIN` remain - every `SHOW` statement (including `SHOW PROCESSLIST`, `SHOW GRANTS` and `SHOW CREATE USER`), `DESCRIBE` and `EXISTS` are refused, and so is reading the databases the server owns - `system` and both spellings of `information_schema`, which is views over `system` (default: `true`).
 - `max_steps` - Maximum number of model steps (tool-calling rounds) per question (default: `24`).
 - `temperature` - Controls randomness, 0.0 = deterministic, 1.0 = creative. Omitted by default and only sent to the model when explicitly set, because some models reject this parameter.
 - `max_tokens` - Maximum response length in tokens per model call (default: `4096`).
