@@ -215,7 +215,9 @@ void BM_StackTraceProfilerSample(benchmark::State & state)
     action.sa_sigaction = sampleHandler;
 #pragma clang diagnostic pop
     action.sa_flags = SA_SIGINFO | SA_RESTART;
-    sigaction(SIGUSR2, &action, nullptr);
+    /// Restore the previous disposition at the end: `SIGUSR2` is used by ClickHouse itself.
+    struct sigaction previous_action{};
+    sigaction(SIGUSR2, &action, &previous_action);
 
     std::atomic<bool> stop{false};
     std::thread sampled([&]
@@ -237,6 +239,7 @@ void BM_StackTraceProfilerSample(benchmark::State & state)
     }
     stop = true;
     sampled.join();
+    sigaction(SIGUSR2, &previous_action, nullptr);
     state.counters["frames"] = static_cast<double>(sampled_frames.load());
 }
 BENCHMARK(BM_StackTraceProfilerSample)->Arg(0)->Arg(8)->Arg(32)->UseRealTime();
