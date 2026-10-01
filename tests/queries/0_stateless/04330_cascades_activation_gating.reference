@@ -40,7 +40,7 @@
 2	99900
 3	100100
 4	100300
--- 13. Exchange-free plan with a window falls back to local execution
+-- 13. Exchange-free plan with a window distributes
 499500
 -- 14. ANY join with join_any_take_last_row is not swapped (must return the last row)
 1001

@@ -203,6 +203,7 @@ ContainerTemplateSpec describes the container configuration overrides for the cl
 | `livenessProbe` | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core) | LivenessProbe overrides the operator's default liveness probe. | false |  |
 | `readinessProbe` | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core) | ReadinessProbe overrides the operator's default readiness probe. | false |  |
 | `startupProbe` | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core) | StartupProbe holds back the liveness and readiness probes until it succeeds, giving slow-starting<br />containers time to come up. The operator sets no startup probe by default. | false |  |
+| `lifecycle` | [Lifecycle](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#lifecycle-v1-core) | Lifecycle defines actions the kubelet triggers on container lifecycle events (PostStart/PreStop).<br />A non-nil Lifecycle fully replaces operator defaults; the user owns the entire struct. | false |  |
 
 Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)

@@ -559,8 +559,8 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_sha
                 /// `MergingSortedTransform`s, per-shard `MergeJoinTransform`s) wait for a chunk of one
                 /// specific input each. Two such scatters then form a circular wait - A blocked pushing to
                 /// shard `i` whose merge waits on B, B blocked pushing to shard `j` whose merge waits on A
-                /// (seen as `Logical error: Pipeline stuck` in the AST fuzzer). The full-sort path is immune:
-                /// each `MergeSortingTransform` drains its whole input before emitting anything.
+                /// (seen as `Logical error: Pipeline stuck` in the AST fuzzer). The full-sort path is immune
+                /// while every shard lane is demanded: a sleeping lane never starts draining its input.
                 ///
                 /// A pre-sorted side therefore runs as a single merge join, exactly like
                 /// `full_sorting_merge`, keeping the in-order read and its virtual rows

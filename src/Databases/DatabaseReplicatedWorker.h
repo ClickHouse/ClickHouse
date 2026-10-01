@@ -1,5 +1,6 @@
 #pragma once
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/QueryFlags.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/QualifiedTableName.h>
 
@@ -27,7 +28,7 @@ public:
 
     String enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &) override;
 
-    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, bool internal_query);
+    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, QueryFlags flags);
 
     void shutdown() override;
 

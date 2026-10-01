@@ -1,0 +1,5 @@
+A LowCardinality(Float64) filter is evaluated locally and keeps the full-precision row:
+1.2345678901234567
+Query: SELECT `f` FROM `t`
+Query: SELECT `f` FROM `t` WHERE `f` = 2.5
+1

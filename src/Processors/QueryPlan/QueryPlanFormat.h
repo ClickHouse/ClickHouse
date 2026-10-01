@@ -3,7 +3,7 @@
 #include <Core/Names.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/PreparedSets.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 
 #include <string>
 #include <string_view>

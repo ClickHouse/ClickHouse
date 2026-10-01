@@ -1,0 +1,35 @@
+-- original file
+tables:
+old_t
+t
+system.tables:
+old_t
+t
+exists old_t, new_t:
+1
+0
+schema of t:
+a	Int64					
+rows of t:
+10
+20
+-- replaced file
+tables:
+new_t
+t
+system.tables:
+new_t
+t
+exists old_t, new_t:
+0
+1
+schema of t:
+a	Int64					
+b	Nullable(String)					
+rows of t:
+30	x
+40	y
+a table of the old file is gone:
+UNKNOWN_TABLE
+a table of the new file is read:
+2

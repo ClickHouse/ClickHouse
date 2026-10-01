@@ -341,7 +341,8 @@ HAVING sum(ps_supplycost * ps_availqty) > (
     SELECT sum(ps_supplycost * ps_availqty) * 0.0001
     FROM partsupp, supplier, nation
     WHERE ps_suppkey = s_suppkey AND s_nationkey = n_nationkey AND n_name = 'GERMANY')
-ORDER BY value DESC;
+ORDER BY value DESC
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- Q12: Shipping modes and order priority (orders, lineitem)
 -- Filter: l_shipmode IN ('MAIL','SHIP') AND date/commit/ship filters -> ~4.77M lineitem rows.
@@ -405,7 +406,8 @@ EXPLAIN
 SELECT s_suppkey, s_name, s_address, s_phone, total_revenue
 FROM supplier, revenue0
 WHERE s_suppkey = supplier_no AND total_revenue = (SELECT max(total_revenue) FROM revenue0)
-ORDER BY s_suppkey;
+ORDER BY s_suppkey
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 DROP VIEW revenue0;
 
 -- Q16: Parts/supplier relationship (partsupp, part + NOT IN subquery on supplier)
@@ -424,7 +426,8 @@ FROM partsupp, part
 WHERE p_partkey = ps_partkey AND p_brand <> 'Brand#45'
     AND p_type NOT LIKE 'MEDIUM POLISHED%' AND p_size IN (49, 14, 23, 45, 19, 3, 36, 9)
     AND ps_suppkey NOT IN (SELECT s_suppkey FROM supplier WHERE s_comment LIKE '%Customer%Complaints%')
-GROUP BY p_brand, p_type, p_size ORDER BY supplier_cnt DESC, p_brand, p_type, p_size;
+GROUP BY p_brand, p_type, p_size ORDER BY supplier_cnt DESC, p_brand, p_type, p_size
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- The same query with the explicit `IN` -> `JOIN` rewrite.
 SELECT '-- Q16 rewrite_in_to_join';
@@ -464,7 +467,8 @@ FROM customer, orders, lineitem
 WHERE o_orderkey IN (SELECT l_orderkey FROM lineitem GROUP BY l_orderkey HAVING sum(l_quantity) > 300)
     AND c_custkey = o_custkey AND o_orderkey = l_orderkey
 GROUP BY c_name, c_custkey, o_orderkey, o_orderdate, o_totalprice
-ORDER BY o_totalprice DESC, o_orderdate LIMIT 100;
+ORDER BY o_totalprice DESC, o_orderdate LIMIT 100
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- The same query with the explicit `IN` -> `JOIN` rewrite: the semi join can reorder with the
 -- other joins, at the price of a second full `lineitem` aggregation on the probe side.
@@ -524,7 +528,8 @@ WHERE s_suppkey IN (
             WHERE l_partkey = ps_partkey AND l_suppkey = ps_suppkey
                 AND l_shipdate >= '1994-01-01' AND l_shipdate < '1995-01-01'))
     AND s_nationkey = n_nationkey AND n_name = 'CANADA'
-ORDER BY s_name;
+ORDER BY s_name
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- The same query with the explicit `IN` -> `JOIN` rewrite.
 SELECT '-- Q20 rewrite_in_to_join';
@@ -579,7 +584,8 @@ FROM (SELECT substring(c_phone, 1, 2) AS cntrycode, c_acctbal
             WHERE c_acctbal > 0 AND substring(c_phone, 1, 2) IN ('13','31','23','29','30','18','17'))
         AND NOT EXISTS (SELECT * FROM orders WHERE o_custkey = c_custkey)
     ) AS custsale
-GROUP BY cntrycode ORDER BY cntrycode;
+GROUP BY cntrycode ORDER BY cntrycode
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE lineitem;
 DROP TABLE orders;

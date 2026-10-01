@@ -1,0 +1,18 @@
+-- a compound SELECT reports the declared type INTEGER while returning TEXT rows: typed from the row, not from the lie
+name	Nullable(String)					
+1
+a
+-- the same for a REAL arm: the column is Float64, and the INTEGER rows convert exactly
+val	Nullable(Float64)					
+1
+1.5
+-- an explicitly declared Int64 over such a compound fails the read instead of reading the TEXT cell as 0
+-- a value that does not fit the declared narrow integer type exactly fails the read
+-- a value that does fit is read
+255
+-- a REAL value that does not survive the narrowing to Float32 fails the read
+-- a REAL value that does survive it is read
+16777216
+1.5
+-- reading the same values as String always works
+300

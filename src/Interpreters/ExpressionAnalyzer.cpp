@@ -478,19 +478,6 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global, b
 }
 
 
-SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name)
-{
-    const auto * table = subquery_or_table_name->as<ASTTableIdentifier>();
-    if (!table)
-        return nullptr;
-    auto table_id = getContext()->resolveStorageID(subquery_or_table_name);
-    const auto storage = DatabaseCatalog::instance().getTable(table_id, getContext());
-    if (storage->getName() != "Set")
-        return nullptr;
-    const auto storage_set = std::dynamic_pointer_cast<StorageSet>(storage);
-    return storage_set->getSet();
-}
-
 void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAG & actions, bool only_consts)
 {
     LogAST log;

@@ -974,15 +974,6 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "인터페이스",
-      "pages": [
-        "ko/reference/interfaces/specs/NativeProtocol",
-        "ko/reference/interfaces/specs/NativeFormat"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
       "group": "설정",
       "pages": [
         "ko/reference/settings/index",

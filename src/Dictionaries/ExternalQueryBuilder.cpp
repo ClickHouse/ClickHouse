@@ -72,6 +72,8 @@ void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out)
         case IdentifierQuotingStyle::DoubleQuotesPostgreSQL:
             writeDoubleQuotedStringPostgreSQL(s, out);
             break;
+
+        case IdentifierQuotingStyle::BackticksSQLite: writeBackQuotedStringSQLite(s, out); break;
     }
 }
 

@@ -4594,12 +4594,17 @@ void Server::createServers(
         if (server_type.shouldStart(ServerType::Type::ICEBERG_REST_CATALOG) && !config.getString("iceberg_rest_catalog.port", "").empty())
         {
             port_name = "iceberg_rest_catalog.port";
-            auto warehouse = config.getString("iceberg_rest_catalog.warehouse", "");
-            if (warehouse.empty())
+            HTTPRequestHandlerFactoryPtr handler_factory;
+            try
             {
-                LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: 'iceberg_rest_catalog.warehouse' is not set");
+                handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
             }
-            else
+            catch (...)
+            {
+                LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: {}", getCurrentExceptionMessage(/*with_stacktrace*/ false));
+            }
+
+            if (handler_factory)
             {
                 createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
                 {
@@ -4612,7 +4617,7 @@ void Server::createServers(
                         port_name,
                         "Iceberg REST catalog: http://" + address.toString(),
                         std::make_unique<HTTPServer>(
-                            httpContext(), createIcebergRESTCatalogHandlerFactory(*this, warehouse), server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                            httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
                 });
             }
         }

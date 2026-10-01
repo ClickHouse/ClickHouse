@@ -1512,12 +1512,14 @@ class LogTablePropertiesGroup(PropertiesGroup):
             # "reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
         }
         if self.log_table == "text_log":
-            log_table_properties["level"] = lambda: random.choice(
-                ["trace", "debug", "information", "warning", "error"]
-            )
-        if self.log_table == "trace_log":
+            # Pinned to the most verbose level, and written directly because
+            # `apply_properties_recursively` samples: at `error` the health check's `Warning`
+            # patterns never reach the table and it under-reports without saying so.
+            level_xml = ET.SubElement(property_element, "level")
+            level_xml.text = "test"
+        elif self.log_table == "trace_log":
             log_table_properties["symbolize"] = true_false_lambda
-        if self.log_table == "transposed_metric_log":
+        elif self.log_table == "transposed_metric_log":
             # Created only with this `schema_type`; the default ("wide") makes the section a no-op
             schema_type_xml = ET.SubElement(property_element, "schema_type")
             schema_type_xml.text = "transposed"
@@ -1757,6 +1759,7 @@ def modify_server_settings(
         selected_properties["distributed_query"] = DistributedQueryPropertiesGroup()
 
     # Add log tables
+    all_log_entries = []
     if args.add_log_tables:
         all_log_entries = [
             ("aggregated_zookeeper_log", 1048576, 8192),
@@ -1777,16 +1780,13 @@ def modify_server_settings(
             ("iceberg_metadata_log", 1048576, 8192),
             ("metric_log", 1048576, 8192),
             ("opentelemetry_span_log", 1048576, 8192),
-            ("part_log", 1048576, 8192),
             ("predicate_statistics_log", 1048576, 8192),
             ("processors_profile_log", 1048576, 8192),
-            ("query_log", 1048576, 8192),
             ("query_metric_log", 1048576, 8192),
             ("query_thread_log", 1048576, 8192),
             ("query_views_log", 1048576, 8192),
             ("s3queue_log", 1048576, 8192),
             ("session_log", 1048576, 8192),
-            ("text_log", 1048576, 8192),
             ("trace_log", 1048576, 8192),
             ("transactions_info_log", 1048576, 8192),
             ("transposed_metric_log", 1048576, 8192),
@@ -1797,12 +1797,22 @@ def modify_server_settings(
             all_log_entries = random.sample(
                 all_log_entries, random.randint(1, len(all_log_entries))
             )
-        random.shuffle(all_log_entries)
-        for entry in all_log_entries:
-            if root.find(entry[0]) is None:
-                selected_properties[entry[0]] = LogTablePropertiesGroup(
-                    entry[0], entry[1], entry[2]
-                )
+
+    # The oracles read these: the health check needs `part_log` and `text_log`, and its whole
+    # query throws `UNKNOWN_TABLE` if either is missing; BuzzHouse reads `query_log` to compare
+    # performance. Sampling them away silently turns those checks into no-ops.
+    if args.add_log_tables or args.with_monitoring:
+        all_log_entries += [
+            ("part_log", 1048576, 8192),
+            ("query_log", 1048576, 8192),
+            ("text_log", 1048576, 8192),
+        ]
+    random.shuffle(all_log_entries)
+    for entry in all_log_entries:
+        if root.find(entry[0]) is None:
+            selected_properties[entry[0]] = LogTablePropertiesGroup(
+                entry[0], entry[1], entry[2]
+            )
 
     # Add shared_database_catalog settings, required for shared catalog to work
     if (

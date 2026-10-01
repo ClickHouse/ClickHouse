@@ -1,7 +1,6 @@
 #include <Processors/Executors/Runtime/ExecutingGraph.h>
 #include <Processors/Executors/Runtime/ExecutorTasks.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/StepWallClock.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/printPipeline.h>

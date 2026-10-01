@@ -1,0 +1,27 @@
+-- a NULL first value keeps the declared numeric types, like the table itself
+id	Nullable(Int64)					
+score	Nullable(Int64)					
+ratio	Nullable(Float64)					
+name	Nullable(String)					
+score	Nullable(Int64)					
+ratio	Nullable(Float64)					
+name	Nullable(String)					
+\N	\N	\N
+42	2.5	b
+7	1	c
+-- so does an empty result
+score	Nullable(Int64)					
+ratio	Nullable(Float64)					
+name	Nullable(String)					
+0
+-- an undeclared column with a NULL first value is String, there is nothing else to type it from
+s	Nullable(String)					
+\N
+42
+7
+-- a compound SELECT reports the declared type of its last arm (INTEGER here) and returns a NULL first: the type is kept, and the TEXT row of the middle arm then fails the read
+score	Nullable(Int64)					
+-- the same values are read as text on request
+\N
+b
+7

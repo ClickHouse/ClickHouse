@@ -57,7 +57,14 @@ If you need a parameter that isn't currently available, contact [support](https:
 
 ClickHouse Managed Postgres runs PgBouncer in **transaction pooling** mode. In this mode, a backend Postgres connection is only assigned to your client for the duration of a single transaction, then returned to the pool — the next transaction from the same client may land on a different backend.
 
-That breaks **server-side prepared statements**, which are tied to the specific backend that ran the `PREPARE` (or the extended-query `Parse`). When the matching `EXECUTE` lands on a different backend, you get errors like:
+PgBouncer tracks **protocol-level prepared statements**, which most drivers send with the extended query protocol (`Parse`, `Bind`, and `Execute` messages). When a statement runs on a backend that hasn't seen it yet, PgBouncer prepares it there first. Each backend connection keeps up to `max_prepared_statements` of them, `200` by default. Named and unnamed prepared statements therefore work through PgBouncer without driver changes.
+
+What doesn't work through PgBouncer:
+
+- **SQL-level prepared statements.** PgBouncer doesn't track `PREPARE` and `EXECUTE` sent as SQL, so an `EXECUTE` can land on a backend that never ran the `PREPARE`.
+- **Freeing statements with SQL `DEALLOCATE`.** PgBouncer renames statements on the backend, so a `DEALLOCATE` of the client's statement name fails. Inside a transaction, this aborts the transaction, and later statements fail with `current transaction is aborted`. Drivers built on libpq 17 or later free statements with a protocol-level `Close` message instead, which PgBouncer handles.
+
+Either case produces errors like:
 
 ```text
 ERROR:  prepared statement "..." does not exist
@@ -68,9 +75,9 @@ Symptoms that often trace back to this same root cause:
 
 - Bursts of `prepared statement does not exist` errors, especially during backfills or high-concurrency writes
 - Inserts that appear to "silently fail" — the statement errors, the driver retries, and a batch can end up partially applied or dropped
-- Returned values with the wrong type (for example, a `BIGINT` column decoded as a `float64` bit pattern) — this happens when a cached client-side plan reuses stale type/format codes against a backend that was never sent the matching `Parse`
+- Transactions that fail with `current transaction is aborted` after a statement is freed
 
-**Fix: disable server-side prepared statements in your driver.** The exact knob depends on your client library:
+**Fix: upgrade your driver, or disable server-side prepared statements in it.** Drivers that free statements with SQL `DEALLOCATE` include Ruby on Rails with a `pg` gem older than 1.6 or libpq older than 17, and PHP `pdo_pgsql` compiled against libpq older than 17. If you can't upgrade, the exact knob depends on your client library:
 
 | Driver | Setting |
 |---|---|
@@ -78,9 +85,10 @@ Symptoms that often trace back to this same root cause:
 | **psycopg3** (Python) | `prepare_threshold=None` |
 | **asyncpg** (Python) | `statement_cache_size=0` |
 | **JDBC** (Java) | `prepareThreshold=0` |
-| **node-postgres / pg** (Node.js) | Don't pass a `name` to `query()` (named queries become server-prepared) |
+| **Active Record** (Ruby on Rails) | `prepared_statements: false` in `config/database.yml` |
+| **PDO** (PHP, Laravel) | `PDO::ATTR_EMULATE_PREPARES => true` |
 
-If your workload depends on prepared statements, connect **directly to PostgreSQL** (port 5432) rather than the PgBouncer pooler — direct connections support prepared statements normally. See [Connection](/products/managed-postgres/connection) for details on choosing between the pooled and direct endpoints.
+If your workload depends on SQL-level `PREPARE`, connect **directly to PostgreSQL** (port 5432) rather than the PgBouncer pooler. See [Connection](/products/managed-postgres/connection) for details on choosing between the pooled and direct endpoints.
 
 ### What does the `max_client_conn` setting in PgBouncer mean, and how does it relate to `max_connections` in Postgres? {#pgbouncer-vs-pg-connections}
 
@@ -89,7 +97,13 @@ They control different things:
 - **Postgres `max_connections`** caps the number of **backend** connections to PostgreSQL itself. This is the expensive number — each backend uses memory and a process slot.
 - **PgBouncer `max_client_conn`** caps the number of **client** connections that can be open in the pooler at once. PgBouncer multiplexes these many client connections onto a much smaller set of backend connections.
 
-A typical ClickHouse Managed Postgres instance is configured so PgBouncer accepts roughly **10× more client connections than there are Postgres backends** (e.g. 5000 client / 500 backend). If you see connection errors at the pooler, you're far more likely to be hitting a per-pool backend limit (`default_pool_size`) than the headline client limit.
+PgBouncer accepts several times more client connections than there are Postgres backends. For example, an instance with `max_connections` set to `500` accepts `2500` client connections at the pooler. If you see connection errors at the pooler, you're far more likely to be hitting a per-pool backend limit (`default_pool_size`, or `max_db_connections` per database) than the headline client limit.
+
+To see the values for your instance, connect to the special `pgbouncer` database through PgBouncer (port `6432`) and run `SHOW CONFIG`:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/pgbouncer?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "SHOW CONFIG;"
+```
 
 ## Database capabilities {#database-capabilities}
 

@@ -1,0 +1,7 @@
+table source, values	1	100	10
+table source, values	2	200	20
+table source, materialized filter, strict	1
+query source, values	1	100	10
+query source, values	2	200	20
+query source without the column, alias	1	10
+query source without the column, alias	2	20

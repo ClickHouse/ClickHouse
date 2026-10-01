@@ -26,6 +26,7 @@ SELECT DISTINCT 42 FROM 04817_m_buffer QUALIFY materialize(42);
 -- exposes materialized constants while the `EmbeddedRocksDB` child keeps them constant, and the
 -- headers of the children must still agree when the children are united.
 SELECT DISTINCT 42 FROM merge(currentDatabase(), '^04817_m_') QUALIFY materialize(42);
+-- No fallback pin: the outer plan over a `Merge` table never distributes (`ReadFromMerge` is not serializable).
 SELECT DISTINCT 42 FROM merge(currentDatabase(), '^04817_m_') QUALIFY materialize(42) SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1;
 
 DROP TABLE 04817_m_buffer;

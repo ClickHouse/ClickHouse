@@ -23,10 +23,8 @@
     {
       "group": "原生协议",
       "pages": [
-        "zh/resources/develop-contribute/native-protocol/basics",
-        "zh/resources/develop-contribute/native-protocol/client",
-        "zh/resources/develop-contribute/native-protocol/server",
-        "zh/resources/develop-contribute/native-protocol/columns",
+        "zh/resources/develop-contribute/native-protocol/protocol",
+        "zh/resources/develop-contribute/native-protocol/format",
         "zh/resources/develop-contribute/native-protocol/hash"
       ]
     },

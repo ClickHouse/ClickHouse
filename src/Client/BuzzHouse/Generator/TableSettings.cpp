@@ -131,11 +131,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"disable_fetch_partition_for_zero_copy_replication", trueOrFalseSetting},
     {"disable_freeze_partition_for_zero_copy_replication", trueOrFalseSetting},
     {"distributed_index_analysis_min_indexes_bytes_to_activate", bytesRangeSetting},
-    {"distributed_index_analysis_min_indexes_size_to_activate",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); },
-         {"0", "1"},
-         false)},
     {"distributed_index_analysis_min_parts_to_activate",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); },
@@ -314,6 +309,9 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"max_replicated_sends_network_bandwidth", bytesRangeSetting},
     {"max_suspicious_broken_parts", highRangeSetting},
     {"max_suspicious_broken_parts_bytes", bytesRangeSetting},
+    {"max_table_size_bytes_compressed", bytesRangeSetting},
+    {"max_table_size_bytes_uncompressed", bytesRangeSetting},
+    {"max_table_size_rows", rowsRangeSetting},
     {"max_uncompressed_bytes_in_patches", bytesRangeSetting},
     {"merge_max_block_size", highRangeNonZeroSetting},
     {"merge_max_block_size_bytes", bytesRangeSetting},
@@ -474,20 +472,22 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings choices = {"'map'", "'map_with_buckets'", "'advanced'"};
+             static const DB::Strings choices = {"'map'", "'map_with_buckets'", "'advanced'", "'advanced_chunked'"};
              return rg.pickRandomly(choices);
          },
-         {"'map'", "'map_with_buckets'", "'advanced'"},
+         {"'map'", "'map_with_buckets'", "'advanced'", "'advanced_chunked'"},
          false)},
     {"object_shared_data_serialization_version_for_zero_level_parts",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings choices = {"'map'", "'map_with_buckets'", "'advanced'"};
+             static const DB::Strings choices = {"'map'", "'map_with_buckets'", "'advanced'", "'advanced_chunked'"};
              return rg.pickRandomly(choices);
          },
-         {"'map'", "'map_with_buckets'", "'advanced'"},
+         {"'map'", "'map_with_buckets'", "'advanced'", "'advanced_chunked'"},
          false)},
+    {"object_shared_data_target_chunk_rows",
+     CHSetting(rowsRangeNonZero, {"1", "2", "4", "8", "32", "64", "1024", "2048", "4096", "16384"}, false)},
     {"old_parts_lifetime",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 10, 8 * 60)); },
@@ -579,10 +579,10 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings choices = {"'basic'", "'with_types'"};
+             static const DB::Strings choices = {"'basic'", "'with_types'", "'with_missing_columns'"};
              return rg.pickRandomly(choices);
          },
-         {"'basic'", "'with_types'"},
+         {"'basic'", "'with_types'", "'with_missing_columns'"},
          false)},
     {"share_nested_offsets", trueOrFalseSetting},
     {"shared_merge_tree_activate_coordinated_merges_tasks", trueOrFalseSetting},
@@ -655,6 +655,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); },
          {"0", "1", "2", "8", "10", "100"},
          false)},
+    {"skip_empty_columns_on_insert", trueOrFalseSetting},
     {"sleep_before_commit_local_part_in_replicated_table_ms", highRangeSetting},
     {"sleep_before_loading_outdated_parts_ms", highRangeSetting},
     {"string_serialization_version",

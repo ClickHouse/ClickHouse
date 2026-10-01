@@ -239,14 +239,14 @@ const Settings & RPNBuilderTreeContext::getSettings() const
     return query_context->getSettingsRef();
 }
 
-RPNBuilderTreeNode::RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, RPNBuilderTreeContext & tree_context_)
+RPNBuilderTreeNode::RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, const RPNBuilderTreeContext & tree_context_)
     : dag_node(dag_node_)
     , tree_context(tree_context_)
 {
     chassert(dag_node);
 }
 
-RPNBuilderTreeNode::RPNBuilderTreeNode(const IAST * ast_node_, RPNBuilderTreeContext & tree_context_)
+RPNBuilderTreeNode::RPNBuilderTreeNode(const IAST * ast_node_, const RPNBuilderTreeContext & tree_context_)
     : ast_node(ast_node_)
     , tree_context(tree_context_)
 {
@@ -362,6 +362,16 @@ ColumnWithTypeAndName RPNBuilderTreeNode::getConstantColumn() const
     return result;
 }
 
+/// A `Field` is the plain value of a constant: `LowCardinality` is only an encoding of the column,
+/// and a value that is not NULL has no `Nullable` type.
+static DataTypePtr getTypeOfConstantValue(const Field & value, const DataTypePtr & type)
+{
+    auto value_type = removeLowCardinality(type);
+    if (!value.isNull())
+        value_type = removeNullable(value_type);
+    return value_type;
+}
+
 bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & output_type) const
 {
     if (ast_node)
@@ -380,12 +390,7 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
 
             /// Simple literal
             output_value = literal->value;
-            output_type = block_with_constants.getByName(column_name).type;
-
-            /// If constant is not Null, we can assume it's type is not Nullable as well.
-            if (!output_value.isNull())
-                output_type = removeNullable(output_type);
-
+            output_type = getTypeOfConstantValue(output_value, block_with_constants.getByName(column_name).type);
             return true;
         }
         if (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column))
@@ -393,11 +398,7 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
             /// An expression which is dependent on constants only
             const auto & constant_column = block_with_constants.getByName(column_name);
             output_value = (*constant_column.column)[0];
-            output_type = constant_column.type;
-
-            if (!output_value.isNull())
-                output_type = removeNullable(output_type);
-
+            output_type = getTypeOfConstantValue(output_value, constant_column.type);
             return true;
         }
     }
@@ -408,11 +409,7 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
         if (node_without_alias->column)
         {
             output_value = node_without_alias->column->getField();
-            output_type = node_without_alias->result_type;
-
-            if (!output_value.isNull())
-                output_type = removeNullable(output_type);
-
+            output_type = getTypeOfConstantValue(output_value, node_without_alias->result_type);
             return true;
         }
     }

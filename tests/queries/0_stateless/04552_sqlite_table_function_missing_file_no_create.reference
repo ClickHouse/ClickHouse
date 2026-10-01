@@ -1,0 +1,8 @@
+INSERT into a missing database through the table function fails:
+PATH_ACCESS_DENIED
+The database file was not created:
+no file
+SELECT from a missing database through the table function fails too:
+PATH_ACCESS_DENIED
+Still no file:
+no file
