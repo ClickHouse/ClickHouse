@@ -435,6 +435,9 @@ bool isReadOnlyStatementForAISession(const IAST & ast)
 
 bool isReadOnlyStatementForAIAgent(const IAST & ast)
 {
+    /// `EXISTS DICTIONARY` and `SHOW CREATE DICTIONARY` are left out: their target is a dictionary
+    /// by construction, never an ordinary table of this server, so there is nothing for the engine
+    /// check to admit them by. They go through `run_query`, which the user confirms.
     return isAnyOf<
         ASTSelectWithUnionQuery,
         ASTExplainQuery,
@@ -450,11 +453,9 @@ bool isReadOnlyStatementForAIAgent(const IAST & ast)
         ASTExistsDatabaseQuery,
         ASTExistsTableQuery,
         ASTExistsViewQuery,
-        ASTExistsDictionaryQuery,
         ASTShowCreateTableQuery,
         ASTShowCreateViewQuery,
         ASTShowCreateDatabaseQuery,
-        ASTShowCreateDictionaryQuery,
         ASTShowAccessQuery,
         ASTShowAccessEntitiesQuery,
         ASTShowCreateAccessEntityQuery,
@@ -615,6 +616,12 @@ bool isAllowedDatabaseEngineForAIAgent(const String & engine)
 
 void validateReadOnlyQueryForAIAgent(const IAST & ast, bool allow_schema_access)
 {
+    if (isAnyOf<ASTExistsDictionaryQuery, ASTShowCreateDictionaryQuery>(ast))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "A dictionary is not an ordinary table of this server, so statements about it are not allowed for "
+            "the read-only tool. Use the run_query tool for this query");
+
     if (!isReadOnlyStatementForAIAgent(ast))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,

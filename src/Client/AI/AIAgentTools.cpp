@@ -230,7 +230,7 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
           "and the query is rejected when one of them does not simply hold data of this server - a view, a "
           "materialized view, a Merge or Buffer table, a Dictionary, a Distributed table, or a table over an "
           "external system (S3, URL, MySQL, Kafka, ...). Also rejected are INTO OUTFILE, overriding the "
-          "readonly/time/memory limit settings, table functions reaching outside of the current server (file, url, "
+          "readonly/time/memory limit settings, EXISTS DICTIONARY and SHOW CREATE DICTIONARY, table functions reaching outside of the current server (file, url, "
           "s3, remote, executable, ...), the AI functions calling external providers (aiGenerate, ...), dictionary "
           "functions, and the `system` tables that read Keeper or object storage (system.zookeeper, "
           "system.replicas, ...). Use run_query for anything that does not fit these constraints; the error message "

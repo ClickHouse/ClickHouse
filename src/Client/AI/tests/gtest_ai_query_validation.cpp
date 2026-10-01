@@ -111,6 +111,20 @@ TEST(AIQueryValidation, AllowsReadOnlyStatements)
     EXPECT_TRUE(isAllowed("SHOW GRANTS"));
 }
 
+TEST(AIQueryValidation, RejectsDictionaryStatements)
+{
+    /// The target of these statements is a dictionary by construction, never an ordinary table,
+    /// so they need confirmation whatever the server reports about the name.
+    EXPECT_FALSE(isAllowed("SHOW CREATE DICTIONARY default.d"));
+    EXPECT_FALSE(isAllowed("SHOW CREATE DICTIONARY d"));
+    EXPECT_FALSE(isAllowed("EXISTS DICTIONARY default.d"));
+    EXPECT_FALSE(isAllowed("EXISTS DICTIONARY d"));
+
+    /// Still read-only, so a session that is `readonly` does not ask to confirm them for nothing.
+    EXPECT_TRUE(isReadOnlyStatement("SHOW CREATE DICTIONARY default.d"));
+    EXPECT_TRUE(isReadOnlyStatement("EXISTS DICTIONARY default.d"));
+}
+
 TEST(AIQueryValidation, DisablingSchemaAccessBlocksAutonomousSchemaExploration)
 {
     EXPECT_TRUE(isAllowedWithoutSchemaAccess("SELECT 1"));
