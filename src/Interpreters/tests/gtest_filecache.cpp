@@ -4020,6 +4020,54 @@ TEST_F(FileCacheTest, DynamicReserveGranularity)
     }
 }
 
+TEST_F(FileCacheTest, ReserveAheadFallsBackToExactSize)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    /// The cache is smaller than the reserve-ahead limit.
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 14;
+    settings[FileCacheSetting::max_elements] = 10;
+    settings[FileCacheSetting::max_file_segment_size] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 20;
+    settings[FileCacheSetting::reserve_granularity] = 16;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("reserve_ahead_fallback", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto holder = cache->getOrSet(DB::FileCacheKey::fromPath("reserve_ahead_fallback"), 0, 20, /*file_size=*/20, {}, 0, user);
+    auto segment = *holder->begin();
+    ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+
+    std::string failure_reason;
+    std::string data(20, '0');
+    DB::FileCacheReserveAhead reserve_ahead;
+    auto reserve_and_write = [&]()
+    {
+        EXPECT_TRUE(segment->reserve(2, 1000, failure_reason, nullptr, 0, &reserve_ahead)) << failure_reason;
+        segment->write(data.data(), 2, segment->getCurrentWriteOffset());
+        return segment->getReservedSize();
+    };
+
+    ASSERT_EQ(reserve_and_write(), 2u);  /// exact
+    ASSERT_EQ(reserve_and_write(), 4u);  /// +2
+    ASSERT_EQ(reserve_and_write(), 8u);  /// +4
+    ASSERT_EQ(reserve_and_write(), 8u);  /// served from surplus
+    ASSERT_EQ(reserve_and_write(), 10u); /// +8 does not fit, falls back to exact +2 and resets
+    ASSERT_EQ(reserve_and_write(), 12u); /// exact again
+    ASSERT_EQ(reserve_and_write(), 14u); /// +2, the cache is full
+
+    /// Neither the reserve-ahead nor the exact size fits.
+    ASSERT_FALSE(segment->reserve(2, 1000, failure_reason, nullptr, 0, &reserve_ahead));
+    ASSERT_EQ(segment->getReservedSize(), 14u);
+    ASSERT_EQ(cache->getUsedCacheSize(), 14u);
+}
+
 TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
 {
     /// Regression test: while one holder for a query_id releases its query context,

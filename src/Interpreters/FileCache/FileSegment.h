@@ -26,8 +26,8 @@ struct FileCacheReserveStat;
 
 /// Reserve-ahead state of one downloader (reader or writer), passed to `FileSegment::reserve`.
 /// Starts at 0 (the first reservation is exact), then `size_to_reserve`, then doubles, up to the
-/// cache's `reserve_granularity`, so a one-off small read does not hold a whole granule while a
-/// long download takes the cache lock rarely. Reset on a failed reservation.
+/// cache's `reserve_granularity`: a small read does not hold a whole granule, a long download rarely
+/// takes the cache lock. Reset on a failed reservation, which is then retried with the exact size.
 struct FileCacheReserveAhead
 {
     /// Returns the reserve-ahead to use for the current reservation of `size_to_reserve` bytes

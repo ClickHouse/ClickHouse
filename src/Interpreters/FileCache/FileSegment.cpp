@@ -747,12 +747,19 @@ bool FileSegment::reserve(
     bool reserved = cache->tryReserve(
         *this, size_to_reserve, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
 
-    if (!reserved)
+    if (!reserved && reserve_ahead)
+        reserve_ahead->reset();
+
+    /// Reserve-ahead is best-effort: if it does not fit, retry with exactly the size the write needs.
+    if (!reserved && size_to_reserve > minimum_reserve_size)
     {
-        if (reserve_ahead)
-            reserve_ahead->reset();
-        setDownloadFailedUnlocked(lock());
+        *reserve_stat = FileCacheReserveStat{};
+        reserved = cache->tryReserve(
+            *this, minimum_reserve_size, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
     }
+
+    if (!reserved)
+        setDownloadFailedUnlocked(lock());
 
     return reserved;
 }
