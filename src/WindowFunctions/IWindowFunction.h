@@ -60,7 +60,7 @@ struct WindowFunctionWorkspace
 
     // Argument columns. Be careful, this is a per-block cache.
     VectorWithMemoryTracking<const IColumn *> argument_columns;
-    UInt64 cached_block_number = std::numeric_limits<UInt64>::max();
+    Int64 cached_block_number = -1;
 };
 
 // A basic implementation for a true window function. It pretends to be an
