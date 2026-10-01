@@ -53,16 +53,12 @@ UniqueKeyMergeRowMap::UniqueKeyMergeRowMap(
 }
 
 /// The merge skipped the rows dead at the snapshot, so its row mapping indexes the rows each source
-/// sent, not their raw offsets: source row `r` is the `r - rank(r)`-th row sent, where `rank(r)`
-/// counts the rows of the source's snapshot bitmap before `r`.
+/// sent: source row `r` is the `r - rank(r)`-th, where `rank(r)` counts the snapshot bitmap's rows
+/// before `r`. Without a sorting key the merge appends the sources in order.
 ///
-/// Example: source A holds ids 10 20 30 40 50 and 20 (row 1) is dead at the snapshot, so A sends
-/// 10 30 40 50. Merged with B's 15 35 45 55, A's rows land at 0 2 4 6 and B's at 1 3 5 7. A's row 3
-/// (id 40) was its sent row 3 - 1 = 2 (0-based), which landed at merged row 4. Without the
-/// subtraction it would map to row 6 (id 50).
-///
-/// Without a sorting key the merge appends the sources in order, so the merged row is the rows the
-/// earlier sources sent plus that index.
+/// TODO(unique-key): `rangeCardinality` walks the bitmap's containers before `source_row` for every
+/// index entry. A per-source array of merged rows, filled in one pass over the bitmap, would make
+/// each lookup one read.
 std::optional<UInt64> UniqueKeyMergeRowMap::toMergedRow(size_t source_index, UInt64 source_row) const
 {
     const DeleteBitmap & snapshot_bitmap = *snapshot_bitmaps[source_index];
