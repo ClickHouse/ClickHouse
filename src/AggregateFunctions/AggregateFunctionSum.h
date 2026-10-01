@@ -446,6 +446,8 @@ struct AggregateFunctionSumPrometheusData
     T sum{};
     T correction{};
 
+    /// Keep this arithmetic equivalent to Prometheus's kahansum.Inc.
+    /// The order of operations is intentional and affects floating-point results.
     template <typename Value>
     void ALWAYS_INLINE addImpl(Value value)
     {

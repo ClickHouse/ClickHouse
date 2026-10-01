@@ -868,6 +868,15 @@ def test_sum_prometheus_aggregate():
         == "10\n"
     )
 
+    # Prometheus's serial accumulation overflows to +Inf for this input order.
+    assert (
+        node.query(
+            "SELECT isInfinite(sumPrometheus(value)) "
+            "FROM (SELECT arrayJoin([1e308, 1e308, -1e308]::Array(Float64)) AS value)"
+        )
+        == "1\n"
+    )
+
     # Verify that corrections from independently accumulated states survive merging.
     assert (
         node.query(
@@ -879,6 +888,20 @@ def test_sum_prometheus_aggregate():
             ")"
         )
         == "10\n"
+    )
+
+    # Partial-state merging cannot preserve Prometheus's original serial sample order.
+    # This partition therefore differs from the serial +Inf result above.
+    assert (
+        node.query(
+            "SELECT sumPrometheusMerge(state) = 1e308 FROM "
+            "("
+            "    SELECT arrayReduce('sumPrometheusState', [1e308]::Array(Float64)) AS state "
+            "    UNION ALL "
+            "    SELECT arrayReduce('sumPrometheusState', [1e308, -1e308]::Array(Float64)) AS state"
+            ")"
+        )
+        == "1\n"
     )
 
 

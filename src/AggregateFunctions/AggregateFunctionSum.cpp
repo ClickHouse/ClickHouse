@@ -271,7 +271,9 @@ SELECT sum(0.1), sumKahan(0.1) FROM numbers(10);
     factory.registerFunction("sumKahan", {createAggregateFunctionSum<AggregateFunctionSumKahan>, documentation_kahan});
 
     FunctionDocumentation::Description description_prometheus = R"(
-Calculates the sum using the compensated summation algorithm used by Prometheus.
+Accumulates values using the compensated addition algorithm used by Prometheus.
+ClickHouse can evaluate values in a different order or merge independently accumulated states during parallel or distributed aggregation.
+Because floating-point summation is order-sensitive, results are not guaranteed to be bit-for-bit identical to Prometheus.
 This function is intended for implementing PromQL aggregation.
     )";
     FunctionDocumentation::Syntax syntax_prometheus = R"(
@@ -292,7 +294,7 @@ SELECT sumPrometheus(0.1) FROM numbers(10);
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_prometheus = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in_prometheus = {26, 10};
     FunctionDocumentation::Category category_prometheus = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_prometheus = {
         description_prometheus,
