@@ -16,7 +16,7 @@
 
     <fill_query>
         INSERT INTO test_json_many_typed_paths
-        SELECT concat('{', arrayStringConcat(arrayMap(x -> concat('"p', x, '": ', number), range(256)), ','), ', "dyn": ', number, '}')
+        SELECT concat('{{', arrayStringConcat(arrayMap(x -> concat('"p', x, '": ', number), range(256)), ','), ', "dyn": ', number, '}}')
         FROM numbers(80000)
         SETTINGS max_block_size = 200, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0
     </fill_query>
