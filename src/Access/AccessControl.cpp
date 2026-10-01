@@ -15,6 +15,7 @@
 #include <Access/SettingsProfilesCache.h>
 #include <Access/User.h>
 #include <Access/ExternalAuthenticators.h>
+#include <Access/OPA/OpaConfiguration.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessBackup.h>
 #include <Access/resolveSetting.h>
@@ -253,6 +254,7 @@ AccessControl::AccessControl()
       quota_cache(std::make_unique<QuotaCache>(*this)),
       settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this)),
       external_authenticators(std::make_unique<ExternalAuthenticators>()),
+      opa_configuration(std::make_unique<MultiVersion<OpaConfiguration>>()),
       custom_settings_prefixes(std::make_unique<CustomSettingsPrefixes>()),
       changes_notifier(std::make_unique<AccessChangesNotifier>()),
       password_rules(std::make_unique<PasswordComplexityRules>())
@@ -675,6 +677,43 @@ void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const Strin
 void AccessControl::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
     external_authenticators->setConfiguration(config, getLogger());
+}
+
+
+void AccessControl::setOpaConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    if (!OpaConfiguration::isConfigured(config))
+    {
+        if (opa_configuration->get())
+            LOG_INFO(getLogger(), "Open Policy Agent authorization is disabled: the 'open_policy_agent' section is gone");
+
+        opa_configuration->set(std::unique_ptr<const OpaConfiguration>{});
+        opa_configured.store(false, std::memory_order_relaxed);
+        return;
+    }
+
+    /// A malformed section propagates instead of being logged and skipped. Swallowing it would leave
+    /// the server authorizing by native grants alone, which is exactly the silent loss of a security
+    /// control that the operator was trying to configure.
+    auto parsed = std::make_unique<const OpaConfiguration>(OpaConfiguration::parse(config));
+
+    LOG_INFO(
+        getLogger(),
+        "Open Policy Agent authorization is enabled, decision endpoint {}{}{}{}{}",
+        parsed->uri.toString(),
+        parsed->batch_uri ? ", batch endpoint " + parsed->batch_uri->toString() : "",
+        parsed->row_filters_uri ? ", row filters endpoint " + parsed->row_filters_uri->toString() : "",
+        parsed->column_masking_uri ? ", column masking endpoint " + parsed->column_masking_uri->toString() : "",
+        parsed->authoritative ? ", authoritative" : ", narrowing grants");
+
+    opa_configuration->set(std::move(parsed));
+    opa_configured.store(true, std::memory_order_relaxed);
+}
+
+
+std::shared_ptr<const OpaConfiguration> AccessControl::getOpaConfiguration() const
+{
+    return opa_configuration->get();
 }
 
 

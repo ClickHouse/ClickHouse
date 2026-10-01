@@ -368,6 +368,7 @@ macro(add_object_library name common_path)
 endmacro()
 
 add_object_library(clickhouse_access Access)
+add_object_library(clickhouse_access_opa Access/OPA)
 if (TARGET ch_contrib::ssh)
     add_object_library(clickhouse_access_ssh Access/SSH)
 endif()

@@ -7,6 +7,8 @@
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <Access/EnabledRolesInfo.h>
+#include <Access/OPA/OpaAccessChecker.h>
+#include <Access/OPA/OpaConfiguration.h>
 #include <Access/EnabledSettings.h>
 #include <Access/SettingsProfilesInfo.h>
 #include <Databases/DatabaseFactory.h>
@@ -568,7 +570,6 @@ std::shared_ptr<const EnabledMaskingPolicies> ContextAccess::getEnabledMaskingPo
 RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
     RowPolicyFilterPtr filter;
-
     {
         std::lock_guard lock{mutex};
 
@@ -612,6 +613,84 @@ RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, co
     }
 
     return filter;
+}
+
+RowPolicyFilterPtr ContextAccess::getOpaRowFilter(const ContextPtr & context, const String & database, const String & table_name) const
+{
+    if (params.full_access)
+        return nullptr;
+
+    auto opa_configuration = access_control->getOpaConfiguration();
+    if (!opa_configuration || !opa_configuration->hasRowFilters())
+        return nullptr;
+
+    /// Read the identity before talking to OPA: the accessors below take this object's mutex, and the
+    /// request must not be issued while it is held.
+    OpaRequestContext request_context;
+    request_context.user = getUserName();
+    request_context.query_id = context->getCurrentQueryId();
+    if (auto info = getRolesInfo())
+        request_context.roles = info->getEnabledRolesNames();
+
+    const OpaAccessChecker checker{std::move(opa_configuration)};
+    return checker.getRowFilter(database, table_name, request_context, context->getOpaDecisionCache());
+}
+
+void ContextAccess::prefetchOpaColumnDecisions(
+    const ContextPtr & context, const AccessFlags & flags, const String & database, const String & table_name, const Names & columns) const
+{
+    if (params.full_access || columns.empty())
+        return;
+
+    auto opa_configuration = access_control->getOpaConfiguration();
+    if (!opa_configuration || !opa_configuration->hasBatch() || !opa_configuration->isDatabaseInScope(database))
+        return;
+
+    auto cache = context->getOpaDecisionCache();
+    if (!cache)
+        return;
+
+    const String current_user_name = getUserName();
+    if (opa_configuration->isUserExempt(current_user_name))
+        return;
+
+    OpaRequestContext request_context;
+    request_context.user = current_user_name;
+    request_context.query_id = context->getCurrentQueryId();
+    if (auto info = getRolesInfo())
+        request_context.roles = info->getEnabledRolesNames();
+
+    Names operations;
+    for (const auto & keyword : flags.toKeywords())
+        operations.emplace_back(keyword);
+
+    const OpaAccessChecker checker{std::move(opa_configuration)};
+    const auto allowed = checker.filterColumns(operations, database, table_name, columns, request_context);
+
+    /// Written under the same key the single-resource path builds, so the per-column checks that
+    /// follow find these answers instead of asking again.
+    for (size_t i = 0; i < columns.size() && i < allowed.size(); ++i)
+        cache->set(OpaDecisionCache::Key{operations, OpaResource::forTable(database, table_name, {columns[i]})}, allowed[i]);
+}
+
+std::unordered_map<String, ASTPtr> ContextAccess::getOpaColumnMasks(
+    const ContextPtr & context, const String & database, const String & table_name, const Names & columns) const
+{
+    if (params.full_access)
+        return {};
+
+    auto opa_configuration = access_control->getOpaConfiguration();
+    if (!opa_configuration || !opa_configuration->hasColumnMasking())
+        return {};
+
+    OpaRequestContext request_context;
+    request_context.user = getUserName();
+    request_context.query_id = context->getCurrentQueryId();
+    if (auto info = getRolesInfo())
+        request_context.roles = info->getEnabledRolesNames();
+
+    const OpaAccessChecker checker{std::move(opa_configuration)};
+    return checker.getColumnMasks(database, table_name, columns, request_context, context->getOpaDecisionCache());
 }
 
 std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
@@ -775,7 +854,35 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
             granted = acs->isGranted(flags, args...);
     }
 
-    if (!granted)
+    /// Whether a policy governs this object, worked out before the grant is judged because an
+    /// authoritative policy makes a missing grant not decisive.
+    ///
+    /// Granting is deliberately never delegated: a user must not be able to hand out a privilege they
+    /// were never given, so a grant-option check is settled by grants alone.
+    OpaConfigurationPtr opa_configuration;
+    std::optional<AccessRightsElement> opa_element;
+    String opa_user_name;
+
+    if (!grant_option && access_control->isOpaConfigured())
+    {
+        if (auto configuration = access_control->getOpaConfiguration())
+        {
+            /// Read the identity before talking to OPA: the accessors take this object's mutex, and the
+            /// request must not be issued while it is held.
+            opa_user_name = getUserName();
+            AccessRightsElement element{flags, args...};
+
+            if (OpaAccessChecker{configuration}.governs(opa_user_name, element))
+            {
+                opa_configuration = std::move(configuration);
+                opa_element.emplace(std::move(element));
+            }
+        }
+    }
+
+    const bool opa_replaces_the_grant = opa_configuration && opa_configuration->authoritative;
+
+    if (!granted && !opa_replaces_the_grant)
     {
         auto format_required_access = [&](AccessFlags access_flags, const auto & ... fmt_args)
         {
@@ -898,6 +1005,30 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
         if (flags & precalc.introspection_flags)
             return access_denied(ErrorCodes::FUNCTION_NOT_ALLOWED, "{}: Introspection functions are disabled, "
                                  "because setting 'allow_introspection_functions' is set to 0");
+    }
+
+    /// Consulted after the rest of the checks, so that a policy which only narrows grants sees just
+    /// the accesses they allowed, and so a check grants already refuse costs no request.
+    if (opa_configuration)
+    {
+        OpaRequestContext request_context;
+        request_context.user = opa_user_name;
+        request_context.query_id = context->getCurrentQueryId();
+        if (auto info = getRolesInfo())
+            request_context.roles = info->getEnabledRolesNames();
+
+        const OpaAccessChecker checker{std::move(opa_configuration)};
+
+        /// A transport failure, a malformed response or an unreachable server propagates instead
+        /// of being turned into an allow. Losing the policy engine must not silently lose the
+        /// restrictions it was enforcing.
+        if (!checker.isAllowed(*opa_element, request_context, context->getOpaDecisionCache()))
+        {
+            return access_denied(
+                ErrorCodes::ACCESS_DENIED,
+                "{}: Not enough privileges. The Open Policy Agent policy denied {}",
+                opa_element->toStringWithoutOptions());
+        }
     }
 
     return access_granted();

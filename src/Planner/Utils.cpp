@@ -592,6 +592,21 @@ NameSet checkAccessRights(
           * one table column is accessible.
           */
         auto access = query_context->getAccess();
+
+        /// The loop below asks about each column separately. When a policy engine is answering those
+        /// checks, ask it about every column in one request first, so a wide table does not turn into
+        /// one request per column.
+        if (storage_id.hasDatabase())
+        {
+            Names all_column_names;
+            all_column_names.reserve(storage_snapshot->metadata->getColumns().size());
+            for (const auto & column : storage_snapshot->metadata->getColumns())
+                all_column_names.push_back(column.name);
+
+            access->prefetchOpaColumnDecisions(
+                query_context, AccessType::SELECT, storage_id.database_name, storage_id.table_name, all_column_names);
+        }
+
         const auto * alias = storage->as<StorageAlias>();
         NameSet chain_granted;
         if (alias)

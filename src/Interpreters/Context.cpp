@@ -102,6 +102,7 @@
 #include <Access/SettingsProfilesInfo.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/ExternalAuthenticators.h>
+#include <Access/OPA/OpaDecisionCache.h>
 #include <Access/GSSAcceptor.h>
 #include <Backups/BackupsWorker.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
@@ -1465,6 +1466,7 @@ ContextData::ContextData(const ContextData &o) :
     query_factories_info(o.query_factories_info),
     distributed_plan_local_object(o.distributed_plan_local_object),
     query_privileges_info(o.query_privileges_info),
+    opa_decision_cache(o.opa_decision_cache),
     async_read_counters(o.async_read_counters),
     query_execution_counters(o.query_execution_counters),
     view_source(o.view_source),
@@ -1535,6 +1537,7 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
     res->shared = shared_part;
     res->query_access_info = std::make_shared<QueryAccessInfo>();
     res->query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
+    res->opa_decision_cache = std::make_shared<OpaDecisionCache>();
     res->async_read_counters = std::make_shared<AsyncReadCounters>();
     return res;
 }
@@ -2206,6 +2209,12 @@ void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfigur
 {
     std::lock_guard lock(shared->mutex);
     shared->access_control->setExternalAuthenticatorsConfig(config);
+}
+
+void Context::setOpaConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->access_control->setOpaConfiguration(config);
 }
 
 std::unique_ptr<GSSAcceptorContext> Context::makeGSSAcceptorContext() const
@@ -4105,6 +4114,9 @@ void Context::makeQueryContext()
     /// Copying its contents — and racing with concurrent writers during the copy — leaked privilege strings
     /// from unrelated earlier queries into `system.query_log.used_privileges`. See issue #105983.
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
+    /// Decisions are scoped to one query: a policy can change between queries, and a stale allow is
+    /// exactly the answer that must never be reused.
+    opa_decision_cache = std::make_shared<OpaDecisionCache>();
     async_read_counters = std::make_shared<AsyncReadCounters>();
     query_execution_counters = std::make_shared<QueryExecutionCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();

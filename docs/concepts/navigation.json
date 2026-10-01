@@ -162,6 +162,7 @@
           "pages": [
             "concepts/features/security/index",
             "concepts/features/security/access-rights",
+            "concepts/features/security/open-policy-agent",
             "concepts/features/security/network-ports",
             {
               "group": "TLS",

@@ -2704,6 +2704,7 @@ try
             global_context->setClustersConfig(loaded_config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
             global_context->setExternalAuthenticatorsConfig(config());
+            global_context->setOpaConfiguration(config());
 
             global_context->setDashboardsConfig(config());
 

@@ -2230,6 +2230,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "jwt",
         "jwt_authenticators",
         "http_authentication_servers",
+        "open_policy_agent",
         "connections_credentials",
         "custom_settings_prefixes",
         "default_profile",

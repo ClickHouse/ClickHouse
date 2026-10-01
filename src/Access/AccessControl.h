@@ -5,6 +5,7 @@
 #include <Access/AccessChangesNotifier.h>
 #include <Access/MultipleAccessStorage.h>
 #include <Access/Common/AuthenticationType.h>
+#include <Common/MultiVersion.h>
 #include <Common/SettingsChanges.h>
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
@@ -50,6 +51,7 @@ class SettingsProfilesCache;
 class SettingsProfileElements;
 class ClientInfo;
 class ExternalAuthenticators;
+struct OpaConfiguration;
 struct Settings;
 
 
@@ -132,6 +134,18 @@ public:
     void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup) override;
 
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
+
+    /// Parses the `<open_policy_agent>` section of the main configuration file. An absent section
+    /// installs an empty configuration, which leaves authorization to native grants alone.
+    void setOpaConfiguration(const Poco::Util::AbstractConfiguration & config);
+
+    /// Returns the configuration currently in effect, or nullptr when OPA authorization is off.
+    /// The returned snapshot stays valid for as long as it is held, even across a configuration reload.
+    std::shared_ptr<const OpaConfiguration> getOpaConfiguration() const;
+
+    /// Whether OPA authorization is configured at all. Reading the configuration itself takes a lock,
+    /// which is too much for a probe on every access check, so the answer is kept separately.
+    bool isOpaConfigured() const { return opa_configured.load(std::memory_order_relaxed); }
 
     /// Sets the default profile's name.
     /// The default profile's settings are always applied before any other profile's.
@@ -291,6 +305,8 @@ private:
     std::unique_ptr<QuotaCache> quota_cache;
     std::unique_ptr<SettingsProfilesCache> settings_profiles_cache;
     std::unique_ptr<ExternalAuthenticators> external_authenticators;
+    std::unique_ptr<MultiVersion<OpaConfiguration>> opa_configuration;
+    std::atomic_bool opa_configured = false;
     std::unique_ptr<CustomSettingsPrefixes> custom_settings_prefixes;
     std::unique_ptr<AccessChangesNotifier> changes_notifier;
     std::unique_ptr<PasswordComplexityRules> password_rules;
