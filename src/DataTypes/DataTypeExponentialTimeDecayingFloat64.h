@@ -106,6 +106,19 @@ struct ExponentialTimeDecayingFloat64Value
     Float64 anchor_time;
 };
 
+inline bool isFiniteExponentialTimeDecayingFloat64Curve(
+    Float64 value, Float64 time, Float64 decay_length)
+{
+    if (!std::isfinite(value)
+        || !std::isfinite(time)
+        || !std::isfinite(decay_length)
+        || decay_length <= 0)
+        return false;
+
+    return value == 0
+        || std::isfinite(getExponentialTimeDecayingUnitTimestamp(value, time, decay_length));
+}
+
 inline ExponentialTimeDecayingFloat64Value normalizeExponentialTimeDecayingFloat64(
     Float64 value, Float64 time, Float64 decay_length)
 {
@@ -121,12 +134,7 @@ inline ExponentialTimeDecayingFloat64Value normalizeExponentialTimeDecayingFloat
 inline bool isCanonicalExponentialTimeDecayingFloat64Value(
     UInt64 ordering_key, Float64 value, Float64 time, Float64 decay_length)
 {
-    if (!std::isfinite(value) || !std::isfinite(time))
-        return false;
-
-    const Float64 unit_timestamp
-        = getExponentialTimeDecayingUnitTimestamp(value, time, decay_length);
-    if (value != 0 && !std::isfinite(unit_timestamp))
+    if (!isFiniteExponentialTimeDecayingFloat64Curve(value, time, decay_length))
         return false;
 
     const auto normalized = normalizeExponentialTimeDecayingFloat64(

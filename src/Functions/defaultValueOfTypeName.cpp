@@ -1,13 +1,21 @@
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_time_decay_aggregate_functions;
+}
 
 namespace ErrorCodes
 {
@@ -22,9 +30,15 @@ class FunctionDefaultValueOfTypeName final : public IFunction
 {
 public:
     static constexpr auto name = "defaultValueOfTypeName";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionDefaultValueOfTypeName>();
+        return std::make_shared<FunctionDefaultValueOfTypeName>(
+            !context || context->getSettingsRef()[Setting::allow_experimental_time_decay_aggregate_functions]);
+    }
+
+    explicit FunctionDefaultValueOfTypeName(bool allow_experimental_time_decay_aggregate_functions_)
+        : allow_experimental_time_decay_aggregate_functions(allow_experimental_time_decay_aggregate_functions_)
+    {
     }
 
     String getName() const override
@@ -52,7 +66,16 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be a constant string describing type.",
                 getName());
 
-        return DataTypeFactory::instance().get(col_type_const->getValue<String>());
+        auto result_type = DataTypeFactory::instance().get(col_type_const->getValue<String>());
+        if (!allow_experimental_time_decay_aggregate_functions
+            && containsExponentialTimeDecayingFloat64(result_type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Type {} is experimental and disabled by default. Enable it with setting "
+                "allow_experimental_time_decay_aggregate_functions",
+                result_type->getName());
+
+        return result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -60,6 +83,9 @@ public:
         const IDataType & type = *result_type;
         return type.createColumnConst(input_rows_count, type.getDefault());
     }
+
+private:
+    const bool allow_experimental_time_decay_aggregate_functions;
 };
 
 }

@@ -129,6 +129,11 @@ struct DecayingColumnBuilder
 
     void append(Float64 value, Float64 time)
     {
+        if (!isFiniteExponentialTimeDecayingFloat64Curve(value, time, decay_length))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "ExponentialTimeDecaying value does not define a finite decay curve");
+
         const auto normalized = normalizeExponentialTimeDecayingFloat64(value, time, decay_length);
         value_at_anchor->insertValue(normalized.value_at_anchor);
         anchor_time->insertValue(normalized.anchor_time);

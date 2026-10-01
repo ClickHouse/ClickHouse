@@ -680,9 +680,7 @@ ColumnPtr materializeExponentialTimeDecayingFloat64StorageColumn(
 
         const Float64 value = values[row];
         const Float64 time = times[row];
-        if (!std::isfinite(value)
-            || !std::isfinite(time)
-            || (value != 0 && !std::isfinite(getExponentialTimeDecayingUnitTimestamp(value, time, decay_length))))
+        if (!isFiniteExponentialTimeDecayingFloat64Curve(value, time, decay_length))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Malformed ExponentialTimeDecaying value in {}: value and timestamp must define a finite decay curve",
@@ -732,8 +730,8 @@ void validateExponentialTimeDecayingFloat64Column(
 
         const auto normalized
             = normalizeExponentialTimeDecayingFloat64(values[row], times[row], decaying.getDecayLength());
-        if (!std::isfinite(values[row])
-            || !std::isfinite(times[row])
+        if (!isFiniteExponentialTimeDecayingFloat64Curve(
+                values[row], times[row], decaying.getDecayLength())
             || normalized.value_at_anchor != values[row]
             || normalized.anchor_time != times[row]
             || normalized.ordering_key != ordering_key[row])

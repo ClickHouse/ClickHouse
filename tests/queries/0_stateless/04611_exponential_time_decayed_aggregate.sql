@@ -19,7 +19,19 @@ SET allow_experimental_time_decay_aggregate_functions = 0;
 SELECT exponentialTimeDecayedCount(10)(toFloat64(0)); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecaying(10)(1, toFloat64(0)); -- { serverError UNKNOWN_FUNCTION }
 
+-- User-facing type-name helpers must not materialize the experimental type,
+-- including when it is nested, while the feature is disabled.
+SELECT defaultValueOfTypeName('ExponentialTimeDecaying(10)'); -- { serverError ILLEGAL_COLUMN }
+SELECT defaultValueOfTypeName('Array(ExponentialTimeDecaying(10))'); -- { serverError ILLEGAL_COLUMN }
+SELECT JSONExtract('[1, 0, 10]', 'ExponentialTimeDecaying(10)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT JSONExtract('[[1, 0, 10]]', 'Array(ExponentialTimeDecaying(10))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 SET allow_experimental_time_decay_aggregate_functions = 1;
+
+SELECT exponentialTimeDecayingDecayLength(defaultValueOfTypeName('ExponentialTimeDecaying(10)'));
+SELECT exponentialTimeDecayingValueAt(
+    JSONExtract('[1, 0, 10]', 'ExponentialTimeDecaying(10)'),
+    toFloat64(0));
 
 -- Function documentation must be materializable through system.functions.
 SELECT name

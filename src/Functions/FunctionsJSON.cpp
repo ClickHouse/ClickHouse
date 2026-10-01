@@ -29,6 +29,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeObject.h>
 
 #include <Functions/IFunction.h>
@@ -50,6 +51,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_simdjson;
+    extern const SettingsBool allow_experimental_time_decay_aggregate_functions;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
 }
 
@@ -700,6 +702,8 @@ public:
 
     explicit JSONOverloadResolver(ContextPtr context)
         : allow_simdjson(context->getSettingsRef()[Setting::allow_simdjson])
+        , allow_experimental_time_decay_aggregate_functions(
+              context->getSettingsRef()[Setting::allow_experimental_time_decay_aggregate_functions])
         , format_settings(getFormatSettings(context))
     {
         /// Extracting a string JSON value into a DateTime/DateTime64 column is a string-to-type
@@ -722,6 +726,14 @@ public:
             has_nothing_argument |= isNothing(arg.type);
 
         DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
+        if (!allow_experimental_time_decay_aggregate_functions
+            && containsExponentialTimeDecayingFloat64(json_return_type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Type {} is experimental and disabled by default. Enable it with setting "
+                "allow_experimental_time_decay_aggregate_functions",
+                json_return_type->getName());
+
         NullPresence null_presence = getNullPresense(arguments);
         DataTypePtr return_type;
         if (has_nothing_argument)
@@ -743,6 +755,7 @@ public:
 
 private:
     const bool allow_simdjson;
+    const bool allow_experimental_time_decay_aggregate_functions;
     FormatSettings format_settings;
 };
 

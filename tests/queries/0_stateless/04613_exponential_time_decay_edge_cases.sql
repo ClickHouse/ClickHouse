@@ -67,6 +67,17 @@ SELECT
     toFloat64(0),
     round(exponentialTimeDecayingValueAt(combined, toFloat64(1)), 6);
 
+-- Finite inputs must not manufacture a non-finite ExponentialTimeDecaying curve.
+-- This covers a derived unit timestamp overflow, arithmetic overflow, and
+-- aggregate finalization overflow.
+SELECT exponentialTimeDecaying(1e308)(1e308, toFloat64(0)); -- { serverError BAD_ARGUMENTS }
+
+WITH exponentialTimeDecaying(1)(1e308, toFloat64(0)) AS value
+SELECT value + value; -- { serverError BAD_ARGUMENTS }
+
+SELECT exponentialTimeDecayedSum(1)(value, time)
+FROM VALUES('value Float64, time Float64', (1e308, 0), (1e308, 0)); -- { serverError BAD_ARGUMENTS }
+
 
 -- A zero finalized-value cutoff preserves exact behavior.
 SET exponential_time_decay_significance_cutoff = 0;

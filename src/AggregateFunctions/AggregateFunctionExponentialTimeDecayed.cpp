@@ -257,9 +257,16 @@ public:
             const Float64 result = result_kind == ExponentialTimeDecayedResult::Sum
                 ? state.weighted_sum
                 : state.weight;
+            const Float64 result_time = state.empty() ? 0 : state.max_time;
+            if (!isFiniteExponentialTimeDecayingFloat64Curve(result, result_time, decay_length))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Result of aggregate function {} does not define a finite ExponentialTimeDecaying curve",
+                    getName());
+
             const auto normalized = normalizeExponentialTimeDecayingFloat64(
                 result,
-                state.empty() ? 0 : state.max_time,
+                result_time,
                 decay_length);
             Tuple decaying_value{
                 Field(normalized.value_at_anchor),
