@@ -55,7 +55,7 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
-#include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyMergedIndex.h>
 #include <fmt/ranges.h>
 #include <Common/DimensionalMetrics.h>
 #include <Common/ErrorCodes.h>
@@ -365,20 +365,6 @@ void MergeTask::GlobalRuntimeContext::checkOperationIsNotCanceled() const
     {
         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
     }
-}
-
-/// Hold on to the merged block's UK columns, so the dense index is built without reading them
-/// back out of the written part.
-static void retainUniqueKeyColumns(const Names & unique_key_columns, const Block & block, Blocks & retained)
-{
-    Block unique_key_block;
-    for (const auto & name : unique_key_columns)
-    {
-        auto column = block.getByName(name);
-        column.column = column.column->convertToFullColumnIfSparse();
-        unique_key_block.insert(std::move(column));
-    }
-    retained.push_back(std::move(unique_key_block));
 }
 
 static String getColumnNameInStorage(const String & column_name, const NameSet & storage_columns, const NameSet & virtual_columns)
@@ -1942,10 +1928,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         ProfileEvents::increment(ProfileEvents::MergeWrittenRows, block.rows());
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
-        if (global_ctx->is_unique_key_merge && block.rows() > 0)
-            retainUniqueKeyColumns(
-                global_ctx->metadata_snapshot->getUniqueKeyColumns(), block, global_ctx->unique_key_index_blocks);
-
         if (global_ctx->merge_may_reduce_rows)
         {
             /// Same rationale as the horizontal-stage `merge` above: keep the row-reducing merge's
@@ -2542,25 +2524,14 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     /// Before `finalizePart`, so the dense index's checksum lands in `checksums.txt`, as on INSERT.
     if (global_ctx->is_unique_key_merge && global_ctx->rows_written > 0)
     {
-        const Block unique_key_index_columns = concatenateBlocks(global_ctx->unique_key_index_blocks);
-        global_ctx->unique_key_index_blocks.clear();
-        if (unique_key_index_columns.rows() != global_ctx->rows_written)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "UNIQUE KEY merged part {} wrote {} rows but the merge retained {} unique-key rows",
-                global_ctx->new_data_part->name, global_ctx->rows_written, unique_key_index_columns.rows());
-
-        const auto & metadata = *global_ctx->metadata_snapshot;
-        SSTIndexWriter::write(
+        const UniqueKeyMergeRowMap row_map(
+            global_ctx->future_part->parts, global_ctx->unique_key_snapshot_bitmaps, *global_ctx->merged_part_offsets);
+        UniqueKeyMergedIndexBuilder(
+            global_ctx->future_part->parts,
+            row_map,
             global_ctx->new_data_part->getDataPartStorage(),
-            unique_key_index_columns,
-            metadata.getUniqueKeyColumns(),
-            metadata.getSortingKeyColumns(),
-            metadata.getSortingKeyReverseFlags(),
-            /*permutation=*/nullptr,
-            /*max_encoded_size=*/std::numeric_limits<UInt64>::max(),
-            global_ctx->gathered_data.checksums,
-            ctx->need_sync,
-            global_ctx->data->getContext());
+            global_ctx->data->getContext())
+            .build(global_ctx->gathered_data.checksums, ctx->need_sync);
     }
 
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)

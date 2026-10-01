@@ -1,9 +1,11 @@
 -- Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree
--- UNIQUE KEY: a merge keeps every live row and drops only the rows dead at its snapshot.
---   1. dead rows: the merge drops exactly the rows a DELETE killed; a second merge drops those of a DELETE on its result
+-- UNIQUE KEY: a merge keeps every live row and skips only the rows dead at its snapshot.
+--   1. dead rows: the merge skips exactly the rows a DELETE killed; a second merge skips those of a DELETE on its result
 --   2. background: a scheduler-picked merge goes through
 --   3. insert cap: a merge ignores `unique_key_max_encoded_size`
 --   4. DEDUPLICATE: OPTIMIZE ... DEDUPLICATE and its DRY RUN form are rejected
+--   5. merged index: an overwrite after the merge kills the key's own row when a source had dead rows
+--      (interleaved sources; no sorting key with a source whose every row is dead)
 
 SET enable_unique_key = 1;
 SET optimize_trivial_count_query = 0;
@@ -103,6 +105,47 @@ OPTIMIZE TABLE uk_merge_dedup FINAL DEDUPLICATE; -- { serverError SUPPORT_IS_DIS
 OPTIMIZE TABLE uk_merge_dedup DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' DEDUPLICATE; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE uk_merge_dedup;
+
+-- 5a. interleaved sources, the UNIQUE KEY is not the ORDER BY prefix: red if the overwrite of a key after
+-- a snapshot-dead row kills a neighbour instead (the key stays twice).
+DROP TABLE IF EXISTS uk_merge_index;
+CREATE TABLE uk_merge_index (id UInt32, s UInt32, v String)
+ENGINE = MergeTree ORDER BY s UNIQUE KEY (id)
+SETTINGS min_bytes_for_wide_part = 0, merge_selector_algorithm = 'Manual', enable_vertical_merge_algorithm = 0;
+
+INSERT INTO uk_merge_index SELECT number, number * 2, 'a' FROM numbers(10);
+INSERT INTO uk_merge_index SELECT 100 + number, number * 2 + 1, 'b' FROM numbers(10);
+DELETE FROM uk_merge_index WHERE id = 2;
+
+OPTIMIZE TABLE uk_merge_index FINAL SETTINGS optimize_throw_if_noop = 1;
+
+INSERT INTO uk_merge_index VALUES (5, 1000, 'new');
+SELECT 'merged_index', id, v FROM uk_merge_index WHERE id IN (4, 5, 6) ORDER BY id, v;
+SELECT 'merged_index_count', count(), countDistinct(id) FROM uk_merge_index; -- 19 19
+
+DROP TABLE uk_merge_index;
+
+-- 5b. no sorting key, so the merge appends the sources: red if a source's start ignores the earlier
+-- sources' dead rows (one in the first, all of the middle one) and an overwrite kills a neighbour.
+CREATE TABLE uk_merge_index (id UInt32, v String)
+ENGINE = MergeTree ORDER BY tuple() UNIQUE KEY (id)
+SETTINGS min_bytes_for_wide_part = 0, merge_selector_algorithm = 'Manual', enable_vertical_merge_algorithm = 0;
+
+INSERT INTO uk_merge_index SELECT number, 'a' FROM numbers(10);
+INSERT INTO uk_merge_index SELECT 50 + number, 'b' FROM numbers(10);
+INSERT INTO uk_merge_index SELECT 100 + number, 'c' FROM numbers(10);
+DELETE FROM uk_merge_index WHERE id = 2 OR (id >= 50 AND id < 60);
+-- The DELETE writes an empty part, so the merge has a zero-row source as well.
+SELECT 'no_sorting_key_sources', groupArray((name, rows)) FROM (SELECT name, rows FROM system.parts
+    WHERE database = currentDatabase() AND table = 'uk_merge_index' AND active ORDER BY name);
+
+OPTIMIZE TABLE uk_merge_index FINAL SETTINGS optimize_throw_if_noop = 1;
+
+INSERT INTO uk_merge_index VALUES (5, 'new'), (104, 'new');
+SELECT 'no_sorting_key', id, v FROM uk_merge_index WHERE id IN (4, 5, 6, 103, 104, 105) ORDER BY id, v;
+SELECT 'no_sorting_key_count', count(), countDistinct(id) FROM uk_merge_index; -- 19 19
+
+DROP TABLE uk_merge_index;
 
 DROP TABLE uk_merge_delete;
 DROP TABLE uk_merge_background;

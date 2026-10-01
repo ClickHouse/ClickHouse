@@ -318,8 +318,6 @@ private:
         /// Set in `prepare()`; the snapshot bitmaps are in source-part order.
         bool is_unique_key_merge{false};
         std::vector<ConstDeleteBitmapPtr> unique_key_snapshot_bitmaps;
-        /// The merged part's UNIQUE KEY columns in write order, so row i is part offset i.
-        Blocks unique_key_index_blocks;
 
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;

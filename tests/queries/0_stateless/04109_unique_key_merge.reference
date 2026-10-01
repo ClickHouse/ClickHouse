@@ -13,3 +13,15 @@ bg_count	80
 bg_distinct	80
 cap_before_merge	100	100
 cap_after_merge	100	100
+merged_index	4	a
+merged_index	5	new
+merged_index	6	a
+merged_index_count	19	19
+no_sorting_key_sources	[('all_1_1_0',10),('all_2_2_0',10),('all_3_3_0',10),('all_4_4_0',0)]
+no_sorting_key	4	a
+no_sorting_key	5	new
+no_sorting_key	6	a
+no_sorting_key	103	c
+no_sorting_key	104	new
+no_sorting_key	105	c
+no_sorting_key_count	19	19
