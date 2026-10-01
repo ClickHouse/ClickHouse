@@ -3260,6 +3260,9 @@ To change SQL security for an existing view, use
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
 
+A `DEFINER` that is not the current user requires the `SET DEFINER` grant on that user, both when the view is created and with `MODIFY SQL SECURITY`.
+To change the query of a `SQL SECURITY DEFINER` or `SQL SECURITY NONE` view with [`ALTER TABLE ... MODIFY QUERY`](/reference/statements/alter/view#required-privileges), the same grants are necessary as to declare its SQL security.
+
 ### Examples {#examples}
 ```sql
 CREATE VIEW test_view
