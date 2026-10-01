@@ -294,7 +294,7 @@ QueryResultCacheOnDisk::ProbeResult QueryResultCacheOnDisk::probeExistingEntry(c
     const auto & user_id = FileCache::getCommonOrigin().user_id;
 
     auto holder = file_cache->getDownloadedContiguousOrEmpty(cache_key, 0, FIXED_HEADER_SIZE, user_id);
-    if (holder->empty())
+    for (size_t attempt = 0; holder->empty(); ++attempt)
     {
         /// No readable header: either there is no entry, or another query is writing one (its segments are held and not
         /// downloaded yet), or only the tail of a partially evicted entry is left. The tail must be removed, otherwise no
@@ -307,7 +307,12 @@ QueryResultCacheOnDisk::ProbeResult QueryResultCacheOnDisk::probeExistingEntry(c
             if (segment.state != FileSegment::State::DOWNLOADED || segment.references > 1)
                 return ProbeResult::InProgress;
         }
-        return ProbeResult::StaleOrUnreadable;
+
+        /// All segments are downloaded and released, but this may be because a concurrent writer completed the entry right after
+        /// the header lookup above. Removing it as a tail would destroy a fresh entry, so look at the header once more.
+        if (attempt > 0)
+            return ProbeResult::StaleOrUnreadable;
+        holder = file_cache->getDownloadedContiguousOrEmpty(cache_key, 0, FIXED_HEADER_SIZE, user_id);
     }
 
     try
