@@ -19,7 +19,8 @@ namespace DB
 /// A connection string cannot be pointed at another account, so with connection-string auth the recorded
 /// endpoint has to name the backup's own storage account, otherwise `BAD_ARGUMENTS` is thrown. Accounts are
 /// compared by name (one account is reachable through several hosts); an endpoint that does not reveal its
-/// account is let through.
+/// account is rejected too, since a mismatch could not be caught later: the container is marked as existing,
+/// and the backup's account may have the same container and key layout.
 AzureBlobStorage::ConnectionParams makeSnapshotSourceConnectionParams(
     const AzureBlobStorage::ConnectionParams & backup_connection_params, const String & endpoint, const String & blob_namespace);
 
