@@ -18,7 +18,7 @@ DROP TABLE IF EXISTS t_top_k_pk_qcc;
 
 -- `b` is the second key column; `a` is constant within most granules, so the primary key bounds `b` per granule.
 CREATE TABLE t_top_k_pk_qcc (a UInt64, b UInt64, s String) ENGINE = MergeTree
-ORDER BY (a, b) SETTINGS index_granularity = 64, index_granularity_bytes = 0;
+ORDER BY (a, b) SETTINGS index_granularity = 64;
 
 INSERT INTO t_top_k_pk_qcc SELECT intDiv(number, 1024), number % 1024, toString(number) FROM numbers(32768);
 
