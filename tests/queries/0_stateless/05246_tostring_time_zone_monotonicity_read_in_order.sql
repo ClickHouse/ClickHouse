@@ -1,6 +1,7 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/122993
 -- `toString(x, tz)` formats in `tz`; whether it keeps the order of `x` depends on `tz`, not on the zone of the type of `x`.
 SET explain_query_plan_default = 'legacy';
+SET optimize_read_in_order = 1;
 SET optimize_injective_functions_in_group_by = 0;
 
 DROP TABLE IF EXISTS tab;
