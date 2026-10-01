@@ -118,12 +118,17 @@ SELECT 'Count';
 SET text_index_posting_list_apply_mode = 'lazy';
 SET optimize_trivial_count_query = 1;
 SET query_plan_optimize_count_from_text_index = 1;
+SET serialize_query_plan = 0;
 SELECT 'bitpacking', count() FROM tab_bitpacking WHERE hasAllTokens(s, ['aall', 'bgap']);
 SELECT 'bitpacking', count() FROM tab_bitpacking WHERE hasAllTokens(s, ['cedge', 'fhalf']);
 SELECT 'bitpacking', count() FROM tab_bitpacking WHERE hasAnyTokens(s, ['erun', 'gsmall']);
 SELECT 'pfor', count() FROM tab_pfor WHERE hasAllTokens(s, ['aall', 'bgap']);
 SELECT 'pfor', count() FROM tab_pfor WHERE hasAllTokens(s, ['cedge', 'fhalf']);
 SELECT 'pfor', count() FROM tab_pfor WHERE hasAnyTokens(s, ['erun', 'gsmall']);
+SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM tab_pfor WHERE hasAllTokens(s, ['aall', 'bgap']) SETTINGS text_index_posting_list_apply_mode = 'materialize') WHERE explain ILIKE '%ReadFromTextIndexCount%';
+SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM tab_pfor WHERE hasAnyTokens(s, ['erun', 'gsmall']) SETTINGS text_index_posting_list_apply_mode = 'materialize') WHERE explain ILIKE '%ReadFromTextIndexCount%';
+SELECT 'pfor', 'materialize', count() FROM tab_pfor WHERE hasAllTokens(s, ['aall', 'bgap']) SETTINGS text_index_posting_list_apply_mode = 'materialize', log_comment = '05320_count_pfor_all';
+SELECT 'pfor', 'materialize', count() FROM tab_pfor WHERE hasAnyTokens(s, ['erun', 'gsmall']) SETTINGS text_index_posting_list_apply_mode = 'materialize', log_comment = '05320_count_pfor_any';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -136,7 +141,7 @@ WITH initial_queries AS
       AND current_database = currentDatabase()
       AND type = 'QueryFinish'
       AND is_initial_query = 1
-      AND match(log_comment, '^05320_(bitpacking|pfor|none|lazy)_')
+      AND match(log_comment, '^05320_(bitpacking|pfor|none|lazy|count)_')
 )
 SELECT q.log_comment, sum(ProfileEvents['TextIndexDensePackedBlocks'])
 FROM system.query_log AS l

@@ -41,6 +41,10 @@ bitpacking	4900
 pfor	9999
 pfor	4999
 pfor	4900
+1
+1
+pfor	materialize	9999
+pfor	materialize	4900
 05320_bitpacking_aall	79
 05320_bitpacking_bgap	78
 05320_bitpacking_cedge	79
@@ -49,6 +53,8 @@ pfor	4900
 05320_bitpacking_fhalf	0
 05320_bitpacking_gsmall	8
 05320_bitpacking_hone	9
+05320_count_pfor_all	157
+05320_count_pfor_any	40
 05320_lazy_pfor_gsmall	8
 05320_none_aall	0
 05320_pfor_aall	79
