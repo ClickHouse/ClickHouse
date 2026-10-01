@@ -41,6 +41,9 @@ SELECT count() FROM t_enum_bf WHERE NOT (e = 'c');
 SELECT count() FROM t_enum_bf PREWHERE e = 'c';
 SELECT count() FROM t_enum_bf WHERE e = 'c' OR v = 2;
 SELECT count() FROM t_enum_bf ARRAY JOIN arr AS x WHERE x = 'c';
+SELECT count() FROM t_enum_bf WHERE e IN ('c');
+SELECT count() FROM t_enum_bf WHERE e IN ('a', 'c');
+SELECT count() FROM t_enum_bf WHERE arrayJoin(arr) IN ('c');
 
 SELECT 'nullable key';
 DROP TABLE IF EXISTS t_enum_null;
