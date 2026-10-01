@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-old-analyzer
-# no-old-analyzer: make_distributed_plan requires the analyzer.
 
 # A PARTITION BY window under make_distributed_plan=1 must produce the same result as the
 # non-distributed plan, in the same row order. Every setting the comparison depends on is pinned
@@ -56,7 +54,7 @@ $CLICKHOUSE_CLIENT --max_threads 8 --query "${WINDOW_QUERY}" \
     --make_distributed_plan 1 --optimize_read_in_order 0 --enable_parallel_replicas 0 \
     --distributed_plan_execute_locally 1 --distributed_plan_max_rows_to_broadcast 0 \
     --enable_join_runtime_filters 0 --distributed_plan_default_shuffle_join_bucket_count 8 \
-    --distributed_plan_default_reader_bucket_count 8 > "$distributed_file"
+    --distributed_plan_default_reader_bucket_count 8 --distributed_plan_fallback_to_local_execution 0 > "$distributed_file"
 
 if cmp -s "$reference_file" "$distributed_file"; then
     echo "OK"

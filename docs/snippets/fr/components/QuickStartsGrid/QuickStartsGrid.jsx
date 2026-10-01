@@ -235,7 +235,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                 {featuredQuickStarts.map((quickStart) => (
                   <a
                     key={quickStart.id}
-                    href={withBase(quickStart.href)}
+                    href={quickStart.href}
                     onClick={(e) => handleCardClick(e, quickStart.href)}
                     className="group block rounded-xl overflow-hidden border border-gray-200 dark:border-white/10 transition-all hover:border-black dark:hover:border-[#FAFF69] hover:shadow-md"
                   >
@@ -244,7 +244,14 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                     <div className="relative w-full aspect-[2/1] overflow-hidden bg-[#FAFF69] flex flex-col justify-center px-6 pb-12">
                       <span className="relative z-10 mx-auto max-w-[90%] text-center text-base font-bold leading-tight text-black line-clamp-4">{quickStart.title}</span>
                       <div className="absolute inset-x-0 bottom-0 h-12 bg-[#E7EA5B] flex items-center justify-between px-5">
-                        <img src={withBase("/images/clickhouse.svg")} alt="" aria-hidden="true" className="h-[18px] w-auto" style={{ borderRadius: 0, filter: "brightness(0)" }} />
+                        <img
+                          src={withBase("/images/clickhouse.svg")}
+                          alt=""
+                          aria-hidden="true"
+                          className="h-[18px] w-auto"
+
+                          style={{ borderRadius: 0, filter: "brightness(0)" }}
+                        />
                         <span className="text-sm font-medium text-black">Premiers pas</span>
                       </div>
                     </div>
@@ -363,7 +370,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                     {filteredQuickStarts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((quickStart) => (
                       <a
                         key={quickStart.id}
-                        href={withBase(quickStart.href)}
+                        href={quickStart.href}
                         onClick={(e) => handleCardClick(e, quickStart.href)}
                         className="group block rounded-lg border px-4 py-3 transition-all border-gray-200 dark:border-white/10 hover:border-black dark:hover:border-[#FAFF69] bg-white dark:bg-[#1B1B18]"
                       >
