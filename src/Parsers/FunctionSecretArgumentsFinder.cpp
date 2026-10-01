@@ -468,11 +468,12 @@ void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
             return;
 
         /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
-        if (findNamedArgument(&uri, "uri", 1) == -1)
+        ssize_t uri_index = findNamedArgument(&uri, "uri", 1);
+        if (uri_index == -1)
             return;
 
         result.are_named = true;
-        result.start = 1;
+        result.start = static_cast<size_t>(uri_index);
     }
     else if (function->arguments->size() == 2)
     {

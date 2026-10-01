@@ -4,9 +4,9 @@
 # no-replicated-database: a named collection is server-global, not database-scoped
 
 # The values of the MongoDB connection options that carry a secret (tlsCertificateKeyFilePassword,
-# sslClientCertificateKeyPassword, authMechanismProperties) must be hidden wherever a MongoDB connection
-# string or option list is shown: SHOW CREATE (system.tables), system.dictionaries.source and
-# system.query_log. Every secret below contains the marker OPTSECRET. None of these objects contacts a
+# sslClientCertificateKeyPassword, AWS_SESSION_TOKEN in authMechanismProperties) must be hidden wherever a
+# MongoDB connection string or option list is shown: SHOW CREATE (system.tables), system.dictionaries.source
+# and system.query_log. Every secret below contains the marker OPTSECRET. None of these objects contacts a
 # MongoDB server when it is created or loaded.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -14,6 +14,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 NC="nc_05315_${CLICKHOUSE_DATABASE}"
+NC2="nc2_05315_${CLICKHOUSE_DATABASE}"
 PROBE="05315_probe_${CLICKHOUSE_DATABASE}"
 
 # A statement carrying a secret. A rejected one prints the name of its object and the error code.
@@ -23,9 +24,12 @@ probe()
 }
 
 $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${NC}"
+$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${NC2}"
 $CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION ${NC} AS host = '127.0.0.1', port = 27017, user = '', password = '', database = 'db', collection = 'c'"
+$CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION ${NC2} AS collection = 'c'"
 
-# Table engine: the URI forms, the positional options of the host:port form, the named-collection overrides.
+# Table engine: the URI forms, the positional options of the host:port form, the named-collection overrides
+# (a uri after another override), and a percent-encoded authMechanismProperties.
 probe "CREATE TABLE e01 (x String) ENGINE = MongoDB('mongodb://127.0.0.1:27017/db?tls=true&tlsCertificateKeyFilePassword=OPTSECRET1', 'c')"
 probe "CREATE TABLE e02 (x String) ENGINE = MongoDB('mongodb://127.0.0.1:27017/db?sslClientCertificateKeyPassword=OPTSECRET2', 'c', '_id')"
 probe "CREATE TABLE e03 (x String) ENGINE = MongoDB(concat('mongodb://127.0.0.1:27017/db?tlsCertificateKeyFilePassword=', 'OPTSECRET15'), 'c', '_id')"
@@ -33,12 +37,14 @@ probe "CREATE TABLE e04 (x String) ENGINE = MongoDB('127.0.0.1:27017', 'db', 'c'
 probe "CREATE TABLE e05 (x String) ENGINE = MongoDB('127.0.0.1:27017', 'db', 'c', 'usr', 'pw', concat('tlsCertificateKeyFilePassword=', 'OPTSECRET4'))"
 probe "CREATE TABLE e06 (x String) ENGINE = MongoDB(${NC}, options = 'tls=true&tlsCertificateKeyFilePassword=OPTSECRET19')"
 probe "CREATE TABLE e07 (x String) ENGINE = MongoDB(${NC}, concat('op', 'tions') = 'tlsCertificateKeyFilePassword=OPTSECRET13')"
+probe "CREATE TABLE e08 (x String) ENGINE = MongoDB(${NC2}, collection = 'c2', uri = 'mongodb://127.0.0.1:27017/db?tlsCertificateKeyFilePassword=OPTSECRET25')"
+probe "CREATE TABLE e09 (x String) ENGINE = MongoDB('mongodb://127.0.0.1:27017/db?authMechanismProperties=ENVIRONMENT:azure%2CAWS_SESSION_TOKEN%3AOPTSECRET26', 'c')"
 
-# Table function: the URI form, the positional and the named options of the host:port form, a URI written
-# after a named argument, an upper-case OPTIONS key (both rejected after being logged), a named
-# oid_columns bound to the options slot, and a named options and a positional after structure moved into
-# the password slot.
-probe "CREATE VIEW f01 AS SELECT * FROM mongodb('mongodb://127.0.0.1:27017/db?authMechanismProperties=AWS_SESSION_TOKEN:OPTSECRET5', 'c', 'x String')"
+# Table function: the URI form with a public property kept, the positional and the named options of the
+# host:port form, a URI written after a named argument, an upper-case OPTIONS key (both rejected after being
+# logged), a named oid_columns bound to the options slot, and a named options and a positional after
+# structure moved into the password slot.
+probe "CREATE VIEW f01 AS SELECT * FROM mongodb('mongodb://127.0.0.1:27017/db?authMechanismProperties=SERVICE_NAME:keep,aws_session_token:OPTSECRET5,OPTSECRET5B', 'c', 'x String')"
 probe "CREATE VIEW f02 AS SELECT * FROM mongodb('127.0.0.1:27017', 'db', 'c', 'usr', 'pw', 'x String', 'tlsCertificateKeyFilePassword=OPTSECRET6')"
 probe "CREATE VIEW f03 AS SELECT * FROM mongodb('127.0.0.1:27017', 'db', 'c', 'usr', 'pw', 'x String', options = 'TLSCERTIFICATEKEYFILEPASSWORD=OPTSECRET7')"
 probe "CREATE VIEW f04 AS SELECT * FROM mongodb(structure = 'x String', 'mongodb://127.0.0.1:27017/db?tlsCertificateKeyFilePassword=OPTSECRET16', 'c')"
@@ -97,3 +103,4 @@ WHERE current_database = currentDatabase() AND event_date >= yesterday() AND log
 "
 
 $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION ${NC}"
+$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION ${NC2}"

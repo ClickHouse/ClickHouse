@@ -92,27 +92,19 @@ inline bool maskURIPassword(std::string * uri)
 /// As the driver reads them, an option name is case-insensitive and not percent-decoded, and a value runs to the next '&'.
 inline bool maskMongoDBConnectionString(std::string & str)
 {
-    static constexpr std::array<std::string_view, 3> secret_options
-        = {"tlscertificatekeyfilepassword", "sslclientcertificatekeypassword", "authmechanismproperties"};
+    static constexpr std::array<std::string_view, 2> secret_options = {"tlscertificatekeyfilepassword", "sslclientcertificatekeypassword"};
+    /// The properties the driver accepts besides `AWS_SESSION_TOKEN`; their names are case-insensitive too.
+    static constexpr std::array<std::string_view, 6> public_properties
+        = {"service_name", "canonicalize_host_name", "service_realm", "service_host", "environment", "token_resource"};
 
-    auto is_secret_option = [](std::string_view name)
+    auto equals = [](std::string_view name, std::string_view lowercase_name)
     {
-        for (auto secret : secret_options)
-        {
-            if (name.length() != secret.length())
-                continue;
-            bool equal = true;
-            for (size_t i = 0; equal && i < name.length(); ++i)
-            {
-                char c = name[i];
-                if ('A' <= c && c <= 'Z')
-                    c = static_cast<char>(c - 'A' + 'a');
-                equal = (c == secret[i]);
-            }
-            if (equal)
-                return true;
-        }
-        return false;
+        return std::equal(name.begin(), name.end(), lowercase_name.begin(), lowercase_name.end(),
+            [](char c, char expected) { return (('A' <= c && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c) == expected; });
+    };
+    auto is_one_of = [&](std::string_view name, const auto & lowercase_names)
+    {
+        return std::any_of(lowercase_names.begin(), lowercase_names.end(), [&](std::string_view expected) { return equals(name, expected); });
     };
 
     std::vector<std::pair<size_t, size_t>> hidden;
@@ -130,14 +122,32 @@ inline bool maskMongoDBConnectionString(std::string & str)
         }
 
         size_t value_begin = name_end + 1;
-        bool is_secret = is_secret_option(std::string_view(str).substr(name_begin, name_end - name_begin));
+        std::string_view name = std::string_view(str).substr(name_begin, name_end - name_begin);
+        bool is_property_list = equals(name, "authmechanismproperties");
+        bool is_secret = is_property_list || is_one_of(name, secret_options);
         /// Any other value also ends at a '?', so that one inside it, or inside the path, does not hide a later secret.
         size_t value_end = is_secret ? str.find('&', value_begin) : str.find_first_of("?&", value_begin);
         if (value_end == std::string::npos)
             value_end = str.length();
 
-        if (is_secret)
+        /// A list of `name:value` separated by ',', which the driver splits after percent-decoding it.
+        std::string_view value = std::string_view(str).substr(value_begin, value_end - value_begin);
+        if (is_property_list && !value.contains('%'))
+        {
+            for (size_t entry_begin = 0; entry_begin < value.length();)
+            {
+                size_t entry_end = std::min(value.find(',', entry_begin), value.length());
+                std::string_view entry = value.substr(entry_begin, entry_end - entry_begin);
+                size_t colon = std::min(entry.find(':'), entry.length());
+                if (!entry.empty() && !is_one_of(entry.substr(0, colon), public_properties))
+                    hidden.emplace_back(value_begin + entry_begin + (colon < entry.length() ? colon + 1 : 0), value_begin + entry_end);
+                entry_begin = entry_end + 1;
+            }
+        }
+        else if (is_secret)
+        {
             hidden.emplace_back(value_begin, value_end);
+        }
         name_begin = value_end + 1;
     }
 
