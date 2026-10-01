@@ -955,8 +955,9 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     chassert(reserved_size >= downloaded_size);
     if (reserved_size > downloaded_size)
     {
-        queue_iterator->decrementSize(reserved_size - downloaded_size);
-        reserved_size = downloaded_size.load();
+        const size_t surplus = reserved_size - downloaded_size;
+        queue_iterator->decrementSize(surplus);
+        addReservedSize(-static_cast<Int64>(surplus));
     }
 
     if (result_size == range().size())
@@ -1547,6 +1548,27 @@ void FileSegment::markRead(size_t offset, size_t size)
         new_granules += std::popcount(mask & ~old);
     }
     efficiency.addActiveBytes(window, static_cast<Int64>(new_granules * efficiency_granule_size));
+}
+
+void FileSegment::addReservedSize(Int64 delta)
+{
+    if (delta >= 0)
+        reserved_size.fetch_add(static_cast<size_t>(delta));
+    else
+        reserved_size.fetch_sub(static_cast<size_t>(-delta));
+
+    if (cache && !is_unbound)
+        cache->getEfficiency().addHeldBytes(efficiency_window_id.load(), delta);
+}
+
+void FileSegment::onRemovedFromCache(const FileSegmentGuard::Lock &)
+{
+    if (!cache || is_unbound)
+        return;
+    auto & efficiency = cache->getEfficiency();
+    const UInt64 window = efficiency_window_id.load();
+    efficiency.addHeldBytes(window, -static_cast<Int64>(reserved_size.load()));
+    efficiency.addActiveBytes(window, -static_cast<Int64>(getActiveBytes()));
 }
 
 size_t FileSegment::getActiveBytes() const

@@ -45,6 +45,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/QueryScope.h>
+#include <Interpreters/FileCache/FileCacheEfficiency.h>
 #include <Common/SipHash.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/scope_guard_safe.h>
@@ -123,6 +124,8 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
     extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
+    extern const FileCacheSettingsUInt64 efficiency_window_sec;
+    extern const FileCacheSettingsUInt64 reserve_granularity;
 }
 
 void printRanges(const auto & segments)
@@ -4227,4 +4230,194 @@ TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtUnknownFileSize)
         for (size_t t = 0; t < num_threads; ++t)
             ASSERT_EQ(errors[t], "") << "thread " << t << ", iteration " << iteration;
     }
+}
+
+namespace
+{
+
+/// A small LRU cache whose file segments are 128 bytes, so one granule is one byte and the
+/// expected values are exact.
+FileCacheSettings efficiencyCacheSettings(UInt64 window_sec)
+{
+    FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 1024;
+    settings[FileCacheSetting::max_elements] = 16;
+    settings[FileCacheSetting::max_file_segment_size] = 128;
+    settings[FileCacheSetting::boundary_alignment] = 128;
+    settings[FileCacheSetting::reserve_granularity] = 32;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    settings[FileCacheSetting::efficiency_window_sec] = window_sec;
+    return settings;
+}
+
+DB::ContextMutablePtr makeEfficiencyQueryContext(const String & query_id)
+{
+    ServerUUID::setRandomForUnitTests();
+    Poco::XML::DOMParser dom_parser;
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(R"(<clickhouse></clickhouse>)");
+    getMutableContext().context->setConfig(new Poco::Util::XMLConfiguration(document));
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId(query_id);
+    return query_context;
+}
+
+}
+
+TEST_F(FileCacheTest, EfficiencyWindow)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_window_test"));
+    auto cache = DB::FileCache("efficiency_window", efficiencyCacheSettings(10));
+    auto now = std::chrono::steady_clock::time_point{};
+    cache.getEfficiency().setClockForTesting([&] { return now; });
+    cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_window_key");
+    auto next_window = [&]
+    {
+        now += std::chrono::seconds(10);
+        return cache.getEfficiency().getSnapshot();
+    };
+    auto expect = [&](const FileCacheEfficiency::Snapshot & snapshot, UInt64 active, UInt64 passive)
+    {
+        EXPECT_EQ(snapshot.active_bytes, active);
+        EXPECT_EQ(snapshot.passive_bytes, passive);
+        EXPECT_EQ(snapshot.active_bytes + snapshot.passive_bytes + snapshot.idle_bytes, cache.getUsedCacheSize());
+    };
+
+    auto holder_a = cache.getOrSet(key, 0, 128, 1024, {}, 0, user);
+    auto a = get(holder_a, 0);
+    download(a);
+    auto holder_b = cache.getOrSet(key, 128, 128, 1024, {}, 0, user);
+    auto b = get(holder_b, 0);
+    download(b);
+    EXPECT_FALSE(FileSegment::getInfo(b).windows_since_touch.has_value());
+
+    /// Window 0: A is read in full; B is not read and stays idle.
+    a->markRead(0, 128);
+    EXPECT_EQ(FileSegment::getInfo(a).windows_since_touch, 0);
+    expect(next_window(), /*active=*/128, /*passive=*/0);
+    EXPECT_EQ(FileSegment::getInfo(a).windows_since_touch, 1);
+
+    /// Window 1: a narrow read of A.
+    a->markRead(10, 16);
+    expect(next_window(), 16, 112);
+
+    /// Window 2: no reads.
+    expect(next_window(), 0, 0);
+
+    /// Window 3: removing an unread file segment does not change the window.
+    a->markRead(0, 16);
+    holder_b.reset();
+    b.reset();
+    cache.removeFileSegment(key, 128, user.user_id);
+    expect(next_window(), 16, 112);
+
+    /// Window 4: a read file segment leaves the window when it is removed.
+    /// (`removeFileSegment` skips a file segment that is still held, so drop the references first.)
+    a->markRead(0, 16);
+    holder_a.reset();
+    a.reset();
+    cache.removeFileSegment(key, 0, user.user_id);
+    expect(next_window(), 0, 0);
+
+    /// Window 5: reserve-ahead growth and the shrink at completion of a read file segment.
+    {
+        auto holder_c = cache.getOrSet(key, 256, 128, 1024, {}, 0, user);
+        auto c = get(holder_c, 0);
+        ASSERT_EQ(c->getOrSetDownloader(), FileSegment::getCallerId());
+        auto key_str = key.toString();
+        fs::create_directories(fs::path(cache_base_path) / key_str.substr(0, 3) / key_str);
+        auto write16 = [&]
+        {
+            std::string data(16, '0');
+            c->write(data.data(), 16, c->getCurrentWriteOffset());
+        };
+        std::string failure_reason;
+        ASSERT_TRUE(c->reserve(16, 1000, failure_reason));   /// reserves 32 (`reserve_granularity`)
+        write16();
+        c->markRead(256, 16);                                /// S = 32, U = 16
+        ASSERT_TRUE(c->reserve(16, 1000, failure_reason));   /// fits into the reserved 32
+        write16();
+        ASSERT_TRUE(c->reserve(16, 1000, failure_reason));   /// reserves 32 more: S = 64
+        write16();
+        ASSERT_EQ(c->getReservedSize(), 64);
+    }
+    /// The holder completed the file segment; the shrink returned 16 bytes: S = 48.
+    expect(next_window(), 16, 32);
+
+    /// Window 6: a read past the end of a short file segment (100 bytes, not a multiple of 128)
+    /// stops at the segment end. C is not read and stays idle.
+    auto short_key = FileCacheKey::fromPath("efficiency_window_short");
+    auto holder_d = cache.getOrSet(short_key, 0, 100, /*file_size=*/100, {}, 0, user);
+    auto d = get(holder_d, 0);
+    ASSERT_EQ(d->range().size(), 100);
+    download(d);
+    d->markRead(90, 110);
+    EXPECT_EQ(FileSegment::getInfo(d).active_bytes, 10);
+    expect(next_window(), 10, 90);
+
+    /// Window 7: eviction removes the share of a read file segment. Eight new 128-byte file
+    /// segments fill the 1024-byte cache, so LRU evicts C and then D.
+    d->markRead(0, 100);
+    holder_d.reset();
+    d.reset();
+    auto filler_key = FileCacheKey::fromPath("efficiency_window_filler");
+    for (size_t i = 0; i < 8; ++i)
+    {
+        auto holder = cache.getOrSet(filler_key, i * 128, 128, /*file_size=*/1024, {}, 0, user);
+        download(get(holder, 0));
+    }
+    expect(next_window(), 0, 0);
+}
+
+TEST_F(FileCacheTest, EfficiencyConcurrentFirstRead)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_concurrent_test"));
+    auto cache = DB::FileCache("efficiency_concurrent", efficiencyCacheSettings(10));
+    auto now = std::chrono::steady_clock::time_point{};
+    cache.getEfficiency().setClockForTesting([&] { return now; });
+    cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_concurrent_key");
+    auto holder = cache.getOrSet(key, 0, 128, 128, {}, 0, user);
+    auto segment = get(holder, 0);
+    download(segment);
+
+    std::vector<std::thread> threads;
+    for (size_t i = 0; i < 8; ++i)
+        threads.emplace_back([&, i] { segment->markRead(i * 16, 16); });
+    for (auto & thread : threads)
+        thread.join();
+
+    now += std::chrono::seconds(10);
+    const auto snapshot = cache.getEfficiency().getSnapshot();
+    EXPECT_EQ(snapshot.active_bytes, 128);
+    EXPECT_EQ(snapshot.passive_bytes, 0);
+}
+
+TEST_F(FileCacheTest, EfficiencyDisabled)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_disabled_test"));
+    auto cache = DB::FileCache("efficiency_disabled", efficiencyCacheSettings(0));
+    cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_disabled_key");
+    auto holder = cache.getOrSet(key, 0, 128, 128, {}, 0, user);
+    auto segment = get(holder, 0);
+    download(segment);
+    segment->markRead(0, 128);
+
+    EXPECT_FALSE(FileSegment::getInfo(segment).windows_since_touch.has_value());
+    EXPECT_EQ(FileSegment::getInfo(segment).active_bytes, 0);
+    const auto snapshot = cache.getEfficiency().getSnapshot();
+    EXPECT_EQ(snapshot.active_bytes + snapshot.passive_bytes + snapshot.idle_bytes, 0);
 }

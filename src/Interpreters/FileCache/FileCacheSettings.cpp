@@ -145,6 +145,15 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
     result.add(
         ColumnDescription(
             "current_elements_num", std::make_shared<DataTypeUInt64>(), "Current cache elements (file segments) number"));
+    result.add(
+        ColumnDescription(
+            "active_bytes", std::make_shared<DataTypeUInt64>(), "Unique bytes read in the last full efficiency window, rounded up to granules"));
+    result.add(
+        ColumnDescription(
+            "passive_bytes", std::make_shared<DataTypeUInt64>(), "Bytes not read in the last full efficiency window, in file segments that had at least one read in it"));
+    result.add(
+        ColumnDescription(
+            "idle_bytes", std::make_shared<DataTypeUInt64>(), "Bytes of file segments with no read in the last full efficiency window"));
 
     return result;
 }
@@ -164,6 +173,11 @@ void FileCacheSettings::dumpToSystemSettingsColumns(
     res_columns[i++]->insert(cache->isInitialized());
     res_columns[i++]->insert(cache->getUsedCacheSize());
     res_columns[i++]->insert(cache->getFileSegmentsNum());
+
+    const auto efficiency = cache->getEfficiency().getSnapshot();
+    res_columns[i++]->insert(efficiency.active_bytes);
+    res_columns[i++]->insert(efficiency.passive_bytes);
+    res_columns[i++]->insert(efficiency.idle_bytes);
 }
 
 void FileCacheSettings::loadFromConfig(

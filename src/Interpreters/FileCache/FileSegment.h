@@ -265,6 +265,14 @@ private:
     DownloadState & getOrCreateDownloadDataUnlocked(const FileSegmentGuard::Lock &);
     void resetDownloadDataUnlocked(const FileSegmentGuard::Lock &);
 
+    /// Changes `reserved_size` by `delta` and keeps the efficiency window of the cache in step.
+    /// Every change of `reserved_size` after construction goes through this method.
+    void addReservedSize(Int64 delta);
+
+    /// Removes the share of this file segment from the live efficiency window.
+    /// Called when the file segment leaves the cache.
+    void onRemovedFromCache(const FileSegmentGuard::Lock &);
+
     /// Bytes of the set granules in `active_granules`, in whole granules.
     size_t getActiveBytes() const;
     /// Windows since the latest window with a read; `nullopt` if never read or not tracked.

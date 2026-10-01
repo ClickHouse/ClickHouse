@@ -1418,7 +1418,7 @@ bool FileCache::doTryReserve(
             main_eviction_info->releaseHoldSpace(lock);
             main_priority_iterator->incrementSize(size, lock);
 
-            file_segment.reserved_size += size;
+            file_segment.addReservedSize(static_cast<Int64>(size));
             chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
             return true;
         }
@@ -1525,7 +1525,7 @@ bool FileCache::doTryReserve(
     if (added_new_main_entry)
         file_segment.setQueueIterator(main_priority_iterator);
 
-    file_segment.reserved_size += size;
+    file_segment.addReservedSize(static_cast<Int64>(size));
     chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
 
     return true;
