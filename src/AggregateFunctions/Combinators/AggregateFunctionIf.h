@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -62,24 +63,6 @@ public:
     DataTypePtr getNormalizedStateType() const override
     {
         return nested_func->getNormalizedStateType();
-    }
-
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        chassert(rhs.getNestedFunction() != nullptr);
-
-        return nested_func->canMergeStateFromDifferentVariant(*rhs.getNestedFunction());
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        chassert(rhs.getNestedFunction() != nullptr);
-
-        nested_func->mergeStateFromDifferentVariant(place, *rhs.getNestedFunction(), rhs_place, arena);
     }
 
     bool isVersioned() const override
@@ -157,21 +140,6 @@ public:
         nested_func->addBatch(row_begin, row_end, places, place_offset, columns, arena, num_arguments - 1);
     }
 
-    void addBatchWithNonNullPlaces(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr * __restrict places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t) const override
-    {
-        if (only_null_condition)
-            return;
-        nested_func->addBatchWithNonNullPlaces(
-            row_begin, row_end, places, place_offset, columns, arena, num_arguments - 1);
-    }
-
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
@@ -192,21 +160,14 @@ public:
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
-        ssize_t if_argument_pos) const override
+        ssize_t) const override
     {
         if (only_null_condition)
             return;
-        /// The nested function takes a single condition, so the condition of an enclosing combinator is applied row by row.
-        if (if_argument_pos >= 0)
-        {
-            IAggregateFunctionHelper<AggregateFunctionIf>::addBatchSinglePlaceNotNull(
-                row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
-            return;
-        }
         nested_func->addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, num_arguments - 1);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
     }
@@ -219,14 +180,9 @@ public:
         nested_func->parallelizeMergePrepare(places, thread_pool, is_cancelled);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
         nested_func->merge(place, rhs, thread_pool, is_cancelled, arena);
-    }
-
-    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
-    {
-        nested_func->parallelizeMergeMulti(places, thread_pool, is_cancelled, arena);
     }
 
     void mergeBatch(
@@ -245,16 +201,6 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         nested_func->serialize(place, buf, version);
-    }
-
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
-    {
-        return nested_func->getSerializedSizeBound(version);
-    }
-
-    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
-    {
-        return nested_func->serializeToMemory(place, dst, version);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
