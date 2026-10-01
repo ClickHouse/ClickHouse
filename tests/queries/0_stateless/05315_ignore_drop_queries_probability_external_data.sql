@@ -13,8 +13,9 @@ CREATE TABLE t_alias ENGINE = Alias(t_alias_target);
 DROP TABLE t_alias SETTINGS ignore_drop_queries_probability = 1;
 SELECT * FROM t_alias_target;
 
+-- Not async: an async insert flush evaluates `currentDatabase()` in the table function arguments without the session database.
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '_skipped_drop_proxy.tsv', format = TSV, structure = 'x UInt64')
-    SETTINGS s3_truncate_on_insert = 1 VALUES (3);
+    SETTINGS async_insert = 0, s3_truncate_on_insert = 1 VALUES (3);
 CREATE TABLE t_proxy (x UInt64) AS s3(s3_conn, filename = currentDatabase() || '_skipped_drop_proxy.tsv', format = TSV);
 DROP TABLE t_proxy SETTINGS ignore_drop_queries_probability = 1;
 SELECT * FROM t_proxy;
