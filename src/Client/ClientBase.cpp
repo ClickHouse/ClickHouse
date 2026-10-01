@@ -2635,15 +2635,31 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 }
 
 
-void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data)
+void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data, bool buf_is_stdin)
 {
     String current_format = "Values";
+
+    /// Owns the decompression buffer for a `COMPRESSION` clause next to `FORMAT` (no `FROM INFILE`).
+    std::unique_ptr<ReadBuffer> compressed_buf;
+    ReadBuffer * buf_to_read = &buf;
 
     /// Data format can be specified in the INSERT query.
     if (const auto * insert = parsed_query->as<ASTInsertQuery>())
     {
         if (!insert->format.empty())
             current_format = insert->format;
+
+        if (!insert->infile && insert->compression)
+        {
+            /// 'auto' has no filename here: fall back to the stdin detection only when `buf` is stdin;
+            /// for query-embedded inline data there is nothing to detect from, so stay uncompressed.
+            CompressionMethod compression_method = insert->resolveCompressionMethod(
+                buf_is_stdin ? default_input_compression_method : CompressionMethod::None);
+            compressed_buf = wrapReadBufferWithCompressionMethod(
+                wrapReadBufferReference(buf), compression_method,
+                /*zstd_window_log_max=*/ 0, client_context->getSettingsRef()[Setting::snappy_mode]);
+            buf_to_read = compressed_buf.get();
+        }
     }
 
     const Settings & settings = client_context->getSettingsRef();
@@ -2675,7 +2691,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
 
     auto source = client_context->getInputFormat(
         current_format,
-        buf,
+        *buf_to_read,
         sample,
         insert_format_max_block_size_rows,
         std::nullopt,
@@ -2749,11 +2765,16 @@ void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & co
     /// Send data read from stdin.
     try
     {
-        if (default_input_compression_method != CompressionMethod::None)
+        /// An explicit `COMPRESSION` clause wins over stdin-name detection; sendDataFrom applies it
+        /// below. Decompressing here too would double-decompress and corrupt the stream.
+        const auto * insert = parsed_query->as<ASTInsertQuery>();
+        bool has_explicit_compression = insert && insert->compression && !insert->infile;
+
+        if (!has_explicit_compression && default_input_compression_method != CompressionMethod::None)
             std_in = wrapReadBufferWithCompressionMethod(
                 std::move(std_in), default_input_compression_method,
                 /*zstd_window_log_max=*/ 0, client_context->getSettingsRef()[Setting::snappy_mode]);
-        sendDataFrom(*std_in, sample, columns_description, parsed_query);
+        sendDataFrom(*std_in, sample, columns_description, parsed_query, /*have_more_data=*/ false, /*buf_is_stdin=*/ true);
     }
     catch (Exception & e)
     {
@@ -2973,10 +2994,18 @@ void ClientBase::processParsedSingleQuery(
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
-        /// When the user explicitly requested inline insert data mode (via `--inline-insert-data` or
-        /// `send_table_structure_on_insert_with_inline_data = 0`), it takes precedence over `async_insert`
-        /// on the client side: both paths send the data inline with the query, and the explicit user choice
-        /// determines which client-side flow (and rejection message) applies.
+        /// Inline compressed data shares one buffer with the rest of a --multiquery script and has no
+        /// unambiguous end marker, so reject it before the async_insert/inline dispatch decision (fails
+        /// the same way regardless of settings). isCompressionEffective() lets 'none'/'auto' through.
+        if (insert && insert->data && !insert->infile && insert->isCompressionEffective())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "COMPRESSION next to FORMAT is only supported for data supplied via stdin, "
+                "not for data embedded inline in the query. Pipe the compressed data via stdin instead. "
+                "Note that in a multiquery script this INSERT must be the last statement, since its true "
+                "data boundary cannot be determined without decompressing it.");
+
+        /// Explicit inline-insert-data mode (`--inline-insert-data` or
+        /// `send_table_structure_on_insert_with_inline_data = 0`) takes precedence over `async_insert`.
         bool is_inline_insert_data = (inline_insert_data || !client_context->getSettingsRef()[Setting::send_table_structure_on_insert_with_inline_data])
             && insert && insert->hasInlinedData() && !insert->select;
 

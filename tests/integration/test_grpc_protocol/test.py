@@ -252,6 +252,21 @@ def test_insert_query_delimiter():
     assert query("SELECT a FROM t ORDER BY a") == "1\n5\n234\n"
 
 
+def test_insert_compression_rejected():
+    # COMPRESSION next to FORMAT is a client-side clause: clickhouse-client and clickhouse-local
+    # decompress the data before sending it. gRPC talks to the server directly and has its own
+    # input_compression_type field, so an effective COMPRESSION clause that reaches the server must
+    # be rejected, not silently ignored.
+    query("CREATE TABLE t (a UInt8) ENGINE = Memory")
+    error = query_and_get_error(
+        "INSERT INTO t COMPRESSION 'gzip' FORMAT TabSeparated", input_data="1\n2\n3\n"
+    )
+    assert (
+        "Query has COMPRESSION next to FORMAT and was send directly to server"
+        in error.display_text
+    )
+
+
 def test_insert_default_column():
     query(
         "CREATE TABLE t (a UInt8, b Int32 DEFAULT 100 - a, c String DEFAULT 'c') ENGINE = Memory"

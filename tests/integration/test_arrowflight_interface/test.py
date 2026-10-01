@@ -195,6 +195,48 @@ def test_doput_cmd_insert_invalid_format():
         assert "Invalid format (JSON), only 'Arrow' format is supported" in str(e)
 
 
+# COMPRESSION next to FORMAT is decompressed by clickhouse-client/clickhouse-local, never by the
+# server. Arrow Flight transports data as Arrow IPC batches with no ClickHouse decompression step,
+# so an effective COMPRESSION clause must be rejected, not silently ignored.
+def test_doput_cmd_insert_compression_rejected():
+    node.query(
+        """
+        CREATE TABLE mytable (
+            id   Int64,
+            name String
+        ) ORDER BY id
+    """
+    )
+
+    client, options = get_client()
+
+    schema = pa.schema(
+        [
+            ("id", pa.int64()),
+            ("name", pa.string()),
+        ]
+    )
+    batch = pa.record_batch(
+        [
+            pa.array([1, 2, 3], type=pa.int64()),
+            pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
+        ],
+        schema=schema,
+    )
+
+    descriptor = flight.FlightDescriptor.for_command(
+        "INSERT INTO mytable COMPRESSION 'gzip' FORMAT Arrow"
+    )
+    writer, _ = client.do_put(descriptor, schema, options)
+    writer.write_batch(batch)
+
+    try:
+        writer.close()
+        assert False, "Expected to fail because of COMPRESSION but succeeded"
+    except flight.FlightServerError as e:
+        assert "COMPRESSION clause is not supported for Arrow Flight queries" in str(e)
+
+
 # INSERT queries without the FORMAT clause are considered invalid.
 def test_doput_cmd_insert_no_format():
     node.query(

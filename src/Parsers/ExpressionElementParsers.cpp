@@ -2089,6 +2089,7 @@ const char * ParserAlias::restricted_keywords[] =
     "ARRAY",
     "ASOF",
     "BETWEEN",
+    "COMPRESSION",
     "CROSS",
     "PASTE",
     "FINAL",

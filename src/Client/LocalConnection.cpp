@@ -17,6 +17,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <IO/CompressionMethod.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
 #include <Common/config_version.h>
@@ -65,6 +66,7 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsDoubleAuto promql_evaluation_time;
+    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace ErrorCodes
@@ -84,6 +86,7 @@ LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool sen
     , send_profile_events(send_profile_events_)
     , server_display_name(server_display_name_)
     , in(in_)
+    , default_input_compression_method(CompressionMethod::None)
 {
     /// Authenticate and create a context to execute queries.
     session->authenticate("default", "", Poco::Net::SocketAddress{});
@@ -100,6 +103,7 @@ LocalConnection::LocalConnection(
     , send_profile_events(send_profile_events_)
     , server_display_name(server_display_name_)
     , in(in_)
+    , default_input_compression_method(CompressionMethod::None)
 {
 }
 
@@ -394,25 +398,37 @@ void LocalConnection::sendQuery(
                 state->max_parser_backtracks);
         }
 
+        chassert(in, "ReadBuffer should be initialized");
+
+        /// `COMPRESSION` next to a bare `FORMAT` means the `input()` data is compressed, mirroring
+        /// ClientBase::sendDataFrom on the networked-client path.
+        ReadBuffer * in_to_read = in;
         if (const auto * insert = parsed_query->as<ASTInsertQuery>())
         {
             if (!insert->format.empty())
                 current_format = insert->format;
+
+            if (!insert->infile && insert->compression)
+            {
+                /// 'auto' falls back to the client's already-detected stdin method (see resolveCompressionMethod).
+                CompressionMethod compression_method = insert->resolveCompressionMethod(default_input_compression_method);
+                compressed_in = wrapReadBufferWithCompressionMethod(
+                    wrapReadBufferReference(*in), compression_method,
+                    /*zstd_window_log_max=*/ 0, settings[Setting::snappy_mode]);
+                in_to_read = compressed_in.get();
+            }
         }
 
-        /// `input_format` / `format` settings override the FORMAT for input (mirrors
-        /// `getSourceFromASTInsertQuery` on the server), so `--input-format` / an in-query
-        /// `SETTINGS input_format = ...` take effect on the `clickhouse-local` `input()` path.
+        /// `input_format` / `format` settings override the query FORMAT, mirroring
+        /// `getSourceFromASTInsertQuery` on the server.
         if (!settings[Setting::input_format].value.empty())
             current_format = settings[Setting::input_format];
         else if (!settings[Setting::format].value.empty())
             current_format = settings[Setting::format];
 
-        chassert(in, "ReadBuffer should be initialized");
-
         auto source = context->getInputFormat(
             current_format,
-            *in,
+            *in_to_read,
             sample,
             settings[Setting::max_insert_block_size],
             std::nullopt,

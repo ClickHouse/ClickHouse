@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <memory>
 #include <Client/Connection.h>
 #include <Core/Field.h>
 #include <Core/SettingsEnums.h>
@@ -19,6 +21,7 @@ class PushingAsyncPipelineExecutor;
 class PushingPipelineExecutor;
 class QueryPipeline;
 class ReadBuffer;
+enum class CompressionMethod : uint8_t;
 
 /// State of query processing.
 struct LocalQueryState
@@ -129,6 +132,10 @@ public:
 
     void setDefaultDatabase(const String & database) override;
 
+    /// The client's already-detected stdin compression (see ClientBase::default_input_compression_method),
+    /// used to resolve `COMPRESSION 'auto'` on `input()`-based inserts that read `in` directly.
+    void setDefaultInputCompressionMethod(CompressionMethod method) { default_input_compression_method = method; }
+
     void setCancelCallback(std::function<bool()> callback) override { is_cancelled_callback = std::move(callback); }
 
     void getServerVersion(const ConnectionTimeouts & timeouts,
@@ -236,6 +243,11 @@ private:
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
     ReadBuffer * in;
+    /// Owns the decompression buffer for a `COMPRESSION` clause on the `input()` path (see in_to_read).
+    std::unique_ptr<ReadBuffer> compressed_in;
+    /// See setDefaultInputCompressionMethod. Defaulted in the constructor (CompressionMethod is
+    /// only forward-declared here).
+    CompressionMethod default_input_compression_method;
 };
 
 }

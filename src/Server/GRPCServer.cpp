@@ -108,6 +108,7 @@ namespace ErrorCodes
     extern const int NO_DATA_TO_INSERT;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_REQUEST_PARAMETER;
+    extern const int UNKNOWN_TYPE_OF_QUERY;
 }
 
 namespace
@@ -1028,6 +1029,11 @@ namespace
         insert_query = ast->as<ASTInsertQuery>();
         if (insert_query)
         {
+            /// gRPC does not go through `getSourceFromASTInsertQuery` and has its own compression field
+            /// (`input_compression_type`, below), so it needs its own copy of the client-only guard.
+            if (query_context->getApplicationType() == Context::ApplicationType::SERVER && insert_query->isCompressionEffective())
+                throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has COMPRESSION next to FORMAT and was send directly to server");
+
             if (const String & input_format_setting = settings[Setting::input_format]; !input_format_setting.empty())
                 input_format = input_format_setting;
             else if (const String & format_setting = settings[Setting::format]; !format_setting.empty())
