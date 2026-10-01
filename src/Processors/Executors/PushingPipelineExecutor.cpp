@@ -100,7 +100,7 @@ void PushingPipelineExecutor::start()
     executor->setReadProgressCallback(pipeline.getReadProgressCallback());
     executor->setStepProfiler(pipeline.getStepProfiler());
 
-    if (!executor->executeStep(&input_wait_flag))
+    if (!executor->executeUntil(&input_wait_flag))
         throwOnUnexpectedPipelineFinish(*pushing_source);
 }
 
@@ -111,7 +111,7 @@ void PushingPipelineExecutor::push(Chunk chunk)
 
     pushing_source->setData(std::move(chunk));
 
-    if (!executor->executeStep(&input_wait_flag))
+    if (!executor->executeUntil(&input_wait_flag))
         throwOnUnexpectedPipelineFinish(*pushing_source);
 }
 
@@ -128,7 +128,7 @@ void PushingPipelineExecutor::finish()
 
     if (executor)
     {
-        [[maybe_unused]] auto res = executor->executeStep(nullptr);
+        [[maybe_unused]] auto res = executor->executeUntil(nullptr);
         chassert(!res);
     }
 }

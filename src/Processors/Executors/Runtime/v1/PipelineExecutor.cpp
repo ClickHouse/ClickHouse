@@ -207,7 +207,7 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
     finalizeExecution();
 }
 
-bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
+bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
 {
     if (!is_execution_initialized)
     {

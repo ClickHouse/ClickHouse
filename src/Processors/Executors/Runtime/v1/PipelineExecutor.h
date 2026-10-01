@@ -46,7 +46,7 @@ public:
     ~PipelineExecutor() override;
 
     void execute(size_t num_threads, bool concurrency_control) override;
-    bool executeStep(std::atomic_bool * yield_flag) override;
+    bool executeUntil(std::atomic_bool * yield_flag) override;
     void cancel(IProcessor::CancelReason reason) override;
     void cancelReading() override;
     void setReadProgressCallback(ReadProgressCallbackPtr callback) override;
@@ -59,7 +59,7 @@ private:
 
     /// Concurrency control related
     SlotAllocationPtr cpu_slots;
-    AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeStep()
+    AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeUntil()
     std::unique_ptr<ThreadPool> pool;
     std::mutex spawn_mutex;
 

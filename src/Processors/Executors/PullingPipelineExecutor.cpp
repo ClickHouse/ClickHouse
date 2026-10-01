@@ -61,7 +61,7 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
         return false;
     }
 
-    if (!executor->executeStep(&has_data_flag))
+    if (!executor->executeUntil(&has_data_flag))
         return false;
 
     chunk = pulling_format->getChunk();

@@ -23,8 +23,8 @@ public:
     /// Execute pipeline in multiple threads.
     virtual void execute(size_t num_threads, bool concurrency_control) = 0;
 
-    /// Execute single step. Step will be stopped when yield_flag is true.
-    virtual bool executeStep(std::atomic_bool * yield_flag) = 0;
+    /// Execute the pipeline until it is finished or `yield_flag` is set.
+    virtual bool executeUntil(std::atomic_bool * yield_flag) = 0;
 
     /// Cancel execution.
     virtual void cancel(IProcessor::CancelReason reason) = 0;
