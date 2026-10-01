@@ -1225,15 +1225,15 @@ void StorageMaterializedView::onActionLockRemove(StorageActionBlockType action_t
         refresher->start();
 }
 
-void StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(const StorageID & table_id, const ContextPtr & context)
+void StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(const StorageID & table_id, const ContextPtr & local_context)
 {
     auto & catalog = DatabaseCatalog::instance();
     for (const auto & dependent_id : catalog.getReferentialDependents(table_id))
     {
-        auto view = std::dynamic_pointer_cast<StorageMaterializedView>(catalog.tryGetTable(dependent_id, context));
+        auto view = std::dynamic_pointer_cast<StorageMaterializedView>(catalog.tryGetTable(dependent_id, local_context));
         if (!view)
             continue;
-        auto metadata = view->getInMemoryMetadataPtr(context, false);
+        auto metadata = view->getInMemoryMetadataPtr(local_context, false);
         const auto * refresh_strategy = metadata->refresh ? metadata->refresh->as<ASTRefreshStrategy>() : nullptr;
         if (!refresh_strategy || !refresh_strategy->isIncremental())
             continue;
