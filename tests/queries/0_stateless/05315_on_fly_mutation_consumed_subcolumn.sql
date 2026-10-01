@@ -96,7 +96,7 @@ DROP TABLE IF EXISTS t_row_exists;
 
 CREATE TABLE t_row_exists (id UInt8, b UInt64) ENGINE = MergeTree ORDER BY id;
 
-INSERT INTO t_row_exists VALUES (1, 0), (2, 0);
+INSERT INTO t_row_exists VALUES (1, 0), (2, 0), (3, 0);
 
 SET lightweight_deletes_sync = 2;
 DELETE FROM t_row_exists WHERE id = 2;
@@ -105,6 +105,7 @@ SET lightweight_deletes_sync = 0;
 SYSTEM STOP MERGES t_row_exists;
 
 ALTER TABLE t_row_exists UPDATE b = 7 WHERE 1;
+DELETE FROM t_row_exists WHERE id = 3;
 
 SELECT 'pending mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_row_exists' AND NOT is_done;
 SELECT 'pending', _row_exists, id, b FROM t_row_exists ORDER BY id;
@@ -141,3 +142,58 @@ SELECT 'pending mutations', count() FROM system.mutations WHERE database = curre
 SELECT 'materialized', id, a.size0, b FROM t_non_adaptive ORDER BY id;
 
 DROP TABLE t_non_adaptive;
+
+SELECT 'parent added after the part was written';
+
+DROP TABLE IF EXISTS t_added;
+
+CREATE TABLE t_added (id UInt8, b UInt64, c UInt8) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO t_added VALUES (1, 0, 0), (2, 0, 0);
+
+ALTER TABLE t_added ADD COLUMN a Array(UInt32), ADD COLUMN x Nullable(UInt32) SETTINGS alter_sync = 2;
+
+SYSTEM STOP MERGES t_added;
+
+ALTER TABLE t_added UPDATE a = [7, 8, 9], x = 5, b = a.size0, c = x.null WHERE id = 1;
+
+SELECT 'pending mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_added' AND NOT is_done;
+SELECT 'pending', id, a.size0, b, x.null, c FROM t_added ORDER BY id;
+SELECT 'pending', id, b FROM t_added PREWHERE a.size0 = 3 ORDER BY id;
+SELECT 'pending', id, length(a), b FROM t_added ORDER BY id;
+
+SYSTEM START MERGES t_added;
+ALTER TABLE t_added UPDATE b = b WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT 'pending mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_added' AND NOT is_done;
+SELECT 'materialized', id, a.size0, b, x.null, c FROM t_added ORDER BY id;
+SELECT 'materialized', id, b FROM t_added PREWHERE a.size0 = 3 ORDER BY id;
+SELECT 'materialized', id, length(a), b FROM t_added ORDER BY id;
+
+DROP TABLE t_added;
+
+SELECT 'parent added with a default and rewritten by a later mutation';
+
+DROP TABLE IF EXISTS t_added_default;
+
+CREATE TABLE t_added_default (id UInt8, b UInt64) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO t_added_default VALUES (1, 0), (2, 0);
+
+ALTER TABLE t_added_default ADD COLUMN a Array(UInt32) DEFAULT [1, 2] SETTINGS alter_sync = 2;
+
+SYSTEM STOP MERGES t_added_default;
+
+ALTER TABLE t_added_default UPDATE b = a.size0 WHERE 1;
+ALTER TABLE t_added_default UPDATE a = [7, 8, 9] WHERE id = 1;
+
+SELECT 'pending mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_added_default' AND NOT is_done;
+SELECT 'pending', id, a.size0, b FROM t_added_default ORDER BY id;
+
+SYSTEM START MERGES t_added_default;
+ALTER TABLE t_added_default UPDATE b = b WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT 'pending mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_added_default' AND NOT is_done;
+SELECT 'materialized', id, a.size0, b FROM t_added_default ORDER BY id;
+
+DROP TABLE t_added_default;

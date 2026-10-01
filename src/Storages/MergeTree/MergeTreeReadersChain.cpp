@@ -531,8 +531,13 @@ void MergeTreeReadersChain::evaluateMissingDefaults(
     if (!previous_header.empty())
         additional_columns = previous_header.cloneWithColumns(result.columns);
 
+    /// A column this step reads is not provided by earlier steps, so its copy carried from them is older than its own value.
+    const auto & read_sample_block = range_reader.getReadSampleBlock();
     for (const auto & col : result.additional_columns)
-        additional_columns.insert(col);
+    {
+        if (!read_sample_block.has(col.name))
+            additional_columns.insert(col);
+    }
 
     addDummyColumnWithRowCount(additional_columns, result.num_rows);
     range_reader.getReader()->evaluateMissingDefaults(additional_columns, columns);

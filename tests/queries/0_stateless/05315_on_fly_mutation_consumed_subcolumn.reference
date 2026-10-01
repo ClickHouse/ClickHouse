@@ -23,7 +23,7 @@ materialized	3	1	0
 materialized	1	2
 materialized	3	1
 column read before the mutations
-pending mutations	1
+pending mutations	2
 pending	1	1	7
 pending mutations	0
 materialized	1	1	7
@@ -34,3 +34,23 @@ pending	2	1	1
 pending mutations	0
 materialized	1	2	2
 materialized	2	1	1
+parent added after the part was written
+pending mutations	1
+pending	1	3	0	0	1
+pending	2	0	0	1	0
+pending	1	0
+pending	1	3	0
+pending	2	0	0
+pending mutations	0
+materialized	1	3	0	0	1
+materialized	2	0	0	1	0
+materialized	1	0
+materialized	1	3	0
+materialized	2	0	0
+parent added with a default and rewritten by a later mutation
+pending mutations	2
+pending	1	3	2
+pending	2	2	2
+pending mutations	0
+materialized	1	3	2
+materialized	2	2	2
