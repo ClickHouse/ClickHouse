@@ -368,6 +368,25 @@ void batchSerializeLowCardinalityString(
     }
 }
 
+template <typename IndexType>
+void collectLowCardinalityStringSizes(
+    const ColumnString & strings,
+    const ColumnVector<IndexType> & indexes,
+    const IColumn::SerializationSettings * settings,
+    PaddedPODArray<UInt64> & sizes)
+{
+    const auto & offsets = strings.getOffsets();
+    const auto & data = indexes.getData();
+    const bool zero_byte = settings && settings->serialize_string_with_zero_byte;
+
+    for (size_t row = 0, size = sizes.size(); row < size; ++row)
+    {
+        const size_t index = data[row];
+        const size_t value_size = offsets[index] - offsets[static_cast<ssize_t>(index) - 1];
+        sizes[row] += sizeof(size_t) + value_size + zero_byte;
+    }
+}
+
 }
 
 void ColumnLowCardinality::batchSerializeValueIntoMemory(
@@ -426,6 +445,47 @@ void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & 
         sizes.resize_fill(rows);
     else if (sizes.size() != rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
+
+    /// Size only the dictionary entries referenced by rows, mirroring `batchSerializeValueIntoMemory`:
+    /// a block may carry a dictionary much larger than itself (e.g. a per-part dictionary after a
+    /// selective filter), and sizing the whole dictionary would then dominate the cost.
+    if (!getDictionary().nestedColumnIsNullable())
+    {
+        if (const auto * strings = typeid_cast<const ColumnString *>(getDictionary().getNestedNotNullableColumn().get()))
+        {
+            const IColumn & indexes = getIndexes();
+            switch (getSizeOfIndexType())
+            {
+                case sizeof(UInt8):
+                    collectLowCardinalityStringSizes(*strings, assert_cast<const ColumnUInt8 &>(indexes), settings, sizes);
+                    return;
+                case sizeof(UInt16):
+                    collectLowCardinalityStringSizes(*strings, assert_cast<const ColumnUInt16 &>(indexes), settings, sizes);
+                    return;
+                case sizeof(UInt32):
+                    collectLowCardinalityStringSizes(*strings, assert_cast<const ColumnUInt32 &>(indexes), settings, sizes);
+                    return;
+                case sizeof(UInt64):
+                    collectLowCardinalityStringSizes(*strings, assert_cast<const ColumnUInt64 &>(indexes), settings, sizes);
+                    return;
+                default:
+                    break;
+            }
+        }
+    }
+
+    if (getDictionary().size() > rows)
+    {
+        const IColumn & indexes = getIndexes();
+        for (size_t i = 0; i < rows; ++i)
+        {
+            const auto value_size = getDictionary().getSerializedValueSize(indexes.getUInt(i), settings);
+            if (!value_size)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Serialized value size is unknown for the dictionary of {}", getName());
+            sizes[i] += *value_size;
+        }
+        return;
+    }
 
     PaddedPODArray<UInt64> dict_sizes;
     getDictionary().collectSerializedValueSizes(dict_sizes, nullptr, settings);
