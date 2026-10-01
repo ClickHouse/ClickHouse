@@ -197,9 +197,7 @@
           "group": "Operators",
           "pages": [
             "reference/operators/index",
-            "reference/operators/exists",
-            "reference/operators/unique",
-            "reference/operators/distributed-ddl"
+            "reference/operators/unique"
           ]
         }
       ]
@@ -421,6 +419,7 @@
             "reference/engines/database-engines/index",
             "reference/engines/database-engines/atomic",
             "reference/engines/database-engines/backup",
+            "reference/engines/database-engines/cluster",
             "reference/engines/database-engines/datalake",
             "reference/engines/database-engines/dictionary",
             "reference/engines/database-engines/filesystem",
@@ -946,6 +945,7 @@
           ]
         },
         "reference/formats/SQLInsert",
+        "reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -970,15 +970,6 @@
         "reference/formats/Values",
         "reference/formats/Vertical",
         "reference/formats/XML"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
-      "group": "Interfaces",
-      "pages": [
-        "reference/interfaces/specs/NativeProtocol",
-        "reference/interfaces/specs/NativeFormat"
       ]
     },
     {
@@ -1084,9 +1075,9 @@
         "reference/system-tables/instrumentation",
         "reference/system-tables/jemalloc_arena_bins",
         "reference/system-tables/jemalloc_bins",
-        "reference/system-tables/jemalloc_stats",
         "reference/system-tables/jemalloc_profile_text",
         "reference/system-tables/jemalloc_sampled_allocations",
+        "reference/system-tables/jemalloc_stats",
         "reference/system-tables/kafka_consumers",
         "reference/system-tables/keeper_changelogs",
         "reference/system-tables/keeper_cluster",
