@@ -79,7 +79,7 @@ QueryPlan & QueryPlanProfiler::captureQueryPlan(QueryPlan plan_)
 
     /// Reads the ActionsDAGs, which building the pipeline moves out of the steps.
     running.pretty_names.emplace(
-        QueryPlanFormat::buildPrettyNamesPerPlan(*running.query_plan)
+        QueryPlanFormat::buildPrettyNamesPerPlan(*running.query_plan, /*only_built_child_plans=*/ true)
     );
     return *running.query_plan;
 }

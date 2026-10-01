@@ -605,12 +605,13 @@ namespace QueryPlanFormat
         PrettyColumnNameMap & pretty_names,
         PrettyRuntimeFilterNameMap & runtime_filter_names,
         PrettySetNameMap & subquery_set_names,
-        PerPlanColumnMaps & per_plan_columns)
+        PerPlanColumnMaps & per_plan_columns,
+        bool only_built_child_plans)
     {
         for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
-            buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns);
+            buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns, only_built_child_plans);
 
-        for (auto * child_plan : node->step->getBuiltChildPlans())
+        for (auto * child_plan : only_built_child_plans ? node->step->getBuiltChildPlans() : node->step->getChildPlans())
         {
             if (child_plan && child_plan->getRootNode())
             {
@@ -620,7 +621,7 @@ namespace QueryPlanFormat
                 /// `materialize(materialize(...))`. Runtime-filter and subquery-set names are global ids,
                 /// so they stay shared across the whole tree.
                 auto & child_columns = per_plan_columns[child_plan];
-                buildPrettyNamesForNode(child_plan->getRootNode(), child_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
+                buildPrettyNamesForNode(child_plan->getRootNode(), child_columns, runtime_filter_names, subquery_set_names, per_plan_columns, only_built_child_plans);
             }
         }
 
@@ -731,7 +732,7 @@ namespace QueryPlanFormat
         }
     }
 
-    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan)
+    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan, bool only_built_child_plans)
     {
         /// Runtime-filter and subquery-set names are global ids; keep them shared across the whole tree
         /// so their numbering stays consistent regardless of plan boundaries. Only column names are scoped.
@@ -743,7 +744,7 @@ namespace QueryPlanFormat
         auto & top_columns = per_plan_columns[&plan];
         auto * root = plan.getRootNode();
         if (root)
-            buildPrettyNamesForNode(root, top_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
+            buildPrettyNamesForNode(root, top_columns, runtime_filter_names, subquery_set_names, per_plan_columns, only_built_child_plans);
 
         PrettyNamesPerPlan result;
         for (auto & [plan_ptr, columns] : per_plan_columns)
