@@ -994,7 +994,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Tabelas do sistema",
+      "group": "Tabelas de sistema",
       "pages": [
         "pt-BR/reference/system-tables/overview",
         "pt-BR/reference/system-tables/aggregate_function_combinators",
