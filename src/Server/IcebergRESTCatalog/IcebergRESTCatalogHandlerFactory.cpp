@@ -33,7 +33,7 @@ namespace ErrorCodes
 namespace
 {
 
-ObjectStoragePtr createWarehouseObjectStorage(IServer & server, const String & storage_named_collection)
+ObjectStoragePtr createWarehouseObjectStorage([[maybe_unused]] IServer & server, [[maybe_unused]] const String & storage_named_collection)
 {
 #if USE_AWS_S3
     auto configuration = std::make_shared<StorageS3Configuration>();

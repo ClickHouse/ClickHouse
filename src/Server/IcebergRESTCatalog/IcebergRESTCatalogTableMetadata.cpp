@@ -52,7 +52,7 @@ void collectNestedFieldIds(const Poco::Dynamic::Var & type, std::set<Int64> & id
     if (type.type() != typeid(Poco::JSON::Object::Ptr))
         return;
 
-    const auto object = type.extract<Poco::JSON::Object::Ptr>();
+    const auto & object = type.extract<Poco::JSON::Object::Ptr>();
     const auto kind = object->optValue<String>(f_type, "");
     if (kind == f_struct)
     {
@@ -60,7 +60,7 @@ void collectNestedFieldIds(const Poco::Dynamic::Var & type, std::set<Int64> & id
         {
             if (field.type() != typeid(Poco::JSON::Object::Ptr))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every schema field must be an object");
-            const auto field_object = field.extract<Poco::JSON::Object::Ptr>();
+            const auto & field_object = field.extract<Poco::JSON::Object::Ptr>();
             collectFieldId(*field_object, f_id, ids);
             if (!field_object->has(f_type))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every schema field must have a 'type'");
@@ -91,7 +91,7 @@ std::vector<Poco::JSON::Object::Ptr> getSpecFields(const Poco::JSON::Object & sp
     {
         if (field.type() != typeid(Poco::JSON::Object::Ptr))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every field of {} must be an object", what);
-        const auto field_object = field.extract<Poco::JSON::Object::Ptr>();
+        const auto & field_object = field.extract<Poco::JSON::Object::Ptr>();
 
         /// TODO: validate the transform against the source column type, like Java's `PartitionSpec.checkCompatibility`.
         const auto source_id = getInteger(*field_object, f_source_id, what + " field");
