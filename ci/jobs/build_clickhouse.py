@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 
 from ci.defs.defs import BuildTypes, ToolSet
 from ci.jobs.scripts.clickhouse_version import CHVersion
@@ -116,8 +117,8 @@ def parse_shard(shard):
     return index, count
 
 
-def write_tidy_shard_targets(index, count, targets_file):
-    """Write the object files of the `index`-th of `count` shards to `targets_file`.
+def get_tidy_shard_targets(index, count):
+    """Return the object files of the `index`-th of `count` shards.
 
     Tidy builds use dummy compiler and linker launchers (see `cmake/clang_tidy.cmake`),
     so each object file is an independent clang-tidy invocation and nothing is linked.
@@ -126,9 +127,12 @@ def write_tidy_shard_targets(index, count, targets_file):
     whatever an object file needs (generated headers, `protoc`) is still built by ninja
     as its dependency.
     """
-    output = Shell.get_output_or_raise(
-        f"ninja -C {build_dir} -t targets all", verbose=False
-    )
+    output = subprocess.run(
+        ["ninja", "-C", build_dir, "-t", "targets", "all"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
     # A few targets are listed with absolute paths, so look at every path component.
     objects = [
         target
@@ -141,9 +145,20 @@ def write_tidy_shard_targets(index, count, targets_file):
         for o in objects
         if int(hashlib.md5(o.encode()).hexdigest(), 16) % count == index - 1
     ]
-    with open(targets_file, "w") as f:
-        f.write("\n".join(selected) + "\n")
     print(f"Shard {index}/{count}: {len(selected)} of {len(objects)} object files")
+    return selected
+
+
+def build_tidy_shard(index, count):
+    # The targets are passed as an argument list, not through a shell, so ninja gets
+    # every target name verbatim.
+    targets = get_tidy_shard_targets(index, count)
+    return (
+        subprocess.run(
+            ["time", "-v", "ninja", "-k0", *targets], cwd=build_dir
+        ).returncode
+        == 0
+    )
 
 
 def run_shell_with_output(name, command, **kwargs):
@@ -502,9 +517,7 @@ def main():
                 "| xargs --no-run-if-empty ninja"
             )
         elif shard:
-            write_tidy_shard_targets(*shard, f"{build_dir}/tidy_shard_targets.txt")
-            # The command runs in the build directory.
-            build_command = "command time -v ninja -k0 $(cat tidy_shard_targets.txt)"
+            build_command = lambda: build_tidy_shard(*shard)
         else:
             build_command = f"command time -v ninja {targets}"
 
