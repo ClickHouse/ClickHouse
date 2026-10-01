@@ -420,6 +420,38 @@ private:
     FunctionLike impl;
 };
 
+class FunctionMapRemovePredicate final : public IFunction
+{
+public:
+    explicit FunctionMapRemovePredicate(FunctionOverloadResolverPtr not_equals_resolver_)
+        : not_equals_resolver(std::move(not_equals_resolver_))
+    {
+    }
+
+    String getName() const override { return "mapRemovePredicate"; }
+    size_t getNumberOfArguments() const override { return 3; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        return not_equals_resolver->getReturnType({
+            {nullptr, arguments[1], "key"},
+            {nullptr, arguments[0], "remove_key"}});
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        ColumnsWithTypeAndName comparison_arguments{arguments[1], arguments[0]};
+        auto comparison = not_equals_resolver->build(comparison_arguments);
+        return comparison->execute(comparison_arguments, result_type, input_rows_count, false);
+    }
+
+private:
+    FunctionOverloadResolverPtr not_equals_resolver;
+};
+
 /// Adapter for map*KeyLike functions.
 /// It extracts nested Array(Tuple(key, value)) from Map columns
 /// and prepares ColumnFunction as first argument which works
@@ -669,6 +701,108 @@ using FunctionMapReverseSort = FunctionMapToArrayAdapter<FunctionArrayReverseSor
 using FunctionMapPartialSort = FunctionMapToArrayAdapter<FunctionArrayPartialSort, MapToNestedAdapter<NameMapPartialSort>, NameMapPartialSort>;
 using FunctionMapPartialReverseSort = FunctionMapToArrayAdapter<FunctionArrayPartialReverseSort, MapToNestedAdapter<NameMapPartialReverseSort>, NameMapPartialReverseSort>;
 
+class FunctionMapRemove final : public IFunction
+{
+public:
+    static constexpr auto name = "mapRemove";
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionMapRemove>(context);
+    }
+
+    explicit FunctionMapRemove(const ContextPtr & context)
+        : map_filter_resolver(FunctionFactory::instance().get("mapFilter", context))
+        , not_equals_resolver(FunctionFactory::instance().get("notEquals", context))
+        , enable_lazy_columns_replication(context->getSettingsRef()[Setting::enable_lazy_columns_replication])
+    {
+    }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.size() != 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 2",
+                getName(), arguments.size());
+
+        const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get());
+        if (!map_type)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be a Map, found {}", getName(), arguments[0]->getName());
+
+        DataTypes lambda_argument_types{
+            recursiveRemoveLowCardinality(map_type->getKeyType()),
+            recursiveRemoveLowCardinality(map_type->getValueType())};
+        auto remove_key_type = recursiveRemoveLowCardinality(arguments[1]);
+        auto predicate_result_type = getPredicateResultType(lambda_argument_types[0], remove_key_type);
+        auto predicate_type = std::make_shared<DataTypeFunction>(lambda_argument_types, predicate_result_type);
+
+        return map_filter_resolver->getReturnType({
+            {nullptr, predicate_type, "func"},
+            {nullptr, arguments[0], "map"}});
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
+        auto remove_key_arguments = ColumnsWithTypeAndName{arguments[1]};
+        convertLowCardinalityColumnsToFull(remove_key_arguments);
+        const auto & remove_key_argument = remove_key_arguments[0];
+
+        DataTypes lambda_argument_types{
+            recursiveRemoveLowCardinality(map_type.getKeyType()),
+            recursiveRemoveLowCardinality(map_type.getValueType())};
+        auto predicate_result_type = getPredicateResultType(lambda_argument_types[0], remove_key_argument.type);
+
+        auto predicate = std::make_shared<FunctionMapRemovePredicate>(not_equals_resolver);
+        DataTypes predicate_argument_types{remove_key_argument.type, lambda_argument_types[0], lambda_argument_types[1]};
+        auto predicate_function = std::make_shared<FunctionToFunctionBaseAdaptor>(
+            predicate, predicate_argument_types, predicate_result_type);
+        ColumnPtr predicate_column;
+        if (remove_key_argument.column)
+        {
+            constexpr bool is_short_circuit_argument = false;
+            constexpr bool is_function_compiled = false;
+            constexpr bool recursively_convert_result_to_full_column_if_low_cardinality = false;
+            predicate_column = ColumnFunction::create(
+                remove_key_argument.column->size(),
+                std::move(predicate_function),
+                ColumnsWithTypeAndName{remove_key_argument},
+                is_short_circuit_argument,
+                is_function_compiled,
+                recursively_convert_result_to_full_column_if_low_cardinality,
+                enable_lazy_columns_replication);
+        }
+
+        auto predicate_type = std::make_shared<DataTypeFunction>(lambda_argument_types, predicate_result_type);
+        ColumnsWithTypeAndName map_filter_arguments{
+            {std::move(predicate_column), predicate_type, "__function_map_remove"},
+            arguments[0]};
+        auto map_filter_function = map_filter_resolver->build(map_filter_arguments);
+        return map_filter_function->execute(map_filter_arguments, result_type, input_rows_count, false);
+    }
+
+private:
+    DataTypePtr getPredicateResultType(const DataTypePtr & key_type, const DataTypePtr & remove_key_type) const
+    {
+        return not_equals_resolver->getReturnType({
+            {nullptr, key_type, "key"},
+            {nullptr, remove_key_type, "remove_key"}});
+    }
+
+    FunctionOverloadResolverPtr map_filter_resolver;
+    FunctionOverloadResolverPtr not_equals_resolver;
+    bool enable_lazy_columns_replication;
+};
+
 REGISTER_FUNCTION(MapMiscellaneous)
 {
     /// mapConcat documentation
@@ -808,6 +942,27 @@ Filters a map by applying a function to each map element.
     FunctionDocumentation::Category category_mapFilter = FunctionDocumentation::Category::Map;
     FunctionDocumentation documentation_mapFilter = {description_mapFilter, syntax_mapFilter, arguments_mapFilter, {}, returned_value_mapFilter, examples_mapFilter, introduced_in_mapFilter, category_mapFilter};
     factory.registerFunction<FunctionMapFilter>(documentation_mapFilter);
+
+    FunctionDocumentation::Description description_mapRemove = R"(
+Removes all entries from a map whose key equals the specified key. If several entries have the same key, all matching entries are removed.
+)";
+    FunctionDocumentation::Syntax syntax_mapRemove = "mapRemove(map, key)";
+    FunctionDocumentation::Arguments arguments_mapRemove = {
+        {"map", "Map to remove an entry from.", {"Map(K, V)"}},
+        {"key", "Key to remove from the map.", {"K"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapRemove = {"Returns the map with all entries whose key is not equal to the specified key.", {"Map(K, V)"}};
+    FunctionDocumentation::Examples examples_mapRemove = {
+        {
+            "Usage example",
+            "SELECT mapRemove(map('k1', 1, 'k2', 2), 'k1')",
+            "{'k2':2}"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapRemove = {26, 10};
+    FunctionDocumentation::Category category_mapRemove = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapRemove = {description_mapRemove, syntax_mapRemove, arguments_mapRemove, {}, returned_value_mapRemove, examples_mapRemove, introduced_in_mapRemove, category_mapRemove};
+    factory.registerFunction<FunctionMapRemove>(documentation_mapRemove);
 
     /// mapApply documentation
     FunctionDocumentation::Description description_mapApply = R"(
