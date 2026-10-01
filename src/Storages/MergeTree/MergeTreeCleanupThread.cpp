@@ -35,12 +35,6 @@ Float32 MergeTreeCleanupThread::iterate()
     size_t cleaned_part_like = 0;
     size_t cleaned_parts = 0;
 
-    /// The workers of a table are disabled while a settings `ALTER` commits a `table_readonly`
-    /// change (see `StorageMergeTree::alter`): a cleanup that ran in that window would modify the
-    /// disk of a table whose commit may still fail and leave it read-only.
-    if (!storage.background_workers_enabled)
-        return 0;
-
     auto storage_settings = storage.getSettings();
 
     auto shared_lock

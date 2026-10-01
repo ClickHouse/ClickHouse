@@ -105,7 +105,7 @@ namespace
             if (!ParserKeyword{Keyword::EXCEPT}.ignore(pos, expected))
                 return false;
 
-            bool unused = false;
+            bool unused;
             return parseBeforeExcept(pos, expected, id_mode, false, false, allow_current_user, unused, except_names, except_current_user);
         });
     }

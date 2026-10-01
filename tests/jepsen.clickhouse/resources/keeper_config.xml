@@ -27,10 +27,6 @@
                 <type>local</type>
                 <path>/home/robot-clickhouse/db/coordination/latest_snapshot/</path>
             </latest_snapshot_local>
-            <data_local>
-                <type>local</type>
-                <path>/home/robot-clickhouse/db/coordination/data/</path>
-            </data_local>
         </disks>
     </storage_configuration>
 
@@ -54,7 +50,6 @@
             <reserved_log_items>{reserved_log_items}</reserved_log_items>
             <async_replication>1</async_replication>
             <use_xid_64>1</use_xid_64>
-            <nuraft_use_bg_thread_for_snapshot_io>{use_bg_thread_for_snapshot_io}</nuraft_use_bg_thread_for_snapshot_io>
         </coordination_settings>
 
         <raft_configuration>

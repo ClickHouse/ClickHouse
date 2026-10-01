@@ -1,5 +1,4 @@
 SET allow_experimental_ts_to_grid_aggregate_function=1;
-SET optimize_on_insert = 1;
 
 -- Table for raw data
 CREATE TABLE t_raw_timeseries
