@@ -11,6 +11,10 @@ SELECT mapRemove(map(toUInt64(1), 'one', toUInt64(2), 'two'), toUInt8(1)) FORMAT
 
 SELECT mapRemove(map('a', 1, 'b', 2), CAST(NULL, 'Nullable(String)')) FORMAT TabSeparatedRaw;
 
+SELECT mapRemove(map('a', 1, 'b', 2), NULL) FORMAT TabSeparatedRaw;
+
+SELECT mapRemove(map('a', 1, 'b', 2), CAST('a', 'LowCardinality(String)')) FORMAT TabSeparatedRaw;
+
 SELECT number, mapRemove(map('a', 1, 'b', 2), if(number = 0, toNullable('a'), CAST(NULL, 'Nullable(String)'))) FROM numbers(2) ORDER BY number FORMAT TabSeparatedRaw;
 
 SELECT mapRemove(

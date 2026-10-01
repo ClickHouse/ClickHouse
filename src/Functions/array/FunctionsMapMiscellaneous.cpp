@@ -738,11 +738,9 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be a Map, found {}", getName(), arguments[0]->getName());
 
-        DataTypes lambda_argument_types{
-            recursiveRemoveLowCardinality(map_type->getKeyType()),
-            recursiveRemoveLowCardinality(map_type->getValueType())};
-        auto remove_key_type = recursiveRemoveLowCardinality(arguments[1]);
-        getPredicateResultType(lambda_argument_types[0], remove_key_type);
+        const auto key_type = recursiveRemoveLowCardinality(map_type->getKeyType());
+        const auto remove_key_type = recursiveRemoveLowCardinality(arguments[1]);
+        getPredicateResultType(key_type, remove_key_type);
         return arguments[0];
     }
 
@@ -765,17 +763,15 @@ public:
         ColumnPtr predicate_column;
         if (remove_key_argument.column)
         {
-            constexpr bool is_short_circuit_argument = false;
-            constexpr bool is_function_compiled = false;
-            constexpr bool recursively_convert_result_to_full_column_if_low_cardinality = false;
+            /// Capture remove_key here; mapFilter appends the map key and value when it invokes the predicate.
             predicate_column = ColumnFunction::create(
                 remove_key_argument.column->size(),
                 std::move(predicate_function),
                 ColumnsWithTypeAndName{remove_key_argument},
-                is_short_circuit_argument,
-                is_function_compiled,
-                recursively_convert_result_to_full_column_if_low_cardinality,
-                enable_lazy_columns_replication);
+                /*is_short_circuit_argument_=*/ false,
+                /*is_function_compiled_=*/ false,
+                /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
+                /*allow_lazy_replicated_captures_=*/ enable_lazy_columns_replication);
         }
 
         auto predicate_type = std::make_shared<DataTypeFunction>(lambda_argument_types, predicate_result_type);
