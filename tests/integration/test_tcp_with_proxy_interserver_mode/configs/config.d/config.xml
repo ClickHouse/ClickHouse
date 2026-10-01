@@ -1,6 +1,5 @@
 <clickhouse>
     <tcp_with_proxy_port>9011</tcp_with_proxy_port>
-    <tcp_with_proxy_allow_interserver_mode>false</tcp_with_proxy_allow_interserver_mode>
 
     <remote_servers>
         <cluster_with_secret>

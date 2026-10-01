@@ -136,6 +136,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_num;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_seconds;
     extern const ServerSettingsUInt64 handshake_timeout_milliseconds;
+    extern const ServerSettingsBool tcp_with_proxy_allow_interserver_mode;
 }
 
 namespace FailPoints
@@ -2201,7 +2202,7 @@ void TCPHandler::receiveHello()
                 = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver mode is disabled for connections to tcp_with_proxy_port");
             session = makeSession();
             session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), exception);
-            throw exception;
+            throw exception; /// NOLINT
         }
 
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)

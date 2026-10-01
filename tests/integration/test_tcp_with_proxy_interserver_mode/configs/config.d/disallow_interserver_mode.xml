@@ -1,0 +1,3 @@
+<clickhouse>
+    <tcp_with_proxy_allow_interserver_mode>false</tcp_with_proxy_allow_interserver_mode>
+</clickhouse>
