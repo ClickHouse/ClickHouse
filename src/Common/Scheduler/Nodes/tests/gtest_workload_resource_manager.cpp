@@ -2828,6 +2828,39 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationDropQueueWhilePending)
     EXPECT_EQ(threw.load(), waiter_count);
 }
 
+TEST(SchedulerWorkloadResourceManager, RetiredAllocationQueueOutlivesWorkload)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD A SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD B SETTINGS max_memory = 100");
+
+    // Only `B`'s classifier retains the old hierarchy version after the temporary classifier for `A` is released.
+    ClassifierPtr classifier_b = t.manager->acquire("B");
+    auto * retired_queue = t.manager->acquire("A")->get("memory").allocation_queue;
+    ASSERT_NE(retired_queue, nullptr);
+    t.executeFromScheduler("memory", [&]
+    {
+        EXPECT_EQ(retired_queue->getWorkloadName(), "A");
+    });
+
+    t.query("CREATE WORKLOAD child IN A");
+    t.executeFromScheduler("memory", [&]
+    {
+        // Check retirement while `A` is still alive: this fails deterministically without relying on
+        // ASan or on the contents of freed memory when the retired queue is eventually destroyed.
+        EXPECT_TRUE(retired_queue->getWorkloadName().empty());
+    });
+
+    t.query("DROP WORKLOAD child");
+    EXPECT_NE(retired_queue, t.manager->acquire("A")->get("memory").allocation_queue);
+    t.query("DROP WORKLOAD A");
+
+    // Destroy the original queue after its workload, through the classifier for a different workload.
+    classifier_b.reset();
+}
+
 // Regression: simulate the race where the owner's destructor reaches `queue.removeAllocation`
 // AFTER `updateMinMaxAllocated`/`updateQueueLimit` has already rejected the allocation. The
 // guard in `removeAllocation` must keep an already-failed allocation out of
