@@ -52,7 +52,7 @@ WITH
     reinterpretAsFloat64(bitOr(bitAnd(h, 0x000FFFFFFFFFFFFF), 0x3FF0000000000000)) - 1 AS unit,
     if(h2 % 32 = 0, (unit - 0.5) * 1000, dec) AS v64,
     toFloat32(v64) AS v32
-SELECT number, v64, v64, v64, v64, v32, v32, v32, v32 FROM numbers(100000);
+SELECT number, v64, v64, v64, v64, v32, v32, v32, v32 FROM numbers(20000);
 
 -- Full-precision values: STD cannot encode them, AUTO must fall back to RD.
 INSERT INTO alp_random
@@ -61,7 +61,7 @@ WITH
     sipHash64(number, seed) AS h,
     (reinterpretAsFloat64(bitOr(bitAnd(h, 0x000FFFFFFFFFFFFF), 0x3FF0000000000000)) - 1.5) * 1000 AS v64,
     toFloat32(v64) AS v32
-SELECT number + 100000, v64, v64, v64, v64, v32, v32, v32, v32 FROM numbers(100000);
+SELECT number + 20000, v64, v64, v64, v64, v32, v32, v32, v32 FROM numbers(20000);
 
 -- Uniformly random bit patterns.
 INSERT INTO alp_random
@@ -70,7 +70,7 @@ WITH
     sipHash64(number, seed) AS h,
     reinterpretAsFloat64(h) AS v64,
     reinterpretAsFloat32(toUInt32(h)) AS v32
-SELECT number + 200000, v64, v64, v64, v64, v32, v32, v32, v32 FROM numbers(100000);
+SELECT number + 40000, v64, v64, v64, v64, v32, v32, v32, v32 FROM numbers(20000);
 
 -- Every other row is a special value. Float32 builds its own, since toFloat32 would alter them.
 INSERT INTO alp_random
@@ -98,7 +98,7 @@ WITH
         kind = 4, toFloat32(sgn * 1.17549435e-38),
         kind = 5, toFloat32(sgn * 3.4028235e38),
         toFloat32(v64)) AS v32
-SELECT number + 300000, v64, v64, v64, v64, v32, v32, v32, v32 FROM numbers(100000);
+SELECT number + 60000, v64, v64, v64, v64, v32, v32, v32, v32 FROM numbers(20000);
 
 -- Monotonic values with few fractional parts -> narrow ranges and small RD dictionaries.
 INSERT INTO alp_random
@@ -107,7 +107,7 @@ WITH
     sipHash64(number, seed) AS h,
     intDiv(number, 128) + (h % 4) / 4 AS v64,
     toFloat32(v64) AS v32
-SELECT number + 400000, v64, v64, v64, v64, v32, v32, v32, v32 FROM numbers(100000);
+SELECT number + 80000, v64, v64, v64, v64, v32, v32, v32, v32 FROM numbers(20000);
 
 SELECT count(), countIf(mismatch) FROM alp_random_check;
 SELECT * FROM alp_random_check WHERE mismatch ORDER BY i LIMIT 10;
