@@ -822,6 +822,12 @@ static Field coerceStringFieldLikeSearchFunction(
 /// replicates. Numeric elements take `executeIntegral`, which compares without coercing.
 static bool searchFunctionCoercesConstant(const DataTypePtr & value_type, const DataTypePtr & actual_type)
 {
+    /// The search functions cast the arguments of `FixedString(N, 'representation')` to the common type,
+    /// which decodes `String` constants like `convertFieldToType` does.
+    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
+        fixed_string_type && fixed_string_type->hasCustomTextRepresentation())
+        return false;
+
     return value_type
         && isStringOrFixedString(removeLowCardinalityAndNullable(value_type))
         && isStringOrFixedString(actual_type);
@@ -860,6 +866,7 @@ static ColumnPtr createColumnFromConstantArray(
     const bool coerce = coerce_like_search_function && element_type && searchFunctionCoercesConstant(element_type, actual_type);
     const bool is_nullable = actual_type->isNullable();
     const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
+
     auto mutable_column = actual_type->createColumn();
 
     for (const auto & f : value_field.safeGet<Array>())
@@ -871,7 +878,8 @@ static ColumnPtr createColumnFromConstantArray(
         /// An over-wide value therefore cannot match a narrower `FixedString` scalar, but
         /// `ColumnFixedString::insert` would throw while preparing the index. Decline the
         /// index and let the function evaluate normally instead.
-        if (!coerce && fixed_string_type && f.getType() == Field::Types::String
+        /// A `String` constant of `FixedString(N, 'representation')` is decoded by `convertFieldToType`, so its length is irrelevant.
+        if (!coerce && fixed_string_type && !fixed_string_type->hasCustomTextRepresentation() && f.getType() == Field::Types::String
             && f.safeGet<String>().size() > fixed_string_type->getN())
         {
             return nullptr;
@@ -1083,7 +1091,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 if (constant_may_be_fixed_string && !fixed_index_type)
                     return false;
 
-                if (fixed_index_type && fixed_index_type->getN() < constant_bytes)
+                /// For `FixedString(N, 'representation')`, a `String` constant is its text representation,
+                /// which `convertFieldToType` decodes into exactly N bytes (or throws), so its length is irrelevant.
+                const bool constant_is_text_representation = fixed_index_type && fixed_index_type->hasCustomTextRepresentation()
+                    && which_constant.isString();
+
+                if (fixed_index_type && fixed_index_type->getN() < constant_bytes && !constant_is_text_representation)
                     return false;
             }
 

@@ -4963,7 +4963,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                                 return false;
                         }
 
-                        const_value = convertFieldToType(const_value, *key_expr_type_not_null);
+                        /// For a `FixedString(N, 'representation')` key, a `String` constant is parsed from the text representation,
+                        /// while a `FixedString` constant already holds the bytes, so pass its type to `convertFieldToType`.
+                        const auto * fixed_key = typeid_cast<const DataTypeFixedString *>(key_expr_type_not_null.get());
+                        const bool key_has_text_representation = fixed_key && fixed_key->hasCustomTextRepresentation();
+                        const_value = convertFieldToType(const_value, *key_expr_type_not_null, key_has_text_representation ? const_type.get() : nullptr);
                         if (const_value.isNull())
                             return false;
                         /// No need to set condition_is_relaxed because we're doing exact conversion

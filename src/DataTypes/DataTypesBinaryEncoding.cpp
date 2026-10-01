@@ -142,6 +142,9 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
         case TypeIndex::String:
             return BinaryTypeIndex::String;
         case TypeIndex::FixedString:
+            /// FixedString(N, 'representation') is encoded by name, so that the representation is preserved.
+            if (assert_cast<const DataTypeFixedString &>(*type).hasCustomTextRepresentation())
+                return BinaryTypeIndex::Custom;
             return BinaryTypeIndex::FixedString;
         case TypeIndex::Enum8:
             return BinaryTypeIndex::Enum8;

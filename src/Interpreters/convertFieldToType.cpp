@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/Serializations/SerializationFixedStringWithTextRepresentation.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 
 #include <Core/AccurateComparison.h>
@@ -44,6 +45,7 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int INCORRECT_DATA;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int DECIMAL_OVERFLOW;
@@ -297,6 +299,34 @@ Field rescaleDecimal64Field(const Field & src, const ToDataType & to_type, bool 
     }
 
     return DecimalField<T>(DecimalUtils::decimalFromComponentsWithMultiplier<T>(value, 0, 1), scale_to);
+}
+
+/// FixedString(N, 'representation') parses String values but keeps the bytes of FixedString values,
+/// so the type of nested values is passed down when the target type contains it.
+bool hasFixedStringWithTextRepresentation(const IDataType & type)
+{
+    if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(&type))
+        return fixed_string->hasCustomTextRepresentation();
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return hasFixedStringWithTextRepresentation(*nullable->getNestedType());
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type))
+        return hasFixedStringWithTextRepresentation(*low_cardinality->getDictionaryType());
+    if (const auto * array = typeid_cast<const DataTypeArray *>(&type))
+        return hasFixedStringWithTextRepresentation(*array->getNestedType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
+        return std::ranges::any_of(tuple->getElements(), [](const auto & element) { return hasFixedStringWithTextRepresentation(*element); });
+    if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
+        return hasFixedStringWithTextRepresentation(*map->getKeyType()) || hasFixedStringWithTextRepresentation(*map->getValueType());
+    return false;
+}
+
+/// The type of nested values of `from_type_hint` to pass to the conversion of nested values to `nested_type`, or nullptr.
+const IDataType * getNestedTypeHint(const IDataType * from_type_hint, const IDataType & nested_type, auto && get_nested_hint)
+{
+    if (!from_type_hint || !hasFixedStringWithTextRepresentation(nested_type))
+        return nullptr;
+    const auto hint = removeLowCardinalityAndNullable(from_type_hint->getPtr());
+    return get_nested_hint(*hint);
 }
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
@@ -716,7 +746,25 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         {
             if (which_type.isFixedString())
             {
-                size_t n = assert_cast<const DataTypeFixedString &>(type).getN();
+                const auto & fixed_string_type = assert_cast<const DataTypeFixedString &>(type);
+
+                /// A String is parsed from the text representation of FixedString(N, 'representation'),
+                /// while a value of another FixedString already holds the bytes.
+                const bool source_is_fixed_string = from_type_hint && WhichDataType(removeLowCardinalityAndNullable(from_type_hint->getPtr())).isFixedString();
+                if (fixed_string_type.hasCustomTextRepresentation() && !source_is_fixed_string)
+                {
+                    const auto & encoded = src.safeGet<String>();
+                    String decoded(fixed_string_type.getN(), '\0');
+                    if (!SerializationFixedStringWithTextRepresentation::tryDecode(
+                            fixed_string_type.getTextRepresentation(), fixed_string_type.getN(), encoded, reinterpret_cast<UInt8 *>(decoded.data())))
+                        throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "Cannot convert '{}' to {}: expected a valid {} representation of exactly {} bytes",
+                            std::string_view(encoded).substr(0, 128), type.getName(),
+                            fixedStringTextRepresentationToString(fixed_string_type.getTextRepresentation()), fixed_string_type.getN());
+                    return decoded;
+                }
+
+                size_t n = fixed_string_type.getN();
                 const auto & src_str = src.safeGet<String>();
                 if (src_str.size() < n)
                 {
@@ -760,7 +808,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                const auto * element_type_hint = getNestedTypeHint(from_type_hint, element_type, [](const IDataType & hint) -> const IDataType *
+                {
+                    const auto * hint_array = typeid_cast<const DataTypeArray *>(&hint);
+                    return hint_array ? hint_array->getNestedType().get() : nullptr;
+                });
+                res[i] = convertFieldToType(src_arr[i], element_type, element_type_hint, format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
@@ -792,7 +845,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                const auto * element_type_hint = getNestedTypeHint(from_type_hint, element_type, [i](const IDataType & hint) -> const IDataType *
+                {
+                    const auto * hint_tuple = typeid_cast<const DataTypeTuple *>(&hint);
+                    return hint_tuple && i < hint_tuple->getElements().size() ? hint_tuple->getElements()[i].get() : nullptr;
+                });
+                res[i] = convertFieldToType(src_tuple[i], element_type, element_type_hint, format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     /*
@@ -984,12 +1042,22 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats);
+                const auto * key_type_hint = getNestedTypeHint(from_type_hint, key_type, [](const IDataType & hint) -> const IDataType *
+                {
+                    const auto * hint_map = typeid_cast<const DataTypeMap *>(&hint);
+                    return hint_map ? hint_map->getKeyType().get() : nullptr;
+                });
+                updated_entry[0] = convertFieldToType(key, key_type, key_type_hint, format_settings, strict, convert_inexact_floats);
 
                 if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats);
+                const auto * value_type_hint = getNestedTypeHint(from_type_hint, value_type, [](const IDataType & hint) -> const IDataType *
+                {
+                    const auto * hint_map = typeid_cast<const DataTypeMap *>(&hint);
+                    return hint_map ? hint_map->getValueType().get() : nullptr;
+                });
+                updated_entry[1] = convertFieldToType(value, value_type, value_type_hint, format_settings, strict, convert_inexact_floats);
                 if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 

@@ -6,8 +6,11 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationFixedString.h>
+#include <DataTypes/Serializations/SerializationFixedStringWithTextRepresentation.h>
 
 #include <IO/WriteHelpers.h>
+
+#include <Poco/String.h>
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
@@ -20,10 +23,42 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
     extern const int UNEXPECTED_AST_STRUCTURE;
 }
 
-DataTypeFixedString::DataTypeFixedString(size_t n_) : n(n_)
+String fixedStringTextRepresentationToString(FixedStringTextRepresentation representation)
+{
+    switch (representation)
+    {
+        case FixedStringTextRepresentation::Raw: return "Raw";
+        case FixedStringTextRepresentation::Hex: return "Hex";
+        case FixedStringTextRepresentation::Base64: return "Base64";
+        case FixedStringTextRepresentation::Base64URL: return "Base64URL";
+        case FixedStringTextRepresentation::Base58: return "Base58";
+    }
+    UNREACHABLE();
+}
+
+FixedStringTextRepresentation parseFixedStringTextRepresentation(const String & representation)
+{
+    static constexpr FixedStringTextRepresentation all_representations[] = {
+        FixedStringTextRepresentation::Raw,
+        FixedStringTextRepresentation::Hex,
+        FixedStringTextRepresentation::Base64,
+        FixedStringTextRepresentation::Base64URL,
+        FixedStringTextRepresentation::Base58,
+    };
+
+    for (auto candidate : all_representations)
+        if (Poco::icompare(representation, fixedStringTextRepresentationToString(candidate)) == 0)
+            return candidate;
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Unknown FixedString text representation '{}'. Supported values are Raw, Hex, Base64, Base64URL, Base58", representation);
+}
+
+DataTypeFixedString::DataTypeFixedString(size_t n_, FixedStringTextRepresentation text_representation_) : n(n_), text_representation(text_representation_)
 {
     if (n == 0)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "FixedString size must be positive");
@@ -33,7 +68,10 @@ DataTypeFixedString::DataTypeFixedString(size_t n_) : n(n_)
 
 std::string DataTypeFixedString::doGetName() const
 {
-    return "FixedString(" + toString(n) + ")";
+    if (text_representation == FixedStringTextRepresentation::Raw)
+        return "FixedString(" + toString(n) + ")";
+
+    return "FixedString(" + toString(n) + ", '" + fixedStringTextRepresentationToString(text_representation) + "')";
 }
 
 MutableColumnPtr DataTypeFixedString::createColumn() const
@@ -48,32 +86,49 @@ Field DataTypeFixedString::getDefault() const
 
 bool DataTypeFixedString::equals(const IDataType & rhs) const
 {
-    return typeid(rhs) == typeid(*this) && n == static_cast<const DataTypeFixedString &>(rhs).n;
+    return typeid(rhs) == typeid(*this)
+        && n == static_cast<const DataTypeFixedString &>(rhs).n
+        && text_representation == static_cast<const DataTypeFixedString &>(rhs).text_representation;
 }
 
 void DataTypeFixedString::updateHashImpl(SipHash & hash) const
 {
     hash.update(n);
+    hash.update(static_cast<UInt8>(text_representation));
 }
 
 SerializationPtr DataTypeFixedString::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return SerializationFixedString::create(n);
+    if (text_representation == FixedStringTextRepresentation::Raw)
+        return SerializationFixedString::create(n);
+
+    return SerializationFixedStringWithTextRepresentation::create(text_representation, n);
 }
 
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (!arguments || arguments->children.size() != 1)
+    if (!arguments || (arguments->children.size() != 1 && arguments->children.size() != 2))
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "FixedString data type family must have exactly one argument - size in bytes");
+                        "FixedString data type family must have one or two arguments: size in bytes and optional text representation");
 
     const auto * argument = arguments->children[0]->as<ASTLiteral>();
     if (!argument || argument->value.getType() != Field::Types::UInt64 || argument->value.safeGet<UInt64>() == 0)
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                        "FixedString data type family must have a number (positive integer) as its argument");
+                        "FixedString data type family must have a number (positive integer) as its first argument");
 
-    return std::make_shared<DataTypeFixedString>(argument->value.safeGet<UInt64>());
+    FixedStringTextRepresentation text_representation = FixedStringTextRepresentation::Raw;
+    if (arguments->children.size() == 2)
+    {
+        const auto * representation_argument = arguments->children[1]->as<ASTLiteral>();
+        if (!representation_argument || representation_argument->value.getType() != Field::Types::String)
+            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                            "The second argument of FixedString data type family must be a string literal with text representation");
+
+        text_representation = parseFixedStringTextRepresentation(representation_argument->value.safeGet<String>());
+    }
+
+    return std::make_shared<DataTypeFixedString>(argument->value.safeGet<UInt64>(), text_representation);
 }
 
 
@@ -182,8 +237,54 @@ FORMAT JSONStringsEachRow
 
 {"name":"a\u0000"}
 ```
+
+## Text representation {#text-representation}
+
+An optional second argument declares how the value is represented as text:
+
+```sql
+<column_name> FixedString(N, 'representation')
+```
+
+Where `representation` is one of (case-insensitive):
+
+- `'Raw'` — the default, the same as `FixedString(N)`.
+- `'Hex'` — hexadecimal digits, `2 * N` characters. On input, an optional `0x` prefix and uppercase digits are accepted. On output, lowercase digits are used.
+- `'Base64'` — Base64 with padding, like the [base64Encode](/reference/functions/regular-functions/encoding-functions#base64Encode) function.
+- `'Base64URL'` — URL-safe Base64 without padding, like the [base64URLEncode](/reference/functions/regular-functions/encoding-functions#base64URLEncode) function. Padding is optional on input.
+- `'Base58'` — Base58 with the Bitcoin alphabet, like the [base58Encode](/reference/functions/regular-functions/encoding-functions#base58Encode) function. Encoding of 32 and 64 bytes values is specialized.
+
+The value is always stored as exactly `N` raw bytes: the storage, the binary formats (`Native`, `RowBinary`, `Parquet`, ...) and the comparison of values
+are the same as for `FixedString(N)`. The representation only changes the conversion from and to text:
+
+- Text input (`INSERT`, text formats, `CAST` from `String`) is decoded, and the decoded value must be exactly `N` bytes, otherwise an exception is thrown. `CAST` to `Nullable` and `accurateCastOrNull` return `NULL` instead.
+- Text output (text formats, `toString`, `CAST` to `String`) is encoded in the declared representation.
+- A string constant compared with the column (`=`, `!=`, `<`, `IN`, `has`, ...) is decoded once, and the values are compared as bytes. The primary key and skipping indexes are used as for `FixedString(N)`.
+- The common type of `FixedString(N, 'representation')` and `String` or `FixedString(N)` is `FixedString(N, 'representation')`. Values with different sizes or different representations cannot be compared or combined without an explicit `CAST`.
+- `FixedString(N)` values are converted without decoding, so `toFixedString(base58Decode(s), 32)` can be compared with `FixedString(32, 'Base58')`, and a column can be changed from `FixedString(N)` with `ALTER TABLE ... MODIFY COLUMN` without changing the stored data.
+- Functions that accept `FixedString` (`length`, `hex`, `base58Encode`, `LIKE`, `startsWith`, ...) operate on the stored bytes.
+- Values are sorted by bytes, which is not the order of the Base58 and Base64 strings.
+
+```sql
+CREATE TABLE accounts
+(
+    id FixedString(32, 'Base58'),
+    name String
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO accounts VALUES ('6SaxMUHmrqwP2rXA2fdz7UojWaoRrfH8zKBKc2MAoEM1', 'example');
+
+SELECT id, hex(id), name FROM accounts WHERE id = '6SaxMUHmrqwP2rXA2fdz7UojWaoRrfH8zKBKc2MAoEM1';
+```
+
+```text
+┌─id───────────────────────────────────────────┬─hex(id)──────────────────────────────────────────────────────────┬─name────┐
+│ 6SaxMUHmrqwP2rXA2fdz7UojWaoRrfH8zKBKc2MAoEM1 │ 50D858E0985ECC7F60418AAF0CC5AB587F42C2570A884095A9E8CCACD0F6545C │ example │
+└──────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────┴─────────┘
+```
 )DOCS_MD",
-            .syntax = "FixedString(N)",
+            .syntax = "FixedString(N[, representation])",
             .related = {"String"},
         });
 
