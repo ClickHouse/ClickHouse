@@ -133,7 +133,7 @@ TEST(ParquetV3NeedOnlyCountBuckets, CountsOnlyAssignedRowGroups)
     const auto context = getContext().context;
 
     Poco::TemporaryFile temp_file;
-    const String path = temp_file.path();
+    const String & path = temp_file.path();
     constexpr size_t rows_per_group = 10;
     constexpr size_t num_groups = 3;
     writeMultiRowGroupParquet(path, rows_per_group, num_groups);
