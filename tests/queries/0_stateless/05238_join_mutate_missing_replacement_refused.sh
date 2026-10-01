@@ -39,7 +39,8 @@ SYSTEM ENABLE FAILPOINT storage_join_mutate_interrupt_before_replacing_file;
 ALTER TABLE j DELETE WHERE id < 50;
 SYSTEM DISABLE FAILPOINT storage_join_mutate_interrupt_before_replacing_file;
 INSERT INTO j SELECT number, toString(number) FROM numbers(100, 25);
-"
+" 2> "${workdir}/ignored_errors"
+echo "injected faults: $(grep -c -F FAULT_INJECTED "${workdir}/ignored_errors")"
 echo "persisted: $(persisted_files)"
 echo "staged: $(staged_files)"
 

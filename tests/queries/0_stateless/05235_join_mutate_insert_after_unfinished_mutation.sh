@@ -35,8 +35,8 @@ SELECT 'rows', count() FROM j;
 echo "persisted: $(persisted_files)"
 
 # The mutation is committed - the marker holds the number `3` its replacement will take - and then
-# fails before the replacement is put in place. The failure is not printed, because `--ignore-error`
-# swallows it; the files and the rows show it happened. The `INSERT` that follows takes the next
+# fails before the replacement is put in place. `--ignore-error` reports the failure
+# on stderr and goes on; the count of injected faults, the files and the rows show it happened. The `INSERT` that follows takes the next
 # number, `4`, which is above the number the marker holds.
 ${CLICKHOUSE_LOCAL} --path "${workdir}" --ignore-error -q "
 SYSTEM ENABLE FAILPOINT storage_join_mutate_interrupt_before_replacing_file;
@@ -45,7 +45,8 @@ SYSTEM DISABLE FAILPOINT storage_join_mutate_interrupt_before_replacing_file;
 SELECT 'the mutation is committed and not finished, and applied in memory', count(), min(id), max(id) FROM (SELECT id FROM j);
 INSERT INTO j SELECT number, toString(number) FROM numbers(100, 25);
 SELECT 'after the insert', count(), min(id), max(id) FROM (SELECT id FROM j);
-"
+" 2> "${workdir}/ignored_errors"
+echo "injected faults: $(grep -c -F FAULT_INJECTED "${workdir}/ignored_errors")"
 
 # The replacement of the mutation is still staged, the marker is still in place, and the file of the
 # insert is the only persisted one.

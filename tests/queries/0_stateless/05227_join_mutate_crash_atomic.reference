@@ -2,6 +2,7 @@ rows	100
 persisted: 1.bin 2.bin 
 the mutation fails before it is committed, and the table is as it was	100	0	99
 and the insert after it is in memory	110	0	109
+injected faults: 1
 persisted: 1.bin 2.bin 3.bin 
 the replacement is staged but not committed: mut.bin 
 and on disk	110	0	109

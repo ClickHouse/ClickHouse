@@ -35,15 +35,17 @@ echo "persisted: $(persisted_files)"
 
 # Up to the commit of the mutation, a failure leaves the table exactly as it was: nothing has been
 # published or removed yet, so the rows are all there, and the next insert takes the next number
-# instead of reusing one of the persisted files. The failure of the mutation is not printed, because
-# `--ignore-error` swallows it; that the rows are all still there shows it happened.
+# instead of reusing one of the persisted files. `--ignore-error` reports the failure of the mutation
+# on stderr and goes on; the count of injected faults and the rows that are all still there show it
+# happened.
 ${CLICKHOUSE_LOCAL} --path "${workdir}" --ignore-error -q "
 SYSTEM ENABLE FAILPOINT storage_join_mutate_interrupt_before_commit;
 ALTER TABLE j DELETE WHERE id < 50;
 SELECT 'the mutation fails before it is committed, and the table is as it was', count(), min(id), max(id) FROM (SELECT id FROM j);
 INSERT INTO j SELECT number, toString(number) FROM numbers(100, 10);
 SELECT 'and the insert after it is in memory', count(), min(id), max(id) FROM (SELECT id FROM j);
-"
+" 2> "${workdir}/ignored_errors"
+echo "injected faults: $(grep -c -F FAULT_INJECTED "${workdir}/ignored_errors")"
 echo "persisted: $(persisted_files)"
 echo "the replacement is staged but not committed: $(staged_files)"
 ${CLICKHOUSE_LOCAL} --path "${workdir}" -q "

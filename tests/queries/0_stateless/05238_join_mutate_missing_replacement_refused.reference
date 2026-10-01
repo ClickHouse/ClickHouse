@@ -1,3 +1,4 @@
+injected faults: 1
 persisted: 4.bin 
 staged: mut.bin mut.commit 
 staged: mut.commit 

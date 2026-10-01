@@ -37,9 +37,9 @@ SELECT 'rows', count() FROM j;
 echo "persisted: $(persisted_files)"
 
 # The first mutation is committed and fails before its replacement is put in place; the second fails
-# before it is committed. The failures are not printed, because `--ignore-error` swallows them; the
-# files and the rows show they happened. Only the first is applied in memory: the second fails before
-# the point where the table is changed.
+# before it is committed. `--ignore-error` reports the failures on stderr and goes on; the count of
+# injected faults, the files and the rows show they happened. Only the first is applied in memory: the
+# second fails before the point where the table is changed.
 ${CLICKHOUSE_LOCAL} --path "${workdir}" --ignore-error -q "
 SYSTEM ENABLE FAILPOINT storage_join_mutate_interrupt_before_replacing_file;
 ALTER TABLE j DELETE WHERE id < 50;
@@ -48,7 +48,8 @@ SELECT 'the first mutation is committed and not finished, and applied in memory'
 SYSTEM ENABLE FAILPOINT storage_join_mutate_interrupt_before_commit;
 ALTER TABLE j DELETE WHERE id >= 75;
 SELECT 'the second mutation fails before it is committed, and the table is as it was', count(), min(id), max(id) FROM (SELECT id FROM j);
-"
+" 2> "${workdir}/ignored_errors"
+echo "injected faults: $(grep -c -F FAULT_INJECTED "${workdir}/ignored_errors")"
 
 # The first mutation was finished before the second staged its replacement: its file is published,
 # the marker is gone, and only the uncommitted snapshot of the second is left staged.
