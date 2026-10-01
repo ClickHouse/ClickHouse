@@ -3368,6 +3368,12 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
 
     auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     auto secondary_indices_descriptions = storage_metadata_snapshot->secondary_indices;
+    if (secondary_indices_descriptions.empty())
+    {
+        secondary_index_sizes = std::make_shared<IndexSizeByName>();
+        return;
+    }
+
     IndexSizeByName new_secondary_index_sizes;
     auto alter_conversions = MergeTreeData::getAlterConversionsForPart(shared_from_this(), storage.getMutationsSnapshot({}), storage.getContext()
 #if CLICKHOUSE_CLOUD
