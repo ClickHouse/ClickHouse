@@ -39,10 +39,12 @@ SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injectio
 -- 1. A round-robin scatter out of the reader task and a gather into the main task.
 EXPLAIN SELECT sum(v) FROM t_exchange_layout;
 SELECT sum(v) FROM t_exchange_layout SETTINGS log_comment = '05176_distributed_plan_exchange_layout_any';
--- 2. A scatter by the hash of the group key.
-EXPLAIN SELECT count() FROM (SELECT k % 10, count() FROM t_exchange_layout GROUP BY k % 10) SETTINGS distributed_plan_force_shuffle_aggregation = 1;
+-- 2. A scatter by the hash of the group key. Without partial aggregation, so the reader task scatters its rows itself.
+EXPLAIN SELECT count() FROM (SELECT k % 10, count() FROM t_exchange_layout GROUP BY k % 10)
+    SETTINGS distributed_plan_force_shuffle_aggregation = 1, distributed_plan_partial_aggregation_before_shuffle = 0;
 SELECT count() FROM (SELECT k % 10, count() FROM t_exchange_layout GROUP BY k % 10)
-    SETTINGS distributed_plan_force_shuffle_aggregation = 1, log_comment = '05176_distributed_plan_exchange_layout_hash';
+    SETTINGS distributed_plan_force_shuffle_aggregation = 1, distributed_plan_partial_aggregation_before_shuffle = 0,
+    log_comment = '05176_distributed_plan_exchange_layout_hash';
 -- 3. A broadcast of the small side of a join.
 EXPLAIN SELECT count() FROM t_exchange_layout, t_exchange_layout_small WHERE t_exchange_layout_small.sid = t_exchange_layout.k % 100
     SETTINGS use_statistics = 1, query_plan_join_swap_table = 0, enable_join_runtime_filters = 0;

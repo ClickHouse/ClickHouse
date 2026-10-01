@@ -2,6 +2,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/castColumn.h>
 #include <Processors/Port.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
@@ -194,6 +195,16 @@ void ScatterByPartitionTransform::generateOutputChunks()
         auto filtered_columns = column->scatter(output_size, selector);
         for (size_t i = 0; i < output_size; ++i)
             output_chunks[i].addColumn(std::move(filtered_columns[i]));
+    }
+
+    /// A shuffle of partial aggregation states splits a chunk by the keys, and the merge on the other
+    /// side needs the bucket number of each part. A two-level bucket is a function of the key, so the
+    /// part keeps a correct bucket number. Empty parts stay without it so they are not sent.
+    if (auto aggregated_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
+    {
+        for (auto & output_chunk : output_chunks)
+            if (output_chunk.getNumRows() > 0)
+                output_chunk.getChunkInfos().add(std::make_shared<AggregatedChunkInfo>(*aggregated_info));
     }
 }
 

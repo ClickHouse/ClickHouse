@@ -354,4 +354,93 @@ std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(Gro
 
 OptimizationRulePtr createTwoStageAggregationTransformation() { return std::make_shared<TwoStageAggregationTransformation>(); }
 
+
+/// Implementations of the merge half of a two-stage aggregation split:
+///   - Local: gather the partial states to one node and merge them there (always applicable)
+///   - Shuffle: the partial states arrive shuffled by the group keys, so each node merges the
+///     states of its own keys, and only the final groups leave the nodes
+/// The shuffle avoids a single node that receives and merges the states of all groups, which
+/// limits the speed of an aggregation with many groups.
+class MergingAggregationImplementation : public IOptimizationRule
+{
+public:
+    String getName() const override { return "MergingAggregation"; }
+    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
+    Promise getPromise() const override { return 3000; }
+    bool isTransformation() const override { return false; }
+
+protected:
+    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+
+private:
+    /// Every condition keeps the merge on one node: a non-final merge and one that must produce
+    /// buckets in order feed a consumer that reads one ordered stream; a merge without keys has
+    /// nothing to shuffle by; `GROUPING SETS` merge over subsets of the keys; an overflow row and a
+    /// global `max_rows_to_group_by` limit would be produced or checked once per node.
+    static bool isShuffleApplicable(const MergingAggregatedStep & merge_step, const Memo & memo)
+    {
+        const auto & params = merge_step.getParams();
+        return memo.getContext().distributed_plan_partial_aggregation_before_shuffle
+            && merge_step.isFinal()
+            && !merge_step.shouldProduceResultsInBucketOrder()
+            && !merge_step.memoryBoundMergingWillBeUsed()
+            && !merge_step.isGroupingSets()
+            && !params.keys.empty()
+            && !params.overflow_row
+            && params.max_rows_to_group_by == 0;
+    }
+};
+
+bool MergingAggregationImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
+{
+    return typeid_cast<const MergingAggregatedStep *>(expression->getQueryPlanStep()) != nullptr
+        && expression->strategy == nullptr;
+}
+
+std::vector<GroupExpressionPtr> MergingAggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+{
+    const auto * merge_step = typeid_cast<const MergingAggregatedStep *>(expression->getQueryPlanStep());
+    if (!merge_step)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "MergingAggregationImplementation::applyImpl called for non-MergingAggregatedStep expression '{}'",
+            expression->getDescription());
+    if (expression->inputs.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "MergingAggregationImplementation::applyImpl: expected 1 input, got {} for expression '{}'",
+            expression->inputs.size(), expression->getDescription());
+
+    std::vector<GroupExpressionPtr> result;
+
+    /// Local: input and output at {1 node} (default distribution).
+    auto local = std::make_shared<GroupExpression>(*expression);
+    local->strategy = strategySingleton<LocalMergeStrategy>();
+    addPhysicalToMemo(local, required_properties, memo, result);
+
+    if (!isShuffleApplicable(*merge_step, memo))
+        return result;
+
+    for (size_t candidate_node_count : getCandidateNodeCounts(memo.getContext().cluster_node_count))
+    {
+        DistributionDescription by_keys;
+        by_keys.node_count = candidate_node_count;
+        for (const auto & key : merge_step->getParams().keys)
+            by_keys.columns.push_back({key});
+
+        auto shuffle = std::make_shared<GroupExpression>(*expression);
+        /// Each node receives the states of its keys from every sender in no particular bucket
+        /// order, which the memory-efficient merge cannot consume.
+        auto shuffle_step = merge_step->cloneWithoutMemoryEfficientAggregation();
+        shuffle_step->setStepDescription(*merge_step);
+        shuffle->plan_step = std::move(shuffle_step);
+        shuffle->strategy = strategySingleton<ShuffleMergeStrategy>();
+        shuffle->inputs[0].required_properties.distribution = by_keys;
+        shuffle->properties.distribution = by_keys;
+        addPhysicalToMemo(shuffle, required_properties, memo, result);
+    }
+
+    return result;
+}
+
+OptimizationRulePtr createMergingAggregationImplementation() { return std::make_shared<MergingAggregationImplementation>(); }
+
 }

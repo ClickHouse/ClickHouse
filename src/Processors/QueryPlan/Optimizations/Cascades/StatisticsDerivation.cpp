@@ -647,10 +647,12 @@ ExpressionStatistics StatisticsDerivation::deriveExpressionStatistics(const Expr
 static constexpr Float64 DEFAULT_DISTINCT_VALUES_RATIO = 0.1;
 
 /// NDV of a group key in the input; without stats, fall back to `DEFAULT_DISTINCT_VALUES_RATIO`.
+/// A read records NDV 0 for a column without statistics; taken as known, it would estimate a single
+/// group for any input and make a merge of all groups on one node look free.
 static Float64 keyDistinctValues(const String & column, const ExpressionStatistics & input_statistics)
 {
     auto column_stats = input_statistics.column_statistics.find(column);
-    if (column_stats != input_statistics.column_statistics.end())
+    if (column_stats != input_statistics.column_statistics.end() && column_stats->second.num_distinct_values > 0)
         return std::min(Float64(column_stats->second.num_distinct_values), input_statistics.max_row_count);
     return DEFAULT_DISTINCT_VALUES_RATIO * input_statistics.estimated_row_count;
 }

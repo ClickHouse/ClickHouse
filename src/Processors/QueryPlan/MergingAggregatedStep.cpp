@@ -208,12 +208,22 @@ void MergingAggregatedStep::updateOutputHeader()
 
 QueryPlanStepPtr MergingAggregatedStep::clone() const
 {
+    return cloneImpl(memory_efficient_aggregation);
+}
+
+QueryPlanStepPtr MergingAggregatedStep::cloneWithoutMemoryEfficientAggregation() const
+{
+    return cloneImpl(false);
+}
+
+std::unique_ptr<MergingAggregatedStep> MergingAggregatedStep::cloneImpl(bool memory_efficient_aggregation_) const
+{
     auto cloned = std::make_unique<MergingAggregatedStep>(
         input_headers.front(),
         params,
         grouping_sets_params,
         final,
-        memory_efficient_aggregation,
+        memory_efficient_aggregation_,
         memory_efficient_merge_threads,
         should_produce_results_in_order_of_bucket_number,
         max_block_size,
