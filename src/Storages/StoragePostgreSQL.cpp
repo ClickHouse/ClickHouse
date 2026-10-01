@@ -1104,7 +1104,7 @@ Passing a query is supported starting from version 26.7. ClickHouse wraps the qu
 With a named collection, pass the query in the `query` key instead of `table`, either in the collection itself or as a key-value argument. `query` and `table` cannot be specified together:
 
 ```sql
-CREATE TABLE pg_table ENGINE = PostgreSQL(postgres_creds, database = 'test', query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
+CREATE TABLE pg_table ENGINE = PostgreSQL(postgres_creds, database = 'test', query = 'SELECT a, b FROM schema1.t1 JOIN schema1.t2 USING (id) WHERE a > 0');
 ```
 
 This is useful to push down joins, aggregations or any other processing to PostgreSQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`postgresql`](/reference/functions/table-functions/postgresql) table function.
