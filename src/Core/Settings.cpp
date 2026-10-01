@@ -7078,6 +7078,8 @@ For example, if `url_base` is `https://example.com/def/`, then:
 - `data.csv` resolves to `https://example.com/def/data.csv`
 - `/test/data.csv` resolves to `https://example.com/test/data.csv`
 - `//other.com/test/data.csv` resolves to `https://other.com/test/data.csv`
+
+When the relative URL comes from a [named collection](/concepts/features/configuration/server-config/named-collections), resolving it counts as an override of the `url` key of the collection and requires the `SHOW NAMED COLLECTIONS SECRETS` privilege on that collection.
 )", 0, \
         {"26.5", "", "", "New setting to specify the base URL for resolving relative URLs in the url table function and URL table engine."}) \
     DECLARE(String, s3_base, "", R"(
@@ -7088,6 +7090,8 @@ When set, a URL without a scheme is resolved against `s3_base` per RFC 3986, usi
 For example, if `s3_base` is `s3://clickhouse-public-datasets/`, then `s3('hits_compatible/hits.csv')` reads `s3://clickhouse-public-datasets/hits_compatible/hits.csv`.
 
 The base URL can use any form accepted by the `s3` table function, e.g. `s3://bucket/`, `https://bucket.s3.amazonaws.com/` or `https://endpoint/bucket/`.
+
+When the relative URL comes from a [named collection](/concepts/features/configuration/server-config/named-collections), resolving it counts as an override of the `url` key of the collection and requires the `SHOW NAMED COLLECTIONS SECRETS` privilege on that collection.
 )", 0, \
         {"26.8", "", "", "New setting to specify the base URL for resolving relative URLs in the s3 table function and the S3 table engine."}) \
     DECLARE(UInt64, database_replicated_initial_query_timeout_sec, 300, R"(

@@ -152,6 +152,12 @@ void checkNamedCollectionOverride(const NamedCollection & collection, const std:
 
         if (!collection.isOverridable(stored_key, /* default_value= */ true))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", stored_key);
+
+        /// ClickHouse appends the inferred `format` and `structure` to the arguments and parses them again.
+        /// Replacing the stored value `'auto'` neither hides a stored value nor redirects credentials, so it is not an override.
+        if ((stored_key == "format" || stored_key == "structure") && collection.getOrDefault<String>(stored_key, "") == "auto")
+            continue;
+
         if (!context)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Overriding named collection key '{}' in a dictionary source is not allowed", stored_key);
         overrides_stored_key = true;

@@ -25,6 +25,7 @@ namespace ErrorCodes
 }
 
 /// Replacing a stored key (including an alias) requires `SHOW NAMED COLLECTIONS SECRETS`.
+/// Replacing a stored `'auto'` value of `format` or `structure` is exempt, because ClickHouse appends the inferred values itself.
 /// A null context forbids replacements, for dictionary sources loaded in the background.
 void checkNamedCollectionOverride(const NamedCollection & collection, const std::string & key, ContextPtr context);
 
