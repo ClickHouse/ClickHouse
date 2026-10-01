@@ -93,6 +93,11 @@ endif()
 # and there `ch_contrib::librseq` (with its <rseq/rseq.h> headers) does not exist.
 if (TARGET ch_contrib::librseq)
     list(APPEND EXAMPLES_SOURCES ../Common/examples/rseq_vs_atomic_benchmark.cpp)
+    if (USE_MUSL)
+        # librseq headers need glibc's `__GNUC_PREREQ`, see contrib/librseq-cmake/musl-compat.h.
+        set_source_files_properties(../Common/examples/rseq_vs_atomic_benchmark.cpp PROPERTIES
+            COMPILE_OPTIONS "-include;${ClickHouse_SOURCE_DIR}/contrib/librseq-cmake/musl-compat.h;-Wno-reserved-macro-identifier")
+    endif()
 endif()
 
 if (ENABLE_HIVE)
@@ -125,6 +130,16 @@ target_link_libraries(clickhouse-examples PRIVATE dbms clickhouse_aggregate_func
 if (OS_LINUX)
     # Build as non-PIE so jemalloc heap profile addresses are stable across processes,
     # enabling cross-process batch symbolization with --symbolize-batch (needed by parser_memory_profiler).
+    if (USE_MUSL)
+        # musl executables are linked as static-PIE with the self-relocating rcrt1 (see the `USE_MUSL` block
+        # in the root CMakeLists.txt), and the driver rejects `-no-pie` together with `-static-pie`.
+        # Link this one as a plain static executable with crt1 instead. CMAKE_EXE_LINKER_FLAGS is
+        # directory-scoped, so the replacement affects only the targets of this directory.
+        string (REPLACE "-static-pie" "-static" CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
+        get_target_property (examples_sources clickhouse-examples SOURCES)
+        list (TRANSFORM examples_sources REPLACE "^\\$<TARGET_OBJECTS:musl-rcrt1>$" "$<TARGET_OBJECTS:musl-crt1>")
+        set_property (TARGET clickhouse-examples PROPERTY SOURCES ${examples_sources})
+    endif ()
     target_link_options(clickhouse-examples PRIVATE -no-pie -Wl,-no-pie)
 endif()
 
