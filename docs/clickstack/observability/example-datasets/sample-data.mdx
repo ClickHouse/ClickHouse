@@ -1,38 +1,33 @@
 ---
 slug: /clickstack/observability/example-datasets/sample-data
 title: 'Sample logs, traces and metrics'
-description: 'Getting started with ClickStack and a sample dataset with logs, sessions, traces and metrics'
+description: 'Explore fully managed ClickHouse Observability with a sample dataset of logs, sessions, traces and metrics'
 doc_type: 'guide'
 toc_max_heading_level: 2
 keywords: ['clickstack', 'example data', 'sample dataset', 'logs', 'observability']
 sidebarTitle: 'Sample logs, traces and metrics'
 ---
 
-<Warning>
-This guide is a placeholder for fully managed ClickHouse Observability. The instructions below have not yet been updated or verified for this offering and may describe a different setup.
-</Warning>
-
 import { Image } from "/snippets/components/Image.jsx";
 
-This guide demonstrates both ClickStack Open Source and Managed ClickStack using a sample data set.
+This guide demonstrates fully managed ClickHouse Observability using a sample dataset.
 
-<Tabs>
-<Tab title="Managed ClickStack">
-
-The following guide assumes you have completed the [Getting Started Guide for Managed ClickStack](/clickstack/deployment/managed) and have the [connection credentials recorded](/clickstack/getting-started/managed#next-steps).
+Before you begin, complete the [Getting started guide](/clickstack/observability/getting-started).
 
 <Steps>
-<Step title="Select your service" id="select-your-service-managed">
+<Step title="Copy your connection details" id="copy-connection-details">
 
-Select the service with Managed ClickStack from the main ClickHouse cloud landing page.
+Open **Team Settings** and scroll to **Managed Telemetry**. Under **OpenTelemetry Collector**, use the **URL** tab shown below to copy the OTLP HTTP endpoint and API key. Select **Reveal key** to view the full values.
 
-<Image img="/images/clickstack/select_service.webp" alt="Select Service" size="lg"/>
-</Step>
-<Step title="Navigate to the ClickStack UI (HyperDX)" id="navigate-to-the-hyperdx-ui-managed">
+<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Team Settings showing Managed Telemetry with masked endpoint and API key connection details" size="lg" />
 
-Select `ClickStack` from the left menu to navigate to the ClickStack UI, where you will be automatically authenticated.
+Set the following variables in the terminal where you will load the sample data. Use the base endpoint without a signal path such as `/v1/logs`, and use the API key as shown in the **URL** tab. The upload command adds the `Bearer` prefix.
 
-<Image img="/images/use-cases/observability/hyperdx.webp" alt="ClickStack UI" size="lg"/>
+```shell
+export CLICKSTACK_OTLP_ENDPOINT='<your-otlp-http-endpoint>'
+export CLICKSTACK_API_KEY='<your-api-key>'
+```
+
 </Step>
 <Step title="Download sample data" id="download-sample-data-managed">
 
@@ -51,232 +46,102 @@ This file contains example logs, metrics, and traces from our public [OpenTeleme
 </Step>
 <Step title="Load sample data" id="load-sample-data-managed">
 
-To load this data, we simply send it to the HTTP endpoint of the deployed OpenTelemetry (OTel) collector. 
+Send the downloaded data directly to your managed OTLP HTTP endpoint. You do not need to deploy a collector for this example.
 
-Run the following command to send the data to the OTel collector:
+Run the following command from the directory containing `sample.tar.gz`:
 
 ```shell
 for filename in $(tar -tf sample.tar.gz); do
-  endpoint="http://localhost:4318/v1/${filename%.json}"
+  endpoint="${CLICKSTACK_OTLP_ENDPOINT%/}/v1/${filename%.json}"
   echo "loading ${filename%.json}"
   tar -xOf sample.tar.gz "$filename" | while read -r line; do
-    printf '%s\n' "$line" | curl -s -o /dev/null -X POST "$endpoint" \
+    printf '%s\n' "$line" | curl --fail-with-body -sS -X POST "$endpoint" \
     -H "Content-Type: application/json" \
-    -H "authorization: ${CLICKSTACK_API_KEY}" \
+    -H "Authorization: Bearer ${CLICKSTACK_API_KEY}" \
     --data-binary @-
   done
 done
 ```
-This simulates OTLP log, trace, and metric sources sending data to the OTel collector. In production, these sources may be language clients or even other OTel collectors.
+This simulates OTLP log, trace, and metric sources sending data to the managed endpoint. In production, these sources may be application SDKs, agents, or OpenTelemetry Collectors.
 
-Returning to the `Search` view, you should see that data has started to load (adjust the time frame to the `Last 1 hour` if the data doesn't render):
+Return to [Search](/clickstack/observability/features/search) to view the loaded data. Select the **Logs** source and a time range that includes the sample events' timestamps. The screenshot below shows sample logs arriving in **Live Tail**:
 
-<Image img="/images/use-cases/observability/hyperdx-10.webp" alt="HyperDX search" size="lg"/>
+<Image img="/images/clickstack/getting-started/observability-sample-data-search.png" alt="Search showing loaded sample logs from the e-commerce demo services" size="lg"/>
 
 Data loading will take a few minutes. Allow for the load to be completed before progressing to the next steps.
 </Step>
 <Step title="Explore sessions" id="explore-sessions-managed">
 
-Suppose we have reports that our users are experiencing issues paying for goods. We can view their experience using HyperDX's session replay capabilities. 
+Suppose we have reports that our users are experiencing issues paying for goods. We can view their experience using session replay.
 
-Select `Client Sessions` from the left menu.
+Select **Client Sessions** from the left menu and set a time range that includes the loaded sample sessions.
 
-<Image img="/images/use-cases/observability/hyperdx-11.webp" alt="Sessions" size="lg"/>
+<Image img="/images/clickstack/getting-started/observability-sample-data-sessions.png" alt="Client Sessions showing sample sessions with an error count highlighted" size="lg"/>
 
-This view allows us to see front-end sessions for our e-commerce store. Sessions remain Anonymous until users check out and try to complete a purchase.
+This view lists sessions from the demo store, including anonymous sessions and sessions identified by an email address.
 
-Note that some sessions with emails have an associated error, potentially confirming reports of failed transactions.
+Some sessions have a nonzero error count. In this example, the highlighted session has one error.
 
-Select a trace with a failure and associated email. The subsequent view allows us to replay the user's session and review their issue. Press play to watch the session.
+Select the highlighted session to open its replay. Use the play button at the bottom of the player to watch the session.
 
-<Image img="/images/use-cases/observability/hyperdx-12.webp" alt="Session replay" size="lg"/>
+<Image img="/images/clickstack/getting-started/observability-sample-data-replay.png" alt="Session replay showing the OpenTelemetry demo storefront and navigation events" size="lg"/>
 
 The replay shows the user navigating the site, adding items to their cart. Feel free to skip to later in the session where they attempt to complete a payment.
 
 <Tip>
-Any errors are annotated on the timeline in red. 
+Error events are marked in red in the event list.
 </Tip>
 
-The user was unable to place the order, with no obvious error. Scroll to the bottom of the left panel, containing the network and console events from the user's browser. You will notice a 500 error was thrown on making a `/api/checkout` call. 
+Scroll to the bottom of the event list on the left. The highlighted `POST /api/checkout` request returned HTTP `500`, with a console error recorded at the same time.
 
-<Image img="/images/use-cases/observability/hyperdx-13.webp" alt="Error in session" size="lg"/>
+<Image img="/images/clickstack/getting-started/observability-sample-data-checkout-error.png" alt="Session replay highlighting the failed POST request to /api/checkout and associated console error" size="lg"/>
 
-Select this `500` error. Neither the `Overview` nor `Column Values` indicate the source of the issue, other than the fact the error is unexpected, causing an `Internal Error`.
+Select the failed `POST /api/checkout` event to inspect the request and its trace.
 </Step>
 <Step title="Explore traces" id="explore-traces-managed">
 
-Navigate to the `Trace` tab to see the full distributed trace. 
+Open the **Trace** tab to see the distributed trace, including related spans and correlated logs.
 
-<Image img="/images/use-cases/observability/hyperdx-14.webp" alt="Session trace" size="lg"/>
+<Image img="/images/clickstack/getting-started/observability-sample-data-trace.png" alt="Trace waterfall showing the checkout request with its spans, correlated logs, and errors" size="lg"/>
 
-Scroll down the trace to see the origin of the error - the `checkout` service span. Select the `Payment` service span. 
+Scroll down the trace and select the `oteldemo.PaymentService/Charge` span in the `checkout` service.
 
-<Image img="/images/use-cases/observability/hyperdx-15.webp" alt="Span" size="lg"/>
+<Image img="/images/clickstack/getting-started/observability-sample-data-payment-span.png" alt="Selected payment request span showing an expired-card error in its attributes" size="lg"/>
 
-Select the tab `Column Values` and scroll down. We can see the issue is associated with a cache being full.
+In the **Overview** tab, inspect **Top Level Attributes**. The `StatusCode` is `Error`, and the `StatusMessage` indicates that the credit card has expired.
 
-<Image img="/images/use-cases/observability/hyperdx-16.webp" alt="Column values" size="lg"/>
+<Image img="/images/clickstack/getting-started/observability-sample-data-span-attributes.png" alt="Overview attributes showing an Error status and a message that the credit card has expired" size="lg"/>
 
-Scrolling up and returning to the trace, we can see logs are correlated with the span, thanks to our earlier configuration. These provide further context.
+In the trace, select the `payment` error log beneath the payment service span. Its row has a log icon, distinguishing it from the error span event. In **Overview**, the log's **Body** confirms that the credit card has expired. The attributes identify the `payment` service and an `error` severity, providing context alongside the trace.
 
-<Image img="/images/use-cases/observability/hyperdx-17.webp" alt="Correlated log" size="lg"/>
+<Image img="/images/clickstack/getting-started/observability-sample-data-correlated-log.png" alt="Correlated payment error log showing the expired-card message and log attributes" size="lg"/>
 
-We've established that a cache is getting filled in the payment service, which is preventing payments from completing. 
+We've traced this failed checkout to a payment request rejected because the credit card had expired.
 </Step>
 <Step title="Explore logs" id="explore-logs-managed">
 
-For further details, we can return to the `Search`:
+To investigate other payment failures, return to [Search](/clickstack/observability/features/search).
 
-Select `Logs` from the sources and apply a filter to the `payment` service.
+Select **Logs** as the source and choose `payment` under the **ServiceName** filter. Use a time range that includes the session you investigated.
 
-<Image img="/images/use-cases/observability/hyperdx-18.webp" alt="Logs" size="lg"/>
+<Image img="/images/clickstack/getting-started/observability-sample-data-payment-logs.png" alt="Search filtered to the payment service showing expired-card and Visa cache-full errors alongside successful transactions" size="lg"/>
 
-We can see that while the issue is recent, the number of impacted payments is high. Furthermore, a cache related to the visa payments appears to be causing issues.
+The results include the expired-card error from the session we investigated, as well as repeated `Visa cache full: cannot add new item.` errors. To see when errors occur across the payment service, chart these error logs over time.
 </Step>
-<Step title="Chart metrics" id="chart-metrics-managed">
+<Step title="Chart payment errors" id="chart-payment-errors">
 
-While an error has clearly been introduced in the code, we can use metrics to confirm the cache size. Navigate to the `Chart Explorer` view.
+Open **Chart Explorer**, select **Time Series**, and choose **Logs** as the data source. Select **Count of Events** as the aggregation.
 
-Select `Metrics` as the data source. Complete the chart builder to plot the `Maximum` of `visa_validation_cache.size (Gauge)` and press the play button. The cache was clearly increasing before reaching a maximum size, after which errors were generated.
+In **Where**, select **Lucene** and enter the following filter:
 
-<Image img="/images/use-cases/observability/hyperdx-19.webp" alt="Metrics" size="lg"/>
+```text
+SeverityText:"error" ServiceName:"payment"
+```
+
+Set a time range covering the sample data and select **Run**.
+
+<Image img="/images/clickstack/getting-started/observability-sample-data-payment-errors-chart.png" alt="Chart Explorer counting payment service error logs over time using a Lucene filter" size="lg"/>
+
+The chart shows the number of matching error logs in each time interval. It includes all errors from the `payment` service, including expired-card and cache-full errors. These are log-event counts, not a count of unique failed payments.
 </Step>
 </Steps>
-
-</Tab>
-<Tab title="ClickStack Open Source">
-
-The following example assumes you have started ClickStack Open Source using the [all-in-one image](/clickstack/getting-started/oss) and copied the [ingestion API key](/clickstack/getting-started/oss#copy-ingestion-api-key).
-
-<Steps>
-<Step title="Navigate to the ClickStack UI (HyperDX)" id="navigate-to-the-hyperdx-ui">
-
-Visit [http://localhost:8080](http://localhost:8080) to access the ClickStack UI. 
-
-<Image img="/images/use-cases/observability/hyperdx.webp" alt="ClickStack UI" size="lg" />
-</Step>
-<Step title="Copy ingestion API key" id="copy-ingestion-api-key">
-
-Navigate to [`Team Settings`](http://localhost:8080/team) and copy the `Ingestion API Key` from the `API Keys` section. This API key ensures data ingestion through the OpenTelemetry collector is secure.
-
-<Image img="/images/use-cases/observability/copy_api_key.webp" alt="Copy API key" size="lg" />
-</Step>
-<Step title="Download sample data" id="download-sample-data">
-
-In order to populate the UI with sample data, download the following file:
-
-[Sample data](https://storage.googleapis.com/hyperdx/sample.tar.gz)
-
-```shell
-# curl
-curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
-# or
-# wget https://storage.googleapis.com/hyperdx/sample.tar.gz
-```
-
-This file contains example logs, metrics, and traces from our public [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo) - a simple e-commerce store with microservices. Copy this file to a directory of your choosing.
-</Step>
-<Step title="Load sample data" id="load-sample-data">
-
-To load this data, we simply send it to the HTTP endpoint of the deployed OpenTelemetry (OTel) collector. 
-
-First, export the API key copied above.
-
-```shell
-# export API key
-export CLICKSTACK_API_KEY=<YOUR_INGESTION_API_KEY>
-```
-
-Run the following command to send the data to the OTel collector:
-
-```shell
-for filename in $(tar -tf sample.tar.gz); do
-  endpoint="http://localhost:4318/v1/${filename%.json}"
-  echo "loading ${filename%.json}"
-  tar -xOf sample.tar.gz "$filename" | while read -r line; do
-    printf '%s\n' "$line" | curl -s -o /dev/null -X POST "$endpoint" \
-    -H "Content-Type: application/json" \
-    -H "authorization: ${CLICKSTACK_API_KEY}" \
-    --data-binary @-
-  done
-done
-```
-
-This simulates OTLP log, trace, and metric sources sending data to the OTel collector. In production, these sources may be language clients or even other OTel collectors.
-
-Returning to the `Search` view, you should see that data has started to load (adjust the time frame to the `Last 1 hour` if the data doesn't render):
-
-<Image img="/images/use-cases/observability/hyperdx-10.webp" alt="HyperDX search" size="lg" />
-
-Data loading will take a few minutes. Allow for the load to be completed before progressing to the next steps.
-</Step>
-<Step title="Explore sessions" id="explore-sessions">
-
-Suppose we have reports that our users are experiencing issues paying for goods. We can view their experience using HyperDX's session replay capabilities. 
-
-Select [`Client Sessions`](http://localhost:8080/sessions?from=1747312320000&to=1747312920000&sessionSource=l1324572572) from the left menu.
-
-<Image img="/images/use-cases/observability/hyperdx-11.webp" alt="Sessions" size="lg" />
-
-This view allows us to see front-end sessions for our e-commerce store. Sessions remain Anonymous until users check out and try to complete a purchase.
-
-Note that some sessions with emails have an associated error, potentially confirming reports of failed transactions.
-
-Select a trace with a failure and associated email. The subsequent view allows us to replay the user's session and review their issue. Press play to watch the session.
-
-<Image img="/images/use-cases/observability/hyperdx-12.webp" alt="Session replay" size="lg" />
-
-The replay shows the user navigating the site, adding items to their cart. Feel free to skip to later in the session where they attempt to complete a payment.
-
-<Tip>
-Any errors are annotated on the timeline in red. 
-</Tip>
-
-The user was unable to place the order, with no obvious error. Scroll to the bottom of the left panel, containing the network and console events from the user's browser. You will notice a 500 error was thrown on making a `/api/checkout` call. 
-
-<Image img="/images/use-cases/observability/hyperdx-13.webp" alt="Error in session" size="lg" />
-
-Select this `500` error. Neither the `Overview` nor `Column Values` indicate the source of the issue, other than the fact the error is unexpected, causing an `Internal Error`.
-</Step>
-<Step title="Explore traces" id="explore-traces">
-
-Navigate to the `Trace` tab to see the full distributed trace. 
-
-<Image img="/images/use-cases/observability/hyperdx-14.webp" alt="Session trace" size="lg" />
-
-Scroll down the trace to see the origin of the error - the `checkout` service span. Select the `Payment` service span. 
-
-<Image img="/images/use-cases/observability/hyperdx-15.webp" alt="Span" size="lg" />
-
-Select the tab `Column Values` and scroll down. We can see the issue is associated with a cache being full.
-
-<Image img="/images/use-cases/observability/hyperdx-16.webp" alt="Column values" size="lg" />
-
-Scrolling up and returning to the trace, we can see logs are correlated with the span, thanks to our earlier configuration. These provide further context.
-
-<Image img="/images/use-cases/observability/hyperdx-17.webp" alt="Correlated log" size="lg" />
-
-We've established that a cache is getting filled in the payment service, which is preventing payments from completing. 
-</Step>
-<Step title="Explore logs" id="explore-logs">
-
-For further details, we can return to the [`Search` view](http://localhost:8080/search):
-
-Select `Logs` from the sources and apply a filter to the `payment` service.
-
-<Image img="/images/use-cases/observability/hyperdx-18.webp" alt="Logs" size="lg"/>
-
-We can see that while the issue is recent, the number of impacted payments is high. Furthermore, a cache related to the visa payments appears to be causing issues.
-</Step>
-<Step title="Chart metrics" id="chart-metrics">
-
-While an error has clearly been introduced in the code, we can use metrics to confirm the cache size. Navigate to the `Chart Explorer` view.
-
-Select `Metrics` as the data source. Complete the chart builder to plot the `Maximum` of `visa_validation_cache.size (Gauge)` and press the play button. The cache was clearly increasing before reaching a maximum size, after which errors were generated.
-
-<Image img="/images/use-cases/observability/hyperdx-19.webp" alt="Metrics" size="lg"/>
-</Step>
-</Steps>
-
-</Tab>
-</Tabs>
