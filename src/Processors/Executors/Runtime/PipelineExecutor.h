@@ -58,15 +58,11 @@ public:
     using ExecutionStatus = PipelineExecutionStatus;
 
     /// Cancel execution. May be called from another thread.
+    void cancel(ExecutionStatus reason);
     void cancel() { cancel(ExecutionStatus::CancelledByUser); }
 
     /// Cancel processors which only read data from source. May be called from another thread.
     void cancelReading();
-
-    /// Checks the query time limits (cancelled or timeout). Throws on cancellation or when time limit is reached and the query uses "break"
-    bool checkTimeLimit();
-    /// Same as checkTimeLimit but it never throws. It returns false on cancellation or time limit reached
-    [[nodiscard]] bool checkTimeLimitSoft();
 
     /// Set callback for read progress.
     /// It would be called every time when processor reports read progress.
@@ -132,7 +128,6 @@ private:
     void executeStepImpl(size_t thread_num, WorkloadResources && resources, std::atomic_bool * yield_flag = nullptr);
     void executeSingleThread(size_t thread_num, WorkloadResources && resources);
     void finish();
-    void cancel(ExecutionStatus reason);
 
     // Methods for CPU scheduling
     SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation);
