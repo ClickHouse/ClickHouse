@@ -1849,7 +1849,8 @@ bool AlterCommand::isDropOrRename() const
         || type == Type::RENAME_COLUMN;
 }
 
-std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
+std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(
+    StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets, const MergeTreeSettings * default_merge_tree_settings) const
 {
     if (!getMutationStageDecision(metadata, context).requires_mutation)
     {
@@ -1857,7 +1858,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         /// to the metadata so that subsequent commands see the updated state. For example,
         /// ADD COLUMN followed by RENAME COLUMN needs the new column to be visible.
         if (!ignore)
-            apply(metadata, context, share_nested_offsets);
+            apply(metadata, context, share_nested_offsets, /*columns_before_alter=*/nullptr, default_merge_tree_settings);
         return {};
     }
 
@@ -1909,7 +1910,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     const auto & settings = context->getSettingsRef();
     result.max_parser_depth = settings[Setting::max_parser_depth];
     result.max_parser_backtracks = settings[Setting::max_parser_backtracks];
-    apply(metadata, context, share_nested_offsets);
+    apply(metadata, context, share_nested_offsets, /*columns_before_alter=*/nullptr, default_merge_tree_settings);
     return result;
 }
 
@@ -2686,7 +2687,13 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters, bool share_nested_offsets) const
+MutationCommands AlterCommands::getMutationCommands(
+    StorageInMemoryMetadata metadata,
+    bool materialize_ttl,
+    ContextPtr context,
+    bool with_alters,
+    bool share_nested_offsets,
+    const MergeTreeSettings * default_merge_tree_settings) const
 {
     /// Save a copy of the original metadata before applying commands.
     /// We need it for isTTLAlter check below, because apply() updates TTL in metadata,
@@ -2706,7 +2713,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
-        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context, share_nested_offsets); mutation_cmd)
+        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context, share_nested_offsets, default_merge_tree_settings); mutation_cmd)
         {
             result.push_back(*mutation_cmd);
         }

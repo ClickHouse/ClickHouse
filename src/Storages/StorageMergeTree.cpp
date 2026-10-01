@@ -492,14 +492,20 @@ void StorageMergeTree::alter(
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
 
-    auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context, /*with_alters*/ false, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
+    const auto default_storage_settings = getDefaultSettings();
+    auto maybe_mutation_commands = commands.getMutationCommands(
+        new_metadata,
+        query_settings[Setting::materialize_ttl_after_modify],
+        local_context,
+        /*with_alters*/ false,
+        (*old_storage_settings)[MergeTreeSetting::share_nested_offsets],
+        default_storage_settings.get());
     if (!maybe_mutation_commands.empty())
         delayMutationOrThrowIfNeeded(nullptr, local_context);
 
     Int64 mutation_version = -1;
 
     removeImplicitStatistics(new_metadata.columns);
-    const auto default_storage_settings = getDefaultSettings();
     commands.apply(new_metadata, local_context, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets], default_storage_settings.get());
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);

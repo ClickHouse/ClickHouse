@@ -230,7 +230,13 @@ struct AlterCommand
     /// metadata changes.
     /// share_nested_offsets is forwarded to the internal apply() so mutation-planning replay
     /// treats IF NOT EXISTS nested existence the same way as the real commands.apply().
-    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
+    /// `default_merge_tree_settings` is forwarded too, so the implicit-index policy is recomputed
+    /// against the same inherited defaults as the real apply (see `AlterCommand::apply`).
+    std::optional<MutationCommand> tryConvertToMutationCommand(
+        StorageInMemoryMetadata & metadata,
+        ContextPtr context,
+        bool share_nested_offsets = true,
+        const MergeTreeSettings * default_merge_tree_settings = nullptr) const;
 };
 
 class Context;
@@ -281,8 +287,16 @@ public:
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
     /// share_nested_offsets is threaded to tryConvertToMutationCommand -> AlterCommand::apply so the
     /// intermediate metadata built while planning mutations matches the real commands.apply() for
-    /// IF NOT EXISTS nested adds (see AlterCommand::apply).
-    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false, bool share_nested_offsets = true) const;
+    /// IF NOT EXISTS nested adds (see AlterCommand::apply). `default_merge_tree_settings` is threaded
+    /// the same way, so a mixed batch like `MODIFY SETTING enable_block_number_column = 1, DROP INDEX
+    /// auto_minmax_index__block_number` is planned against the defaults the table really inherits.
+    MutationCommands getMutationCommands(
+        StorageInMemoryMetadata metadata,
+        bool materialize_ttl,
+        ContextPtr context,
+        bool with_alters = false,
+        bool share_nested_offsets = true,
+        const MergeTreeSettings * default_merge_tree_settings = nullptr) const;
 
     /// Check if commands have a text index
     static bool hasTextIndex(const StorageInMemoryMetadata & metadata);

@@ -7326,7 +7326,13 @@ void StorageReplicatedMergeTree::alter(
         alter_entry->create_time = time(nullptr);
 
         auto maybe_mutation_commands
-            = commands.getMutationCommands(*current_metadata, query_settings[Setting::materialize_ttl_after_modify], query_context, /*with_alters*/ false, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
+            = commands.getMutationCommands(
+                *current_metadata,
+                query_settings[Setting::materialize_ttl_after_modify],
+                query_context,
+                /*with_alters*/ false,
+                (*old_settings)[MergeTreeSetting::share_nested_offsets],
+                default_storage_settings.get());
 
         bool have_mutation = !maybe_mutation_commands.empty();
         alter_entry->have_mutation = have_mutation;
