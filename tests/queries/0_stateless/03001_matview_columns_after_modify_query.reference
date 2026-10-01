@@ -1,0 +1,86 @@
+src:
+Timestamp	c1	c2
+DateTime64(9)	String	String
+2024-02-22 00:00:00.000000000	0	0
+2024-02-22 00:00:01.000000000	1	1
+2024-02-22 00:00:02.000000000	2	2
+
+mv:
+timestamp	c12
+DateTime	Nullable(String)
+2024-02-22 00:00:00	00
+2024-02-22 00:00:01	11
+2024-02-22 00:00:02	22
+
+inner:
+timestamp	c12
+DateTime	Nullable(String)
+2024-02-22 00:00:00	00
+2024-02-22 00:00:01	11
+2024-02-22 00:00:02	22
+
+Test 1. MODIFY QUERY doesn't change columns.
+
+mv:
+timestamp	c12
+DateTime	Nullable(String)
+2024-02-22 00:00:00	00
+2024-02-22 00:00:01	11
+2024-02-22 00:00:02	22
+
+inner:
+timestamp	c12
+DateTime	Nullable(String)
+2024-02-22 00:00:00	00
+2024-02-22 00:00:01	11
+2024-02-22 00:00:02	22
+
+Test 2. MODIFY QUERY with explicit data types doesn't change columns.
+
+mv:
+timestamp	c12
+DateTime	Nullable(String)
+2024-02-22 00:00:00	00
+2024-02-22 00:00:01	11
+2024-02-22 00:00:02	22
+
+inner:
+timestamp	c12
+DateTime	Nullable(String)
+2024-02-22 00:00:00	00
+2024-02-22 00:00:01	11
+2024-02-22 00:00:02	22
+
+Test 3. MODIFY QUERY can even fix wrong columns.
+
+Before MODIFY QUERY:
+
+mv:
+timestamp	c12
+DateTime64(9)	String
+2024-02-22 00:00:00.000000000	00
+2024-02-22 00:00:01.000000000	11
+2024-02-22 00:00:02.000000000	22
+
+inner:
+timestamp	c12
+DateTime	Nullable(String)
+2024-02-22 00:00:00	00
+2024-02-22 00:00:01	11
+2024-02-22 00:00:02	22
+
+After MODIFY QUERY:
+
+mv:
+timestamp	c12
+DateTime	Nullable(String)
+2024-02-22 00:00:00	00
+2024-02-22 00:00:01	11
+2024-02-22 00:00:02	22
+
+inner:
+timestamp	c12
+DateTime	Nullable(String)
+2024-02-22 00:00:00	00
+2024-02-22 00:00:01	11
+2024-02-22 00:00:02	22

@@ -32,6 +32,10 @@ OPTIMIZE TABLE visits_order FINAL;
 
 ALTER TABLE visits_order_dst ATTACH PARTITION ID '2' FROM visits_order;
 
+SET enable_analyzer=0;
+
+EXPLAIN SELECT * FROM visits_order_dst WHERE user_name='another_user2';
+
 SET enable_analyzer=1, enable_parallel_replicas=0;
 
 EXPLAIN SELECT * FROM visits_order_dst WHERE user_name='another_user2';

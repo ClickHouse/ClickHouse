@@ -111,14 +111,14 @@ def test_s3_queue_extra_credentials(started_cluster):
     assert get_count(node, dst_table_name) == 10
 
     assert (
-        "extra_credentials(\\'role_arn\\' = \\'arn::role\\', \\'role_session_name\\' = \\'[HIDDEN]\\')"
+        "extra_credentials(\\'role_arn\\' = \\'arn::role\\', \\'role_session_name\\' = \\'miniorole\\')"
         in node.query(f"SHOW CREATE TABLE {table_name}")
     )
 
     node.restart_clickhouse()
 
     assert (
-        "extra_credentials(\\'role_arn\\' = \\'arn::role\\', \\'role_session_name\\' = \\'[HIDDEN]\\')"
+        "extra_credentials(\\'role_arn\\' = \\'arn::role\\', \\'role_session_name\\' = \\'miniorole\\')"
         in node.query(f"SHOW CREATE TABLE {table_name}")
     )
 
@@ -181,7 +181,7 @@ def test_s3_queue_extra_credentials_backup(started_cluster):
     # are equally invalid for MinIO, so a restored table that silently dropped
     # the clause would fail with the same error. Pin the round trip explicitly.
     assert (
-        "extra_credentials(\\'role_arn\\' = \\'arn::role\\', \\'role_session_name\\' = \\'[HIDDEN]\\')"
+        "extra_credentials(\\'role_arn\\' = \\'arn::role\\', \\'role_session_name\\' = \\'miniorole\\')"
         in node.query(f"SHOW CREATE TABLE {table_name}")
     )
 

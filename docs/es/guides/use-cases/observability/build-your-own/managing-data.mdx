@@ -91,10 +91,10 @@ Podemos tener otra tabla, `otel_logs_archive`, que usamos para almacenar los dat
 
 ```sql
 CREATE TABLE otel_logs_archive AS otel_logs
---move data to archive table
+--mover datos a la tabla de archivo
 ALTER TABLE otel_logs
         (MOVE PARTITION tuple('2019-01-26') TO TABLE otel_logs_archive
---confirm data has been moved
+--confirmar que los datos se han movido
 SELECT
         Timestamp::Date AS day,
         count() AS c
@@ -163,7 +163,7 @@ ORDER BY c DESC
 ```
 
 <Note>
-  TTL aprovecha esta funcionalidad cuando se usa la configuración [`ttl_only_drop_parts=1`](/es/reference/settings/merge-tree-settings/other#ttl_only_drop_parts). Consulta [Gestión de datos con TTL](#data-management-with-ttl-time-to-live) para más detalles.
+  TTL aprovecha esta funcionalidad cuando se usa la configuración [`ttl_only_drop_parts=1`](/es/reference/settings/merge-tree-settings#ttl_only_drop_parts). Consulta [Gestión de datos con TTL](#data-management-with-ttl-time-to-live) para más detalles.
 </Note>
 
 <div id="applications">
@@ -204,7 +204,7 @@ exporters:
    ttl: 72h
 ```
 
-Esta sintaxis admite actualmente la [sintaxis de Duration de Golang](https://pkg.go.dev/time#ParseDuration). **Recomendamos que los usuarios utilicen `h` y se aseguren de que esto coincida con el período de particionamiento. Por ejemplo, si se particiona por día, asegúrese de que sea un múltiplo de días, p. ej., 24h, 48h, 72h.** Esto garantizará automáticamente que se añada una cláusula TTL a la tabla, por ejemplo, si `ttl: 96h`.
+Esta sintaxis admite actualmente la [sintaxis de Duration de Golang](https://pkg.go.dev/time#ParseDuration). **Recomendamos que los usuarios utilicen `h` y se aseguren de que esto coincida con el período de particionado. Por ejemplo, si se particiona por día, asegúrese de que sea un múltiplo de días, p. ej., 24h, 48h, 72h.** Esto garantizará automáticamente que se añada una cláusula TTL a la tabla, por ejemplo, si `ttl: 96h`.
 
 ```sql
 PARTITION BY toDate(Timestamp)
@@ -221,7 +221,7 @@ De forma predeterminada, los datos con un TTL vencido se eliminan cuando ClickHo
   Los TTL no se aplican inmediatamente, sino según una programación, como se indicó antes. La configuración de tabla de MergeTree `merge_with_ttl_timeout` establece el retraso mínimo, en segundos, antes de repetir una fusión con TTL de eliminación. El valor predeterminado es de 14400 segundos (4 horas). Pero ese es solo el retraso mínimo; puede pasar más tiempo hasta que se active una fusión TTL. Si el valor es demasiado bajo, se realizarán muchas fusiones fuera de programación que pueden consumir muchos recursos. El vencimiento de un TTL se puede forzar con el comando `ALTER TABLE my_table MATERIALIZE TTL`.
 </Info>
 
-**Importante: Recomendamos usar la configuración [`ttl_only_drop_parts=1`](/es/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) ** (aplicada por el esquema predeterminado). Cuando esta configuración está habilitada, ClickHouse elimina una parte completa cuando todas sus filas han caducado. Eliminar partes completas en lugar de limpiar parcialmente las filas con TTL vencido (algo que se logra mediante mutaciones con un alto consumo de recursos cuando `ttl_only_drop_parts=0`) permite usar valores más cortos de `merge_with_ttl_timeout` y reducir el impacto en el rendimiento del sistema. Si los datos están particionados por la misma unidad con la que se aplica el vencimiento del TTL, por ejemplo, día, las partes contendrán de forma natural solo datos del intervalo definido. Esto garantizará que `ttl_only_drop_parts=1` pueda aplicarse de forma eficiente.
+**Importante: Recomendamos usar la configuración [`ttl_only_drop_parts=1`](/es/reference/settings/merge-tree-settings#ttl_only_drop_parts) ** (aplicada por el esquema predeterminado). Cuando esta configuración está habilitada, ClickHouse elimina una parte completa cuando todas sus filas han caducado. Eliminar partes completas en lugar de limpiar parcialmente las filas con TTL vencido (algo que se logra mediante mutaciones con un alto consumo de recursos cuando `ttl_only_drop_parts=0`) permite usar valores más cortos de `merge_with_ttl_timeout` y reducir el impacto en el rendimiento del sistema. Si los datos están particionados por la misma unidad con la que se aplica el vencimiento del TTL, por ejemplo, día, las partes contendrán de forma natural solo datos del intervalo definido. Esto garantizará que `ttl_only_drop_parts=1` pueda aplicarse de forma eficiente.
 
 <div id="column-level-ttl">
   ### TTL a nivel de columna

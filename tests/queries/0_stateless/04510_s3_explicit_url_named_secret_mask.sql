@@ -7,8 +7,8 @@
 -- so the final assertion can prove none of them leaks. They used to leak in plaintext in SHOW CREATE
 -- and logged query text.
 
--- Engine form: SHOW CREATE hides every secret; the non-secret extra_credentials identifier
--- (role_arn) stays visible while external_id is hidden.
+-- Engine form: SHOW CREATE hides every secret; the non-secret extra_credentials identifiers
+-- (role_arn, role_session_name) stay visible while external_id is hidden.
 DROP TABLE IF EXISTS t_04510;
 CREATE TABLE t_04510 (x UInt8)
 ENGINE = S3('http://localhost:11111/test/04510', 'ak', 'SEKRIT_SAK',
@@ -528,9 +528,6 @@ WHERE current_database = currentDatabase()
   AND type != 'QueryStart'
   AND query_kind != 'Set' -- sent by the test harness, not by this test
   AND query NOT ILIKE 'SYSTEM FLUSH%' -- its own terminal event races with the flush it performs
-  AND query_id = initial_query_id -- only the statements issued here: a Replicated database logs
-                                  -- each DDL again from the replay worker, which inherits the
-                                  -- initiator's initial_query_id but gets a fresh query_id
   AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE
 ORDER BY event_time_microseconds;
 

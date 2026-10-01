@@ -14,11 +14,11 @@
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
 #include <Processors/LimitTransform.h>
-#include <Processors/LimitRangeTransform.h>
 #include <Processors/NegativeLimitTransform.h>
 #include <Processors/FractionalLimitTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Processors/Sinks/NullSink.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/NullSource.h>
@@ -28,7 +28,6 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
-#include <Processors/Transforms/DroppingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
@@ -39,6 +38,7 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/StreamInQueryResultCacheTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
+#include <Processors/StepWallClockRegistry.h>
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -219,17 +219,6 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         if ((typeid_cast<RemoteSource *>(processor) || typeid_cast<DelayedSource *>(processor)) && !limit_being_counted)
         {
             processors.emplace(processor);
-            continue;
-        }
-
-        if (typeid_cast<LimitRangeTransform *>(processor))
-        {
-            has_limit = true;
-            /// LimitRangeTransform is a single-input simple transform that keeps its own counter
-            /// over all rows it reads (i.e. rows before the AFTER/UNTIL range is applied). Like any
-            /// other limiting operation, it does not take the counter over from a limit downstream.
-            if (!limit_being_counted)
-                processors.emplace(processor);
             continue;
         }
 
@@ -513,38 +502,16 @@ QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
     processors->emplace_back(std::move(format));
 }
 
-/// Discards `totals`/`extremes` without adding a childless node; see `DroppingTransform`.
-/// Requires `output != nullptr`.
-static void dropTotalsAndExtremesViaTransform(
-    OutputPort *& output, OutputPort *& totals, OutputPort *& extremes, Processors & processors)
+static void drop(OutputPort *& port, Processors & processors)
 {
-    if (!totals && !extremes)
+    if (!port)
         return;
 
-    chassert(output);
+    auto null_sink = std::make_shared<NullSink>(port->getSharedHeader());
+    connect(*port, null_sink->getPort());
 
-    auto dropping = std::make_shared<DroppingTransform>(
-        output->getSharedHeader(),
-        /*num_streams_=*/1,
-        totals ? totals->getSharedHeader() : nullptr,
-        extremes ? extremes->getSharedHeader() : nullptr);
-
-    connect(*output, dropping->getInputs().front());
-
-    if (totals)
-    {
-        connect(*totals, *dropping->getTotalsPort());
-        totals = nullptr;
-    }
-
-    if (extremes)
-    {
-        connect(*extremes, *dropping->getExtremesPort());
-        extremes = nullptr;
-    }
-
-    output = &dropping->getOutputs().front();
-    processors.emplace_back(std::move(dropping));
+    processors.emplace_back(std::move(null_sink));
+    port = nullptr;
 }
 
 QueryPipeline::QueryPipeline(std::shared_ptr<SinkToStorage> sink) : QueryPipeline(Chain(std::move(sink))) {}
@@ -554,7 +521,8 @@ void QueryPipeline::complete(std::shared_ptr<ISink> sink)
     if (!pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be completed with sink");
 
-    dropTotalsAndExtremesViaTransform(output, totals, extremes, *processors);
+    drop(totals, *processors);
+    drop(extremes, *processors);
 
     connect(*output, sink->getPort());
     processors->emplace_back(std::move(sink));
@@ -568,7 +536,8 @@ void QueryPipeline::complete(Chain chain)
 
     resources = chain.detachResources();
 
-    dropTotalsAndExtremesViaTransform(output, totals, extremes, *processors);
+    drop(totals, *processors);
+    drop(extremes, *processors);
 
     for (auto processor : chain.getProcessors())
         processors->emplace_back(std::move(processor));
@@ -591,7 +560,8 @@ void QueryPipeline::complete(Pipe pipe)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pushing to be completed with pipe");
 
     pipe.resize(1);
-    pipe.dropTotalsAndExtremes();
+    pipe.dropExtremes();
+    pipe.dropTotals();
     connect(*pipe.getOutputPort(0), *input);
     input = nullptr;
 
@@ -686,11 +656,6 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
     progress_callback = callback;
 }
 
-void QueryPipeline::setStepProfiler(StepProfilerPtr step_profiler_)
-{
-    step_profiler = std::move(step_profiler_);
-}
-
 void QueryPipeline::setProcessListElement(QueryStatusPtr elem)
 {
     process_list_element = elem;
@@ -732,6 +697,11 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
     result_rows = output_format->getResultRows();
     result_bytes = output_format->getResultBytes();
     return true;
+}
+
+void QueryPipeline::setStepWallClockRegistry(StepWallClockRegistryPtr step_wall_clock_registry_)
+{
+    step_wall_clock_registry = std::move(step_wall_clock_registry_);
 }
 
 void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer)
@@ -882,9 +852,6 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns, c
 
 std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() const
 {
-    if (!report_read_progress)
-        return nullptr;
-
     auto callback = std::make_unique<ReadProgressCallback>();
 
     callback->setProgressCallback(progress_callback);

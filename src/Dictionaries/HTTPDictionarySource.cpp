@@ -336,7 +336,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         if (created_from_ddl)
         {
             context->getRemoteHostFilter().checkURL(Poco::URI(uri));
-            context->getHTTPHeaderFilter().checkHeaders(header_entries);
+            context->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_entries);
         }
 
         auto configuration = HTTPDictionarySource::Configuration
@@ -351,71 +351,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
     };
     factory.registerSource("http", create_table_source, Documentation{
-        .description = R"DOCS_MD(
-# HTTP(S) dictionary source
-
-Working with an HTTP(S) server depends on [how the dictionary is stored in memory](/reference/statements/create/dictionary/layouts/overview). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
-
-Example of settings:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-SOURCE(HTTP(
-    url 'http://[::1]/os.tsv'
-    format 'TabSeparated'
-    credentials(user 'user' password 'password')
-    headers(header(name 'API-KEY' value 'key'))
-))
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<source>
-    <http>
-        <url>http://[::1]/os.tsv</url>
-        <format>TabSeparated</format>
-        <credentials>
-            <user>user</user>
-            <password>password</password>
-        </credentials>
-        <headers>
-            <header>
-                <name>API-KEY</name>
-                <value>key</value>
-            </header>
-        </headers>
-    </http>
-</source>
-```
-
-</Tab>
-</Tabs>
-<br/>
-
-In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](/reference/settings/server-settings/settings/other#openssl) in the server configuration.
-
-Setting fields:
-
-| Setting | Description |
-|---------|-------------|
-| `url` | The source URL. |
-| `format` | The file format. All the formats described in [Formats](/reference/formats/index) are supported. |
-| `credentials` | Basic HTTP authentication. Optional. |
-| `user` | Username required for the authentication. |
-| `password` | Password required for the authentication. |
-| `headers` | All custom HTTP headers entries used for the HTTP request. Optional. |
-| `header` | Single HTTP header entry. |
-| `name` | Identifier name used for the header send on the request. |
-| `value` | Value set for a specific identifier name. |
-
-When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
-
-The headers, including their names, are shown as `HEADERS ('[HIDDEN]')` in the output of `SHOW CREATE DICTIONARY`, in `system.tables` and in the query logs, the same way as the password. As with the password, a query that cannot be parsed is logged as is, with only [`query_masking_rules`](/reference/settings/server-settings/settings/query#query_masking_rules) applied. To display the headers in `SHOW CREATE DICTIONARY` and `system.tables`, enable the server setting [`display_secrets_in_show_and_select`](/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select) and the format setting [`format_display_secrets_in_show_and_select`](/reference/settings/formats/format#format_display_secrets_in_show_and_select); the user also needs the `displaySecretsInShowAndSelect` privilege. These settings do not affect the query logs.
-)DOCS_MD",
+        .description = "Obtains dictionary data from an HTTP(S) endpoint in one of the supported formats.",
         .syntax = "SOURCE(HTTP(url 'https://host/path' format 'CSV'))",
         .related = {"file"}});
 }
