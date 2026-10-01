@@ -2850,10 +2850,6 @@ try
                 const bool respect_memory_limit = new_server_settings[ServerSetting::workloads_respect_server_memory_limit];
                 const bool implicit_default_workload = new_server_settings[ServerSetting::implicit_default_workload];
 
-                /// The storage resolves the resource names the execution paths look up; tell it whether
-                /// to fall back to the implicit server-synthesized resources when none are declared.
-                global_context->getWorkloadEntityStoragePtr()->setServerLimitsEnabled(respect_cpu_limit, respect_memory_limit);
-
                 if (respect_cpu_limit || respect_memory_limit || implicit_default_workload || workload_server_limits_touched)
                 {
                     workload_server_limits_touched = true;
@@ -2875,6 +2871,12 @@ try
                     workload_limits.memory_bytes = (respect_memory_limit && max_server_memory_usage != 0)
                         ? static_cast<Int64>(max_server_memory_usage)
                         : WorkloadSettings::unlimited;
+                    /// `updateServerLimits` both creates/removes the implicit server-limit resources and
+                    /// flips the storage-side resource-name resolution for each role, ordered so the two
+                    /// stay consistent (resolution turned on only after the resource exists, and off
+                    /// before it is removed). The storage resolution must not be flipped separately here:
+                    /// two unordered steps leave a window where a query resolves the implicit name while
+                    /// the manager has not yet created (or has already removed) that resource.
                     global_context->getResourceManager()->updateServerLimits(workload_limits);
                 }
             }

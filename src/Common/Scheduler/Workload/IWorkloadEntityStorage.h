@@ -112,11 +112,17 @@ public:
     /// Returns the name of resource used for memory reservation
     virtual String getMemoryReservationResourceName() = 0;
 
-    /// Records whether the server-limit workload features are enabled. When enabled and the operator
-    /// declared no matching resource, the resource-name getters above resolve to the implicit
-    /// server-synthesized resource (`IMPLICIT_CPU_RESOURCE_NAME` / `IMPLICIT_MEMORY_RESOURCE_NAME`)
-    /// that `WorkloadResourceManager` creates, so the execution paths route through it.
-    virtual void setServerLimitsEnabled(bool /*respect_cpu_limit*/, bool /*respect_memory_limit*/) {}
+    /// Records whether the server CPU / memory limit features are enabled, controlled per role. When a
+    /// role is enabled and the operator declared no matching resource, the resource-name getters above
+    /// resolve to the implicit server-synthesized resource (`IMPLICIT_CPU_RESOURCE_NAME` /
+    /// `IMPLICIT_MEMORY_RESOURCE_NAME`) that `WorkloadResourceManager` creates, so the execution paths
+    /// route through it. `WorkloadResourceManager::updateServerLimits` is the sole caller: it flips each
+    /// role's resolution together with creating / removing that role's implicit resource, ordered so the
+    /// resolution turns on only after the resource exists and off before it is removed. Keeping both
+    /// sides in one ordered step is what prevents a query from resolving the implicit name while the
+    /// manager has no such resource.
+    virtual void setServerCpuLimitEnabled(bool /*respect_cpu_limit*/) {}
+    virtual void setServerMemoryLimitEnabled(bool /*respect_memory_limit*/) {}
 
     /// Makes backup entries to back up all the workload entities of the specified type.
     virtual void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, WorkloadEntityType entity_type) const = 0;

@@ -2501,7 +2501,6 @@ TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitAutoCreateAndRemove)
     limits.respect_memory_limit = true;
     limits.memory_bytes = 1000;
     t.manager->updateServerLimits(limits);
-    t.storage.setServerLimitsEnabled(/*respect_cpu_limit=*/ false, /*respect_memory_limit=*/ true);
 
     EXPECT_TRUE(t.manager->hasResource(implicit_resource));
     EXPECT_EQ(t.storage.getMemoryReservationResourceName(), implicit_resource);
@@ -2516,7 +2515,6 @@ TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitAutoCreateAndRemove)
 
     // Disable: the auto-created resource is removed and the name is no longer resolved to it.
     t.manager->updateServerLimits(ServerResourceLimits{});
-    t.storage.setServerLimitsEnabled(/*respect_cpu_limit=*/ false, /*respect_memory_limit=*/ false);
     EXPECT_FALSE(t.manager->hasResource(implicit_resource));
     EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "");
 }
@@ -2702,7 +2700,6 @@ TEST(SchedulerWorkloadResourceManager, ServerCPULimitAutoCreateAndRemove)
     limits.respect_cpu_limit = true;
     limits.cpu_slots = 4;
     t.manager->updateServerLimits(limits);
-    t.storage.setServerLimitsEnabled(/*respect_cpu_limit=*/ true, /*respect_memory_limit=*/ false);
 
     EXPECT_TRUE(t.manager->hasResource(implicit_resource));
     EXPECT_EQ(t.storage.getMasterThreadResourceName(), implicit_resource);
@@ -2718,7 +2715,6 @@ TEST(SchedulerWorkloadResourceManager, ServerCPULimitAutoCreateAndRemove)
 
     // Disable: the auto-created resource is removed and the names are no longer resolved to it.
     t.manager->updateServerLimits(ServerResourceLimits{});
-    t.storage.setServerLimitsEnabled(/*respect_cpu_limit=*/ false, /*respect_memory_limit=*/ false);
     EXPECT_FALSE(t.manager->hasResource(implicit_resource));
     EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
     EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
@@ -2738,7 +2734,6 @@ TEST(SchedulerWorkloadResourceManager, ServerCPULimitAggregateCap)
     limits.respect_cpu_limit = true;
     limits.cpu_slots = 4;
     t.manager->updateServerLimits(limits);
-    t.storage.setServerLimitsEnabled(/*respect_cpu_limit=*/ true, /*respect_memory_limit=*/ false);
 
     // A query in workload A saturates the shared budget of 4 slots.
     auto query_a = std::make_shared<TestQuery>(t);
@@ -2829,7 +2824,6 @@ TEST(SchedulerWorkloadResourceManager, ServerCPULimitPartialResourceNoEffect)
     limits.respect_cpu_limit = true;
     limits.cpu_slots = 4;
     t.manager->updateServerLimits(limits);
-    t.storage.setServerLimitsEnabled(/*respect_cpu_limit=*/ true, /*respect_memory_limit=*/ false);
 
     // Manager: the partial layout is unsupported, so no implicit resource is created and the operator
     // root is not capped.
@@ -2888,6 +2882,63 @@ TEST(SchedulerWorkloadResourceManager, ServerCPULimitHotReload)
     // Disable: the auto-created resource is removed.
     t.manager->updateServerLimits(ServerResourceLimits{});
     EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+}
+
+// Switchover consistency: a single `updateServerLimits` drives BOTH the manager's resource presence and
+// the storage-side name resolution, ordered so the two never disagree in the dangerous direction (the
+// storage resolving an implicit name the manager has not created). This test never calls
+// `setServer*LimitEnabled` by hand -- with the fix Server.cpp no longer flips the storage flag
+// separately, so the manager must drive it. At every observable step storage resolution and manager
+// presence agree. Per-role control is exercised by disabling one role while keeping the other.
+TEST(SchedulerWorkloadResourceManager, ServerLimitSwitchoverDrivesStorageResolution)
+{
+    ResourceTest t;
+    const String implicit_cpu(IMPLICIT_CPU_RESOURCE_NAME);
+    const String implicit_memory(IMPLICIT_MEMORY_RESOURCE_NAME);
+
+    // Off: nothing is created and no name resolves to an implicit resource.
+    EXPECT_FALSE(t.manager->hasResource(implicit_cpu));
+    EXPECT_FALSE(t.manager->hasResource(implicit_memory));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "");
+
+    // Enable both roles in one reload: each implicit resource exists AND the storage resolves its role
+    // names to it -- presence and resolution agree, proving the manager drove the storage flip.
+    ServerResourceLimits both;
+    both.respect_cpu_limit = true;
+    both.cpu_slots = 4;
+    both.respect_memory_limit = true;
+    both.memory_bytes = 1000;
+    t.manager->updateServerLimits(both);
+
+    EXPECT_TRUE(t.manager->hasResource(implicit_cpu));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), implicit_cpu);
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), implicit_cpu);
+    EXPECT_TRUE(t.manager->hasResource(implicit_memory));
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), implicit_memory);
+
+    // Per-role switchover in one reload: disable CPU while keeping memory enabled. The CPU implicit
+    // resource is gone and its names no longer resolve, while memory is untouched -- each role's
+    // presence and resolution stay in agreement independently.
+    ServerResourceLimits memory_only;
+    memory_only.respect_memory_limit = true;
+    memory_only.memory_bytes = 1000;
+    t.manager->updateServerLimits(memory_only);
+
+    EXPECT_FALSE(t.manager->hasResource(implicit_cpu));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
+    EXPECT_TRUE(t.manager->hasResource(implicit_memory));
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), implicit_memory);
+
+    // Disable the remaining role: everything is removed and nothing resolves to an implicit resource.
+    t.manager->updateServerLimits(ServerResourceLimits{});
+    EXPECT_FALSE(t.manager->hasResource(implicit_cpu));
+    EXPECT_FALSE(t.manager->hasResource(implicit_memory));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "");
 }
 
 // When `implicit_default_workload` is enabled and no `default` workload is declared, one is synthesized

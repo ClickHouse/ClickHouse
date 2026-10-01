@@ -433,14 +433,16 @@ void WorkloadResourceManager::applyServerLimitsLocked()
     if (!any_enabled && !server_limits_applied)
         return;
 
-    // CPU concurrency budget on a combined `MASTER THREAD, WORKER THREAD` resource.
+    // CPU concurrency budget on a combined `MASTER THREAD, WORKER THREAD` resource. The manager owns the
+    // storage-side resolution flip for this role so it stays ordered against the resource create/remove.
     applyResourceLimitLocked(
         CostUnit::CPUNanosecond,
         String(IMPLICIT_CPU_RESOURCE_NAME),
         {ResourceAccessMode::MasterThread, ResourceAccessMode::WorkerThread},
         current_limits.respect_cpu_limit,
         current_limits.cpu_slots,
-        [](WorkloadSettings & s, Int64 v) { s.max_concurrent_threads = v; });
+        [](WorkloadSettings & s, Int64 v) { s.max_concurrent_threads = v; },
+        [this](bool on) { storage->setServerCpuLimitEnabled(on); });
 
     // Memory reservation admission budget on a `MEMORY RESERVATION` resource.
     applyResourceLimitLocked(
@@ -449,7 +451,8 @@ void WorkloadResourceManager::applyServerLimitsLocked()
         {ResourceAccessMode::MemoryReservation},
         current_limits.respect_memory_limit,
         current_limits.memory_bytes,
-        [](WorkloadSettings & s, Int64 v) { s.max_memory = v; });
+        [](WorkloadSettings & s, Int64 v) { s.max_memory = v; },
+        [this](bool on) { storage->setServerMemoryLimitEnabled(on); });
 
     server_limits_applied = any_enabled;
 }
@@ -482,7 +485,8 @@ void WorkloadResourceManager::applyResourceLimitLocked(
     const std::vector<ResourceAccessMode> & implicit_modes,
     bool enabled,
     Int64 effective_limit,
-    const std::function<void(WorkloadSettings &, Int64)> & set_limit_field)
+    const std::function<void(WorkloadSettings &, Int64)> & set_limit_field,
+    const std::function<void(bool)> & set_storage_resolution_enabled)
 {
     // Snapshot resources of this unit before mutating the map (creating the implicit resource inserts
     // into `resources`, which would otherwise invalidate an in-progress iteration).
@@ -528,9 +532,23 @@ void WorkloadResourceManager::applyResourceLimitLocked(
             implicit->setImplicitRootLimit(root_settings);
         for (auto & resource : operator_resources)
             resource->setImplicitRootLimit(root_settings);
+
+        // Enable ordering: the resource this role resolves to is now present in the manager (the implicit
+        // one just created, or an operator one that takes precedence), so turn the storage-side resolution
+        // ON only now. Doing it after creation guarantees a query can never resolve the implicit name
+        // before the manager has that resource (which would raise RESOURCE_ACCESS_DENIED under
+        // `throw_on_unknown_workload`).
+        set_storage_resolution_enabled(enabled);
     }
     else
     {
+        // Disable ordering: turn the storage-side resolution for this role OFF first, so a query can
+        // never resolve the implicit name after the manager has removed that resource. Only then reset
+        // operator roots and drop the implicit resource. (When enabled but the layout is unsupported,
+        // at least one operator role name stays non-empty, so the getters never fall back to the
+        // never-created implicit resource regardless of this flag.)
+        set_storage_resolution_enabled(enabled);
+
         // Reset any operator resource's root to unlimited in place; never remove an operator resource.
         WorkloadSettings unlimited_root_settings;
         for (auto & resource : operator_resources)

@@ -358,13 +358,20 @@ private:
     /// when `enabled`; otherwise resets existing roots of that unit to unlimited and removes the
     /// auto-created implicit resource. An operator-declared resource is never removed. Assumes `mutex`
     /// is held. `set_limit_field` writes the effective limit into the correct `WorkloadSettings` field.
+    ///
+    /// Also drives the storage-side name resolution for this role through `set_storage_resolution_enabled`,
+    /// ordered against the resource create/remove so the two never disagree in the dangerous direction:
+    /// on enable the resolution is turned on only AFTER the resource exists; on disable it is turned off
+    /// BEFORE the resource is removed. The callback is invoked while holding only `mutex` (never inside a
+    /// scheduler-thread callback) to keep a single manager->storage lock order.
     void applyResourceLimitLocked(
         CostUnit unit,
         const String & implicit_name,
         const std::vector<ResourceAccessMode> & implicit_modes,
         bool enabled,
         Int64 effective_limit,
-        const std::function<void(WorkloadSettings &, Int64)> & set_limit_field);
+        const std::function<void(WorkloadSettings &, Int64)> & set_limit_field,
+        const std::function<void(bool)> & set_storage_resolution_enabled);
 
     /// Creates a server-synthesized resource (not persisted through the entity storage) and attaches
     /// all existing workloads to it, mirroring the create branch of `createOrUpdateResource`. Assumes
@@ -376,7 +383,9 @@ private:
     std::vector<Workload *> topologicallySortedWorkloads();
 
     /// Hold shared ownership of the storage so it cannot be destroyed during lazy initialization,
-    /// which may run concurrently with server shutdown. The storage is only accessed in the constructor.
+    /// which may run concurrently with server shutdown. Accessed in the constructor (to subscribe) and
+    /// in `applyResourceLimitLocked`, which flips the storage-side resource-name resolution in step with
+    /// creating / removing the implicit server-limit resource.
     std::shared_ptr<IWorkloadEntityStorage> storage;
     scope_guard subscription;
 

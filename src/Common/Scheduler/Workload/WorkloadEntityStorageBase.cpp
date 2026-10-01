@@ -677,10 +677,15 @@ String WorkloadEntityStorageBase::getMemoryReservationResourceName()
     return memory_reservation_resource;
 }
 
-void WorkloadEntityStorageBase::setServerLimitsEnabled(bool respect_cpu_limit, bool respect_memory_limit)
+void WorkloadEntityStorageBase::setServerCpuLimitEnabled(bool respect_cpu_limit)
 {
     std::lock_guard lock{mutex};
     server_respect_cpu_limit = respect_cpu_limit;
+}
+
+void WorkloadEntityStorageBase::setServerMemoryLimitEnabled(bool respect_memory_limit)
+{
+    std::lock_guard lock{mutex};
     server_respect_memory_limit = respect_memory_limit;
 }
 
