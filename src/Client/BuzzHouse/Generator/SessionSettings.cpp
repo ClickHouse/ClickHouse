@@ -1957,6 +1957,34 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          {},
          false)},
     {"wait_for_part_commit_in_dependent_materialized_views", trueOrFalseSettingNoOracle},
+    {"week_functions_first_week_of_year",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"'auto'", "'first_full_week'", "'four_or_more_days'", "'contains_january_1'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
+    {"week_functions_range",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"'auto'", "'0-53'", "'1-53'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
+    {"week_functions_starting_day",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices
+                 = {"'auto'", "'monday'", "'tuesday'", "'wednesday'", "'thursday'", "'friday'", "'saturday'", "'sunday'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     {"write_full_path_in_iceberg_metadata", trueOrFalseSettingNoOracle},
     {"zstd_window_log_max",
      CHSetting(

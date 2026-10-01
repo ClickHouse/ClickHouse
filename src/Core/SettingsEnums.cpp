@@ -432,6 +432,33 @@ IMPLEMENT_SETTING_ENUM(
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
 
 IMPLEMENT_SETTING_ENUM(
+    WeekFunctionsStartingDay,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", WeekFunctionsStartingDay::AUTO},
+     {"monday", WeekFunctionsStartingDay::MONDAY},
+     {"tuesday", WeekFunctionsStartingDay::TUESDAY},
+     {"wednesday", WeekFunctionsStartingDay::WEDNESDAY},
+     {"thursday", WeekFunctionsStartingDay::THURSDAY},
+     {"friday", WeekFunctionsStartingDay::FRIDAY},
+     {"saturday", WeekFunctionsStartingDay::SATURDAY},
+     {"sunday", WeekFunctionsStartingDay::SUNDAY}})
+
+IMPLEMENT_SETTING_ENUM(
+    WeekFunctionsRange,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", WeekFunctionsRange::AUTO},
+     {"0-53", WeekFunctionsRange::ZERO_TO_53},
+     {"1-53", WeekFunctionsRange::ONE_TO_53}})
+
+IMPLEMENT_SETTING_ENUM(
+    WeekFunctionsFirstWeekOfYear,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", WeekFunctionsFirstWeekOfYear::AUTO},
+     {"first_full_week", WeekFunctionsFirstWeekOfYear::FIRST_FULL_WEEK},
+     {"four_or_more_days", WeekFunctionsFirstWeekOfYear::FOUR_OR_MORE_DAYS},
+     {"contains_january_1", WeekFunctionsFirstWeekOfYear::CONTAINS_JANUARY_1}})
+
+IMPLEMENT_SETTING_ENUM(
     SkipUnavailableShardsMode,
     ErrorCodes::BAD_ARGUMENTS,
     {{"unavailable", SkipUnavailableShardsMode::UNAVAILABLE},
