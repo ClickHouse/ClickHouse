@@ -4393,6 +4393,14 @@ void NO_INLINE Aggregator::mergeDataImpl(
     }
 }
 
+size_t Aggregator::numDeferredMerges(const DeferredMerges & deferred)
+{
+    size_t res = 0;
+    for (const auto & pairs : deferred)
+        res += pairs.dst_places.size();
+    return res;
+}
+
 void Aggregator::destroyDeferredMergeSources(DeferredMerges & deferred) const noexcept
 {
     for (size_t i = 0; i < deferred.size(); ++i)
@@ -4441,8 +4449,9 @@ void Aggregator::mergeDeferredLargeStates(DeferredMerges & deferred, Arena * are
                 for (size_t j = group_begin; j < group_end; ++j)
                     places.push_back(pairs.src_places[order[j]]);
 
-                if (aggregate_functions[i]->isParallelizeMergePrepareNeeded())
-                    aggregate_functions[i]->parallelizeMergePrepare(places, *thread_pool, is_cancelled);
+                /// No `parallelizeMergePrepare` here: it converts every single-level source to two-level, which
+                /// is expensive for the many small per-thread states of a group. `parallelizeMergeMulti` merges
+                /// single-level sources without converting them.
                 aggregate_functions[i]->parallelizeMergeMulti(places, *thread_pool, is_cancelled, arena);
 
                 if (destroy_sources)
@@ -5003,7 +5012,8 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     size_t row_end,
     const AggregateColumnsConstData &,
     std::atomic<bool> &,
-    Arena * arena_for_keys) const
+    Arena * arena_for_keys,
+    DeferredMerges *) const
 {
     /// With `no_more_keys` the keys that are not already there are dropped, so there is nothing to insert.
     if (no_more_keys)
@@ -5028,7 +5038,8 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     size_t row_end,
     const AggregateColumnsConstData & aggregate_columns_data,
     std::atomic<bool> & is_cancelled,
-    Arena * arena_for_keys) const
+    Arena * arena_for_keys,
+    DeferredMerges * external_deferred) const
 {
     chassert(!is_simple_count);
 
@@ -5072,12 +5083,13 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     }
 
     /// Large states (e.g. `uniqExact` sets past the two-level threshold) are not merged row by row but
-    /// collected and merged with all their sources of this block in one parallel pass below. The sources
+    /// collected and merged with all their sources in one parallel pass: below for the sources of this block,
+    /// or by the caller for the sources of all its blocks if it passed `external_deferred`. The sources
     /// stay owned by the aggregate columns and are not destroyed.
-    DeferredMerges deferred;
-    if (worthDeferringLargeMerges())
-        deferred.resize(params.aggregates_size);
-    DeferredMerges * deferred_ptr = deferred.empty() ? nullptr : &deferred;
+    DeferredMerges local_deferred;
+    if (!external_deferred && worthDeferringLargeMerges())
+        local_deferred.resize(params.aggregates_size);
+    DeferredMerges * deferred_ptr = external_deferred ? external_deferred : (local_deferred.empty() ? nullptr : &local_deferred);
 
     for (size_t j = 0; j < params.aggregates_size; ++j)
     {
@@ -5089,8 +5101,8 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
                 places.get(),
                 offsets_of_aggregate_states[j],
                 aggregate_columns_data[j]->data(),
-                deferred[j].dst_places,
-                deferred[j].src_places,
+                (*deferred_ptr)[j].dst_places,
+                (*deferred_ptr)[j].src_places,
                 aggregates_pool);
         else
             aggregate_functions[j]->mergeBatch(
@@ -5104,8 +5116,8 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
                 aggregates_pool);
     }
 
-    if (deferred_ptr)
-        mergeDeferredLargeStates(deferred, aggregates_pool, is_cancelled, /*destroy_sources=*/ false);
+    if (!local_deferred.empty())
+        mergeDeferredLargeStates(local_deferred, aggregates_pool, is_cancelled, /*destroy_sources=*/ false);
 }
 
 template <typename Method, typename Table>
@@ -5119,7 +5131,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     LastElementCacheStats & consecutive_keys_cache_stats,
     bool no_more_keys,
     std::atomic<bool> & is_cancelled,
-    Arena * arena_for_keys) const
+    Arena * arena_for_keys,
+    DeferredMerges * deferred) const
 {
     const AggregateColumnsConstData & aggregate_columns_data = makeAggregateColumnsData(columns, params.keys_size, params.aggregates_size);
     ColumnRawPtrs key_columns = makeRawKeyColumns(columns, params.keys_size);
@@ -5136,7 +5149,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         aggregate_columns_data,
         key_columns,
         is_cancelled,
-        arena_for_keys);
+        arena_for_keys,
+        deferred);
 }
 
 template <typename Method, typename Table>
@@ -5152,7 +5166,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     const AggregateColumnsConstData & aggregate_columns_data,
     const ColumnRawPtrs & key_columns,
     std::atomic<bool> & is_cancelled,
-    Arena * arena_for_keys) const
+    Arena * arena_for_keys,
+    DeferredMerges * deferred) const
 {
     UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
@@ -5216,7 +5231,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
                 row_end,
                 aggregate_columns_data,
                 is_cancelled,
-                arena_for_keys);
+                arena_for_keys,
+                deferred);
         }
 
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
@@ -5244,7 +5260,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
                 row_end,
                 aggregate_columns_data,
                 is_cancelled,
-                arena_for_keys);
+                arena_for_keys,
+                deferred);
         }
     }
 }
@@ -5448,22 +5465,37 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
                 if (is_cancelled.load())
                     return;
 
+                /// Large states of all chunks of the bucket are merged together after the last chunk.
+                DeferredMerges deferred;
+                if (worthDeferringLargeMerges())
+                    deferred.resize(params.aggregates_size);
+                DeferredMerges * deferred_ptr = deferred.empty() ? nullptr : &deferred;
+                std::vector<Columns> columns_with_deferred_sources;
+
                 for (auto & agg_chunk : bucket_to_chunks[bucket])
                 {
                     /// Copy to avoid race.
                     auto consecutive_keys_cache_stats_copy = result.consecutive_keys_cache_stats;
                     size_t chunk_rows = agg_chunk.chunk.getNumRows();
                     auto chunk_columns = agg_chunk.chunk.detachColumns();
+                    const size_t num_deferred_before = numDeferredMerges(deferred);
                 #define M(NAME) \
                     else if (result.type == AggregatedDataVariants::Type::NAME) \
-                        mergeStreamsImpl(chunk_columns, chunk_rows, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, consecutive_keys_cache_stats_copy, false, is_cancelled);
+                        mergeStreamsImpl(chunk_columns, chunk_rows, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, consecutive_keys_cache_stats_copy, false, is_cancelled, nullptr, deferred_ptr);
 
                     if (false) {} // NOLINT
                         APPLY_FOR_VARIANTS_TWO_LEVEL(M)
                 #undef M
                     else
                         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+
+                    /// The deferred source states live in the chunk's aggregate columns.
+                    if (numDeferredMerges(deferred) != num_deferred_before)
+                        columns_with_deferred_sources.push_back(std::move(chunk_columns));
                 }
+
+                if (deferred_ptr)
+                    mergeDeferredLargeStates(deferred, aggregates_pool, is_cancelled, /*destroy_sources=*/ false);
             }
         };
 
@@ -5472,7 +5504,15 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
 
         if (use_thread_pool)
         {
-            ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
+            /// Not `thread_pool`: merging large states (e.g. `uniqExact`) inside `merge_bucket` schedules jobs on
+            /// `thread_pool` and waits for them. If `merge_bucket` ran on `thread_pool` too, it could occupy all its
+            /// threads and all its queue slots, and the nested jobs could never be scheduled.
+            ThreadPool merge_bucket_pool(
+                CurrentMetrics::AggregatorThreads,
+                CurrentMetrics::AggregatorThreadsActive,
+                CurrentMetrics::AggregatorThreadsScheduled,
+                params.max_threads);
+            ThreadPoolCallbackRunnerLocal<void> runner(merge_bucket_pool, ThreadName::AGGREGATOR_POOL);
             try
             {
                 for (size_t i = 0; i < params.max_threads; ++i)
@@ -5507,6 +5547,13 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
 
         bool no_more_keys = false;
 
+        /// Large states of all chunks are merged together after the last chunk.
+        DeferredMerges deferred;
+        if (worthDeferringLargeMerges())
+            deferred.resize(params.aggregates_size);
+        DeferredMerges * deferred_ptr = deferred.empty() ? nullptr : &deferred;
+        std::vector<Columns> columns_with_deferred_sources;
+
         auto & chunks = bucket_to_chunks[-1];
         for (auto & agg_chunk : chunks)
         {
@@ -5515,19 +5562,27 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
 
             size_t chunk_rows = agg_chunk.chunk.getNumRows();
             auto chunk_columns = agg_chunk.chunk.detachColumns();
+            const size_t num_deferred_before = numDeferredMerges(deferred);
 
             if (result.type == AggregatedDataVariants::Type::without_key || agg_chunk.is_overflows)
                 mergeBlockWithoutKeyStreamsImpl(chunk_columns, chunk_rows, result, is_cancelled);
 
         #define M(NAME, IS_TWO_LEVEL) \
             else if (result.type == AggregatedDataVariants::Type::NAME) \
-                mergeStreamsImpl(chunk_columns, chunk_rows, result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, result.consecutive_keys_cache_stats, no_more_keys, is_cancelled);
+                mergeStreamsImpl(chunk_columns, chunk_rows, result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, result.consecutive_keys_cache_stats, no_more_keys, is_cancelled, nullptr, deferred_ptr);
 
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
             else if (result.type != AggregatedDataVariants::Type::without_key)
                 throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+
+            /// The deferred source states live in the chunk's aggregate columns.
+            if (numDeferredMerges(deferred) != num_deferred_before)
+                columns_with_deferred_sources.push_back(std::move(chunk_columns));
         }
+
+        if (deferred_ptr)
+            mergeDeferredLargeStates(deferred, result.aggregates_pool, is_cancelled, /*destroy_sources=*/ false);
 
         LOG_TRACE(log, "Merged partially aggregated single-level data.");
     }
@@ -5610,6 +5665,15 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
     /// To avoid this we use a separate arena to allocate memory for aggregation keys. Its memory will be freed at this function return.
     auto arena_for_keys = std::make_shared<Arena>();
 
+    /// Large states of all chunks are merged together after the last chunk: a destination gets one source
+    /// from each chunk (e.g. one per stream in aggregation in order), and merging them one chunk at a time
+    /// would run a separate parallel merge for every source.
+    DeferredMerges deferred;
+    if (worthDeferringLargeMerges())
+        deferred.resize(params.aggregates_size);
+    DeferredMerges * deferred_ptr = deferred.empty() ? nullptr : &deferred;
+    std::vector<Columns> columns_with_deferred_sources;
+
     for (auto & agg_chunk : chunks)
     {
         size_t chunk_rows = agg_chunk.chunk.getNumRows();
@@ -5619,19 +5683,29 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
             bucket_num = -1;
 
         auto chunk_columns = agg_chunk.chunk.detachColumns();
+        const size_t num_deferred_before = numDeferredMerges(deferred);
 
         if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)
             mergeBlockWithoutKeyStreamsImpl(chunk_columns, chunk_rows, result, is_cancelled);
 
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
-        mergeStreamsImpl(chunk_columns, chunk_rows, result.aggregates_pool, *result.NAME, result.NAME->data, nullptr, result.consecutive_keys_cache_stats, false, is_cancelled, arena_for_keys.get());
+        mergeStreamsImpl(chunk_columns, chunk_rows, result.aggregates_pool, *result.NAME, result.NAME->data, nullptr, result.consecutive_keys_cache_stats, false, is_cancelled, arena_for_keys.get(), deferred_ptr);
 
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
         else if (result.type != AggregatedDataVariants::Type::without_key)
             throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+
+        /// The deferred source states live in the chunk's aggregate columns.
+        if (numDeferredMerges(deferred) != num_deferred_before)
+            columns_with_deferred_sources.push_back(std::move(chunk_columns));
     }
+
+    if (deferred_ptr)
+        mergeDeferredLargeStates(deferred, result.aggregates_pool, is_cancelled, /*destroy_sources=*/ false);
+    /// Free the source states before building the result.
+    columns_with_deferred_sources.clear();
 
     if (dataflow_cache_updater)
         dataflow_cache_updater->recordAggregationStateSizes(result, bucket_num);

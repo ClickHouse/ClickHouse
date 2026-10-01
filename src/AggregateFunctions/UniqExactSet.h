@@ -2,6 +2,7 @@
 
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/PODArray.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
@@ -199,6 +200,16 @@ public:
 
         if (!all_two_level)
         {
+            size_t total_size = 0;
+            for (size_t i = 0; i < places.size(); ++i)
+                total_size += accessor(places[i])->size();
+
+            if (worthConvertingToTwoLevel(total_size))
+            {
+                parallelizeMergeMultiScattered(places, accessor, thread_pool, is_cancelled);
+                return;
+            }
+
             for (size_t j = 1; j < places.size(); ++j)
             {
                 if (is_cancelled.load(std::memory_order_seq_cst))
@@ -387,7 +398,7 @@ public:
     static bool worthConvertingToTwoLevel(size_t size) { return size > 100'000; }
 
     /// Whether merging `other` into this set is heavy enough to be worth handing over to a thread pool
-    /// (via `parallelizeMergePrepare` + `parallelizeMergeMulti`) instead of merging serially in place.
+    /// (via `parallelizeMergeMulti`) instead of merging serially in place.
     /// A two-level set is always past the threshold: it converted at `worthConvertingToTwoLevel` size.
     /// Both `size()` calls are O(1) here since they are only reached when the set is single-level.
     bool worthMergingInParallel(const UniqExactSet & other) const
@@ -397,7 +408,7 @@ public:
         if (isSingleLevel() && size() == 0)
             return false;
         /// An empty source (e.g. `uniqExactIf` where the predicate never matched, or all-`NULL` input under the
-        /// `Nullable` adapter) makes `merge` a no-op; deferring it would only convert it to two-level for nothing.
+        /// `Nullable` adapter) makes `merge` a no-op; deferring it would only add the overhead of a parallel merge.
         if (other.isSingleLevel() && other.size() == 0)
             return false;
         return isTwoLevel() || other.isTwoLevel() || worthConvertingToTwoLevel(size() + other.size());
@@ -417,6 +428,165 @@ public:
 
 private:
     static constexpr size_t insert_prefetch_look_ahead = 16;
+
+    /// The keys of a single-level set grouped by the bucket of the two-level set they belong to:
+    /// the keys of bucket `b` are `keys[offsets[b]] .. keys[offsets[b + 1] - 1]`.
+    static_assert(TwoLevelSet::NUM_BUCKETS <= 256, "Bucket indices are stored as UInt8");
+
+    struct ScatteredSet
+    {
+        PODArray<value_type> keys;
+        std::array<UInt32, TwoLevelSet::NUM_BUCKETS + 1> offsets{};
+    };
+
+    static void scatterByBucket(const SingleLevelSet & src, const TwoLevelSet & dst, ScatteredSet & res)
+    {
+        constexpr size_t NUM_BUCKETS = TwoLevelSet::NUM_BUCKETS;
+        const size_t size = src.size();
+
+        PODArray<value_type> keys(size);
+        PODArray<UInt8> buckets(size);
+        std::array<UInt32, NUM_BUCKETS> counts{};
+
+        size_t i = 0;
+        for (auto it = src.begin(); it != src.end(); ++it, ++i)
+        {
+            const auto & key = it->getValue();
+            const auto bucket = TwoLevelSet::getBucketFromHash(dst.hash(key));
+            keys[i] = key;
+            buckets[i] = static_cast<UInt8>(bucket);
+            ++counts[bucket];
+        }
+        chassert(i == size);
+
+        for (size_t b = 0; b < NUM_BUCKETS; ++b)
+            res.offsets[b + 1] = res.offsets[b] + counts[b];
+
+        std::array<UInt32, NUM_BUCKETS> positions;
+        std::copy_n(res.offsets.begin(), NUM_BUCKETS, positions.begin());
+
+        res.keys.resize(size);
+        for (i = 0; i < size; ++i)
+            res.keys[positions[buckets[i]]++] = keys[i];
+    }
+
+    /// Merge the sets of `places` into the first one in parallel, when some of them are single-level.
+    /// Converting a single-level set to two-level allocates `NUM_BUCKETS` hash tables of the initial size,
+    /// which costs far more than the set itself when it is small (e.g. per-thread partial states of one
+    /// of many groups), so the single-level sets are not converted. Instead, their keys are grouped by
+    /// bucket into flat arrays in parallel, and then each bucket of the destination absorbs its share of
+    /// every source, with the buckets processed in parallel.
+    template <typename Places, typename Accessor>
+    static void parallelizeMergeMultiScattered(const Places & places, Accessor && accessor, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled)
+    {
+        constexpr size_t NUM_BUCKETS = TwoLevelSet::NUM_BUCKETS;
+        auto * first = accessor(places[0]);
+
+        /// The single-level sets to scatter. If the destination is single-level, it becomes an empty
+        /// two-level set, and its former content is scattered as one more source.
+        VectorWithMemoryTracking<const SingleLevelSet *> single_level_sources;
+        VectorWithMemoryTracking<std::shared_ptr<SharedTwoLevelSet>> two_level_sources;
+        single_level_sources.reserve(places.size());
+        two_level_sources.reserve(places.size());
+
+        if (first->isSingleLevel())
+        {
+            first->two_level_set = std::make_shared<SharedTwoLevelSet>();
+            single_level_sources.push_back(&first->single_level_set);
+        }
+
+        for (size_t i = 1; i < places.size(); ++i)
+        {
+            const auto * src = accessor(places[i]);
+            if (src->isSingleLevel())
+            {
+                if (src->size() != 0)
+                    single_level_sources.push_back(&src->asSingleLevel());
+            }
+            else
+            {
+                /// `getTwoLevelSet` marks the pointee shared, so nobody mutates it in place while we read it.
+                two_level_sources.push_back(src->getTwoLevelSet());
+            }
+        }
+
+        auto & dst = first->asTwoLevelChecked();
+        VectorWithMemoryTracking<ScatteredSet> scattered(single_level_sources.size());
+
+        {
+            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::UNIQ_EXACT_CONVERT);
+            try
+            {
+                auto next_source = std::make_shared<std::atomic_size_t>(0);
+                auto thread_func = [&single_level_sources, &scattered, &dst, next_source, &is_cancelled]()
+                {
+                    while (true)
+                    {
+                        if (is_cancelled.load(std::memory_order_seq_cst))
+                            return;
+
+                        const size_t i = next_source->fetch_add(1);
+                        if (i >= single_level_sources.size())
+                            return;
+
+                        scatterByBucket(*single_level_sources[i], dst, scattered[i]);
+                    }
+                };
+
+                const size_t num_jobs = std::min<size_t>(thread_pool.getMaxThreads(), single_level_sources.size());
+                for (size_t i = 0; i < num_jobs; ++i)
+                    runner.enqueueAndKeepTrack(thread_func, Priority{});
+            }
+            catch (...)
+            {
+                is_cancelled.store(true);
+                throw;
+            }
+            runner.waitForAllToFinishAndRethrowFirstError();
+        }
+
+        /// The former content of a single-level destination now lives in `scattered`.
+        first->single_level_set.clear();
+
+        if (is_cancelled.load(std::memory_order_seq_cst))
+            return;
+
+        ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::UNIQ_EXACT_MERGER);
+        try
+        {
+            auto next_bucket = std::make_shared<std::atomic_uint32_t>(0);
+            auto thread_func = [&two_level_sources, &scattered, &dst, next_bucket, &is_cancelled]()
+            {
+                while (true)
+                {
+                    if (is_cancelled.load(std::memory_order_seq_cst))
+                        return;
+
+                    const auto bucket = next_bucket->fetch_add(1);
+                    if (bucket >= NUM_BUCKETS)
+                        return;
+
+                    auto & dst_bucket = dst.impls[bucket];
+                    for (const auto & src : two_level_sources)
+                        dst_bucket.merge(src->set.impls[bucket]);
+
+                    for (const auto & src : scattered)
+                        for (size_t i = src.offsets[bucket]; i < src.offsets[bucket + 1]; ++i)
+                            dst_bucket.insert(src.keys[i]);
+                }
+            };
+
+            const size_t num_jobs = std::min<size_t>(thread_pool.getMaxThreads(), NUM_BUCKETS);
+            for (size_t i = 0; i < num_jobs && next_bucket->load(std::memory_order_relaxed) < NUM_BUCKETS; ++i)
+                runner.enqueueAndKeepTrack(thread_func, Priority{});
+        }
+        catch (...)
+        {
+            is_cancelled.store(true);
+            throw;
+        }
+        runner.waitForAllToFinishAndRethrowFirstError();
+    }
 
     template <typename Set>
     static void ALWAYS_INLINE insertManyIntoSet(Set & set, const value_type * values, size_t n, bool prefetch)

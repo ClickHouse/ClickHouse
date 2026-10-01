@@ -8,7 +8,7 @@ FROM (SELECT if(number < 2400000, toUInt64(0), number % 16) AS k, number AS n FR
 GROUP BY k ORDER BY k
 SETTINGS max_threads = 16, group_by_two_level_threshold = 8;
 
--- Single-level result table, single-level partial sets: the merge converts them to two-level in parallel first.
+-- Single-level result table, single-level partial sets: they are merged in parallel without converting them to two-level.
 -- With the hash-partitioned parallel single-level merge (the default) ...
 SELECT k, uniqExact(n) AS u
 FROM (SELECT if(number < 400000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(480000))
@@ -40,7 +40,7 @@ FROM remote('127.0.0.{1,2}', view(SELECT if(number < 400000, toUInt64(0), number
 GROUP BY k ORDER BY k
 SETTINGS max_threads = 16, distributed_aggregation_memory_efficient = 1, group_by_two_level_threshold = 2;
 
--- ... and single-level partial states that are converted to two-level in parallel before merging.
+-- ... and single-level partial states.
 SELECT k, uniqExact(n) AS u
 FROM remote('127.0.0.{1,2}', view(SELECT if(number < 60000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(80000)))
 GROUP BY k ORDER BY k
@@ -107,3 +107,15 @@ SELECT k, uniqExactOrNull(n) AS u, uniqExactIfOrDefault(n, n % 3 != 0) AS d
 FROM (SELECT if(number < 400000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(480000))
 GROUP BY k ORDER BY k
 SETTINGS max_threads = 16, group_by_two_level_threshold = 8, max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0;
+
+-- Non-memory-efficient merge of two-level blocks from remote shards merges the buckets on a thread pool,
+-- and many buckets hold large states whose parallel merge schedules jobs on a thread pool too.
+-- This must not deadlock by waiting for nested jobs that can never be scheduled.
+SELECT count(), sum(u), max(u)
+FROM
+(
+    SELECT k, uniqExact(n) AS u
+    FROM remote('127.0.0.{1,2}', view(SELECT if(number < 3600000, intHash64(number % 64), number) AS k, number AS n FROM numbers_mt(3700000)))
+    GROUP BY k
+)
+SETTINGS max_threads = 4, distributed_aggregation_memory_efficient = 0, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1;

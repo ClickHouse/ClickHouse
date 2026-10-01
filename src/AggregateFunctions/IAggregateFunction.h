@@ -277,7 +277,7 @@ public:
     /// Same as `mergeAndDestroyBatch`, but pairs of states that are too large to merge serially on this
     /// thread are skipped and appended (with `offset` already applied) to `deferred_dst`/`deferred_src`.
     /// The caller must later merge each deferred destination with all its deferred sources — e.g. via
-    /// `parallelizeMergePrepare` + `parallelizeMergeMulti` — and destroy the deferred source states.
+    /// `parallelizeMergeMulti` — and destroy the deferred source states.
     /// Functions that cannot parallelize their merge (see `isAbleToParallelizeMerge`) defer nothing.
     virtual void mergeAndDestroyBatchOrDefer(
         AggregateDataPtr * dst_places,
@@ -291,8 +291,8 @@ public:
     /// Same as `mergeBatch`, but pairs of states that are too large to merge serially on this thread are
     /// skipped and appended (with `place_offset` already applied to the destination) to `deferred_dst`/`deferred_src`.
     /// The caller must later merge each deferred destination with all its deferred sources — e.g. via
-    /// `parallelizeMergePrepare` + `parallelizeMergeMulti`. The sources stay owned by the caller (they live in
-    /// an aggregate column) and are not destroyed. Functions that cannot parallelize their merge defer nothing.
+    /// `parallelizeMergeMulti`. The sources stay owned by the caller (they live in an aggregate column)
+    /// and are not destroyed. Functions that cannot parallelize their merge defer nothing.
     virtual void mergeBatchOrDefer(
         size_t row_begin,
         size_t row_end,
