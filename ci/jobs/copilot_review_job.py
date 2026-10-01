@@ -194,12 +194,14 @@ def _run_codex_once(loom_config, _robot_name, model, effort):
         #   but the approval policy still applies; "never" lets the
         #   agent execute without blocking on an approval request.
         # --color never: no ANSI codes in the job log.
+        # --skip-git-repo-check: the tree is a `git archive` copy, deliberately
+        #   without `.git`, and `codex exec` refuses to start outside a repository.
         # `-` reads the prompt from stdin (redirected by the job's shell),
         #   which has no argument size limit.
         command = [
             codex, "exec", "-m", model, "-c", f"model_reasoning_effort={effort}",
             "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
-            "-c", "approval_policy=never", "--color", "never", "-",
+            "-c", "approval_policy=never", "--color", "never", "--skip-git-repo-check", "-",
         ]
         exit_code = ws.run(command, env, ATTEMPT_TIMEOUT_SECONDS, stdin_file=os.path.abspath(PROMPT_FILE))
         ws.collect(os.path.join(WORK_DIR, "out"), OUTPUT_DIR)

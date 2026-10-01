@@ -87,19 +87,25 @@ class Workspace:
     def run(self, command, env, timeout, stdin_file=None):
         """Run `command` (a list) in the tree as the agent's user, with an
         environment built from `env` alone and stdin read from `stdin_file` by
-        the job's own shell. The command line is not printed: `env` holds the
-        Loom token, which the agent gets anyway, but the job log does not."""
+        the job's own shell. The values go through a file in the attempt
+        directory, so the logged command line (and the job log with the
+        agent's output) never carries them; `env` holds the Loom token, which
+        the agent gets anyway."""
+        env_file = os.path.join(self.attempt_dir, "agent.env")
+        with open(env_file, "w", encoding="utf-8") as f:
+            for k, v in env.items():
+                f.write(f"export {k}={shlex.quote(v)}\n")
+        os.chmod(env_file, 0o600)
         try:
             kill_agent_processes()
             chown(f"{AGENT_USER}:", self.attempt_dir)
-            assignments = " ".join(shlex.quote(f"{k}={v}") for k, v in env.items())
             redirect = f" < {shlex.quote(stdin_file)}" if stdin_file else ""
-            print(f"Running as {AGENT_USER} in {self.tree}: {' '.join(command)}")
+            inner = f". {shlex.quote(env_file)} && exec \"$@\""
             return Shell.run(
-                f"cd {shlex.quote(self.tree)} && sudo -n -u {AGENT_USER} env -i {assignments} "
+                f"cd {shlex.quote(self.tree)} && sudo -n -u {AGENT_USER} env -i /bin/sh -c {shlex.quote(inner)} sh "
                 + " ".join(shlex.quote(c) for c in command) + redirect,
                 timeout=timeout,
-                verbose=False,
+                verbose=True,
             )
         finally:
             kill_agent_processes()
