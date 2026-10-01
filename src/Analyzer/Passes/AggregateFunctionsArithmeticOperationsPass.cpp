@@ -137,10 +137,6 @@ bool constantKeepsZeroAtZero(const Field & value, bool zero_has_no_sign)
         case Field::Types::Int128:
         case Field::Types::UInt256:
         case Field::Types::Int256:
-        case Field::Types::Decimal32:
-        case Field::Types::Decimal64:
-        case Field::Types::Decimal128:
-        case Field::Types::Decimal256:
             break;
         case Field::Types::Float64:
             if (!isFinite(value.safeGet<Float64>()))
@@ -189,7 +185,7 @@ EmptyStateHoist hoistOverEmptyState(
     }
 
     /// In floating point a negative constant maps zero to a negative zero, which `1 / x` tells apart from zero.
-    if (constantKeepsZeroAtZero(constant_value, WhichDataType(aggregate_result_type).isIntegerOrDecimal()))
+    if (constantKeepsZeroAtZero(constant_value, WhichDataType(aggregate_result_type).isInteger()))
         return EmptyStateHoist::Keep;
 
     return EmptyStateHoist::Decline;

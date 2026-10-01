@@ -297,9 +297,6 @@ kept: negative constant integer multiply	1
 kept: negative constant integer multiply on the left	1
 kept: negative constant sum multiply	1
 kept: negative constant low cardinality multiply	1
-kept: negative constant decimal multiply	1
-kept: negative constant decimal divide	1
-kept: negative decimal constant	1
 guarded: keyless plus	1
 guarded: keyless minus	1
 guarded: constant on the left	1
