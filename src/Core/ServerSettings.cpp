@@ -1464,7 +1464,7 @@ though it names no setting: granting or revoking a role that carries one, assign
 dropping a role or a profile, or dropping an override by omission. A user defined by SQL whose own settings or
 whose roles' settings hold such a value cannot log in. Settings that the server itself puts in effect through
 the configuration file, and users defined in it, are never rejected. The `compatibility` setting leaves a
-setting of a disabled tier at its current value instead of applying the default of the previous version.
+setting of a disabled tier at its default instead of applying the default of the previous version.
 
 <Note>
 A value of `0` means that all settings can be changed.

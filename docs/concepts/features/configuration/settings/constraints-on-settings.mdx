@@ -120,14 +120,14 @@ The Merge process depends on `settings_constraints_replace_previous`:
 
 The [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) setting changes the
 settings the user has not set to the defaults of a previous version. It never applies a value that the
-constraints refuse: a setting keeps its current value when the previous default is outside its `min`/`max`
+constraints refuse: a setting keeps its default when the previous default is outside its `min`/`max`
 range, is one of its `disallowed` values, or the setting is `const`. The same applies to a setting of a tier
 that [`allow_feature_tier`](/reference/settings/server-settings/settings/allow#allow_feature_tier) disables.
 The `readonly` setting does not restrict `compatibility` in this way: it decides whether a query may set
 `compatibility` at all.
 
 `MergeTree` settings follow only the `compatibility` of the default profile, which gives the server-wide
-defaults of every table. There, a setting likewise keeps its current value when a `merge_tree_`-prefixed
+defaults of every table. There, a setting likewise keeps its default when a `merge_tree_`-prefixed
 constraint of the default profile or `allow_feature_tier` refuses the previous default.
 
 ## Read-only mode {#read-only}
