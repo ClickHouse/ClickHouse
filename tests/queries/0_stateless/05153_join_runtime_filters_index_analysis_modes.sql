@@ -124,16 +124,14 @@ SELECT
     -- Guards against the rows passing vacuously: a row that stopped engaging parallel replicas at all - a
     -- changed default, a new bail-out - would keep pruning locally and stay green while testing nothing.
     max(initiator.ProfileEvents['ParallelReplicasUsedCount']) > 0 AS parallel_replicas_engaged,
-    -- The initiator's own share of the coordinated read, which the aggregates above cannot speak for: a
-    -- follower pruning its share satisfies them even if the initiator pruned nothing. `ParallelReplicasRead
-    -- Marks` counts only marks that reach a reader through the coordinated read, after the refiner dropped
-    -- what the runtime filter excluded, so the three cases separate cleanly: the initiator pruned
-    -- (considered > 0), the coordinator left it no share (no marks), or it read its share unpruned, which is
-    -- what losing the descriptors on the cloned local plan did. `SelectedMarks` cannot be used here - it
-    -- also counts the initiator's own read of the build side, which never goes through the coordinator.
-    sumIf(part.ProfileEvents['RuntimeFilterGranulesConsidered'], part.is_initial_query) > 0
-        OR sumIf(part.ProfileEvents['ParallelReplicasReadMarks'], part.is_initial_query) = 0
-        AS initiator_prunes_its_own_share
+    -- The initiator's own read, which the aggregates above cannot speak for: a follower pruning its share
+    -- satisfies them even if the initiator's read lost its descriptors, which is the regression this fixes.
+    -- `RuntimeFilterIndexAnalysisReads` counts a read that reached its pipeline still carrying them, so it
+    -- holds whatever the coordinator assigns and whenever the filter becomes ready. The granule counters
+    -- cannot stand in for it: they only move once a granule is examined, so a run where the coordinator
+    -- leaves the initiator no share, or where its read gets there before the filter, says nothing.
+    sumIf(part.ProfileEvents['RuntimeFilterIndexAnalysisReads'], part.is_initial_query) > 0
+        AS initiator_read_kept_its_descriptors
 FROM system.query_log AS part
 INNER JOIN
 (
