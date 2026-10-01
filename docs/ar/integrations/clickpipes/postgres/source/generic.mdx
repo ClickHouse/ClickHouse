@@ -90,7 +90,7 @@ integration:
 4. أنشئ [منشورًا](https://www.postgresql.org/docs/current/logical-replication-publication.html) يتضمن الجداول التي تريد تضمينها في النسخ المتماثل. نوصي بشدة بقصر المنشور على الجداول التي تحتاج إليها فقط لتجنّب أي عبء إضافي على الأداء.
 
 <Warning>
-  يجب أن يكون لأي جدول مُدرج في المنشور **مفتاح أساسي** معرّف، *أو* أن تكون **هوية النسخة المتماثلة** الخاصة به مضبوطة على `FULL`. راجع [الأسئلة الشائعة الخاصة بـ Postgres](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للحصول على إرشادات حول تحديد النطاق.
+  يجب أن يكون لأي جدول مُدرج في المنشور **مفتاح أساسي** معرّف *أو* أن تكون **هوية النسخة المتماثلة** الخاصة به مضبوطة على `FULL`. راجع [الأسئلة الشائعة الخاصة بـ Postgres](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للحصول على إرشادات حول تحديد النطاق.
 </Warning>
 
 * لإنشاء منشور لجداول محددة:
@@ -105,7 +105,7 @@ integration:
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-سيحتوي المنشور `clickpipes` على مجموعة أحداث التغيير الناتجة عن الجداول المحددة، وسيُستخدم لاحقًا لاستيعاب دفق النسخ المتماثل.
+يحدّد المنشور `clickpipes` مجموعة الجداول التي ستُبثّ أحداث التغيير الخاصة بها إلى ClickPipes. ولا نوصي باستخدام `FOR ALL TABLES` إلا إذا كنت تنوي تضمين جميع الجداول في النسخ المتماثل، لأن تضمين جداول غير ضرورية يزيد من حركة مرور WAL من Postgres إلى ClickPipes ويقلّل الكفاءة الإجمالية للنسخ المتماثل.
 
 <div id="enabling-connections-in-pg_hbaconf-to-the-clickpipes-user">
   ## تمكين الاتصالات في pg_hba.conf لمستخدم ClickPipes

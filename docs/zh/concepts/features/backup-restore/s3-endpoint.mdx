@@ -52,9 +52,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
 <br />
 
 <Steps>
-  <Step>
-    #### 准备
-
+  <Step title="准备" id="create-a-table">
     创建以下数据库和表，并向其中插入一些随机数据：
 
     ```sql
@@ -76,9 +74,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### 创建基础备份
-
+  <Step title="创建基础备份" id="create-a-base-initial-backup">
     增量备份需要先有一个*基础*备份作为起点。S3 目标端的第一个参数是 S3 端点，后面是 bucket 中
     用于存放此次备份的目录。在这个示例中，该目录名为 `my_backup`。
 
@@ -99,9 +95,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### 添加更多数据
-
+  <Step title="添加更多数据" id="add-more-data">
     增量备份记录的是基础备份与正在备份的表当前内容之间的差异。在执行
     增量备份之前，请先添加更多数据：
 
@@ -112,9 +106,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### 执行增量备份
-
+  <Step title="执行增量备份" id="take-an-incremental-backup">
     此备份命令与基准备份类似，但增加了 `SETTINGS base_backup` 和基准备份的位置。请注意，增量备份的目标端与基准备份不在同一目录中，而是位于同一端点下、bucket 内的另一个目标目录。基准备份位于 `my_backup`，增量备份将写入 `my_incremental`：
 
     ```sql
@@ -137,9 +129,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### 从增量备份中恢复
-
+  <Step title="从增量备份中恢复" id="restore-from-the-incremental-backup">
     此命令会将增量备份恢复到新表 `test_table_restored` 中。
     请注意，恢复增量备份时，也会一并包含基准备份。
     恢复时只需指定**增量备份**：
@@ -159,9 +149,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### 验证行数
-
+  <Step title="验证行数" id="verify-the-count">
     原始表 `data` 中进行了两次插入：一次插入了 1,000 行，另一次插入了 100 行，共计 1,100 行。
     请验证恢复后的表有 1,100 行：
 
@@ -177,9 +165,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### 验证内容
-
+  <Step title="验证内容" id="verify-the-content">
     这里会比较原始表 `test_table` 与已恢复表 `test_table_restored` 的内容：
 
     ```sql

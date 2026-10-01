@@ -1,0 +1,10 @@
+--- SELECT 1 UNION SELECT 2
+Code: 558. Expected ALL or DISTINCT after UNION. Write `UNION ALL` to keep duplicate rows or `UNION DISTINCT` to remove them, or set `union_default_mode` to choose what a bare UNION means
+--- SELECT 1 EXCEPT SELECT 2 SETTINGS except_default_mode = ''
+Code: 558. Expected ALL or DISTINCT after EXCEPT. Write `EXCEPT ALL` to keep duplicate rows or `EXCEPT DISTINCT` to remove them, or set `except_default_mode` to choose what a bare EXCEPT means
+--- SELECT 1 INTERSECT SELECT 2 SETTINGS intersect_default_mode = ''
+Code: 558. Expected ALL or DISTINCT after INTERSECT. Write `INTERSECT ALL` to keep duplicate rows or `INTERSECT DISTINCT` to remove them, or set `intersect_default_mode` to choose what a bare INTERSECT means
+1
+1
+1
+1

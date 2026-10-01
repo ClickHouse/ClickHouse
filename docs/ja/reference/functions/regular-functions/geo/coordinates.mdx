@@ -116,6 +116,135 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 └─────┘
 ```
 
+<div id="geotoutm">
+  ## geoToUTM
+</div>
+
+WGS84 の地理座標 `(longitude, latitude)` を [Universal Transverse Mercator (UTM)](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) 座標に変換します。
+
+UTM は 60 個の横メルカトル投影の集合で、それぞれが経度 6° 幅のゾーンをカバーし、地理座標をメートル単位の平面グリッドに写像します。ゾーンは経度に基づいて自動的に選択され、明示的な `zone` が指定されていない限り、ノルウェーおよびスヴァールバルに対する標準的な例外が適用されます。UTM が定義されているのは緯度 `[-80°, 84°]` の範囲のみで、極地では別の UPS システムが使用されます。
+
+```sql
+geoToUTM(longitude, latitude[, zone])
+```
+
+**引数**
+
+* `longitude` — 度単位の経度。範囲: `[-180°, 180°]`。[`Float32`](/ja/reference/data-types/float)/[`Float64`](/ja/reference/data-types/float)。
+* `latitude` — 度単位の緯度。範囲: `[-80°, 84°]`。[`Float32`](/ja/reference/data-types/float)/[`Float64`](/ja/reference/data-types/float)。
+* `zone` — 任意。自動選択ではなく、この UTM ゾーンへの投影を強制します。範囲: `[1, 60]`。[`(U)Int*`](/ja/reference/data-types/int-uint)。
+
+**戻り値**
+
+名前付きタプル `(easting, northing, zone, band)` を返します。`easting` と `northing` は東距と北距でメートル単位 ([`Float64`](/ja/reference/data-types/float)) 、UTM の `zone` はゾーン番号 ([`UInt8`](/ja/reference/data-types/int-uint)) 、MGRS 緯度の `band` は帯域文字 ([`FixedString(1)`](/ja/reference/data-types/fixedstring)) です。`band` が `'N'` 以降の場合は北半球を示します。
+
+緯度が `[-80°, 84°]` の範囲外、または経度が `[-180°, 180°]` の範囲外の場合、例外を生成します。
+
+**例**
+
+```sql
+SELECT geoToUTM(2.294497, 48.858222) AS utm; -- Eiffel Tower
+```
+
+```text
+(448251.5978370684,5411935.125629659,31,'U')
+```
+
+<div id="utmtogeo">
+  ## UTMToGeo
+</div>
+
+[UTM](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) 座標を WGS84 の地理座標 `(longitude, latitude)` に変換します。これは [`geoToUTM`](#geotoutm) の逆変換です。
+
+```sql
+UTMToGeo(easting, northing, zone, is_north)
+```
+
+**引数**
+
+* `easting` — 東距 (メートル単位。500000 m の仮東距を含む) 。[`(U)Int*`](/ja/reference/data-types/int-uint)/[`Float*`](/ja/reference/data-types/float)。
+* `northing` — 北距 (メートル単位。南半球では 10000000 m の仮北距を含む) 。[`(U)Int*`](/ja/reference/data-types/int-uint)/[`Float*`](/ja/reference/data-types/float)。
+* `zone` — UTM ゾーン番号。範囲: `[1, 60]`。[`(U)Int*`](/ja/reference/data-types/int-uint)。
+* `is_north` — 半球。北半球は `1`、南半球は `0`。[`(U)Int*`](/ja/reference/data-types/int-uint)。
+
+**戻り値**
+
+度単位の名前付きタプル `(longitude, latitude)`。[`Tuple(Float64, Float64)`](/ja/reference/data-types/tuple)。
+
+**例**
+
+```sql
+SELECT UTMToGeo(448251.6, 5411935.13, 31, 1) AS coord;
+```
+
+```text
+(2.2944970289079203,48.85822204127082)
+```
+
+<div id="geotomgrs">
+  ## geoToMGRS
+</div>
+
+WGS84の地理座標`(longitude, latitude)`を、[Military Grid Reference System (MGRS)](https://en.wikipedia.org/wiki/Military_Grid_Reference_System)文字列にエンコードします。
+
+文字列の形式は`<zone><band><100km square><easting><northing>`で、たとえば`31UDQ4825111935`です。`precision`引数は、東距と北距のそれぞれに使用する桁数を制御します。`5` (デフォルト) は1 m、`4`は10 m、`3`は100 m、`2`は1 km、`1`は10 km、`0`は100 kmグリッドスクエアのみを表します。MGRSは、緯度が`[-80°, 84°]`の範囲内にある場合にのみ定義されています。
+
+```sql
+geoToMGRS(longitude, latitude[, precision])
+```
+
+**引数**
+
+* `longitude` — 度単位の経度。範囲: `[-180°, 180°]`。[`Float32`](/ja/reference/data-types/float)/[`Float64`](/ja/reference/data-types/float)。
+* `latitude` — 度単位の緯度。範囲: `[-80°, 84°]`。[`Float32`](/ja/reference/data-types/float)/[`Float64`](/ja/reference/data-types/float)。
+* `precision` — 省略可。東距・北距のそれぞれの桁数。デフォルト: `5`。範囲: `[0, 5]`。[`(U)Int*`](/ja/reference/data-types/int-uint)。
+
+**戻り値**
+
+MGRS参照文字列。[`String`](/ja/reference/data-types/string)。
+
+**例**
+
+```sql
+SELECT geoToMGRS(2.294497, 48.858222) AS mgrs, geoToMGRS(2.294497, 48.858222, 3) AS mgrs_100m;
+```
+
+```text
+┌─mgrs────────────┬─mgrs_100m───┐
+│ 31UDQ4825111935 │ 31UDQ482119 │
+└─────────────────┴─────────────┘
+```
+
+<div id="mgrstogeo">
+  ## MGRSToGeo
+</div>
+
+[MGRS](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) 文字列を WGS84 の地理座標 `(longitude, latitude)` にデコードします。これは [`geoToMGRS`](#geotomgrs) の逆です。
+
+返される Point は、参照されたグリッド正方形の中心点です。そのため、結果の精度は文字列にエンコードされている精度と一致します。入力中の空白は無視され、文字の大文字と小文字は区別されません。
+
+```sql
+MGRSToGeo(mgrs)
+```
+
+**引数**
+
+* `mgrs` — デコードする MGRS 参照文字列。[`String`](/ja/reference/data-types/string)/[`FixedString`](/ja/reference/data-types/fixedstring)。
+
+**戻り値**
+
+度単位の名前付きタプル `(longitude, latitude)` を返します。[`Tuple(Float64, Float64)`](/ja/reference/data-types/tuple)。
+
+**例**
+
+```sql
+SELECT MGRSToGeo('31UDQ4825111935') AS coord;
+```
+
+```text
+(2.294495618908297,48.85822536113692)
+```
+
 <div id="pointinellipses">
   ## pointInEllipses
 </div>
@@ -163,10 +292,13 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **入力値**
 
-* `(x, y)` — 平面上の点の座標。データ型 — [Tuple](/ja/reference/data-types/tuple) — 2 つの数値からなるタプル。
-* `[(a, b), (c, d) ...]` — Polygon の頂点。データ型 — [Array](/ja/reference/data-types/array)。各頂点は座標の組 `(a, b)` で表されます。頂点は時計回りまたは反時計回りの順序で指定する必要があります。頂点の最小数は 3 です。Polygon は定数である必要があります。
+* `(x, y)` — 平面上の点の座標。データ型 — [Tuple](/ja/reference/data-types/tuple) — 2 つの数値からなるタプル、または [Point](/ja/reference/data-types/geo#point)。
+* `[(a, b), (c, d) ...]` — Polygon の頂点。データ型 — [Array](/ja/reference/data-types/array) または [Ring](/ja/reference/data-types/geo#ring)。各頂点は座標の組 `(a, b)` で表されます。頂点は時計回りまたは反時計回りの順序で指定する必要があります。頂点の最小数は 3 です。
 * この関数は穴 (切り抜き部分) のある Polygon もサポートします。データ型 — [Polygon](/ja/reference/data-types/geo#polygon)。`Polygon` 全体を第 2 引数として渡すか、外側のリングを最初に渡し、その後に各穴を個別の追加引数として渡します。
 * この関数は MultiPolygon もサポートします。データ型 — [MultiPolygon](/ja/reference/data-types/geo#multipolygon)。`MultiPolygon` 全体を第 2 引数として渡すか、各構成 Polygon をそれぞれ個別の引数として列挙します。
+* Polygon 引数には、Polygon 形状の値 (`Ring`、`Polygon`、または `MultiPolygon`) を保持する [Geometry](/ja/reference/data-types/geo#geometry) カラムも使用できます。
+
+Polygon 形状の型 ([Ring](/ja/reference/data-types/geo#ring)、[Polygon](/ja/reference/data-types/geo#polygon)、[MultiPolygon](/ja/reference/data-types/geo#multipolygon)、および [Geometry](/ja/reference/data-types/geo#geometry)) は、定数としても通常の (非定数の) テーブルカラムとしても渡すことができます。Polygon が複数の個別の引数 (外側のリングの後に穴が続く場合や、MultiPolygon の複数の Polygon など) に分けて渡される場合、それらの引数はすべて定数でなければなりません。
 
 **戻り値**
 
@@ -183,6 +315,20 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ┌─res─┐
 │   1 │
 └─────┘
+```
+
+ポリゴンは、テーブルのカラムとして指定する場合も含め、名前付きの幾何データ型を使って指定することもできます。
+
+```sql
+CREATE TABLE poly (id UInt32, shape Polygon) ENGINE = Memory;
+INSERT INTO poly VALUES (1, [[(0, 0), (10, 0), (10, 10), (0, 10)], [(4, 4), (6, 4), (6, 6), (4, 6)]]);
+SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;
+```
+
+```text
+┌─id─┬─res─┐
+│  1 │   1 │
+└────┴─────┘
 ```
 
 > **注**

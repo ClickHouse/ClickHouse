@@ -303,10 +303,12 @@ def get_keeper_socket(cluster, nodename, port=9181, timeout_sec=60):
 
 
 def send_4lw_cmd(cluster, node, cmd="ruok", port=9181, argument=None, timeout_sec=60):
+    # `node` may be an instance or a bare container name.
+    nodename = getattr(node, "name", node)
     client = None
-    logging.debug("Sending %s to %s:%d", cmd, node, port)
+    logging.debug("Sending %s to %s:%d", cmd, nodename, port)
     try:
-        client = get_keeper_socket(cluster, node.name, port, timeout_sec)
+        client = get_keeper_socket(cluster, nodename, port, timeout_sec)
         if argument is not None:
             client.send(
                 cmd.encode() + struct.pack(">L", len(argument)) + argument.encode()
@@ -314,12 +316,38 @@ def send_4lw_cmd(cluster, node, cmd="ruok", port=9181, argument=None, timeout_se
         else:
             client.send(cmd.encode())
 
-        data = client.recv(100_000)
-        data = data.decode()
+        # The server closes the connection after writing the full response, but a single
+        # recv() call is not guaranteed to return the whole payload at once (e.g. `pfev`
+        # can be tens of KB). Keep reading until the peer closes the socket.
+        chunks = []
+        while True:
+            chunk = client.recv(100_000)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        data = b"".join(chunks).decode()
         return data
     finally:
         if client is not None:
             client.close()
+
+
+def get_profile_events(cluster, node, port=9181):
+    """Send the `pfev` 4LW command and parse its "<name>\t<value>\t<docs>" lines into a dict."""
+    data = send_4lw_cmd(cluster, node, "pfev", port)
+    result = {}
+    for line in data.strip().split("\n"):
+        if not line:
+            continue
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        name, value = parts[0], parts[1]
+        try:
+            result[name] = int(value)
+        except ValueError:
+            continue
+    return result
 
 
 NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving requests"

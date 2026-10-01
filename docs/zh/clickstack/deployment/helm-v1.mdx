@@ -48,17 +48,13 @@ ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStac
 <br />
 
 <Steps>
-  <Step>
-    ### 前置条件
-
+  <Step title="前置条件" id="prerequisites">
     * [Helm](https://helm.sh/) v3+
     * Kubernetes 集群 (推荐使用 v1.20+)
     * 已配置为与你的集群进行交互的 `kubectl`
   </Step>
 
-  <Step>
-    ### 添加 ClickStack 的 Helm 仓库
-
+  <Step title="添加 ClickStack 的 Helm 仓库" id="add-the-clickstack-helm-repository">
     添加 ClickStack 的 Helm 仓库：
 
     ```shell
@@ -67,9 +63,7 @@ ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStac
     ```
   </Step>
 
-  <Step>
-    ### 安装 ClickStack
-
+  <Step title="安装 ClickStack" id="installing-clickstack">
     要使用默认值安装 ClickStack Chart：
 
     ```shell
@@ -77,9 +71,7 @@ ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStac
     ```
   </Step>
 
-  <Step>
-    ### 验证安装
-
+  <Step title="验证安装" id="verify-the-installation">
     确认安装是否成功：
 
     ```shell
@@ -89,9 +81,7 @@ ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStac
     当所有 Pod (容器组) 都就绪后，即可继续。
   </Step>
 
-  <Step>
-    ### 端口转发
-
+  <Step title="端口转发" id="forward-ports">
     通过端口转发，我们可以访问并配置 HyperDX。部署到生产环境时，建议改为通过入口或负载均衡器暴露该服务，以确保网络访问、TLS 终止和可扩展性都得到妥善保障。端口转发最适合用于本地开发或一次性的管理操作，不适用于长期运行或高可用环境。
 
     ```shell
@@ -107,9 +97,7 @@ ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStac
     </Tip>
   </Step>
 
-  <Step>
-    ### 进入 UI
-
+  <Step title="进入 UI" id="navigate-to-the-ui">
     访问 [http://localhost:8080](http://localhost:8080) 以打开 HyperDX UI。
 
     创建用户时，请提供符合要求的用户名和密码。
@@ -125,9 +113,7 @@ ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStac
     </Info>
   </Step>
 
-  <Step>
-    ### 自定义值 (可选)
-
+  <Step title="自定义值 (可选)" id="customizing-values">
     您可以使用 `--set` 参数自定义配置。例如：
 
     ```shell
@@ -167,9 +153,7 @@ ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStac
     ```
   </Step>
 
-  <Step>
-    ### 使用 Secret (可选)
-
+  <Step title="使用 Secret (可选)" id="using-secrets">
     如需处理 API 密钥或数据库凭据等敏感数据，请使用 Kubernetes Secret。HyperDX Helm 图表提供了默认的 Secret 文件，你可以修改后将其应用到集群。
 
     #### 使用预配置的 Secret

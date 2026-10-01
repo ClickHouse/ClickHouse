@@ -35,19 +35,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 * Пароль Redis, если включена аутентификация
 
 <Steps>
-  <Step>
-    #### Проверьте подключение к Redis
-
+  <Step title="Проверьте подключение к Redis" id="verify-redis">
     Сначала убедитесь, что вы можете подключиться к Redis и что команда INFO работает:
 
     ```bash
-    # Проверка соединения
+    # Test connection
     redis-cli ping
-    # Ожидаемый вывод: PONG
+    # Expected output: PONG
 
-    # Проверка команды INFO (используется сборщиком метрик)
+    # Test INFO command (used by metrics collector)
     redis-cli INFO server
-    # Должна отобразиться информация о сервере Redis
+    # Should display Redis server information
     ```
 
     Если для Redis требуется аутентификация:
@@ -63,9 +61,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     * **Удалённый хост**: `<redis-host>:6379`
   </Step>
 
-  <Step>
-    #### Создайте пользовательскую конфигурацию OTel collector
-
+  <Step title="Создайте пользовательскую конфигурацию OTel collector" id="custom-otel">
     ClickStack позволяет расширить базовую конфигурацию OpenTelemetry Collector, смонтировав пользовательский файл конфигурации и задав переменную окружения. Пользовательская конфигурация объединяется с базовой конфигурацией, которой HyperDX управляет через OpAMP.
 
     Создайте файл `redis-metrics.yaml` со следующей конфигурацией:
@@ -75,10 +71,10 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
       redis:
         endpoint: "localhost:6379"
         collection_interval: 10s
-        # Раскомментируйте, если Redis требует аутентификации
+        # Uncomment if Redis requires authentication
         # password: ${env:REDIS_PASSWORD}
         
-        # Укажите, какие метрики собирать
+        # Configure which metrics to collect
         metrics:
           redis.commands.processed:
             enabled: true
@@ -146,9 +142,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### Настройка ClickStack для загрузки пользовательской конфигурации
-
+  <Step title="Настройка ClickStack для загрузки пользовательской конфигурации" id="load-custom">
     Чтобы включить пользовательскую конфигурацию collector в существующем развертывании ClickStack, необходимо:
 
     1. Смонтировать пользовательский файл конфигурации в `/etc/otelcol-contrib/custom.config.yaml`
@@ -162,16 +156,16 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... существующая конфигурация ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # Необязательно: если Redis требует аутентификации
+          # Optional: If Redis requires authentication
           # - REDIS_PASSWORD=your-redis-password
-          # ... другие переменные окружения ...
+          # ... other environment variables ...
         volumes:
           - ./redis-metrics.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
-          # ... другие тома ...
-        # Если Redis находится в том же compose-файле:
+          # ... other volumes ...
+        # If Redis is in the same compose file:
         depends_on:
           - redis
 
@@ -179,7 +173,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
         image: redis:7-alpine
         ports:
           - "6379:6379"
-        # Необязательно: включить аутентификацию
+        # Optional: Enable authentication
         # command: redis-server --requirepass your-redis-password
     ```
 
@@ -198,13 +192,13 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     **Важно:** Если Redis запущен в другом контейнере, используйте сеть Docker:
 
     ```bash
-    # Создать сеть
+    # Create a network
     docker network create monitoring
 
-    # Запустить Redis в сети
+    # Run Redis on the network
     docker run -d --name redis --network monitoring redis:7-alpine
 
-    # Запустить ClickStack в той же сети (обновить конечную точку на "redis:6379" в конфигурации)
+    # Run ClickStack on the same network (update endpoint to "redis:6379" in config)
     docker run --name clickstack \
       --network monitoring \
       -p 8080:8080 -p 4317:4317 -p 4318:4318 \
@@ -214,9 +208,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Проверьте метрики в HyperDX
-
+  <Step title="Проверьте метрики в HyperDX" id="verifying-metrics">
     После настройки войдите в HyperDX и убедитесь, что метрики поступают:
 
     1. Перейдите в обозреватель метрик
@@ -234,9 +226,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Для пользователей, которые хотят протестировать интеграцию Redis Metrics перед настройкой своих систем в продакшн, мы предоставляем заранее подготовленный датасет с реалистичными паттернами Redis Metrics.
 
 <Steps>
-  <Step>
-    #### Скачайте пример датасета метрик
-
+  <Step title="Скачайте пример датасета метрик" id="download-sample">
     Скачайте заранее подготовленные файлы метрик (24 часа Redis Metrics с реалистичными паттернами):
 
     ```bash
@@ -255,9 +245,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     * **Суточные паттерны трафика** - Пики в рабочие часы, вечерние спады, случайные микровсплески
   </Step>
 
-  <Step>
-    #### Запустите ClickStack
-
+  <Step title="Запустите ClickStack" id="start-clickstack">
     Запустите экземпляр ClickStack:
 
     ```bash
@@ -269,9 +257,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Подождите примерно 30 секунд, пока ClickStack полностью запустится.
   </Step>
 
-  <Step>
-    #### Загрузите метрики в ClickStack
-
+  <Step title="Загрузите метрики в ClickStack" id="load-metrics">
     Загрузите метрики напрямую в ClickHouse:
 
     ```bash
@@ -285,9 +271,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Проверьте метрики в HyperDX
-
+  <Step title="Проверьте метрики в HyperDX" id="verify-metrics">
     После загрузки самый быстрый способ увидеть метрики — воспользоваться преднастроенным дашбордом.
 
     Перейдите к разделу [Панели мониторинга и визуализация](#dashboards), чтобы импортировать дашборд и сразу просмотреть все Redis Metrics.
@@ -311,13 +295,11 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Чтобы вам было проще начать мониторинг Redis в ClickStack, мы предоставляем основные визуализации для Redis Metrics.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-metrics-dashboard.json'} download="redis-metrics-dashboard.json" eventName="docs.redis_metrics_monitoring.dashboard_download">Скачать</TrackedLink> конфигурацию панели мониторинга
+  <Step title="Скачать конфигурацию панели мониторинга" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-metrics-dashboard.json'} download="redis-metrics-dashboard.json" eventName="docs.redis_metrics_monitoring.dashboard_download">Скачать файл конфигурации панели мониторинга</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Импортируйте преднастроенный дашборд
-
+  <Step title="Импортируйте преднастроенный дашборд" id="import-dashboard">
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
@@ -328,9 +310,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/import-redis-metrics-dashboard.webp" alt="Диалог завершения импорта" />
   </Step>
 
-  <Step>
-    #### Просмотрите панель мониторинга
-
+  <Step title="Просмотрите панель мониторинга" id="created-dashboard">
     Панель мониторинга будет создана со всеми преднастроенными визуализациями:
 
     <Image img="/images/clickstack/redis-metrics-dashboard.webp" alt="Панель мониторинга Redis Metrics" />
@@ -451,7 +431,7 @@ docker exec <clickstack-container> telnet redis 6379
 * Отслеживайте несколько экземпляров Redis, дублируя конфигурацию приёмника с разными конечными точками и именами сервисов
 
 <div id="going-to-production">
-  ## Выход в продакшн
+  ## Переход в продакшн
 </div>
 
-В этом руководстве для быстрой настройки используется встроенный OpenTelemetry Collector в ClickStack. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. Конфигурацию для продакшна см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
+В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. Конфигурацию для продакшна см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).

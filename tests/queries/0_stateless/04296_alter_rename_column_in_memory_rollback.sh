@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-replicated-database
 # Tag no-parallel: uses fail points which affect the whole server.
+# Tag no-replicated-database: this test asserts the non-replicated rollback
+# contract. Inside a `Replicated` database the durable metadata commit lives in
+# ZooKeeper and cannot be rolled back, so `StorageMergeTree::alter` deliberately
+# converges forward to `new_metadata` instead of reverting; column `d` is then
+# gone by design. 04352 covers that path.
 #
 # Regression test for https://github.com/ClickHouse/ClickHouse/pull/104822
 # inline review (error-path rollback gap).

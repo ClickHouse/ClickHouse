@@ -51,7 +51,7 @@ ClickHouse 支持多种 JOIN 类型和算法，而且 JOIN 性能在最近几个
 ClickHouse 支持多种 JOIN 算法，可在速度和内存占用之间进行权衡：
 
 * **Parallel Hash JOIN (默认) ：** 适用于能装入内存的中小型右侧表，速度很快。
-* **Direct JOIN：** 使用字典 (或其他具有键值特性的表引擎) 并配合 `INNER` 或 `LEFT ANY JOIN` 时尤为理想——它无需构建哈希表，因此是点查找最快的方法。
+* **Direct JOIN：** 使用字典 (或其他具有键值特征的表引擎) 并配合 `INNER` 或 `LEFT ANY JOIN` 时尤为理想——它无需构建哈希表，因此是点查找最快的方法。
 * **Full Sorting Merge JOIN：** 当两张表都按连接键排序时，效率很高。
 * **Partial Merge JOIN：** 可将内存占用降到最低，但速度较慢——最适合在内存有限时连接大型表。
 * **Grace Hash JOIN：** 灵活且可调节内存使用，适合大型数据集，并可按需权衡性能表现。
@@ -62,7 +62,7 @@ ClickHouse 支持多种 JOIN 算法，可在速度和内存占用之间进行权
   每种算法支持的 JOIN 类型各不相同。每种算法所支持 JOIN 类型的完整列表可在[这里](/zh/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)查看。
 </Note>
 
-你可以通过设置 `join_algorithm = 'auto'` (默认值) 让 ClickHouse 自动选择最佳算法，也可以根据你的工作负载显式指定。如果你需要为优化性能或内存开销而选择 JOIN 算法，我们建议参考[本指南](/zh/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)。
+你可以通过设置 `join_algorithm = 'auto'` 让 ClickHouse 选择最佳算法，也可以根据你的工作负载显式控制它。默认值是 `direct,parallel_hash,hash`，因此当右侧是字典或键值引擎时，ClickHouse 会使用 direct join，否则会依次回退到 parallel hash，再到 hash。如果你需要为优化性能或内存开销而选择 JOIN 算法，我们建议参考[本指南](/zh/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)。
 
 为了获得最佳性能：
 

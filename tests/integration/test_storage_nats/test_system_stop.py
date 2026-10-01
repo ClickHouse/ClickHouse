@@ -463,8 +463,15 @@ def test_stop_during_insert_does_not_duplicate(nats_cluster):
     table = "nats_stop_during_insert"
     n = 5
 
-    # A short ack-wait so a missing ack surfaces quickly as a redelivery.
-    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=3)
+    # The block is acked only after the insert (its durable boundary), so `ack_wait` must exceed the
+    # insert time or the broker redelivers a correctly-acked block before its ack lands (a spurious
+    # duplicate). The view sleeps a fixed `insert_secs` (cap lifted below), so the margin is
+    # deterministic: `ack_wait=3` used to duplicate under this load; `ack_wait` well above insert_secs
+    # does not. A wrongly skipped ack is still detected two ways: as a redelivery duplicate (caught by
+    # the longer-than-`ack_wait` stability window below) and immediately by a non-zero `num_ack_pending`.
+    insert_secs = 5
+    ack_wait = 30
+    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=ack_wait)
 
     instance.query(
         f"""
@@ -483,7 +490,8 @@ def test_stop_during_insert_does_not_duplicate(nats_cluster):
             ENGINE = MergeTree ORDER BY key;
 
         CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
-            SELECT key, value FROM test.{table} WHERE sleepEachRow(0.4) = 0;
+            SELECT key, value FROM test.{table} WHERE sleepEachRow({insert_secs / n}) = 0
+            SETTINGS function_sleep_max_microseconds_per_block = 60000000;
         """
     )
     instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
@@ -494,13 +502,15 @@ def test_stop_during_insert_does_not_duplicate(nats_cluster):
     # (incorrectly) skipped would be redelivered after ack_wait and surface as a duplicate.
     time.sleep(1)
     instance.query(f"SYSTEM STOP test.{table}")
-    instance.query(f"SYSTEM START test.{table}")
-    instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
+    # Wait for the fresh post-START subscription (a new "Started streaming" line), not the stale one from
+    # table creation, so the stability window below actually covers the resubscribed consumer.
+    start_and_wait_for_streaming(table)
 
-    # The block is acked exactly once: the rows appear and never grow past n (past the 3s ack-wait there
-    # is no redelivery), none are missing, and the consumer reports nothing still pending acknowledgement.
+    # The block is acked exactly once: the rows appear and never grow past n, none are missing, and the
+    # consumer reports nothing still pending acknowledgement. Watch for longer than ack_wait so a skipped
+    # ack, which would be redelivered only after ack_wait, still surfaces as a duplicate within the window.
     wait_dst_count_at_least(table, n)
-    assert_dst_count_stable(table, n, seconds=8)
+    assert_dst_count_stable(table, n, seconds=ack_wait + 5)
     assert jetstream_ack_pending(nats_cluster, stream, durable) == 0
 
 
@@ -514,8 +524,15 @@ def test_cancel_during_insert_does_not_duplicate(nats_cluster):
     table = "nats_cancel_during_insert"
     n = 5
 
-    # A short ack-wait so a missing ack surfaces quickly as a redelivery.
-    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=3)
+    # The block is acked only after the insert (its durable boundary), so `ack_wait` must exceed the
+    # insert time or the broker redelivers a correctly-acked block before its ack lands (a spurious
+    # duplicate). The view sleeps a fixed `insert_secs` (cap lifted below), so the margin is
+    # deterministic: `ack_wait=3` used to duplicate under this load; `ack_wait` well above insert_secs
+    # does not. A wrongly skipped ack is still detected two ways: as a redelivery duplicate (caught by
+    # the longer-than-`ack_wait` stability window below) and immediately by a non-zero `num_ack_pending`.
+    insert_secs = 5
+    ack_wait = 30
+    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=ack_wait)
 
     instance.query(
         f"""
@@ -534,7 +551,8 @@ def test_cancel_during_insert_does_not_duplicate(nats_cluster):
             ENGINE = MergeTree ORDER BY key;
 
         CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
-            SELECT key, value FROM test.{table} WHERE sleepEachRow(0.4) = 0;
+            SELECT key, value FROM test.{table} WHERE sleepEachRow({insert_secs / n}) = 0
+            SETTINGS function_sleep_max_microseconds_per_block = 60000000;
         """
     )
     instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
@@ -545,10 +563,11 @@ def test_cancel_during_insert_does_not_duplicate(nats_cluster):
     time.sleep(1)
     instance.query(f"SYSTEM CANCEL test.{table}")
 
-    # Acked exactly once: count reaches n and never grows (no duplicate, no loss), and nothing is
-    # left pending acknowledgement.
+    # Acked exactly once: count reaches n and never grows (no duplicate, no loss), and nothing is left
+    # pending acknowledgement. Watch for longer than ack_wait so a skipped ack, which would be
+    # redelivered only after ack_wait, still surfaces as a duplicate within the window.
     wait_dst_count_at_least(table, n)
-    assert_dst_count_stable(table, n, seconds=8)
+    assert_dst_count_stable(table, n, seconds=ack_wait + 5)
     assert jetstream_ack_pending(nats_cluster, stream, durable) == 0
 
 
@@ -726,15 +745,14 @@ def test_direct_select_leftover_does_not_pollute_view(nats_cluster):
     )
     jetstream_publish(nats_cluster, subject, 0, n)
 
-    # One direct read returns a single row (block size 1) and leaves the rest of the delivered burst
-    # buffered locally; retry until a read returns, confirming the burst was delivered.
-    for _ in range(40):
-        res = instance.query(
+    # A block-size-1 read returns one row while the broker is still streaming the rest of the burst,
+    # so keep reading until all n are delivered and unacked, leaving stale copies for the view below.
+    deadline = time.time() + 60
+    while time.time() < deadline and jetstream_ack_pending(nats_cluster, stream, durable) < n:
+        instance.query(
             f"SELECT key FROM test.{table} SETTINGS stream_like_engine_allow_direct_select = 1",
             ignore_error=True,
         )
-        if res.strip():
-            break
     assert jetstream_ack_pending(nats_cluster, stream, durable) == n
 
     # Let the unacked messages pass ack_wait so the broker will redeliver them to the next subscription.
@@ -1162,25 +1180,19 @@ def test_stop_while_viewless_does_not_drop_after_start(nats_cluster):
     ), f"consumer subscribed {subscribes}x; a stale unsubscribe fired after a STOP-while-viewless"
 
 
-def _server_cpu_jiffies():
-    """utime + stime of the clickhouse server process, in clock ticks."""
-    pid = instance.get_process_pid("clickhouse server")
-    content = instance.exec_in_container(["bash", "-c", f"cat /proc/{pid}/stat"])
-    # Skip 'pid (comm)' -- comm may contain spaces -- then fields start at 'state' (field 3).
-    rest = content[content.rindex(")") + 1:].split()
-    return int(rest[11]) + int(rest[12])  # utime (field 14) + stime (field 15)
-
-
-def _cpu_over(seconds):
-    before = _server_cpu_jiffies()
-    time.sleep(seconds)
-    return _server_cpu_jiffies() - before
+def broker_pool_tasks(table):
+    """(log_name, delayed) of each task of the table queued, running or delayed in the message broker pool."""
+    result = instance.query(
+        "SELECT log_name, delayed FROM system.background_schedule_pool "
+        f"WHERE pool = 'message_broker' AND database = 'test' AND table = '{table}' ORDER BY log_name"
+    )
+    return [(name, int(delayed)) for name, delayed in (line.split("\t") for line in result.splitlines())]
 
 
 def test_detach_last_view_does_not_busy_loop(nats_cluster):
-    # After the last view is detached, the viewless streaming task must back off, not tight-loop the
-    # message-broker schedule pool. Compare server CPU with a view (idle 500ms polling) vs viewless;
-    # a busy-loop pegs roughly a full core, while backing off stays near the baseline.
+    # After the last view is detached, the streaming task must stop rescheduling itself: it leaves the
+    # message broker pool, and only the consumer initialization task keeps polling for views, waiting
+    # between runs. A busy-looping streaming task never leaves the pool.
     table = "nats_detach_loop"
     subject = "detach_loop_subject"
     setup_consuming_table(table, subject)
@@ -1188,15 +1200,31 @@ def test_detach_last_view_does_not_busy_loop(nats_cluster):
     nats_publish(nats_cluster, subject, 0, 5)
     wait_dst_count_at_least(table, 5)
 
-    baseline = _cpu_over(4)
+    def task_names(tasks):
+        return [name for name, _ in tasks]
+
+    tasks = broker_pool_tasks(table)
+    assert task_names(tasks).count("NATSStreamingTask") == 1, tasks
 
     instance.query(f"DROP TABLE test.{table}_mv SYNC")
-    time.sleep(2)  # settle into the viewless state
 
-    viewless = _cpu_over(4)
-    assert viewless < baseline + 150, ( # based on test runs, where it's ~15, or ~400-800 for busy
-        f"viewless streaming task appears to busy-loop: baseline={baseline} viewless={viewless} "
-        "CPU jiffies over 4s"
+    # The last streaming run may still be draining the subscription.
+    deadline = time.time() + 60
+    while True:
+        tasks = broker_pool_tasks(table)
+        if "NATSStreamingTask" not in task_names(tasks) and "NATSInitializeConsumersTask" in task_names(tasks):
+            break
+        assert time.time() < deadline, f"viewless streaming task appears to busy-loop: {tasks}"
+        time.sleep(0.5)
+
+    samples = []
+    for _ in range(8):
+        time.sleep(0.5)
+        tasks = broker_pool_tasks(table)
+        assert "NATSStreamingTask" not in task_names(tasks), f"viewless streaming task appears to busy-loop: {tasks}"
+        samples.append(tasks)
+    assert any(("NATSInitializeConsumersTask", 1) in tasks for tasks in samples), (
+        f"viewless consumer initialization task does not wait between runs: {samples}"
     )
 
 

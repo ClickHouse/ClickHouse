@@ -20,9 +20,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 Kubernetes 上で稼働するワークロードの場合、ゲートウェイ collector 自体は、**ClickStack collector イメージを使用してアップストリームの OpenTelemetry Helm チャートで同じクラスター内に**デプロイする必要があります。インストールするには、[Deploying the collector](/ja/clickstack/ingesting-data/collector#configuring-the-collector) の Helm の手順に従ってください。**この OTLP endpoint は必ず記録しておいてください**。
 
 <Steps>
-  <Step>
-    ## 前提条件を確認する
-
+  <Step title="前提条件を確認する" id="gather-prerequisites">
     必要なもの:
 
     * `kubectl` が設定済みの **Kubernetes クラスター** (v1.20+ 推奨) 。
@@ -37,9 +35,7 @@ Kubernetes 上で稼働するワークロードの場合、ゲートウェイ co
     </Info>
   </Step>
 
-  <Step>
-    ## 認証用のsecretとConfigMapを作成する
-
+  <Step title="認証用のsecretとConfigMapを作成する" id="create-secret-and-configmap">
     collectorを配置するネームスペースを選択し、`OTLP_AUTH_TOKEN` を格納するsecretと、ゲートウェイを指定するConfigMapを作成します:
 
     ```shell
@@ -61,18 +57,14 @@ Kubernetes 上で稼働するワークロードの場合、ゲートウェイ co
     以下の2つのcollectorはいずれも`extraEnvs`経由でこれらの値を読み込むため、同じSecretとConfigMapを両者で再利用します。
   </Step>
 
-  <Step>
-    ## OpenTelemetry の Helm リポジトリを追加する
-
+  <Step title="OpenTelemetry の Helm リポジトリを追加する" id="add-otel-helm-repo">
     ```shell
     helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
     helm repo update
     ```
   </Step>
 
-  <Step>
-    ## クラスター collector をデプロイする
-
+  <Step title="クラスター collector をデプロイする" id="deploy-cluster-collector">
     これは単一レプリカのデプロイメントで、**Kubernetes イベント** と **クラスター全体のメトリクス** (ノード数、ポッドのフェーズ、デプロイメントのステータスなど) を収集します。レプリカを複数実行すると、重複データが発生します。
 
     以下の内容を `k8s_deployment.yaml` として保存します。
@@ -141,9 +133,7 @@ Kubernetes 上で稼働するワークロードの場合、ゲートウェイ co
     ```
   </Step>
 
-  <Step>
-    ## ノード collector をデプロイする
-
+  <Step title="ノード collector をデプロイする" id="deploy-node-collector">
     これは、**コンテナーログ**、**ホストメトリクス**、**キューブレット メトリクス** (ポッド単位およびコンテナー単位での、request と limit に対する CPU とメモリの使用率) を収集するために、すべてのノードで実行されるデーモンセットです。
 
     以下を `k8s_daemonset.yaml` として保存します。
@@ -260,9 +250,7 @@ Kubernetes 上で稼働するワークロードの場合、ゲートウェイ co
     デプロイメントのポッドが1つと、各ノードにつきデーモンセットのポッドが1つ表示され、いずれも `Running` 状態になっているはずです。
   </Step>
 
-  <Step>
-    ## Kubernetes 属性をアプリに転送する (推奨)
-
+  <Step title="Kubernetes 属性をアプリに転送する (推奨)" id="forward-k8s-attributes">
     アプリケーションのログ、メトリクス、トレースを Kubernetes のメタデータ (ポッド名、ネームスペース、ノード、デプロイメント) と相関付けるには、`OTEL_RESOURCE_ATTRIBUTES` を介してこのメタデータをアプリケーションに渡します。すると、デーモンセットの `k8sattributes` プロセッサが、受信したテレメトリーに一致するポッドおよびノードの属性を付加します。
 
     ```yaml
@@ -311,9 +299,7 @@ Kubernetes 上で稼働するワークロードの場合、ゲートウェイ co
     ```
   </Step>
 
-  <Step>
-    ## ClickStack UIで確認する
-
+  <Step title="ClickStack UIで確認する" id="confirm-in-ui">
     [ClickHouse Cloud console](https://console.clickhouse.cloud)でサービスを開き、左側のメニューから**ClickStack**を選択します。
 
     <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="ClickStackを起動" border />
@@ -333,9 +319,7 @@ Kubernetes 上で稼働するワークロードの場合、ゲートウェイ co
     * secret内の`OTLP_AUTH_TOKEN`が、ゲートウェイcollectorに設定した値と一致していることを確認します。
   </Step>
 
-  <Step>
-    ## 参考資料
-
+  <Step title="参考資料" id="further-reading">
     * receiver、プロセッサ、チューニングオプションの全体像については、[Kubernetes インテグレーション リファレンス](/ja/clickstack/integration-examples/kubernetes) を参照してください。
     * アプリケーション側でのエンリッチメントの詳細については、[resource タグをポッドに転送する](/ja/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) を参照してください。
     * OTLP endpoint での TLS の利用と最小権限のインジェスト用ユーザーについては、[collector の保護](/ja/clickstack/ingesting-data/collector#securing-the-collector) を参照してください。

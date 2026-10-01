@@ -28,7 +28,7 @@ Dans certains cas, vous pouvez vous fier à l’ordre d’exécution.
 Cela s’applique aux cas où `SELECT` provient d’une sous-requête qui utilise `ORDER BY`.
 
 Lorsqu’une requête `SELECT` comporte la clause `GROUP BY` ou au moins une fonction d’agrégation, ClickHouse (contrairement à MySQL) exige que toutes les expressions des clauses `SELECT`, `HAVING` et `ORDER BY` soient calculées à partir de clés ou de fonctions d’agrégation.
-Autrement dit, chaque colonne sélectionnée dans la table doit être utilisée soit dans les clés, soit à l’intérieur de fonctions d’agrégation.
+Autrement dit, chaque colonne sélectionnée de la table doit être utilisée soit dans les clés, soit à l’intérieur de fonctions d’agrégation.
 Pour obtenir un comportement semblable à celui de MySQL, vous pouvez placer les autres colonnes dans la fonction d’agrégation `any`.
 
 <Note>

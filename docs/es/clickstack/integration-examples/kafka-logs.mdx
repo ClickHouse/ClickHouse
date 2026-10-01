@@ -33,15 +33,13 @@ Si desea probar la integración de logs de Kafka antes de configurar su propio e
 * Acceso a los archivos de registro de Kafka (`server.log`, `controller.log`, etc.)
 
 <Steps>
-  <Step>
-    #### Verifique la configuración de logging de Kafka
-
+  <Step title="Verifique la configuración de logging de Kafka" id="verify-kafka">
     Kafka usa Log4j y escribe los logs en el directorio especificado por la propiedad del sistema `kafka.logs.dir` o la variable de entorno `LOG_DIR`. Compruebe la ubicación de su archivo de log:
 
     ```bash
-    # Ubicaciones predeterminadas
-    ls $KAFKA_HOME/logs/      # Apache Kafka estándar (por defecto en <install-dir>/logs/)
-    ls /var/log/kafka/        # Instalaciones de paquetes RPM/DEB
+    # Default locations
+    ls $KAFKA_HOME/logs/      # Standard Apache Kafka (defaults to <install-dir>/logs/)
+    ls /var/log/kafka/        # RPM/DEB package installations
     ```
 
     Principales archivos de registro de Kafka:
@@ -61,9 +59,7 @@ Si desea probar la integración de logs de Kafka antes de configurar su propio e
     </Note>
   </Step>
 
-  <Step>
-    #### Cree una configuración personalizada del OTel collector para Kafka
-
+  <Step title="Cree una configuración personalizada del OTel collector para Kafka" id="custom-otel">
     ClickStack le permite ampliar la configuración base de OpenTelemetry Collector montando un archivo de configuración personalizado y definiendo una variable de entorno. La configuración personalizada se combina con la configuración base administrada por HyperDX mediante OpAMP.
 
     Cree un archivo llamado `kafka-logs-monitoring.yaml` con la siguiente configuración:
@@ -73,8 +69,8 @@ Si desea probar la integración de logs de Kafka antes de configurar su propio e
       filelog/kafka:
         include:
           - /var/log/kafka/server.log
-          - /var/log/kafka/controller.log  # opcional, solo existe si log4j está configurado con appenders de archivo independientes
-          - /var/log/kafka/state-change.log  # opcional, igual que el caso anterior
+          - /var/log/kafka/controller.log  # optional, only exists if log4j is configured with separate file appenders
+          - /var/log/kafka/state-change.log  # optional, same as above
         start_at: beginning
         multiline:
           line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
@@ -120,9 +116,7 @@ Si desea probar la integración de logs de Kafka antes de configurar su propio e
     </Note>
   </Step>
 
-  <Step>
-    #### Configura ClickStack para cargar una configuración personalizada
-
+  <Step title="Configura ClickStack para cargar una configuración personalizada" id="load-custom">
     Para habilitar una configuración personalizada del collector en tu despliegue actual de ClickStack, debes hacer lo siguiente:
 
     1. Montar el archivo de configuración personalizado en `/etc/otelcol-contrib/custom.config.yaml`
@@ -166,9 +160,7 @@ Si desea probar la integración de logs de Kafka antes de configurar su propio e
     </Note>
   </Step>
 
-  <Step>
-    #### Verificar los logs en HyperDX
-
+  <Step title="Verificar los logs en HyperDX" id="verifying-logs">
     Una vez completada la configuración, inicia sesión en HyperDX y verifica que los logs se estén recibiendo:
 
     <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="Vista de búsqueda" />
@@ -184,9 +176,7 @@ Si desea probar la integración de logs de Kafka antes de configurar su propio e
 Prueba la integración de logs de Kafka con un conjunto de datos de ejemplo pregenerado antes de configurar tus sistemas de producción.
 
 <Steps>
-  <Step>
-    #### Descarga el conjunto de datos de ejemplo
-
+  <Step title="Descarga el conjunto de datos de ejemplo" id="download-sample">
     Descarga el archivo de logs de ejemplo:
 
     ```bash
@@ -194,9 +184,7 @@ Prueba la integración de logs de Kafka con un conjunto de datos de ejemplo preg
     ```
   </Step>
 
-  <Step>
-    #### Crea la configuración del collector de prueba
-
+  <Step title="Crea la configuración del collector de prueba" id="test-config">
     Crea un archivo llamado `kafka-logs-demo.yaml` con la siguiente configuración:
 
     ```yaml
@@ -245,9 +233,7 @@ Prueba la integración de logs de Kafka con un conjunto de datos de ejemplo preg
     ```
   </Step>
 
-  <Step>
-    #### Ejecuta ClickStack con la configuración de demostración
-
+  <Step title="Ejecuta ClickStack con la configuración de demostración" id="run-demo">
     Ejecuta ClickStack con los logs de demostración y esta configuración:
 
     ```bash
@@ -278,13 +264,11 @@ Prueba la integración de logs de Kafka con un conjunto de datos de ejemplo preg
 </div>
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json'} download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">Descargar</TrackedLink> la configuración del dashboard
+  <Step title="Descargar la configuración del dashboard" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json'} download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">Descargar el archivo de configuración del dashboard</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Importar dashboard preconfigurado
-
+  <Step title="Importar dashboard preconfigurado" id="import-dashboard">
     1. Abre HyperDX y ve a la sección Dashboards.
     2. Haz clic en &quot;Import Dashboard&quot; en la esquina superior derecha, en el menú de tres puntos.
 
@@ -295,10 +279,8 @@ Prueba la integración de logs de Kafka con un conjunto de datos de ejemplo preg
     <Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="Finalizar la importación del dashboard de logs de Kafka" />
   </Step>
 
-  <Step>
-    #### El dashboard se creará con todas las visualizaciones preconfiguradas
-
-    Para el dataset de demostración, establece el intervalo de tiempo para incluir **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
+  <Step title="El dashboard se creará con todas las visualizaciones preconfiguradas" id="created-dashboard">
+    Para el conjunto de datos de demostración, establece el intervalo de tiempo para incluir **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
     <Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="Dashboard de ejemplo de logs de Kafka" />
   </Step>
@@ -340,4 +322,4 @@ Si tu instalación de Kafka usa un pattern de Log4j personalizado, ajusta la reg
   ## Puesta en producción
 </div>
 
-Esta guía amplía el OpenTelemetry Collector integrado de ClickStack para facilitar una configuración rápida. Para implementaciones en producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.
+Esta guía utiliza el OpenTelemetry Collector integrado de ClickStack para una configuración rápida. Para implementaciones en producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.

@@ -51,21 +51,17 @@ DROP DATABASE db1;
 예시에서 사용할 다음 테이블과 사용자를 생성합니다.
 
 <div id="creating-a-sample-database-table-and-rows">
-  #### 샘플 데이터베이스, 테이블, 행 만들기
+  #### 샘플 데이터베이스, 테이블 및 행 생성하기
 </div>
 
 <Steps>
-  <Step>
-    ##### 테스트 데이터베이스 만들기
-
+  <Step title="테스트 데이터베이스 생성하기" id="create-a-test-database">
     ```sql
     CREATE DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### 테이블 만들기
-
+  <Step title="테이블 생성하기" id="create-a-table">
     ```sql
     CREATE TABLE db1.table1 (
        id UInt64,
@@ -77,9 +73,7 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### 테이블에 샘플 행 삽입하기
-
+  <Step title="샘플 행으로 테이블 채우기" id="populate">
     ```sql
     INSERT INTO db1.table1
        (id, column1, column2)
@@ -91,9 +85,7 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### 테이블 확인하기
-
+  <Step title="테이블 확인하기" id="verify">
     ```sql title="쿼리"
     SELECT *
     FROM db1.table1
@@ -111,20 +103,16 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### `column_user` 만들기
-
-    특정 컬럼에 대한 접근 제한을 보여주는 데 사용할 일반 사용자를 생성합니다:
+  <Step title={<>Create <code>column_user</code></>} id="create-a-user-with-restricted-access-to-columns">
+    특정 컬럼에 대한 액세스 제한을 시연하는 데 사용할 일반 사용자를 생성합니다:
 
     ```sql
     CREATE USER column_user IDENTIFIED BY 'password';
     ```
   </Step>
 
-  <Step>
-    ##### `row_user` 만들기
-
-    특정 값을 가진 행에 대한 접근 제한을 보여주는 데 사용할 일반 사용자를 생성합니다:
+  <Step title={<>Create <code>row_user</code></>} id="create-a-user-with-restricted-access-to-rows-with-certain-values">
+    특정 값을 가진 행에 대한 액세스 제한을 시연하는 데 사용할 일반 사용자를 생성합니다:
 
     ```sql
     CREATE USER row_user IDENTIFIED BY 'password';
@@ -145,65 +133,49 @@ DROP DATABASE db1;
 역할을 사용하면 각 사용자를 개별적으로 관리하는 대신, 특정 권한별로 사용자 그룹을 정의할 수 있습니다.
 
 <Steps>
-  <Step>
-    ##### 이 역할에 속한 사용자가 데이터베이스 `db1`의 `table1`에서 `column1`만 볼 수 있도록 제한하는 역할 생성
-
+  <Step title={<>이 역할에 속한 사용자가 데이터베이스 <code>db1</code>의 <code>table1</code>에서 <code>column1</code>만 볼 수 있도록 제한하는 역할 생성:</>} id="create-column-role">
     ```sql
     CREATE ROLE column1_users;
     ```
   </Step>
 
-  <Step>
-    ##### `column1`을 볼 수 있는 권한 설정
-
+  <Step title={<>`column1`을 볼 수 있는 권한 설정</>} id="set-column-privileges">
     ```sql
     GRANT SELECT(id, column1) ON db1.table1 TO column1_users;
     ```
   </Step>
 
-  <Step>
-    ##### `column_user` 사용자를 `column1_users` 역할에 추가
-
+  <Step title={<>`column_user` 사용자를 `column1_users` 역할에 추가</>} id="add-column-user-to-role">
     ```sql
     GRANT column1_users TO column_user;
     ```
   </Step>
 
-  <Step>
-    ##### 이 역할에 속한 사용자가 선택된 행만 볼 수 있도록 제한하는 역할 생성. 여기서는 `column1`에 `A`가 있는 행만 볼 수 있습니다
-
+  <Step title={<>이 역할에 속한 사용자가 선택된 행만 볼 수 있도록 제한하는 역할 생성. 여기서는 <code>column1</code>에 <code>A</code>가 있는 행만 볼 수 있습니다</>} id="create-row-role">
     ```sql
     CREATE ROLE A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### `row_user`를 `A_rows_users` 역할에 추가
-
+  <Step title={<>`row_user`를 `A_rows_users` 역할에 추가</>} id="add-row-user-to-role">
     ```sql
     GRANT A_rows_users TO row_user;
     ```
   </Step>
 
-  <Step>
-    ##### `column1` 값이 `A`인 경우에만 볼 수 있도록 정책 생성
-
+  <Step title={<>`column1` 값이 <code>A</code>인 경우에만 볼 수 있도록 정책 생성</>} id="create-row-policy">
     ```sql
     CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### 데이터베이스와 테이블에 대한 권한 설정
-
+  <Step title="데이터베이스와 테이블에 대한 권한 설정" id="set-db-table-privileges">
     ```sql
     GRANT SELECT(id, column1, column2) ON db1.table1 TO A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### 다른 역할도 계속 모든 행에 접근할 수 있도록 명시적으로 권한 부여
-
+  <Step title="다른 역할도 계속 모든 행에 접근할 수 있도록 명시적으로 권한 부여" id="grant-other-roles-access">
     ```sql
     CREATE ROW POLICY allow_other_users_filter 
     ON db1.table1 FOR SELECT USING 1 TO clickhouse_admin, column1_users;
@@ -224,17 +196,13 @@ DROP DATABASE db1;
 </div>
 
 <Steps>
-  <Step>
-    ##### `clickhouse_admin` 사용자로 clickhouse client에 로그인합니다
-
+  <Step title={<>`clickhouse_admin` 사용자로 clickhouse client에 로그인합니다</>} id="login-admin-user">
     ```bash
     clickhouse-client --user clickhouse_admin --password password
     ```
   </Step>
 
-  <Step>
-    ##### 관리자 사용자로 데이터베이스, 테이블, 그리고 모든 행에 대한 접근을 확인합니다.
-
+  <Step title="관리자 사용자로 데이터베이스, 테이블, 그리고 모든 행에 대한 접근을 확인합니다." id="verify-admin-access">
     ```sql
     SELECT *
     FROM db1.table1
@@ -252,17 +220,13 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### `column_user` 사용자로 ClickHouse client에 로그인합니다
-
+  <Step title={<>`column_user` 사용자로 ClickHouse client에 로그인합니다</>} id="login-column-user">
     ```bash
     clickhouse-client --user column_user --password password
     ```
   </Step>
 
-  <Step>
-    ##### 모든 컬럼으로 `SELECT`를 테스트합니다
-
+  <Step title={<>모든 컬럼으로 <code>SELECT</code>를 테스트합니다</>} id="test-select-all-columns">
     ```sql
     SELECT *
     FROM db1.table1
@@ -285,9 +249,7 @@ DROP DATABASE db1;
     </Note>
   </Step>
 
-  <Step>
-    ##### 지정되었고 허용된 컬럼만 사용하는 `SELECT` 쿼리를 확인합니다:
-
+  <Step title={<>지정되고 허용된 컬럼만 사용하는 <code>SELECT</code> 쿼리를 확인합니다:</>} id="verify-allowed-columns">
     ```sql
     SELECT
         id,
@@ -313,17 +275,13 @@ DROP DATABASE db1;
 </div>
 
 <Steps>
-  <Step>
-    ##### `row_user`로 ClickHouse client에 로그인
-
+  <Step title={<>`row_user`로 ClickHouse client에 로그인</>} id="login-row-user">
     ```bash
     clickhouse-client --user row_user --password password
     ```
   </Step>
 
-  <Step>
-    ##### 조회 가능한 행 확인
-
+  <Step title="조회 가능한 행 확인" id="view-available-rows">
     ```sql
     SELECT *
     FROM db1.table1
@@ -353,41 +311,31 @@ DROP DATABASE db1;
 예를 들어 `role1`이 `column1`에 대한 SELECT만 허용하고 `role2`가 `column1` 및 `column2`에 대한 SELECT를 허용하면, 해당 사용자는 두 컬럼 모두에 접근할 수 있습니다.
 
 <Steps>
-  <Step>
-    ##### 관리자 계정을 사용해 행과 컬럼 모두에 제한을 적용하고 기본 역할을 가진 새 사용자를 생성합니다
-
+  <Step title="관리자 계정을 사용해 행과 컬럼 모두에 제한을 적용하고 기본 역할을 가진 새 사용자를 생성합니다" id="create-restricted-user">
     ```sql
     CREATE USER row_and_column_user IDENTIFIED BY 'password' DEFAULT ROLE A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### `A_rows_users` 역할의 기존 권한을 제거합니다
-
+  <Step title={<>`A_rows_users` 역할의 기존 권한을 제거합니다</>} id="remove-prior-privileges">
     ```sql
     REVOKE SELECT(id, column1, column2) ON db1.table1 FROM A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### `A_row_users` 역할이 `column1`만 SELECT할 수 있도록 허용합니다
-
+  <Step title={<>`A_row_users` 역할이 <code>column1</code>만 SELECT할 수 있도록 허용합니다</>} id="allow-column1-select">
     ```sql
     GRANT SELECT(id, column1) ON db1.table1 TO A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### `row_and_column_user`로 clickhouse client에 로그인합니다
-
+  <Step title={<>`row_and_column_user`로 clickhouse client에 로그인합니다</>} id="login-restricted-user">
     ```bash
     clickhouse-client --user row_and_column_user --password password;
     ```
   </Step>
 
-  <Step>
-    ##### 모든 컬럼으로 테스트합니다:
-
+  <Step title="모든 컬럼으로 테스트합니다:" id="test-all-columns-restricted">
     ```sql
     SELECT *
     FROM db1.table1
@@ -406,9 +354,7 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### 허용된 컬럼만 사용해 테스트합니다:
-
+  <Step title="허용된 컬럼만 사용해 테스트합니다:" id="test-limited-columns">
     ```sql
     SELECT
         id,

@@ -192,7 +192,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
 #else
     /// If we use Musl with static linking, there is no dlsym and no issue with vfork.
-    static void * real_vfork = reinterpret_cast<void *>(&vfork);
+    static void * real_vfork = reinterpret_cast<void *>(&vfork); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c)
 #endif
 
     if (!real_vfork)

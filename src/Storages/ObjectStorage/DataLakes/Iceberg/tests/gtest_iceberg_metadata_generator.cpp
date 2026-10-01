@@ -61,6 +61,65 @@ void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id =
         /*num_deleted_rows=*/ 0);
 }
 
+/// Generate one snapshot with explicit delete-file / operation parameters and return its `operation` summary field.
+String snapshotOperation(
+    Poco::JSON::Object::Ptr metadata,
+    Int64 added_delete_files,
+    Int64 num_deleted_rows,
+    MetadataGenerator::SnapshotOperation operation = MetadataGenerator::SnapshotOperation::Append)
+{
+    FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
+    generator.setVersion(1);
+    auto metadata_info = generator.generateMetadataPathWithInfo();
+    auto result = MetadataGenerator(metadata).generateNextMetadata(
+        generator,
+        metadata_info.path,
+        /*parent_snapshot_id=*/ -1,
+        /*added_files=*/ 1,
+        /*added_records=*/ 1,
+        /*added_files_size=*/ 100,
+        /*num_partitions=*/ 1,
+        added_delete_files,
+        num_deleted_rows,
+        /*user_defined_snapshot_id=*/ std::nullopt,
+        /*user_defined_timestamp=*/ std::nullopt,
+        operation);
+    return result.snapshot->getObject(Iceberg::f_summary)->getValue<String>(Iceberg::f_operation);
+}
+
+void callManifestOnlySnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id)
+{
+    FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
+    generator.setVersion(1);
+    auto metadata_info = generator.generateMetadataPathWithInfo();
+    MetadataGenerator(metadata).generateManifestOnlySnapshot(generator, metadata_info.path, parent_snapshot_id);
+}
+
+}
+
+/// A plain data append (no deleted rows) must be labelled `append`.
+TEST(IcebergMetadataGenerator, AppendOperationForInsert)
+{
+    auto metadata = makeMinimalV2Metadata();
+    EXPECT_EQ(snapshotOperation(metadata, /*added_delete_files=*/ 0, /*num_deleted_rows=*/ 0), Iceberg::f_append);
+}
+
+/// A merge-on-read DELETE writes position-delete files, so its snapshot must be labelled `overwrite`
+/// (Iceberg spec). This is what system.iceberg_history reports and what expire_snapshots relies on.
+TEST(IcebergMetadataGenerator, OverwriteOperationForDelete)
+{
+    auto metadata = makeMinimalV2Metadata();
+    EXPECT_EQ(snapshotOperation(metadata, /*added_delete_files=*/ 1, /*num_deleted_rows=*/ 5), Iceberg::f_overwrite);
+}
+
+/// An explicit `Replace` (manifest rewrite / compaction) stays `replace` regardless of delete counters.
+TEST(IcebergMetadataGenerator, ReplaceOperationIsPreserved)
+{
+    auto metadata = makeMinimalV2Metadata();
+    EXPECT_EQ(
+        snapshotOperation(
+            metadata, /*added_delete_files=*/ 1, /*num_deleted_rows=*/ 5, MetadataGenerator::SnapshotOperation::Replace),
+        Iceberg::f_replace);
 }
 
 /// snapshots / metadata-log / snapshot-log are optional per the Iceberg spec, so external
@@ -129,6 +188,28 @@ TEST(IcebergMetadataGenerator, ThrowsWhenSnapshotsArrayMissingButParentSnapshotE
         EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION);
     }
     EXPECT_FALSE(metadata->has(Iceberg::f_snapshots));
+}
+
+/// `refs` is optional per the Iceberg spec too, so a manifest-only rewrite (OPTIMIZE ... MANIFEST)
+/// must seed it. isObject is asserted, not just the absence of a throw: it matches on the same
+/// typeid(Object::Ptr) as getObject, so it also rejects seeding a raw Poco::JSON::Object pointer.
+TEST(IcebergMetadataGenerator, ManifestOnlySnapshotWhenRefsMissing)
+{
+    auto metadata = makeMinimalV2Metadata();
+    ASSERT_NO_THROW(appendSnapshot(metadata));
+    ASSERT_EQ(metadata->getArray(Iceberg::f_snapshots)->size(), 1u);
+    auto parent_snapshot_id
+        = metadata->getArray(Iceberg::f_snapshots)->getObject(0)->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+
+    metadata->remove(Iceberg::f_refs);
+    EXPECT_NO_THROW(callManifestOnlySnapshot(metadata, parent_snapshot_id));
+
+    EXPECT_TRUE(metadata->isObject(Iceberg::f_refs));
+    ASSERT_FALSE(metadata->getObject(Iceberg::f_refs).isNull());
+    ASSERT_TRUE(metadata->getObject(Iceberg::f_refs)->has(Iceberg::f_main));
+    EXPECT_EQ(
+        metadata->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->getValue<Int64>(Iceberg::f_metadata_snapshot_id),
+        metadata->getValue<Int64>(Iceberg::f_current_snapshot_id));
 }
 
 #endif

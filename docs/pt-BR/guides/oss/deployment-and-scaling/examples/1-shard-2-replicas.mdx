@@ -39,9 +39,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
 * Você tem o Docker instalado na sua máquina
 
 <Steps>
-  <Step>
-    ## Configurar a estrutura de diretórios e o ambiente de teste
-
+  <Step title="Configurar a estrutura de diretórios e o ambiente de teste" id="set-up">
     <ExampleFiles />
 
     Neste tutorial, você usará o [Docker compose](https://docs.docker.com/compose/) para
@@ -54,12 +52,12 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     mkdir cluster_1S_2R
     cd cluster_1S_2R
 
-    # Criar diretórios do clickhouse-keeper
+    # Create clickhouse-keeper directories
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # Criar diretórios do clickhouse-server
+    # Create clickhouse-server directories
     for i in {01..02}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -143,14 +141,12 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## Configurar nós do ClickHouse
-
-    ### Configuração do servidor
+  <Step title="Configurar nós do ClickHouse" id="configure-clickhouse-servers">
+### Configuração do servidor
 
     Agora modifique cada arquivo de configuração vazio `config.xml` localizado em
-    `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. As linhas destacadas
-    abaixo precisam ser ajustadas de acordo com cada nó:
+    `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. As linhas que estão
+    destacadas abaixo precisam ser alteradas para serem específicas de cada nó:
 
     ```xml highlight={9,53-57}
     <clickhouse replace="true">
@@ -220,7 +216,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
 
     Cada seção do arquivo de configuração acima é explicada em mais detalhes a seguir.
 
-    #### Rede e logging
+#### Rede e logging
 
     <ListenHost />
 
@@ -240,7 +236,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     Para obter mais informações sobre configuração de logging, consulte os comentários incluídos no
     [arquivo de configuração](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) padrão do ClickHouse.
 
-    #### Configuração do cluster
+#### Configuração do cluster
 
     A configuração do cluster é definida no bloco `<remote_servers>`.
     Aqui é definido o nome do cluster `cluster_1S_2R`.
@@ -255,11 +251,11 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
 
     ```xml
     <remote_servers>
-        <!-- nome do cluster (não deve conter pontos) -->
+        <!-- cluster name (should not contain dots) -->
         <cluster_1S_2R>
             <!-- <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries> -->
             <shard>
-                <!-- Opcional. Define se os dados devem ser gravados em apenas uma das réplicas. Padrão: false (gravar dados em todas as réplicas). -->
+                <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
                 <internal_replication>true</internal_replication>
                 <replica>
                     <host>clickhouse-01</host>
@@ -276,7 +272,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
 
     <ServerParameterTable />
 
-    #### Configuração do Keeper
+#### Configuração do Keeper
 
     A seção `<ZooKeeper>` informa ao ClickHouse onde o ClickHouse Keeper (ou ZooKeeper) está em execução.
     Como estamos usando um cluster do ClickHouse Keeper, cada `<node>` do cluster precisa ser especificado,
@@ -306,7 +302,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
       em ambientes de produção, recomendamos fortemente que o ClickHouse Keeper seja executado em servidores dedicados.
     </Note>
 
-    #### Configuração de macros
+#### Configuração de macros
 
     Além disso, a seção `<macros>` é usada para definir substituições de parâmetros para
     tabelas replicadas. Elas são listadas em `system.macros` e permitem o uso de substituições
@@ -324,7 +320,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
       Eles serão definidos de maneira específica, dependendo da configuração do cluster.
     </Note>
 
-    ### Configuração de usuário
+### Configuração de usuário
 
     Agora modifique cada arquivo de configuração vazio `users.xml` localizado em
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` com o seguinte conteúdo:
@@ -342,7 +338,6 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
         </profiles>
         <users>
             <default>
-                <access_management>1</access_management>
                 <profile>default</profile>
                 <networks>
                     <ip>::/0</ip>
@@ -350,7 +345,6 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
                 <quota>default</quota>
                 <access_management>1</access_management>
                 <named_collection_control>1</named_collection_control>
-                <show_named_collections>1</show_named_collections>
                 <show_named_collections_secrets>1</show_named_collections_secrets>
             </default>
         </users>
@@ -382,10 +376,8 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     </Note>
   </Step>
 
-  <Step>
-    ## Configurar o ClickHouse Keeper
-
-    ### Configuração do ClickHouse Keeper
+  <Step title="Configurar o ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
+### Configuração do ClickHouse Keeper
 
     <KeeperConfig />
 
@@ -400,9 +392,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     <CloudTip />
   </Step>
 
-  <Step>
-    ## Teste a configuração
-
+  <Step title="Teste a configuração" id="test-the-setup">
     Certifique-se de que o Docker esteja em execução na sua máquina.
     Inicie o cluster usando o comando `docker-compose up` na raiz do diretório `cluster_1S_2R`:
 
@@ -427,7 +417,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     consulta a seguir. O comando para se conectar ao primeiro nó é mostrado abaixo:
 
     ```bash
-    # Conecte-se a qualquer nó
+    # Connect to any node
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -481,9 +471,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     Na próxima etapa, você criará uma tabela no cluster.
   </Step>
 
-  <Step>
-    ## Criar um banco de dados
-
+  <Step title="Criar um banco de dados" id="creating-a-database">
     Agora que você verificou que o cluster foi configurado corretamente e está em execução,
     você recriará a mesma tabela usada no tutorial do conjunto de dados de exemplo
     [UK property prices](/pt-BR/get-started/sample-datasets/uk-price-paid). Esse conjunto de dados
@@ -541,9 +529,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     ```
   </Step>
 
-  <Step>
-    ## Crie uma tabela no cluster
-
+  <Step title="Crie uma tabela no cluster" id="creating-a-table">
     Agora que o banco de dados foi criado, crie uma tabela no cluster.
     Execute a seguinte consulta em qualquer um dos hosts clientes:
 
@@ -595,9 +581,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     ```
   </Step>
 
-  <Step>
-    ## Inserir dados
-
+  <Step title="Inserir dados" id="inserting-data">
     Como o conjunto de dados é grande e leva alguns minutos para ser completamente ingerido, vamos
     inserir apenas um pequeno subconjunto inicialmente.
 
@@ -683,7 +667,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     INSERT INTO test.test_table (id, name) VALUES (1, 'Clicky McClickface');
     ```
 
-    Mas o que acontece se um dos hosts estiver fora do ar? Para simular isso, pare
+    Mas o que acontecerá se um dos hosts ficar fora do ar? Para simular isso, pare
     `clickhouse-01` executando:
 
     ```bash
@@ -713,7 +697,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     ```
 
     ```response title="Response"
-    ┌─id─┬─name───────────────┐
+       ┌─id─┬─name───────────────┐
     1. │  1 │ Clicky McClickface │
     2. │  2 │ Alexey Milovidov   │
        └────┴────────────────────┘
@@ -732,7 +716,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     ```
 
     ```response title="Response"
-    ┌─id─┬─name───────────────┐
+       ┌─id─┬─name───────────────┐
     1. │  1 │ Clicky McClickface │
     2. │  2 │ Alexey Milovidov   │
        └────┴────────────────────┘
@@ -787,8 +771,8 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     ```
 
     ```response title="Response"
-    ┌──count()─┐
-    1. │ 30212555 │ -- 30,21 milhões
+       ┌──count()─┐
+    1. │ 30212555 │ -- 30.21 million
        └──────────┘
     ```
   </Step>

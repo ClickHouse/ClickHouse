@@ -42,7 +42,7 @@ ClickHouse は、[数値キー](/ja/reference/statements/create/dictionary/attri
 
 ClickHouse は、外部 Dictionary 属性の階層プロパティをサポートしています。このプロパティを使うと、前述のような階層型 Dictionary を設定できます。
 
-[dictGetHierarchy](/ja/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy) 関数を使うと、要素の親チェーンを取得できます。
+[dictGetHierarchy](/ja/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy) 関数を使うと、要素の親チェーンを取得できます。[dictGetRoot](/ja/reference/functions/regular-functions/ext-dict-functions#dictGetRoot) 関数は、要素の最上位の祖先 (ルート) のみを返します。
 
 この例では、Dictionary の構造は次のようになります。
 

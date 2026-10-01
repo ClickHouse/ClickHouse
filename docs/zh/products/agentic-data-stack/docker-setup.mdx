@@ -57,7 +57,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     docker compose up -d
     ```
 
-    启动顺序会自动处理。LibreChat 只有在 MCP Server 健康后才会启动，因此首次加载时，它与 ClickHouse 的连接就已经就绪。
+    启动顺序会自动处理。LibreChat 只有在 MCP 服务器健康后才会启动，因此首次加载时，它与 ClickHouse 的连接就已经就绪。
   </Step>
 
   <Step title="打开 LibreChat 并登录">
@@ -65,7 +65,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     * **LibreChat** (聊天 UI) — [http://localhost:3080](http://localhost:3080)
     * **Langfuse** (可观测性) — [http://localhost:3000](http://localhost:3000)
-    * **Admin Panel** (基于浏览器的 LibreChat 配置界面) — [http://localhost:3081](http://localhost:3081)
+    * **管理面板** (基于浏览器的 LibreChat 配置界面) — [http://localhost:3081](http://localhost:3081)
     * **MinIO console** (对象存储；凭据见 `.env`) — [http://localhost:9091](http://localhost:9091)
 
     使用 `.env` 文件中的 admin 凭据登录 LibreChat。
@@ -89,8 +89,8 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </Accordion>
   </Step>
 
-  <Step title="选择 MCP Server">
-    该技术栈已在 LibreChat 的 `librechat.yaml` 中预先配置好 MCP servers。在消息输入框中，点击 **MCP Servers** 并选择 **ClickHouse-Local**。
+  <Step title="选择 MCP 服务器">
+    该技术栈已在 LibreChat 的 `librechat.yaml` 中预先配置好 MCP 服务器。在消息输入框中，点击 **MCP Servers** 并选择 **ClickHouse-Local**。
 
     如果要使用 ClickHouse Cloud 服务，请改为选择 **ClickHouse-Cloud**。
 
@@ -104,7 +104,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     > 有哪些数据库和表可用，最大的一张表有多少行？
 
-    agent 会使用 MCP Server 的工具列出数据库和表，对 ClickHouse 执行只读查询，并根据结果生成答案。你无需编写 SQL。
+    agent 会使用 MCP 服务器的工具列出数据库和表，对 ClickHouse 执行只读查询，并根据结果生成答案。你无需编写 SQL。
 
     <Image img="/images/agentic-data-stack/prompt-chat.webp" alt="LibreChat 通过调用 ClickHouse-Local MCP 工具回答示例问题，并列出可用的数据库和表" size="md" />
   </Step>

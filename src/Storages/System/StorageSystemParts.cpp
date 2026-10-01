@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Interpreters/ProcessList.h>
 
 
 namespace
@@ -34,6 +35,8 @@ std::string_view getRemovalStateDescription(DB::DataPartRemovalState state)
         return "Waiting mutation parent to be removed";
     case DB::DataPartRemovalState::EMPTY_PART_COVERS_OTHER_PARTS:
         return "Waiting for covered parts to be removed first";
+    case DB::DataPartRemovalState::PINNED_BY_DELETE_BITMAP:
+        return "Holds the only copy of another part's delete bitmap";
     case DB::DataPartRemovalState::REMOVE:
         return "Part was selected to be removed";
     case DB::DataPartRemovalState::REMOVE_ROLLED_BACK:
@@ -68,7 +71,7 @@ Name of the data part. The part naming structure can be used to determine many a
 )"},
         {"uuid",                                        std::make_shared<DataTypeUUID>(),      "The UUID of data part."},
         {"part_type",                                   std::make_shared<DataTypeString>(),    "The data part storing format. Possible values: `Wide` — each column is stored in a separate file, `Compact` — all columns are stored in one file. Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the MergeTree table."},
-        {"part_storage_type",                           std::make_shared<DataTypeString>(),    "The type of DataPartStorage. Possible values: Packed - all files are stored in a single blob, Full - a blob per file."},
+        {"part_storage_type",                           std::make_shared<DataTypeString>(),    "The type of `DataPartStorage`. Possible values: `Packed` - most part files are stored in a single archive (projections and a few service files such as `txn_version.txt` are written separately), `Full` - each file is stored separately."},
         {"active",                                      std::make_shared<DataTypeUInt8>(),     "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's about to be deleted. Inactive data parts appear after merging and mutating operations."},
         {"marks",                                       std::make_shared<DataTypeUInt64>(),    "The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity)."},
         {"rows",                                        std::make_shared<DataTypeUInt64>(),    "The number of rows."},
@@ -116,7 +119,7 @@ Name of the data part. The part naming structure can be used to determine many a
         {"move_ttl_info.min",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "Array of date and time values. Each element describes the minimum key value for a TTL MOVE rule."},
         {"move_ttl_info.max",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "Array of date and time values. Each element describes the maximum key value for a TTL MOVE rule."},
 
-        {"default_compression_codec",                   std::make_shared<DataTypeString>(), "The name of the codec used to compress this data part (in case when there is no explicit codec for columns)."},
+        {"default_compression_codec",                   std::make_shared<DataTypeString>(), "The name of the codec used to compress this data part when a column has no explicit codec or uses `CODEC(Default)`. `UNKNOWN` means this codec could not be recovered exactly from the part metadata. With `enable_adaptive_codec_selection`, individual blocks of such columns may use other codecs; see [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/mergeTreeCodecBlockCounts)."},
 
         {"recompression_ttl_info.expression",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),   "The TTL expression."},
         {"recompression_ttl_info.min",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression within this part. Used to understand whether we have at least one row with expired TTL."},
@@ -155,10 +158,17 @@ void StorageSystemParts::processNextStorage(
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
 
-    all_parts = info.getParts(all_parts_state, has_state_column);
+    QueryStatusPtr query_status = context->getProcessListElement();
+
+    all_parts = info.getParts(all_parts_state, has_state_column, query_status);
 
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
+        if (query_status && !query_status->checkTimeLimit())
+            break;
+
+        slowDownSystemPartsEnumeration(info.table);
+
         const auto & part = all_parts[part_number];
         auto part_state = all_parts_state[part_number];
 
@@ -339,7 +349,7 @@ void StorageSystemParts::processNextStorage(
         add_ttl_info_map(part->ttl_infos.moves_ttl);
 
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->default_codec->getCodecDesc()->formatForLogging());
+            columns[res_index++]->insert(part->default_codec_is_approximate ? "UNKNOWN" : part->default_codec->getCodecDescription()->formatForLogging());
 
         add_ttl_info_map(part->ttl_infos.recompression_ttl);
         add_ttl_info_map(part->ttl_infos.group_by_ttl);
@@ -363,7 +373,7 @@ void StorageSystemParts::processNextStorage(
 
         auto get_tid_as_field = [](const TransactionID & tid) -> Field
         {
-            return Tuple{tid.start_csn, tid.local_tid, tid.host_id};
+            return Tuple{tid.start_csn, tid.local_tid, tid.host_id, tid.session_node_version};
         };
 
         auto current_version_info = part->version->getInfo();

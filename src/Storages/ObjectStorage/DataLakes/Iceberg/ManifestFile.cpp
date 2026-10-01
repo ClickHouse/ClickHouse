@@ -6,6 +6,8 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
+#include <Poco/String.h>
+
 #include <Common/logger_useful.h>
 #include <fmt/format.h>
 
@@ -101,6 +103,11 @@ static String dumpPartitionKeyValue(const DB::Row & partition_key_value)
     }
 }
 
+
+bool ParsedManifestFileEntry::isDeletionVector() const
+{
+    return content_type == FileContentType::POSITION_DELETE && Poco::toLower(file_format) == "puffin";
+}
 
 String ProcessedManifestFileEntry::dumpDeletesMatchingInfo() const
 {

@@ -23,7 +23,20 @@ const DB::Strings compressionMethods
     = {"auto", "none", "gz", "gzip", "deflate", "brotli", "br", "xz", "zst", "zstd", "lzma", "lz4", "bz2", "snappy"};
 
 const DB::Strings codecs
-    = {"LZ4", "LZ4HC", "ZSTD", "Delta", "DoubleDelta", "Gorilla", "T64", "FPC", "GCD", "ALP", "AES_128_GCM_SIV", "AES_256_GCM_SIV", "NONE"};
+    = {"LZ4",
+       "LZ4HC",
+       "ZSTD",
+       "ZXC",
+       "Delta",
+       "DoubleDelta",
+       "Gorilla",
+       "T64",
+       "FPC",
+       "GCD",
+       "ALP",
+       "AES_128_GCM_SIV",
+       "AES_256_GCM_SIV",
+       "NONE"};
 
 String escapeSQLString(const String & s, const char escape_char)
 {
@@ -354,6 +367,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"paimonlocal", allow_paimonLocal},
            {"merge", allow_merge},
            {"distributed", allow_distributed},
+           {"remote", allow_remote},
            {"dictionary", allow_dictionary},
            {"generaterandom", allow_generaterandom},
            {"azureblobstorage", allow_AzureBlobStorage},
@@ -440,6 +454,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"enable_sync_settings", [&](const JSONObjectType & value) { enable_sync_settings = value.getBool(); }},
         {"enable_backups", [&](const JSONObjectType & value) { enable_backups = value.getBool(); }},
         {"enable_renames", [&](const JSONObjectType & value) { enable_renames = value.getBool(); }},
+        {"enable_failpoints", [&](const JSONObjectType & value) { enable_failpoints = value.getBool(); }},
         {"allow_nasty_identifiers", [&](const JSONObjectType & value) { allow_nasty_identifiers = value.getBool(); }},
         {"random_limited_values", [&](const JSONObjectType & value) { random_limited_values = value.getBool(); }},
         {"truncate_output", [&](const JSONObjectType & value) { truncate_output = value.getBool(); }},
@@ -938,37 +953,15 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings<String>(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
     loadServerSettings<String>(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
-    /// keeper_leader_sets_invalid_digest, libcxx_hardening_out_of_bounds_assertion, trigger_sanitizer_error - The server aborts legitimately, can't be used
-    /// terminate_with_exception, terminate_with_std_exception - Terminates the server
-    /// tcp_handler_fail_connection_setup - Fails every new TCP connection setup, so once enabled the fuzzer can neither
-    ///     reconnect nor disable it again over its TCP connection (it would deadlock; the test controls it over HTTP)
-    loadServerSettings<String>(
-        this->failpoints,
-        "failpoints",
-        "SELECT \"name\" FROM \"system\".\"fail_points\""
-        " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
-        "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion', "
-        "'trigger_sanitizer_error', 'tcp_handler_fail_connection_setup')");
-    loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
-    /// Probe which function_implementation values the server supports. They depend on how the binary
-    /// was compiled and on the host CPU (e.g. no x86-64 tag is available on aarch64 builds), and an
-    /// unsupported value raises NO_SUITABLE_FUNCTION_IMPLEMENTATION, so test each candidate. Only
-    /// default, x86-64-v3 and x86-64-v4 implementations are registered in the server's source.
-    this->function_implementations.clear();
-    for (const auto & entry : {"default", "x86-64-v3", "x86-64-v4"})
+    if (enable_failpoints)
     {
-        if (processServerQuery(
-                false, fmt::format("SELECT ignore(sipHash64(materialize(1))) SETTINGS function_implementation = '{}' FORMAT Null;", entry)))
-        {
-            this->function_implementations.emplace_back(entry);
-        }
+        loadServerSettings<String>(
+            this->failpoints,
+            "failpoints",
+            "SELECT \"name\" FROM \"system\".\"fail_points\""
+            " WHERE \"type\" NOT IN ('pauseable', 'pauseable_once') ORDER BY rand() LIMIT 10");
     }
-    LOG_INFO(
-        log,
-        "Found {} entries for function implementations{}{}",
-        this->function_implementations.size(),
-        this->function_implementations.empty() ? "" : ": ",
-        fmt::join(this->function_implementations, ", "));
+    loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
     loadFunctions();
 }
 
