@@ -17,22 +17,26 @@ doc_type: 'reference'
 **الصيغة**
 
 ```sql
-CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
+CREATE [OR REPLACE] NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
 key_name1 = 'some value' [[NOT] OVERRIDABLE],
 key_name2 = 'some value' [[NOT] OVERRIDABLE],
 key_name3 = 'some value' [[NOT] OVERRIDABLE],
 ...
 ```
 
+لا يمكن استخدام `OR REPLACE` و`IF NOT EXISTS` معًا. يؤدي تنفيذ `CREATE OR REPLACE` على مجموعة مُسمّاة موجودة
+إلى استبدالها بالكامل، إذ تُزال المفاتيح وعلامات قابلية التجاوز التي لا يتضمنها التعريف الجديد.
+
 **مثال**
 
 ```sql
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
+CREATE OR REPLACE NAMED COLLECTION foobar AS a = '2', c = '3';
 ```
 
 **العبارات ذات الصلة**
 
-* [CREATE NAMED COLLECTION](/ar/reference/statements/alter/named-collection)
+* [ALTER NAMED COLLECTION](/ar/reference/statements/alter/named-collection)
 * [DROP NAMED COLLECTION](/ar/reference/statements/drop#drop-function)
 
 **انظر أيضًا**

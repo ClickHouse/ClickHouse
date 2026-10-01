@@ -302,6 +302,14 @@ ClickHouse 便可只读取所需的字节范围，从而减少内存使用。
 
 强制将被省略的字段初始化为 NULL 值
 
+## input_format_freeform_max_search_steps {#input_format_freeform_max_search_steps}
+
+<SettingsInfoBlock type="UInt64" default_value="4096" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "4096"},{"label": "新增设置，用于限制 `Freeform` 行结构的搜索范围。此前该搜索没有上限，遇到由字符串构成的宽行时可能耗尽内存；设为 0 可恢复此前的行为。"}]}]} />
+
+在 `Freeform` 格式中搜索行结构时允许的最大步数。如果多种转义规则对某个字段的读取结果相同 (例如，制表符分隔行中的单词，按 `Raw` 规则和 `Escaped` 规则读取的结果一致) ，搜索就会在该字段处产生分支，因此由字符串构成的宽行会产生指数级数量的候选结构。当搜索步数超过此值时，将抛出异常，以避免耗尽内存和时间。0 表示不限制。
+
 ## input_format_geojson_unsupported_geometry_handling {#input_format_geojson_unsupported_geometry_handling}
 
 <SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />

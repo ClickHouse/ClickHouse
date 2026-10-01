@@ -4408,6 +4408,47 @@ SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHa
 └──────────────────────────────┘
 ```
 
+## normalizedQueryHashUnordered {#normalizedQueryHashUnordered}
+
+Introducida en: v26.10.0
+
+Al igual que [`normalizedQueryHash`](#normalizedQueryHash), devuelve valores hash idénticos de 64 bits, sin los valores de los literales, para consultas similares,
+pero combina los hash de los tokens mediante una suma, por lo que el orden de los tokens es completamente irrelevante.
+`SELECT a, b FROM t` y `SELECT b, a FROM t` producen el mismo hash.
+
+La consulta no se analiza, solo se divide en tokens, por lo que la función tiene pérdida de información de forma intencionada: cualquier reordenación de los mismos tokens produce el mismo hash,
+incluidas las que cambian el significado (`a - b` y `b - a`) o las que ni siquiera son SQL válido (`SELECT 1` y `1 SELECT`).
+Utilícela para agrupar un workload según su estructura, por ejemplo sobre `system.query_log`, pero nunca para determinar que dos consultas son intercambiables.
+Nunca lanza excepciones: el texto que no se puede dividir correctamente en tokens también se procesa con hash.
+
+**Sintaxis**
+
+```sql
+normalizedQueryHashUnordered(x)
+```
+
+**Argumentos**
+
+* `x` — Secuencia de caracteres. [`String`](/es/reference/data-types/string)
+
+**Valor devuelto**
+
+Devuelve un valor hash de 64 bits. [`UInt64`](/es/reference/data-types/int-uint)
+
+**Ejemplos**
+
+**Ejemplo de uso**
+
+```sql title=Query
+SELECT normalizedQueryHashUnordered('SELECT a, b FROM t WHERE x = 1') = normalizedQueryHashUnordered('SELECT b, a FROM t WHERE x = 2') AS res
+```
+
+```response title=Response
+┌─res─┐
+│   1 │
+└─────┘
+```
+
 ## obfuscateQuery {#obfuscateQuery}
 
 Introducido en: v26.4.0

@@ -857,6 +857,21 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 
 设置 INTERSECT 查询的默认 mode。可能的值：空字符串、&#39;ALL&#39;、&#39;DISTINCT&#39;。如果为空，未指定 mode 的查询将抛出异常。
 
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+控制 [`KILL QUERY`](/zh/reference/statements/kill#kill-query) 和 [`KILL MUTATION`](/zh/reference/statements/kill#kill-mutation) 的 `WHERE` 子句未匹配到任何行时是否抛出异常。
+
+设置为 true 时，如果在排除当前 `KILL` 语句后，`system.processes` 中没有符合条件的行，`KILL QUERY` 会抛出异常；如果 `system.mutations` 中没有匹配的行，`KILL MUTATION` 会抛出异常。默认情况下，匹配结果为空时会直接返回，不会抛出异常。使用 `ON CLUSTER` 执行时，即使匹配结果为空也不会抛出异常，因为匹配结果不会跨主机汇总。
+
+可选值：
+
+* 1 — 抛出异常。
+* 0 — 不抛出异常。
+
 ## least_greatest_legacy_null_behavior {#least_greatest_legacy_null_behavior}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -864,6 +879,14 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "新增设置"}]}]} />
 
 如果启用，当函数 `least` 和 `greatest` 的任一参数为 `NULL` 时，将返回 `NULL`。
+
+## legacy_array_join_function_nondeterministic_evaluation {#legacy_array_join_function_nondeterministic_evaluation}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "与 `arrayJoin` 函数并列的非确定性函数会在每个输出行上生成不同的值，与 `ARRAY JOIN` 子句的行为一致。该设置可恢复为每个源行只生成一个值。"}]}]} />
+
+控制与 `arrayJoin` 函数并列、且不依赖于被展开值的非确定性函数 (例如同一 `SELECT` 中的 `rand()` 或 `generateUUIDv4()`) 的求值方式。默认情况下，此类函数会在每个输出行上生成不同的值，与 `ARRAY JOIN` 子句的行为一致。启用此设置可恢复旧版本的行为：每个源行只生成一个值，并在该行展开得到的所有行中重复使用。
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 

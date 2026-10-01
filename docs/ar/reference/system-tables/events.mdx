@@ -1750,10 +1750,6 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 عدد الأجزاء المفقودة أثناء تحليل الفهرس الموزع التي سيجري التعامل معها محليًا
 
-### DistributedIndexAnalysisParts {#distributedindexanalysisparts}
-
-عدد الأجزاء المُرسلة لإجراء تحليل الفهرس الموزع
-
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
 عدد مرات تعذّر تحليل الفهرس الموزّع على إحدى النسخ المتماثلة مع التراجع إلى النسخة المتماثلة المحلية
@@ -1910,10 +1906,6 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 عدد المرات التي جرى فيها كتابة ملف مؤقت إلى القرص لأغراض التجميع باستخدام الذاكرة الخارجية.
 
-### ExternalDataSourceLocalCacheReadBytes {#externaldatasourcelocalcachereadbytes}
-
-البايتات المقروءة من ذاكرة التخزين المؤقت المحلية في RemoteReadBufferCache
-
 ### ExternalDistinctCompressedBytes {#externaldistinctcompressedbytes}
 
 عدد البايتات المضغوطة التي تمت كتابتها لعملية DISTINCT في الذاكرة الخارجية.
@@ -1921,6 +1913,14 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### ExternalDistinctMerge {#externaldistinctmerge}
 
 عدد مرات دمج الملفات المؤقتة لعملية DISTINCT في الذاكرة الخارجية.
+
+### ExternalDistinctTailKeptRows {#externaldistincttailkeptrows}
+
+عدد الصفوف المخزّنة مؤقتًا التي يُحتفظ بها في الذاكرة لعملية الدمج النهائية في DISTINCT الخارجي.
+
+### ExternalDistinctTailSpilledRows {#externaldistincttailspilledrows}
+
+عدد الصفوف المخزّنة مؤقتًا التي اختيرت للكتابة على القرص قبل الدمج النهائي لعملية DISTINCT الخارجية.
 
 ### ExternalDistinctUncompressedBytes {#externaldistinctuncompressedbytes}
 
@@ -2069,10 +2069,6 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### FileSegmentLockMicroseconds {#filesegmentlockmicroseconds}
 
 مدة قفل جزء الملف
-
-### زمن remove() لمقطع الملف {#filesegmentremovemicroseconds}
-
-زمن remove() لمقطع الملف
 
 ### FileSegmentWaitMicroseconds {#filesegmentwaitmicroseconds}
 
@@ -4074,10 +4070,6 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 الوقت المستغرَق في جمع المقاطع المخصّصة بحسب `hash`
 
-### ParallelReplicasDeniedRequests {#parallelreplicasdeniedrequests}
-
-عدد الطلبات المرفوضة بالكامل للعقدة المُبادِرة
-
 ### ParallelReplicasHandleAnnouncementMicroseconds {#parallelreplicashandleannouncementmicroseconds}
 
 الوقت المستغرَق في معالجة إشعارات النسخ المتماثلة
@@ -5001,18 +4993,6 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### S3PutRequestThrottlerSleepMicroseconds {#s3putrequestthrottlersleepmicroseconds}
 
 إجمالي الوقت الذي أمضاه الاستعلام في وضع السكون امتثالًا لآلية تقييد طلبات S3 من نوع PUT وCOPY وPOST وLIST.
-
-### S3QueueSetFileFailedMicroseconds {#s3queuesetfilefailedmicroseconds}
-
-الوقت المستغرق لوضع علامة &quot;فاشل&quot; على الملف
-
-### S3QueueSetFileProcessedMicroseconds {#s3queuesetfileprocessedmicroseconds}
-
-الوقت المستغرق لوضع علامة &quot;تمت المعالجة&quot; على الملف
-
-### S3QueueSetFileProcessingMicroseconds {#s3queuesetfileprocessingmicroseconds}
-
-الوقت المستغرق لوضع الملف في حالة قيد المعالجة
 
 ### S3ReadMicroseconds {#s3readmicroseconds}
 
@@ -6313,10 +6293,6 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### WasmGuestExecuteMicroseconds {#wasmguestexecutemicroseconds}
 
 الوقت المستغرَق في تنفيذ شيفرة WebAssembly
-
-### WasmMemoryAllocated {#wasmmemoryallocated}
-
-إجمالي الذاكرة المخصصة لبيئات WebAssembly المعزولة
 
 ### WasmModuleInstatiate {#wasmmoduleinstatiate}
 

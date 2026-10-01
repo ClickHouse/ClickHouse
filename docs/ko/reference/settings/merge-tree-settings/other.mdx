@@ -19,7 +19,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
-적응형 쓰기 버퍼의 초기 크기입니다.
+MergeTree 데이터를 쓸 때 사용하는 각 적응형 쓰기 버퍼(adaptive write buffer)의 초기 크기를 바이트 단위로 설정합니다. 버퍼는 필요에 따라 자동으로 커집니다. 값을 낮추면 초기 메모리 사용량이 줄어들며 컬럼이 많은 테이블에서 특히 효과적이지만, 버퍼 플러시가 더 자주 발생할 수 있습니다. 이 값은 시작 크기일 뿐 메모리 제한이 아닙니다.
+
+적응형 쓰기 버퍼는 wide 파트에서만 사용되며, 사용 여부는 [`min_columns_to_activate_adaptive_write_buffer`](/ko/reference/settings/merge-tree-settings/min#min_columns_to_activate_adaptive_write_buffer) 및 [`use_adaptive_write_buffer_for_dynamic_subcolumns`](/ko/reference/settings/merge-tree-settings/use#use_adaptive_write_buffer_for_dynamic_subcolumns) 설정으로 제어됩니다.
 
 ## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 

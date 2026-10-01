@@ -302,6 +302,14 @@ Valores posibles:
 
 Forzar la inicialización de los campos omitidos con valores NULL
 
+## input_format_freeform_max_search_steps {#input_format_freeform_max_search_steps}
+
+<SettingsInfoBlock type="UInt64" default_value="4096" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "4096"},{"label": "Nueva configuración que limita la búsqueda de la estructura de una fila `Freeform`. Antes, la búsqueda no tenía límite y podía agotar la memoria con una fila ancha de cadenas; con 0 se restaura ese comportamiento."}]}]} />
+
+Número máximo de pasos en la búsqueda de la estructura de una fila en el formato `Freeform`. La búsqueda se ramifica en cada campo que varias reglas de escape interpretan de la misma forma (por ejemplo, una palabra en una fila separada por tabulaciones se lee igual con las reglas `Raw` y `Escaped`), por lo que una fila ancha de cadenas admite un número exponencial de estructuras candidatas. Si la búsqueda supera este número de pasos, se lanza una excepción en lugar de agotar la memoria y el tiempo. 0 significa sin límite.
+
 ## input_format_geojson_unsupported_geometry_handling {#input_format_geojson_unsupported_geometry_handling}
 
 <SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />

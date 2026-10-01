@@ -1750,10 +1750,6 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество отсутствующих частей при распределённом анализе индексов, которые будут обработаны локально
 
-### DistributedIndexAnalysisParts {#distributedindexanalysisparts}
-
-Количество частей, отправленных на распределённый анализ индексов
-
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
 Количество случаев, когда при распределённом анализе индексов произошёл сбой на одной из реплик и система переключилась на локальную реплику
@@ -1910,10 +1906,6 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество случаев записи временного файла на диск при агрегации с использованием внешней памяти.
 
-### ExternalDataSourceLocalCacheReadBytes {#externaldatasourcelocalcachereadbytes}
-
-Байты, прочитанные из буфера локального кэша в RemoteReadBufferCache
-
 ### ExternalDistinctCompressedBytes {#externaldistinctcompressedbytes}
 
 Количество сжатых байт, записанных для DISTINCT во внешней памяти.
@@ -1921,6 +1913,14 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### ExternalDistinctMerge {#externaldistinctmerge}
 
 Количество слияний временных файлов для DISTINCT во внешней памяти.
+
+### ExternalDistinctTailKeptRows {#externaldistincttailkeptrows}
+
+Количество буферизованных строк, удерживаемых в памяти для финального слияния при внешнем DISTINCT.
+
+### ExternalDistinctTailSpilledRows {#externaldistincttailspilledrows}
+
+Количество буферизованных строк, отобранных для сброса на диск перед финальным слиянием при внешнем DISTINCT.
 
 ### ExternalDistinctUncompressedBytes {#externaldistinctuncompressedbytes}
 
@@ -2069,10 +2069,6 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### FileSegmentLockMicroseconds {#filesegmentlockmicroseconds}
 
 Время блокировки файлового сегмента
-
-### FileSegmentRemoveMicroseconds {#filesegmentremovemicroseconds}
-
-Время удаления сегмента файла (remove())
 
 ### FileSegmentWaitMicroseconds {#filesegmentwaitmicroseconds}
 
@@ -4074,10 +4070,6 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Время, затраченное на сбор сегментов, определённых хешем
 
-### ParallelReplicasDeniedRequests {#parallelreplicasdeniedrequests}
-
-Количество запросов к инициирующему узлу, полностью отклонённых
-
 ### ParallelReplicasHandleAnnouncementMicroseconds {#parallelreplicashandleannouncementmicroseconds}
 
 Время, затраченное на обработку уведомлений от реплик
@@ -5001,18 +4993,6 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### S3PutRequestThrottlerSleepMicroseconds {#s3putrequestthrottlersleepmicroseconds}
 
 Общее время, в течение которого запрос ожидал, чтобы соблюсти ограничение скорости запросов S3 PUT, COPY, POST и LIST.
-
-### S3QueueSetFileFailedMicroseconds {#s3queuesetfilefailedmicroseconds}
-
-Время, затраченное на пометку файла как Failed
-
-### S3QueueSetFileProcessedMicroseconds {#s3queuesetfileprocessedmicroseconds}
-
-Время, затраченное на то, чтобы пометить файл как обработанный
-
-### S3QueueSetFileProcessingMicroseconds {#s3queuesetfileprocessingmicroseconds}
-
-Время, затраченное на пометку файла как processing
 
 ### S3ReadMicroseconds {#s3readmicroseconds}
 
@@ -6313,10 +6293,6 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### WasmGuestExecuteMicroseconds {#wasmguestexecutemicroseconds}
 
 Время выполнения кода WebAssembly
-
-### WasmMemoryAllocated {#wasmmemoryallocated}
-
-Общий объём памяти, выделенный для компартментов WebAssembly
 
 ### WasmModuleInstatiate {#wasmmoduleinstatiate}
 

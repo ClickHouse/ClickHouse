@@ -868,6 +868,21 @@ HSTS의 만료 시간입니다. 0은 HSTS를 비활성화한다는 뜻입니다.
 
 INTERSECT 쿼리의 기본 모드를 설정합니다. 가능한 값: 빈 문자열, &#39;ALL&#39;, &#39;DISTINCT&#39;입니다. 빈 문자열이면 모드가 없는 쿼리에서 예외가 발생합니다.
 
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]} />
+
+[`KILL QUERY`](/ko/reference/statements/kill#kill-query) 및 [`KILL MUTATION`](/ko/reference/statements/kill#kill-mutation)의 `WHERE` 절과 일치하는 행이 없을 때 예외를 발생시킬지 여부를 제어합니다.
+
+true로 설정하면 `KILL QUERY`는 현재 실행 중인 `KILL` SQL 문을 제외하고 `system.processes`에 대상 행이 없을 때 예외를 발생시키며, `KILL MUTATION`은 `system.mutations`에 일치하는 행이 없을 때 예외를 발생시킵니다. 기본적으로는 일치하는 행이 없어도 예외 없이 반환됩니다. `ON CLUSTER`로 실행하면 일치 결과가 호스트 간에 집계되지 않으므로, 일치하는 행이 없어도 예외가 발생하지 않습니다.
+
+가능한 값:
+
+* 1 — 예외를 발생시킵니다.
+* 0 — 예외를 발생시키지 않습니다.
+
 ## least_greatest_legacy_null_behavior {#least_greatest_legacy_null_behavior}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -875,6 +890,14 @@ INTERSECT 쿼리의 기본 모드를 설정합니다. 가능한 값: 빈 문자�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
 활성화하면 &#39;least&#39; 및 &#39;greatest&#39; 함수는 인수 중 하나가 NULL인 경우 NULL을 반환합니다.
+
+## legacy_array_join_function_nondeterministic_evaluation {#legacy_array_join_function_nondeterministic_evaluation}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`arrayJoin` 함수와 함께 사용된 비결정적 함수는 `ARRAY JOIN` 절과 마찬가지로 출력 행마다 서로 다른 값을 반환합니다. 이 설정을 사용하면 원본 행당 하나의 값을 반환하던 기존 방식으로 되돌릴 수 있습니다."}]}]} />
+
+`arrayJoin` 함수와 함께 사용된 비결정적 함수가 조인된 값에 의존하지 않을 때(예: 동일한 `SELECT` 내의 `rand()` 또는 `generateUUIDv4()`) 이 함수를 평가하는 방식을 지정합니다. 기본적으로는 `ARRAY JOIN` 절과 마찬가지로 출력 행마다 서로 다른 값을 반환합니다. 이 설정을 활성화하면 이전 버전의 동작으로 돌아갑니다. 즉, 원본 행당 하나의 값을 생성하고, 해당 행에서 확장된 모든 행에 같은 값을 반복해서 사용합니다.
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 

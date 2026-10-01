@@ -19,7 +19,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
-Начальный размер адаптивного буфера для записи
+Задаёт начальный размер (в байтах) каждого адаптивного буфера записи, используемого при записи данных MergeTree. При необходимости буферы увеличиваются автоматически. Меньшие значения снижают начальное потребление памяти, особенно для таблиц с большим количеством столбцов, но могут приводить к более частому сбросу буферов на диск. Это лишь начальный размер, а не ограничение памяти.
+
+Адаптивные буферы записи используются только в частях Wide; это регулируется настройками [`min_columns_to_activate_adaptive_write_buffer`](/ru/reference/settings/merge-tree-settings/min#min_columns_to_activate_adaptive_write_buffer) и [`use_adaptive_write_buffer_for_dynamic_subcolumns`](/ru/reference/settings/merge-tree-settings/use#use_adaptive_write_buffer_for_dynamic_subcolumns).
 
 ## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 

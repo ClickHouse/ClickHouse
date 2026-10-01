@@ -447,6 +447,8 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Объём данных (в несжатом виде, до сжатия), записанных для JOIN во внешней памяти.
 * `ProfileEvent_ExternalDistinctWritePart` ([UInt64](/ru/reference/data-types/int-uint)) — Количество раз, когда временный файл записывался на диск для DISTINCT во внешней памяти.
 * `ProfileEvent_ExternalDistinctMerge` ([UInt64](/ru/reference/data-types/int-uint)) — Количество раз, когда временные файлы сливались для DISTINCT во внешней памяти.
+* `ProfileEvent_ExternalDistinctTailSpilledRows` ([UInt64](/ru/reference/data-types/int-uint)) — Количество буферизованных строк, выбранных для сброса на диск перед финальным слиянием внешнего DISTINCT.
+* `ProfileEvent_ExternalDistinctTailKeptRows` ([UInt64](/ru/reference/data-types/int-uint)) — Количество буферизованных строк, оставленных в памяти для финального слияния внешнего DISTINCT.
 * `ProfileEvent_ExternalDistinctCompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество сжатых байтов, записанных для DISTINCT во внешней памяти.
 * `ProfileEvent_ExternalDistinctUncompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Объём данных (в несжатом виде, до сжатия), записанных для DISTINCT во внешней памяти.
 * `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Количество пропущенных файлов при отсечении партиций в Iceberg
@@ -500,7 +502,6 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedIndexAnalysisScheduledReplicas` ([UInt64](/ru/reference/data-types/int-uint)) — Количество реплик (локальная реплика учитывается один раз), для которых был запланирован распределённый анализ индексов
 * `ProfileEvent_DistributedIndexAnalysisReplicaUnavailable` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда распределённый анализ индексов завершился неудачей на одной из реплик без переключения на локальную реплику (сбой при подключении)
 * `ProfileEvent_DistributedIndexAnalysisReplicaFallback` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда распределённый анализ индексов завершился неудачей на одной из реплик с переключением на локальную реплику
-* `ProfileEvent_DistributedIndexAnalysisParts` ([UInt64](/ru/reference/data-types/int-uint)) — Количество частей, отправленных для распределённого анализа индексов
 * `ProfileEvent_DistributedIndexAnalysisMissingParts` ([UInt64](/ru/reference/data-types/int-uint)) — Количество отсутствующих частей при распределённом анализе индексов, которые будут обработаны локально
 * `ProfileEvent_WaitMarksLoadMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на загрузку марок
 * `ProfileEvent_BackgroundLoadingMarksTasks` ([UInt64](/ru/reference/data-types/int-uint)) — Количество фоновых задач по загрузке марок
@@ -701,7 +702,6 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_ParallelReplicasStealingLeftoversMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на сбор осиротевших сегментов
 * `ProfileEvent_ParallelReplicasCollectingOwnedSegmentsMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на сбор сегментов, назначенных по hash
 * `ProfileEvent_ParallelReplicasNumRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов к инициатору.
-* `ProfileEvent_ParallelReplicasDeniedRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Количество полностью отклонённых запросов к инициатору
 * `ProfileEvent_CacheWarmerBytesDownloaded` ([UInt64](/ru/reference/data-types/int-uint)) — Объём данных, загруженных в файловый кэш выделенными фоновыми потоками.
 * `ProfileEvent_CacheWarmerDataPartsDownloaded` ([UInt64](/ru/reference/data-types/int-uint)) — Количество частей данных, полностью загруженных CacheWarmer.
 * `ProfileEvent_IgnoredColdParts` ([UInt64](/ru/reference/data-types/int-uint)) — См. настройку ignore&#95;cold&#95;parts&#95;seconds. Количество случаев, когда запросы на чтение игнорировали очень новые части, которые CacheWarmer ещё не успел загрузить в кэш.
@@ -897,7 +897,6 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_FileSegmentLockMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время блокировки сегмента файла
 * `ProfileEvent_FileSegmentWriteMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время выполнения write() для сегмента файла
 * `ProfileEvent_FileSegmentIncreasePriorityMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время повышения приоритета сегмента файла
-* `ProfileEvent_FileSegmentRemoveMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время выполнения remove() для сегмента файла
 * `ProfileEvent_FileSegmentHolderCompleteMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время выполнения complete() для держателя сегментов файла
 * `ProfileEvent_FileSegmentFailToIncreasePriority` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда приоритет не был повышен из-за высокой конкуренции за блокировку кэша
 * `ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfLockContention` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда резервирование места было пропущено из-за высокой конкуренции за блокировку кэша
@@ -945,7 +944,6 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_SynchronousReadWaitMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время ожидания синхронных чтений при асинхронном локальном чтении.
 * `ProfileEvent_AsynchronousRemoteReadWaitMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время ожидания асинхронных удалённых чтений.
 * `ProfileEvent_SynchronousRemoteReadWaitMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время ожидания синхронных удалённых чтений.
-* `ProfileEvent_ExternalDataSourceLocalCacheReadBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество байт, прочитанных из буфера локального кэша в RemoteReadBufferCache
 * `ProfileEvent_MainConfigLoads` ([UInt64](/ru/reference/data-types/int-uint)) — Количество перезагрузок основной конфигурации.
 * `ProfileEvent_AggregationPreallocatedElementsInHashTables` ([UInt64](/ru/reference/data-types/int-uint)) — Количество элементов, предварительно выделенных в хеш-таблицах для агрегации.
 * `ProfileEvent_AdaptiveAggregationLocalFreezes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество локальных хеш-таблиц, замороженных адаптивной агрегацией при достижении порога заморозки.
@@ -1051,7 +1049,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperLatency` ([UInt64](/ru/reference/data-types/int-uint)) — Задержка Keeper
 * `ProfileEvent_KeeperTotalElapsedMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общая задержка Keeper для одного запроса
 * `ProfileEvent_KeeperProcessElapsedMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Задержка коммита в Keeper для одного запроса
-* `ProfileEvent_KeeperPreprocessElapsedMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Задержка предобработки в Keeper для одного запроса
+* `ProfileEvent_KeeperPreprocessElapsedMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Задержка предварительной обработки в Keeper для одного запроса
 * `ProfileEvent_KeeperStorageLockWaitMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время ожидания получения блокировки хранилища Keeper
 * `ProfileEvent_KeeperStorageSharedLockWaitMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время ожидания получения разделяемой блокировки хранилища Keeper
 * `ProfileEvent_KeeperChangelogLockWaitMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время ожидания получения блокировки журнала изменений Keeper
@@ -1111,9 +1109,6 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_OverflowBreak` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда обработка данных была прервана из-за ограничения сложности запроса при настройке &#39;*&#95;overflow&#95;mode&#39; = &#39;break&#39;, и результат оказался неполным.
 * `ProfileEvent_OverflowThrow` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда обработка данных была прервана из-за ограничения сложности запроса при настройке &#39;*&#95;overflow&#95;mode&#39; = &#39;throw&#39; и было сгенерировано исключение.
 * `ProfileEvent_OverflowAny` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда применялся приблизительный GROUP BY: агрегация выполнялась только по первым &#39;max&#95;rows&#95;to&#95;group&#95;by&#39; уникальным ключам, а остальные ключи игнорировались из-за &#39;group&#95;by&#95;overflow&#95;mode&#39; = &#39;any&#39;.
-* `ProfileEvent_S3QueueSetFileProcessingMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на перевод файла в состояние processing
-* `ProfileEvent_S3QueueSetFileProcessedMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на перевод файла в состояние processed
-* `ProfileEvent_S3QueueSetFileFailedMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на перевод файла в состояние failed
 * `ProfileEvent_ObjectStorageQueueFailedFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Количество файлов, которые не удалось обработать
 * `ProfileEvent_ObjectStorageQueueProcessedFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Количество обработанных файлов
 * `ProfileEvent_ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на перевод файла в состояние failed
@@ -1134,7 +1129,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_ObjectStorageQueueTaggedObjects` ([UInt64](/ru/reference/data-types/int-uint)) — Количество объектов, помеченных тегами в рамках after&#95;processing = tag
 * `ProfileEvent_ObjectStorageQueueInsertIterations` ([UInt64](/ru/reference/data-types/int-uint)) — Количество итераций вставки
 * `ProfileEvent_ObjectStorageQueueRemoveObjectFailures` ([UInt64](/ru/reference/data-types/int-uint)) — Количество объектов, которые не удалось удалить в рамках after&#95;processing = delete
-* `ProfileEvent_ObjectStorageQueueCommitRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов к Keeper на коммит файлов как обработанных или завершившихся с ошибкой
+* `ProfileEvent_ObjectStorageQueueCommitRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов к Keeper на коммит файлов в состояниях failed или processed
 * `ProfileEvent_ObjectStorageQueueBucketLockLostOwnership` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев обнаружения потери владения блокировкой бакета в S3(Azure)Queue. Ненулевое значение указывает на слишком малое значение persistent&#95;processing&#95;node&#95;ttl&#95;seconds или ошибку
 * `ProfileEvent_ObjectStorageQueueBucketLockRefreshes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество успешных обновлений блокировки бакета в S3(Azure)Queue
 * `ProfileEvent_ObjectStorageQueueSuccessfulCommits` ([UInt64](/ru/reference/data-types/int-uint)) — Количество успешных коммитов в Keeper
@@ -1534,7 +1529,6 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_WasmGuestExecuteMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на выполнение кода WebAssembly
 * `ProfileEvent_WasmTotalExecuteMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на выполнение кода WebAssembly
 * `ProfileEvent_WasmModuleInstatiate` ([UInt64](/ru/reference/data-types/int-uint)) — Количество созданных компартментов WebAssembly
-* `ProfileEvent_WasmMemoryAllocated` ([UInt64](/ru/reference/data-types/int-uint)) — Общий объём памяти, выделенной для компартментов WebAssembly
 * `ProfileEvent_ExecutableUserDefinedFunctionInvocations` ([UInt64](/ru/reference/data-types/int-uint)) — Количество вызовов пользовательских функций типов executable и executable&#95;pool.
 * `ProfileEvent_ExecutableUserDefinedFunctionElapsedMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Реальное время, затраченное на выполнение пользовательских функций executable и executable&#95;pool, в микросекундах.
 * `ProfileEvent_ExecutableUserDefinedFunctionUserTimeMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время CPU в пользовательском режиме, потреблённое дочерними процессами пользовательских функций executable и executable&#95;pool, в микросекундах.

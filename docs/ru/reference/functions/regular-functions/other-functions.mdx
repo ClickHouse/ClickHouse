@@ -4408,6 +4408,47 @@ SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHa
 └──────────────────────────────┘
 ```
 
+## normalizedQueryHashUnordered {#normalizedQueryHashUnordered}
+
+Добавлено в: v26.10.0
+
+Как и [`normalizedQueryHash`](#normalizedQueryHash), функция возвращает одинаковые 64-битные хеш-значения без учёта значений литералов для похожих запросов,
+но объединяет хеши токенов суммированием, поэтому порядок токенов не имеет никакого значения.
+Для `SELECT a, b FROM t` и `SELECT b, a FROM t` получается один и тот же хеш.
+
+Запрос не разбирается, а лишь разбивается на токены, поэтому функция намеренно работает с потерей информации: любая перестановка одних и тех же токенов даёт одинаковый хеш,
+в том числе перестановки, меняющие смысл (`a - b` и `b - a`), или такие, что вовсе не являются корректным SQL (`SELECT 1` и `1 SELECT`).
+Используйте её для группировки рабочей нагрузки по структуре запросов, например по данным `system.query_log`, но никогда — для того, чтобы решать, можно ли заменить один запрос другим.
+Функция никогда не генерирует исключение: текст, который не удаётся корректно разбить на токены, тоже хешируется.
+
+**Синтаксис**
+
+```sql
+normalizedQueryHashUnordered(x)
+```
+
+**Аргументы**
+
+* `x` — последовательность символов. [`String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+Возвращает 64-битное хеш-значение. [`UInt64`](/ru/reference/data-types/int-uint)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT normalizedQueryHashUnordered('SELECT a, b FROM t WHERE x = 1') = normalizedQueryHashUnordered('SELECT b, a FROM t WHERE x = 2') AS res
+```
+
+```response title=Response
+┌─res─┐
+│   1 │
+└─────┘
+```
+
 ## obfuscateQuery {#obfuscateQuery}
 
 Добавленный в: v26.4.0

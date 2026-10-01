@@ -880,6 +880,21 @@ El intervalo, en microsegundos, para comprobar si se ha cancelado la ejecución 
 
 Establece el modo predeterminado en la consulta INTERSECT. Valores posibles: cadena vacía, &#39;ALL&#39;, &#39;DISTINCT&#39;. Si está vacío, una consulta sin modo generará una excepción.
 
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "nueva configuración"}]}]} />
+
+Controla si [`KILL QUERY`](/es/reference/statements/kill#kill-query) y [`KILL MUTATION`](/es/reference/statements/kill#kill-mutation) lanzan una excepción cuando sus cláusulas `WHERE` no coinciden con ninguna fila.
+
+Si se establece en true, `KILL QUERY` lanza una excepción cuando no hay filas aptas en `system.processes` tras excluir la propia sentencia `KILL`, y `KILL MUTATION` lanza una excepción cuando ninguna fila de `system.mutations` coincide. De forma predeterminada, si no hay coincidencias, la sentencia finaliza sin lanzar ninguna excepción. Con `ON CLUSTER`, no se lanzan excepciones aunque no haya coincidencias, ya que los resultados no se agregan entre hosts.
+
+Valores posibles:
+
+* 1 — Lanzar una excepción.
+* 0 — No lanzar ninguna excepción.
+
 ## least_greatest_legacy_null_behavior {#least_greatest_legacy_null_behavior}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -887,6 +902,14 @@ Establece el modo predeterminado en la consulta INTERSECT. Valores posibles: cad
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
 Si está habilitada, las funciones &#39;least&#39; y &#39;greatest&#39; devuelven NULL si alguno de sus argumentos es NULL.
+
+## legacy_array_join_function_nondeterministic_evaluation {#legacy_array_join_function_nondeterministic_evaluation}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Una función no determinista junto a la función `arrayJoin` devuelve un valor distinto en cada fila de salida, igual que con la cláusula `ARRAY JOIN`. Esta configuración restaura un único valor por fila de origen."}]}]} />
+
+Determina cómo se evalúa una función no determinista junto a la función `arrayJoin` cuando no depende del valor expandido, por ejemplo `rand()` o `generateUUIDv4()` en el mismo `SELECT`. De forma predeterminada, devuelve un valor distinto en cada fila de salida, igual que con la cláusula `ARRAY JOIN`. Habilítela para recuperar el comportamiento de versiones anteriores: un único valor por fila de origen, que se repite en todas las filas expandidas a partir de ella.
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 

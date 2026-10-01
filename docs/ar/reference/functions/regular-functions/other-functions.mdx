@@ -4408,6 +4408,47 @@ SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHa
 └──────────────────────────────┘
 ```
 
+## normalizedQueryHashUnordered {#normalizedQueryHashUnordered}
+
+أُضيف في: v26.10.0
+
+على غرار [`normalizedQueryHash`](#normalizedQueryHash)، تُعيد هذه الدالة قيم تجزئة متطابقة بطول 64 بت للاستعلامات المتشابهة مع تجاهل القيم الحرفية،
+لكنها تدمج قيم تجزئة الرموز بجمعها معًا، فلا يكون لترتيب الرموز أي أثر على الإطلاق.
+فالاستعلامان `SELECT a, b FROM t` و`SELECT b, a FROM t` يحصلان على قيمة التجزئة نفسها.
+
+لا يُحلَّل الاستعلام، بل يُقسَّم إلى رموز فحسب، ولذلك تتعمّد الدالة إهمال بعض المعلومات: فأي إعادة ترتيب للرموز نفسها تُنتج قيمة التجزئة نفسها،
+حتى لو غيّرت المعنى (`a - b` و`b - a`) أو لم تكن SQL صالحة أصلًا (`SELECT 1` و`1 SELECT`).
+استخدمها لتجميع عبء العمل حسب البنية، كأن تطبّقها على `system.query_log`، ولا تعتمد عليها مطلقًا للحكم بأن أحد الاستعلامين يمكن أن يحل محل الآخر.
+لا ترفع هذه الدالة استثناءً أبدًا: إذ تُحسب قيمة التجزئة حتى للنص الذي يتعذّر تقسيمه إلى رموز بشكل سليم.
+
+**الصيغة**
+
+```sql
+normalizedQueryHashUnordered(x)
+```
+
+**الوسيطات**
+
+* `x` — تسلسل من المحارف. [`String`](/ar/reference/data-types/string)
+
+**القيمة المعادة**
+
+تُعيد قيمة تجزئة بطول 64 بت. [`UInt64`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT normalizedQueryHashUnordered('SELECT a, b FROM t WHERE x = 1') = normalizedQueryHashUnordered('SELECT b, a FROM t WHERE x = 2') AS res
+```
+
+```response title=Response
+┌─res─┐
+│   1 │
+└─────┘
+```
+
 ## obfuscateQuery {#obfuscateQuery}
 
 أُضيف في: v26.4.0

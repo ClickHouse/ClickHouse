@@ -302,6 +302,14 @@ Valeurs possibles :
 
 Forcer l&#39;initialisation des champs omis avec des valeurs NULL
 
+## input_format_freeform_max_search_steps {#input_format_freeform_max_search_steps}
+
+<SettingsInfoBlock type="UInt64" default_value="4096" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "4096"},{"label": "Nouveau paramètre limitant la recherche de la structure d'une ligne `Freeform`. Auparavant, cette recherche n'était pas bornée et pouvait épuiser la mémoire sur une ligne large composée de chaînes de caractères ; la valeur 0 rétablit ce comportement."}]}]} />
+
+Nombre maximal d&#39;étapes de la recherche de la structure d&#39;une ligne au format `Freeform`. La recherche crée une ramification pour chaque champ que plusieurs règles d&#39;échappement lisent de la même manière (par exemple, un mot dans une ligne séparée par des tabulations est lu de façon identique par les règles `Raw` et `Escaped`) ; une ligne large composée de chaînes de caractères présente donc un nombre exponentiel de structures candidates. Lorsque la recherche dépasse ce nombre d&#39;étapes, une exception est levée plutôt que d&#39;épuiser la mémoire et le temps. La valeur 0 signifie illimité.
+
 ## input_format_geojson_unsupported_geometry_handling {#input_format_geojson_unsupported_geometry_handling}
 
 <SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />

@@ -19,7 +19,9 @@ Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/r
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
-Taille initiale d’un tampon d’écriture adaptatif
+Définit la taille initiale, en octets, de chaque tampon d&#39;écriture adaptatif utilisé lors de l&#39;écriture des données MergeTree. Les tampons s&#39;agrandissent automatiquement en fonction des besoins. Des valeurs plus faibles réduisent la consommation initiale de mémoire, en particulier pour les tables comportant de nombreuses colonnes, mais peuvent entraîner des vidages de tampon plus fréquents. Il s&#39;agit d&#39;une taille de départ, et non d&#39;une limite de mémoire.
+
+Les tampons d&#39;écriture adaptatifs ne sont utilisés que dans les parts au format wide, selon la configuration des paramètres [`min_columns_to_activate_adaptive_write_buffer`](/fr/reference/settings/merge-tree-settings/min#min_columns_to_activate_adaptive_write_buffer) et [`use_adaptive_write_buffer_for_dynamic_subcolumns`](/fr/reference/settings/merge-tree-settings/use#use_adaptive_write_buffer_for_dynamic_subcolumns).
 
 ## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 

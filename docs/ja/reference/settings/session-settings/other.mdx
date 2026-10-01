@@ -866,6 +866,21 @@ ORDER BY がないとクエリ結果が非決定論的になるため、主に�
 
 INTERSECTクエリのデフォルトモードを設定します。設定可能な値: 空文字列、&#39;ALL&#39;、&#39;DISTINCT&#39;。空の場合、モードを指定しないクエリでは例外がスローされます。
 
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+[`KILL QUERY`](/ja/reference/statements/kill#kill-query) および [`KILL MUTATION`](/ja/reference/statements/kill#kill-mutation) の `WHERE` 句に一致する行が 1 件もない場合に、例外をスローするかどうかを制御します。
+
+true に設定すると、`KILL QUERY` は、実行中の `KILL` ステートメント自体を除いて `system.processes` に対象となる行がない場合に例外をスローします。同様に、`KILL MUTATION` は `system.mutations` に一致する行がない場合に例外をスローします。デフォルトでは、一致する行がなくても例外は発生せず、そのまま終了します。`ON CLUSTER` で実行した場合は、一致結果がホスト間で集計されないため、一致する行がなくても例外はスローされません。
+
+設定可能な値:
+
+* 1 — 例外をスローします。
+* 0 — 例外をスローしません。
+
 ## least_greatest_legacy_null_behavior {#least_greatest_legacy_null_behavior}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -873,6 +888,14 @@ INTERSECTクエリのデフォルトモードを設定します。設定可能�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
 有効にすると、関数 &#39;least&#39; と &#39;greatest&#39; は、いずれかの引数が NULL の場合に NULL を返します。
+
+## legacy_array_join_function_nondeterministic_evaluation {#legacy_array_join_function_nondeterministic_evaluation}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`arrayJoin` 関数と併用される非決定論的関数は、`ARRAY JOIN` 句の場合と同様に、出力行ごとに異なる値を返すようになりました。この設定を有効にすると、ソース行ごとに 1 つの値を返す従来の動作に戻ります。"}]}]} />
+
+`arrayJoin` 関数と同じ `SELECT` 内で使用される非決定論的関数 (例: `rand()` や `generateUUIDv4()`) が、展開される値に依存しない場合の評価方法を制御します。デフォルトでは、`ARRAY JOIN` 句の場合と同様に、出力行ごとに異なる値を返します。有効にすると旧バージョンと同じ動作になり、ソース行ごとに 1 つの値が生成され、その行から展開されたすべての行で同じ値が使われます。
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 

@@ -4408,6 +4408,47 @@ SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHa
 └──────────────────────────────┘
 ```
 
+## normalizedQueryHashUnordered {#normalizedQueryHashUnordered}
+
+導入バージョン: v26.10.0
+
+[`normalizedQueryHash`](#normalizedQueryHash) と同様に、類似したクエリに対してリテラルの値を除いた同一の 64 ビットハッシュ値を返しますが、
+トークンごとのハッシュを合計して結合するため、トークンの順序は一切影響しません。
+`SELECT a, b FROM t` と `SELECT b, a FROM t` は同じハッシュになります。
+
+クエリはパースされず、トークンに分割されるだけなので、この関数は意図的に情報が失われる設計になっています。同じトークンであれば、どのように並べ替えても同じハッシュになります。
+これには、意味が変わる並べ替え (`a - b` と `b - a`) や、そもそも有効な SQL ではない並べ替え (`SELECT 1` と `1 SELECT`) も含まれます。
+`system.query_log` などを対象に、ワークロードを構造ごとにグループ化する用途で使用してください。2 つのクエリが互いに置き換え可能かどうかの判断には、決して使用しないでください。
+この関数は例外をスローしません。正しくトークン化できないテキストもハッシュ化されます。
+
+**構文**
+
+```sql
+normalizedQueryHashUnordered(x)
+```
+
+**引数**
+
+* `x` — 文字列。[`String`](/ja/reference/data-types/string)
+
+**戻り値**
+
+64ビットのハッシュ値を返します。[`UInt64`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT normalizedQueryHashUnordered('SELECT a, b FROM t WHERE x = 1') = normalizedQueryHashUnordered('SELECT b, a FROM t WHERE x = 2') AS res
+```
+
+```response title=Response
+┌─res─┐
+│   1 │
+└─────┘
+```
+
 ## obfuscateQuery {#obfuscateQuery}
 
 導入バージョン: v26.4.0

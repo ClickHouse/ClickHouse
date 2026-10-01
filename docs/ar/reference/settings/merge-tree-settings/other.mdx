@@ -19,7 +19,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
-الحجم الأولي لمخزن مؤقت للكتابة التكيفية
+يحدد الحجم الابتدائي، بالبايت، لكل مخزن كتابة مؤقت تكيفي يُستخدم عند كتابة بيانات MergeTree. وتتوسع المخازن المؤقتة تلقائيًا حسب الحاجة. وتؤدي القيم الأصغر إلى تقليل استهلاك الذاكرة في البداية، لا سيما في الجداول التي تضم عددًا كبيرًا من الأعمدة، لكنها قد تتسبب في تفريغ المخازن المؤقتة بوتيرة أعلى. وتجدر الإشارة إلى أن هذه القيمة تمثل حجمًا ابتدائيًا، لا حدًا أقصى للذاكرة.
+
+لا تُستخدم مخازن الكتابة المؤقتة التكيفية إلا في أجزاء البيانات ذات التنسيق wide، وفقًا لما يحدده الإعدادان [`min_columns_to_activate_adaptive_write_buffer`](/ar/reference/settings/merge-tree-settings/min#min_columns_to_activate_adaptive_write_buffer) و[`use_adaptive_write_buffer_for_dynamic_subcolumns`](/ar/reference/settings/merge-tree-settings/use#use_adaptive_write_buffer_for_dynamic_subcolumns).
 
 ## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 

@@ -4407,6 +4407,46 @@ SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHa
 └──────────────────────────────┘
 ```
 
+## normalizedQueryHashUnordered {#normalizedQueryHashUnordered}
+
+도입 버전: v26.10.0
+
+[`normalizedQueryHash`](#normalizedQueryHash)와 마찬가지로 유사한 쿼리에 대해 리터럴 값을 제외하고 동일한 64비트 해시 값을 반환합니다. 다만 토큰별 해시를 합산하여 결합하므로 토큰의 순서는 결과에 전혀 영향을 주지 않습니다.
+`SELECT a, b FROM t`와 `SELECT b, a FROM t`는 동일한 해시를 갖습니다.
+
+쿼리를 파싱하지 않고 토큰으로 분할하기만 하므로, 이 함수는 의도적으로 정보 손실을 허용합니다. 동일한 토큰을 어떻게 재배열하더라도 같은 해시가 생성되며,
+의미가 달라지는 경우(`a - b`와 `b - a`)나 아예 유효한 SQL이 아닌 경우(`SELECT 1`과 `1 SELECT`)도 마찬가지입니다.
+이 함수는 `system.query_log` 등에서 워크로드를 형태별로 그룹화하는 용도로 사용하고, 두 쿼리를 서로 대체할 수 있는지 판단하는 용도로는 절대 사용하지 마십시오.
+이 함수는 예외를 발생시키지 않으며, 토큰화가 제대로 되지 않는 텍스트도 해시합니다.
+
+**구문**
+
+```sql
+normalizedQueryHashUnordered(x)
+```
+
+**인수**
+
+* `x` — 문자 시퀀스. [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+64비트 해시 값을 반환합니다. [`UInt64`](/ko/reference/data-types/int-uint)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT normalizedQueryHashUnordered('SELECT a, b FROM t WHERE x = 1') = normalizedQueryHashUnordered('SELECT b, a FROM t WHERE x = 2') AS res
+```
+
+```response title=Response
+┌─res─┐
+│   1 │
+└─────┘
+```
+
 ## obfuscateQuery {#obfuscateQuery}
 
 도입 버전: v26.4.0

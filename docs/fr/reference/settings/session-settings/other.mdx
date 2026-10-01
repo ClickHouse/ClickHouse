@@ -879,6 +879,21 @@ L’intervalle, en microsecondes, entre les vérifications de l’annulation de 
 
 Définit le mode par défaut de la requête INTERSECT. Valeurs possibles : chaîne vide, &#39;ALL&#39;, &#39;DISTINCT&#39;. Si cette valeur est vide, une requête sans mode générera une exception.
 
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+
+Détermine si [`KILL QUERY`](/fr/reference/statements/kill#kill-query) et [`KILL MUTATION`](/fr/reference/statements/kill#kill-mutation) lèvent une exception lorsque leurs clauses `WHERE` ne correspondent à aucune ligne.
+
+Si ce paramètre vaut true, `KILL QUERY` lève une exception lorsqu&#39;aucune ligne éligible n&#39;existe dans `system.processes` une fois le statement `KILL` en cours exclu, et `KILL MUTATION` lève une exception lorsqu&#39;aucune ligne ne correspond dans `system.mutations`. Par défaut, l&#39;absence de correspondance n&#39;entraîne aucune exception. L&#39;exécution avec `ON CLUSTER` ne lève pas d&#39;exception en l&#39;absence de correspondance, car les résultats ne sont pas agrégés entre les hôtes.
+
+Valeurs possibles :
+
+* 1 — Lever une exception.
+* 0 — Ne pas lever d&#39;exception.
+
 ## least_greatest_legacy_null_behavior {#least_greatest_legacy_null_behavior}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -886,6 +901,14 @@ Définit le mode par défaut de la requête INTERSECT. Valeurs possibles : cha�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "Nouveau réglage"}]}]} />
 
 S&#39;il est activé, les fonctions &#39;least&#39; et &#39;greatest&#39; renvoient NULL si l&#39;un de leurs arguments est NULL.
+
+## legacy_array_join_function_nondeterministic_evaluation {#legacy_array_join_function_nondeterministic_evaluation}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Une fonction non déterministe utilisée à côté de la fonction `arrayJoin` renvoie une valeur différente pour chaque ligne de sortie, comme avec la clause `ARRAY JOIN`. Ce paramètre rétablit une valeur unique par ligne source."}]}]} />
+
+Détermine la manière dont est évaluée une fonction non déterministe utilisée à côté de la fonction `arrayJoin` lorsqu&#39;elle ne dépend pas de la valeur jointe, par exemple `rand()` ou `generateUUIDv4()` dans le même `SELECT`. Par défaut, elle renvoie une valeur différente pour chaque ligne de sortie, comme avec la clause `ARRAY JOIN`. Activez ce paramètre pour retrouver le comportement des versions antérieures : une seule valeur par ligne source, répétée sur toutes les lignes issues de l&#39;expansion de cette ligne.
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 

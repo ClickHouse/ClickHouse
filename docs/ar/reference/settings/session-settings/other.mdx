@@ -878,6 +878,21 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 يُعيّن الوضع الافتراضي في استعلام INTERSECT. القيم الممكنة: سلسلة فارغة، &#39;ALL&#39;، &#39;DISTINCT&#39;. إذا كانت القيمة فارغة، فسيؤدي الاستعلام بدون وضع إلى إثارة استثناء.
 
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]} />
+
+يتحكم هذا الإعداد فيما إذا كانت العبارتان [`KILL QUERY`](/ar/reference/statements/kill#kill-query) و[`KILL MUTATION`](/ar/reference/statements/kill#kill-mutation) ترفعان استثناءً عندما لا تطابق عبارات `WHERE` الخاصة بهما أي صفوف.
+
+عند ضبطه على true، ترفع `KILL QUERY` استثناءً إذا لم توجد صفوف مؤهلة في `system.processes` بعد استبعاد عبارة `KILL` الحالية، وترفع `KILL MUTATION` استثناءً إذا لم يتطابق أي صف في `system.mutations`. أما افتراضيًا، فتنتهي العبارة دون رفع استثناء عند عدم وجود أي تطابق. ولا يرفع التنفيذ باستخدام `ON CLUSTER` استثناءً عند عدم وجود تطابقات، لأن نتائج المطابقة لا تُجمَّع عبر المضيفين.
+
+القيم الممكنة:
+
+* 1 — رفع استثناء.
+* 0 — عدم رفع استثناء.
+
 ## least_greatest_legacy_null_behavior {#least_greatest_legacy_null_behavior}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -885,6 +900,14 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
 إذا كان هذا الإعداد ممكّنًا، فستُرجِع الدالتان &#39;least&#39; و &#39;greatest&#39; القيمة NULL إذا كانت إحدى وسيطاتهما NULL.
+
+## legacy_array_join_function_nondeterministic_evaluation {#legacy_array_join_function_nondeterministic_evaluation}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "أصبحت الدالة غير الحتمية المستخدمة إلى جانب الدالة `arrayJoin` تُعيد قيمة مختلفة في كل صف إخراج، كما هو الحال مع عبارة `ARRAY JOIN`. ويُعيد هذا الإعداد السلوك السابق: قيمة واحدة لكل صف مصدر."}]}]} />
+
+يحدد هذا الإعداد كيفية تقييم الدالة غير الحتمية المستخدمة إلى جانب الدالة `arrayJoin` عندما لا تعتمد على القيمة الناتجة عن الضم، مثل `rand()` أو `generateUUIDv4()` ضمن عبارة `SELECT` نفسها. افتراضيًا، تُعيد الدالة قيمة مختلفة في كل صف إخراج، كما هو الحال مع عبارة `ARRAY JOIN`. فعّل هذا الإعداد للحصول على سلوك الإصدارات الأقدم، أي قيمة واحدة لكل صف مصدر تتكرر في جميع الصفوف الموسَّعة الناتجة عنه.
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 

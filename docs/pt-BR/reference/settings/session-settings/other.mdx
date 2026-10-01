@@ -879,6 +879,21 @@ O intervalo, em microssegundos, para verificar se a execução da requisição f
 
 Define o modo padrão da consulta INTERSECT. Valores possíveis: string vazia, &#39;ALL&#39;, &#39;DISTINCT&#39;. Se estiver vazio, a consulta sem modo gerará uma exceção.
 
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]} />
+
+Controla se [`KILL QUERY`](/pt-BR/reference/statements/kill#kill-query) e [`KILL MUTATION`](/pt-BR/reference/statements/kill#kill-mutation) devem lançar uma exceção quando suas cláusulas `WHERE` não correspondem a nenhuma linha.
+
+Quando definida como true, `KILL QUERY` lança uma exceção se não houver linhas elegíveis em `system.processes` após a exclusão da própria instrução `KILL` em execução, e `KILL MUTATION` lança uma exceção se nenhuma linha corresponder em `system.mutations`. Por padrão, quando nenhuma linha corresponde, o comando retorna sem exceção. A execução com `ON CLUSTER` não lança exceção quando não há correspondências, pois os resultados não são agregados entre os hosts.
+
+Valores possíveis:
+
+* 1 — Lançar uma exceção.
+* 0 — Não lançar uma exceção.
+
 ## least_greatest_legacy_null_behavior {#least_greatest_legacy_null_behavior}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -886,6 +901,14 @@ Define o modo padrão da consulta INTERSECT. Valores possíveis: string vazia, &
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "Nova configuração"}]}]} />
 
 Quando ativada, as funções &#39;least&#39; e &#39;greatest&#39; retornam NULL se um de seus argumentos for NULL.
+
+## legacy_array_join_function_nondeterministic_evaluation {#legacy_array_join_function_nondeterministic_evaluation}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Uma função não determinística usada junto com a função `arrayJoin` gera um valor diferente em cada linha de saída, como ocorre com a cláusula `ARRAY JOIN`. A configuração restaura um único valor por linha de origem."}]}]} />
+
+Define como uma função não determinística usada junto com a função `arrayJoin` é avaliada quando não depende do valor resultante da junção, por exemplo, `rand()` ou `generateUUIDv4()` no mesmo `SELECT`. Por padrão, ela gera um valor diferente em cada linha de saída, como ocorre com a cláusula `ARRAY JOIN`. Habilite para obter o comportamento das versões anteriores: um único valor por linha de origem, repetido em todas as linhas expandidas a partir dela.
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 

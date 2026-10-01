@@ -17,22 +17,25 @@ doc_type: 'reference'
 **構文**
 
 ```sql
-CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
+CREATE [OR REPLACE] NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
 key_name1 = 'some value' [[NOT] OVERRIDABLE],
 key_name2 = 'some value' [[NOT] OVERRIDABLE],
 key_name3 = 'some value' [[NOT] OVERRIDABLE],
 ...
 ```
 
+`OR REPLACE` と `IF NOT EXISTS` は同時に指定できません。既存のコレクションに対して `CREATE OR REPLACE` を実行すると、そのコレクションは完全に置き換えられます。新しい定義に含まれていないキーや上書き可否フラグは削除されます。
+
 **例**
 
 ```sql
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
+CREATE OR REPLACE NAMED COLLECTION foobar AS a = '2', c = '3';
 ```
 
 **関連するSQL文**
 
-* [CREATE NAMED COLLECTION](/ja/reference/statements/alter/named-collection)
+* [ALTER NAMED COLLECTION](/ja/reference/statements/alter/named-collection)
 * [DROP NAMED COLLECTION](/ja/reference/statements/drop#drop-function)
 
 **関連項目**

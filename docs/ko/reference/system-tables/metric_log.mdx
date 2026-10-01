@@ -446,6 +446,8 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 외부 메모리에서 JOIN을 위해 기록한 데이터 양(비압축, 압축 전)입니다.
 * `ProfileEvent_ExternalDistinctWritePart` ([UInt64](/ko/reference/data-types/int-uint)) — 외부 메모리에서 DISTINCT를 위해 임시 파일을 디스크에 기록한 횟수입니다.
 * `ProfileEvent_ExternalDistinctMerge` ([UInt64](/ko/reference/data-types/int-uint)) — 외부 메모리에서 DISTINCT를 위해 임시 파일을 머지한 횟수입니다.
+* `ProfileEvent_ExternalDistinctTailSpilledRows` ([UInt64](/ko/reference/data-types/int-uint)) — 최종 외부 DISTINCT 머지 전에 스필 대상으로 선택된 버퍼링된 행 수입니다.
+* `ProfileEvent_ExternalDistinctTailKeptRows` ([UInt64](/ko/reference/data-types/int-uint)) — 최종 외부 DISTINCT 머지를 위해 메모리에 유지된 버퍼링된 행 수입니다.
 * `ProfileEvent_ExternalDistinctCompressedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 외부 메모리에서 DISTINCT를 위해 기록한 압축 바이트 수입니다.
 * `ProfileEvent_ExternalDistinctUncompressedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 외부 메모리에서 DISTINCT를 위해 기록한 데이터 양(비압축, 압축 전)입니다.
 * `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg 파티션 프루닝 중 건너뛴 파일 수입니다.
@@ -499,7 +501,6 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedIndexAnalysisScheduledReplicas` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 인덱스 분석이 할당된 레플리카 수(로컬 레플리카는 1회만 집계됨)
 * `ProfileEvent_DistributedIndexAnalysisReplicaUnavailable` ([UInt64](/ko/reference/data-types/int-uint)) — 폴백 없이 레플리카 중 하나에서 분산 인덱스 분석이 실패한 횟수(연결 중 실패)
 * `ProfileEvent_DistributedIndexAnalysisReplicaFallback` ([UInt64](/ko/reference/data-types/int-uint)) — 레플리카 중 하나에서 분산 인덱스 분석이 실패해 로컬 레플리카로 폴백한 횟수
-* `ProfileEvent_DistributedIndexAnalysisParts` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 인덱스 분석을 위해 전송된 파트 수
 * `ProfileEvent_DistributedIndexAnalysisMissingParts` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 인덱스 분석 중 누락되어 로컬에서 처리될 파트 수
 * `ProfileEvent_WaitMarksLoadMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 마크 로드를 기다리는 데 소요된 시간
 * `ProfileEvent_BackgroundLoadingMarksTasks` ([UInt64](/ko/reference/data-types/int-uint)) — 마크 로드를 위한 백그라운드 작업 수
@@ -700,7 +701,6 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_ParallelReplicasStealingLeftoversMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 고아 세그먼트를 수집하는 데 소요된 시간
 * `ProfileEvent_ParallelReplicasCollectingOwnedSegmentsMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 해시에 따라 할당된 세그먼트를 수집하는 데 소요된 시간
 * `ProfileEvent_ParallelReplicasNumRequests` ([UInt64](/ko/reference/data-types/int-uint)) — initiator에 대한 요청 수
-* `ProfileEvent_ParallelReplicasDeniedRequests` ([UInt64](/ko/reference/data-types/int-uint)) — initiator에 대한 요청이 완전히 거부된 횟수
 * `ProfileEvent_CacheWarmerBytesDownloaded` ([UInt64](/ko/reference/data-types/int-uint)) — 전용 백그라운드 스레드가 파일 시스템 캐시로 가져온 데이터 양
 * `ProfileEvent_CacheWarmerDataPartsDownloaded` ([UInt64](/ko/reference/data-types/int-uint)) — CacheWarmer가 데이터 파트를 완전히 fetch한 횟수
 * `ProfileEvent_IgnoredColdParts` ([UInt64](/ko/reference/data-types/int-uint)) — 설정 ignore&#95;cold&#95;parts&#95;seconds를 참조하십시오. 읽기 쿼리가 CacheWarmer에 의해 아직 캐시로 가져와지지 않은 아주 새로운 파트를 무시한 횟수입니다.
@@ -896,7 +896,6 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_FileSegmentLockMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 파일 세그먼트 잠금에 소요된 시간
 * `ProfileEvent_FileSegmentWriteMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 파일 세그먼트 write()에 소요된 시간
 * `ProfileEvent_FileSegmentIncreasePriorityMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 파일 세그먼트 우선순위 증가에 소요된 시간
-* `ProfileEvent_FileSegmentRemoveMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 파일 세그먼트 remove()에 소요된 시간
 * `ProfileEvent_FileSegmentHolderCompleteMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 파일 세그먼트 holder complete()에 소요된 시간
 * `ProfileEvent_FileSegmentFailToIncreasePriority` ([UInt64](/ko/reference/data-types/int-uint)) — 캐시 잠금 경합이 심해 우선순위를 높이지 못한 횟수
 * `ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfLockContention` ([UInt64](/ko/reference/data-types/int-uint)) — 캐시 잠금 경합이 심해 공간 예약을 건너뛴 횟수
@@ -944,7 +943,6 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_SynchronousReadWaitMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 비동기 로컬 읽기에서 동기 읽기를 기다리는 데 소요된 시간입니다.
 * `ProfileEvent_AsynchronousRemoteReadWaitMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 비동기 원격 읽기를 기다리는 데 소요된 시간입니다.
 * `ProfileEvent_SynchronousRemoteReadWaitMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 동기 원격 읽기를 기다리는 데 소요된 시간입니다.
-* `ProfileEvent_ExternalDataSourceLocalCacheReadBytes` ([UInt64](/ko/reference/data-types/int-uint)) — RemoteReadBufferCache의 로컬 캐시 버퍼에서 읽은 바이트 수입니다.
 * `ProfileEvent_MainConfigLoads` ([UInt64](/ko/reference/data-types/int-uint)) — 기본 구성을 다시 로드한 횟수입니다.
 * `ProfileEvent_AggregationPreallocatedElementsInHashTables` ([UInt64](/ko/reference/data-types/int-uint)) — 집계를 위해 해시 테이블에 미리 할당된 요소 수입니다.
 * `ProfileEvent_AdaptiveAggregationLocalFreezes` ([UInt64](/ko/reference/data-types/int-uint)) — 적응형 집계가 동결 임계값에서 동결한 로컬 해시 테이블 수입니다.
@@ -1110,9 +1108,6 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_OverflowBreak` ([UInt64](/ko/reference/data-types/int-uint)) — 설정 &#39;*&#95;overflow&#95;mode&#39; = &#39;break&#39;일 때, 쿼리 복잡도 제한으로 인해 데이터 처리가 취소되어 결과가 불완전해진 횟수입니다.
 * `ProfileEvent_OverflowThrow` ([UInt64](/ko/reference/data-types/int-uint)) — 설정 &#39;*&#95;overflow&#95;mode&#39; = &#39;throw&#39;일 때, 쿼리 복잡도 제한으로 인해 데이터 처리가 취소되고 예외가 발생한 횟수입니다.
 * `ProfileEvent_OverflowAny` ([UInt64](/ko/reference/data-types/int-uint)) — 근사 GROUP BY가 적용된 횟수입니다. 즉, 집계가 처음 &#39;max&#95;rows&#95;to&#95;group&#95;by&#39;개의 고유 키에 대해서만 수행되고, &#39;group&#95;by&#95;overflow&#95;mode&#39; = &#39;any&#39;로 인해 다른 키는 무시된 경우입니다.
-* `ProfileEvent_S3QueueSetFileProcessingMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 파일을 processing 상태로 설정하는 데 소요된 시간
-* `ProfileEvent_S3QueueSetFileProcessedMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 파일을 processed 상태로 설정하는 데 소요된 시간
-* `ProfileEvent_S3QueueSetFileFailedMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 파일을 failed 상태로 설정하는 데 소요된 시간
 * `ProfileEvent_ObjectStorageQueueFailedFiles` ([UInt64](/ko/reference/data-types/int-uint)) — 처리에 실패한 파일 수
 * `ProfileEvent_ObjectStorageQueueProcessedFiles` ([UInt64](/ko/reference/data-types/int-uint)) — 처리된 파일 수
 * `ProfileEvent_ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 파일을 failed 상태로 설정하는 데 소요된 시간
@@ -1533,7 +1528,6 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_WasmGuestExecuteMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — WebAssembly 코드를 실행하는 데 소요된 시간
 * `ProfileEvent_WasmTotalExecuteMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — WebAssembly 코드를 실행하는 데 소요된 시간
 * `ProfileEvent_WasmModuleInstatiate` ([UInt64](/ko/reference/data-types/int-uint)) — 생성된 WebAssembly 컴파트먼트 수
-* `ProfileEvent_WasmMemoryAllocated` ([UInt64](/ko/reference/data-types/int-uint)) — WebAssembly 컴파트먼트에 할당된 총 메모리 양
 * `ProfileEvent_ExecutableUserDefinedFunctionInvocations` ([UInt64](/ko/reference/data-types/int-uint)) — 실행형 및 executable&#95;pool 사용자 정의 함수 호출 횟수입니다.
 * `ProfileEvent_ExecutableUserDefinedFunctionElapsedMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 실행형 및 executable&#95;pool 사용자 정의 함수를 실행하는 데 소요된 벽시계 시간(마이크로초)입니다.
 * `ProfileEvent_ExecutableUserDefinedFunctionUserTimeMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 실행형 및 executable&#95;pool 사용자 정의 함수 자식 프로세스가 소비한 사용자 모드 CPU 시간(마이크로초)입니다.

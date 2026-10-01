@@ -1750,10 +1750,6 @@ Temps total consacré à l’analyse distribuée des index
 
 Nombre de parts manquantes au cours de l’analyse distribuée des index qui seront résolues localement
 
-### DistributedIndexAnalysisParts {#distributedindexanalysisparts}
-
-Nombre de parts envoyées pour l’analyse d’index distribuée
-
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
 Nombre de fois où l’analyse d’index distribuée a échoué sur l’une des répliques, avec basculement vers la réplique locale
@@ -1910,10 +1906,6 @@ Quantité de données (non compressées, avant compression) écrites sur le disq
 
 Nombre de fois qu’un fichier temporaire a été écrit sur disque pour une agrégation en mémoire externe.
 
-### ExternalDataSourceLocalCacheReadBytes {#externaldatasourcelocalcachereadbytes}
-
-Octets lus depuis le tampon du cache local dans RemoteReadBufferCache
-
 ### ExternalDistinctCompressedBytes {#externaldistinctcompressedbytes}
 
 Nombre d&#39;octets compressés écrits pour DISTINCT en mémoire externe.
@@ -1921,6 +1913,14 @@ Nombre d&#39;octets compressés écrits pour DISTINCT en mémoire externe.
 ### ExternalDistinctMerge {#externaldistinctmerge}
 
 Nombre de fois où des fichiers temporaires ont été fusionnés pour DISTINCT en mémoire externe.
+
+### ExternalDistinctTailKeptRows {#externaldistincttailkeptrows}
+
+Nombre de lignes mises en tampon et conservées en mémoire pour la fusion finale du DISTINCT externe.
+
+### ExternalDistinctTailSpilledRows {#externaldistincttailspilledrows}
+
+Nombre de lignes en tampon sélectionnées pour un déversement sur le disque avant la fusion externe finale de DISTINCT.
 
 ### ExternalDistinctUncompressedBytes {#externaldistinctuncompressedbytes}
 
@@ -2069,10 +2069,6 @@ Durée d’augmentation de la priorité du segment de fichier
 ### FileSegmentLockMicroseconds {#filesegmentlockmicroseconds}
 
 Durée de verrouillage d’un segment de fichier
-
-### FileSegmentRemoveMicroseconds {#filesegmentremovemicroseconds}
-
-Temps de suppression remove() du segment de fichier
 
 ### FileSegmentWaitMicroseconds {#filesegmentwaitmicroseconds}
 
@@ -4074,10 +4070,6 @@ Nombre de répliques disponibles pour exécuter une requête avec des répliques
 
 Temps consacré à la collecte des segments attribués par hachage
 
-### ParallelReplicasDeniedRequests {#parallelreplicasdeniedrequests}
-
-Nombre de requêtes entièrement refusées par le nœud initiateur
-
 ### ParallelReplicasHandleAnnouncementMicroseconds {#parallelreplicashandleannouncementmicroseconds}
 
 Temps consacré au traitement des annonces des répliques
@@ -5001,18 +4993,6 @@ Nombre de requêtes S3 PUT, COPY, POST et LIST ayant transité par le throttler�
 ### S3PutRequestThrottlerSleepMicroseconds {#s3putrequestthrottlersleepmicroseconds}
 
 Temps total pendant lequel une requête a été mise en veille afin de respecter la limitation du débit des requêtes S3 PUT, COPY, POST et LIST.
-
-### S3QueueSetFileFailedMicroseconds {#s3queuesetfilefailedmicroseconds}
-
-Temps nécessaire pour marquer le fichier comme échoué
-
-### S3QueueSetFileProcessedMicroseconds {#s3queuesetfileprocessedmicroseconds}
-
-Temps consacré au marquage du fichier comme traité
-
-### S3QueueSetFileProcessingMicroseconds {#s3queuesetfileprocessingmicroseconds}
-
-Temps nécessaire pour marquer le fichier comme étant en cours de traitement
 
 ### S3ReadMicroseconds {#s3readmicroseconds}
 
@@ -6313,10 +6293,6 @@ Temps consacré à l’exécution de code WebAssembly
 ### WasmGuestExecuteMicroseconds {#wasmguestexecutemicroseconds}
 
 Temps passé à exécuter du code WebAssembly
-
-### WasmMemoryAllocated {#wasmmemoryallocated}
-
-Mémoire totale allouée aux compartiments WebAssembly
 
 ### WasmModuleInstatiate {#wasmmoduleinstatiate}
 

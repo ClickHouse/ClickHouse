@@ -1749,10 +1749,6 @@ write syscall の待機に費やされた合計時間です。これには page 
 
 分散索引解析で不足し、ローカルで解決されるパーツ数
 
-### DistributedIndexAnalysisParts {#distributedindexanalysisparts}
-
-分散索引解析のために送信されたパーツ数
-
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
 いずれかのレプリカで分散索引解析が失敗し、ローカルレプリカにフォールバックした回数
@@ -1909,10 +1905,6 @@ encryption header cache 内に encryption header のバイト列が見つから�
 
 外部メモリで集約を行う際に、一時ファイルがディスクに書き込まれた回数。
 
-### ExternalDataSourceLocalCacheReadBytes {#externaldatasourcelocalcachereadbytes}
-
-RemoteReadBufferCache のローカル cache バッファから読み込まれたバイト数
-
 ### ExternalDistinctCompressedBytes {#externaldistinctcompressedbytes}
 
 外部メモリ 上での DISTINCT 処理のために書き込まれた圧縮バイト数。
@@ -1920,6 +1912,14 @@ RemoteReadBufferCache のローカル cache バッファから読み込まれた
 ### ExternalDistinctMerge {#externaldistinctmerge}
 
 外部メモリ 上で DISTINCT のために 一時ファイル がマージされた回数。
+
+### ExternalDistinctTailKeptRows {#externaldistincttailkeptrows}
+
+外部 DISTINCT の最終マージ用にメモリ上に保持されている、バッファリング済みの行数。
+
+### ExternalDistinctTailSpilledRows {#externaldistincttailspilledrows}
+
+最終的な外部 DISTINCT マージの前にスピル対象として選択された、バッファ内の行の数。
 
 ### ExternalDistinctUncompressedBytes {#externaldistinctuncompressedbytes}
 
@@ -2068,10 +2068,6 @@ cache ロックで激しい競合が発生したため、優先度を引き上�
 ### FileSegmentLockMicroseconds {#filesegmentlockmicroseconds}
 
 ファイルセグメントのロック時間
-
-### FileSegmentRemoveMicroseconds {#filesegmentremovemicroseconds}
-
-file segment の remove() に要する時間
 
 ### FileSegmentWaitMicroseconds {#filesegmentwaitmicroseconds}
 
@@ -4073,10 +4069,6 @@ paimon メタデータcacheから追い出されたおおよそのバイト数�
 
 ハッシュによって割り当てられたセグメントの収集に費やされた時間
 
-### ParallelReplicasDeniedRequests {#parallelreplicasdeniedrequests}
-
-イニシエーターへのリクエストのうち、完全に拒否された件数
-
 ### ParallelReplicasHandleAnnouncementMicroseconds {#parallelreplicashandleannouncementmicroseconds}
 
 レプリカからの通知の処理にかかった時間
@@ -5000,18 +4992,6 @@ S3 API の PutObject 呼び出しの回数。
 ### S3PutRequestThrottlerSleepMicroseconds {#s3putrequestthrottlersleepmicroseconds}
 
 S3 の PUT、COPY、POST、LIST リクエストのスロットリングに従うために、クエリがスリープしていた合計時間。
-
-### S3QueueSetFileFailedMicroseconds {#s3queuesetfilefailedmicroseconds}
-
-ファイルを失敗扱いに設定するのにかかった時間
-
-### S3QueueSetFileProcessedMicroseconds {#s3queuesetfileprocessedmicroseconds}
-
-ファイルを処理済みとして設定するのに要した時間
-
-### S3QueueSetFileProcessingMicroseconds {#s3queuesetfileprocessingmicroseconds}
-
-ファイルを処理中として設定するのに要した時間
 
 ### S3ReadMicroseconds {#s3readmicroseconds}
 
@@ -6312,10 +6292,6 @@ WebAssembly コードの実行にかかった時間
 ### WasmGuestExecuteMicroseconds {#wasmguestexecutemicroseconds}
 
 WebAssembly コードの実行にかかった時間
-
-### WasmMemoryAllocated {#wasmmemoryallocated}
-
-WebAssemblyコンパートメントに割り当てられたメモリの総量
 
 ### WasmModuleInstatiate {#wasmmoduleinstatiate}
 

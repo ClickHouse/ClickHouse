@@ -302,6 +302,14 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 فرض تهيئة الحقول المُغفلة بقيم NULL
 
+## input_format_freeform_max_search_steps {#input_format_freeform_max_search_steps}
+
+<SettingsInfoBlock type="UInt64" default_value="4096" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "4096"},{"label": "إعداد جديد يضع حدًا للبحث عن بنية صف بصيغة `Freeform`. كان البحث في السابق غير محدود، وقد يستنفد الذاكرة عند معالجة صف عريض من السلاسل النصية؛ وتعيد القيمة 0 ذلك السلوك."}]}]} />
+
+الحد الأقصى لعدد خطوات البحث عن بنية صف بصيغة `Freeform`. يتفرّع البحث عند كل حقل تقرؤه عدة قواعد إفلات بالطريقة نفسها (فمثلًا، تقرأ القاعدتان `Raw` و`Escaped` الكلمة الواردة في صف مفصول بعلامات الجدولة بالطريقة نفسها)، ولذلك يتزايد عدد البنى المرشّحة للصف العريض من السلاسل النصية تزايدًا أُسّيًا. وعندما يتجاوز البحث هذا العدد من الخطوات، يُرفع استثناء بدلًا من استنفاد الذاكرة والوقت. وتعني القيمة 0 عدم وجود حد.
+
 ## input_format_geojson_unsupported_geometry_handling {#input_format_geojson_unsupported_geometry_handling}
 
 <SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />

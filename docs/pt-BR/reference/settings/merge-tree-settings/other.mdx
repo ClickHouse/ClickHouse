@@ -19,7 +19,9 @@ Estas configurações estão disponíveis em [system.merge&#95;tree&#95;settings
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
-Tamanho inicial de um buffer de escrita adaptativo
+Define o tamanho inicial, em bytes, de cada buffer de gravação adaptativo usado na gravação de dados MergeTree. Os buffers crescem automaticamente conforme necessário. Valores menores reduzem o uso inicial de memória, especialmente em tabelas com muitas colunas, mas podem resultar em flushes de buffer mais frequentes. Trata-se de um tamanho inicial, não de um limite de memória.
+
+Os buffers de gravação adaptativos são usados apenas em partes wide, conforme controlado por [`min_columns_to_activate_adaptive_write_buffer`](/pt-BR/reference/settings/merge-tree-settings/min#min_columns_to_activate_adaptive_write_buffer) e [`use_adaptive_write_buffer_for_dynamic_subcolumns`](/pt-BR/reference/settings/merge-tree-settings/use#use_adaptive_write_buffer_for_dynamic_subcolumns).
 
 ## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 

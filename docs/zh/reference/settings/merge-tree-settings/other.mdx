@@ -19,7 +19,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
-自适应写入缓冲区的初始大小
+设置写入 MergeTree 数据时使用的每个自适应写入缓冲区的初始大小，单位为字节。缓冲区会根据需要自动扩容。较小的值可降低初始内存占用，对列数较多的表尤其有效，但可能导致更频繁的缓冲区刷写。此设置指定的是初始大小，而非内存上限。
+
+自适应写入缓冲区仅用于宽格式分片，是否启用由 [`min_columns_to_activate_adaptive_write_buffer`](/zh/reference/settings/merge-tree-settings/min#min_columns_to_activate_adaptive_write_buffer) 和 [`use_adaptive_write_buffer_for_dynamic_subcolumns`](/zh/reference/settings/merge-tree-settings/use#use_adaptive_write_buffer_for_dynamic_subcolumns) 控制。
 
 ## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 

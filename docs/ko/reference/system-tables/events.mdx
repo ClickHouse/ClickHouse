@@ -1749,10 +1749,6 @@ Distributed Cache 쓰기 버퍼 이벤트. 재시도 가능한 쓰기 오류가 
 
 분산 인덱스 분석 중 로컬에서 처리될 누락된 파트 수
 
-### DistributedIndexAnalysisParts {#distributedindexanalysisparts}
-
-분산 인덱스 분석을 위해 전송되는 파트 수
-
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
 분산 인덱스 분석이 레플리카 중 하나에서 실패해 로컬 레플리카로 폴백된 횟수
@@ -1909,10 +1905,6 @@ File/S3/URL/HDFS처럼 파일을 사용하는 테이블 엔진에서 읽은 파�
 
 외부 메모리에서 집계할 때 임시 파일이 디스크에 기록된 횟수입니다.
 
-### ExternalDataSourceLocalCacheReadBytes {#externaldatasourcelocalcachereadbytes}
-
-RemoteReadBufferCache의 로컬 캐시 버퍼에서 읽어들인 바이트 수
-
 ### ExternalDistinctCompressedBytes {#externaldistinctcompressedbytes}
 
 외부 메모리(external memory)에서 DISTINCT 처리를 위해 기록된 압축 바이트 수입니다.
@@ -1920,6 +1912,14 @@ RemoteReadBufferCache의 로컬 캐시 버퍼에서 읽어들인 바이트 수
 ### ExternalDistinctMerge {#externaldistinctmerge}
 
 외부 메모리에서 DISTINCT 처리를 위해 임시 파일가 머지된 횟수입니다.
+
+### ExternalDistinctTailKeptRows {#externaldistincttailkeptrows}
+
+최종 외부 DISTINCT 머지를 위해 메모리에 보관되는 버퍼링된 행의 수입니다.
+
+### ExternalDistinctTailSpilledRows {#externaldistincttailspilledrows}
+
+최종 외부 DISTINCT 머지 전에 스필 대상으로 선택된 버퍼링된 행의 수입니다.
 
 ### ExternalDistinctUncompressedBytes {#externaldistinctuncompressedbytes}
 
@@ -2068,10 +2068,6 @@ Fetch 실행기에서 작업이 완료될 때까지 대기한 시간입니다.
 ### FileSegmentLockMicroseconds {#filesegmentlockmicroseconds}
 
 파일 세그먼트 잠금에 걸린 시간
-
-### FileSegmentRemoveMicroseconds {#filesegmentremovemicroseconds}
-
-파일 세그먼트 remove() 소요 시간
 
 ### FileSegmentWaitMicroseconds {#filesegmentwaitmicroseconds}
 
@@ -4073,10 +4069,6 @@ announcement 전송에 소요된 시간
 
 hash로 할당된 세그먼트를 수집하는 데 소요된 시간
 
-### ParallelReplicasDeniedRequests {#parallelreplicasdeniedrequests}
-
-initiator로 전송된 요청 중 완전히 거부된 요청 수
-
 ### ParallelReplicasHandleAnnouncementMicroseconds {#parallelreplicashandleannouncementmicroseconds}
 
 레플리카 announcement를 처리하는 데 소요된 시간
@@ -5000,18 +4992,6 @@ throttler를 거친 S3 PUT, COPY, POST 및 LIST 요청 수입니다. 차단된 �
 ### S3PutRequestThrottlerSleepMicroseconds {#s3putrequestthrottlersleepmicroseconds}
 
 쿼리가 S3 PUT, COPY, POST 및 LIST 요청 스로틀링에 맞추기 위해 대기한 총 시간입니다.
-
-### S3QueueSetFileFailedMicroseconds {#s3queuesetfilefailedmicroseconds}
-
-파일을 Failed 상태로 설정하는 데 걸린 시간
-
-### S3QueueSetFileProcessedMicroseconds {#s3queuesetfileprocessedmicroseconds}
-
-파일을 처리 완료로 설정하는 데 소요된 시간
-
-### S3QueueSetFileProcessingMicroseconds {#s3queuesetfileprocessingmicroseconds}
-
-파일을 processing 상태로 변경하는 데 걸린 시간
 
 ### S3ReadMicroseconds {#s3readmicroseconds}
 
@@ -6312,10 +6292,6 @@ WebAssembly 코드 실행에 소요된 시간
 ### WasmGuestExecuteMicroseconds {#wasmguestexecutemicroseconds}
 
 WebAssembly 코드 실행에 소요된 시간
-
-### WasmMemoryAllocated {#wasmmemoryallocated}
-
-WebAssembly 컴파트먼트에 할당된 전체 메모리
 
 ### WasmModuleInstatiate {#wasmmoduleinstatiate}
 

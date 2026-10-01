@@ -19,7 +19,9 @@ Estos ajustes están disponibles en [system.merge&#95;tree&#95;settings](/es/ref
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
-Tamaño inicial del búfer de escritura adaptativo
+Establece el tamaño inicial, en bytes, de cada búfer de escritura adaptativo que se utiliza al escribir datos de MergeTree. Los búferes crecen automáticamente según sea necesario. Un valor más bajo reduce el uso inicial de memoria, sobre todo en tablas con muchas columnas, pero puede provocar vaciados del búfer más frecuentes. Se trata de un tamaño inicial, no de un memory limit.
+
+Los búferes de escritura adaptativos solo se utilizan en partes con formato wide, según lo determinan [`min_columns_to_activate_adaptive_write_buffer`](/es/reference/settings/merge-tree-settings/min#min_columns_to_activate_adaptive_write_buffer) y [`use_adaptive_write_buffer_for_dynamic_subcolumns`](/es/reference/settings/merge-tree-settings/use#use_adaptive_write_buffer_for_dynamic_subcolumns).
 
 ## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 

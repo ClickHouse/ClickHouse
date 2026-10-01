@@ -4408,6 +4408,47 @@ SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHa
 └──────────────────────────────┘
 ```
 
+## normalizedQueryHashUnordered {#normalizedQueryHashUnordered}
+
+引入版本：v26.10.0
+
+与 [`normalizedQueryHash`](#normalizedQueryHash) 类似，对于相似的查询，它会忽略字面量的值并返回相同的 64 比特哈希值，
+但它通过求和来组合各个标记的哈希，因此标记的顺序完全不影响结果。
+`SELECT a, b FROM t` 和 `SELECT b, a FROM t` 会得到相同的哈希。
+
+该函数不会解析查询，只会将其切分为标记，因此它在设计上就是有损的：相同标记的任意重新排列都会得到相同的哈希，
+包括会改变语义的排列 (`a - b` 和 `b - a`) ，以及根本不是有效 SQL 的排列 (`SELECT 1` 和 `1 SELECT`) 。
+可用它按形态对工作负载进行分组 (例如基于 `system.query_log`) ，但切勿用它来判断两个查询能否相互替换。
+该函数从不抛出异常：无法正常切分为标记的文本同样会被计算哈希。
+
+**语法**
+
+```sql
+normalizedQueryHashUnordered(x)
+```
+
+**参数**
+
+* `x` — 字符序列。[`String`](/zh/reference/data-types/string)
+
+**返回值**
+
+返回一个 64 比特的哈希值。[`UInt64`](/zh/reference/data-types/int-uint)
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+SELECT normalizedQueryHashUnordered('SELECT a, b FROM t WHERE x = 1') = normalizedQueryHashUnordered('SELECT b, a FROM t WHERE x = 2') AS res
+```
+
+```response title=Response
+┌─res─┐
+│   1 │
+└─────┘
+```
+
 ## obfuscateQuery {#obfuscateQuery}
 
 引入版本：v26.4.0

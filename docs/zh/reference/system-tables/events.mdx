@@ -1749,10 +1749,6 @@ Distributed Cache 客户端事件。写请求期间发生的可重试分布式�
 
 分布式索引分析期间缺失且将由本地处理的 parts 数量
 
-### DistributedIndexAnalysisParts {#distributedindexanalysisparts}
-
-发送用于分布式索引分析的 parts 数量
-
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
 分布式索引分析在某个副本上失败后回退到本地副本的次数
@@ -1909,10 +1905,6 @@ DNSReverseRequests 统计的反向 DNS 查询总耗时，包括 DNSReverseError 
 
 使用外部内存进行聚合时，临时 File 写入磁盘的次数。
 
-### ExternalDataSourceLocalCacheReadBytes {#externaldatasourcelocalcachereadbytes}
-
-RemoteReadBufferCache 中从本地缓存缓冲区读取的字节数
-
 ### ExternalDistinctCompressedBytes {#externaldistinctcompressedbytes}
 
 在外部内存中为 DISTINCT 写入的压缩字节数。
@@ -1920,6 +1912,14 @@ RemoteReadBufferCache 中从本地缓存缓冲区读取的字节数
 ### ExternalDistinctMerge {#externaldistinctmerge}
 
 在外部内存中为 DISTINCT 合并临时 File 的次数。
+
+### ExternalDistinctTailKeptRows {#externaldistincttailkeptrows}
+
+为最终的外部 DISTINCT 合并而保留在内存中的已缓冲行数。
+
+### ExternalDistinctTailSpilledRows {#externaldistincttailspilledrows}
+
+在最终的外部 DISTINCT 合并之前，被选中落盘的已缓冲行数。
 
 ### ExternalDistinctUncompressedBytes {#externaldistinctuncompressedbytes}
 
@@ -2068,10 +2068,6 @@ File 段优先级提升时间
 ### FileSegmentLockMicroseconds {#filesegmentlockmicroseconds}
 
 锁定 File 段耗时
-
-### FileSegmentRemoveMicroseconds {#filesegmentremovemicroseconds}
-
-File 段 remove() 耗时
 
 ### FileSegmentWaitMicroseconds {#filesegmentwaitmicroseconds}
 
@@ -4073,10 +4069,6 @@ OneLake catalog 通过 Entra ID refresh token 授权发起的访问令牌请求�
 
 收集按哈希归属的分段所花费的时间
 
-### ParallelReplicasDeniedRequests {#parallelreplicasdeniedrequests}
-
-发往发起节点且被完全拒绝的请求数
-
 ### ParallelReplicasHandleAnnouncementMicroseconds {#parallelreplicashandleannouncementmicroseconds}
 
 处理副本通知所用的时间
@@ -5000,18 +4992,6 @@ S3 API 的 PutObject 调用次数。
 ### S3PutRequestThrottlerSleepMicroseconds {#s3putrequestthrottlersleepmicroseconds}
 
 查询因遵守 S3 PUT、COPY、POST 和 LIST 请求限流而休眠的总时长。
-
-### S3QueueSetFileFailedMicroseconds {#s3queuesetfilefailedmicroseconds}
-
-将文件设置为失败状态所花费的时间
-
-### S3QueueSetFileProcessedMicroseconds {#s3queuesetfileprocessedmicroseconds}
-
-将文件设为已处理状态所花费的时间
-
-### S3QueueSetFileProcessingMicroseconds {#s3queuesetfileprocessingmicroseconds}
-
-将文件设为处理中状态所花费的时间
 
 ### S3ReadMicroseconds {#s3readmicroseconds}
 
@@ -6312,10 +6292,6 @@ DeleteBitmapCache 未命中时，读取并反序列化 UNIQUE KEY delete-bitmap 
 ### WasmGuestExecuteMicroseconds {#wasmguestexecutemicroseconds}
 
 执行 WebAssembly 代码耗费的时间
-
-### WasmMemoryAllocated {#wasmmemoryallocated}
-
-为 WebAssembly 隔离区分配的内存总量
 
 ### WasmModuleInstatiate {#wasmmoduleinstatiate}
 

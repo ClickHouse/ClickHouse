@@ -453,6 +453,8 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Quantidade de dados (não comprimidos, antes da compressão) gravados para JOIN em memória externa.
 * `ProfileEvent_ExternalDistinctWritePart` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que um arquivo temporário foi gravado em disco para DISTINCT em memória externa.
 * `ProfileEvent_ExternalDistinctMerge` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que arquivos temporários foram mesclados para DISTINCT em memória externa.
+* `ProfileEvent_ExternalDistinctTailSpilledRows` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de linhas em buffer selecionadas para spill antes da mesclagem final do DISTINCT externo.
+* `ProfileEvent_ExternalDistinctTailKeptRows` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de linhas em buffer mantidas na memória para a mesclagem final do DISTINCT externo.
 * `ProfileEvent_ExternalDistinctCompressedBytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de bytes comprimidos gravados para DISTINCT em memória externa.
 * `ProfileEvent_ExternalDistinctUncompressedBytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Quantidade de dados (não comprimidos, antes da compressão) gravados para DISTINCT em memória externa.
 * `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de arquivos ignorados durante a eliminação de partições do Iceberg
@@ -506,7 +508,6 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_DistributedIndexAnalysisScheduledReplicas` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de réplicas (a réplica local será contabilizada uma vez) para as quais a análise de índice distribuída foi agendada
 * `ProfileEvent_DistributedIndexAnalysisReplicaUnavailable` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que a análise de índice distribuída falhou em uma das réplicas sem fallback (falha durante a conexão)
 * `ProfileEvent_DistributedIndexAnalysisReplicaFallback` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que a análise de índice distribuída falhou em uma das réplicas com fallback para a réplica local
-* `ProfileEvent_DistributedIndexAnalysisParts` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de partes enviadas para análise de índice distribuída
 * `ProfileEvent_DistributedIndexAnalysisMissingParts` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de partes ausentes durante a análise de índice distribuída que serão resolvidas localmente
 * `ProfileEvent_WaitMarksLoadMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto carregando marcas
 * `ProfileEvent_BackgroundLoadingMarksTasks` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de tarefas em segundo plano para carregar marcas
@@ -707,7 +708,6 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_ParallelReplicasStealingLeftoversMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto coletando segmentos órfãos
 * `ProfileEvent_ParallelReplicasCollectingOwnedSegmentsMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto coletando segmentos atribuídos por hash
 * `ProfileEvent_ParallelReplicasNumRequests` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de solicitações ao iniciador.
-* `ProfileEvent_ParallelReplicasDeniedRequests` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de solicitações totalmente negadas ao iniciador
 * `ProfileEvent_CacheWarmerBytesDownloaded` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Quantidade de dados carregados no filesystem cache por threads dedicadas em segundo plano.
 * `ProfileEvent_CacheWarmerDataPartsDownloaded` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de partes de dados totalmente carregadas pelo CacheWarmer.
 * `ProfileEvent_IgnoredColdParts` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Veja a configuração ignore&#95;cold&#95;parts&#95;seconds. Número de vezes em que queries de leitura ignoraram partes muito novas que ainda não haviam sido carregadas no cache pelo CacheWarmer.
@@ -817,7 +817,7 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_WriteBufferFromS3Microseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto na gravação no S3.
 * `ProfileEvent_WriteBufferFromS3Bytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Bytes gravados no S3.
 * `ProfileEvent_WriteBufferFromS3RequestsErrors` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de exceções durante a gravação no S3.
-* `ProfileEvent_WriteBufferFromS3WaitInflightLimitMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto aguardando enquanto algumas das requisições atuais são concluídas quando sua quantidade atinge o limite definido por s3&#95;max&#95;inflight&#95;parts&#95;for&#95;one&#95;file.
+* `ProfileEvent_WriteBufferFromS3WaitInflightLimitMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto aguardando a conclusão de algumas requisições em andamento quando sua quantidade atinge o limite definido por s3&#95;max&#95;inflight&#95;parts&#95;for&#95;one&#95;file.
 * `ProfileEvent_QueryMemoryLimitExceeded` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que houve limite de memória excedido em consulta.
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes que o limite global de memória foi excedido.
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que a memória foi alocada sem verificar as restrições de memória.
@@ -903,7 +903,6 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_FileSegmentLockMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo de bloqueio do segmento de arquivo
 * `ProfileEvent_FileSegmentWriteMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo de `write()` do segmento de arquivo
 * `ProfileEvent_FileSegmentIncreasePriorityMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo para aumentar a prioridade do segmento de arquivo
-* `ProfileEvent_FileSegmentRemoveMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo de `remove()` do segmento de arquivo
 * `ProfileEvent_FileSegmentHolderCompleteMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo de `complete()` do holder de segmentos de arquivo
 * `ProfileEvent_FileSegmentFailToIncreasePriority` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que a prioridade não foi aumentada devido à alta contenção no bloqueio do cache
 * `ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfLockContention` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que a reserva de espaço foi ignorada devido à alta contenção no bloqueio do cache
@@ -951,7 +950,6 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_SynchronousReadWaitMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto aguardando leituras síncronas na leitura local assíncrona.
 * `ProfileEvent_AsynchronousRemoteReadWaitMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto aguardando leituras remotas assíncronas.
 * `ProfileEvent_SynchronousRemoteReadWaitMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto aguardando leituras remotas síncronas.
-* `ProfileEvent_ExternalDataSourceLocalCacheReadBytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Bytes lidos do buffer de cache local no RemoteReadBufferCache
 * `ProfileEvent_MainConfigLoads` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes que a configuração principal foi recarregada.
 * `ProfileEvent_AggregationPreallocatedElementsInHashTables` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Quantos elementos foram pré-alocados em tabelas hash para agregação.
 * `ProfileEvent_AdaptiveAggregationLocalFreezes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de tabelas hash locais que a agregação adaptativa congelou no limite de congelamento.
@@ -1066,10 +1064,10 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_KeeperReadRequestQueueLockWaitMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto aguardando a aquisição do bloqueio da fila de requisições de leitura do Keeper
 * `ProfileEvent_KeeperProcessAndResponsesLockWaitMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto aguardando a aquisição do bloqueio de processamento e respostas do Keeper
 * `ProfileEvent_KeeperCommitWaitElapsedMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto aguardando que um determinado log receba commit
-* `ProfileEvent_KeeperBatchMaxCount` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de batches que atingiram o limite max&#95;requests&#95;batch&#95;size
-* `ProfileEvent_KeeperBatchMaxTotalSize` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de batches que atingiram o limite max&#95;requests&#95;batch&#95;bytes&#95;size
-* `ProfileEvent_KeeperBatchMaxReadCount` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de batches que atingiram o limite max&#95;read&#95;batch&#95;size
-* `ProfileEvent_KeeperBatchMaxReadTotalSize` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de batches que atingiram o limite max&#95;read&#95;batch&#95;bytes&#95;size
+* `ProfileEvent_KeeperBatchMaxCount` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de lotes que atingiram o limite max&#95;requests&#95;batch&#95;size
+* `ProfileEvent_KeeperBatchMaxTotalSize` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de lotes que atingiram o limite max&#95;requests&#95;batch&#95;bytes&#95;size
+* `ProfileEvent_KeeperBatchMaxReadCount` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de lotes que atingiram o limite max&#95;read&#95;batch&#95;size
+* `ProfileEvent_KeeperBatchMaxReadTotalSize` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de lotes que atingiram o limite max&#95;read&#95;batch&#95;bytes&#95;size
 * `ProfileEvent_KeeperReadBatchCount` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de batches de requisições de leitura processados pelo Keeper
 * `ProfileEvent_KeeperReadBatchTotalRequests` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número total de requisições de leitura processadas em batches pelo Keeper
 * `ProfileEvent_KeeperWriteBatchCount` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de batches de requisições de escrita processados pelo Keeper
@@ -1117,9 +1115,6 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_OverflowBreak` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que o processamento de dados foi cancelado pela limitação de complexidade da consulta com a configuração &#39;*&#95;overflow&#95;mode&#39; = &#39;break&#39; e o resultado ficou incompleto.
 * `ProfileEvent_OverflowThrow` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que o processamento de dados foi cancelado pela limitação de complexidade da consulta com a configuração &#39;*&#95;overflow&#95;mode&#39; = &#39;throw&#39; e uma exceção foi gerada.
 * `ProfileEvent_OverflowAny` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que o GROUP BY aproximado entrou em vigor: quando a agregação foi realizada apenas sobre as primeiras chaves únicas de &#39;max&#95;rows&#95;to&#95;group&#95;by&#39; e as demais chaves foram ignoradas devido a &#39;group&#95;by&#95;overflow&#95;mode&#39; = &#39;any&#39;.
-* `ProfileEvent_S3QueueSetFileProcessingMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto para marcar o arquivo como em processamento
-* `ProfileEvent_S3QueueSetFileProcessedMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto para marcar o arquivo como processado
-* `ProfileEvent_S3QueueSetFileFailedMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto para marcar o arquivo como com falha
 * `ProfileEvent_ObjectStorageQueueFailedFiles` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de arquivos cujo processamento falhou
 * `ProfileEvent_ObjectStorageQueueProcessedFiles` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de arquivos que foram processados
 * `ProfileEvent_ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto para marcar o arquivo como com falha
@@ -1540,7 +1535,6 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_WasmGuestExecuteMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto na execução de código WebAssembly
 * `ProfileEvent_WasmTotalExecuteMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo gasto na execução de código WebAssembly
 * `ProfileEvent_WasmModuleInstatiate` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de compartimentos WebAssembly criados
-* `ProfileEvent_WasmMemoryAllocated` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Total de memória alocada para compartimentos WebAssembly
 * `ProfileEvent_ExecutableUserDefinedFunctionInvocations` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de invocações de funções definidas pelo usuário executáveis e executable&#95;pool.
 * `ProfileEvent_ExecutableUserDefinedFunctionElapsedMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo de relógio de parede gasto na execução de funções definidas pelo usuário executable e executable&#95;pool, em microssegundos.
 * `ProfileEvent_ExecutableUserDefinedFunctionUserTimeMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo de CPU em modo de usuário consumido por processos filhos de funções definidas pelo usuário executable e executable&#95;pool, em microssegundos.

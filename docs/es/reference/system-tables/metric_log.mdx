@@ -447,6 +447,8 @@ Es seguro truncar o eliminar esta tabla en cualquier momento.
 * `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de datos (sin comprimir, antes de la compresión) escrita para JOIN en memoria externa.
 * `ProfileEvent_ExternalDistinctWritePart` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se escribió un archivo temporal en disco para DISTINCT en memoria externa.
 * `ProfileEvent_ExternalDistinctMerge` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se combinaron archivos temporales para DISTINCT en memoria externa.
+* `ProfileEvent_ExternalDistinctTailSpilledRows` ([UInt64](/es/reference/data-types/int-uint)) — Número de filas almacenadas temporalmente en el búfer que se seleccionaron para su volcado a disco antes de la fusión final de DISTINCT externo.
+* `ProfileEvent_ExternalDistinctTailKeptRows` ([UInt64](/es/reference/data-types/int-uint)) — Número de filas almacenadas temporalmente en el búfer que se conservaron en memoria para la fusión final de DISTINCT externo.
 * `ProfileEvent_ExternalDistinctCompressedBytes` ([UInt64](/es/reference/data-types/int-uint)) — Número de bytes comprimidos escritos para DISTINCT en memoria externa.
 * `ProfileEvent_ExternalDistinctUncompressedBytes` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de datos (sin comprimir, antes de la compresión) escrita para DISTINCT en memoria externa.
 * `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/es/reference/data-types/int-uint)) — Número de archivos omitidos durante la poda de particiones en Iceberg
@@ -500,7 +502,6 @@ Es seguro truncar o eliminar esta tabla en cualquier momento.
 * `ProfileEvent_DistributedIndexAnalysisScheduledReplicas` ([UInt64](/es/reference/data-types/int-uint)) — Número de réplicas (la réplica local se contabiliza una vez) para las que se ha programado el análisis distribuido de índices
 * `ProfileEvent_DistributedIndexAnalysisReplicaUnavailable` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que el análisis distribuido de índices falló en una de las réplicas sin fallback (falló durante la conexión)
 * `ProfileEvent_DistributedIndexAnalysisReplicaFallback` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que el análisis distribuido de índices falló en una de las réplicas con fallback a la réplica local
-* `ProfileEvent_DistributedIndexAnalysisParts` ([UInt64](/es/reference/data-types/int-uint)) — Número de partes enviadas para el análisis distribuido de índices
 * `ProfileEvent_DistributedIndexAnalysisMissingParts` ([UInt64](/es/reference/data-types/int-uint)) — Número de partes faltantes durante el análisis distribuido de índices que se resolverán localmente
 * `ProfileEvent_WaitMarksLoadMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a cargar marcas
 * `ProfileEvent_BackgroundLoadingMarksTasks` ([UInt64](/es/reference/data-types/int-uint)) — Número de tareas en segundo plano para cargar marcas
@@ -701,7 +702,6 @@ Es seguro truncar o eliminar esta tabla en cualquier momento.
 * `ProfileEvent_ParallelReplicasStealingLeftoversMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a recopilar segmentos huérfanos
 * `ProfileEvent_ParallelReplicasCollectingOwnedSegmentsMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a recopilar segmentos asignados por hash
 * `ProfileEvent_ParallelReplicasNumRequests` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes al iniciador.
-* `ProfileEvent_ParallelReplicasDeniedRequests` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes completamente denegadas al iniciador
 * `ProfileEvent_CacheWarmerBytesDownloaded` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de datos descargados en la caché del sistema de archivos por hilos en segundo plano dedicados.
 * `ProfileEvent_CacheWarmerDataPartsDownloaded` ([UInt64](/es/reference/data-types/int-uint)) — Número de partes de datos que CacheWarmer descargó por completo.
 * `ProfileEvent_IgnoredColdParts` ([UInt64](/es/reference/data-types/int-uint)) — Consulte la configuración ignore&#95;cold&#95;parts&#95;seconds. Número de veces que las consultas de lectura ignoraron partes muy nuevas que CacheWarmer aún no había cargado en la caché.
@@ -897,7 +897,6 @@ Es seguro truncar o eliminar esta tabla en cualquier momento.
 * `ProfileEvent_FileSegmentLockMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de bloqueo del segmento de archivo
 * `ProfileEvent_FileSegmentWriteMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de write() del segmento de archivo
 * `ProfileEvent_FileSegmentIncreasePriorityMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo para aumentar la prioridad del segmento de archivo
-* `ProfileEvent_FileSegmentRemoveMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de remove() del segmento de archivo
 * `ProfileEvent_FileSegmentHolderCompleteMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de complete() del contenedor de segmentos de archivo
 * `ProfileEvent_FileSegmentFailToIncreasePriority` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que no se aumentó la prioridad debido a una alta contención en el bloqueo de la caché
 * `ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfLockContention` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se omitió la reserva de espacio debido a una alta contención en el bloqueo de la caché
@@ -945,7 +944,6 @@ Es seguro truncar o eliminar esta tabla en cualquier momento.
 * `ProfileEvent_SynchronousReadWaitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a esperar lecturas síncronas en la lectura local asíncrona.
 * `ProfileEvent_AsynchronousRemoteReadWaitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a esperar lecturas remotas asíncronas.
 * `ProfileEvent_SynchronousRemoteReadWaitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a esperar lecturas remotas síncronas.
-* `ProfileEvent_ExternalDataSourceLocalCacheReadBytes` ([UInt64](/es/reference/data-types/int-uint)) — Bytes leídos del búfer de caché local en RemoteReadBufferCache
 * `ProfileEvent_MainConfigLoads` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se recargó la configuración principal.
 * `ProfileEvent_AggregationPreallocatedElementsInHashTables` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de elementos preasignados en tablas hash para la agregación.
 * `ProfileEvent_AdaptiveAggregationLocalFreezes` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de tablas hash locales que la agregación adaptativa congeló al alcanzar el umbral de congelación.
@@ -1111,9 +1109,6 @@ Es seguro truncar o eliminar esta tabla en cualquier momento.
 * `ProfileEvent_OverflowBreak` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que el procesamiento de datos se canceló debido a la limitación de complejidad de la consulta con la configuración &#39;*&#95;overflow&#95;mode&#39; = &#39;break&#39;, y el resultado quedó incompleto.
 * `ProfileEvent_OverflowThrow` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que el procesamiento de datos se canceló debido a la limitación de complejidad de la consulta con la configuración &#39;*&#95;overflow&#95;mode&#39; = &#39;throw&#39; y se lanzó una excepción.
 * `ProfileEvent_OverflowAny` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se aplicó un GROUP BY aproximado: cuando la agregación se realizó solo sobre las primeras &#39;max&#95;rows&#95;to&#95;group&#95;by&#39; claves únicas y las demás claves se ignoraron debido a &#39;group&#95;by&#95;overflow&#95;mode&#39; = &#39;any&#39;.
-* `ProfileEvent_S3QueueSetFileProcessingMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo empleado en marcar el archivo como en procesamiento
-* `ProfileEvent_S3QueueSetFileProcessedMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo empleado en marcar el archivo como procesado
-* `ProfileEvent_S3QueueSetFileFailedMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo empleado en marcar el archivo como fallido
 * `ProfileEvent_ObjectStorageQueueFailedFiles` ([UInt64](/es/reference/data-types/int-uint)) — Número de archivos cuyo procesamiento falló
 * `ProfileEvent_ObjectStorageQueueProcessedFiles` ([UInt64](/es/reference/data-types/int-uint)) — Número de archivos procesados
 * `ProfileEvent_ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo empleado en marcar el archivo como fallido
@@ -1534,7 +1529,6 @@ Es seguro truncar o eliminar esta tabla en cualquier momento.
 * `ProfileEvent_WasmGuestExecuteMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a ejecutar código WebAssembly
 * `ProfileEvent_WasmTotalExecuteMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a ejecutar código WebAssembly
 * `ProfileEvent_WasmModuleInstatiate` ([UInt64](/es/reference/data-types/int-uint)) — Número de compartimentos de WebAssembly creados
-* `ProfileEvent_WasmMemoryAllocated` ([UInt64](/es/reference/data-types/int-uint)) — Memoria total asignada a los compartimentos de WebAssembly
 * `ProfileEvent_ExecutableUserDefinedFunctionInvocations` ([UInt64](/es/reference/data-types/int-uint)) — Número de invocaciones de funciones definidas por el usuario ejecutables y de executable&#95;pool.
 * `ProfileEvent_ExecutableUserDefinedFunctionElapsedMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de reloj empleado en ejecutar funciones definidas por el usuario ejecutables y executable&#95;pool, en microsegundos.
 * `ProfileEvent_ExecutableUserDefinedFunctionUserTimeMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de CPU en modo usuario consumido por los procesos secundarios de funciones definidas por el usuario ejecutables y executable&#95;pool, en microsegundos.

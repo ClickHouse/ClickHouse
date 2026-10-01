@@ -446,6 +446,8 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 外部メモリでのJOINのために書き込まれたデータ量 (非圧縮、圧縮前) 。
 * `ProfileEvent_ExternalDistinctWritePart` ([UInt64](/ja/reference/data-types/int-uint)) — 外部メモリでの DISTINCT のために一時ファイルがディスクに書き込まれた回数。
 * `ProfileEvent_ExternalDistinctMerge` ([UInt64](/ja/reference/data-types/int-uint)) — 外部メモリでの DISTINCT のために一時ファイルがマージされた回数。
+* `ProfileEvent_ExternalDistinctTailSpilledRows` ([UInt64](/ja/reference/data-types/int-uint)) — 外部 DISTINCT の最終マージ前に、スピル対象として選択されたバッファ内の行数。
+* `ProfileEvent_ExternalDistinctTailKeptRows` ([UInt64](/ja/reference/data-types/int-uint)) — 外部 DISTINCT の最終マージのためにメモリに保持されたバッファ内の行数。
 * `ProfileEvent_ExternalDistinctCompressedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 外部メモリでの DISTINCT のために書き込まれた圧縮バイト数。
 * `ProfileEvent_ExternalDistinctUncompressedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 外部メモリでの DISTINCT のために書き込まれたデータ量 (非圧縮、圧縮前) 。
 * `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/ja/reference/data-types/int-uint)) — Iceberg のパーティションプルーニングでスキップされたファイル数
@@ -499,7 +501,6 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedIndexAnalysisScheduledReplicas` ([UInt64](/ja/reference/data-types/int-uint)) — 分散索引解析がスケジュールされたレプリカ数 (ローカルレプリカは 1 回として計上)
 * `ProfileEvent_DistributedIndexAnalysisReplicaUnavailable` ([UInt64](/ja/reference/data-types/int-uint)) — フォールバックなしで、いずれかのレプリカで分散索引解析が失敗した回数 (接続時に失敗)
 * `ProfileEvent_DistributedIndexAnalysisReplicaFallback` ([UInt64](/ja/reference/data-types/int-uint)) — いずれかのレプリカで分散索引解析が失敗し、ローカルレプリカにフォールバックした回数
-* `ProfileEvent_DistributedIndexAnalysisParts` ([UInt64](/ja/reference/data-types/int-uint)) — 分散索引解析のために送信されたパーツ数
 * `ProfileEvent_DistributedIndexAnalysisMissingParts` ([UInt64](/ja/reference/data-types/int-uint)) — 分散索引解析中に欠落しており、ローカルで解決されるパーツ数
 * `ProfileEvent_WaitMarksLoadMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — マークの読み込み待機に費やされた時間
 * `ProfileEvent_BackgroundLoadingMarksTasks` ([UInt64](/ja/reference/data-types/int-uint)) — マーク読み込み用のバックグラウンドタスク数
@@ -700,7 +701,6 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_ParallelReplicasStealingLeftoversMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 孤立したセグメントの収集に費やした時間
 * `ProfileEvent_ParallelReplicasCollectingOwnedSegmentsMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — hash によって割り当てられたセグメントの収集に費やした時間
 * `ProfileEvent_ParallelReplicasNumRequests` ([UInt64](/ja/reference/data-types/int-uint)) — イニシエーターへのリクエスト数
-* `ProfileEvent_ParallelReplicasDeniedRequests` ([UInt64](/ja/reference/data-types/int-uint)) — イニシエーターへのリクエストが完全に拒否された回数
 * `ProfileEvent_CacheWarmerBytesDownloaded` ([UInt64](/ja/reference/data-types/int-uint)) — 専用のバックグラウンドスレッドによってファイルシステムキャッシュに取り込まれたデータ量
 * `ProfileEvent_CacheWarmerDataPartsDownloaded` ([UInt64](/ja/reference/data-types/int-uint)) — CacheWarmer によって完全に取得されたデータパーツ数
 * `ProfileEvent_IgnoredColdParts` ([UInt64](/ja/reference/data-types/int-uint)) — 設定 ignore&#95;cold&#95;parts&#95;seconds を参照してください。読み取りクエリが、まだ CacheWarmer によってキャッシュに取り込まれていない非常に新しいパーツを無視した回数
@@ -896,7 +896,6 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_FileSegmentLockMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ファイルセグメントのロックにかかった時間
 * `ProfileEvent_FileSegmentWriteMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ファイルセグメントの write() にかかった時間
 * `ProfileEvent_FileSegmentIncreasePriorityMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ファイルセグメントの優先度引き上げにかかった時間
-* `ProfileEvent_FileSegmentRemoveMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ファイルセグメントの remove() にかかった時間
 * `ProfileEvent_FileSegmentHolderCompleteMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ファイルセグメントホルダーの complete() にかかった時間
 * `ProfileEvent_FileSegmentFailToIncreasePriority` ([UInt64](/ja/reference/data-types/int-uint)) — cache ロックの競合が激しく、優先度を上げられなかった回数
 * `ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfLockContention` ([UInt64](/ja/reference/data-types/int-uint)) — cache ロックの競合が激しく、領域予約がスキップされた回数
@@ -932,7 +931,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_ReadBufferSeekCancelConnection` ([UInt64](/ja/reference/data-types/int-uint)) — 新しい接続につながるシークの回数 (S3、HTTP)
 * `ProfileEvent_SleepFunctionCalls` ([UInt64](/ja/reference/data-types/int-uint)) — sleep 関数 (sleep、sleepEachRow) が呼び出された回数。
 * `ProfileEvent_SleepFunctionMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — sleep 関数 (sleep、sleepEachRow) で設定された sleep 時間。
-* `ProfileEvent_SleepFunctionElapsedMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — sleep 関数 (`sleep`、`sleepEachRow`) で実際に sleep していた時間。
+* `ProfileEvent_SleepFunctionElapsedMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — sleep 関数 (sleep、sleepEachRow) で実際に sleep していた時間。
 * `ProfileEvent_SystemPartsEnumerationSlowdownSleeps` ([UInt64](/ja/reference/data-types/int-uint)) — system.parts ファミリーのテーブルを充填する際に、テスト専用 failpoint &#39;slowdown&#95;system&#95;parts&#95;enumeration&#39; が sleep した回数。テスト以外では常にゼロです。
 * `ProfileEvent_ThreadPoolReaderPageCacheHit` ([UInt64](/ja/reference/data-types/int-uint)) — ThreadPoolReader 内の読み取りがページキャッシュから行われた回数。
 * `ProfileEvent_ThreadPoolReaderPageCacheHitBytes` ([UInt64](/ja/reference/data-types/int-uint)) — ThreadPoolReader 内でページキャッシュから読み取られたバイト数。
@@ -944,7 +943,6 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_SynchronousReadWaitMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 非同期ローカル読み取りにおいて、同期 read の待機に費やされた時間。
 * `ProfileEvent_AsynchronousRemoteReadWaitMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 非同期リモート読み取りの待機に費やされた時間。
 * `ProfileEvent_SynchronousRemoteReadWaitMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 同期リモート読み取りの待機に費やされた時間。
-* `ProfileEvent_ExternalDataSourceLocalCacheReadBytes` ([UInt64](/ja/reference/data-types/int-uint)) — RemoteReadBufferCache 内のローカル cache buffer から読み取られたバイト数。
 * `ProfileEvent_MainConfigLoads` ([UInt64](/ja/reference/data-types/int-uint)) — メイン設定が再読み込みされた回数。
 * `ProfileEvent_AggregationPreallocatedElementsInHashTables` ([UInt64](/ja/reference/data-types/int-uint)) — aggregation 用の hash table で事前割り当てされた要素数。
 * `ProfileEvent_AdaptiveAggregationLocalFreezes` ([UInt64](/ja/reference/data-types/int-uint)) — アダプティブ集計がフリーズしきい値でフリーズしたローカル hash table の数。
@@ -1110,9 +1108,6 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_OverflowBreak` ([UInt64](/ja/reference/data-types/int-uint)) — 設定 &#39;*&#95;overflow&#95;mode&#39; = &#39;break&#39; により、クエリ複雑度の制限でデータ処理がキャンセルされ、結果が不完全になった回数。
 * `ProfileEvent_OverflowThrow` ([UInt64](/ja/reference/data-types/int-uint)) — 設定 &#39;*&#95;overflow&#95;mode&#39; = &#39;throw&#39; により、クエリ複雑度の制限でデータ処理がキャンセルされ、例外がスローされた回数。
 * `ProfileEvent_OverflowAny` ([UInt64](/ja/reference/data-types/int-uint)) — 近似 GROUP BY が有効になった回数。これは、最初の &#39;max&#95;rows&#95;to&#95;group&#95;by&#39; 個の一意キーに対してのみ集約が行われ、&#39;group&#95;by&#95;overflow&#95;mode&#39; = &#39;any&#39; によりその他のキーが無視された場合です。
-* `ProfileEvent_S3QueueSetFileProcessingMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ファイルを processing 状態に設定するのに費やした時間
-* `ProfileEvent_S3QueueSetFileProcessedMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ファイルを processed 状態に設定するのに費やした時間
-* `ProfileEvent_S3QueueSetFileFailedMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ファイルを Failed 状態に設定するのに費やした時間
 * `ProfileEvent_ObjectStorageQueueFailedFiles` ([UInt64](/ja/reference/data-types/int-uint)) — 処理に失敗したファイル数
 * `ProfileEvent_ObjectStorageQueueProcessedFiles` ([UInt64](/ja/reference/data-types/int-uint)) — 処理済みのファイル数
 * `ProfileEvent_ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ファイルを Failed 状態に設定するのに費やした時間
@@ -1533,7 +1528,6 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_WasmGuestExecuteMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — WebAssembly コードの実行に費やされた時間
 * `ProfileEvent_WasmTotalExecuteMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — WebAssembly コードの実行に費やされた時間
 * `ProfileEvent_WasmModuleInstatiate` ([UInt64](/ja/reference/data-types/int-uint)) — 作成された WebAssembly コンパートメントの数
-* `ProfileEvent_WasmMemoryAllocated` ([UInt64](/ja/reference/data-types/int-uint)) — WebAssembly コンパートメントに割り当てられたメモリの総量
 * `ProfileEvent_ExecutableUserDefinedFunctionInvocations` ([UInt64](/ja/reference/data-types/int-uint)) — 実行可能および executable&#95;pool ユーザー定義関数の呼び出し回数。
 * `ProfileEvent_ExecutableUserDefinedFunctionElapsedMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 実行可能および executable&#95;pool ユーザー定義関数の実行に費やされた実時間 (マイクロ秒) 。
 * `ProfileEvent_ExecutableUserDefinedFunctionUserTimeMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 実行可能および executable&#95;pool ユーザー定義関数の子プロセスが消費したユーザーモード CPU 時間 (マイクロ秒) 。

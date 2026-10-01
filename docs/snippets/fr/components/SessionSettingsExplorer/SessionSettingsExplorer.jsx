@@ -2844,12 +2844,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "use_*",
-      count: 22,
+      count: 21,
       settings: [
         { name: "use_async_executor_for_materialized_views", path: "/use#use_async_executor_for_materialized_views", default: "0" },
         { name: "use_cache_for_count_from_files", path: "/use#use_cache_for_count_from_files", default: "1" },
         { name: "use_client_time_zone", path: "/use#use_client_time_zone", default: "0" },
-        { name: "use_compact_format_in_distributed_parts_names", path: "/use#use_compact_format_in_distributed_parts_names", default: "1" },
         { name: "use_concurrency_control", path: "/use#use_concurrency_control", default: "1" },
         { name: "use_constant_folding_in_index_analysis", path: "/use#use_constant_folding_in_index_analysis", default: "0" },
         { name: "use_hash_table_stats_for_join_reordering", path: "/use#use_hash_table_stats_for_join_reordering", default: "1" },
@@ -3034,7 +3033,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "Autres",
-      count: 143,
+      count: 145,
       settings: [
         { name: "adaptive_aggregator_freeze_threshold", path: "/other#adaptive_aggregator_freeze_threshold", default: "16384" },
         { name: "adaptive_aggregator_freeze_threshold_bytes", path: "/other#adaptive_aggregator_freeze_threshold_bytes", default: "4194304" },
@@ -3102,7 +3101,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "input_format", path: "/other#input_format", default: '""' },
         { name: "interactive_delay", path: "/other#interactive_delay", default: "100000" },
         { name: "intersect_default_mode", path: "/other#intersect_default_mode", default: "ALL" },
+        { name: "kill_throw_if_noop", path: "/other#kill_throw_if_noop", default: "0" },
         { name: "least_greatest_legacy_null_behavior", path: "/other#least_greatest_legacy_null_behavior", default: "0" },
+        { name: "legacy_array_join_function_nondeterministic_evaluation", path: "/other#legacy_array_join_function_nondeterministic_evaluation", default: "0" },
         { name: "legacy_column_name_of_tuple_literal", path: "/other#legacy_column_name_of_tuple_literal", default: "0" },
         { name: "legacy_join_size_limits_trigger_spilling", path: "/other#legacy_join_size_limits_trigger_spilling", default: "0" },
         { name: "limit", path: "/other#limit", default: "0" },

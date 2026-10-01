@@ -302,6 +302,14 @@ CustomSeparated 포맷의 끝에 있는 빈 줄을 건너뜁니다
 
 누락된 필드를 NULL 값으로 강제 초기화
 
+## input_format_freeform_max_search_steps {#input_format_freeform_max_search_steps}
+
+<SettingsInfoBlock type="UInt64" default_value="4096" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "4096"},{"label": "`Freeform` 행의 구조 탐색 범위를 제한하는 새로운 설정입니다. 이전에는 탐색 범위에 제한이 없어 문자열 필드가 많은 행에서 메모리가 고갈될 수 있었습니다. 0으로 설정하면 이전 동작으로 되돌아갑니다."}]}]} />
+
+`Freeform` 포맷에서 행의 구조를 탐색할 때 허용되는 최대 단계 수입니다. 여러 이스케이프 규칙이 동일하게 읽는 필드가 나올 때마다 탐색이 분기합니다(예를 들어, 탭으로 구분된 행의 단어는 `Raw` 규칙과 `Escaped` 규칙에서 똑같이 읽힙니다). 따라서 문자열 필드가 많은 행에서는 후보 구조의 수가 기하급수적으로 늘어납니다. 탐색 단계가 이 값을 초과하면 메모리와 시간을 소진하는 대신 예외가 발생합니다. 0은 무제한을 의미합니다.
+
 ## input_format_geojson_unsupported_geometry_handling {#input_format_geojson_unsupported_geometry_handling}
 
 <SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />

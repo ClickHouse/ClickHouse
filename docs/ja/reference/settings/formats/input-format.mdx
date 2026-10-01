@@ -302,6 +302,14 @@ CustomSeparated フォーマットの末尾にある空行をスキップしま�
 
 省略されたフィールドを強制的に NULL 値で初期化します
 
+## input_format_freeform_max_search_steps {#input_format_freeform_max_search_steps}
+
+<SettingsInfoBlock type="UInt64" default_value="4096" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "4096"},{"label": "`Freeform` 行の構造探索に上限を設ける新しい設定。以前は探索に上限がなく、文字列を多数含む列数の多い行ではメモリを使い果たすおそれがありました。0 を指定すると以前の動作に戻ります。"}]}]} />
+
+`Freeform` フォーマットで行の構造を探索する際の最大ステップ数です。複数のエスケープ規則で同じように読み取られるフィールドがあると、探索はそのたびに分岐します (たとえば、タブ区切りの行に含まれる単語は、`Raw` 規則でも `Escaped` 規則でも同じように読み取られます) 。そのため、文字列を多数含む列数の多い行では、候補となる構造の数が指数関数的に増加します。探索がこのステップ数を超えると、メモリと時間を使い果たす前に例外がスローされます。0 は無制限を意味します。
+
 ## input_format_geojson_unsupported_geometry_handling {#input_format_geojson_unsupported_geometry_handling}
 
 <SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />

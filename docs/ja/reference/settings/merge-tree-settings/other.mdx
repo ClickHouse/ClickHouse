@@ -19,7 +19,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
-アダプティブ書き込みバッファの初期サイズ
+MergeTree データの書き込みに使用する各アダプティブ書き込みバッファの初期サイズをバイト単位で設定します。バッファは必要に応じて自動的に拡大します。値を小さくすると、特にカラム数の多いテーブルで初期のメモリ使用量を抑えられますが、バッファの flush が頻繁に発生する可能性があります。この設定は初期サイズを指定するものであり、メモリ制限ではありません。
+
+アダプティブ書き込みバッファは、[`min_columns_to_activate_adaptive_write_buffer`](/ja/reference/settings/merge-tree-settings/min#min_columns_to_activate_adaptive_write_buffer) と [`use_adaptive_write_buffer_for_dynamic_subcolumns`](/ja/reference/settings/merge-tree-settings/use#use_adaptive_write_buffer_for_dynamic_subcolumns) の設定に従って、wide パーツでのみ使用されます。
 
 ## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 

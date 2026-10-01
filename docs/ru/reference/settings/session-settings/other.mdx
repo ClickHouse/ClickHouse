@@ -879,6 +879,21 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 Задаёт режим по умолчанию для запроса INTERSECT. Возможные значения: пустая строка, &#39;ALL&#39;, &#39;DISTINCT&#39;. Если указана пустая строка, запрос без режима сгенерирует исключение.
 
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Новая настройка"}]}]} />
+
+Определяет, генерируют ли [`KILL QUERY`](/ru/reference/statements/kill#kill-query) и [`KILL MUTATION`](/ru/reference/statements/kill#kill-mutation) исключение, если их предложениям `WHERE` не соответствует ни одна строка.
+
+Если установлено значение true, `KILL QUERY` генерирует исключение, когда в `system.processes` нет подходящих строк (без учёта текущего оператора `KILL`), а `KILL MUTATION` — когда в `system.mutations` нет строк, удовлетворяющих условию. По умолчанию, если ни одна строка не найдена, исключение не генерируется. При выполнении с `ON CLUSTER` исключение в таком случае не генерируется, поскольку результаты сопоставления не агрегируются по всем хостам.
+
+Возможные значения:
+
+* 1 — сгенерировать исключение.
+* 0 — не генерировать исключение.
+
 ## least_greatest_legacy_null_behavior {#least_greatest_legacy_null_behavior}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -886,6 +901,14 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "новая настройка"}]}]} />
 
 Если включено, функции &#39;least&#39; и &#39;greatest&#39; возвращают NULL, если один из аргументов равен NULL.
+
+## legacy_array_join_function_nondeterministic_evaluation {#legacy_array_join_function_nondeterministic_evaluation}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Недетерминированная функция рядом с функцией `arrayJoin` возвращает новое значение для каждой выходной строки, как и при использовании предложения `ARRAY JOIN`. Эта настройка возвращает прежнее поведение: одно значение на исходную строку."}]}]} />
+
+Определяет, как вычисляется недетерминированная функция рядом с функцией `arrayJoin`, если она не зависит от развёрнутого значения, например `rand()` или `generateUUIDv4()` в том же `SELECT`. По умолчанию она возвращает новое значение для каждой выходной строки, как и при использовании предложения `ARRAY JOIN`. Включите настройку, чтобы вернуть поведение старых версий: одно значение на исходную строку, которое повторяется во всех строках, полученных при её развёртывании.
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 
