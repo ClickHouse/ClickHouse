@@ -1,0 +1,7 @@
+A training parameter given more than once is rejected
+eval_metric is not an accepted training parameter
+An unknown training parameter is rejected
+A negative parameter value cannot be expressed in the dictionary DDL
+Parameter names are case-insensitive, and the value is applied
+1
+1
