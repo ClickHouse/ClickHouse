@@ -7,15 +7,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TABLE_PATH="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_narrow/"
 WIDE_PATH="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_wide/"
+NEW_PATH="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_new/"
 
 cleanup()
 {
     ${CLICKHOUSE_CLIENT} --query "
         DROP TABLE IF EXISTS t_signed;
         DROP TABLE IF EXISTS t_u64;
-        DROP TABLE IF EXISTS t_nested_u64;
         DROP TABLE IF EXISTS t_wide"
-    rm -rf "${TABLE_PATH}" "${WIDE_PATH}"
+    rm -rf "${TABLE_PATH}" "${WIDE_PATH}" "${NEW_PATH}"
 }
 trap cleanup EXIT
 
@@ -23,17 +23,17 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
     CREATE TABLE t_signed (a Int32, b Int64, c Array(Int32)) ENGINE = IcebergLocal('${TABLE_PATH}');
     INSERT INTO t_signed VALUES (1, 2, [3]);"
 
-# The table already exists at the path, so these do not create a schema: they are ClickHouse tables
-# with `UInt64` columns over the existing Iceberg fields, as older releases created them.
-${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE IF NOT EXISTS t_u64 (a Int32, b UInt64, c Array(Int32)) ENGINE = IcebergLocal('${TABLE_PATH}');
-    CREATE TABLE IF NOT EXISTS t_nested_u64 (a Int32, b Int64, c Array(UInt64)) ENGINE = IcebergLocal('${TABLE_PATH}');"
-
-for table in t_u64 t_nested_u64
+# `UInt64` cannot be stored in Iceberg, so a table with such a column cannot be created, whether the
+# Iceberg table exists at the path already or not.
+for path in "${TABLE_PATH}" "${NEW_PATH}"
 do
-    ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${table} VALUES (1, 2, [3])" 2>&1 \
-        | grep -o "Cannot write column [a-z]* of type [A-Za-z0-9()]*"
+    for columns in "a Int32, b UInt64, c Array(Int32)" "a Int32, b Int64, c Array(UInt64)"
+    do
+        ${CLICKHOUSE_CLIENT} --query "CREATE TABLE IF NOT EXISTS t_u64 (${columns}) ENGINE = IcebergLocal('${path}')" 2>&1 \
+            | grep -o "Column [a-z]* of type [A-Za-z0-9()]* cannot be stored in Iceberg" | head -n1
+    done
 done
+ls "${NEW_PATH}" 2>/dev/null
 
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM t_signed"
 

@@ -1,5 +1,7 @@
-Cannot write column b of type UInt64
-Cannot write column c of type Array(UInt64)
+Column b of type UInt64 cannot be stored in Iceberg
+Column c of type Array(UInt64) cannot be stored in Iceberg
+Column b of type UInt64 cannot be stored in Iceberg
+Column c of type Array(UInt64) cannot be stored in Iceberg
 1	2	[3]
 4000000000
 4000000000
