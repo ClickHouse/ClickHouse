@@ -121,14 +121,19 @@ SELECT
     initiator.log_comment AS mode,
     sum(part.ProfileEvents['RuntimeFilterGranulesConsidered']) > 0 AS granules_considered,
     sum(part.ProfileEvents['RuntimeFilterGranulesDropped']) > 0 AS granules_dropped,
-    -- Guards against the rows passing vacuously. A parallel-replicas row that stopped engaging parallel
-    -- replicas at all - a changed default, a new bail-out - would otherwise keep pruning locally and stay
-    -- green while testing nothing. This says nothing about *which* replica pruned: that depends on the
-    -- coordinator's assignment and on the read reaching a granule after the runtime filter is ready, and
-    -- the pruning is fail-open, so it is not an invariant. Forcing the read to be the initiator's only is
-    -- not an option either - a one-replica cluster does not engage parallel replicas, so the row would go
-    -- vacuous in the other direction.
-    max(initiator.ProfileEvents['ParallelReplicasUsedCount']) > 0 AS parallel_replicas_engaged
+    -- Guards against the rows passing vacuously: a row that stopped engaging parallel replicas at all - a
+    -- changed default, a new bail-out - would keep pruning locally and stay green while testing nothing.
+    max(initiator.ProfileEvents['ParallelReplicasUsedCount']) > 0 AS parallel_replicas_engaged,
+    -- The initiator's own share of the coordinated read, which the aggregates above cannot speak for: a
+    -- follower pruning its share satisfies them even if the initiator pruned nothing. `ParallelReplicasRead
+    -- Marks` counts only marks that reach a reader through the coordinated read, after the refiner dropped
+    -- what the runtime filter excluded, so the three cases separate cleanly: the initiator pruned
+    -- (considered > 0), the coordinator left it no share (no marks), or it read its share unpruned, which is
+    -- what losing the descriptors on the cloned local plan did. `SelectedMarks` cannot be used here - it
+    -- also counts the initiator's own read of the build side, which never goes through the coordinator.
+    sumIf(part.ProfileEvents['RuntimeFilterGranulesConsidered'], part.is_initial_query) > 0
+        OR sumIf(part.ProfileEvents['ParallelReplicasReadMarks'], part.is_initial_query) = 0
+        AS initiator_prunes_its_own_share
 FROM system.query_log AS part
 INNER JOIN
 (
