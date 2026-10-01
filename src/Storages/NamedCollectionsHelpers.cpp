@@ -139,32 +139,69 @@ namespace
             return areEquivalentKeys(key_root, other_root);
         return false;
     }
+
+    /// Throws if `key` replaces a stored key that is `NOT OVERRIDABLE`.
+    /// Returns whether `key` replaces a stored key that requires the privilege `SHOW NAMED COLLECTIONS SECRETS`.
+    bool checkOverrideLockAndFindStoredKey(const NamedCollection & collection, const std::string & key)
+    {
+        bool overrides_stored_key = false;
+        const auto normalized_key = normalizeKey(key);
+        for (const auto & stored_key : collection.getKeys())
+        {
+            if (!areEquivalentKeys(normalized_key, normalizeKey(stored_key)))
+                continue;
+
+            if (!collection.isOverridable(stored_key, /* default_value= */ true))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", stored_key);
+
+            /// ClickHouse appends the inferred `format` and `structure` to the arguments and parses them again.
+            /// Replacing the stored value `'auto'` neither hides a stored value nor redirects credentials, so it is not an override.
+            if ((stored_key == "format" || stored_key == "structure") && collection.getOrDefault<String>(stored_key, "") == "auto")
+                continue;
+
+            overrides_stored_key = true;
+        }
+        return overrides_stored_key;
+    }
+}
+
+void checkNamedCollectionOverrideLock(const NamedCollection & collection, const std::string & key)
+{
+    checkOverrideLockAndFindStoredKey(collection, key);
 }
 
 void checkNamedCollectionOverride(const NamedCollection & collection, const std::string & key, ContextPtr context)
 {
-    bool overrides_stored_key = false;
-    const auto normalized_key = normalizeKey(key);
-    for (const auto & stored_key : collection.getKeys())
-    {
-        if (!areEquivalentKeys(normalized_key, normalizeKey(stored_key)))
-            continue;
-
-        if (!collection.isOverridable(stored_key, /* default_value= */ true))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", stored_key);
-
-        /// ClickHouse appends the inferred `format` and `structure` to the arguments and parses them again.
-        /// Replacing the stored value `'auto'` neither hides a stored value nor redirects credentials, so it is not an override.
-        if ((stored_key == "format" || stored_key == "structure") && collection.getOrDefault<String>(stored_key, "") == "auto")
-            continue;
-
-        if (!context)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Overriding named collection key '{}' in a dictionary source is not allowed", stored_key);
-        overrides_stored_key = true;
-    }
-
-    if (overrides_stored_key)
+    if (!context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Checking an override of named collection key '{}' requires a context", key);
+    if (checkOverrideLockAndFindStoredKey(collection, key))
         context->checkAccess(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS, collection.getName());
+}
+
+void checkNamedCollectionOverridesInDictionarySource(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+{
+    auto collection_name = config.getString(config_prefix + ".name", "");
+    if (collection_name.empty())
+        return;
+
+    NamedCollectionFactory::instance().loadIfNot();
+
+    /// A missing collection is reported when the dictionary source is created.
+    auto collection = NamedCollectionFactory::instance().tryGet(collection_name);
+    if (!collection)
+        return;
+
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_prefix, keys);
+    for (const auto & key : keys)
+    {
+        /// The 'name' key identifies the named collection itself and is not a data key to override.
+        if (key == "name")
+            continue;
+
+        checkNamedCollectionOverride(*collection, key, context);
+    }
 }
 
 std::pair<String, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context)
@@ -288,7 +325,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         if (key == "name")
             continue;
 
-        checkNamedCollectionOverride(*collection, key, nullptr);
+        checkNamedCollectionOverrideLock(*collection, key);
 
         /// The keys of a dictionary created with a DDL query come from the query, so mark them the
         /// same way as the AST-based overload above: `StorageMySQL::getSSLParams` distinguishes a

@@ -24,10 +24,23 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// Replacing a stored key (including an alias) requires `SHOW NAMED COLLECTIONS SECRETS`.
+/// Throws `BAD_ARGUMENTS` if `key` replaces a stored key (including an alias) that is `NOT OVERRIDABLE`.
+/// Does not check privileges. Used where the override was already authorized when the object was created,
+/// for example when a dictionary source is loaded in the background.
+void checkNamedCollectionOverrideLock(const NamedCollection & collection, const std::string & key);
+
+/// Checks the lock as `checkNamedCollectionOverrideLock` does.
+/// Then, replacing a stored key (including an alias) requires `SHOW NAMED COLLECTIONS SECRETS` in `context`.
 /// Replacing a stored `'auto'` value of `format` or `structure` is exempt, because ClickHouse appends the inferred values itself.
-/// A null context forbids replacements, for dictionary sources loaded in the background.
+/// The context is required and must not be null: a caller that loads an already authorized object uses `checkNamedCollectionOverrideLock`.
 void checkNamedCollectionOverride(const NamedCollection & collection, const std::string & key, ContextPtr context);
+
+/// Checks the overrides of the stored keys in the source of a dictionary at its creation, attachment or restore.
+/// `config_prefix` is the source configuration "<dict_root>.source.<type>" (e.g. "dictionary.source.clickhouse").
+/// Every key that replaces a stored key is checked with `checkNamedCollectionOverride` in `context`.
+/// Does nothing if the source does not refer to an existing named collection. Does not register dependencies.
+void checkNamedCollectionOverridesInDictionarySource(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
 
 /// Helper function to get named collection for table engine.
 /// Table engines have collection name as first argument of ast and other arguments are key-value overrides.
@@ -43,7 +56,9 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
 /// Helper function to get named collection for dictionary source.
 /// Dictionaries have the collection name as the `name` argument of their configuration.
-/// Other arguments may add missing keys, but cannot override stored keys during background loading.
+/// Other arguments may add missing keys or replace stored keys that are not `NOT OVERRIDABLE`.
+/// Privileges are not checked here: they are checked when the dictionary is created
+/// (see `checkNamedCollectionOverridesInDictionarySource`).
 /// Also registers the dictionary as a dependency of the named collection, so that
 /// DROP NAMED COLLECTION is blocked while the dictionary exists.
 /// The dictionary's identity is derived from config_prefix, which has the form

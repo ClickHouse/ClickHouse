@@ -13,6 +13,14 @@
             <password>ClickHouse_PostgreSQL_P@ssw0rd</password>
             <host>postgres1</host>
         </mysql2>
+        <mysql3>
+            <user>root</user>
+            <password>ClickHouse_MySQL_P@ssw0rd</password>
+            <host>mysql80</host>
+            <port>1111</port>
+            <database>test</database>
+            <table>test_table</table>
+        </mysql3>
         <mysql4>
             <user>root</user>
             <password>ClickHouse_MySQL_P@ssw0rd</password>

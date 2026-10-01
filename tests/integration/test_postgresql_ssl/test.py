@@ -508,14 +508,21 @@ def test_postgresql_dictionary_named_collection_wrong_ca_is_rejected(started_clu
 def test_postgresql_dictionary_named_collection_client_certificate(started_cluster):
     # The client-certificate half of the same branch: `certdb` only accepts a connection
     # presenting a verified client certificate, so dropped `sslcert_pem`/`sslkey_pem`
-    # would fail before any row is read.
+    # would fail before any row is read. The `table` key of the collection is overridden
+    # to the dedicated table used by the inline dictionary case.
+    pg_exec(
+        f"psql -v ON_ERROR_STOP=1 -U postgres -d {CERT_DB} -c "
+        f'"CREATE TABLE IF NOT EXISTS dict_cert_table (key integer PRIMARY KEY, value integer); '
+        f"TRUNCATE dict_cert_table; "
+        f'INSERT INTO dict_cert_table SELECT i, i * 10 FROM generate_series(0, 9) AS i"'
+    )
     node.query("DROP DICTIONARY IF EXISTS dict_pg_nc_cert")
     node.query(
         f"""
         CREATE DICTIONARY dict_pg_nc_cert (key UInt32, value UInt32)
         PRIMARY KEY key
         SOURCE(POSTGRESQL(
-            NAME pg_ssl_cert
+            NAME pg_ssl_cert table 'dict_cert_table'
             sslmode 'verify-full' sslrootcert_pem '{quote_pem(ca_pem)}'
             sslcert_pem '{quote_pem(client_cert_pem)}' sslkey_pem '{quote_pem(client_key_pem)}'))
         LAYOUT(HASHED())
