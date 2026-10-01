@@ -9,6 +9,8 @@
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -28,32 +30,22 @@ struct NtileState
     Int64 current_partition_rows = 0;
     Int64 current_partition_inserted_row = 0;
 
-    void windowInsertResultInto(
-        const WindowTransform * transform,
-        size_t function_index,
-        const DataTypes & argument_types)
+    void windowInsertResultInto(const WindowTransform * transform, size_t function_index)
     {
         if (!buckets) [[unlikely]]
         {
             const auto & current_block = transform->blocks.blockAt(transform->current_row.block);
             const auto & workspace = transform->workspaces[function_index];
             const auto & arg_col = *current_block.input_columns[workspace.argument_column_indices[0]];
+
             if (!isColumnConst(arg_col))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be a constant");
-            auto type_id = argument_types[0]->getTypeId();
-            if (type_id == TypeIndex::UInt8)
-                buckets = arg_col[transform->current_row.row].safeGet<UInt8>();
-            else if (type_id == TypeIndex::UInt16)
-                buckets = arg_col[transform->current_row.row].safeGet<UInt16>();
-            else if (type_id == TypeIndex::UInt32)
-                buckets = arg_col[transform->current_row.row].safeGet<UInt32>();
-            else if (type_id == TypeIndex::UInt64)
-                buckets = arg_col[transform->current_row.row].safeGet<UInt64>();
 
-            if (!buckets)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be greater than zero");
-            }
+            const UInt64 value = arg_col[transform->current_row.row].safeGet<UInt64>();
+            if (value == 0 || value > std::numeric_limits<Int64>::max())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be in [1, {}], {} given", std::numeric_limits<Int64>::max(), value);
+
+            buckets = value;
         }
         // new partition
         if (WindowRowAccess::isPartitionFirstRow(transform)) [[unlikely]]
@@ -160,7 +152,7 @@ struct WindowFunctionNtile final : public StatefulWindowFunction<NtileState>
     {
         const auto & workspace = transform->workspaces[function_index];
         auto & state = getState(workspace);
-        state.windowInsertResultInto(transform, function_index, argument_types);
+        state.windowInsertResultInto(transform, function_index);
     }
 };
 

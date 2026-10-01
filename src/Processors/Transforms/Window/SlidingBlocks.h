@@ -32,7 +32,7 @@ struct SlidingBlock
     const SlidingIndex index;
 
     /// Output
-    MutableColumns result_columns;
+    mutable MutableColumns result_columns;
 };
 
 class SlidingBlocks
@@ -50,6 +50,7 @@ public:
 
 private:
     std::deque<SlidingBlock> blocks;
+    int64_t first_block_number = 0;
     int64_t next_block_number = 0;
 };
 
