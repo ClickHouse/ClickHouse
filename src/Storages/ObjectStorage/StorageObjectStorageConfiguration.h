@@ -17,6 +17,9 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <unordered_set>
+#include <unordered_map>
+#include <deque>
+#include <chrono>
 #include <optional>
 #include <Common/CopyableMutex.h>
 #include <Databases/DataLake/StorageCredentials.h>
@@ -238,12 +241,14 @@ public:
     /// object storage would tell that the key is taken, and it may not report a just written object yet.
     /// The raw path of a plain table is kept here as well once an insert has committed its object: it is in the
     /// list of the paths whether its object exists or not, so the list does not tell whether it is taken.
-    /// Only the objects this table has written are kept, so the set grows like the list of the paths of a table
-    /// that is not partitioned; a truncating insert and `TRUNCATE TABLE` drop the keys of the objects they remove.
+    /// The set only bridges the time until the object storage reports a just written object: a key is kept for
+    /// `CommittedPaths::retention` after its object is committed, and then the object storage alone tells that it is
+    /// taken. Otherwise a long-lived table that keeps writing new partitions would keep one key per object it has
+    /// ever written. A truncating insert and `TRUNCATE TABLE` drop the keys of the objects they remove right away.
     void commitPathWrittenByInsert(const String & path)
     {
         std::lock_guard lock(paths_mutex);
-        paths_committed_by_writes.insert(path);
+        paths_committed_by_writes.commit(path);
     }
 
     bool isPathCommittedByInsert(const String & path) const
@@ -255,7 +260,7 @@ public:
     void forgetPathCommittedByInsert(const String & path)
     {
         std::lock_guard lock(paths_mutex);
-        paths_committed_by_writes.erase(path);
+        paths_committed_by_writes.forget(path);
     }
 
     virtual String getDataSourceDescription() const = 0;
@@ -563,7 +568,42 @@ protected:
     ReservedPaths paths_reserved_for_write;
     /// See `commitPathWrittenByInsert`. Guarded by `paths_mutex`. Unlike the reservations, the keys name
     /// the committed objects, which a copy of the configuration reads as well, so they are copied with it.
-    std::unordered_set<String> paths_committed_by_writes;
+    struct CommittedPaths
+    {
+        using Clock = std::chrono::steady_clock;
+
+        /// Much longer than an S3 implementation takes to report an object after the `PUT` has returned,
+        /// and short enough to keep only the keys of the objects written recently.
+        static constexpr auto retention = std::chrono::minutes(10);
+
+        /// The time each key was committed at, and the keys in the order they were committed, to expire them.
+        /// A key that is committed again or forgotten leaves its old entry in `order`, and it is skipped there.
+        std::unordered_map<String, Clock::time_point> paths;
+        std::deque<std::pair<Clock::time_point, String>> order;
+
+        void commit(const String & path)
+        {
+            const auto now = Clock::now();
+            while (!order.empty() && now - order.front().first >= retention)
+            {
+                auto it = paths.find(order.front().second);
+                if (it != paths.end() && it->second == order.front().first)
+                    paths.erase(it);
+                order.pop_front();
+            }
+            paths[path] = now;
+            order.emplace_back(now, path);
+        }
+
+        bool contains(const String & path) const
+        {
+            auto it = paths.find(path);
+            return it != paths.end() && Clock::now() - it->second < retention;
+        }
+
+        void forget(const String & path) { paths.erase(path); }
+    };
+    CommittedPaths paths_committed_by_writes;
     void checkFormat() const;
 
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
