@@ -20,7 +20,7 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/SetUtils.h>
 
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -437,9 +437,7 @@ bool hasLateAttachedTableFilter(
 
     const auto has_nontrivial_row_policy = [&](const ContextPtr & context)
     {
-        const auto row_policy_filter = context->getRowPolicyFilter(
-            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        return row_policy_filter && !row_policy_filter->isAlwaysTrue();
+        return getEffectiveRowPolicyFilter(*table->getStorage(), context) != nullptr;
     };
 
     /// A scalar query can have its own context. Check both contexts even though they normally
@@ -2433,8 +2431,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
-            /// Replace storage with values storage of insertion block
-            if (StoragePtr storage = scope.context->getViewSource())
+            /// Replace storage with values storage of insertion block.
+            /// The inner query of an ordinary view referenced by the view query reads the table itself.
+            if (StoragePtr storage = scope.context->getViewSource(); storage && !scope.context->isViewInnerQuery())
             {
                 QueryTreeNodePtr table_expression = in_second_argument;
 
@@ -2821,9 +2820,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 if (query_context->hasScalar(scalar_string))
                 {
                     auto scalar = query_context->getScalar(scalar_string);
-                    argument_column.column = ColumnConst::create(scalar.getByPosition(0).column, 1);
-                    argument_column.type = get_scalar_function_node->getResultType();
-                    argument_is_constant = true;
+                    const auto & scalar_column = scalar.getByPosition(0).column;
+                    const auto & get_scalar_result_type = get_scalar_function_node->getResultType();
+                    /// The column comes from the scalars map while the type comes from the resolved node, and the
+                    /// two disagree when the overload resolver wrapped the node's result type (a Nullable name).
+                    if (scalar_column->size() == 1 && columnMatchesType(*scalar_column, *get_scalar_result_type))
+                    {
+                        argument_column.column = ColumnConst::create(scalar_column, 1);
+                        argument_column.type = get_scalar_result_type;
+                        argument_is_constant = true;
+                    }
                 }
             }
         }
@@ -2992,6 +2998,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         auto action = function_node_ptr->getNullsAction();
         std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
+
+        argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types));
+        for (size_t i = 0; i < argument_types.size(); ++i)
+            function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
 
         AggregateFunctionProperties properties;
         auto aggregate_function
