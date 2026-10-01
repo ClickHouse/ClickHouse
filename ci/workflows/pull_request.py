@@ -5,6 +5,7 @@ from ci.defs.defs import (
     DOCKERS,
     SECRETS,
     ArtifactConfigs,
+    ArtifactNames,
     JobNames,
 )
 from ci.defs.job_configs import JobConfigs
@@ -65,186 +66,40 @@ PLAIN_INTEGRATION_TEST_JOB = [
     j for j in INTEGRATION_TARGETED_JOBS if "(amd_tsan, targeted)" in j.name
 ][0]
 
+
+# NOTE: temporarily trimmed down to just the arm_darwin build plus several parallel
+# copies of its fast test, to debug the intermittent
+# 04319_skip_unavailable_shards_mode_table_missing hang without paying for a full CI
+# run. Each copy gets a unique name so the job digest (which includes the name)
+# differs and all copies actually run instead of collapsing to a single cache hit.
+# Not intended to be merged as-is.
+DARWIN_BUILD = [
+    job for job in JobConfigs.special_build_jobs if job.name == "Build (arm_darwin)"
+]
+
+DARWIN_FAST_TESTS_PARALLEL = [
+    JobConfigs.darwin_fast_test_jobs[0].set_name(f"Fast test (arm_darwin) [{i}]")
+    for i in range(1, 6)
+]
+
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
     engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
-        JobConfigs.style_check,
-        JobConfigs.code_review.set_run_after(CODE_REVIEW_BLOCKING_JOBS),
-        JobConfigs.docs_job_mintlify,
-        JobConfigs.fast_test,
-        *JobConfigs.darwin_fast_test_jobs,
-        *JobConfigs.tidy_build_arm_jobs,
-        *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
-        *[
-            job.set_run_after(STYLE_AND_FAST_TESTS)
-            for job in JobConfigs.extra_validation_build_jobs
-        ],
-        *[
-            job.set_run_after(REGULAR_BUILD_NAMES)
-            for job in JobConfigs.release_build_jobs_with_examples
-        ],
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.special_build_jobs
-        ],
-        # Gated like the regular builds rather than like the special ones: it is the only job
-        # that compiles the standalone parser at all, and it needs no build artifact, so there
-        # is nothing to gain by deferring it behind the functional tests.
-        *[
-            job.set_run_after(STYLE_AND_FAST_TESTS)
-            for job in JobConfigs.wasm_parser_build_jobs
-        ],
-        *[
-            job.set_run_after(STYLE_AND_FAST_TESTS)
-            for job in JobConfigs.build_llvm_coverage_job
-        ],
-        # TODO: stabilize new jobs and remove set_allow_failure
-        JobConfigs.lightweight_functional_tests_job,
-        *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
-        *[
-            job.set_run_after(
-                CORE_BLOCKING_JOB_NAMES if job.name not in CORE_BLOCKING_JOB_NAMES else []
-            )
-            for job in INTEGRATION_TARGETED_JOBS
-        ],
-        JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
-        JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
-        *JobConfigs.stateless_tests_flaky_pr_jobs,
-        # The merge queue's non-sanitizer flaky check also runs here, so a test
-        # that is only too slow (or only flaky) without a sanitizer is reported
-        # in the PR rather than first bouncing it from the merge queue. Same job
-        # config as in `ci/workflows/merge_queue.py`.
-        *JobConfigs.stateless_tests_flaky_mq_jobs,
-        *JobConfigs.integration_test_asan_flaky_pr_jobs,
-        # Per-arch Bugfix Validation Checks (functional + integration tests on
-        # both amd64 and aarch64). Each per-arch variant has
-        # `allow_failure=True` so an individual FAIL doesn't block PR merge -
-        # the aggregate decision (validate iff at least one arch passed) lives
-        # in the `new_tests_check.py` workflow post-hook below.
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.bugfix_validation_ft_pr_jobs
-        ],
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.bugfix_validation_it_jobs
-        ],
-        # Unit-test (gtest) bugfix validation: a single AMD-only job (allow_failure)
-        # that builds a merge-base "before" binary and runs the touched suite against it.
-        # It is not part of the per-arch FT/IT aggregation; instead new_tests_check.py
-        # blocks the unit case iff this job reported a definitive FAIL (failed to
-        # reproduce) — a reproduction or an inconclusive ERROR does not block.
-        # Like the sibling FT/IT jobs, it is deferred behind the core blocking jobs.
-        JobConfigs.bugfix_validation_ut_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
-        *[
-            j.set_run_after(
-                CORE_BLOCKING_JOB_NAMES if j.name not in CORE_BLOCKING_JOB_NAMES else []
-            )
-            for j in FUNCTIONAL_TESTS_JOBS
-        ],
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.functional_tests_jobs_azure
-        ],
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.functional_test_llvm_coverage_jobs
-        ],
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.functional_test_excluded_from_llvm_job
-        ],
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.integration_test_llvm_coverage_jobs
-        ],
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.integration_test_excluded_from_llvm_job
-        ],
-        *JobConfigs.unittest_jobs,
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.unittest_llvm_coverage_job
-        ],
-        JobConfigs.docker_server.set_run_after(CORE_BLOCKING_JOB_NAMES),
-        JobConfigs.docker_keeper.set_run_after(CORE_BLOCKING_JOB_NAMES),
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.install_check_jobs
-        ],
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.compatibility_test_jobs
-        ],
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.stress_test_jobs
-        ],
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.upgrade_test_jobs
-        ],
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.ast_fuzzer_jobs
-        ],
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.buzz_fuzzer_jobs
-        ],
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.performance_comparison_with_master_head_jobs
-        ],
-        JobConfigs.parser_memory_check_job,
-        JobConfigs.storage_memory_check_job,
-        # ClickBench runs on PRs only when files in its digest change
-        # (see `clickbench_jobs.digest_config`), so the cost is bounded.
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.clickbench_jobs
-        ],
-        JobConfigs.llvm_coverage_job,
-        # Waits for the integration jobs of this workflow, which upload the compliance results.
-        # The LLVM coverage run is the only one that always runs the compliance suite.
-        JobConfigs.promql_compliance_job.set_run_after(
-            INTEGRATION_TARGETED_JOBS
-            + JobConfigs.integration_test_llvm_coverage_jobs
-            + JobConfigs.integration_test_excluded_from_llvm_job,
-            reset=True,
-        ),
-        # TODO: stabilize and remove set_allow_failure
-        JobConfigs.build_profile_diff_job.set_allow_failure(),
-        JobConfigs.sqllogic_test_master_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
-        JobConfigs.sqlstorm_test_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
-        JobConfigs.docs_examples_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
-        # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
-        # default backend only, 15 min each. Runs when src/Coordination or stress test files change.
-        JobConfigs.keeper_stress_job.set_name("Keeper Stress Tests (PR)").set_timeout(
-            3 * 3600
-        ),
-        *JobConfigs.toolchain_build_jobs,
+        *DARWIN_BUILD,
+        *DARWIN_FAST_TESTS_PARALLEL,
     ],
     artifacts=[
-        *ArtifactConfigs.unittests_binaries,
-        *ArtifactConfigs.clickhouse_binaries,
-        *ArtifactConfigs.clickhouse_darwin_plain_binaries,
-        *ArtifactConfigs.clickhouse_debians,
-        *ArtifactConfigs.clickhouse_rpms,
-        *ArtifactConfigs.clickhouse_tgzs,
-        ArtifactConfigs.clickhouse_wasm,
-        ArtifactConfigs.wasm_parser,
-        ArtifactConfigs.fuzzers,
-        ArtifactConfigs.fuzzers_corpus,
-        ArtifactConfigs.clickhouse_examples,
-        *ArtifactConfigs.llvm_profdata_file,
-        ArtifactConfigs.llvm_coverage_info_file,
-        ArtifactConfigs.toolchain_pgo_bolt_amd,
-        ArtifactConfigs.toolchain_pgo_bolt_arm,
+        *[
+            a
+            for a in [
+                *ArtifactConfigs.clickhouse_binaries,
+                *ArtifactConfigs.clickhouse_darwin_plain_binaries,
+            ]
+            if a.name in (ArtifactNames.CH_ARM_DARWIN_BIN, ArtifactNames.CH_ARM_DARWIN_PLAIN)
+        ],
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,
