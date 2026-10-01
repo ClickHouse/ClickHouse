@@ -3692,7 +3692,7 @@ public:
                 ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(arguments);
                 auto temporary_result_type = removeNullable(result_type);
 
-                /// Parsing a string to DateTime64 or Time64 throws on the empty value behind a NULL, so those rows are not parsed.
+                /// The string behind a NULL row is arbitrary, and parsing it to DateTime64 or Time64 may throw.
                 WhichDataType which_result(temporary_result_type);
                 if (result_null_map && (which_result.isDateTime64() || which_result.isTime64())
                     && isStringOrFixedString(removeNullable(arguments[0].type)))
