@@ -10119,6 +10119,7 @@ Allow to perform full text search filtering using only the inverted text index i
         {"25.9", true, true, "New setting."}) \
     DECLARE(Bool, query_plan_optimize_count_from_text_index, true, R"(
 Allow to answer `SELECT count() ... WHERE <text search predicate>` directly from the text index posting-list cardinalities, without materializing the matching rows.
+Other conditions of the filter are allowed when the partition min-max index proves that they hold for every row of a part; such parts are counted from the index and the other parts are read.
 Only takes effect when `query_plan_direct_read_from_text_index` is enabled.
 )", 0, \
         {"26.8", false, true, "New setting"}) \

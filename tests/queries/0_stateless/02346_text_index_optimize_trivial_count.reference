@@ -115,3 +115,54 @@ AggregatingProjection
 -- does not fire: no part has the index
 0
 100
+Other conditions proven for whole parts by the partition min-max index
+-- fires: every day is covered by the min-max index
+1	0
+36
+36
+-- fires: two whole days, the third is pruned
+1	0
+24
+24
+-- fires: the first day is partially covered and read
+1	1
+30
+30
+-- does not fire: no part is covered
+0	1
+3
+3
+-- fires: a monotonic function of the partition key column
+1	0
+12
+12
+-- fires: the min-max index proves a disjunction
+1	0
+24
+24
+-- does not fire: a condition on a column outside both indexes
+0	1
+36
+36
+-- does not fire: use_partition_pruning = 0
+0	1
+24
+-- does not fire: NULL values do not satisfy the condition
+0	1
+12
+12
+-- does not fire: the min-max index does not show NaN
+0	1
+2
+2
+-- does not fire: a cast around another condition is kept whole
+0	1
+2
+2
+-- fires: the part without the index is read
+1	1
+36
+36
+-- does not fire after a lightweight delete
+0	1
+23
