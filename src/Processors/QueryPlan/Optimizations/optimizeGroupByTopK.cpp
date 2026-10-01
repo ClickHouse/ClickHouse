@@ -216,7 +216,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
         return nullptr;
     }
 
-    read_step->updatePrewhereInfo(std::move(new_prewhere_info));
+    read_step->updatePrewhereInfo(new_prewhere_info);
     auto updated_header = read_step->getOutputHeader();
 
     if (!blocksHaveEqualStructure(*initial_header, *updated_header))
