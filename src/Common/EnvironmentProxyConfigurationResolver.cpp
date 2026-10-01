@@ -2,6 +2,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
+#include <Poco/Exception.h>
 #include <Poco/URI.h>
 
 namespace DB
@@ -42,6 +43,33 @@ namespace
         return std::getenv(NO_PROXY_ENVIRONMENT_VARIABLE); // NOLINT(concurrency-mt-unsafe)
     }
 
+    /// Credentials in the proxy URI are expected to be percent-encoded, but a password
+    /// containing a literal '%' is a common mistake and makes `Poco::URI::decode` throw.
+    /// Fall back to the raw value instead of failing: before credentials were supported the
+    /// userinfo was ignored entirely, so throwing here would break a previously working setup.
+    std::string decodeOrKeepVerbatim(const std::string & value, const char * what)
+    {
+        if (value.empty())
+        {
+            return value;
+        }
+
+        try
+        {
+            std::string decoded;
+            Poco::URI::decode(value, decoded);
+            return decoded;
+        }
+        catch (const Poco::URISyntaxException &)
+        {
+            LOG_WARNING(
+                getLogger("EnvironmentProxyConfigurationResolver"),
+                "Proxy {} is not valid percent-encoding, using it verbatim",
+                what);
+            return value;
+        }
+    }
+
     ProxyConfiguration buildProxyConfiguration(
         ProxyConfiguration::Protocol request_protocol,
         const Poco::URI & uri,
@@ -59,10 +87,8 @@ namespace
         /// Split on the raw userinfo first, then percent-decode each half.
         /// Decoding first would make an encoded "%3A" indistinguishable from the real separator.
         const auto [encoded_username, encoded_password] = ProxyConfiguration::parseUserInfo(uri.getUserInfo());
-        std::string username;
-        std::string password;
-        Poco::URI::decode(encoded_username, username);
-        Poco::URI::decode(encoded_password, password);
+        const auto username = decodeOrKeepVerbatim(encoded_username, "username");
+        const auto password = decodeOrKeepVerbatim(encoded_password, "password");
 
         const bool use_tunneling_for_https_requests_over_http_proxy = ProxyConfiguration::useTunneling(
             request_protocol,

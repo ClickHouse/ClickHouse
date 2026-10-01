@@ -35,6 +35,13 @@ TEST(ProxyCredentials, ParseUserInfo)
         ASSERT_EQ(password, "");
     }
 
+    /// No username. Poco does not send an Authorization header in this case.
+    {
+        const auto [username, password] = ProxyConfiguration::parseUserInfo(":password");
+        ASSERT_EQ(username, "");
+        ASSERT_EQ(password, "password");
+    }
+
     /// A password may contain colons. Only the first one separates.
     {
         const auto [username, password] = ProxyConfiguration::parseUserInfo("user:pass:word");
