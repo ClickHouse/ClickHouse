@@ -5,6 +5,9 @@
 -- which in Cloud are replaced with `SharedMergeTree`.
 -- Tag no-shared-merge-tree: the inner engines come from `default_table_engine` at runtime,
 -- so `--replace-replicated-with-shared` cannot rewrite them, and they don't work on SMT disks.
+--
+-- The choice of the inner engines from `default_table_engine` (including the rejection of unsuitable values)
+-- is covered by the unit test gtest_normalize_time_series_definition.cpp; this test checks the created inner tables.
 
 SET allow_experimental_time_series_table = 1;
 
@@ -30,23 +33,3 @@ SELECT splitByChar('.', name)[3] AS target, engine FROM system.tables
 WHERE database = currentDatabase() AND name LIKE '.inner\_id.%' ORDER BY target;
 
 DROP TABLE ts_default_engine SYNC;
-
-SELECT '-- default_table_engine = None requires explicit inner engines';
-
-SET default_table_engine = 'None';
-CREATE TABLE ts_default_engine ENGINE = TimeSeries; -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE ts_default_engine ENGINE = TimeSeries
-SAMPLES ENGINE = MergeTree ORDER BY (id, timestamp)
-TAGS ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
-METRICS ENGINE = ReplacingMergeTree ORDER BY metric_family_name
-RECENT SAMPLES ENGINE = MergeTree PARTITION BY toDate(timestamp) ORDER BY (id, timestamp);
-
-SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.%';
-
-DROP TABLE ts_default_engine;
-
-SELECT '-- other default_table_engine values are rejected';
-
-SET default_table_engine = 'Memory';
-CREATE TABLE ts_default_engine ENGINE = TimeSeries; -- { serverError INCORRECT_QUERY }

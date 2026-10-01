@@ -97,7 +97,8 @@ public:
         TokenizerPtr tokenizer_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
-        bool has_positions_);
+        bool has_positions_,
+        NameSet columns_shadowing_map_subcolumns_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -169,7 +170,7 @@ private:
 
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
-        const RPNBuilderTreeNode & index_column_node,
+        const RPNBuilderTreeNode & argument_node,
         DataTypePtr value_type,
         Field value_field,
         RPNElement & out) const;
@@ -184,7 +185,24 @@ private:
     /// and there is a text index built on `mapValues(map_col)`.
     bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
 
+    /// Returns the constant key of `m['key']` (`arrayElement` or `m.key_<key>` subcolumn) on this
+    /// index's column.
+    std::optional<String> tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const;
+
+    /// A `keyValuePairs` index in the (column, constant) shape; currently only `m['key'] = 'value'`.
+    bool traverseMapElementKeyValueNode(
+        const String & function_name,
+        const RPNBuilderTreeNode & index_column_node,
+        TextIndexDirectReadMode direct_read_mode,
+        const DataTypePtr & value_type,
+        const Field & value_field,
+        RPNElement & out) const;
+
+    /// `mapContainsKeyValue(m, 'key', 'value')`: both pair tokens, searched as one `Any` query.
+    bool traverseMapContainsKeyValueNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
+
     VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
+    VectorWithMemoryTracking<String> stringToTokens(std::string_view raw) const;
     VectorWithMemoryTracking<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     VectorWithMemoryTracking<String> stringLikeToTokens(const Field & field) const;
 
@@ -206,7 +224,10 @@ private:
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
+    /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
+    std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;
+    NameSet columns_shadowing_map_subcolumns;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
     /// share mutable parsing state; null otherwise.
     std::shared_ptr<const ITokenizer> owned_tokenizer;
@@ -244,5 +265,9 @@ private:
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
 bool isTextIndexVirtualColumn(const String & column_name);
+
+/// Strips `CAST`, `_CAST`, `toNullable` and `toLowCardinality` from the node while the conversion never
+/// changes the value and never throws. The index is analyzed on the expression under such conversions.
+const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node);
 
 }

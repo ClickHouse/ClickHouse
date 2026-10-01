@@ -32,7 +32,7 @@ The point in time is saved as a [Unix timestamp](https://en.wikipedia.org/wiki/U
 
 Timezone agnostic Unix timestamp is stored in tables, and the timezone is used to transform it to text format or back during data import/export or to make calendar calculations on the values (example: `toDate`, `toHour` functions etc.). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata.
 
-A list of supported time zones can be found in the [IANA Time Zone Database](https://www.iana.org/time-zones) and also can be queried by `SELECT * FROM system.time_zones`. [The list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) is also available at Wikipedia.
+The supported time zone names are exactly the ones that `SELECT * FROM system.time_zones` lists: the [IANA Time Zone Database](https://www.iana.org/time-zones) that is shipped with the server, so that results do not depend on the host's own database. [The list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) is also available at Wikipedia. A fixed offset from UTC, spelled `Fixed/UTC±HH:MM:SS`, e.g. `Fixed/UTC+05:30:00`, is accepted as well; such a name is what reading an Arrow or ORC timestamp column with a fixed-offset time zone produces. Any other name is rejected.
 
 You can explicitly set a time zone for `DateTime`-type columns when creating a table. Example: `DateTime('UTC')`. If the time zone isn't set, ClickHouse uses the value of the [timezone](/reference/settings/server-settings/settings/other#timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
 

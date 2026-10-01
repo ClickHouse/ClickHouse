@@ -769,11 +769,15 @@ private:
             const auto & preprocessor_dag = preprocessor->getOriginalActionsDAG();
             chassert(preprocessor_dag.getOutputs().size() == 1);
             const auto & preprocessor_output = preprocessor_dag.getOutputs().front();
-            auto haystack_name = getNameWithoutAliases(arg_haystack);
+            /// The index was analyzed on the expression under lossless conversions, e.g. `s` in `hasToken(toNullable(s), 'Foo')`.
+            const auto * haystack = unwrapLosslessConversion(arg_haystack);
+            auto haystack_name = getNameWithoutAliases(haystack);
 
             /// Check that preprocessor contains current expression as its argument.
             if (hasSubexpression(preprocessor_output, haystack_name))
             {
+                new_children[0] = haystack;
+
                 if (apply_postprocessor)
                 {
                     preprocessor_source_ast = preprocessor->getExpressionAST(new_children[0]->result_name);
@@ -1170,7 +1174,8 @@ static bool isRowScanPassThroughStep(const IQueryPlanStep * step)
 /// with virtual columns for direct index reads (both WHERE and PREWHERE clauses).
 ///
 /// See TextIndexDAGReplacer class for more details.
-void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index)
+void processAndOptimizeTextIndexFunctions(
+    const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings)
 {
     const auto & frame = stack.back();
     ReadFromMergeTree * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
@@ -1209,13 +1214,13 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
         prewhere_optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_infos, direct_read_allowed, /*require_index_analyzed_predicate=*/ is_deferred_after_final);
     }
 
-    /// A first-pass optimization can leave an `ExpressionStep` on top of the read step and hide the filter, e.g. the
-    /// header-converting step of `tryOptimizeTopK`. Merge it into the filter above so direct read stays possible.
+    /// A first-pass optimization can leave an `ExpressionStep` on top of the read step and hide the
+    /// filter. Merge it into the filter above so direct read stays possible.
     auto walk_begin = stack.rbegin() + 1;
     if (stack.size() >= 3 && typeid_cast<ExpressionStep *>(walk_begin->node->step.get()))
     {
         QueryPlan::Node * node_above = (stack.rbegin() + 2)->node;
-        if (typeid_cast<FilterStep *>(node_above->step.get()) && tryMergeExpressions(node_above, nodes, {}))
+        if (typeid_cast<FilterStep *>(node_above->step.get()) && tryMergeExpressions(node_above, nodes, settings))
             ++walk_begin; /// the merged-away step is detached now, the filter sits directly above the scan
     }
 
