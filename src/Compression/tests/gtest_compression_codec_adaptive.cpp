@@ -28,15 +28,8 @@ constexpr auto T64 = static_cast<uint8_t>(CompressionMethodByte::T64);
 constexpr auto NONE = static_cast<uint8_t>(CompressionMethodByte::NONE);
 constexpr auto MULTIPLE = static_cast<uint8_t>(CompressionMethodByte::Multiple);
 
-DataTypePtr type(const String & name)
-{
-    return DataTypeFactory::instance().get(name);
-}
-
-CompressionCodecPtr defaultCodec()
-{
-    return CompressionCodecFactory::instance().getDefaultCodec();
-}
+DataTypePtr type(const String & name) { return DataTypeFactory::instance().get(name); }
+CompressionCodecPtr defaultCodec() { return CompressionCodecFactory::instance().getDefaultCodec(); }
 
 /// Period 1 prices every block, so the smallest output always wins.
 std::unique_ptr<const AdaptiveCodec::ICodecSelector> priceEveryBlock() { return std::make_unique<AdaptiveCodec::CodecSelectorSampled>(1); }
