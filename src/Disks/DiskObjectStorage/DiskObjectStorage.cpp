@@ -771,7 +771,7 @@ bool DiskObjectStorage::isWriteOnce() const
 bool DiskObjectStorage::prefersRecursiveRemoval() const
 {
     /// `plain_rewritable` copies the blob of every unlinked file so that the unlink can be undone, while its
-    /// recursive removal only rewrites the directory metadata and deletes all objects in one request.
+    /// recursive removal only rewrites the directory metadata and deletes all objects in bulk.
     return metadata_storage->getType() == MetadataStorageType::PlainRewritable;
 }
 
