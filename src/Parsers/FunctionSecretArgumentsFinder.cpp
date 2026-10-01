@@ -519,12 +519,13 @@ void FunctionSecretArgumentsFinder::findMongoDBConnectionStringSecretArguments()
     };
 
     const bool is_engine = function->name() == "MongoDB";
+    const bool is_named_collection = isNamedCollectionName(0);
     const size_t size = function->arguments->size();
 
     /// The table function appends `options` and `oid_columns` to the positionals before index 5, so a named argument
     /// there can move them into the user or password slot.
     bool shifted = false;
-    if (!is_engine && size > 4 && !isNamedCollectionName(0))
+    if (!is_engine && size > 4 && !is_named_collection)
     {
         for (size_t i = 0; i < 5; ++i)
         {
@@ -570,7 +571,8 @@ void FunctionSecretArgumentsFinder::findMongoDBConnectionStringSecretArguments()
         if (is_masked(i))
             continue;
 
-        if (shifted && i > 5)
+        /// A positional after a collection name is rejected or ignored, but only after the statement is logged.
+        if ((shifted && i > 5) || (is_named_collection && i > 0))
         {
             result.replaced_arguments[i] = "'[HIDDEN]'";
             continue;

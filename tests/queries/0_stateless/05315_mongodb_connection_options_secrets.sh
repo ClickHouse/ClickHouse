@@ -29,7 +29,8 @@ $CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION ${NC} AS host = '127.0.0.1', port
 $CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION ${NC2} AS collection = 'c'"
 
 # Table engine: the URI forms, the positional options of the host:port form, the named-collection overrides
-# (a uri after another override), and a percent-encoded authMechanismProperties.
+# (a uri after another override), a percent-encoded authMechanismProperties, and a positional URI after the
+# collection name (rejected after being logged).
 probe "CREATE TABLE e01 (x String) ENGINE = MongoDB('mongodb://127.0.0.1:27017/db?tls=true&tlsCertificateKeyFilePassword=OPTSECRET1', 'c')"
 probe "CREATE TABLE e02 (x String) ENGINE = MongoDB('mongodb://127.0.0.1:27017/db?sslClientCertificateKeyPassword=OPTSECRET2', 'c', '_id')"
 probe "CREATE TABLE e03 (x String) ENGINE = MongoDB(concat('mongodb://127.0.0.1:27017/db?tlsCertificateKeyFilePassword=', 'OPTSECRET15'), 'c', '_id')"
@@ -39,11 +40,12 @@ probe "CREATE TABLE e06 (x String) ENGINE = MongoDB(${NC}, options = 'tls=true&t
 probe "CREATE TABLE e07 (x String) ENGINE = MongoDB(${NC}, concat('op', 'tions') = 'tlsCertificateKeyFilePassword=OPTSECRET13')"
 probe "CREATE TABLE e08 (x String) ENGINE = MongoDB(${NC2}, collection = 'c2', uri = 'mongodb://127.0.0.1:27017/db?tlsCertificateKeyFilePassword=OPTSECRET25')"
 probe "CREATE TABLE e09 (x String) ENGINE = MongoDB('mongodb://127.0.0.1:27017/db?authMechanismProperties=ENVIRONMENT:azure%2CAWS_SESSION_TOKEN%3AOPTSECRET26', 'c')"
+probe "CREATE TABLE e10 (x String) ENGINE = MongoDB(${NC}, 'mongodb://usr:OPTSECRET27@127.0.0.1:27017/db?tlsCertificateKeyFilePassword=OPTSECRET27B')"
 
 # Table function: the URI form with a public property kept, the positional and the named options of the
 # host:port form, a URI written after a named argument, an upper-case OPTIONS key (both rejected after being
-# logged), a named oid_columns bound to the options slot, and a named options and a positional after
-# structure moved into the password slot.
+# logged), a named oid_columns bound to the options slot, a named options and a positional after
+# structure moved into the password slot, and a positional after a named collection (rejected after being logged).
 probe "CREATE VIEW f01 AS SELECT * FROM mongodb('mongodb://127.0.0.1:27017/db?authMechanismProperties=SERVICE_NAME:keep,aws_session_token:OPTSECRET5,OPTSECRET5B', 'c', 'x String')"
 probe "CREATE VIEW f02 AS SELECT * FROM mongodb('127.0.0.1:27017', 'db', 'c', 'usr', 'pw', 'x String', 'tlsCertificateKeyFilePassword=OPTSECRET6')"
 probe "CREATE VIEW f03 AS SELECT * FROM mongodb('127.0.0.1:27017', 'db', 'c', 'usr', 'pw', 'x String', options = 'TLSCERTIFICATEKEYFILEPASSWORD=OPTSECRET7')"
@@ -52,6 +54,7 @@ probe "CREATE VIEW f05 AS SELECT * FROM mongodb('127.0.0.1:27017', 'db', 'c', 'u
 probe "CREATE VIEW f06 AS SELECT * FROM mongodb(oid_columns = 'tlsCertificateKeyFilePassword=OPTSECRET22', '127.0.0.1:27017', 'db', 'c', '', 'x String')"
 probe "CREATE VIEW f07 AS SELECT * FROM mongodb(options = 'OPTSECRET23', '127.0.0.1:27017', 'db', 'c', 'usr', 'x String')"
 probe "CREATE VIEW f08 AS SELECT * FROM mongodb(oid_columns = 'appName=keep', '127.0.0.1:27017', 'db', 'c', 'usr', 'x String', 'OPTSECRET24')"
+probe "CREATE VIEW f09 AS SELECT * FROM mongodb(${NC}, structure = 'x String', 'OPTSECRET28')"
 
 # Dictionary source: an option given twice, a URI written as an identifier with '#' in the value, the
 # OPTIONS of the host form, and OPTIONS given as an expression.
