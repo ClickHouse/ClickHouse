@@ -13,8 +13,10 @@
     </create_query>
 
     <fill_query>SYSTEM STOP MERGES lazy_mat_final_limit</fill_query>
-    <fill_query>INSERT INTO lazy_mat_final_limit SELECT number, cityHash64(number, 1) % 10000, randomPrintableASCII(2000) FROM numbers_mt(500000)</fill_query>
-    <fill_query>INSERT INTO lazy_mat_final_limit SELECT number, cityHash64(number, 2) % 10000, randomPrintableASCII(2000) FROM numbers_mt(500000)</fill_query>
+    <!-- Each INSERT writes exactly one part, so that both compared servers read the same two intersecting parts. -->
+    <fill_query>INSERT INTO lazy_mat_final_limit SELECT number, cityHash64(number, 1) % 10000, randomPrintableASCII(2000) FROM numbers_mt(500000) SETTINGS min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO lazy_mat_final_limit SELECT number, cityHash64(number, 2) % 10000, randomPrintableASCII(2000) FROM numbers_mt(500000) SETTINGS min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>SELECT throwIf(count() != 2, 'lazy_materialization_final_limit: expected 2 active parts') FROM system.parts WHERE database = currentDatabase() AND table = 'lazy_mat_final_limit' AND active</fill_query>
 
     <query>SELECT k, payload FROM lazy_mat_final_limit FINAL WHERE v = 7 LIMIT 10 FORMAT Null</query>
     <query>SELECT k, payload FROM lazy_mat_final_limit FINAL WHERE v = 7 LIMIT 100 FORMAT Null</query>

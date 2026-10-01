@@ -132,12 +132,6 @@ void ColumnDecimal<T>::deserializeAndInsertFromArena(ReadBuffer & in, const ICol
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::skipSerializedInArena(ReadBuffer & in) const
-{
-    in.ignore(sizeof(T));
-}
-
-template <is_decimal T>
 UInt64 ColumnDecimal<T>::get64([[maybe_unused]] size_t n) const
 {
     if constexpr (sizeof(T) > sizeof(UInt64))
@@ -304,8 +298,9 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
 
         if (size >= 256 && size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
         {
-            bool try_sort = trySort(begin, end, pred);
-            if (try_sort)
+            /// `trySort` can reorder equal values even when it returns false.
+            /// Stable radix sorting must preserve the incoming order within equal ranges.
+            if (!sort_is_stable && trySort(begin, end, pred))
                 return;
 
             PaddedPODArray<ValueWithIndex<NativeT>> pairs(size);
@@ -486,11 +481,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
             {
                 size_t index = std::countr_zero(mask);
                 res_data.push_back(data_pos[index]);
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                mask = mask & (mask - 1);
             }
         }
 
@@ -546,11 +537,7 @@ void ColumnDecimal<T>::filter(const IColumn::Filter & filt)
             {
                 size_t index = std::countr_zero(mask);
                 res_data[res_size++] = data_pos[index];
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                mask = mask & (mask - 1);
             }
         }
 
@@ -668,6 +655,12 @@ void ColumnDecimal<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_
 {
     const auto & src_data = assert_cast<const Self &>(src).getData();
     data[dst_pos] = src_data[src_pos];
+}
+
+template <is_decimal T>
+bool ColumnDecimal<T>::hasOnlyTypeDefaults() const
+{
+    return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
 }
 
 template <is_decimal T>

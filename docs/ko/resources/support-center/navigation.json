@@ -126,12 +126,13 @@
           ]
         },
         {
-          "group": "구체화된 뷰 및 프로젝션",
+          "group": "구체화된 뷰(Materialized View) 및 프로젝션",
           "pages": [
             "ko/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "ko/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
             "ko/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
-            "ko/resources/support-center/knowledge-base/materialized-views/projection-example"
+            "ko/resources/support-center/knowledge-base/materialized-views/projection-example",
+            "ko/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts"
           ]
         },
         {
@@ -185,7 +186,7 @@
           ]
         },
         {
-          "group": "일반 및 FAQ",
+          "group": "일반 및 자주 묻는 질문",
           "pages": [
             "ko/resources/support-center/knowledge-base/general-faqs/faq-index",
             {
@@ -241,7 +242,7 @@
           ]
         },
         {
-          "group": "팁과 요령",
+          "group": "유용한 팁",
           "pages": [
             "ko/resources/support-center/tips-and-tricks/community-wisdom",
             "ko/resources/support-center/tips-and-tricks/cost-optimization",

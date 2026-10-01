@@ -6,9 +6,6 @@
 -- Disable automatic parallel replicas mode so randomized settings do not interfere.
 SET automatic_parallel_replicas_mode = 0;
 
--- Keep test stable across analyzer-enabled and analyzer-disabled CI runs.
-SET parallel_replicas_only_with_analyzer = 0;
-
 DROP TABLE IF EXISTS t;
 
 CREATE TABLE t(key UInt64, value String) ENGINE = MergeTree ORDER BY key;
@@ -60,8 +57,6 @@ SETTINGS
 
 -- INSERT SELECT: with `prefer_local_replica` = 0 and `max_parallel_replicas` = 1,
 -- the INSERT SELECT should also use the parallel replicas path.
--- Force `allow_experimental_analyzer` = 1 because `buildInsertSelectPipelineParallelReplicas`
--- has a hard gate on the analyzer, independent of `parallel_replicas_only_with_analyzer`.
 DROP TABLE IF EXISTS t_dest;
 CREATE TABLE t_dest(key UInt64, value String) ENGINE = MergeTree ORDER BY key;
 

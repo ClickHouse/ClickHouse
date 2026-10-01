@@ -7,7 +7,49 @@
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "ru/get-started/index",
-        "ru/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": false,
+          "group": "Быстрый старт",
+          "pages": [
+            "ru/get-started/quickstarts/home",
+            {
+              "expanded": false,
+              "group": "Все сценарии использования",
+              "pages": [
+                "ru/get-started/setup/cloud",
+                "ru/get-started/quickstarts/obtain-your-cloud-connection-details",
+                "ru/get-started/quickstarts/insert-data-using-clickhouse-client",
+                "ru/get-started/quickstarts/creating-tables",
+                "ru/get-started/quickstarts/writing-queries",
+                "ru/get-started/quickstarts/create-your-first-mergetree-table"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Аналитика в реальном времени",
+              "pages": [
+                "ru/get-started/quickstarts/create-your-first-materialized-view",
+                "ru/get-started/quickstarts/create-your-first-projection"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Хранилище данных",
+              "pages": [
+                "ru/get-started/quickstarts/connect-your-iceberg-catalog",
+                "ru/get-started/quickstarts/mutations"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Обсервабилити",
+              "pages": [
+                "ru/get-started/quickstarts/working-with-the-map-type"
+              ]
+            }
+          ]
+        },
         {
           "expandable": true,
           "expanded": true,
@@ -20,9 +62,10 @@
         },
         {
           "expanded": true,
-          "group": "Варианты использования",
+          "group": "Сценарии использования",
           "pages": [
             "ru/get-started/use-cases/overview",
+            "ru/get-started/use-cases/choosing-a-service",
             "ru/get-started/use-cases/real-time-analytics",
             "ru/get-started/use-cases/observability",
             "ru/get-started/use-cases/data-warehousing",
@@ -41,7 +84,7 @@
         "ru/get-started/setup/cloud",
         {
           "expanded": true,
-          "group": "Самоуправляемое развертывание",
+          "group": "Самостоятельное развертывание",
           "pages": [
             "ru/get-started/setup/self-managed/overview",
             {
@@ -54,7 +97,7 @@
               ]
             },
             {
-              "group": "Продакшн-сервер",
+              "group": "Рабочий сервер",
               "pages": [
                 "ru/get-started/setup/self-managed/debian-ubuntu",
                 "ru/get-started/setup/self-managed/redhat",
@@ -68,13 +111,13 @@
     },
     {
       "expanded": true,
-      "group": "Примеры датасетов",
+      "group": "Примеры наборов данных",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
         "ru/get-started/sample-datasets/index",
         "ru/get-started/sample-datasets/playground",
         {
-          "group": "Бенчмарки",
+          "group": "Тесты производительности",
           "pages": [
             "ru/get-started/sample-datasets/amplab-benchmark",
             "ru/get-started/sample-datasets/brown-benchmark",
@@ -86,7 +129,7 @@
           ]
         },
         {
-          "group": "Векторный поиск и эмбеддинги",
+          "group": "Векторный поиск и векторные представления",
           "pages": [
             "ru/get-started/sample-datasets/dbpedia",
             "ru/get-started/sample-datasets/hacker-news-vector-search",
@@ -95,7 +138,7 @@
           ]
         },
         {
-          "group": "Веб- и социальная аналитика",
+          "group": "Веб-аналитика и аналитика социальных сетей",
           "pages": [
             "ru/get-started/sample-datasets/amazon-reviews",
             "ru/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -107,7 +150,7 @@
           ]
         },
         {
-          "group": "Geo и местоположение",
+          "group": "Геоданные и местоположение",
           "pages": [
             "ru/get-started/sample-datasets/cell-towers",
             "ru/get-started/sample-datasets/foursquare-os-places",
@@ -124,7 +167,7 @@
           ]
         },
         {
-          "group": "Государственные реестры и открытые данные",
+          "group": "Публичные реестры и открытые данные",
           "pages": [
             "ru/get-started/sample-datasets/covid19",
             "ru/get-started/sample-datasets/menus",
@@ -187,7 +230,7 @@
           ]
         },
         {
-          "group": "Из OSS в Cloud",
+          "group": "Переход с ClickHouse OSS на ClickHouse Cloud",
           "pages": [
             "ru/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
             "ru/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"

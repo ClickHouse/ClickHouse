@@ -11,7 +11,7 @@ doc_type: 'guide'
 [ClickHouse playground](https://sql.clickhouse.com) permite que as pessoas experimentem o ClickHouse executando consultas instantaneamente, sem precisar configurar seu servidor ou cluster.
 Vários conjuntos de dados de exemplo estão disponíveis no Playground.
 
-Você pode fazer consultas no Playground usando qualquer cliente HTTP, por exemplo [curl](https://curl.haxx.se) ou [wget](https://www.gnu.org/software/wget/), ou configurar uma conexão usando drivers [JDBC](/pt-BR/concepts/features/interfaces/jdbc) ou [ODBC](/pt-BR/concepts/features/interfaces/odbc). Mais informações sobre produtos de software compatíveis com o ClickHouse estão disponíveis [aqui](/pt-BR/integrations/home).
+Você pode fazer consultas no Playground usando qualquer cliente HTTP, por exemplo [curl](https://curl.haxx.se) ou [wget](https://www.gnu.org/software/wget/), ou configurar uma conexão usando drivers [JDBC](/pt-BR/integrations/language-clients/java/jdbc) ou [ODBC](/pt-BR/concepts/features/interfaces/odbc). Mais informações sobre produtos de software compatíveis com o ClickHouse estão disponíveis [aqui](/pt-BR/integrations/home).
 
 <div id="credentials">
   ## Credenciais
@@ -45,7 +45,7 @@ Exemplo de endpoint HTTPS com `curl`:
 curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play ClickHouse'"
 ```
 
-Exemplo de endpoint TCP com [CLI](/pt-BR/concepts/features/interfaces/cli):
+Exemplo de endpoint TCP com [ClickHouse client](/pt-BR/concepts/features/interfaces/client):
 
 ```bash
 clickhouse client --secure --host play.clickhouse.com --user explorer

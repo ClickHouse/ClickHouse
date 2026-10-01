@@ -1,6 +1,8 @@
 -- A constant Array(JSON) argument to an aggregate reaches ColumnArray::replicateGeneric, which appended
 -- shared data one row at a time and re-reserved the whole nested column each time, so the bytes copied
 -- grew quadratically. max_execution_time only guards a return; the runner's own timeout trips first.
+-- The time limit is only on the arms that hold a JSON object, because the other shapes never reach
+-- the quadratic path and their wall clock says nothing about it.
 
 SET enable_analyzer = 1;
 SET max_block_size = 400000;
@@ -17,10 +19,10 @@ SELECT any(c) IS NOT NULL, count() FROM (SELECT materialize(1) AS k, [map('a', 1
 SELECT any(c) IS NOT NULL, count() FROM (SELECT materialize(1) AS k, [map('k', map('a', 1)::JSON)] AS c FROM numbers(400000)) GROUP BY k SETTINGS max_execution_time = 60;
 SELECT any(c) IS NOT NULL, count() FROM (SELECT materialize(1) AS k, [map('a', 1)::JSON::Dynamic] AS c FROM numbers(400000)) GROUP BY k SETTINGS max_execution_time = 60;
 SELECT any(c) IS NOT NULL, count() FROM (SELECT materialize(1) AS k, [map('a', 1)::JSON::Variant(UInt64, JSON)] AS c FROM numbers(400000)) GROUP BY k SETTINGS max_execution_time = 60;
-SELECT any(c) IS NOT NULL, count() FROM (SELECT materialize(1) AS k, [1::Dynamic, 'x'::Dynamic] AS c FROM numbers(400000)) GROUP BY k SETTINGS max_execution_time = 60;
-SELECT any(c) IS NOT NULL, count() FROM (SELECT materialize(1) AS k, [1::Variant(UInt64, String)] AS c FROM numbers(400000)) GROUP BY k SETTINGS max_execution_time = 60;
-SELECT any(c) IS NOT NULL, count() FROM (SELECT materialize(1) AS k, [map('a', 1)] AS c FROM numbers(400000)) GROUP BY k SETTINGS max_execution_time = 60;
-SELECT any(c) IS NOT NULL, count() FROM (SELECT materialize(1) AS k, [toLowCardinality('x')] AS c FROM numbers(400000)) GROUP BY k SETTINGS max_execution_time = 60;
+SELECT any(c) IS NOT NULL, count() FROM (SELECT materialize(1) AS k, [1::Dynamic, 'x'::Dynamic] AS c FROM numbers(400000)) GROUP BY k;
+SELECT any(c) IS NOT NULL, count() FROM (SELECT materialize(1) AS k, [1::Variant(UInt64, String)] AS c FROM numbers(400000)) GROUP BY k;
+SELECT any(c) IS NOT NULL, count() FROM (SELECT materialize(1) AS k, [map('a', 1)] AS c FROM numbers(400000)) GROUP BY k;
+SELECT any(c) IS NOT NULL, count() FROM (SELECT materialize(1) AS k, [toLowCardinality('x')] AS c FROM numbers(400000)) GROUP BY k;
 
 -- Appending offsets must not raise peak memory, since IColumn::reserve affects performance only. These
 -- pass from the same limit as before the fix; an object with no shared-data pair is the tight case,

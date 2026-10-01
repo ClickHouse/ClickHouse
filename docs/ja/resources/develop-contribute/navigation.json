@@ -23,15 +23,13 @@
     {
       "group": "ネイティブプロトコル",
       "pages": [
-        "ja/resources/develop-contribute/native-protocol/basics",
-        "ja/resources/develop-contribute/native-protocol/client",
-        "ja/resources/develop-contribute/native-protocol/server",
-        "ja/resources/develop-contribute/native-protocol/columns",
+        "ja/resources/develop-contribute/native-protocol/protocol",
+        "ja/resources/develop-contribute/native-protocol/format",
         "ja/resources/develop-contribute/native-protocol/hash"
       ]
     },
     {
-      "group": "コントリビューション",
+      "group": "貢献",
       "pages": [
         "ja/resources/develop-contribute/contribute/tests",
         "ja/resources/develop-contribute/contribute/continuous-integration",
@@ -60,6 +58,6 @@
     }
   ],
   "icon": "/images/icons/icon-contribute.svg",
-  "item": "開発とコントリビューション",
+  "item": "開発と貢献",
   "root": "ja/resources/develop-contribute/index"
 }
