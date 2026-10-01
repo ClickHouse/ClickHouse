@@ -611,6 +611,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (getSelectQuery().recursive_with)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported by this interpreter");
 
+    for (const auto & table_element : getSelectQuery().tables() ? getSelectQuery().tables()->children : ASTs{})
+    {
+        const auto & element = table_element->as<ASTTablesInSelectQueryElement &>();
+        if (element.table_expression && element.table_expression->as<ASTTableExpression &>().unpivot)
+            throw Exception(
+                ErrorCodes::UNSUPPORTED_METHOD, "UNPIVOT is not supported with the old analyzer. Please use `enable_analyzer=1`");
+    }
+
     initSettings();
 
     // Automatic parallel replicas aren't supported in the old analyzer, this code is needed only as a safe guard for

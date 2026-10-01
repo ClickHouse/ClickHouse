@@ -144,6 +144,7 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"TablesInSelectQuery", [] { return make_intrusive<ASTTablesInSelectQuery>(); }},
         {"TablesInSelectQueryElement", [] { return make_intrusive<ASTTablesInSelectQueryElement>(); }},
         {"TableExpression", [] { return make_intrusive<ASTTableExpression>(); }},
+        {"Unpivot", [] { return make_intrusive<ASTUnpivot>(); }},
         {"TableJoin", [] { return make_intrusive<ASTTableJoin>(); }},
         {"ArrayJoin", [] { return make_intrusive<ASTArrayJoin>(); }},
         {"OrderByElement", [] { return make_intrusive<ASTOrderByElement>(); }},
