@@ -9,6 +9,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 
@@ -65,6 +66,7 @@ namespace Setting
     extern const SettingsBool query_plan_propagate_predicate_across_join;
     extern const SettingsBool query_plan_fuse_filter_into_array_join;
     extern const SettingsBool query_plan_lower_array_join_function;
+    extern const SettingsBool legacy_array_join_function_nondeterministic_evaluation;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
@@ -195,6 +197,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         && from[Setting::use_primary_key];
     fuse_filter_into_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_fuse_filter_into_array_join];
     lower_array_join_function = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lower_array_join_function];
+    legacy_array_join_function_nondeterministic_evaluation = from[Setting::legacy_array_join_function_nondeterministic_evaluation];
     enable_lazy_columns_replication = from[Setting::enable_lazy_columns_replication];
     short_circuit_function_evaluation_disabled = from[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::DISABLE;
     push_down_volume_reducing_functions
@@ -226,7 +229,14 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     query_plan_optimize_join_order_randomize = from[Setting::query_plan_optimize_join_order_randomize];
     if (query_plan_optimize_join_order_randomize == 1)
     {
-        query_plan_optimize_join_order_randomize = randomSeed();
+        /// This constructor runs once per plan construction and one query builds several plans, one per replica
+        /// among them, so the seed has to come from a value that is stable across them. 0 and 1 are sentinels.
+        if (initial_query_id_.empty())
+            query_plan_optimize_join_order_randomize = randomSeed(); /// Internal or background plan: no query to follow.
+        else
+            query_plan_optimize_join_order_randomize = sipHash64(initial_query_id_);
+        if (query_plan_optimize_join_order_randomize <= 1)
+            query_plan_optimize_join_order_randomize = 2;
     }
     if (query_plan_optimize_join_order_randomize)
     {
