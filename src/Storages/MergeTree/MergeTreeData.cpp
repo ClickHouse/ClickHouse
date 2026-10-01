@@ -5017,12 +5017,6 @@ void MergeTreeData::checkUniqueKeyOptimizeIsPossible(const StorageInMemoryMetada
                         "already keeps one live row per key");
 }
 
-void MergeTreeData::deleteByUniqueKey(const ASTPtr &, ContextPtr)
-{
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-        "DELETE on a UNIQUE KEY table is not supported by engine {}", getName());
-}
-
 bool MergeTreeData::isPinnedByDeleteBitmap(const IMergeTreeDataPart & part) const
 {
     /// Ahead of the lock: every table without a unique key reaches this on its own cleanup path,

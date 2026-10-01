@@ -442,6 +442,17 @@ QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands,
     return pipeline;
 }
 
+void StorageAlias::deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr local_context)
+{
+    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
+    /// The caller locks the alias, not the target.
+    auto lock = target_storage->lockForShare(
+        local_context->getCurrentQueryId(),
+        local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    target_storage->deleteByUniqueKey(query_ptr, local_context);
+}
+
 CancellationCode StorageAlias::killMutation(const String & mutation_id)
 {
     return getTargetTable()->killMutation(mutation_id);

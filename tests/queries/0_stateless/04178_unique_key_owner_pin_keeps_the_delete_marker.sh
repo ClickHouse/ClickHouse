@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree
+# Tags: no-fasttest, no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree
 # UNIQUE KEY: a 0-row DELETE marker holding the only copy of another part's kills is never reclaimed.
+# no-parallel: an outdated part is removed only once every running transaction on the server started
+# after its removal, so another test's transaction holds the wait back.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

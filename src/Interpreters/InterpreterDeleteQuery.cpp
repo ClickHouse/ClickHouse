@@ -128,13 +128,7 @@ BlockIO InterpreterDeleteQuery::execute()
         if (!delete_query.cluster.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE ... ON CLUSTER is not supported on UNIQUE KEY tables");
 
-        auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get());
-        if (!merge_tree)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "DELETE on UNIQUE KEY tables is only supported on MergeTree engines (got {})",
-                table->getName());
-
-        merge_tree->deleteByUniqueKey(query_ptr, getContext());
+        table->deleteByUniqueKey(query_ptr, getContext());
         return {};
     }
 
