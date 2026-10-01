@@ -73,8 +73,7 @@ public:
         propagateUpdate(*child, Update()
             .setAttached(child.get())
             .setIncrease(child->increase)
-            .setDecrease(child->decrease)
-            .setSuction(child->getSuctionAllocation()));
+            .setDecrease(child->decrease));
     }
 
     void removeChild(ISchedulerNode * child_) override
@@ -110,7 +109,6 @@ public:
     void approveIncrease() override
     {
         chassert(increase);
-        increase->approval_epoch = ++approval_epoch;
         apply(*increase);
         increase = nullptr;
         child->approveIncrease();
@@ -124,22 +122,6 @@ public:
         decrease = nullptr;
         child->approveDecrease();
         decrease = child->decrease;
-    }
-
-    void retrySuspendedIncreases() override
-    {
-        if (child)
-            child->retrySuspendedIncreases();
-    }
-
-    bool hasSuspendedIncrease() const override
-    {
-        return child && child->hasSuspendedIncrease();
-    }
-
-    ResourceAllocation * getSuctionAllocation() const override
-    {
-        return child ? child->getSuctionAllocation() : nullptr;
     }
 
     ResourceAllocation * selectAllocationToKill(IncreaseRequest &, ResourceCost, String &) override
@@ -174,7 +156,6 @@ private:
     }
 
     SpaceSharedNodePtr child;
-    UInt64 approval_epoch = 0;
 
     std::atomic<bool> stop_flag = false;
     EventQueue events;

@@ -22,9 +22,6 @@ public:
     ResourceAllocation * selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details) override;
     void approveIncrease() override;
     void approveDecrease() override;
-    void retrySuspendedIncreases() override;
-    bool hasSuspendedIncrease() const override;
-    ResourceAllocation * getSuctionAllocation() const override;
     void propagateUpdate(ISpaceSharedNode & from_child, Update && update) override;
     void updateMinMaxAllocated(ResourceCost new_value) override;
 

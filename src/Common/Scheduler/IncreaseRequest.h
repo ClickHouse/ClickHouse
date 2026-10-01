@@ -40,10 +40,6 @@ public:
     /// It must be greater than zero and remain constant until increaseApproved().
     ResourceCost size = 0;
 
-    /// Assigned once by the scheduler when this request is approved.
-    /// It lets nested limits recognize productive work without storing per-limit allocation pointers.
-    UInt64 approval_epoch = 0;
-
     /// When allocation is inserted into a queue, allocation should be increased from zero to its initial size.
     /// During this period allocation is pending (i.e. not yet running).
     Kind kind = Kind::Regular;
@@ -56,7 +52,6 @@ public:
     {
         size = size_;
         kind = kind_;
-        approval_epoch = 0;
     }
 };
 

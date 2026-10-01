@@ -169,11 +169,7 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
         return concurrent_join->addBlockToJoin(block, check_limits);
     }
 
-    /// The reservation spill path may force the same transition from another query thread.
-    /// Serialize the single-thread HashJoin build with that transition as well.
-    std::shared_lock lock(switch_mutex);
-    if (state.load(std::memory_order_acquire) != State::COLLECTING)
-        return chosen_join->addBlockToJoin(block, check_limits);
+    /// Single-thread HashJoin path.
     return hash_join->addBlockToJoin(block, check_limits);
 }
 
@@ -234,9 +230,7 @@ void SpillingHashJoin::switchToGraceHashJoin(bool spill_immediately)
         return;
     }
 
-    /// The normal single-thread build and the explicit reservation-spill path can enter here from
-    /// different query threads. Use the same transition lock as the concurrent implementation.
-    std::unique_lock lock(switch_mutex);
+    /// `requestSpill` can bring us here too, so look at the state again before rebuilding.
     if (state.load(std::memory_order_relaxed) != State::COLLECTING)
         return;
 
@@ -245,7 +239,7 @@ void SpillingHashJoin::switchToGraceHashJoin(bool spill_immediately)
     ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/false);
 
-    grace_join = std::make_shared<GraceHashJoin>(
+    chosen_join = std::make_shared<GraceHashJoin>(
         initial_num_buckets,
         max_num_buckets,
         table_join,
@@ -254,16 +248,16 @@ void SpillingHashJoin::switchToGraceHashJoin(bool spill_immediately)
         tmp_data,
         any_take_last_row,
         max_bytes_before_external_join);
-    grace_join->initialize(*left_sample_block);
-    chosen_join = grace_join;
+
+    chosen_join->initialize(*left_sample_block);
     if (spill_immediately)
-        grace_join->requestSpill();
+        chosen_join->requestSpill();
 
     /// Drain extracted blocks into GraceHashJoin one by one,
     /// freeing each after insertion to limit peak memory.
     while (!right_blocks.empty())
     {
-        grace_join->addBlockToJoin(right_blocks.front(), /*check_limits=*/false);
+        chosen_join->addBlockToJoin(right_blocks.front(), /*check_limits=*/false);
         right_blocks.pop_front();
     }
 
@@ -319,49 +313,6 @@ void SpillingHashJoin::onBuildPhaseFinish()
         else
             hash_join->dropRightBlocksKeptForAnotherAlgorithm();
     }
-}
-
-bool SpillingHashJoin::trySpillForMemoryPressure()
-{
-    State current_state = state.load(std::memory_order_acquire);
-    if (current_state == State::IN_MEMORY_JOIN)
-        return false;
-
-    if (current_state == State::COLLECTING)
-        switchToGraceHashJoin(/*spill_immediately=*/true);
-
-    /// `switchToGraceHashJoin` publishes `grace_join` while holding `switch_mutex`.
-    /// Keep the pointer and state check under the same lock for worker-side recovery hooks.
-    std::shared_lock lock(switch_mutex);
-    if (state.load(std::memory_order_acquire) != State::GRACE_HASH_JOIN || !grace_join)
-        return false;
-    auto active_grace_join = grace_join;
-    lock.unlock();
-
-    /// Finish converting all concurrent slots before asking GraceHashJoin to rehash the active
-    /// bucket; otherwise conversion could immediately refill memory that the forced spill released.
-    if (concurrent_join)
-        tryConvertSlots();
-    return active_grace_join->trySpillForMemoryPressure();
-}
-
-bool SpillingHashJoin::hasPendingMemoryPressureSpill() const
-{
-    std::shared_lock lock(switch_mutex);
-    auto active_grace_join = grace_join;
-    lock.unlock();
-    return active_grace_join && active_grace_join->hasPendingSpill();
-}
-
-bool SpillingHashJoin::forceSpill()
-{
-    std::shared_lock lock(switch_mutex);
-    if (state.load(std::memory_order_acquire) != State::GRACE_HASH_JOIN || !grace_join)
-        return false;
-    auto active_grace_join = grace_join;
-    lock.unlock();
-    active_grace_join->forceSpill();
-    return true;
 }
 
 size_t SpillingHashJoin::getSpillableBytes() const

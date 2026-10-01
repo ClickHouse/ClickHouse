@@ -4467,23 +4467,11 @@ This setting takes effect only if MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL, \
         {"26.7", 0, 0, "New setting to reserve memory for specific workload before starting a query."}) \
     DECLARE(Bool, memory_reservation_protect_from_eviction, false, R"(
-Allow this query to suspend a memory increase and give it a prioritized recovery retry before eviction. Protected queries are skipped while an unprotected victim is available, but remain the final fallback so a fully protected workload cannot deadlock. When disabled, the query follows the existing eviction path.
+Allow regular memory growth of this query to use the reserved memory-recovery capacity before eviction. Only one protected suspended request at a time receives the reserved-capacity retry. If it still does not fit at the resource limit, the existing eviction path is used. Initial and pending admission keep the existing behavior.
 This setting takes effect only if a MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting enabling opt-in pre-eviction suspension, suction, and soft victim protection."}, \
-        {"26.9", false, false, "New setting enabling opt-in pre-eviction suspension, suction, and soft victim protection."}) \
-    DECLARE(Bool, memory_reservation_force_spill_before_eviction, false, R"(
-Run one exhaustive query-level spill pass when this query enters memory-reservation recovery. `memory_reservation_max_allocation_before_retry_bytes` may allow the final recovery retry to start before the pass completes, but it does not initiate spilling.
-This setting takes effect only if a MEMORY RESERVATION resource is created.
-)", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting controlling the forced spill pass before memory-reservation eviction."}, \
-        {"26.9", false, false, "New setting controlling the forced spill pass before memory-reservation eviction."}) \
-    DECLARE(Milliseconds, memory_reservation_recovery_timeout_ms, 0, R"(
-Maximum time a query may wait for its forced-spill pass during memory-reservation recovery. After the timeout, the query proceeds to its final prioritized retry with the spill work completed so far. An in-flight spill failure remains attached to the originating recovery episode. A value of `0` disables the timeout.
-This setting takes effect only if a MEMORY RESERVATION resource is created.
-)", EXPERIMENTAL, \
-        {"26.10", 0, 0, "New setting bounding the forced-spill phase before the final memory-recovery retry."}, \
-        {"26.9", 0, 0, "New setting bounding the forced-spill phase before the final memory-recovery retry."}) \
+        {"26.10", false, false, "New setting enabling opt-in reserved-capacity retry before memory-reservation eviction."}, \
+        {"26.9", false, false, "New setting enabling opt-in reserved-capacity retry before memory-reservation eviction."}) \
     DECLARE(UInt64, max_network_bandwidth, 0, R"(
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 

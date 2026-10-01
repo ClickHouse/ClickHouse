@@ -866,8 +866,7 @@ private:
         propagateUpdate(*child, Update()
             .setAttached(child.get())
             .setIncrease(child->increase)
-            .setDecrease(child->decrease)
-            .setSuction(child->getSuctionAllocation()));
+            .setDecrease(child->decrease));
     }
 
     /// Removes an immediate child (used through `reparent()`)
@@ -929,22 +928,6 @@ private:
     {
         chassert(child);
         return child->selectAllocationToKill(killer, limit, details);
-    }
-
-    void retrySuspendedIncreases() override
-    {
-        if (child)
-            child->retrySuspendedIncreases();
-    }
-
-    bool hasSuspendedIncrease() const override
-    {
-        return child && child->hasSuspendedIncrease();
-    }
-
-    ResourceAllocation * getSuctionAllocation() const override
-    {
-        return child ? child->getSuctionAllocation() : nullptr;
     }
 
     void propagateUpdateSchedulingSettings() override

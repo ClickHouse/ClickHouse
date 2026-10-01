@@ -37,29 +37,14 @@ TEST(ProcessList, MapsMemoryReservationSettingsFromQueryAndServerSettings)
 {
     auto global_context = Context::createCopy(getContext().context);
 
-    const auto previous_max_allocation_before_retry
-        = global_context->getServerSettings().get("memory_reservation_max_allocation_before_retry_bytes");
-    const auto previous_recovery_max_allocation
-        = global_context->getServerSettings().get("memory_reservation_recovery_max_allocation_bytes");
     const auto previous_recovery_reserved
         = global_context->getServerSettings().get("memory_reservation_recovery_reserved_bytes");
-    const auto previous_recovery_queue_policy
-        = global_context->getServerSettings().get("memory_reservation_recovery_queue_policy");
     SCOPE_EXIT({
         global_context->setServerSetting(
-            "memory_reservation_max_allocation_before_retry_bytes", previous_max_allocation_before_retry);
-        global_context->setServerSetting(
-            "memory_reservation_recovery_max_allocation_bytes", previous_recovery_max_allocation);
-        global_context->setServerSetting(
             "memory_reservation_recovery_reserved_bytes", previous_recovery_reserved);
-        global_context->setServerSetting(
-            "memory_reservation_recovery_queue_policy", previous_recovery_queue_policy);
     });
 
-    global_context->setServerSetting("memory_reservation_max_allocation_before_retry_bytes", UInt64{1111});
-    global_context->setServerSetting("memory_reservation_recovery_max_allocation_bytes", UInt64{2222});
     global_context->setServerSetting("memory_reservation_recovery_reserved_bytes", UInt64{3333});
-    global_context->setServerSetting("memory_reservation_recovery_queue_policy", String{"largest_memory_first"});
 
     auto storage = global_context->getWorkloadEntityStoragePtr();
     Settings storage_settings;
@@ -87,8 +72,6 @@ TEST(ProcessList, MapsMemoryReservationSettingsFromQueryAndServerSettings)
     query_context->setSetting("workload", String{"process_list_test"});
     query_context->setSetting("reserve_memory", UInt64{0});
     query_context->setSetting("memory_reservation_protect_from_eviction", true);
-    query_context->setSetting("memory_reservation_force_spill_before_eviction", true);
-    query_context->setSetting("memory_reservation_recovery_timeout_ms", UInt64{444});
     query_context->getClientInfo().current_user = "process_list_test_user";
     query_context->getClientInfo().current_query_id = "process_list_memory_settings";
 
@@ -105,17 +88,8 @@ TEST(ProcessList, MapsMemoryReservationSettingsFromQueryAndServerSettings)
 
         auto * reservation = entry->getQueryStatus()->getMemoryReservation();
         ASSERT_NE(reservation, nullptr);
-        const auto & settings = reservation->getSettings();
-
-        EXPECT_TRUE(settings.pressure_policy.protect_from_eviction);
-        EXPECT_TRUE(settings.force_spill_before_eviction);
-        EXPECT_EQ(settings.recovery_timeout_ms, 444u);
-        EXPECT_EQ(settings.pressure_policy.max_allocation_before_suction_bytes, 1111u);
-        EXPECT_EQ(settings.pressure_policy.suction_max_allocation_bytes, 2222u);
-        EXPECT_EQ(settings.pressure_policy.suction_reserved_bytes, 3333u);
-        EXPECT_EQ(
-            settings.pressure_policy.suction_queue_policy,
-            ResourceAllocation::SuctionQueuePolicy::LargestMemoryFirst);
+        EXPECT_TRUE(reservation->isProtectedFromEviction());
+        EXPECT_EQ(reservation->getRecoveryReservedBytes(), 3333u);
 
         entry.reset();
     }
