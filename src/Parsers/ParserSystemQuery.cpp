@@ -326,6 +326,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP SCHEMA CACHE", Type::CLEAR_SCHEMA_CACHE},
             {"DROP FORMAT SCHEMA CACHE", Type::CLEAR_FORMAT_SCHEMA_CACHE},
             {"DROP AVRO SCHEMA CACHE", Type::CLEAR_AVRO_SCHEMA_CACHE},
+            {"DROP TIME SERIES CACHES", Type::CLEAR_TIME_SERIES_CACHES},
             {"DROP S3 CLIENT CACHE", Type::CLEAR_S3_CLIENT_CACHE},
         };
 
@@ -459,6 +460,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::WAIT_QUERY_RUNNER:
         case Type::PREWARM_MARK_CACHE:
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
+        case Type::CLEAR_TIME_SERIES_CACHES:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
@@ -1308,6 +1310,14 @@ Clears the metadata cache of the specified disk.
 
 ```sql
 SYSTEM DROP DISK METADATA CACHE <disk_name>
+```
+
+## SYSTEM CLEAR|DROP TIME SERIES CACHES {#drop-time-series-caches}
+
+Clears the caches of a `TimeSeries` table which let inserts skip the rows already present in its target tables. There are two such caches: the deduplication cache of the metric families table and the deduplication cache of the tags table (used only when `store_min_time_and_max_time` is disabled), see the `metric_families_deduplication_cache_expiration_seconds` and `tags_deduplication_cache_expiration_seconds` settings of the table. The caches are local to the server and they don't notice changes made to the target tables directly. Such a difference disappears by itself when the entries expire; use the statement to make the next insert write all its rows without waiting (for example, after truncating the metric families table). `TRUNCATE TABLE` of a `TimeSeries` table clears the caches of the executing server only, so if the target tables are replicated, run the statement `ON CLUSTER` afterwards to clear the caches of the other replicas.
+
+```sql
+SYSTEM DROP TIME SERIES CACHES [ON CLUSTER cluster_name] [db.]table
 ```
 
 ## SYSTEM SYNC FILESYSTEM CACHE {#sync-filesystem-cache}

@@ -291,7 +291,7 @@ bool hasRowsInFilter(const IColumn & where_column)
     if (const auto * where_column_uint8 = typeid_cast<const ColumnUInt8 *>(&where_column))
         return hasRowsInFilter(*where_column_uint8);
     else
-        return hasRowsInFilter(where_column);
+        return hasRowsInFilter<IColumn>(where_column);
 }
 
 void updateTTLInfoConst(MergeTreeDataPartTTLInfo & ttl_info, const ColumnConst & ttl_column, const IColumn * where_column)
