@@ -30,8 +30,6 @@ namespace Setting
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
-    extern const SettingsBool optimize_aggregation_in_order;
-    extern const SettingsBool force_aggregation_in_order;
     extern const SettingsUInt64 max_projection_rows_to_use_projection_index;
     extern const SettingsUInt64 min_table_rows_to_use_projection_index;
 }
@@ -98,12 +96,8 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
         bool support_projection = query_settings[Setting::parallel_replicas_local_plan]
             && query_settings[Setting::parallel_replicas_support_projection];
 
-        /// AggregationInOrder may cause local and remote replicas to use different CoordinationModes, which is currently unsupported.
-        bool enable_aggregation_in_order = query_settings[Setting::optimize_aggregation_in_order]
-            || query_settings[Setting::force_aggregation_in_order];
-
-        if (!support_projection || enable_aggregation_in_order)
-            return std::unexpected("parallel replicas are enabled without projection support or with aggregation in order");
+        if (!support_projection)
+            return std::unexpected("parallel replicas are enabled without projection support");
     }
 
     // Currently projection don't support settings which implicitly modify aggregate functions.

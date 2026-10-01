@@ -244,12 +244,14 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// the other replicas and the optimization would give up. Settings written after `FORMAT` land on
     /// `ASTQueryWithOutput` and are not re-applied, which is why the very same query used to be
     /// optimized or not depending on where its `SETTINGS` clause was written. Drop the overridden
-    /// settings from the (cloned) AST so that the overrides above actually hold.
+    /// settings from the top-level `SETTINGS` carriers of the (cloned) AST so that the overrides above
+    /// actually hold. A subquery's `SETTINGS` clause is part of its query-node tree hash, and that hash
+    /// is the identity its prepared set and its read step are matched by against the single-node plan.
     static constexpr std::array settings_overridden_for_this_plan{
         std::string_view{"automatic_parallel_replicas_mode"},
         std::string_view{"force_primary_key"},
     };
-    removeSettingsFromQuery(ast, settings_overridden_for_this_plan);
+    removeSettingsFromQueryTopLevel(ast, settings_overridden_for_this_plan);
 
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);
 
@@ -271,7 +273,7 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// `prefer_global_in_and_join` and `parallel_replicas_prefer_local_join`, and a query carries its
     /// own `SETTINGS` for those. `QueryTreeBuilder::buildSelectExpression` applies them to the context
     /// it is handed - `ctx` - while building the tree above, which is the same mechanism
-    /// `removeSettingsFromQuery` had to counteract. Asking before that would read pre-query settings
+    /// `removeSettingsFromQueryTopLevel` had to counteract. Asking before that would read pre-query settings
     /// and could answer no for a query that does materialize.
     if (shippingQueryMaterializesSubqueries(interpreter.getQueryTree(), ctx))
     {
@@ -304,9 +306,44 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
 }
 }
 
+/// Like `extractAllTableReferences`, but does not descend into the inner queries of views inlined
+/// by the analyzer (`analyzer_inline_views`) into a query that is not itself inside a view:
+/// they read their own tables, just like a view that is not inlined.
+static bool isViewInnerQueryNode(const QueryTreeNodePtr & node)
+{
+    if (const auto * query_node = node->as<QueryNode>())
+        return query_node->getContext()->isViewInnerQuery();
+    if (const auto * union_node = node->as<UnionNode>())
+        return union_node->getContext()->isViewInnerQuery();
+    return false;
+}
+
+static void extractTableReferencesOutsideViews(const QueryTreeNodePtr & node, bool outer_is_view_inner, QueryTreeNodes & result)
+{
+    bool is_view_inner = isViewInnerQueryNode(node);
+    if (is_view_inner && !outer_is_view_inner)
+        return;
+
+    if (node->getNodeType() == QueryTreeNodeType::TABLE)
+    {
+        result.push_back(node);
+    }
+    else if (const auto * query_node = node->as<QueryNode>())
+    {
+        for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped(), /*add_array_join=*/ false, /*recursive=*/ false))
+            extractTableReferencesOutsideViews(table_expression, is_view_inner, result);
+    }
+    else if (const auto * union_node = node->as<UnionNode>())
+    {
+        for (const auto & query : union_node->getQueries().getNodes())
+            extractTableReferencesOutsideViews(query, is_view_inner, result);
+    }
+}
+
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
 {
-    auto nodes = extractAllTableReferences(query_tree);
+    QueryTreeNodes nodes;
+    extractTableReferencesOutsideViews(query_tree, isViewInnerQueryNode(query_tree), nodes);
     IQueryTreeNode::ReplacementMap replacement_map;
 
     for (auto & node : nodes)
