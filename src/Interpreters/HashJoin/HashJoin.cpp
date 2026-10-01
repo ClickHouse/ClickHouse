@@ -51,7 +51,7 @@
 #include <numeric>
 
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 
 namespace DB
 {
@@ -2796,6 +2796,12 @@ bool HashJoin::recordsRowRefsForStats() const
 
 void HashJoin::onBuildPhaseFinish()
 {
+    /// The used flags are indexed by `offsetInternal`, and `offsetInternal` needs the bucket prefix sums.
+    /// The buckets do not change after this point. `ConcurrentHashJoin` calls this function only after it has
+    /// merged the maps of all its slots into one.
+    for (auto & map : data->maps)
+        std::visit([this](auto & map_) { map_.computeBucketPrefix(data->type); }, map);
+
     reinitUsedFlags();
 
     /// Two-level maps per-row flags will be finalized by ConcurrentHashJoin.
