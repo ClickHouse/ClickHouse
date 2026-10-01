@@ -150,11 +150,14 @@ def validate_comments(entries, files, threads, base_dir, dismissed=None, units=N
     open_ours = set()
     open_texts = {}
     for t in threads or []:
-        if thread_is_ours(t) and not t.get("isResolved"):
-            if t.get("line"):
-                open_ours.add((t.get("path"), int(t["line"])))
-            first = ((t.get("comments") or {}).get("nodes") or [{}])[0]
-            open_texts.setdefault(t.get("path"), []).append(first.get("body") or "")
+        if t.get("isResolved"):
+            continue
+        if thread_is_ours(t) and t.get("line"):
+            open_ours.add((t.get("path"), int(t["line"])))
+        # Any open thread counts, not only ours: repeating what a maintainer
+        # already raised on the same file is noise too.
+        first = ((t.get("comments") or {}).get("nodes") or [{}])[0]
+        open_texts.setdefault(t.get("path"), []).append(first.get("body") or "")
 
     postable, moved = [], []
     seen = set()
@@ -420,7 +423,7 @@ def local_links_to_github(text, repo, sha):
 
 
 def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_text, memory=None,
-            units=None, previous_state=None, simplicity=True):
+            units=None, previous_state=None, simplicity=True, activity=""):
     """Post the inline review and the thread actions. `gh` is the praktika GH
     class (injected for tests). Returns the summary text to post, with the
     comments that could not be attached inline appended."""
@@ -483,5 +486,5 @@ def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_t
         findings += [{"fp": fp} for fp in sorted(posted - known)]
         contract, _ = _read_body({"body_file": os.path.join(output_dir, "contract.md")}, output_dir)
         summary += "\n" + review_units.encode_state(
-            units, findings[-200:], contract or (previous_state or {}).get("contract", "")) + "\n"
+            units, findings[-200:], contract or (previous_state or {}).get("contract", ""), activity) + "\n"
     return summary

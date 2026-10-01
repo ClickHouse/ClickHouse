@@ -223,8 +223,9 @@ earlier runs of this review.
   accepts as real but declines to fix stays open and stays in the summary. Re-open a resolved
   thread of yours only when the issue is still present and either you resolved it yourself earlier
   or you are replying that the claimed fix did not fix it. Never act on threads that are not yours.
-- Do not open a new inline comment for an issue that already has a thread; a new push does not make
-  an old finding new.
+- Do not open a new inline comment for an issue that already has a thread, yours or a reviewer's; a
+  new push does not make an old finding new. Agreeing with a reviewer's point is worth at most a line
+  in the summary.
 - On a re-review, `units.md` separates the units this push changed from the ones it did not. Review
   the changed units fully. Look at the unchanged ones only where a change affects them (a changed
   caller, callee, type or invariant they depend on). A problem you notice in unchanged code that

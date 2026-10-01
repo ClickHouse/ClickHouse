@@ -158,9 +158,11 @@ def finding_fingerprint(path, unit_key, body):
     return hashlib.sha1(f"{path}|{unit_key}|{words}".encode()).hexdigest()[:16]
 
 
-def encode_state(units, findings, contract):
+def encode_state(units, findings, contract, activity=""):
+    """`activity` is the time of the latest comment by a person when the
+    review started, so the next run can tell whether anyone wrote since."""
     state = {"v": STATE_VERSION, "units": {u["key"]: u["fp"] for u in units}, "findings": findings,
-             "contract": (contract or "")[:6000]}
+             "contract": (contract or "")[:6000], "activity": activity or ""}
     data = base64.b64encode(zlib.compress(json.dumps(state, separators=(",", ":")).encode(), 9)).decode()
     return STATE_MARKER.format(data=data)
 

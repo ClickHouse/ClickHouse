@@ -277,7 +277,8 @@ def _render_since_last_review(repo, pr_number, base_ref, last_sha, head_sha, fil
 class Context:
     """The fetched context. Holds what the job needs again after the run."""
 
-    def __init__(self, directory, repo, pr, files, threads, previous_review, units=None, previous_state=None):
+    def __init__(self, directory, repo, pr, files, threads, previous_review, units=None, previous_state=None,
+                 activity=""):
         self.directory = directory
         self.repo = repo
         self.pr = pr
@@ -286,6 +287,16 @@ class Context:
         self.previous_review = previous_review
         self.units = units or []
         self.previous_state = previous_state
+        # Time of the latest comment by a person (not the review), ISO 8601.
+        self.activity = activity
+
+    @property
+    def nothing_new(self):
+        """Every unit unchanged since the previous review and nobody wrote
+        since: a run would only repeat the previous review."""
+        return (self.previous_state is not None
+                and not any(review_units.in_scope(u) for u in self.units)
+                and self.activity <= (self.previous_state.get("activity") or ""))
 
     @property
     def head_sha(self):
@@ -334,7 +345,12 @@ def fetch(directory, repo, pr_number):
             repo, pr_number, (pr.get("base") or {}).get("ref") or "master", reviewed_sha(previous), head_sha, files)
         if since:
             _write(os.path.join(directory, "since_last_review.md"), since)
-    return Context(directory, repo, pr, files, threads, previous, units, previous_state)
+    times = [c.get("createdAt") or "" for t in threads for c in (t.get("comments") or {}).get("nodes") or []
+             if not (c.get("viewerDidAuthor") or is_bot((c.get("author") or {}).get("login")))]
+    times += [c.get("created_at") or "" for c in issue_comments
+              if not is_bot((c.get("user") or {}).get("login")) and _REVIEW_COMMENT_START not in (c.get("body") or "")]
+    times += [r.get("submitted_at") or "" for r in reviews if not is_bot((r.get("user") or {}).get("login"))]
+    return Context(directory, repo, pr, files, threads, previous, units, previous_state, max(times, default=""))
 
 
 def index_markdown(directory):

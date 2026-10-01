@@ -57,6 +57,12 @@ def prepare():
     )
 
 
+def stop_agent():
+    """Stop a running agent (all processes of its user), e.g. when a newer
+    commit makes its review pointless."""
+    kill_agent_processes()
+
+
 def reauthenticate():
     """Mint the token the job publishes with, after the agent has run. Also
     needed when the review fails: the runner posts the commit status and the

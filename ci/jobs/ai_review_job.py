@@ -25,12 +25,15 @@ A run has three stages, and only the middle one involves the agent:
 
 import json
 import os
+import re
 import shlex
 import shutil
 import sys
+import threading
 import time
 import traceback
 import urllib.parse
+import urllib.request
 
 from ci.jobs.scripts.ai_review import context as review_context
 from ci.jobs.scripts.ai_review import loom, prompt, publish, sandbox
@@ -60,6 +63,11 @@ MAX_ATTEMPTS = 3
 # started. A hung agent otherwise holds the runner until the job timeout.
 ATTEMPT_TIMEOUT_SECONDS = 50 * 60
 NO_NEW_ATTEMPT_AFTER_SECONDS = 100 * 60
+# How often the job checks, while the agent runs, whether a newer commit was
+# pushed. A review of a superseded commit is stopped: the newer commit's run
+# reviews the PR anyway, and in parallel (the workflow's concurrency group is
+# per commit, so a push does not cancel the previous commit's run).
+SUPERSEDED_CHECK_SECONDS = 120
 
 # OpenAI API key for the Codex CLI, written into `$CODEX_HOME/auth.json`
 # via `codex login --with-api-key`.
@@ -164,6 +172,50 @@ def _run_codex_once(loom_config):
         Shell.check(f"rm -rf {shlex.quote(root)}", verbose=False)
 
 
+class Superseded(Exception):
+    """A newer commit was pushed; its own run reviews the PR."""
+
+
+class _SupersededWatch:
+    """Checks the PR head while the agent runs and stops the agent when it
+    moves. It uses a token read before the agent starts and kept in this
+    process only: the agent runs as another user and cannot read it."""
+
+    def __init__(self, repo, pr_number, sha):
+        self.url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+        self.sha = sha
+        self.token = Shell.get_output("gh auth token", verbose=False).strip()
+        self.superseded = threading.Event()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+
+    def head(self):
+        request = urllib.request.Request(self.url, headers={"Accept": "application/vnd.github+json",
+                                                           **({"Authorization": f"Bearer {self.token}"} if self.token else {})})
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                return (json.loads(response.read().decode()).get("head") or {}).get("sha") or ""
+        except Exception as e:  # noqa: BLE001 - a failed check is not a reason to stop the review
+            print(f"WARNING: could not check the PR head: {type(e).__name__}")
+            return ""
+
+    def _loop(self):
+        while not self._stop.wait(SUPERSEDED_CHECK_SECONDS):
+            head = self.head()
+            if head and head != self.sha:
+                print(f"A newer commit {head[:12]} was pushed; stopping the review of {self.sha[:12]}")
+                self.superseded.set()
+                sandbox.stop_agent()
+                return
+
+    def __enter__(self):
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._stop.set()
+
+
 def _outputs_problem():
     """Why the agent's output cannot be published, or "" when it can. All three
     files are required (the JSON ones as `[]` when empty): the prompt has the
@@ -185,7 +237,7 @@ def _outputs_problem():
     return ""
 
 
-def _run_agent(loom_config):
+def _run_agent(loom_config, watch=None):
     """Run the agent until it produces publishable output. Returns the model
     that produced it. Raises otherwise."""
     started = time.time()
@@ -195,6 +247,7 @@ def _run_agent(loom_config):
             print(f"Not starting attempt {attempt}: {int(time.time() - started)}s already spent")
             break
         _reset_output_dir()
+        attempt_started = time.time()
         print(f"Codex attempt {attempt}/{MAX_ATTEMPTS} with {MODEL} ({REASONING_EFFORT})")
         try:
             exit_code = _run_codex_once(loom_config)
@@ -213,7 +266,14 @@ def _run_agent(loom_config):
         except Exception as e:  # noqa: BLE001 — broad catch: any exception is retryable here
             last_error = f"{type(e).__name__}: {e}"
             traceback.print_exc()
+        if watch and watch.superseded.is_set():
+            raise Superseded()
         print(f"WARNING: Codex attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
+        if time.time() - attempt_started >= ATTEMPT_TIMEOUT_SECONDS - 60:
+            # It ran out of time; another attempt would most likely do the
+            # same and double the cost.
+            print("Not retrying: the attempt hit the time limit")
+            break
         if attempt < MAX_ATTEMPTS:
             delay = min(2 ** attempt, 60)
             print(f"Retrying Codex in {delay}s ...")
@@ -221,12 +281,30 @@ def _run_agent(loom_config):
     raise RuntimeError(f"Codex review failed: {last_error}")
 
 
-def _post_summary(summary, head_sha, model):
+_MARKER_RE = re.compile(r"\n*<!-- ai-review-(?:reviewed-sha|model|state): [^>]*-->")
+
+
+def _strip_markers(text):
+    return _MARKER_RE.sub("", text or "").rstrip()
+
+
+def _state_marker(previous_state, units, activity):
+    from ci.jobs.scripts.ai_review import units as review_units
+
+    return review_units.encode_state(units, (previous_state or {}).get("findings") or [],
+                                     (previous_state or {}).get("contract", ""), activity)
+
+
+def _post_summary(summary, head_sha, model, state=""):
     """Post the summary as the updateable `review` comment. Raises on failure,
     failing the job. The hidden markers tell the next run which commit this
     review saw, and let reviews be compared by model."""
-    body = (summary.rstrip() + "\n\n" + review_context.REVIEWED_SHA_MARKER.format(sha=head_sha)
-            + f"\n<!-- ai-review-model: {model} -->\n")
+    body = summary.rstrip() + "\n"
+    if state:
+        body += "\n" + state + "\n"
+    body += "\n" + review_context.REVIEWED_SHA_MARKER.format(sha=head_sha) + "\n"
+    if model:
+        body += f"<!-- ai-review-model: {model} -->\n"
     path = f"{WORK_DIR}/summary_to_post.md"
     with open(path, "w", encoding="utf-8") as f:
         f.write(body)
@@ -248,6 +326,17 @@ def review():
     os.makedirs(WORK_DIR, exist_ok=True)
 
     ctx = review_context.fetch(CONTEXT_DIR, repo, info.pr_number)
+    if ctx.head_sha and info.sha and ctx.head_sha != info.sha:
+        print(f"Not reviewing {info.sha[:12]}: the PR head is already {ctx.head_sha[:12]}, whose run reviews it")
+        return []
+    if ctx.nothing_new:
+        # A merge of the base branch, a rebase or a re-run that leaves the
+        # PR's diff as it was, with nothing written since: the previous review
+        # still stands. Only the markers move to this commit.
+        print("Nothing changed since the previous review; keeping it")
+        _post_summary(_strip_markers(ctx.previous_review), ctx.head_sha, "",
+                      state=_state_marker(ctx.previous_state, ctx.units, ctx.activity))
+        return []
 
     loom_config = loom.Config.for_repo(repo, info.pr_number, _ssm)
     os.environ["LOOM_CALL_LOG"] = os.path.abspath(LOOM_CALL_LOG)
@@ -276,9 +365,14 @@ def review():
     # From here until the agent is done, the job holds no GitHub token. It is
     # minted again whatever happens: publishing needs it, and so does the
     # runner, which posts the commit status after the job command.
+    watch = _SupersededWatch(repo, info.pr_number, info.sha)
     try:
         sandbox.prepare()
-        model = _run_agent(loom_config)
+        with watch:
+            model = _run_agent(loom_config, watch)
+    except Superseded:
+        print("Review stopped: superseded by a newer commit")
+        return []
     finally:
         sandbox.reauthenticate()
 
@@ -302,7 +396,7 @@ def review():
     is_backport = (ctx.pr.get("title") or "").startswith("Backport") or any(
         (label.get("name") or "") == "pr-backport" for label in ctx.pr.get("labels") or [])
     summary = publish.publish(GH, repo, info.pr_number, ctx.head_sha, ctx.files, threads, OUTPUT_DIR, summary, memory,
-                              ctx.units, ctx.previous_state, simplicity=not is_backport)
+                              ctx.units, ctx.previous_state, simplicity=not is_backport, activity=ctx.activity)
     _post_summary(summary, ctx.head_sha, model)
 
     # Record every review thread of ours, with its current state and replies,
