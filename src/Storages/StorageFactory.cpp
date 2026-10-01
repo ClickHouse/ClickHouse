@@ -62,6 +62,19 @@ static bool isReplayedTableDefinition(
 }
 
 
+static void checkNoAliasInKeyExpression(const IAST * ast, std::string_view clause)
+{
+    if (!ast)
+        return;
+
+    if (const String alias = ast->tryGetAlias(); !alias.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias '{}' is not allowed in {}", alias, clause);
+
+    for (const auto & child : ast->children)
+        checkNoAliasInKeyExpression(child.get(), clause);
+}
+
+
 void checkStorageSettingNames(const StorageFactory::Arguments & args)
 {
     if (!args.storage_def || !args.storage_def->settings)
@@ -238,6 +251,14 @@ StoragePtr StorageFactory::get(
                 check_feature(
                     "UNIQUE KEY clause",
                     [](StorageFeatures features) { return features.supports_unique_key; });
+
+            if (!isReplayedTableDefinition(mode, query, local_context))
+            {
+                checkNoAliasInKeyExpression(storage_def->partition_by, "PARTITION BY");
+                checkNoAliasInKeyExpression(storage_def->primary_key, "PRIMARY KEY");
+                checkNoAliasInKeyExpression(storage_def->order_by, "ORDER BY");
+                checkNoAliasInKeyExpression(storage_def->unique_key, "UNIQUE KEY");
+            }
 
             if (storage_def->ttl_table)
                 check_feature(

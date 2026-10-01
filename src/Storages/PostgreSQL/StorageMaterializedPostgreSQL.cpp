@@ -625,7 +625,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
         auto primary_key_ast = metadata_snapshot->getPrimaryKeyAST();
         if (!primary_key_ast)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializedPostgreSQL must have primary key");
-        storage->set(storage->order_by, KeyDescription::getSortingKeyASTFromPrimaryKey(*primary_key_ast));
+        storage->set(storage->order_by, primary_key_ast);
 
         constraints = metadata_snapshot->getConstraints();
     }
@@ -707,7 +707,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
                                 " You can enable it with the `enable_materialized_postgresql_table` setting");
 
         if (!args.storage_def->order_by && args.storage_def->primary_key)
-            args.storage_def->set(args.storage_def->order_by, KeyDescription::getSortingKeyASTFromPrimaryKey(*args.storage_def->primary_key));
+            args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
 
         if (!args.storage_def->order_by)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializedPostgreSQL needs order by key or primary key");

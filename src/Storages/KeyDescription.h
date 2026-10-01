@@ -102,10 +102,6 @@ struct KeyDescription
 
     ASTPtr getOriginalExpressionList() const;
 
-    /// A copy of the PRIMARY KEY without its top-level alias, to be used as the ORDER BY of a table
-    /// that declares only PRIMARY KEY: ORDER BY does not accept an alias.
-    static ASTPtr getSortingKeyASTFromPrimaryKey(const IAST & primary_key_ast);
-
     KeyDescription() = default;
 
     /// We need custom copy constructors because we don't want
