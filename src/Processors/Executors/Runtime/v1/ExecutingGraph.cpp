@@ -1,5 +1,5 @@
-#include <Processors/Executors/Runtime/ExecutingGraph.h>
-#include <Processors/Executors/Runtime/ExecutorTasks.h>
+#include <Processors/Executors/Runtime/v1/ExecutingGraph.h>
+#include <Processors/Executors/Runtime/v1/ExecutorTasks.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>

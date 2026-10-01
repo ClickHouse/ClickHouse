@@ -1,5 +1,5 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/v1/PipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -128,7 +128,7 @@ void PushingPipelineExecutor::finish()
 
     if (executor)
     {
-        [[maybe_unused]] auto res = executor->executeStep();
+        [[maybe_unused]] auto res = executor->executeStep(nullptr);
         chassert(!res);
     }
 }

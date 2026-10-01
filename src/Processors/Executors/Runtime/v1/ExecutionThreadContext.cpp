@@ -1,6 +1,6 @@
 #include <ctime>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Processors/Executors/Runtime/ExecutionThreadContext.h>
+#include <Processors/Executors/Runtime/v1/ExecutionThreadContext.h>
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>

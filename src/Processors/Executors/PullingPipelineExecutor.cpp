@@ -1,5 +1,5 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/v1/PipelineExecutor.h>
 #include <Processors/Formats/PullingOutputFormat.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>

@@ -1,5 +1,5 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/v1/PipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Poco/Event.h>
@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 struct CompletedPipelineExecutor::Data
 {
-    PipelineExecutorPtr executor;
+    ExecutorPtr executor;
     std::exception_ptr exception;
     std::atomic_bool is_finished = false;
     std::atomic_bool has_exception = false;

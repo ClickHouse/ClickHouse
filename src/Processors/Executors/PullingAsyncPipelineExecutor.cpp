@@ -1,5 +1,5 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/v1/PipelineExecutor.h>
 #include <Processors/Formats/LazyOutputFormat.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 struct PullingAsyncPipelineExecutor::Data
 {
-    PipelineExecutorPtr executor;
+    ExecutorPtr executor;
     std::exception_ptr exception;
     LazyOutputFormat * lazy_format = nullptr;
     std::atomic_bool is_finished = false;

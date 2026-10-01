@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/ExecutionThreadContext.h>
-#include <Processors/Executors/Runtime/PollingQueue.h>
-#include <Processors/Executors/Runtime/ThreadsQueue.h>
-#include <Processors/Executors/Runtime/TasksQueue.h>
+#include <Processors/Executors/Runtime/v1/ExecutionThreadContext.h>
+#include <Processors/Executors/Runtime/v1/PollingQueue.h>
+#include <Processors/Executors/Runtime/v1/ThreadsQueue.h>
+#include <Processors/Executors/Runtime/v1/TasksQueue.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ISlotControl.h>
 #include <Common/Logger.h>

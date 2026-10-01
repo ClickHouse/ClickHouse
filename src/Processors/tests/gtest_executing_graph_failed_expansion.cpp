@@ -4,7 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Executors/Runtime/ExecutingGraph.h>
+#include <Processors/Executors/Runtime/v1/ExecutingGraph.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Sinks/NullSink.h>
 

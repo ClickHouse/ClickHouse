@@ -1,5 +1,5 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/v1/PipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -76,7 +76,7 @@ private:
 
 struct PushingAsyncPipelineExecutor::Data
 {
-    PipelineExecutorPtr executor;
+    ExecutorPtr executor;
     std::exception_ptr exception;
     PushingAsyncSource * source = nullptr;
     std::atomic_bool is_finished = false;
