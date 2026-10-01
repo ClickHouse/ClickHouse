@@ -2,47 +2,33 @@
 #include <Common/Exception.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Functions/FunctionVariantAdaptor.h>
-#include <Functions/TypeMismatchStrictness.h>
-#include <Functions/castNestedResult.h>
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsBool variant_throw_on_type_mismatch;
+}
 
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int TYPE_MISMATCH;
+extern const int CANNOT_CONVERT_TYPE;
 extern const int NO_COMMON_TYPE;
-extern const int TIMEOUT_EXCEEDED;
-}
-
-/// `checkTimeLimit` throws for `KILL QUERY` and the 'throw' overflow mode and returns false under
-/// 'break'; a partially resolved alternative list is a wrong result type rather than a smaller one, so
-/// the false return becomes a throw too.
-static void checkQueryTimeLimit(const QueryStatusPtr & process_list_element, const String & function_name)
-{
-    if (process_list_element && !process_list_element->checkTimeLimit())
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", function_name);
-}
-
-/// Resolved from the executing thread rather than captured: an adaptor instance can be reused by a
-/// later query.
-static QueryStatusPtr tryGetProcessListElement()
-{
-    if (auto query_context = CurrentThread::tryGetQueryContext())
-        return query_context->getProcessListElementSafe();
-    return {};
 }
 
 ExecutableFunctionVariantAdaptor::ExecutableFunctionVariantAdaptor(
@@ -50,8 +36,12 @@ ExecutableFunctionVariantAdaptor::ExecutableFunctionVariantAdaptor(
     size_t variant_argument_index_)
     : function_overload_resolver(std::move(function_overload_resolver_))
     , variant_argument_index(variant_argument_index_)
-    , throw_on_type_mismatch(shouldThrowOnVariantTypeMismatch())
 {
+    if (CurrentThread::isInitialized())
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            throw_on_type_mismatch = query_context->getSettingsRef()[Setting::variant_throw_on_type_mismatch];
+    }
 }
 
 /// Strip LowCardinality wrapper from nested function result if present.
@@ -103,7 +93,8 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
-            if (!isTypeMismatchError(e.code()))
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
                 throw;
             return nullptr;
         }
@@ -207,10 +198,29 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         {
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
-                return castNestedResult(
-                    ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""},
-                    result_type,
-                    getName());
+            {
+                try
+                {
+                    return castColumn(
+                        ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type);
+                }
+                catch (const Exception & e)
+                {
+                    /// Only wrap type-conversion errors as LOGICAL_ERROR.
+                    /// Other exceptions (e.g. MEMORY_LIMIT_EXCEEDED) should propagate as-is.
+                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                        throw;
+
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
+                        getName(),
+                        removeNullable(result_type)->getName(),
+                        removeNullable(nested_result_type)->getName(),
+                        e.message());
+                }
+            }
 
             return makeNullableSafe(nested_result);
         }
@@ -218,7 +228,24 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         /// Result is Variant - use castColumn to handle the conversion.
         /// If nested result type is one of the variant types or a Variant type with a subset of resulting variants,
         /// castColumn will handle it correctly.
-        return castNestedResult(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type, getName());
+        try
+        {
+            return castColumn(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
+                getName(),
+                nested_result_type->getName(),
+                result_type->getName(),
+                e.message());
+        }
     }
 
     /// Second, check if this Variant column contains only 1 variant and NULLs.
@@ -309,7 +336,26 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
 
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!result_type->equals(*nested_result_type))
-                return castNestedResult(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type, getName());
+            {
+                try
+                {
+                    return castColumn(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                        throw;
+
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
+                        getName(),
+                        result_type->getName(),
+                        nested_result_type->getName(),
+                        e.message());
+                }
+            }
 
             return nested_result;
         }
@@ -320,12 +366,47 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         {
             nested_result = expandColumnByFilter(std::move(nested_result), filter);
             /// Cast to result type (handles case where nested Variant is a subset)
-            return castNestedResult(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type, getName());
+            try
+            {
+                return castColumn(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                    && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                    throw;
+
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
+                    getName(),
+                    nested_result_type->getName(),
+                    result_type->getName(),
+                    e.message());
+            }
         }
 
         /// If the result of nested function is not Variant, cast it to result Variant type and expand
         /// This handles both regular types and Nullable types automatically
-        ColumnPtr result = castNestedResult(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type, getName());
+        ColumnPtr result;
+        try
+        {
+            result = castColumn(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
+                getName(),
+                nested_result_type->getName(),
+                result_type->getName(),
+                e.message());
+        }
 
         /// Expand to match the original column size (filling filtered-out rows with NULLs)
         result = expandColumnByFilter(std::move(result), filter);
@@ -402,16 +483,11 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// Index num_variants is allocated for rows with NULL values, it doesn't have any result,
     /// we will insert NULL values in these rows.
 
-    const auto process_list_element = tryGetProcessListElement();
-    const auto function_name = getName();
-
     for (size_t i = 0; i < num_variants; ++i)
     {
         /// Skip variants that don't exist in the data.
         if (!variants[i].column)
             continue;
-
-        checkQueryTimeLimit(process_list_element, function_name);
 
         auto func_base = try_build(variants_arguments[i]);
         if (!func_base)
@@ -446,12 +522,31 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         {
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
-                variants_results[i] = castNestedResult(
-                    ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""},
-                    result_type,
-                    getName());
+            {
+                try
+                {
+                    variants_results[i] = castColumn(
+                        ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                        throw;
+
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
+                        getName(),
+                        result_type->getName(),
+                        nested_result_type->getName(),
+                        e.message());
+                }
+            }
             else
+            {
                 variants_results[i] = makeNullableSafe(nested_result);
+            }
         }
         /// Result is Variant - keep the individual result columns, we'll build Variant manually
         else
@@ -589,7 +684,24 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         const auto & variant_result_type = variants_result_types[i];
 
         /// Cast this result to the final Variant type
-        casted_results[i] = castNestedResult(ColumnWithTypeAndName{variants_results[i], variant_result_type, ""}, result_type, getName());
+        try
+        {
+            casted_results[i] = castColumn(ColumnWithTypeAndName{variants_results[i], variant_result_type, ""}, result_type);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
+                getName(),
+                variant_result_type->getName(),
+                result_type->getName(),
+                e.message());
+        }
     }
 
     /// Build result column row by row using selector and casted results
@@ -621,22 +733,27 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeDryRunImpl(
 
 FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
-    ColumnsWithTypeAndName arguments_with_type_,
-    size_t variant_argument_index_)
+    ColumnsWithTypeAndName arguments_with_type_)
     : function_overload_resolver(std::move(function_overload_resolver_))
-    , variant_argument_index(variant_argument_index_)
 {
     arguments.reserve(arguments_with_type_.size());
     for (const auto & arg : arguments_with_type_)
         arguments.push_back(arg.type);
 
-    if (variant_argument_index >= arguments.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Variant argument index {} is out of range for {} with {} arguments",
-            variant_argument_index,
-            function_overload_resolver->getName(),
-            arguments.size());
+    std::optional<size_t> first_variant_index;
+    for (size_t i = 0; i != arguments.size(); ++i)
+    {
+        if (isVariant(arguments[i]))
+        {
+            first_variant_index = i;
+            break;
+        }
+    }
+
+    if (!first_variant_index.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No variant argument found for {}", function_overload_resolver->getName());
+
+    variant_argument_index = *first_variant_index;
 
     /// Get the Variant argument type and its alternatives.
     const auto * variant_type = typeid_cast<const DataTypeVariant *>(arguments[variant_argument_index].get());
@@ -649,13 +766,8 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     DataTypes result_types;
     result_types.reserve(variant_alternatives.size());
 
-    const auto process_list_element = tryGetProcessListElement();
-    const auto function_name = function_overload_resolver->getName();
-
     for (const auto & alternative : variant_alternatives)
     {
-        checkQueryTimeLimit(process_list_element, function_name);
-
         /// Create arguments with this alternative instead of the Variant.
         /// Preserve original columns (especially ColumnConst) for non-Variant arguments.
         ColumnsWithTypeAndName alt_columns_with_type = arguments_with_type_;
@@ -678,7 +790,8 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
             /// If this combination of types is incompatible (e.g., Array(UInt32) vs UInt64),
             /// skip this alternative and treat it as if it doesn't participate in the result type.
             /// Only catch type-related errors - re-throw everything else.
-            if (!isTypeMismatchError(e.code()))
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
                 throw;
             /// Otherwise, skip this alternative
         }
@@ -691,7 +804,14 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     /// returns NULL rows (consistent with the per-row mismatch behaviour).
     if (result_types.empty())
     {
-        if (!shouldThrowOnVariantTypeMismatch())
+        bool throw_on_mismatch = true;
+        if (CurrentThread::isInitialized())
+        {
+            if (auto query_context = CurrentThread::tryGetQueryContext())
+                throw_on_mismatch = query_context->getSettingsRef()[Setting::variant_throw_on_type_mismatch];
+        }
+
+        if (!throw_on_mismatch)
         {
             return_type = makeNullable(std::make_shared<DataTypeNothing>());
             return;

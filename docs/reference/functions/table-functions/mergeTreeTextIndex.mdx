@@ -26,11 +26,9 @@ mergeTreeTextIndex(database, table, index_name)
 | `table`      | The table name to read text index from.    |
 | `index_name` | The text index to read from.               |
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table object with tokens and their posting list metadata.
-
-If the index uses the `keyValuePairs` tokenizer, each token is a `(key, value)` pair of a `Map` column, and the result has two additional columns `token_key` and `token_value` with the decoded parts of the token.
 
 ## Usage Example {#usage-example}
 

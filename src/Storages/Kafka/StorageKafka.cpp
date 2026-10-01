@@ -179,8 +179,7 @@ StorageKafka::StorageKafka(
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
     , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_topic_list].value, macros_info)))
-    , brokers(StorageKafkaUtils::validateBrokerList(
-          getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_broker_list].value, macros_info), context_))
+    , brokers(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_broker_list].value, macros_info))
     , group(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_group_name].value, macros_info))
     , client_id(
           (*kafka_settings)[KafkaSetting::kafka_client_id].value.empty()
@@ -214,7 +213,7 @@ StorageKafka::StorageKafka(
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
-        auto task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), log->name(), [this, i]{ threadFunc(i); });
+        auto task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), log->name(), [this, i]{ threadFunc(i); });
         task->deactivate();
         tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
     }
@@ -295,13 +294,6 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
 
 void StorageKafka::startup()
 {
-    if (getContext()->getMessageQueueDisableInsertion())
-    {
-        StreamingStorageRegistry::instance().registerTable(getStorageID());
-        LOG_INFO(log, "Streaming to views is disabled");
-        return;
-    }
-
     // Start the reader thread
     for (auto & task : tasks)
     {
@@ -514,7 +506,7 @@ KafkaConsumerPtr StorageKafka::createKafkaConsumer(size_t consumer_number)
 cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr)
 {
     KafkaConfigLoader::ConsumerConfigParams params{
-        {getContext()->getConfigRef(), collection_name, topics, log, getContext()},
+        {getContext()->getConfigRef(), collection_name, topics, log},
         brokers,
         group,
         num_consumers > 1,
@@ -527,7 +519,7 @@ cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_n
 cppkafka::Configuration StorageKafka::getProducerConfiguration()
 {
     KafkaConfigLoader::ProducerConfigParams params{
-        {getContext()->getConfigRef(), collection_name, topics, log, getContext()},
+        {getContext()->getConfigRef(), collection_name, topics, log},
         brokers,
         client_id};
     return KafkaConfigLoader::getProducerConfiguration(*this, params);
