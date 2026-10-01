@@ -8,6 +8,8 @@
 #include <Common/re2.h>
 #include <IO/WriteHelpers.h>
 
+#include <boost/algorithm/string/replace.hpp>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -23,6 +25,8 @@ void RemoteHostFilter::checkURL(const Poco::URI & uri) const
     {
         std::string masked_uri = uri.toString();
         maskURIUserinfo(masked_uri);
+        /// An S3 URI can carry its presigned query in the path, which `toString` renders as `%3F`.
+        boost::replace_all(masked_uri, "%3F", "?");
         maskPresignedURLParameters(masked_uri);
         throw Exception(ErrorCodes::UNACCEPTABLE_URL, "URL \"{}\" is not allowed in configuration file, "
                                                       "see <remote_url_allow_hosts>", masked_uri);
