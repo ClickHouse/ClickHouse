@@ -316,6 +316,8 @@ Default value: 0.
 
 This setting enables or disables the `SHOW NAMED COLLECTIONS SECRETS` privilege for the user, which allows the user to see the values stored in [named collections](/concepts/features/configuration/server-config/named-collections), for example in the [`system.named_collections`](/reference/system-tables/named_collections) table.
 
+It is also required to override a key that is stored in a named collection when the collection is used, for example `url` in `s3(my_collection, url = '...')`, a `SETTINGS` clause of a table engine, or a key in a dictionary source. Adding a key that is not stored in the collection does not require it.
+
 It is disabled by default: being able to manage named collections does not mean being able to read back the credentials that are already stored in them.
 
 This setting only has an effect together with `named_collection_control`, because with `named_collection_control` disabled all named collection privileges, including `SHOW NAMED COLLECTIONS SECRETS`, are revoked anyway.
