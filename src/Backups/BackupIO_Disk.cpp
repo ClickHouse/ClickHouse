@@ -13,7 +13,7 @@ namespace DB
 BackupReaderDisk::BackupReaderDisk(const DiskPtr & disk_, const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderDisk"))
     , disk(disk_)
-    , root_path(root_path_)
+    , root_path(pathFromString(root_path_))
     , data_source_description(disk->getDataSourceDescription())
 {
 }
@@ -22,17 +22,17 @@ BackupReaderDisk::~BackupReaderDisk() = default;
 
 bool BackupReaderDisk::fileExists(const String & file_name)
 {
-    return disk->existsFile(pathToGenericString(root_path / file_name));
+    return disk->existsFile(pathToGenericString(root_path / pathFromString(file_name)));
 }
 
 UInt64 BackupReaderDisk::getFileSize(const String & file_name)
 {
-    return disk->getFileSize(pathToGenericString(root_path / file_name));
+    return disk->getFileSize(pathToGenericString(root_path / pathFromString(file_name)));
 }
 
 std::unique_ptr<ReadBufferFromFileBase> BackupReaderDisk::readFile(const String & file_name)
 {
-    return disk->readFile(pathToGenericString(root_path / file_name), read_settings);
+    return disk->readFile(pathToGenericString(root_path / pathFromString(file_name)), read_settings);
 }
 
 void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
@@ -48,7 +48,7 @@ void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file
         {
             /// Use more optimal way.
             LOG_TRACE(log, "Copying file {} from disk {} to disk {}", path_in_backup, disk->getName(), destination_disk->getName());
-            disk->copyFile(pathToGenericString(root_path / path_in_backup), *destination_disk, destination_path, read_settings, write_settings);
+            disk->copyFile(pathToGenericString(root_path / pathFromString(path_in_backup)), *destination_disk, destination_path, read_settings, write_settings);
             return; /// copied!
         }
     }
@@ -61,7 +61,7 @@ void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file
 BackupWriterDisk::BackupWriterDisk(const DiskPtr & disk_, const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterDisk"))
     , disk(disk_)
-    , root_path(root_path_)
+    , root_path(pathFromString(root_path_))
     , data_source_description(disk->getDataSourceDescription())
 {
 }
@@ -70,29 +70,29 @@ BackupWriterDisk::~BackupWriterDisk() = default;
 
 bool BackupWriterDisk::fileExists(const String & file_name)
 {
-    return disk->existsFile(pathToGenericString(root_path / file_name));
+    return disk->existsFile(pathToGenericString(root_path / pathFromString(file_name)));
 }
 
 UInt64 BackupWriterDisk::getFileSize(const String & file_name)
 {
-    return disk->getFileSize(pathToGenericString(root_path / file_name));
+    return disk->getFileSize(pathToGenericString(root_path / pathFromString(file_name)));
 }
 
 std::unique_ptr<ReadBuffer> BackupWriterDisk::readFile(const String & file_name, size_t expected_file_size)
 {
-    return disk->readFile(pathToGenericString(root_path / file_name), read_settings.adjustBufferSize(expected_file_size));
+    return disk->readFile(pathToGenericString(root_path / pathFromString(file_name)), read_settings.adjustBufferSize(expected_file_size));
 }
 
 std::unique_ptr<WriteBuffer> BackupWriterDisk::writeFile(const String & file_name)
 {
-    auto file_path = root_path / file_name;
+    auto file_path = root_path / pathFromString(file_name);
     disk->createDirectories(pathToGenericString(file_path.parent_path()));
     return disk->writeFile(pathToGenericString(file_path), write_buffer_size, WriteMode::Rewrite, write_settings);
 }
 
 void BackupWriterDisk::removeFile(const String & file_name)
 {
-    disk->removeFileIfExists(pathToGenericString(root_path / file_name));
+    disk->removeFileIfExists(pathToGenericString(root_path / pathFromString(file_name)));
 }
 
 void BackupWriterDisk::removeEmptyDirectories()
@@ -121,7 +121,7 @@ void BackupWriterDisk::removeEmptyDirectoriesImpl(const fs::path & current_dir)
     }
 
     for (auto it = disk->iterateDirectory(pathToGenericString(current_dir)); it->isValid(); it->next())
-        removeEmptyDirectoriesImpl(current_dir / it->name());
+        removeEmptyDirectoriesImpl(current_dir / pathFromString(it->name()));
 
     if (disk->isDirectoryEmpty(pathToGenericString(current_dir)))
         disk->removeDirectory(pathToGenericString(current_dir));
@@ -141,7 +141,7 @@ void BackupWriterDisk::copyFileFromDisk(
         {
             /// Use more optimal way.
             LOG_TRACE(log, "Copying file {} from disk {} to disk {}", src_path, src_disk->getName(), disk->getName());
-            auto dest_file_path = root_path / path_in_backup;
+            auto dest_file_path = root_path / pathFromString(path_in_backup);
             disk->createDirectories(pathToGenericString(dest_file_path.parent_path()));
             src_disk->copyFile(src_path, *disk, pathToGenericString(dest_file_path), read_settings, write_settings);
             return; /// copied!
@@ -155,8 +155,8 @@ void BackupWriterDisk::copyFileFromDisk(
 void BackupWriterDisk::copyFile(const String & destination, const String & source, size_t /*size*/)
 {
     LOG_TRACE(log, "Copying file inside backup from {} to {} ", source, destination);
-    auto dest_file_path = root_path / destination;
-    auto src_file_path = root_path / source;
+    auto dest_file_path = root_path / pathFromString(destination);
+    auto src_file_path = root_path / pathFromString(source);
     disk->createDirectories(pathToGenericString(dest_file_path.parent_path()));
     disk->copyFile(pathToGenericString(src_file_path), *disk, pathToGenericString(dest_file_path), read_settings, write_settings);
 }
