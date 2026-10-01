@@ -723,14 +723,15 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     const auto & settings = condition_text.getContext()->getSettingsRef();
     const size_t max_postings_to_read = settings[Setting::text_index_like_max_postings_to_read];
     const size_t max_matched_tokens = settings[Setting::text_index_like_max_matched_tokens];
-    const auto key_ranges = analyzer->getPatternTokenKeyRanges();
-    const auto block_ranges = blocksMatchingTokenKeyRanges(sparse_index, key_ranges);
+    const auto block_ranges = blocksMatchingTokenKeyRanges(sparse_index, analyzer->getPatternTokenKeyRanges());
     const bool filter_tokens_by_literals = analyzer->canFilterTokensByLiterals();
 
     /// Reading a whole dictionary with more tokens than half the rows costs more than checking the column on several threads.
     /// As for the cap below, a dictionary of up to `max_matched_tokens` tokens is read. The last block may be short.
+    const bool reads_whole_dictionary = block_ranges.size() == 1 && block_ranges.front().first == 0
+        && block_ranges.front().second == sparse_index.size();
     const size_t min_num_tokens = (sparse_index.size() - 1) * params.dictionary_block_size;
-    if (!key_ranges && analyzer->hasPerTokenPatterns() && max_matched_tokens
+    if (reads_whole_dictionary && analyzer->hasPerTokenPatterns() && max_matched_tokens
         && min_num_tokens > std::max<size_t>(max_matched_tokens, state.part_info.getRowCount() / 2))
     {
         analyzer->bypassPatternQueries();
