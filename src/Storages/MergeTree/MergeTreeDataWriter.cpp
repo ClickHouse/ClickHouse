@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -917,7 +918,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             /// A non-physical column is never present in a written block, so `build` below would
             /// reject it. Every other absence stays an error.
             std::erase_if(statistics, [&](const auto & entry) { return !all_columns.hasPhysical(entry.first); });
-            statistics.build(block);
+            statistics.build(block, getStatisticsBuildOptions(*data_settings));
         }
     }
 

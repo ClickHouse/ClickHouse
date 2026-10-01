@@ -1961,6 +1961,7 @@ struct MutationContext
     /// the "Type mismatch when building statistics" logical error. `MergeTask` makes the same
     /// distinction through `statistics_to_build_by_part`.
     ColumnsStatistics statistics_to_build;
+    StatisticsBuildOptions statistics_build_options;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     NameSet files_to_skip;
     NameToNameVector files_to_rename;
@@ -2182,7 +2183,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns);
 
         if (!ctx->statistics_to_build.empty())
-            ctx->statistics_to_build.buildIfExists(cur_block);
+            ctx->statistics_to_build.buildIfExists(cur_block, ctx->statistics_build_options);
 
         /// TODO: move this calculation to DELETE FROM mutation
         if (ctx->count_lightweight_deleted_rows)
@@ -4241,6 +4242,7 @@ bool MutateTask::prepare()
     ctx->mrk_extension = ctx->source_part->index_granularity_info.mark_type.getFileExtension();
 
     const auto data_settings = ctx->data->getSettings();
+    ctx->statistics_build_options = getStatisticsBuildOptions(*data_settings);
     ctx->need_sync = data_settings->needSyncPart(ctx->source_part->rows_count, ctx->source_part->getBytesOnDisk());
     ctx->execute_ttl_type = ExecuteTTLType::NONE;
 

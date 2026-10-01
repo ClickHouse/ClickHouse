@@ -178,11 +178,10 @@ namespace ErrorCodes
 class BuildStatisticsTransform final : public ISimpleTransform
 {
 public:
-    BuildStatisticsTransform(
-        SharedHeader header,
-        ColumnsStatistics statistics_to_build_)
+    BuildStatisticsTransform(SharedHeader header, ColumnsStatistics statistics_to_build_, StatisticsBuildOptions build_options_ = {})
         : ISimpleTransform(header, header, false)
         , statistics_to_build(std::move(statistics_to_build_))
+        , build_options(build_options_)
     {
     }
 
@@ -192,13 +191,14 @@ public:
     {
         auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        statistics_to_build.buildIfExists(block);
+        statistics_to_build.buildIfExists(block, build_options);
     }
 
     const ColumnsStatistics & getStatistics() const { return statistics_to_build; }
 
 private:
     ColumnsStatistics statistics_to_build;
+    StatisticsBuildOptions build_options;
 };
 
 class BuildStatisticsStep : public ITransformingStep
@@ -962,6 +962,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
     else
     {
+        const auto statistics_build_options = getStatisticsBuildOptions(*merge_tree_settings);
+
         for (const auto & part : global_ctx->future_part->parts)
         {
             /// Skip empty parts,
@@ -998,7 +1000,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             {
                 auto it = part_statistics.find(column_name);
 
-                if (it == part_statistics.end() || !column_stats->structureEquals(*it->second))
+                /// Rebuild instead of merging when the part's statistics have a different structure,
+                /// or when they carry an assumed-all-distinct cardinality that neither the metadata
+                /// nor the current settings would produce anymore (e.g. the assumption setting was
+                /// disabled) — otherwise the stale assumption would survive every future merge.
+                if (it == part_statistics.end() || !column_stats->structureEquals(*it->second)
+                    || column_stats->hasStaleAssumedStatistics(*it->second, statistics_build_options))
                     global_ctx->statistics_to_build_by_part[part->name].emplace(column_name, column_stats->cloneEmpty());
                 else
                     column_stats->merge(it->second);
@@ -3347,8 +3354,7 @@ BuildStatisticsTransformPtr MergeTask::addBuildStatisticsStep(QueryPlan & plan, 
         return nullptr;
 
     auto transform = std::make_shared<BuildStatisticsTransform>(
-        plan.getCurrentHeader(),
-        std::move(statistics_to_build));
+        plan.getCurrentHeader(), std::move(statistics_to_build), getStatisticsBuildOptions(*global_ctx->data_settings));
 
     auto build_statistics_step = std::make_unique<BuildStatisticsStep>(plan.getCurrentHeader(), transform);
     plan.addStep(std::move(build_statistics_step));
