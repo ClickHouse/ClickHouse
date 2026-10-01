@@ -397,7 +397,8 @@ endif()
 # Probe every page of a large stack allocation (big frames, `alloca`, VLAs) so that it cannot jump over
 # the guard page into another mapping. Only functions with frames larger than a page pay for it.
 # Clang ignores it (and `-Werror` turns the warning into an error) on Darwin, WebAssembly and LoongArch.
-if (NOT OS_DARWIN AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X OR ARCH_RISCV64))
+# Note: it's not enabled on RISC-V64 due to bugs in LLVM.
+if (NOT OS_DARWIN AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X))
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-clash-protection")
 endif ()
 
