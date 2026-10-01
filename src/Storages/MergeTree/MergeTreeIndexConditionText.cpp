@@ -1275,6 +1275,9 @@ bool MergeTreeIndexConditionText::absentMapValueMatches(const String & function_
     if (value_type->isNullable())
         return false;
 
+    if (!isStringOrFixedString(value_type))
+        return false;
+
     const auto default_column = value_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
     const auto default_value = default_column->getDataAt(0);
 

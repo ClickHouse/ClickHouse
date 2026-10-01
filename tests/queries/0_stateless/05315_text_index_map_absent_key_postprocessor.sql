@@ -7,6 +7,7 @@ SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS tab_post;
 DROP TABLE IF EXISTS tab_post_lc;
 DROP TABLE IF EXISTS tab_phrase;
+DROP TABLE IF EXISTS tab_phrase_pos;
 DROP TABLE IF EXISTS tab_ngrams;
 DROP TABLE IF EXISTS tab_pre_lower;
 DROP TABLE IF EXISTS tab_pre_nul;
@@ -108,6 +109,35 @@ SETTINGS use_skip_indexes = 0;
 
 SELECT 'phrase control', groupArray(id) FROM (SELECT id FROM tab_phrase WHERE hasPhrase(m['k'], 'hello') ORDER BY id);
 
+CREATE TABLE tab_phrase_pos (id UInt32, m Map(String, FixedString(5)),
+    INDEX tix mapValues(m) TYPE text(tokenizer = splitByString(['abc']), support_phrase_search = 1,
+        postprocessor = if(match(mapValues(m), '^[a-z]+$'), mapValues(m), 'x')))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, allow_experimental_text_index_phrase_search = 1;
+INSERT INTO tab_phrase_pos VALUES (1, map()), (2, map('k', 'hello')), (3, map('k', '12345'));
+
+SELECT 'phrase pos', 'subcolumns=1',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_pos WHERE hasPhrase(m['k'], '00') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_pos WHERE hasPhrase(m['k'], '00', 'splitByString([\'abc\'])') ORDER BY id))
+SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT 'phrase pos', 'subcolumns=0',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_pos WHERE hasPhrase(m['k'], '00') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_pos WHERE hasPhrase(m['k'], '00', 'splitByString([\'abc\'])') ORDER BY id))
+SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'phrase pos', 'no hint',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_pos WHERE hasPhrase(m['k'], '00') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_pos WHERE hasPhrase(m['k'], '00', 'splitByString([\'abc\'])') ORDER BY id))
+SETTINGS query_plan_text_index_add_hint = 0;
+SELECT 'phrase pos', 'no direct read',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_pos WHERE hasPhrase(m['k'], '00') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_pos WHERE hasPhrase(m['k'], '00', 'splitByString([\'abc\'])') ORDER BY id))
+SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'phrase pos', 'no index',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_pos WHERE hasPhrase(m['k'], '00') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_pos WHERE hasPhrase(m['k'], '00', 'splitByString([\'abc\'])') ORDER BY id))
+SETTINGS use_skip_indexes = 0;
+
+SELECT 'phrase pos control', groupArray(id) FROM (SELECT id FROM tab_phrase_pos WHERE hasPhrase(m['k'], 'hello') ORDER BY id);
+
 -- No postprocessor: `ngrams(3)` keeps the default's zero bytes in its tokens.
 CREATE TABLE tab_ngrams (id UInt32, m Map(String, FixedString(6)), INDEX tix mapValues(m) TYPE text(tokenizer = ngrams(3)))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
@@ -183,6 +213,7 @@ FROM (EXPLAIN indexes = 1 SELECT id FROM tab_nullable WHERE hasAnyTokens(m['k'],
 DROP TABLE tab_post;
 DROP TABLE tab_post_lc;
 DROP TABLE tab_phrase;
+DROP TABLE tab_phrase_pos;
 DROP TABLE tab_ngrams;
 DROP TABLE tab_pre_lower;
 DROP TABLE tab_pre_nul;
