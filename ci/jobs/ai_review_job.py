@@ -1,10 +1,6 @@
 """
-AI-based automated PR code review job.
-
-Two backends are supported, selected by flag:
-
-  --codex    OpenAI Codex CLI       (auth: OPENAI_API_KEY from `/ci/llm/openai_api_key`)
-  --copilot  GitHub Copilot CLI     (auth: gh robot token from `/ci/robot-ch-test-poll-copilot`)
+AI-based automated PR code review job, run with the OpenAI Codex CLI (auth:
+`OPENAI_API_KEY` from `/ci/llm/openai_api_key`).
 
 A run has three stages, and only the middle one involves the agent:
 
@@ -14,12 +10,10 @@ A run has three stages, and only the middle one involves the agent:
    (`ai_review/loom.py`) when Loom is configured for the repository.
 2. Review. The agent reads the context and the checkout, may query Loom through
    `python3 -m ci.jobs.scripts.ai_review.loom`, and writes its summary, inline
-   comments and thread actions as files into `OUTPUT_DIR`. The Codex agent runs
-   as a user of its own in a copy of the tree, with no GitHub token and no
-   route to the runner's cloud credentials (`ai_review/sandbox.py`); the job
-   mints a fresh token to publish. The Copilot CLI needs its robot login for its own
-   model access, so a Copilot agent could reach `gh` and relies on the prompt
-   not to post. An attempt is retried when the agent fails or its output is
+   comments and thread actions as files into `OUTPUT_DIR`. The agent runs as a
+   user of its own in a copy of the tree, with no GitHub token and no route to
+   the runner's cloud credentials (`ai_review/sandbox.py`); the job mints a
+   fresh token to publish. An attempt is retried when the agent fails or its output is
    incomplete; nothing has been posted at that point, so a retry cannot
    duplicate comments.
 3. Publish. The job validates the inline comments against the diff and the
@@ -31,11 +25,9 @@ A run has three stages, and only the middle one involves the agent:
 
 import json
 import os
-import random
 import shlex
 import shutil
 import sys
-import tempfile
 import time
 import traceback
 import urllib.parse
@@ -68,18 +60,6 @@ MAX_ATTEMPTS = 3
 # started. A hung agent otherwise holds the runner until the job timeout.
 ATTEMPT_TIMEOUT_SECONDS = 50 * 60
 NO_NEW_ATTEMPT_AFTER_SECONDS = 100 * 60
-
-# Linux limits a single command-line argument to 128 KiB. The Copilot CLI takes
-# the prompt as an argument; above this size it is pointed at the prompt file.
-_MAX_PROMPT_ARGUMENT = 120_000
-
-# Robot gh tokens the Copilot CLI authenticates against GitHub with. Each
-# attempt picks one in a randomised rotation so a single robot's rate limit
-# or token issue does not fail every attempt.
-ROBOT_NAMES = [
-    "/ci/robot-ch-test-poll-copilot",
-    "/ci/robot-ch-test-poll-1-copilot",
-]
 
 # OpenAI API key for the Codex CLI, written into `$CODEX_HOME/auth.json`
 # via `codex login --with-api-key`.
@@ -122,37 +102,7 @@ def _agent_env(loom_config, extra=None):
     return env
 
 
-def _run_copilot_once(loom_config, robot_name, model, effort):
-    """One attempt: `gh auth login` with a robot token (the Copilot CLI's own
-    authentication) + `copilot`."""
-    with tempfile.TemporaryDirectory() as gh_config_dir:
-        print(f"Using robot: {robot_name}")
-        Shell.check(
-            "gh auth login --with-token", stdin_str=_ssm(robot_name), strict=True, verbose=False,
-            env={**os.environ, "GH_CONFIG_DIR": gh_config_dir},
-        )
-        with open(PROMPT_FILE, "r", encoding="utf-8") as f:
-            size = len(f.read().encode())
-        prompt_arg = (
-            f'"$(cat {shlex.quote(PROMPT_FILE)})"' if size <= _MAX_PROMPT_ARGUMENT
-            else shlex.quote(f"Read {PROMPT_FILE} and follow the instructions in it exactly.")
-        )
-        # --allow-all: enable all permissions; --allow-all-tools alone hits
-        #   a CLI bug where compound shell commands are denied and the gate
-        #   then tries to escalate to a human (github/copilot-cli#176, #2971)
-        # --no-ask-user: disable ask_user so the agent cannot try to prompt
-        #   for permission in a non-interactive session
-        # --add-dir .: restrict file access to repo root (default, but explicit)
-        # </dev/null: ensure stdin is definitively non-interactive
-        return Shell.run(
-            f"copilot -p {prompt_arg} --allow-all --no-ask-user --add-dir . "
-            f"--model {shlex.quote(model)} --effort {shlex.quote(effort)} < /dev/null",
-            timeout=ATTEMPT_TIMEOUT_SECONDS,
-            env=_agent_env(loom_config, {"GH_CONFIG_DIR": gh_config_dir}),
-        )
-
-
-def _run_codex_once(loom_config, _robot_name, model, effort):
+def _run_codex_once(loom_config):
     """One attempt: `codex login` + `codex exec`, confined (see `sandbox.py`).
 
     Codex stores credentials in `$CODEX_HOME/auth.json` and does NOT consult
@@ -199,7 +149,7 @@ def _run_codex_once(loom_config, _robot_name, model, effort):
         # `-` reads the prompt from stdin (redirected by the job's shell),
         #   which has no argument size limit.
         command = [
-            codex, "exec", "-m", model, "-c", f"model_reasoning_effort={effort}",
+            codex, "exec", "-m", MODEL, "-c", f"model_reasoning_effort={REASONING_EFFORT}",
             "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
             "-c", "approval_policy=never", "--color", "never", "--skip-git-repo-check", "-",
         ]
@@ -235,24 +185,22 @@ def _outputs_problem():
     return ""
 
 
-def _run_agent(run_once, agent_name, loom_config):
+def _run_agent(loom_config):
     """Run the agent until it produces publishable output. Returns the model
     that produced it. Raises otherwise."""
     started = time.time()
     last_error = None
-    robots = ROBOT_NAMES.copy()
-    random.shuffle(robots)
     for attempt in range(1, MAX_ATTEMPTS + 1):
         if attempt > 1 and time.time() - started > NO_NEW_ATTEMPT_AFTER_SECONDS:
             print(f"Not starting attempt {attempt}: {int(time.time() - started)}s already spent")
             break
         _reset_output_dir()
-        print(f"{agent_name} attempt {attempt}/{MAX_ATTEMPTS} with {MODEL} ({REASONING_EFFORT})")
+        print(f"Codex attempt {attempt}/{MAX_ATTEMPTS} with {MODEL} ({REASONING_EFFORT})")
         try:
-            exit_code = run_once(loom_config, robots[(attempt - 1) % len(robots)], MODEL, REASONING_EFFORT)
+            exit_code = _run_codex_once(loom_config)
             problem = _outputs_problem()
             if exit_code != 0 and problem:
-                last_error = f"{agent_name} exited with code {exit_code}: {problem}"
+                last_error = f"Codex exited with code {exit_code}: {problem}"
             elif problem:
                 last_error = problem
             else:
@@ -260,17 +208,17 @@ def _run_agent(run_once, agent_name, loom_config):
                     # All outputs are there and the summary is written last,
                     # so the run finished; a non-zero exit after that is a CLI
                     # shutdown issue.
-                    print(f"WARNING: {agent_name} exited with code {exit_code} after writing complete output")
+                    print(f"WARNING: Codex exited with code {exit_code} after writing complete output")
                 return MODEL
         except Exception as e:  # noqa: BLE001 — broad catch: any exception is retryable here
             last_error = f"{type(e).__name__}: {e}"
             traceback.print_exc()
-        print(f"WARNING: {agent_name} attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
+        print(f"WARNING: Codex attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
         if attempt < MAX_ATTEMPTS:
             delay = min(2 ** attempt, 60)
-            print(f"Retrying {agent_name} in {delay}s ...")
+            print(f"Retrying Codex in {delay}s ...")
             time.sleep(delay)
-    raise RuntimeError(f"{agent_name} review failed: {last_error}")
+    raise RuntimeError(f"Codex review failed: {last_error}")
 
 
 def _post_summary(summary, head_sha, model):
@@ -289,7 +237,7 @@ def _post_summary(summary, head_sha, model):
     )
 
 
-def review(run_once, agent_name):
+def review():
     info = Info()
     if not info.pr_number:
         print("Not a PR, skipping")
@@ -324,18 +272,15 @@ def review(run_once, agent_name):
     with open(PROMPT_FILE, "w", encoding="utf-8") as f:
         f.write(text)
 
-    if run_once is _run_codex_once:
-        Shell.check("codex --version", verbose=True)
-        # From here until the agent is done, the job holds no GitHub token. It
-        # is minted again whatever happens: publishing needs it, and so does
-        # the runner, which posts the commit status after the job command.
-        try:
-            sandbox.prepare()
-            model = _run_agent(run_once, agent_name, loom_config)
-        finally:
-            sandbox.reauthenticate()
-    else:
-        model = _run_agent(run_once, agent_name, loom_config)
+    Shell.check("codex --version", verbose=True)
+    # From here until the agent is done, the job holds no GitHub token. It is
+    # minted again whatever happens: publishing needs it, and so does the
+    # runner, which posts the commit status after the job command.
+    try:
+        sandbox.prepare()
+        model = _run_agent(loom_config)
+    finally:
+        sandbox.reauthenticate()
 
     # Re-read the threads: the author may have replied or resolved while the
     # agent ran, and thread actions are checked against the current state.
@@ -373,19 +318,11 @@ def review(run_once, agent_name):
 
 
 if __name__ == "__main__":
-    if "--codex" in sys.argv:
-        run_once, agent_name = _run_codex_once, "Codex"
-    elif "--copilot" in sys.argv:
-        run_once, agent_name = _run_copilot_once, "Copilot"
-    else:
-        print("Usage: copilot_review_job.py --codex | --copilot")
-        sys.exit(1)
-
     status = Result.Status.OK
     info = ""
     files = []
     try:
-        files = review(run_once, agent_name)
+        files = review()
     except Exception as e:
         info = f"ERROR: {e}"
         print(info)
