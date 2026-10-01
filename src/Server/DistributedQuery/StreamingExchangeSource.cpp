@@ -15,7 +15,13 @@
 #include <Common/PODArray.h>
 #include <Common/ErrnoException.h>
 #include <cstring>
+#if defined(OS_WINDOWS)
+/// Declares `WSAPOLLFD`, the `POLL*` flags and `WSAPoll`. There is no <poll.h>.
+#include <Poco/UnWindows.h>
+#include <winsock2.h>
+#else
 #include <poll.h>
+#endif
 #include <base/scope_guard.h>
 #include <base/types.h>
 
@@ -178,6 +184,23 @@ bool StreamingExchangeSource::waitForSocket(Int16 events, const Stopwatch & hand
                 fmt::format("{} timed out after {} s on exchange stream {}", what, StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS, stream_name),
                 fmt::format("{}:{}", host, port));
 
+#if defined(OS_WINDOWS)
+        /// On Windows a `WakeupFd` is a loopback socket pair (see `WakeupFd.h`), so all three are
+        /// sockets and `WSAPoll` can wait on them together. The `int` it hands out is
+        /// `Socket::toDescriptor` of the handle, undone here. `WSAPoll` has no documented
+        /// counterpart of `poll` skipping a negative fd, so the cancellation entry is not passed
+        /// at all when there is no query state.
+        const auto to_socket = [](int fd) { return static_cast<SOCKET>(static_cast<unsigned int>(fd)); };
+        WSAPOLLFD fds[] = {
+            {.fd = socket->sockfd(), .events = events, .revents = 0},
+            {.fd = to_socket(output_update_wakeup.fd()), .events = POLLIN, .revents = 0},
+            {.fd = cancellation ? to_socket(cancellation->getCancelledFd()) : INVALID_SOCKET, .events = POLLIN, .revents = 0},
+        };
+        const ULONG fds_count = cancellation ? 3 : 2;
+        if (WSAPoll(fds, fds_count, static_cast<INT>(remaining_ms)) == SOCKET_ERROR)
+            throw Exception(ErrorCodes::CANNOT_POLL, "Cannot poll the socket of exchange stream {} (WSAPoll), error code: {}",
+                stream_name, WSAGetLastError());
+#else
         pollfd fds[] = {
             {.fd = socket->sockfd(), .events = events, .revents = 0},
             {.fd = output_update_wakeup.fd(), .events = POLLIN, .revents = 0},
@@ -190,6 +213,7 @@ bool StreamingExchangeSource::waitForSocket(Int16 events, const Stopwatch & hand
                 continue;
             throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot poll the socket of exchange stream {}", stream_name);
         }
+#endif
         if (fds[1].revents)
             output_update_wakeup.drain();
         /// A cancel wins over a socket that became ready at the same time.
