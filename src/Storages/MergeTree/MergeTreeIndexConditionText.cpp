@@ -1484,7 +1484,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 search_tokens = postprocessor->processTokens(std::move(search_tokens));
         }
 
-        /// Never prunes, but keeps the query the plan rewrites the predicate with.
         const bool keeps_absent_key_rows = is_map_element_value && absentMapValueMatches(function_name, search_tokens);
         const auto read_mode = keeps_absent_key_rows ? TextIndexDirectReadMode::None : direct_read_mode;
 
