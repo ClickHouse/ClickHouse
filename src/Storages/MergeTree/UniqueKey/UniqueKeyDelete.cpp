@@ -250,6 +250,9 @@ void StorageMergeTree::deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr qu
     if (!hasUniqueKey())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "deleteByUniqueKey called on table {} without UNIQUE KEY", getStorageID().getNameForLogs());
 
+    /// Refused before pruning, so a DELETE with no partition to visit is refused too.
+    throwIfInsideTransaction(query_context->getCurrentTransaction(), "DELETE");
+
     const auto & query = query_ptr->as<ASTDeleteQuery &>();
     const DeleteStatement statement{
         .storage = *this,

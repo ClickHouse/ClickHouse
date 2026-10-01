@@ -80,6 +80,9 @@ public:
         const PartitionWriteGuard & guard, const MergeTreeTransactionPtr & txn, const StagedWrite & staged) = 0;
 };
 
+/// Throws SUPPORT_IS_DISABLED if `current` is set: a unique-key write commits under its own transaction.
+void throwIfInsideTransaction(const MergeTreeTransactionPtr & current, std::string_view operation);
+
 /// Begin the transaction a unique-key write commits under, refusing the query's explicit one.
 MergeTreeTransactionHolder beginUniqueKeyTransaction(const ContextPtr & context, std::string_view operation);
 

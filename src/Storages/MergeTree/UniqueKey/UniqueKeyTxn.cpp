@@ -160,12 +160,17 @@ CSN creationCSN(const IMergeTreeDataPart & part)
 
 }
 
-MergeTreeTransactionHolder beginUniqueKeyTransaction(
-    const MergeTreeTransactionPtr & current, std::string_view operation, const std::vector<MergeTreeDataPartPtr> & source_parts)
+void throwIfInsideTransaction(const MergeTreeTransactionPtr & current, std::string_view operation)
 {
     if (current)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "{} on a UNIQUE KEY table is not supported inside an explicit transaction", operation);
+}
+
+MergeTreeTransactionHolder beginUniqueKeyTransaction(
+    const MergeTreeTransactionPtr & current, std::string_view operation, const std::vector<MergeTreeDataPartPtr> & source_parts)
+{
+    throwIfInsideTransaction(current, operation);
 
     /// A commit stamps its parts' csn before `latest_snapshot` reaches it, and the scheduler takes a part
     /// as soon as its creation resolves. A snapshot below that csn misses the source and still sees the part

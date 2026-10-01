@@ -28,6 +28,18 @@ SELECT 'survivors_unchanged' AS step, id FROM uk_guard ORDER BY id;  -- 1,3,5
 
 DROP TABLE uk_guard;
 
+-- A DELETE with no partition to visit is refused too.
+DROP TABLE IF EXISTS uk_guard_empty;
+
+CREATE TABLE uk_guard_empty (id UInt64, v String)
+ENGINE = MergeTree
+UNIQUE KEY (id)
+ORDER BY (id);
+
+DELETE FROM uk_guard_empty WHERE id = 1 SETTINGS implicit_transaction = 1; -- { serverError SUPPORT_IS_DISABLED, NOT_IMPLEMENTED }
+
+DROP TABLE uk_guard_empty;
+
 -- 2. Alias: red if the DELETE through the alias is refused (SUPPORT_IS_DISABLED) or leaves row 2.
 DROP TABLE IF EXISTS uk_alias;
 DROP TABLE IF EXISTS uk_alias_target;
