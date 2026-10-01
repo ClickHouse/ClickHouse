@@ -170,6 +170,7 @@ namespace FailPoints
     extern const char atomic_populate_pause_before_subscription[];
     extern const char atomic_populate_pause_after_view_publication[];
     extern const char atomic_populate_pause_before_source_guard[];
+    extern const char atomic_populate_pause_before_population[];
 }
 
 namespace ErrorCodes
@@ -3556,6 +3557,11 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
     populate_context->setPinnedStorageSnapshot(source_uuid, snapshot);
     if (populate_context->hasQueryContext())
         populate_context->getQueryContext()->setPinnedStorageSnapshot(source_uuid, snapshot);
+
+    /// Models a slow start of the population. The view is already subscribed, so a test inserts into the
+    /// source here and checks that the row reaches the view once - live, not again through the population
+    /// (see 05315_atomic_populate_materialized_view_trivial_count).
+    FailPointInjection::pauseFailPoint(FailPoints::atomic_populate_pause_before_population);
 
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};

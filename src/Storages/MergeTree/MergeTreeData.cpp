@@ -14510,6 +14510,13 @@ bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & 
 {
     const auto & settings = query_context->getSettingsRef();
 
+    /// A pinned snapshot (atomic `CREATE MATERIALIZED VIEW ... POPULATE`) must observe the parts captured at
+    /// subscription time, while `totalRows` counts the currently active parts.
+    if (query_context->getPinnedStorageSnapshot(getStorageID().uuid))
+        return false;
+    if (query_context->hasQueryContext() && query_context->getQueryContext()->getPinnedStorageSnapshot(getStorageID().uuid))
+        return false;
+
     auto supports_trivial_count = [&]()
     {
         /// Fallback for callers that don't provide a storage snapshot (e.g. StorageMerge).
