@@ -5275,7 +5275,15 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
 
         if (use_thread_pool)
         {
-            ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
+            /// Not `thread_pool`: merging large states (e.g. `uniqExact`) inside `merge_bucket` schedules jobs on
+            /// `thread_pool` and waits for them. If `merge_bucket` ran on `thread_pool` too, it could occupy all its
+            /// threads and all its queue slots, and the nested jobs could never be scheduled.
+            ThreadPool merge_bucket_pool(
+                CurrentMetrics::AggregatorThreads,
+                CurrentMetrics::AggregatorThreadsActive,
+                CurrentMetrics::AggregatorThreadsScheduled,
+                params.max_threads);
+            ThreadPoolCallbackRunnerLocal<void> runner(merge_bucket_pool, ThreadName::AGGREGATOR_POOL);
             try
             {
                 for (size_t i = 0; i < params.max_threads; ++i)
