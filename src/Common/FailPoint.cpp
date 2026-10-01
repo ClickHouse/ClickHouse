@@ -86,13 +86,7 @@ static struct InitFiu
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     PAUSEABLE_ONCE(s3_read_before_get_object) \
-    PAUSEABLE_ONCE(azure_read_before_download) \
-    PAUSEABLE_ONCE(azure_read_before_read) \
-    PAUSEABLE_ONCE(azure_read_big_at_before_download) \
-    PAUSEABLE_ONCE(azure_read_big_at_before_read) \
-    PAUSEABLE_ONCE(hdfs_read_before_open) \
-    PAUSEABLE_ONCE(hdfs_read_before_pread) \
-    PAUSEABLE_ONCE(hdfs_read_before_read) \
+    PAUSEABLE_ONCE(s3_read_before_retry) \
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(file_read_inject_version_token_mismatch) \
     REGULAR(azure_inject_forbidden_response) \
@@ -159,11 +153,8 @@ static struct InitFiu
     REGULAR(dummy_failpoint) \
     ONCE(query_status_cancel_with_injected_exception) \
     ONCE(system_log_pipeline_fail_after_smt_restore) \
-    PAUSEABLE(scalar_subquery_before_cardinality_check) \
-    PAUSEABLE_ONCE(creating_sets_transform_after_first_chunk) \
     REGULAR(prefetched_reader_pool_failpoint) \
-    PAUSEABLE_ONCE(read_buffer_from_http_before_request) \
-    PAUSEABLE_ONCE(merge_tree_read_pool_pause_after_cancel) \
+    PAUSEABLE_ONCE(prefetch_refiner_after_refine) \
     PAUSEABLE_ONCE(merge_tree_reader_pause_before_report_broken) \
     PAUSEABLE_ONCE(merge_tree_sink_after_commit_part) \
     REGULAR(taskstats_counters_reset_throw) \

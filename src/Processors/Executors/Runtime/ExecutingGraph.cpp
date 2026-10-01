@@ -237,11 +237,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipelineImpl(
         if (cancel_reason != IProcessor::CancelReason::NotCancelled)
         {
             for (auto & processor : update.to_add)
-            {
-                if (cancel_reason == IProcessor::CancelReason::PartialResult)
-                    processor->onPartialResult();
                 processor->cancel(cancel_reason);
-            }
 
             cancel_reason_if_cancelled = cancel_reason;
         }
@@ -601,10 +597,6 @@ void ExecutingGraph::cancel(IProcessor::CancelReason reason)
             cancel_reason = reason;
         else if (cancel_reason == IProcessor::CancelReason::PartialResult && reason != IProcessor::CancelReason::PartialResult)
             cancel_reason = reason;
-
-        if (cancel_reason == IProcessor::CancelReason::PartialResult)
-            for (auto & processor : *processors)
-                processor->onPartialResult();
 
         for (auto & processor : *processors)
         {

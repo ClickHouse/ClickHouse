@@ -16,8 +16,8 @@ using namespace DB;
 
 namespace DB::ErrorCodes
 {
+    extern const int FAULT_INJECTED;
     extern const int QUERY_WAS_CANCELLED;
-    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int TIMEOUT_EXCEEDED;
 }
 
@@ -47,11 +47,11 @@ QueryStatusPtr makeQueryStatus(const String & query_id)
 
 /// Stands in for the reason the cancelling caller's exception carries. Every thread of the query
 /// must still see it, so it doubles as the positive control of each assertion below.
-constexpr std::string_view cancellation_reason = "cancelled by the client";
+constexpr std::string_view cancellation_reason = "custom cancellation reason";
 
 std::exception_ptr makeCancellationException()
 {
-    return std::make_exception_ptr(Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "{}", cancellation_reason));
+    return std::make_exception_ptr(Exception(ErrorCodes::FAULT_INJECTED, "{}", cancellation_reason));
 }
 
 /// Mimics the context `MergeTreeReaderCompact` appends to whatever it catches.
@@ -86,7 +86,7 @@ TEST(QueryStatusCancellationException, EachThrowIfKilledCallerGetsItsOwnExceptio
             previous_exception = current_exception;
             const std::string message = e.message();
 
-            EXPECT_EQ(e.code(), ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT);
+            EXPECT_EQ(e.code(), ErrorCodes::FAULT_INJECTED);
             EXPECT_NE(message.find(cancellation_reason), std::string::npos)
                 << "caller " << caller << " lost the cancellation reason: " << message;
 

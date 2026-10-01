@@ -113,7 +113,6 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
     bool use_external_buffer,
     bool /* restrict_seek */) const
 {
-    read_settings.read_cancellation.checkIfNotCancelled();
     initializeHDFSFS();
     auto path = extractObjectKeyFromURL(object);
 

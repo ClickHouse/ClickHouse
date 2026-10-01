@@ -1283,10 +1283,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             CompletedPipelineExecutor executor(pipeline);
 
-            /// Runtime metrics from `EXPLAIN ANALYZE` are meaningful only after the inner query completes.
             if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
                 executor.setCancelCallback(
-                    ExecutorCancellation::cancelQuery(std::move(cancel_callback), query_context),
+                    std::move(cancel_callback),
                     query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
             auto outer_thread_group = CurrentThread::getGroup();

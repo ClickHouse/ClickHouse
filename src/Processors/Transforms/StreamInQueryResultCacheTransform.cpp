@@ -3,12 +3,6 @@
 namespace DB
 {
 
-void StreamInQueryResultCacheTransform::onPartialResult() noexcept
-{
-    std::lock_guard lock(cache_publication_mutex);
-    partial_result = true;
-}
-
 StreamInQueryResultCacheTransform::StreamInQueryResultCacheTransform(
     const Block & header_,
     std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer_,
@@ -27,8 +21,7 @@ void StreamInQueryResultCacheTransform::transform(Chunk & chunk)
 
 void StreamInQueryResultCacheTransform::finalizeWriteInQueryResultCache()
 {
-    std::lock_guard lock(cache_publication_mutex);
-    if (!isCancelled() && !partial_result)
+    if (!isCancelled())
         query_result_cache_writer->finalizeWrite();
 }
 

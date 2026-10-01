@@ -452,7 +452,7 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
     }
 
     /// Pause after registering the part in the query transaction, with the parts lock released,
-    /// so a native cancellation can exercise rollback of the persisted version metadata.
+    /// so timeout and `KILL QUERY` can exercise rollback of the persisted version metadata.
     if (context->getCurrentTransaction())
         FailPointInjection::pauseFailPoint(FailPoints::merge_tree_sink_after_commit_part);
 

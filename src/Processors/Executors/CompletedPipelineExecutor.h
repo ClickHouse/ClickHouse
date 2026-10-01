@@ -1,5 +1,4 @@
 #pragma once
-#include <Processors/Executors/ExecutorCancellation.h>
 
 #include <functional>
 #include <memory>
@@ -19,10 +18,9 @@ public:
     explicit CompletedPipelineExecutor(QueryPipeline & pipeline_);
     ~CompletedPipelineExecutor();
 
-    /// Check before starting execution and each interactive_timeout_ms (if it is not 0).
-    /// A true result cancels execution. Use an explicit policy to finish a partial result or cancel the query.
-    void setCancelCallback(std::function<bool()> callback, size_t interactive_timeout_ms_);
-    void setCancelCallback(ExecutorCancellation callback, size_t interactive_timeout_ms_);
+    /// This callback will be called each interactive_timeout_ms (if it is not 0).
+    /// If returns true, query would be cancelled.
+    void setCancelCallback(std::function<bool()> is_cancelled, size_t interactive_timeout_ms_);
 
     void initialize();
     void execute();
@@ -32,7 +30,7 @@ public:
 
 private:
     QueryPipeline & pipeline;
-    ExecutorCancellation cancel_callback;
+    std::function<bool()> is_cancelled_callback;
     size_t interactive_timeout_ms = 0;
     std::unique_ptr<Data> data;
 };

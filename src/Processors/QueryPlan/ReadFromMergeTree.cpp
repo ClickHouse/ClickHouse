@@ -542,8 +542,6 @@ ReadFromMergeTree::ReadFromMergeTree(
     , is_parallel_reading_from_replicas(enable_parallel_reading_)
     , number_of_current_replica(number_of_current_replica_)
 {
-    reader_settings.read_settings.read_cancellation = ReadCancellationToken::create();
-
     if (is_parallel_reading_from_replicas)
     {
         /// Taken exactly as given: a read marked by `enableParallelReadingFromReplicasForSerialization`
@@ -704,8 +702,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             lazy_materializing_rows,
             &storage_snapshot->metadata->getColumns());
 
-        auto source = std::make_shared<MergeTreeSource>(
-            std::move(processor), data.getLogName(), MergeTreeSource::PartialResultMode::StopReading);
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
     }
 
@@ -823,8 +820,7 @@ Pipe ReadFromMergeTree::readFromPool(
             lazy_materializing_rows,
             &storage_snapshot->metadata->getColumns());
 
-        auto source = std::make_shared<MergeTreeSource>(
-            std::move(processor), data.getLogName(), MergeTreeSource::PartialResultMode::StopReading);
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
         if (i == 0)
             source->addTotalRowsApprox(total_rows);
@@ -1027,8 +1023,7 @@ Pipe ReadFromMergeTree::readInOrder(
                 processor->setVirtualRowConversions(virtual_row_conversion, pk_header, read_type == ReadType::InReverseOrder);
         }
 
-        auto source = std::make_shared<MergeTreeSource>(
-            std::move(processor), data.getLogName(), MergeTreeSource::PartialResultMode::StopReading);
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         if (set_total_rows_approx)
             source->addTotalRowsApprox(total_rows);
 

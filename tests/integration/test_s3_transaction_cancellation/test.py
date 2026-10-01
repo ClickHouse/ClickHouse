@@ -1,4 +1,3 @@
-import signal
 import uuid
 
 import pytest
@@ -35,11 +34,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("cancel_method", ["cancel-packet", "disconnect"])
-@pytest.mark.parametrize("partial_result_on_first_cancel", [0, 1])
-def test_native_insert_cancellation_rolls_back_s3_part(
-    started_cluster, cancel_method, partial_result_on_first_cancel
-):
+@pytest.mark.parametrize("cancel_method", ["timeout", "kill_query"])
+def test_insert_cancellation_rolls_back_s3_part(started_cluster, cancel_method):
     table = f"txn_cancel_{uuid.uuid4().hex}"
     query_id = uuid.uuid4().hex
     part_failpoint = "merge_tree_sink_after_commit_part"
@@ -60,11 +56,15 @@ def test_native_insert_cancellation_rolls_back_s3_part(
         # Register a persisted part in an uncommitted transaction before cancelling.
         node.query(f"SYSTEM ENABLE FAILPOINT {part_failpoint}")
         enabled_failpoints.append(part_failpoint)
+        timeout_settings = (
+            ", max_execution_time=1, timeout_overflow_mode='throw'"
+            if cancel_method == "timeout"
+            else ""
+        )
         request = node.get_query_request(
             f"INSERT INTO {table} SELECT 42 SETTINGS implicit_transaction=1, "
-            "max_threads=1, max_insert_threads=1, "
-            f"partial_result_on_first_cancel={partial_result_on_first_cancel}, "
-            "apply_mutations_on_fly=0",
+            "max_threads=1, max_insert_threads=1, apply_mutations_on_fly=0"
+            f"{timeout_settings}",
             query_id=query_id,
             timeout=180,
         )
@@ -79,11 +79,9 @@ def test_native_insert_cancellation_rolls_back_s3_part(
             == "1\n"
         )
 
-        # The handler records cancellation while the pipeline still owns the part.
-        if cancel_method == "cancel-packet":
-            request.process.send_signal(signal.SIGINT)
-        else:
-            request.process.kill()
+        # The query is cancelled while its pipeline still owns the part.
+        if cancel_method == "kill_query":
+            node.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
         assert_eq_with_retry(
             node,
             f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
@@ -105,9 +103,11 @@ def test_native_insert_cancellation_rolls_back_s3_part(
         node.query(f"SYSTEM NOTIFY FAILPOINT {read_failpoint}")
 
         answer, error = request.get_answer_and_error()
-        if cancel_method == "cancel-packet":
-            assert answer == "", answer
-            assert error == "", error
+        assert answer == "", answer
+        expected_error = (
+            "TIMEOUT_EXCEEDED" if cancel_method == "timeout" else "QUERY_WAS_CANCELLED"
+        )
+        assert expected_error in error, error
 
         assert_eq_with_retry(
             node,
@@ -154,7 +154,7 @@ def test_native_insert_cancellation_rolls_back_s3_part(
             == "1\n7\n"
         )
     finally:
-        # Release workers before waiting for or terminating the native client.
+        # Release workers before waiting for or terminating the query client.
         for failpoint in enabled_failpoints:
             node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
             node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")

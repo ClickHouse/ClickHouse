@@ -1,7 +1,5 @@
 #pragma once
 
-#include <mutex>
-
 #include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/IAccumulatingTransform.h>
@@ -39,8 +37,6 @@ public:
 
     ~CreatingSetsTransform() override;
 
-    void onPartialResult() noexcept override;
-
     String getName() const override { return "CreatingSetsTransform"; }
 
     Status prepare() override;
@@ -49,8 +45,6 @@ public:
     Chunk generate() override;
 
 private:
-    std::mutex cache_publication_mutex;
-    bool partial_result = false;
     SetAndKeyPtr set_and_key;
     std::optional<std::promise<SetPtr>> promise_to_build;
 

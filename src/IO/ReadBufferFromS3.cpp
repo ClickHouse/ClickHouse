@@ -55,6 +55,7 @@ namespace FailPoints
     extern const char s3_read_buffer_throw_expired_token[];
     extern const char s3_send_request_throw_expired_token[];
     extern const char s3_read_before_get_object[];
+    extern const char s3_read_before_retry[];
     extern const char s3_read_inject_etag_mismatch[];
 }
 
@@ -128,7 +129,7 @@ ReadBufferFromS3::ReadBufferFromS3(
 
 void ReadBufferFromS3::checkIfNotCancelled() const
 {
-    read_settings.read_cancellation.checkIfNotCancelled();
+    CurrentThread::checkIfNotCancelled();
 }
 
 bool ReadBufferFromS3::nextImpl()
@@ -235,12 +236,11 @@ bool ReadBufferFromS3::nextImpl()
         }
         catch (...)
         {
-            if (!processException(getPosition(), attempt))
+            if (!processException(getPosition(), attempt) || last_attempt)
                 throw;
 
+            FailPointInjection::pauseFailPoint(FailPoints::s3_read_before_retry);
             checkIfNotCancelled();
-            if (last_attempt)
-                throw;
 
             /// Drop the failed request before pausing. Its connection is of no use to this buffer
             /// anymore, and keeping it during the back-off would only take it away from the others.
@@ -358,12 +358,11 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             if (request_started)
                 observe_request_metrics();
 
-            if (!processException(range_begin, attempt))
+            if (!processException(range_begin, attempt) || last_attempt)
                 throw;
 
+            FailPointInjection::pauseFailPoint(FailPoints::s3_read_before_retry);
             checkIfNotCancelled();
-            if (last_attempt)
-                throw;
 
             /// Drop the failed request before pausing, for the same reason as in `nextImpl`: its
             /// connection is of no use to this read anymore, and holding it during the back-off
@@ -657,13 +656,6 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(
     FailPointInjection::pauseFailPoint(FailPoints::s3_read_before_get_object);
     checkIfNotCancelled();
 
-    if (request_started)
-        *request_started = true;
-
-    ProfileEvents::increment(ProfileEvents::S3GetObject);
-    if (client_ptr->isClientForDisk())
-        ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
-
     /// Simulate a real `ExpiredToken` error returned from S3, used by integration tests for
     /// the credentials refresh callback path in `processException`. Unlike
     /// `s3_read_buffer_throw_expired_token` (which is gated by `if (impl)` in `nextImpl` and
@@ -686,6 +678,13 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(
     /// Measures time-to-first-byte: just the GetObject API call, not data transfer.
     /// Each sendRequest call is logged individually, unlike HDFS/Local which aggregate.
     Stopwatch blob_log_watch;
+    if (request_started)
+        *request_started = true;
+
+    ProfileEvents::increment(ProfileEvents::S3GetObject);
+    if (client_ptr->isClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
+
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
     if (outcome.IsSuccess())

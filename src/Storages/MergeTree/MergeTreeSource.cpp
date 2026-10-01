@@ -136,12 +136,8 @@ private:
 };
 #endif
 
-MergeTreeSource::MergeTreeSource(
-    MergeTreeSelectProcessorPtr processor_, const std::string & log_name_, PartialResultMode partial_result_mode_)
-    : ISource(std::make_shared<const Block>(processor_->getHeader()))
-    , processor(std::move(processor_))
-    , log_name(log_name_)
-    , partial_result_mode(partial_result_mode_)
+MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_)
+    : ISource(std::make_shared<const Block>(processor_->getHeader())), processor(std::move(processor_)), log_name(log_name_)
 {
 #if defined(OS_LINUX)
     if (processor->getSettings().use_asynchronous_read_from_pool)
@@ -156,23 +152,8 @@ std::string MergeTreeSource::getName() const
     return processor->getName();
 }
 
-void MergeTreeSource::onPartialResult() noexcept
-{
-    if (partial_result_mode == PartialResultMode::StopReading)
-        processor->cancelReading();
-}
-
-void MergeTreeSource::cancel(CancelReason reason) noexcept
-{
-    if (reason == CancelReason::PartialResult)
-        return;
-
-    ISource::cancel(reason);
-}
-
 void MergeTreeSource::onCancel() noexcept
 {
-    processor->cancelReading();
     processor->cancel();
 }
 

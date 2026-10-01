@@ -268,11 +268,11 @@ def test_non_retryable_error_still_marks_part_broken(
         executor = ThreadPoolExecutor(max_workers=1)
         query_future = executor.submit(
             node.query_and_get_error,
-            f"SELECT sum(k) FROM {table} SETTINGS "
-            "max_execution_time=1, timeout_overflow_mode='throw'",
+            f"SELECT sum(k) FROM {table}",
             query_id=query_id,
         )
         node.query(f"SYSTEM WAIT FAILPOINT {pause_failpoint} PAUSE", timeout=60)
+        node.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
         assert_eq_with_retry(
             node,
             f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
@@ -284,7 +284,7 @@ def test_non_retryable_error_still_marks_part_broken(
 
         error = query_future.result(timeout=10)
         assert "Bad request (injected by failpoint)" in error, error
-        assert "TIMEOUT_EXCEEDED" not in error, error
+        assert "QUERY_WAS_CANCELLED" not in error, error
         node.wait_for_log_line(BROKEN_PART_LOG, timeout=60)
     finally:
         if cancel_during_unwind:

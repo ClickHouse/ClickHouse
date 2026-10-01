@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <memory>
 #include <base/unit.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
@@ -9,7 +8,6 @@
 #include <IO/DistributedCacheSettings.h>
 #endif
 #include <IO/ReadMethod.h>
-#include <IO/ReadCancellationToken.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
@@ -144,10 +142,6 @@ struct ReadSettings
 
     /// For 'pread_threadpool'/'io_uring' method and async prefetch. Lower value is higher priority.
     Priority priority;
-
-    /// Stops reads owned by one `MergeTree` read step without cancelling the whole query. This is used when
-    /// the client requests a partial result and the processors already in flight must be drained.
-    ReadCancellationToken read_cancellation;
 
     bool enable_filesystem_read_prefetches_log = false;
 
