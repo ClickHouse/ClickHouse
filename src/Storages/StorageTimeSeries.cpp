@@ -719,7 +719,7 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
         /// to write them back in a canonical form.
         new_settings = std::make_unique<TimeSeriesSettings>();
         new_settings->applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
-        checkTimeSeriesSettings(*new_settings);
+        checkTimeSeriesSettings(*new_settings, !isInnerTable(ViewTarget::Tags));
         auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         settings_ast->changes = new_settings->changes();
@@ -1142,7 +1142,8 @@ tags tables keep their indexes; add and materialize the index on their tags targ
 The _tags min max_ table keeps the minimum and the maximum timestamp of each time series, used to skip series
 which have no samples in the time range of a query (see the [filter_by_min_time_and_max_time](#settings) setting).
 A table of [version](#schema-versioning) 8 and later has this target when [store_min_time_and_max_time](#settings)
-is `true`; a table of version 7 and earlier keeps `min_time` and `max_time` in its [tags](#tags-table) table instead.
+is `true` and its [tags](#tags-table) table is an inner one; a table of version 7 and earlier, or one with an external
+tags table, keeps `min_time` and `max_time` in its tags table instead.
 
 The _tags min max_ table must use `AggregatingMergeTree` (or its `Replicated` or `Shared` variant),
 including when an external target is supplied. Its bounds must use `SimpleAggregateFunction(min, ...)`
@@ -1518,7 +1519,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `id_generator` | Expression | depends on `id` type | Expression that computes the identifier (fingerprint) of a time series from its tags. If unset, the default expression for the `id` column is used. If the default expression for the `id` column is also unset then the expression is chosen automatically. For an external tags table the setting is recorded automatically at `CREATE` time if `version` is at least 2 (see [External target tables](#external-target-tables)) |
 | `tags_to_columns` | Map | {} | Map specifying which tags should be put to separate columns in the [tags](#tags-table) table. Syntax: `{'tag1': 'column1', 'tag2' : column2, ...}` |
 | `use_all_tags_column_to_generate_id` | Bool | false | Obsolete setting, does nothing |
-| `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series. A table of [version](#schema-versioning) 8 and later stores them in a separate [tags min max](#tags-min-max-table) target table, an earlier one in columns of the [tags](#tags-table) table |
+| `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series. A table of [version](#schema-versioning) 8 and later stores them in a separate [tags min max](#tags-min-max-table) target table, an earlier one or one with an external tags table in columns of the [tags](#tags-table) table |
 | `aggregate_min_time_and_max_time` | Bool | true | When creating an inner target `tags` table, this flag enables using `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` instead of just `Nullable(DateTime64(3))` as the type of the `min_time` column, and the same for the `max_time` column. Ignored from [version](#schema-versioning) 8: the [tags min max](#tags-min-max-table) table always aggregates these columns |
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
 | `metric_families_deduplication_cache_size_bytes` | UInt64 | 10485760 | Maximum size in bytes of the deduplication cache of the [metric families](#metric-families-table) table. The cache remembers the descriptions of the metric families written recently, so they aren't written again with every insert. When the cache is full, the entries used only once are evicted first, then the least recently used ones (SLRU). Set to 0 to disable the cache, see also `metric_families_deduplication_cache_expiration_seconds` |

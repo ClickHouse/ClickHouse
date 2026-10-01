@@ -497,7 +497,7 @@ namespace
 
     /// Removes the settings copied from the old table which this table must not inherit. `new_settings` is
     /// the SETTINGS clause of the query, which is applied on top of the copied settings afterwards.
-    void removeOldSettingsDisabledByNewSettings(SettingsChanges & old_settings, const ASTSetQuery * new_settings)
+    void removeOldSettingsDisabledByNewSettings(SettingsChanges & old_settings, const ASTSetQuery * new_settings, bool external_tags_table)
     {
         /// The version is pinned for the new table separately, so that it gets the latest one.
         old_settings.removeSetting("version");
@@ -540,7 +540,7 @@ namespace
             >= TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX;
         if (const auto * value = get_new_value("store_min_time_and_max_time"); value && !SettingFieldBool{*value}.value)
             old_settings.removeSettings({"aggregate_min_time_and_max_time", "filter_by_min_time_and_max_time"});
-        else if (!separate_tags_min_max)
+        else if (!separate_tags_min_max || external_tags_table)
             old_settings.removeSettings({"tags_deduplication_cache_size_bytes", "tags_deduplication_cache_expiration_seconds"});
     }
 
@@ -2074,7 +2074,8 @@ namespace
             auto merged_settings = boost::static_pointer_cast<ASTSetQuery>(old_create_query.storage->settings->clone());
 
             /// Some settings of the old table are not copied because the settings written in this query disable them.
-            removeOldSettingsDisabledByNewSettings(merged_settings->changes, create_query.storage->settings);
+            removeOldSettingsDisabledByNewSettings(
+                merged_settings->changes, create_query.storage->settings, hasTargetTableID(create_query, ViewTarget::Tags));
 
             /// The `id_type` and `id_generator` of the old table are not copied if this table has another `id` type.
             removeOldSettingsDisabledByIdTypeChange(merged_settings->changes, old_types.id_type, new_types.id_type);
@@ -2291,7 +2292,7 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
             settings.loadFromQuery(*create_query.storage);
 
         /// This also checks that the version is in the range supported by this server.
-        checkTimeSeriesSettings(settings);
+        checkTimeSeriesSettings(settings, hasTargetTableID(create_query, ViewTarget::Tags));
 
         /// Pin `version`, so that the table keeps its version if a future server bumps the latest one.
         /// Converted queries have a version at this point (see above), so a missing version here means a fresh CREATE.

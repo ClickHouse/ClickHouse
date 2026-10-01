@@ -28,7 +28,7 @@ namespace ErrorCodes
     DECLARE(ASTFunction, id_generator, String{}, "Expression that computes the identifier (fingerprint) of a time series from its tags. If the 'tags' target is an external table and 'version' is at least 2, the setting is set automatically when the table is created: to the DEFAULT expression of the 'id' column of that table if any, otherwise to the expression chosen automatically for the 'id' type", 0) \
     DECLARE(Map, tags_to_columns, Map{}, "Map specifying which tags should be put to separate columns of the 'tags' table. Syntax: {'tag1': 'column1', 'tag2' : column2, ...}", 0) \
     DECLARE(Bool, use_all_tags_column_to_generate_id, false, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE) \
-    DECLARE(Bool, store_min_time_and_max_time, true, "If set to true then the table will store 'min_time' and 'max_time' for each time series. From 'version' 8 the columns are stored in a separate 'tags min max' target table, which exists only while this setting is enabled; earlier versions store them in the 'tags' table. The setting is pinned automatically when a table is created and cannot be changed afterwards", 0) \
+    DECLARE(Bool, store_min_time_and_max_time, true, "If set to true then the table will store 'min_time' and 'max_time' for each time series. From 'version' 8 the columns are stored in a separate 'tags min max' target table, which exists only while this setting is enabled and the 'tags' table is an inner one; earlier versions and an external 'tags' table store them in the 'tags' table. The setting is pinned automatically when a table is created and cannot be changed afterwards", 0) \
     DECLARE(Bool, aggregate_min_time_and_max_time, true, "When creating an inner target 'tags' table, this flag enables using 'SimpleAggregateFunction(min, Nullable(DateTime64(3)))' instead of just 'Nullable(DateTime64(3))' as the type of the 'min_time' column, and the same for the 'max_time' column. Ignored from 'version' 8: the separate 'tags min max' table always aggregates the columns", 0) \
     DECLARE(Bool, filter_by_min_time_and_max_time, true, "If set to true then the table will use the 'min_time' and 'max_time' columns for filtering time series", 0) \
     DECLARE(UInt64, samples_index_granularity, 32768, "Sets 'index_granularity' of the inner 'samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external samples table and a non-MergeTree engine", 0) \
@@ -115,7 +115,7 @@ bool TimeSeriesSettings::hasBuiltin(std::string_view name)
     return TimeSeriesSettingsImpl::hasBuiltin(name);
 }
 
-void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
+void checkTimeSeriesSettings(const TimeSeriesSettings & settings, bool external_tags_table)
 {
     UInt64 version = settings[TimeSeriesSetting::version];
 
@@ -139,7 +139,8 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
     check_setting_requires_version("tags_deduplication_cache_size_bytes", TimeSeriesVersion::MIN_WITH_DEDUPLICATION_CACHES);
     check_setting_requires_version("tags_deduplication_cache_expiration_seconds", TimeSeriesVersion::MIN_WITH_DEDUPLICATION_CACHES);
 
-    if (settings[TimeSeriesSetting::store_min_time_and_max_time] && (version < TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX))
+    if (settings[TimeSeriesSetting::store_min_time_and_max_time]
+        && ((version < TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX) || external_tags_table))
     {
         /// Every insert changes `min_time` and `max_time` of a time series, so the rows of the tags table can't be deduplicated
         /// while these columns are in the tags table. Reject only an explicit enabling value, the defaults are just ignored.
@@ -147,7 +148,8 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
         {
             if (setting.isChanged() && setting.value)
                 throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-                    "Setting `{}` cannot be used when `store_min_time_and_max_time` is enabled and `version` is less than {}",
+                    "Setting `{}` cannot be used when `store_min_time_and_max_time` is enabled and the tags table keeps "
+                    "`min_time` and `max_time`: `version` is less than {} or the tags table is external",
                     setting_name, TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX);
         };
 

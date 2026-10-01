@@ -37,6 +37,9 @@ k4	2
 --- from version 8 min_time and max_time are stored in the tags min max table, so the tags table is deduplicated and the bounds still advance ---
 1
 1	1
+--- an external tags table keeps min_time and max_time itself, so its cache cannot be enabled in version 8 either ---
+ts_cached	1
+ts_ext_tags_copy	0
 --- the same time series is written to the tags table once if min_time and max_time are not stored ---
 2
 3

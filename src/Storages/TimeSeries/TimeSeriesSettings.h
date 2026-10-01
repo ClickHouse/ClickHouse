@@ -58,7 +58,8 @@ private:
 };
 
 /// Checks that the combination of settings is consistent.
-void checkTimeSeriesSettings(const TimeSeriesSettings & settings);
+/// `external_tags_table` is true if the tags table is an external one, which keeps `min_time` and `max_time` itself.
+void checkTimeSeriesSettings(const TimeSeriesSettings & settings, bool external_tags_table);
 
 /// Whether a CREATE TABLE ... ENGINE=TimeSeries query has `recent_samples_ttl_seconds` in its SETTINGS clause.
 bool hasExplicitTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query);
