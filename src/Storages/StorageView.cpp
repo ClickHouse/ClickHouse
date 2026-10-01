@@ -656,9 +656,30 @@ bool StorageView::isSealed(const StorageInMemoryMetadata & metadata, const Conte
 
     const auto & inner_query = metadata.getSelectQuery().inner_query;
     auto storage = tryGetTrivialViewUnderlyingStorage(inner_query, context);
-    if (!storage || !storage->isMergeTree()
-        || inner_query->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front()->as<ASTSelectQuery &>().where())
+    if (!storage || !storage->isMergeTree())
         return true;
+
+    const auto & select = inner_query->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front()->as<ASTSelectQuery &>();
+    if (select.where())
+        return true;
+
+    /// A transparent view is inlined into the invoker's plan, so `EXPLAIN` shows its expressions.
+    /// Only a projection of stored columns reveals nothing beyond what the view returns: any other expression
+    /// (including an `ALIAS` column of the table, which `*` may expand to) can carry constants such as keys.
+    const auto storage_metadata = storage->getInMemoryMetadataPtr(context, false);
+    const auto & columns = storage_metadata->getColumns();
+    for (const auto & expr : select.select()->children)
+    {
+        if (expr->as<ASTAsterisk>() || expr->as<ASTQualifiedAsterisk>())
+        {
+            if (!columns.getAliases().empty())
+                return true;
+            continue;
+        }
+        const auto * identifier = expr->as<ASTIdentifier>();
+        if (!identifier || !columns.tryGetPhysical(identifier->name()))
+            return true;
+    }
 
     /// A row policy of the view's context on the table is applied inside the read, so the projection still hides rows.
     return getEffectiveRowPolicyFilter(*storage, metadata.getSQLSecurityOverriddenContext(context)) != nullptr;
