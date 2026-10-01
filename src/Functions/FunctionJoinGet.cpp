@@ -11,6 +11,8 @@
 #include <Storages/TableLockHolder.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 
 namespace DB
 {
@@ -21,6 +23,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -81,6 +84,12 @@ public:
     }
 
     String getName() const override { return function_name; }
+
+    /// A `Join` table is local to the server that holds it and is not kept in sync with anything, so
+    /// the same call answers differently on another node. The overload resolver says so already, but
+    /// whoever asks the built function - a predicate on its way to a shard, an index analysis - asks
+    /// this one, and `IFunctionBase` answers `true` by default. `dictGet` overrides it here as well.
+    bool isDeterministic() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -146,11 +155,18 @@ ExecutableFunctionPtr FunctionJoinGet::prepare(const ColumnsWithTypeAndName &) c
 
     Names column_names = storage_join->getKeyNames();
     column_names.push_back(attr_name);
+    const auto storage_id = storage_join->getStorageID();
     auto metadata_snapshot = storage_join->getInMemoryMetadataPtr(context, false);
     context->checkAccess(
         AccessType::SELECT,
-        storage_join->getStorageID(),
-        metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(column_names, context, storage_join->getStorageID()));
+        storage_id,
+        metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(column_names, context, storage_id));
+
+    /// The hash table is read as is, so a row policy on the table cannot be applied here any more than in a JOIN.
+    auto row_policy_filter = context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot use {} because a row policy is applied on table {} with the Join engine", function_name, storage_id.getNameForLogs());
 
     return std::make_unique<ExecutableFunctionJoinGet>(function_name, context, table_lock, storage_join, result_columns);
 }
