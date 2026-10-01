@@ -2,11 +2,13 @@
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/UTF8Helpers.h>
+#include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/readDecimalText.h>
 #include <IO/readIntText.h>
+#include <base/hex.h>
 
 
 namespace DB
@@ -228,6 +230,62 @@ namespace
         }
         return true;
     }
+}
+
+String PrometheusQueryParsingUtil::quoteStringLiteral(std::string_view input)
+{
+    String result;
+    result.reserve(input.size() + 2);
+    result.push_back('"');
+
+    for (size_t i = 0; i < input.size();)
+    {
+        const auto c = static_cast<UInt8>(input[i]);
+
+        if (c >= 0x80)
+        {
+            const size_t sequence_length = UTF8::seqLength(c);
+            if (sequence_length <= input.size() - i
+                && UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(input.data() + i), sequence_length))
+            {
+                result.append(input.data() + i, sequence_length);
+                i += sequence_length;
+                continue;
+            }
+        }
+
+        switch (c)
+        {
+            case '"':
+            case '\\':
+                result.push_back('\\');
+                result.push_back(static_cast<char>(c));
+                break;
+            case '\a': result.append("\\a"); break;
+            case '\b': result.append("\\b"); break;
+            case '\f': result.append("\\f"); break;
+            case '\n': result.append("\\n"); break;
+            case '\r': result.append("\\r"); break;
+            case '\t': result.append("\\t"); break;
+            case '\v': result.append("\\v"); break;
+            default:
+                if (c < 0x20 || c == 0x7F || c >= 0x80)
+                {
+                    result.append("\\x");
+                    result += getHexUIntLowercase(c);
+                }
+                else
+                {
+                    result.push_back(static_cast<char>(c));
+                }
+                break;
+        }
+
+        ++i;
+    }
+
+    result.push_back('"');
+    return result;
 }
 
 /// Converts a quoted string literal to its unquoted version.
