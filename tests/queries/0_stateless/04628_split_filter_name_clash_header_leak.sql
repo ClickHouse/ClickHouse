@@ -3,6 +3,8 @@ SET query_plan_enable_optimizations = 1;
 SET query_plan_split_filter = 1;
 -- The '[split]' step marker is only emitted when this is non-zero.
 SET query_plan_max_step_description_length = 500;
+-- keep arrayJoin as a function here: lowered to a step, this constant filter is not split
+SET query_plan_lower_array_join_function = 0;
 
 -- The split must fire, and the split filter column must not survive in the branch output header.
 SELECT countSubstrings(explain, '[split]') > 0 AS split_fired,
