@@ -25,8 +25,7 @@
             "get-started/use-cases/overview",
             "get-started/use-cases/real-time-analytics",
             "get-started/use-cases/observability",
-            "get-started/use-cases/data-warehousing",
-            "get-started/use-cases/agentic-analytics"
+            "get-started/use-cases/data-warehousing"
           ]
         },
         "get-started/about/deployment-modes"
