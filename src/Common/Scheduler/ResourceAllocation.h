@@ -30,16 +30,8 @@ public:
         UInt64 recovery_reserved_bytes = 0;
     };
 
-    explicit ResourceAllocation(
-        IAllocationQueue & queue_,
-        const String & id_ = {},
-        MemoryPressurePolicy memory_pressure_policy_ = {})
-        : queue(queue_)
-        , id(id_)
-        , memory_pressure_policy(memory_pressure_policy_)
-        , increase(*this)
-        , decrease(*this)
-    {}
+    explicit ResourceAllocation(IAllocationQueue & queue_, const String & id_ = {});
+    ResourceAllocation(IAllocationQueue & queue_, const String & id_, MemoryPressurePolicy memory_pressure_policy_);
 
     virtual ~ResourceAllocation();
 

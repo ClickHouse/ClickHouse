@@ -53,12 +53,23 @@ public:
     // steady_clock deadline shared with the query slot so the whole admission phase uses one budget; on
     // expiry the still-pending allocation is canceled and a `MEMORY_RESERVATION_ACQUISITION_TIMEOUT`
     // exception is thrown. `time_point::max()` means no timeout.
+    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size);
     MemoryReservation(
         ResourceLink link,
         const String & id_,
         ResourceCost reserved_size,
-        std::chrono::steady_clock::time_point admission_deadline_ = std::chrono::steady_clock::time_point::max(),
-        MemoryPressurePolicy memory_pressure_policy_ = {});
+        MemoryPressurePolicy memory_pressure_policy_);
+    MemoryReservation(
+        ResourceLink link,
+        const String & id_,
+        ResourceCost reserved_size,
+        std::chrono::steady_clock::time_point admission_deadline_);
+    MemoryReservation(
+        ResourceLink link,
+        const String & id_,
+        ResourceCost reserved_size,
+        std::chrono::steady_clock::time_point admission_deadline_,
+        MemoryPressurePolicy memory_pressure_policy_);
     ~MemoryReservation() override;
 
     // Sync actual size with MemoryTracker, issues and waits increase/decrease requests as needed.
