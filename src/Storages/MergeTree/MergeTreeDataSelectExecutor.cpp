@@ -21,7 +21,8 @@
 #include <Storages/Statistics/StatisticsPartPruner.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/getEffectiveRowPolicyFilter.h>
+#include <Access/EnabledRowPolicies.h>
+#include <Access/Common/RowPolicyDefs.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
@@ -805,6 +806,15 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
 }
 
 
+static bool hasEffectiveRowPolicy(const IStorage & storage, const ContextPtr & context)
+{
+    auto storage_id = storage.getStorageID();
+    if (!storage_id.hasDatabase())
+        return false;
+    auto filter = context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    return filter && !filter->isAlwaysTrue();
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     const RangesInDataParts & parts,
     const StorageMetadataPtr & metadata_snapshot,
@@ -832,7 +842,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
         || (!parts.empty() && parts.front().data_part->storage.hasEnabledMaskingPolicies(context))
         || query_info.row_level_filter
-        || (!parts.empty() && getEffectiveRowPolicyFilter(parts.front().data_part->storage, context)))
+        || (!parts.empty() && hasEffectiveRowPolicy(parts.front().data_part->storage, context)))
     {
         return parts;
     }
