@@ -6,10 +6,14 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/DDLTask.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -17,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
+#include <Storages/StorageSet.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -48,9 +53,11 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Identifier.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
@@ -83,14 +90,13 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_nondeterministic_mutations;
-    extern const SettingsString force_data_skipping_indices;
+    extern const SettingsString force_data_skipping_indexes;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool allow_statistics;
-    extern const SettingsBool validate_mutation_query;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode except_default_mode;
@@ -118,6 +124,52 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int UNKNOWN_TABLE;
+}
+
+void checkNoRowPolicyForSetOperands(
+    const ASTPtr & mutation_ast,
+    const String & default_database,
+    const ContextPtr & context,
+    bool throw_if_unresolved)
+{
+    ASTPtr ast = mutation_ast->clone();
+    AddDefaultDatabaseVisitor visitor(context, default_database);
+    visitor.visit(ast);
+
+    const auto check = [&](const ASTPtr & node, const auto & self) -> void
+    {
+        if (const auto * function = node->as<ASTFunction>();
+            function && functionIsInOrGlobalInOperator(function->name) && function->arguments
+            && function->arguments->children.size() == 2)
+        {
+            const auto & right_operand = function->arguments->children[1];
+            if (const auto * table_identifier = right_operand->as<ASTTableIdentifier>())
+            {
+                auto resolved = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+                    Identifier(table_identifier->name_parts), context);
+                if (!resolved.resolved_identifier && throw_if_unresolved)
+                    throw Exception(
+                        ErrorCodes::UNKNOWN_TABLE,
+                        "Table {} on the right side of IN does not exist on the initiator. The other hosts do not run the query as "
+                        "the initiating user. So the initiator must check whether the table is a Set table with a row policy. Run the "
+                        "query on a host that has this table. Alternatively, let every host check the table as the initiating user. "
+                        "For that, enable the server setting distributed_ddl_use_initial_user_and_roles on every host, and set "
+                        "distributed_ddl_entry_format_version to at least {}",
+                        table_identifier->formatForErrorMessage(),
+                        DDLLogEntry::INITIATOR_USER_VERSION);
+
+                auto * table_node = resolved.resolved_identifier ? resolved.resolved_identifier->as<TableNode>() : nullptr;
+                if (auto * storage_set = table_node ? dynamic_cast<StorageSet *>(table_node->getStorage().get()) : nullptr)
+                    storage_set->checkNoRowPolicy(context);
+            }
+        }
+
+        for (const auto & child : node->children)
+            self(child, self);
+    };
+
+    check(ast, check);
 }
 
 /// Stored SQL text always carries explicit modes, so the `*_default_mode` fallbacks are not reached in
@@ -315,7 +367,7 @@ bool canExcludePartByIndexAnalysis(
 {
     /// The check query rejects a mutation whose predicate does not use a forced index;
     /// excluding the part here would silently bypass that check.
-    if (context->getSettingsRef()[Setting::force_data_skipping_indices].changed)
+    if (context->getSettingsRef()[Setting::force_data_skipping_indexes].changed)
         return false;
 
     /// Only the predicate rewrite/analysis below is allowed to fall back silently: a genuine
@@ -444,7 +496,7 @@ IsStorageTouched isStorageTouchedByMutations(
     /// so it must not count towards MutationUntouchedPartsByIndexAnalysis. The check query
     /// still rejects a predicate that does not use a forced index even for an empty part,
     /// so the shortcut is gated the same way as `canExcludePartByIndexAnalysis`.
-    if (source_part->isEmpty() && !context->getSettingsRef()[Setting::force_data_skipping_indices].changed)
+    if (source_part->isEmpty() && !context->getSettingsRef()[Setting::force_data_skipping_indexes].changed)
         return {.any_rows_affected = false, .all_rows_affected = true};
 
     if (canExcludePartByIndexAnalysis(source_part, storage_from_part, metadata_snapshot, std::move(predicates_for_part), context))

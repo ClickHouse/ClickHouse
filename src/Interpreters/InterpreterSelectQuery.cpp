@@ -814,6 +814,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
         view = dynamic_cast<StorageView *>(storage.get());
 
+    /// Rewriting a sealed view into a subquery would make it transparent to the optimizations below,
+    /// so it is read as a table. A parameterized view needs the rewrite to substitute its parameters.
+    if (view && !view->isParameterizedView() && view->isSealed(*metadata_snapshot, context))
+        view = nullptr;
+
     if (!settings[Setting::additional_table_filters].value.empty() && storage && !joined_tables.tablesWithColumns().empty())
         query_info.additional_filter_ast = parseAdditionalFilterConditionForTable(
             settings[Setting::additional_table_filters], joined_tables.tablesWithColumns().front().table, *context);
@@ -926,12 +931,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
 
+                /// The parts are only there for a storage of the `MergeTree` family, and they are
+                /// only used by its condition selectivity estimator. Other storages that allow
+                /// moving conditions to `PREWHERE` either have no snapshot data at all or have
+                /// their own type of it (`StorageMemory`), so the type has to be checked.
                 RangesInDataParts parts_for_estimator;
-                if (storage_snapshot->data)
+                if (const auto * merge_tree_snapshot_data
+                    = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
                 {
-                    const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
-                    if (parts)
-                        parts_for_estimator = *parts;
+                    if (merge_tree_snapshot_data->parts)
+                        parts_for_estimator = *merge_tree_snapshot_data->parts;
                 }
 
                 /// Just attempting to read statistics files on disk can increase query latencies.
@@ -2729,7 +2738,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
         return {};
 
     auto & query = getSelectQuery();
-    if (!query.prewhere() && !query.where() && !context->getCurrentTransaction())
+    if (!query.prewhere() && !query.where())
     {
         /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
         /// require reading some data (but much faster than reading columns).
