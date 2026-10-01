@@ -182,19 +182,8 @@ std::unordered_map<String, ASTPtr> resolveDeclaredProjectionColumnCodecs(
         /// Preprocess without session-dependent sanity or gate checks; see `validateDeclaredColumnCodecs`.
         if (auto codec_ast = column_declaration.getCodec())
         {
-            auto codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                codec_ast, column_in_projection->type, CodecValidationSettings::trusted());
-
-            if (isLossyCodecForType(codec, column_in_projection->type))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Column {} in projection {} cannot use lossy codec {} because a projection must return "
-                    "the same values as its parent table",
-                    backQuote(column_name),
-                    backQuote(projection_name),
-                    codec_ast->formatForErrorMessage());
-
-            codecs.emplace(column_name, std::move(codec));
+            codecs.emplace(column_name, ProjectionDescription::validateDeclaredColumnCodec(
+                codec_ast, column_in_projection->type, CodecValidationSettings::trusted(), column_name, projection_name));
         }
     }
 
@@ -387,6 +376,26 @@ bool hasDeclaredProjectionColumnCodec(const ASTProjectionDeclaration & declarati
     return false;
 }
 
+ASTPtr ProjectionDescription::validateDeclaredColumnCodec(
+    const ASTPtr & codec_ast,
+    const DataTypePtr & column_type,
+    const CodecValidationSettings & validation_settings,
+    const String & column_name,
+    const String & projection_name)
+{
+    auto codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+        codec_ast, column_type, validation_settings);
+    if (column_type && isLossyCodecForType(codec, column_type))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Column {} in projection {} cannot use lossy codec {} because a projection must return "
+            "the same values as its parent table",
+            backQuote(column_name),
+            backQuote(projection_name),
+            codec_ast->formatForErrorMessage());
+    return codec;
+}
+
 void ProjectionDescription::validateDeclaredColumnCodecs(
     const ProjectionDescription & projection,
     const ContextPtr & query_context,
@@ -413,10 +422,9 @@ void ProjectionDescription::validateDeclaredColumnCodecs(
         const auto column_name = getProjectionStorageColumnName(declared_column.name, projection.with_parent_part_offset);
         const auto & column = projection_columns.get(column_name);
 
-        CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-            column.codec,
-            column.type,
-            CodecValidationSettings(query_context->getSettingsRef()));
+        validateDeclaredColumnCodec(
+            column.codec, column.type, CodecValidationSettings(query_context->getSettingsRef()),
+            declared_column.name, declaration.name);
     }
 }
 

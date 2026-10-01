@@ -910,10 +910,8 @@ void checkUnavailableProjectionCodecTypeChange(
                 const auto & new_type = new_columns.get(*type_column).type;
                 try
                 {
-                    auto codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                        codec_ast, new_type, CodecValidationSettings::trusted());
-                    if (isLossyCodecForType(codec, new_type))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "codec would be lossy for type {}", new_type->getName());
+                    ProjectionDescription::validateDeclaredColumnCodec(
+                        codec_ast, new_type, CodecValidationSettings::trusted(), declared_column.name, declaration.name);
                 }
                 catch (const Exception & exception)
                 {

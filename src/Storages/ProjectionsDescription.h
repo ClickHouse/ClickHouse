@@ -27,6 +27,7 @@ struct KeyDescription;
 
 class ASTProjectionDeclaration;
 class ASTProjectionSelectQuery;
+struct CodecValidationSettings;
 
 struct MergeTreeSettings;
 
@@ -106,7 +107,16 @@ struct ProjectionDescription
         /// Of the `ATTACH` carrying this projection; leave the default when the definition is not attached
         bool attach_short_syntax = true);
 
-    /// Sanity-check declared codecs against the session's settings. Must be called from a query's
+    /// Validate both the codec policy for this provenance and the lossless projection invariant.
+    /// The type may be absent while admitting an unavailable definition from a backup.
+    static ASTPtr validateDeclaredColumnCodec(
+        const ASTPtr & codec_ast,
+        const DataTypePtr & column_type,
+        const CodecValidationSettings & validation_settings,
+        const String & column_name,
+        const String & projection_name);
+
+    /// Check declared codecs against the session's settings and the lossless projection rule. Must be called from a query's
     /// validation phase: `getProjectionFromAST` runs on stored metadata too, and on the `CREATE` path it
     /// is reached with the global context, so a check placed there would both miss the user's settings
     /// and make a table using a suspicious codec impossible to attach. Takes the built projection

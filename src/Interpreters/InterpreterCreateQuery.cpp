@@ -1026,9 +1026,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                                 {
                                     const auto type_ast = column->getType();
                                     const auto declared_type = type_ast ? DataTypeFactory::instance().get(type_ast) : DataTypePtr{};
-                                    CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                                    ProjectionDescription::validateDeclaredColumnCodec(
                                         column->getCodec(), declared_type, CodecValidationSettings(
-                                            getContext()->getSettingsRef(), /*reject_type_sensitive_without_column_type=*/ true));
+                                            getContext()->getSettingsRef(), /*reject_type_sensitive_without_column_type=*/ true),
+                                        column->name, declaration.name);
                                 }
                             }
                         }

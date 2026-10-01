@@ -257,6 +257,63 @@ def test_restore_codec_projection_with_missing_dictionary(started_cluster):
     )
 
 
+def test_restore_unavailable_projection_rejects_lossy_codec(started_cluster):
+    node.query("DROP DATABASE IF EXISTS codec_restore_lossy SYNC")
+    node.query("CREATE DATABASE codec_restore_lossy")
+    fresh_error = node.query_and_get_error(
+        "CREATE TABLE codec_restore_lossy.fresh "
+        "(k UInt64, x Float64, PROJECTION pp (x Float64 CODEC(SZ3)) AS "
+        "(SELECT k, x ORDER BY k)) ENGINE = MergeTree ORDER BY k",
+        settings={"enable_sz3_codec": 1},
+    )
+    assert "cannot use lossy codec" in fresh_error, fresh_error
+    node.query(
+        "CREATE TABLE codec_restore_lossy.lookup_source "
+        "(id UInt64, value UInt64) ENGINE = Memory"
+    )
+    node.query(
+        "CREATE DICTIONARY codec_restore_lossy.lookup "
+        "(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id "
+        "SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() "
+        "DB 'codec_restore_lossy' TABLE 'lookup_source')) "
+        "LAYOUT(FLAT()) LIFETIME(0)"
+    )
+    node.query(
+        "CREATE TABLE codec_restore_lossy.source "
+        "(k UInt64, x Float64, PROJECTION pp (x Float64 CODEC(LZ4)) AS "
+        "(SELECT x, dictGet('codec_restore_lossy.lookup', 'value', k) AS d ORDER BY x)) "
+        "ENGINE = MergeTree ORDER BY k"
+    )
+
+    # Simulate a backup from older metadata with a codec that current projection DDL rejects.
+    metadata_path = node.query(
+        "SELECT metadata_path FROM system.tables "
+        "WHERE database = 'codec_restore_lossy' AND name = 'source'"
+    ).strip()
+    node.query("DETACH TABLE codec_restore_lossy.source")
+    metadata = read_metadata(node, metadata_path)
+    assert "CODEC(LZ4)" in metadata, metadata
+    write_metadata(node, metadata_path, metadata.replace("CODEC(LZ4)", "CODEC(SZ3)"))
+    node.query(
+        "DROP DICTIONARY codec_restore_lossy.lookup SETTINGS check_table_dependencies = 0"
+    )
+    node.restart_clickhouse()
+    assert node.query(
+        "SELECT count() FROM system.projections "
+        "WHERE database = 'codec_restore_lossy' AND table = 'source'"
+    ).strip() == "0"
+
+    backup = f"unavailable_projection_lossy_{uuid.uuid4().hex}"
+    node.query(f"BACKUP TABLE codec_restore_lossy.source TO Disk('backups', '{backup}')")
+    restore_query = (
+        "RESTORE TABLE codec_restore_lossy.source AS codec_restore_lossy.restored "
+        f"FROM Disk('backups', '{backup}')"
+    )
+    error = node.query_and_get_error(restore_query, settings={"enable_sz3_codec": 1})
+    assert "cannot use lossy codec" in error, error
+    assert node.query("EXISTS TABLE codec_restore_lossy.restored").strip() == "0"
+
+
 @pytest.mark.parametrize("part_offset_expression", ["_part_offset", "_part_offset AS parent_offset"])
 def test_restore_unavailable_projection_checks_destination_requirements(started_cluster, part_offset_expression):
     node.query("DROP DATABASE IF EXISTS restore_unavailable_gate SYNC")
