@@ -507,7 +507,7 @@ void FreeformFieldMatcher::readRowBySolution(
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Row does not end at a newline after all fields of the inferred solution");
 }
 
-bool FreeformFieldMatcher::validateSolution(Solution & solution)
+bool FreeformFieldMatcher::validateSolution(Solution & solution, const QueryStatusPtr & query_status)
 {
     try
     {
@@ -526,6 +526,8 @@ bool FreeformFieldMatcher::validateSolution(Solution & solution)
 
         for (size_t row = 0; row < max_rows_to_check; ++row)
         {
+            checkSearchLimits(query_status);
+
             // For each iteration, we try to parse fields and find the type union of the current row and the previously parsed rows. If it doesn't exist,
             // the solution is invalid.
 
@@ -645,16 +647,13 @@ bool FreeformFieldMatcher::buildSolutionsAndPickBest()
     // Validation also widens the types of the solution to the union of the types seen in the checked rows (the first row alone
     // does not tell whether a column of integers is nullable), so the validated solution is the one that becomes final.
     for (auto & solution : solutions)
-    {
-        checkSearchLimits(query_status);
-        if (validateSolution(solution))
+        if (validateSolution(solution, query_status))
         {
             setFinalSolution(solution);
             in.rollbackToCheckpoint(true);
             LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "Found solution");
             return true;
         }
-    }
 
     in.rollbackToCheckpoint(true);
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "None of the {} candidate solutions parses every checked row", solutions.size());

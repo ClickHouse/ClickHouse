@@ -204,7 +204,7 @@ private:
         const QueryStatusPtr & query_status) const;
     // validateSolution iterates over the current row and try to parse and infer the types of the parsed fields. A solution is valid when the parsed types are valid.
     /// validateSolution also widens the types of `solution` to the union of the types seen in the checked rows.
-    bool validateSolution(Solution & solution);
+    bool validateSolution(Solution & solution, const QueryStatusPtr & query_status);
     /// Reads one row with the fields of `solution` and calls `on_field(column, matcher_index, type, field)` for every
     /// column. Throws if the row does not fill every column of the solution exactly once or does not end after them.
     template <typename OnField>
