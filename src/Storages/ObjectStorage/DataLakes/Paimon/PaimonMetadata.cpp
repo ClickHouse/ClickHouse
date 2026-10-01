@@ -48,6 +48,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int NO_ZOOKEEPER;
+extern const int NOT_IMPLEMENTED;
 extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
 
@@ -572,6 +573,17 @@ ObjectIterator PaimonMetadata::iterate(
     auto schema = persistent_components.schema_processor->getSchemaById(state->schema_id);
     if (!schema)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema with id {} not found", state->schema_id);
+
+    /// The read path below returns the raw union of the snapshot's data files: row versions
+    /// superseded by later upserts are not eliminated. Refuse rather than return wrong results.
+    auto primary_keys = persistent_components.schema_processor->getPrimaryKeys(state->schema_id);
+    if (!primary_keys.empty())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Reading Paimon primary-key table (primary keys: {}) is not supported: "
+            "merge-on-read is not implemented, so the result would contain row versions "
+            "superseded by later writes.",
+            fmt::join(primary_keys, ", "));
 
     /// 3. Build partition pruner if needed
     std::optional<PartitionPruner> partition_pruner;

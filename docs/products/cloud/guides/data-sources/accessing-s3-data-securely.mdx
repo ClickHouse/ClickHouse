@@ -141,6 +141,7 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
 
 Below is an example query that uses the `role_session_name` as a shared secret to query data from a bucket.
 If the `role_session_name` isn't correct, this operation will fail.
+Because it can act as a shared secret, ClickHouse masks the value of `role_session_name` as `[HIDDEN]` in `system.query_log`, `SHOW CREATE TABLE`, and everywhere else the query text is shown, the same way as `external_id`.
 
 ```sql
 DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWithNames',extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', role_session_name = 'secret-role-name'))
