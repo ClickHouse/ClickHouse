@@ -255,6 +255,7 @@ struct QueryPlanOptimizationSettings
     size_t automatic_parallel_replicas_mode;
     size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
+    float automatic_parallel_replicas_max_replicated_read_ratio;
 
     bool query_plan_optimize_primary_key = true;
 
