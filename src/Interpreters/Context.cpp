@@ -3839,13 +3839,17 @@ void Context::checkSettingsConstraintsForOverwrite(const std::vector<UUID> & ids
     }
 }
 
-void Context::checkSettingsConstraintsForOverwrite(const std::vector<std::shared_ptr<const IAccessEntity>> & new_entities) const
+void Context::checkSettingsConstraintsForOverwrite(
+    const std::vector<std::shared_ptr<const IAccessEntity>> & new_entities, const String & storage_name) const
 {
     const auto & access_control = getAccessControl();
     for (const auto & new_entity : new_entities)
     {
-        auto id = access_control.find(new_entity->getType(), new_entity->getName());
-        if (auto old_entity = id ? access_control.tryRead(*id) : nullptr)
+        /// Only a same-name entity of the destination storage is replaced; one of a later storage is just hidden.
+        std::shared_ptr<const IAccessStorage> storage = storage_name.empty()
+            ? access_control.getStorageForInsertion(new_entity) : access_control.getStorageByName(storage_name);
+        auto id = storage->find(new_entity->getType(), new_entity->getName());
+        if (auto old_entity = id ? storage->tryRead(*id) : nullptr)
             checkRemovedSettings(old_entity, new_entity);
     }
 }

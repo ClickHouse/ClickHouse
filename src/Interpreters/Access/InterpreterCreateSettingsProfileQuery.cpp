@@ -117,7 +117,7 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
         }
 
         if (query.or_replace)
-            getContext()->checkSettingsConstraintsForOverwrite(new_profiles);
+            getContext()->checkSettingsConstraintsForOverwrite(new_profiles, query.storage_name);
 
         if (!query.storage_name.empty())
             access_control.insertInto(query.storage_name, new_profiles, query.or_replace, !query.if_not_exists);

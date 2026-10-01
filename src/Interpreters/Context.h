@@ -1300,7 +1300,8 @@ public:
     using AccessEntityUpdate
         = std::function<std::shared_ptr<const IAccessEntity>(const std::shared_ptr<const IAccessEntity> &, const UUID &)>;
     void checkSettingsConstraintsForOverwrite(const std::vector<UUID> & ids, const AccessEntityUpdate & update) const;
-    void checkSettingsConstraintsForOverwrite(const std::vector<std::shared_ptr<const IAccessEntity>> & new_entities) const;
+    void checkSettingsConstraintsForOverwrite(
+        const std::vector<std::shared_ptr<const IAccessEntity>> & new_entities, const String & storage_name) const;
     void checkSettingsConstraints(const SettingChange & change, SettingSource source);
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);

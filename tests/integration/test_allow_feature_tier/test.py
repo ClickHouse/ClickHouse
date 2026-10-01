@@ -1944,3 +1944,41 @@ def test_compatibility_skips_merge_tree_settings_refused_by_default_profile(star
         )
         == "replicated_deduplication_window\t1\nreplicated_deduplication_window_seconds\t0\n"
     )
+
+
+def test_or_replace_checks_removed_settings_of_the_replaced_entity(start_cluster):
+    actor = "tier_or_replace_actor"
+    actor_profile = "tier_or_replace_actor_profile"
+    hidden = "tier_or_replace_hidden"
+    replaced = "tier_or_replace_replaced"
+    constraint = "max_execution_time MAX 4"
+
+    with entities(instance, profiles=[hidden], storage="memory"), entities(
+        instance,
+        users=[actor],
+        profiles=[actor_profile, hidden, replaced],
+        storage="local_directory",
+    ):
+        instance.query(f"CREATE USER {actor} IN local_directory IDENTIFIED WITH no_password")
+        instance.query(f"GRANT ACCESS MANAGEMENT ON *.* TO {actor}")
+        instance.query(
+            f"CREATE SETTINGS PROFILE {actor_profile} IN local_directory SETTINGS {constraint} TO {actor}"
+        )
+        instance.query(f"CREATE SETTINGS PROFILE {hidden} IN memory SETTINGS {constraint}")
+        instance.query(f"CREATE SETTINGS PROFILE {replaced} IN local_directory SETTINGS {constraint}")
+
+        # `local_directory` is looked up before `memory`, so it gets a new profile which hides the one in
+        # `memory` and replaces nothing.
+        instance.query(f"CREATE SETTINGS PROFILE OR REPLACE {hidden}", user=actor)
+        assert (
+            instance.query(
+                f"SELECT storage FROM system.settings_profiles WHERE name = '{hidden}' ORDER BY storage"
+            )
+            == "local_directory\nmemory\n"
+        )
+
+        # A profile replaced in place must keep the constrained setting.
+        error = instance.query_and_get_error(
+            f"CREATE SETTINGS PROFILE OR REPLACE {replaced}", user=actor
+        )
+        assert "SETTING_CONSTRAINT_VIOLATION" in error, error

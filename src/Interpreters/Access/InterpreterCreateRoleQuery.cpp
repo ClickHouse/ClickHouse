@@ -108,7 +108,7 @@ BlockIO InterpreterCreateRoleQuery::execute()
         }
 
         if (query.or_replace)
-            getContext()->checkSettingsConstraintsForOverwrite(new_roles);
+            getContext()->checkSettingsConstraintsForOverwrite(new_roles, query.storage_name);
 
         if (!query.storage_name.empty())
             access_control.insertInto(query.storage_name, new_roles, query.or_replace, !query.if_not_exists);

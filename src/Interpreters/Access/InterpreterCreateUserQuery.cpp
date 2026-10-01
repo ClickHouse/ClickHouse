@@ -476,7 +476,7 @@ BlockIO InterpreterCreateUserQuery::execute()
 
         std::vector<UUID> ids;
         if (query.or_replace)
-            getContext()->checkSettingsConstraintsForOverwrite(new_users);
+            getContext()->checkSettingsConstraintsForOverwrite(new_users, query.storage_name);
 
         if (!query.storage_name.empty())
             ids = access_control.insertInto(query.storage_name, new_users, query.or_replace, !query.if_not_exists);
