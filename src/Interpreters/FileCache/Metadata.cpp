@@ -1011,9 +1011,11 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         size_to_download -= size;
 
         std::string failure_reason;
+        /// Don't reserve ahead past the prefix this background pass downloads.
+        const size_t reserve_hint = size + size_to_download;
         if (!file_segment.reserve(
                 size, reserve_space_lock_wait_timeout_milliseconds, failure_reason,
-                /* reserve_stat */nullptr, /* reserve_hint */0, &reserve_ahead))
+                /* reserve_stat */nullptr, reserve_hint, &reserve_ahead))
         {
             LOG_TEST(
                 log, "Failed to reserve space during background download "
