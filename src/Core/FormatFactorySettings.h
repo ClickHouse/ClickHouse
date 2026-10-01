@@ -1798,6 +1798,15 @@ Use REPLACE statement instead of INSERT
 Quote column names with '`' characters
 )", 0) \
     \
+    DECLARE(String, input_format_sqlite_table_name, "", R"(
+Name of the table in SQLite input from which to read data. If empty, the first table from the SQLite database is used.
+)", 0, \
+        {"26.10", "", "", "New setting for the `SQLite` input format: the name of the table to read."}) \
+    DECLARE(String, output_format_sqlite_table_name, "table", R"(
+Name of the table in SQLite output
+)", 0, \
+        {"26.10", "table", "table", "New setting for the `SQLite` output format: the name of the table to write."}) \
+    \
     DECLARE(Bool, output_format_values_escape_quote_with_quote, false, R"(
 If true escape ' with '', otherwise quoted with \\'
 )", 0, \
