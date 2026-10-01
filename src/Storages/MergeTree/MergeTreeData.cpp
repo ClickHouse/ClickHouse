@@ -14680,7 +14680,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
 
                     if (lock->isLocked())
                     {
-                        cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
+                        cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings, admission_epoch);
                         /// Cloning part can take a long time.
                         /// Recheck if the lock (and keeper session expirity) is OK
                         if (lock->isLocked())
@@ -14713,7 +14713,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             }
             else /// Ordinary move as it should be
             {
-                cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
+                cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings, admission_epoch);
                 parts_mover.swapClonedPart(cloned_part, admission_epoch);
             }
             write_part_log({});
