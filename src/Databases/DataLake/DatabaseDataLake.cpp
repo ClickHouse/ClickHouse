@@ -144,6 +144,7 @@ namespace FailPoints
     extern const char datalake_try_get_table_return_nullptr[];
     extern const char datalake_try_get_table_throw[];
     extern const char datalake_get_tables_throw[];
+    extern const char datalake_keep_mismatched_stateful_table[];
 }
 
 namespace
@@ -904,6 +905,24 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     const auto catalog_uuid = table_metadata.getTableUUID();
     const UUID table_uuid = catalog_uuid ? parseFromString<UUID>(*catalog_uuid) : UUIDHelpers::Nil;
 
+    /// Glue and Hive report no table UUID, so a table recreated under the same name and location has the same key.
+    const auto is_same_table = [&](const StatefulTable & entry)
+    {
+        if (!(entry.endpoint == table_endpoint && entry.uuid == table_uuid && entry.settings_version == settings_version))
+            return false;
+        if (catalog_uuid)
+            return true;
+        const auto * object_storage_table = dynamic_cast<const StorageObjectStorage *>(entry.storage.get());
+        return object_storage_table
+            && object_storage_table->getObjectStorageConfiguration()->isMetadataFileOfThisTable(explicit_metadata_location, context_);
+    };
+    const auto reuse_stateful_table = [&](const StoragePtr & storage_to_reuse)
+    {
+        if (const auto * object_storage_table = dynamic_cast<const StorageObjectStorage *>(storage_to_reuse.get()))
+            object_storage_table->getObjectStorageConfiguration()->setExplicitMetadataFilePath(explicit_metadata_location);
+        return storage_to_reuse;
+    };
+
     const auto & query_settings = context_->getSettingsRef();
 
     const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
@@ -919,23 +938,19 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         && (*storage_settings)[DataLakeStorageSetting::allow_experimental_iceberg_compaction];
     if (want_stateful)
     {
-        StoragePtr cached_storage;
+        std::optional<StatefulTable> cached;
         {
             std::lock_guard lock(stateful_tables_mutex);
             if (auto it = stateful_tables.find(name); it != stateful_tables.end())
-            {
-                const auto & cached = it->second;
-                if (cached.endpoint == table_endpoint && cached.uuid == table_uuid && cached.settings_version == settings_version)
-                    cached_storage = cached.storage;
-            }
+                cached = it->second;
         }
-        if (cached_storage)
-        {
-            if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(cached_storage.get()))
-                object_storage_table->getObjectStorageConfiguration()->setExplicitMetadataFilePath(explicit_metadata_location);
-            return cached_storage;
-        }
-        evictStatefulTable(name);
+        if (cached && is_same_table(*cached))
+            return reuse_stateful_table(cached->storage);
+        /// Test-only: the mismatched entry stays, so the insert below loses the race to it.
+        bool keep_mismatched_entry = false;
+        fiu_do_on(FailPoints::datalake_keep_mismatched_stateful_table, { keep_mismatched_entry = true; });
+        if (!keep_mismatched_entry)
+            evictStatefulTable(name);
     }
     const auto configuration = getConfiguration(storage_type, storage_settings, table_metadata.getTableFormat());
 
@@ -1074,21 +1089,20 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     if (want_stateful)
     {
         result_storage->startup();
-        StoragePtr cached_storage;
+        std::optional<StatefulTable> cached;
         {
             std::lock_guard lock(stateful_tables_mutex);
             auto [it, inserted] = stateful_tables.emplace(
                 name, StatefulTable{result_storage, table_endpoint, table_uuid, settings_version});
             if (!inserted)
-                cached_storage = it->second.storage;
+                cached = it->second;
         }
-        if (cached_storage)
+        if (cached)
         {
-            /// Lost a race to another query; keep the already-cached storage and drop ours.
+            /// Lost a race to another query; ours is not cached, and serves this query only if the cached one is another table.
             result_storage->shutdown(/*is_drop*/ false);
-            if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(cached_storage.get()))
-                object_storage_table->getObjectStorageConfiguration()->setExplicitMetadataFilePath(explicit_metadata_location);
-            return cached_storage;
+            if (is_same_table(*cached))
+                return reuse_stateful_table(cached->storage);
         }
     }
 

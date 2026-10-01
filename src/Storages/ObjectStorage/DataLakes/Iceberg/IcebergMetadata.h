@@ -108,6 +108,7 @@ public:
     bool supportsUpdate() const override { return true; }
 
     void setExplicitMetadataFilePath(const String & path) override;
+    bool isMetadataFileOfThisTable(const String & path, ContextPtr local_context) const override;
 
     bool supportsWrites() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
