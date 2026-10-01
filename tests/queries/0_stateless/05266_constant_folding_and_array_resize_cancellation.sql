@@ -11,6 +11,9 @@ SELECT intDiv(length(arrayResize([], 8000, repeat('x', 16384))), 0) SETTINGS max
 
 -- The edit distance of two 20000-character strings is a constant that takes longer than the deadline to evaluate.
 SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), intDiv(1, 0) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
+-- The next function is not built after the deadline either, with constant or other arguments; otherwise it reports the unknown tokenizer.
+SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), hasPhrase('a', 'a', 'invalid') SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
+SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), hasPhrase(toString(dummy), 'a', 'invalid') FROM system.one SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
 -- A constant of more than 1 MiB is not kept by the analyzer, so it is evaluated again when the query plan is built.
 SELECT intDiv(length(repeat('ab', 600000)), 0), editDistance(repeat('a', 20000), repeat('b', 20000)) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
 
