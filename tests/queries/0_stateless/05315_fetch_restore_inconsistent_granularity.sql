@@ -10,7 +10,8 @@ CREATE TABLE r_fsrc_g8 (a UInt64)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05315/r_fsrc_g8', 'r1') ORDER BY a
 SETTINGS index_granularity = 8, index_granularity_bytes = 0, enable_mixed_granularity_parts = 0;
 SYSTEM STOP MERGES r_fsrc_g8;
-INSERT INTO r_fsrc_g8 SELECT number FROM numbers(18);
+-- F2 fetches all_0_0_0 by name, and an insert retried after a Keeper fault takes the next block number
+INSERT INTO r_fsrc_g8 SETTINGS insert_keeper_fault_injection_probability = 0 SELECT number FROM numbers(18);
 
 CREATE TABLE r_fsrc_g4 (a UInt64)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05315/r_fsrc_g4', 'r1') ORDER BY a
