@@ -95,14 +95,17 @@ def test_interserver_mode_is_rejected_on_tcp_with_proxy_port(started_cluster):
     )
 
     # The rejection is routed through `Session::onAuthenticationFailure`,
-    # which emits a `LoginFailure` row into `system.session_log`.
+    # which emits a `LoginFailure` row into `system.session_log`. With
+    # `auth_use_forwarded_address` enabled, the row must carry the client
+    # address from the PROXY header rather than the address of the proxy.
     node.query("SYSTEM FLUSH LOGS session_log")
     assert (
         int(
             node.query(
                 "SELECT count() FROM system.session_log "
                 "WHERE type = 'LoginFailure' AND interface = 'TCP_Interserver' "
-                "AND failure_reason LIKE '%Interserver mode is disabled for connections to tcp_with_proxy_port%'"
+                "AND failure_reason LIKE '%Interserver mode is disabled for connections to tcp_with_proxy_port%' "
+                "AND client_address = toIPv6('192.0.2.1')"
             )
         )
         > 0

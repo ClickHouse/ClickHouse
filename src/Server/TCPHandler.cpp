@@ -2201,7 +2201,7 @@ void TCPHandler::receiveHello()
             auto exception
                 = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver mode is disabled for connections to tcp_with_proxy_port");
             session = makeSession();
-            session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), exception);
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, getClientAddress(session->getClientInfo()), exception);
             throw exception; /// NOLINT
         }
 

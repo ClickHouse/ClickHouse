@@ -1,3 +1,4 @@
 <clickhouse>
     <tcp_with_proxy_allow_interserver_mode>false</tcp_with_proxy_allow_interserver_mode>
+    <auth_use_forwarded_address>true</auth_use_forwarded_address>
 </clickhouse>
