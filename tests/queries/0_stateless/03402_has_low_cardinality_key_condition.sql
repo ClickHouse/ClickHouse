@@ -13,6 +13,9 @@ ENGINE = MergeTree ORDER BY CAST(d, 'String') SETTINGS index_granularity = 1;
 INSERT INTO t_has_lc VALUES (toDateTime(1730611800, 'America/New_York')), (toDateTime(1730615400, 'America/New_York'));
 
 SELECT toUnixTimestamp(d) FROM t_has_lc WHERE has([toDateTime(1730611800, 'America/New_York')], d);
+-- `optimize_rewrite_has_to_in` turns the has() above into an in(), which does not reach the key
+-- condition code path that regressed, so the has() plan is pinned explicitly as well.
+SELECT toUnixTimestamp(d) FROM t_has_lc WHERE has([toDateTime(1730611800, 'America/New_York')], d) SETTINGS optimize_rewrite_has_to_in = 0;
 
 DROP TABLE t_has_lc;
 
