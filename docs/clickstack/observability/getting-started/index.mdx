@@ -7,6 +7,91 @@ doc_type: 'guide'
 keywords: ['ClickHouse Observability', 'getting started', 'fully managed']
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
+<Warning>
+This guide is a draft for fully managed ClickHouse Observability. Service creation, telemetry configuration, and the end-to-end ingestion workflow still need verification. Review notes below identify the remaining gaps.
+</Warning>
+
+Get started with ClickHouse Observability, send a test event, and confirm that the event is available in the observability UI.
+
+The service provides a managed telemetry endpoint. Send data from your applications, agents, or an existing OpenTelemetry Collector to this endpoint.
+
+## Before you begin {#before-you-begin}
+
+After you create a ClickHouse Observability service, you automatically land on the **Getting Started** page. Choose one of the three paths below to send telemetry.
+
 <Note>
-The getting started guide for fully managed ClickHouse Observability is coming soon.
+**Review: service creation.** Add the verified steps for creating a fully managed Observability service.
 </Note>
+
+## Set up ClickHouse Observability {#set-up-clickhouse-observability}
+
+Choose the path that matches your environment.
+
+<Tabs>
+<Tab title="Use an existing OpenTelemetry setup">
+
+<Image img="/images/clickstack/getting-started/observability-connection-details.png" alt="Set up OpenTelemetry dialog with URL, Collector config, and Env vars options and masked connection details" size="md" />
+
+Use this path if your application, agent, or collector already produces OpenTelemetry data.
+
+1. Select **View connection details** on the getting started page.
+2. Copy the configuration for your telemetry sender. The connection details provide **URL**, **Collector config**, and **Env vars** options.
+
+3. Configure your sender to export telemetry to the managed endpoint using the provided authentication details.
+4. Generate normal activity in your application, then confirm that the resulting data appears in [Search](/clickstack/observability/features/search).
+
+<Tip>
+For an optional quick check, select **send a test log** on the getting started page. The button immediately sends a test log from the UI; it does not verify your application's or collector's configuration.
+</Tip>
+
+</Tab>
+<Tab title="Instrument with AI">
+
+<Image img="/images/clickstack/getting-started/observability-ai-instrumentation.png" alt="Set it up with an AI agent dialog showing the instrumentation prompt and masked endpoint and API key environment variables" size="md" />
+
+Use this path if you have application code and want your coding assistant to help add OpenTelemetry instrumentation.
+
+1. Under **Instrument with AI**, select **Copy prompt** to open the **Set it up with an AI agent** dialog.
+2. Copy the prompt from the dialog and paste it into your coding assistant with access to your application code, such as Cursor, Copilot, or Claude Code.
+3. Set `CLICKSTACK_OTLP_ENDPOINT` and `CLICKSTACK_API_KEY` using the values provided in the dialog. Store them in a `.env` file excluded from version control or in your secrets store.
+4. Review and apply the suggested instrumentation, then run your application and generate an event.
+
+<Note>
+**Review: AI instrumentation.** Verify the generated prompt with a sample application and confirm that its telemetry arrives in Search.
+</Note>
+
+</Tab>
+<Tab title="Follow setup guides">
+
+<Image img="/images/clickstack/getting-started/observability-setup-guides.png" alt="Send data dialog with searchable setup guides for languages, frameworks, infrastructure, and collectors" size="md" />
+
+Use this path if you want instructions for a specific application or infrastructure source.
+
+1. Select **Browse setup guides**.
+2. Choose the guide for your language, framework, or infrastructure.
+3. Follow its instrumentation and configuration steps, then generate telemetry from that source.
+
+<Note>
+**Review: setup guides.** Verify this path against the fully managed SDK and integration guides once their endpoint and authentication instructions have been updated.
+</Note>
+
+</Tab>
+</Tabs>
+
+## Verify ingestion and start exploring {#verify-ingestion}
+
+After completing your chosen path, select **Start exploring** to open [Search](/clickstack/observability/features/search). Look for an event you generated and confirm that it is present before continuing.
+
+For logs, select the **Logs** source and a time range that includes when you sent the event. The example below shows a log sent using the UI's **send a test log** button, with `example-service` as its service name. Expand an event to inspect its attributes.
+
+<Image img="/images/clickstack/getting-started/observability-verify-ingestion.png" alt="Search showing a UI test log for example-service with its event attributes expanded" size="lg" />
+
+## Next steps {#next-steps}
+
+Once your data is available, use [Search](/clickstack/observability/features/search) to explore events and [Dashboards](/clickstack/observability/features/dashboards/overview) to visualize them.
+
+<Warning>
+**Review: next steps.** Once the remaining fully managed guides have been written or updated, revisit this section and add the applicable equivalents of the next-step links in the Self Configured and OSS getting started guides.
+</Warning>

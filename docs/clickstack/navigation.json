@@ -4,6 +4,7 @@
   "dropdowns": [
     {
       "dropdown": "ClickHouse Observability",
+      "icon": "/images/icons/icon-clickstack.svg",
       "anchors": [
         {
           "anchor": "Fully managed",
@@ -477,6 +478,7 @@
     },
     {
       "dropdown": "ClickStack",
+      "icon": "/images/icons/icon-clickstack.svg",
       "pages": [
         "clickstack",
         {
