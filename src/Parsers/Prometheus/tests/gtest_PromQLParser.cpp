@@ -1784,14 +1784,14 @@ TEST(PromQLParser, RejectNonPositiveDurationRanges)
              {"up[0ms]", 3},
              {"up[0m]", 3},
              {"up[0.0]", 3},
-             {"up[-1s]", 3},
-             {"up[-0.001]", 3},
+             {"up[-1s]", 2},
+             {"up[-0.001]", 2},
              {"up[0m:]", 3},
              {"up[0.0:]", 3},
              {"up[5m:0]", 6},
              {"up[5m:0s]", 6},
              {"up[5m:0.0]", 6},
-             {"up[5m:-1s]", 6},
+             {"up[5m:-1s]", 2},
          })
     {
         PrometheusQueryTree query_tree;
