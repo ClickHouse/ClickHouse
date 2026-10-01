@@ -24,8 +24,10 @@ echo "on: $(ls -A "${TABLE_PATH}" 2>/dev/null | wc -l) files left"
 create_table && echo "on: re-created"
 
 # Setting off (default): the files are kept.
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE} SETTINGS allow_insert_into_iceberg = 1 VALUES (1)"
+FILES_BEFORE=$(cd "${TABLE_PATH}" && find . -type f | sort)
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE} SYNC"
-[ -f "${TABLE_PATH}metadata/v1.metadata.json" ] && echo "off: files kept"
+[ "$(cd "${TABLE_PATH}" && find . -type f | sort)" = "${FILES_BEFORE}" ] && echo "off: files kept"
 
 # A leftover version-hint.text without any metadata file still occupies the path.
 rm -rf "${TABLE_PATH}"

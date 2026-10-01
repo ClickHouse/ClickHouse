@@ -1000,7 +1000,7 @@ void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) cons
 
 void StorageObjectStorage::drop()
 {
-    dropImpl(configuration, object_storage, catalog, storage_id, drop_query_settings);
+    dropImpl(configuration, object_storage, catalog, getStorageID(), drop_query_settings);
 }
 
 void StorageObjectStorage::dropImpl(
@@ -1014,9 +1014,6 @@ void StorageObjectStorage::dropImpl(
     if (query_settings)
         drop_context->setSettings(*query_settings);
     const bool delete_data_on_drop = drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
-    /// A table from a DataLakeCatalog database is a fresh instance with no metadata loaded yet.
-    if (delete_data_on_drop && configuration->isIcebergConfiguration())
-        configuration->lazyInitializeIfNeeded(object_storage, drop_context);
 
     auto commit = [&catalog, &storage_id, delete_data_on_drop]
     {
@@ -1030,6 +1027,17 @@ void StorageObjectStorage::dropImpl(
             catalog->dropTable(namespace_name, table_name, delete_data_on_drop);
         }
     };
+
+    /// A catalog that manages the table location purges the files itself.
+    if (catalog && catalog->managesTableLocation())
+    {
+        commit();
+        return;
+    }
+
+    /// A table from a DataLakeCatalog database is a fresh instance with no metadata loaded yet.
+    if (delete_data_on_drop && configuration->isIcebergConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, drop_context);
 
     /// A Nil database UUID means Ordinary/Memory, as in InterpreterDropQuery.
     DropCleanupPolicy policy = DropCleanupPolicy::CatalogRetry;

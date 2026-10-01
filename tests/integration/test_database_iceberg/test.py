@@ -1495,8 +1495,9 @@ def test_drop_table_delete_data(started_cluster):
     # Without the setting the files are kept.
     table_name = f"{namespace}_off"
     create_table_with_data(started_cluster, node, namespace, table_name)
+    files = table_files(started_cluster, table_name)
     node.query(f"DROP TABLE {CATALOG_NAME}.`{namespace}.{table_name}`")
-    assert len(table_files(started_cluster, table_name)) > 0
+    assert sorted(table_files(started_cluster, table_name)) == sorted(files)
     assert len(catalog.list_tables(namespace)) == 0
 
 

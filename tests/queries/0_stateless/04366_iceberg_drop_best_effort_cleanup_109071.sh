@@ -27,6 +27,7 @@ function drop_with_failpoint()
 
 # Failure after the data files are deleted: ignored, the table is dropped.
 drop_with_failpoint iceberg_drop_catalog_remove_fail
+ls -A "${TABLE_PATH}" 2>/dev/null | wc -l
 rm -rf "${TABLE_PATH}"
 
 # Failure on the first delete, nothing is deleted yet: the DROP fails and the table stays readable.
