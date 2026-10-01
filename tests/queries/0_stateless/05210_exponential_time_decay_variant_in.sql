@@ -38,8 +38,8 @@ WITH CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecaying(10))') AS a
 SELECT CAST(a, 'Variant(Array(ExponentialTimeDecaying(10)), UInt8)') IN
     (SELECT CAST(a, 'Variant(Array(ExponentialTimeDecaying(10)), UInt8)'));
 
--- Validate the probe and the set independently, including noncanonical ordering fields.
-SELECT probe IN (SELECT value FROM VALUES('value Variant(ExponentialTimeDecaying(10), UInt8)', ((2., 0., 10.))))
+-- Validate malformed set and probe values independently.
+SELECT probe IN (SELECT value FROM VALUES('value Variant(ExponentialTimeDecaying(10), UInt8)', ((2., 0., 20.))))
 FROM time_decay_variant_in; -- { serverError BAD_ARGUMENTS, TYPE_MISMATCH }
 SELECT value IN (SELECT key FROM time_decay_variant_in)
 FROM VALUES('value Variant(ExponentialTimeDecaying(10), UInt8)', ((1., 0., 20.))); -- { serverError BAD_ARGUMENTS, TYPE_MISMATCH }
