@@ -9,6 +9,8 @@ namespace DB
 
 bool isRetryableAzureException(const Azure::Core::RequestFailedException & e);
 
+bool isAzureAccessTokenExpiredError(const Azure::Core::RequestFailedException & e);
+
 }
 
 #endif
