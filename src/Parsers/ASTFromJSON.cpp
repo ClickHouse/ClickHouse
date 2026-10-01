@@ -328,6 +328,40 @@ public:
     }
 };
 
+/// Poco destroys a JSON document recursively, and destroying a nesting level can take more stack than
+/// parsing it, so a document that `StackCheckingParseHandler` let through within half of the stack can
+/// still overflow the rest of it on destruction (seen on aarch64). Empty every container iteratively
+/// instead, so that each of them is destroyed with no children left.
+void dismantleJSON(const Poco::Dynamic::Var & root)
+{
+    std::vector<Poco::Dynamic::Var> pending{root};
+    while (!pending.empty())
+    {
+        Poco::Dynamic::Var value = std::move(pending.back());
+        pending.pop_back();
+
+        /// The children stay referenced from `pending`, so clearing a container never releases one
+        /// of them recursively.
+        if (value.type() == typeid(Poco::JSON::Object::Ptr))
+        {
+            Poco::JSON::Object::Ptr object = value.extract<Poco::JSON::Object::Ptr>();
+            if (!object)
+                continue;
+            for (const auto & [_, child] : *object)
+                pending.push_back(child);
+            object->clear();
+        }
+        else if (value.type() == typeid(Poco::JSON::Array::Ptr))
+        {
+            Poco::JSON::Array::Ptr array = value.extract<Poco::JSON::Array::Ptr>();
+            if (!array)
+                continue;
+            pending.insert(pending.end(), array->begin(), array->end());
+            array->clear();
+        }
+    }
+}
+
 }
 
 ASTPtr IAST::createFromJSON(const String & json)
@@ -373,7 +407,19 @@ ASTPtr IAST::createFromJSON(const String & json)
 
     if (!obj)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization");
-    return createFromJSON(*obj);
+
+    ASTPtr ast;
+    try
+    {
+        ast = createFromJSON(*obj);
+    }
+    catch (...)
+    {
+        dismantleJSON(result);
+        throw;
+    }
+    dismantleJSON(result);
+    return ast;
 }
 
 
