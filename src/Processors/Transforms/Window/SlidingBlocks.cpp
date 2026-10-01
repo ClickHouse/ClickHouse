@@ -4,17 +4,18 @@
 
 #include <base/arithmeticOverflow.h>
 
-#include <ranges>
-
 namespace DB
 {
 
 SlidingBlock & SlidingBlocks::add(Chunk chunk, Columns materialized_columns, SlidingIndex index)
 {
+    int64_t rows_count = chunk.getNumRows();
+    Columns input_columns = chunk.detachColumns();
+
     return blocks.emplace_back(SlidingBlock{
-        .input_columns = chunk.getColumns(),
+        .input_columns = std::move(input_columns),
         .materialized_columns = std::move(materialized_columns),
-        .rows_count = static_cast<int64_t>(chunk.getNumRows()),
+        .rows_count = rows_count,
         .block_number = next_block_number++,
         .index = std::move(index),
         .result_columns = {},
