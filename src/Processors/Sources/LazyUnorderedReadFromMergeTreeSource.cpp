@@ -1,4 +1,5 @@
 #include <Processors/Port.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Sources/LazyUnorderedReadFromMergeTreeSource.h>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -97,7 +98,7 @@ IProcessor::PipelineUpdate LazyUnorderedReadFromMergeTreeSource::updatePipeline(
     /// that includes processors whose first output is already connected internally. Iterating
     /// over all processors and calling `connect` on their first output would then fail with
     /// `Port is already connected`. Instead, connect only the pipe's real output ports.
-    std::vector<OutputPort *> pipe_outputs;
+    VectorWithMemoryTracking<OutputPort *> pipe_outputs;
     pipe_outputs.reserve(pipe.numOutputPorts());
     for (size_t i = 0; i < pipe.numOutputPorts(); ++i)
         pipe_outputs.push_back(pipe.getOutputPort(i));

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/logger_useful.h>
 
@@ -17,7 +18,7 @@ protected:
         size_t next_child = 0;
     };
 
-    using StackWithParent = std::vector<FrameWithParent>;
+    using StackWithParent = VectorWithMemoryTracking<FrameWithParent>;
 
     QueryPlan::Node * root = nullptr;
     StackWithParent stack;
@@ -78,8 +79,8 @@ private:
 
     const Derived & getDerived() const { return *static_cast<Derived *>(this); }
 
-    std::unordered_map<const IQueryPlanStep*, std::string> address2name;
-    std::unordered_map<std::string, UInt32> name_gen;
+    UnorderedMapWithMemoryTracking<const IQueryPlanStep*, std::string> address2name;
+    UnorderedMapWithMemoryTracking<std::string, UInt32> name_gen;
 
     std::string getStepId(const IQueryPlanStep* step)
     {

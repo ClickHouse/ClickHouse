@@ -1,4 +1,5 @@
 #include <cmath>
+#include <Common/VectorWithMemoryTracking.h>
 #include <string>
 #include <Processors/Formats/Impl/NpyRowInputFormat.h>
 #include <DataTypes/DataTypeString.h>
@@ -124,14 +125,14 @@ std::shared_ptr<NumpyDataType> parseType(String type)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support numpy type '{}'", type);
 }
 
-std::vector<size_t> parseShape(String shape_string)
+VectorWithMemoryTracking<size_t> parseShape(String shape_string)
 {
     if (!shape_string.starts_with('(') || !shape_string.ends_with(')'))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect shape format: {}", shape_string);
-    std::vector<std::string> result_str;
+    VectorWithMemoryTracking<std::string> result_str;
     boost::split(result_str, std::string_view(shape_string.data() + 1, shape_string.size() - 2), boost::is_any_of(","));
 
-    std::vector<size_t> shape;
+    VectorWithMemoryTracking<size_t> shape;
     if (result_str[result_str.size()-1].empty())
         result_str.pop_back();
     if (result_str.empty())

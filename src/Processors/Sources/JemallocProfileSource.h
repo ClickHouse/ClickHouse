@@ -8,7 +8,8 @@
 #    include <optional>
 #    include <string>
 #    include <unordered_map>
-#    include <vector>
+#    include <Common/UnorderedMapWithMemoryTracking.h>
+#    include <Common/VectorWithMemoryTracking.h>
 #    include <Core/SettingsEnums.h>
 #    include <IO/ReadBufferFromFile.h>
 #    include <Processors/ISource.h>
@@ -71,7 +72,7 @@ private:
 
     /// For Symbolized mode streaming
     SymbolizedPhase symbolized_phase = SymbolizedPhase::CollectingAddresses;
-    std::vector<UInt64> addresses;        /// Collected addresses to symbolize
+    VectorWithMemoryTracking<UInt64> addresses;        /// Collected addresses to symbolize
     size_t current_address_index = 0;
 
     /// Track what we've output in header phases
@@ -83,8 +84,8 @@ private:
     /// For Collapsed mode: aggregated stacks streamed directly from the map
     struct CollapsedState
     {
-        std::unordered_map<std::string, UInt64> stack_to_metric;
-        std::unordered_map<std::string, UInt64>::const_iterator iter;
+        UnorderedMapWithMemoryTracking<std::string, UInt64> stack_to_metric;
+        UnorderedMapWithMemoryTracking<std::string, UInt64>::const_iterator iter;
 
         CollapsedState() = default;
         CollapsedState(const CollapsedState &) = delete;
@@ -102,7 +103,7 @@ private:
 /// `fully_parsed` (when given) reports whether the whole line was consumed;
 /// on a malformed token the parsed prefix is still returned - strict callers
 /// must check the flag, best-effort callers may ignore it.
-std::vector<UInt64> parseJemallocStackAddresses(std::string_view line, bool * fully_parsed = nullptr);
+VectorWithMemoryTracking<UInt64> parseJemallocStackAddresses(std::string_view line, bool * fully_parsed = nullptr);
 
 /// Parse the sampling interval from a jemalloc heap_v2 header line ("heap_v2/N").
 /// Returns 0 if the header doesn't match heap_v2 format or the value is not a valid integer.

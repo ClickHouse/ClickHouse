@@ -1,4 +1,6 @@
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_ARROW || USE_PARQUET
 
@@ -554,7 +556,7 @@ namespace DB
         size_t start,
         size_t end,
         const CHColumnToArrowColumn::Settings & settings,
-        std::unordered_map<String, MutableColumnPtr> & dictionary_values);
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> & dictionary_values);
 
 
     /// `out_opaque_type_name`, when given, is set to the ClickHouse type name of a column with no Arrow
@@ -608,7 +610,7 @@ namespace DB
         size_t start,
         size_t end,
         const CHColumnToArrowColumn::Settings & settings,
-        std::unordered_map<String, MutableColumnPtr> & dictionary_values)
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> & dictionary_values)
     {
         size_t size = end - start;
         const auto & column_offsets = column.getOffsets();
@@ -624,8 +626,8 @@ namespace DB
                 format_name,
                 static_cast<int>(std::numeric_limits<int8_t>::max()));
 
-        std::vector<size_t> starts(num_variants);
-        std::vector<size_t> ends(num_variants);
+        VectorWithMemoryTracking<size_t> starts(num_variants);
+        VectorWithMemoryTracking<size_t> ends(num_variants);
         arrow::Status status;
         /// Here we are doing slicing - there is no clear specification on ColumnVariant having
         /// offsets being monotonic and contiguous (though from current code it seems they are),
@@ -762,7 +764,7 @@ namespace DB
         size_t start,
         size_t end,
         const CHColumnToArrowColumn::Settings & settings,
-        std::unordered_map<String, MutableColumnPtr> & dictionary_values)
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> & dictionary_values)
     {
         const auto * column_tuple = assert_cast<const ColumnTuple *>(column.get());
         const auto * type_tuple = assert_cast<const DataTypeTuple *>(column_type.get());
@@ -930,7 +932,7 @@ namespace DB
         size_t start,
         size_t end,
         const CHColumnToArrowColumn::Settings & settings,
-        std::unordered_map<String, MutableColumnPtr> & dictionary_values)
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> & dictionary_values)
     {
         const auto * column_array = assert_cast<const ColumnArray *>(column.get());
         const auto * type_array = assert_cast<const DataTypeArray *>(column_type.get());
@@ -974,7 +976,7 @@ namespace DB
         size_t start,
         size_t end,
         const CHColumnToArrowColumn::Settings & settings,
-        std::unordered_map<String, MutableColumnPtr> & dictionary_values)
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> & dictionary_values)
     {
         const auto * column_map = assert_cast<const ColumnMap *>(column.get());
         auto nested_column = column_map->getNestedColumnPtr();
@@ -1001,7 +1003,7 @@ namespace DB
         size_t start,
         size_t end,
         const CHColumnToArrowColumn::Settings & settings,
-        std::unordered_map<String, MutableColumnPtr> & dictionary_values)
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> & dictionary_values)
     {
         const auto * column_lc = assert_cast<const ColumnLowCardinality *>(column.get());
         arrow::DictionaryBuilder<ValueType> * builder = assert_cast<arrow::DictionaryBuilder<ValueType> *>(array_builder);
@@ -1080,7 +1082,7 @@ namespace DB
         size_t start,
         size_t end,
         const CHColumnToArrowColumn::Settings & settings,
-        std::unordered_map<String, MutableColumnPtr> & dictionary_values)
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> & dictionary_values)
     {
         auto value_type = assert_cast<arrow::DictionaryType *>(array_builder->type().get())->value_type();
 
@@ -1428,7 +1430,7 @@ namespace DB
         size_t start,
         size_t end,
         const CHColumnToArrowColumn::Settings & settings,
-        std::unordered_map<String, MutableColumnPtr> & dictionary_values)
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> & dictionary_values)
     {
         std::shared_ptr<arrow::Array> arrow_array;
 
@@ -1714,7 +1716,7 @@ namespace DB
             const auto & nested_types = tuple_type->getElements();
             const auto & nested_names = tuple_type->getElementNames();
             const auto * tuple_column = column ? assert_cast<const ColumnTuple *>(column.get()) : nullptr;
-            std::vector<std::shared_ptr<arrow::Field>> nested_fields;
+            std::vector<std::shared_ptr<arrow::Field>> nested_fields; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- arrow::struct_ takes std::vector
             for (size_t i = 0; i != nested_types.size(); ++i)
             {
                 nested_fields.push_back(getArrowChildField(
@@ -1894,13 +1896,13 @@ namespace DB
         const Chunk * chunk,
         const Settings & settings,
         std::optional<size_t> columns_num,
-        const std::optional<std::unordered_map<String, Int64>> & column_to_field_id
+        const std::optional<UnorderedMapWithMemoryTracking<String, Int64>> & column_to_field_id
     )
     {
         if (!columns_num)
             columns_num = header_columns.size();
 
-        std::vector<std::shared_ptr<arrow::Field>> arrow_fields;
+        std::vector<std::shared_ptr<arrow::Field>> arrow_fields; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- arrow::schema takes std::vector
         arrow_fields.reserve(*columns_num);
 
         for (size_t column_i = 0; column_i < *columns_num; ++column_i)
@@ -1970,19 +1972,19 @@ namespace DB
     std::shared_ptr<arrow::Table> CHColumnToArrowColumn::calculateArrowTable(
         const ColumnsWithTypeAndName & header_columns,
         const std::string & format_name,
-        const std::vector<Chunk> & chunks,
+        const VectorWithMemoryTracking<Chunk> & chunks,
         const Settings & settings,
         size_t columns_num,
         std::shared_ptr<arrow::Schema> schema,
-        std::unordered_map<std::string, MutableColumnPtr> * cached_dictionary_values)
+        UnorderedMapWithMemoryTracking<std::string, MutableColumnPtr> * cached_dictionary_values)
     {
         /// Map {column name : arrow dictionary}.
         /// To avoid converting dictionary from LowCardinality to Arrow
         /// Dictionary every chunk we save it and reuse.
-        std::unordered_map<std::string, MutableColumnPtr> local_dictionary_values;
-        std::unordered_map<std::string, MutableColumnPtr> & dictionary_values = cached_dictionary_values ? *cached_dictionary_values : local_dictionary_values;
+        UnorderedMapWithMemoryTracking<std::string, MutableColumnPtr> local_dictionary_values;
+        UnorderedMapWithMemoryTracking<std::string, MutableColumnPtr> & dictionary_values = cached_dictionary_values ? *cached_dictionary_values : local_dictionary_values;
 
-        std::vector<arrow::ArrayVector> table_data(columns_num);
+        VectorWithMemoryTracking<arrow::ArrayVector> table_data(columns_num);
 
         for (const auto & chunk : chunks)
         {
@@ -2029,7 +2031,7 @@ namespace DB
             }
         }
 
-        std::vector<std::shared_ptr<arrow::ChunkedArray>> columns;
+        std::vector<std::shared_ptr<arrow::ChunkedArray>> columns; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- arrow::Table::Make takes std::vector
         columns.reserve(columns_num);
         for (size_t column_i = 0; column_i < columns_num; ++column_i)
             columns.emplace_back(std::make_shared<arrow::ChunkedArray>(table_data.at(column_i)));
@@ -2070,7 +2072,7 @@ namespace DB
     }
 
     void CHColumnToArrowColumn::initializeArrowSchema(
-        const Chunk * chunk, std::optional<size_t> columns_num, const std::optional<std::unordered_map<String, Int64>> & column_to_field_id)
+        const Chunk * chunk, std::optional<size_t> columns_num, const std::optional<UnorderedMapWithMemoryTracking<String, Int64>> & column_to_field_id)
     {
         if (arrow_schema)
             return;
@@ -2086,9 +2088,9 @@ namespace DB
 
     void CHColumnToArrowColumn::chChunkToArrowTable(
         std::shared_ptr<arrow::Table> & res,
-        const std::vector<Chunk> & chunks,
+        const VectorWithMemoryTracking<Chunk> & chunks,
         size_t columns_num,
-        const std::optional<std::unordered_map<String, Int64>> & column_to_field_id)
+        const std::optional<UnorderedMapWithMemoryTracking<String, Int64>> & column_to_field_id)
     {
         /// We use the first chunk to initialize the arrow schema.
         const Chunk * chunk_to_initialize_schema = chunks.empty() ? nullptr : chunks.data();

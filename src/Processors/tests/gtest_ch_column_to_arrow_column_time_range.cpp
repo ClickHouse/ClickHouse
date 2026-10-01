@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_ARROW || USE_PARQUET
 
@@ -45,7 +46,7 @@ void convertToArrow(const DataTypePtr & type, const Field & value)
     Columns columns;
     columns.emplace_back(std::move(column));
 
-    std::vector<Chunk> chunks;
+    VectorWithMemoryTracking<Chunk> chunks;
     chunks.emplace_back(std::move(columns), 1);
 
     CHColumnToArrowColumn converter(header_columns, "Arrow", CHColumnToArrowColumn::Settings{});

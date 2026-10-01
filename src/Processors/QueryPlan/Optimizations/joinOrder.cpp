@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
 #include <Common/CurrentThread.h>
 
@@ -39,7 +42,7 @@ LoggerPtr getJoinOrderOptimizerLogger()
     return log;
 }
 
-DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_)
+DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats_)
     : relations()
     , cost(0.0)
     , estimated_rows(rows)
@@ -284,7 +287,7 @@ static void cleanupJoinPredicates(
             };
 
             using ConstClassPtr = EquivClasses::ConstClassPtr;
-            std::unordered_set<ConstClassPtr> visited;
+            UnorderedSetWithMemoryTracking<ConstClassPtr> visited;
 
             for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
             {
@@ -335,7 +338,7 @@ String DPJoinEntry::dump() const
 class JoinOrderOptimizer
 {
 public:
-    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_)
+    JoinOrderOptimizer(QueryGraph query_graph_, const VectorWithMemoryTracking<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_)
         : query_graph(std::move(query_graph_))
         , max_searched_plans(max_searched_plans_)
         , enabled_algorithms(enabled_algorithms_)
@@ -353,7 +356,7 @@ public:
 private:
     QueryGraph query_graph;
     const UInt64 max_searched_plans;
-    const std::vector<JoinOrderAlgorithm> enabled_algorithms;
+    const VectorWithMemoryTracking<JoinOrderAlgorithm> enabled_algorithms;
     LoggerPtr log = DB::getJoinOrderOptimizerLogger();
     QueryStatusPtr query_status;
     std::function<bool()> interactive_cancel_callback;

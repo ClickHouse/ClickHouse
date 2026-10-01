@@ -1,4 +1,8 @@
 #include <Common/logger_useful.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Common/SipHash.h>
 #include <Common/safe_cast.h>
 
@@ -75,13 +79,13 @@ struct RuntimeHashStatisticsContext
     /// where the contribution hashes the parent join's equi-key columns on the side N sits on.
     /// Populated for every node by `calculateHashTableCacheKeys`; mutated during join reorder
     /// to reflect the post-reorder parent of each node.
-    std::unordered_map<const QueryPlan::Node *, UInt64> cache_keys;
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> cache_keys;
     /// Bottom-up hash of the subtree rooted at the node — does NOT include any parent-join
     /// contribution, so it identifies "what data" but not "what hash table keyed how". Used
     /// by join-reorder code in `chooseJoinOrder` to derive cache keys for sub-join nodes
     /// built during reorder, where the post-reorder parent's contribution differs from
     /// whatever was originally stamped into `cache_keys` during the pre-reorder walk.
-    std::unordered_map<const QueryPlan::Node *, UInt64> raw_hashes;
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> raw_hashes;
     StatsCollectingParams params;
 
     RuntimeHashStatisticsContext(const QueryPlanOptimizationSettings & optimization_settings, const QueryPlan::Node & root_node)
@@ -283,23 +287,23 @@ struct QueryGraphBuilder
 {
     JoinExpressionActions expression_actions;
 
-    std::vector<RelationStats> relation_stats;
-    std::vector<QueryPlan::Node *> inputs;
+    VectorWithMemoryTracking<RelationStats> relation_stats;
+    VectorWithMemoryTracking<QueryPlan::Node *> inputs;
 
-    std::vector<JoinActionRef> join_edges;
+    VectorWithMemoryTracking<JoinActionRef> join_edges;
 
     /// Outer joined relation should be joined after all other relations involved in its join expressions.
     /// It is joined with specified join kind.
     /// The `join_kinds` maps (join relation index) -> (set of relations it depends on, join kind)
-    std::unordered_map<size_t, std::pair<BitSet, JoinKind>> join_kinds;
-    std::unordered_map<size_t, ActionsDAG::NodeRawConstPtrs> type_changes;
+    UnorderedMapWithMemoryTracking<size_t, std::pair<BitSet, JoinKind>> join_kinds;
+    UnorderedMapWithMemoryTracking<size_t, ActionsDAG::NodeRawConstPtrs> type_changes;
     /// ON-clause predicates of outer joins, see QueryGraph::outer_join_conditions
-    std::unordered_map<JoinActionRef, size_t> outer_join_conditions;
+    UnorderedMapWithMemoryTracking<JoinActionRef, size_t> outer_join_conditions;
 
     /// One record per binary join operator of the original tree, captured for the optional conflict
     /// detector (CD-A/CD-C). Relation ids are local to this (sub)graph and shifted in `uniteGraphs`.
     /// See QueryGraph::conflict_ops / ConflictJoinOp.
-    std::vector<ConflictJoinOp> conflict_ops;
+    VectorWithMemoryTracking<ConflictJoinOp> conflict_ops;
 
     struct BuilderContext
     {
@@ -422,7 +426,7 @@ static bool conflictDetectorReordersSemiAnti(const QueryPlanOptimizationSettings
 /// expression a second time, so such an expression must not be merged into a join graph.
 static bool hasOutputShadowingInputName(const ActionsDAG & dag)
 {
-    std::unordered_set<std::string_view> input_names;
+    UnorderedSetWithMemoryTracking<std::string_view> input_names;
     for (const auto * input : dag.getInputs())
         input_names.insert(input->result_name);
 
@@ -584,7 +588,7 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
 /// one. It excludes NULL-blocking functions on purpose (`coalesce`, `ifNull`, `assumeNotNull`, ...).
 static bool isNullPropagatingFunction(const ActionsDAG::Node & node)
 {
-    static const std::unordered_set<std::string_view> names = {
+    static const UnorderedSetWithMemoryTracking<std::string_view> names = {
         /// comparisons (the atoms of equi/theta-join predicates)
         "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
         /// arithmetic that may wrap a column inside a comparison, e.g. `a.x + 1 = b.y`
@@ -871,12 +875,12 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Residual filter is not supported in join reorder");
 }
 
-static std::vector<DPJoinEntry *> getJoinTreePostOrderSequence(DPJoinEntryPtr root)
+static VectorWithMemoryTracking<DPJoinEntry *> getJoinTreePostOrderSequence(DPJoinEntryPtr root)
 {
-    std::vector<DPJoinEntry *> result;
+    VectorWithMemoryTracking<DPJoinEntry *> result;
     result.reserve(root->relations.count() * 2);
 
-    std::vector<DPJoinEntry *> stack;
+    VectorWithMemoryTracking<DPJoinEntry *> stack;
     stack.push_back(root.get());
 
     while (!stack.empty())
@@ -960,9 +964,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());
 
-    std::unordered_map<BitSet, RelationEstimateInfo> relation_infos;
+    UnorderedMapWithMemoryTracking<BitSet, RelationEstimateInfo> relation_infos;
     Strings relations_without_statistics;
-    std::vector<UInt8> leaf_imprecise(query_graph.relation_stats.size());
+    VectorWithMemoryTracking<UInt8> leaf_imprecise(query_graph.relation_stats.size());
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
@@ -1004,9 +1008,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
     /// Mapping from node to maximal step position where it is used
     /// It's used to drop unused expressions
-    std::unordered_map<const ActionsDAG::Node *, size_t> usage_level_map;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> usage_level_map;
     {
-        std::deque<std::pair<const ActionsDAG::Node *, size_t>> stack;
+        DequeWithMemoryTracking<std::pair<const ActionsDAG::Node *, size_t>> stack;
 
         /// Join expressions used by i-th join step
         for (size_t i = 0; i < sequence.size(); ++i)
@@ -1051,10 +1055,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     /// Each next step uses mapped columns as inputs
 
     /// Input in global dag -> it's position
-    std::unordered_map<const ActionsDAG::Node *, size_t> input_node_map;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> input_node_map;
 
     /// input_position -> (relation no, input)
-    std::vector<std::pair<size_t, const ActionsDAG::Node *>> current_input_nodes;
+    VectorWithMemoryTracking<std::pair<size_t, const ActionsDAG::Node *>> current_input_nodes;
 
     const auto & global_inputs = global_actions_dag->getInputs();
     for (size_t input_idx = 0; input_idx < global_inputs.size(); ++input_idx)
@@ -1164,7 +1168,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             ActionsDAG::NodeRawConstPtrs required_output_nodes;
 
             /// input pos -> new input node
-            std::unordered_map<size_t, const ActionsDAG::Node *> current_step_type_changes;
+            UnorderedMapWithMemoryTracking<size_t, const ActionsDAG::Node *> current_step_type_changes;
 
             for (auto rel_id : {left_rels.getSingleBit(), right_rels.getSingleBit()})
             {
@@ -1355,7 +1359,7 @@ static void collectJoinGraphRelationHeaders(
     int join_steps_limit,
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
-    std::vector<SharedHeader> & relation_headers,
+    VectorWithMemoryTracking<SharedHeader> & relation_headers,
     bool allow_semi_anti_children);
 
 /// Mirrors `buildQueryGraph` for a single join node: collects the output headers of the relations
@@ -1367,7 +1371,7 @@ static void collectJoinGraphRelationHeadersForJoin(
     int join_steps_limit,
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
-    std::vector<SharedHeader> & relation_headers,
+    VectorWithMemoryTracking<SharedHeader> & relation_headers,
     bool allow_semi_anti_children)
 {
     const auto * join_step = typeid_cast<const JoinStepLogical *>(join_node.step.get());
@@ -1399,7 +1403,7 @@ static void collectJoinGraphRelationHeaders(
     int join_steps_limit,
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
-    std::vector<SharedHeader> & relation_headers,
+    VectorWithMemoryTracking<SharedHeader> & relation_headers,
     bool allow_semi_anti_children)
 {
     /// Peeling must match `addChildQueryGraph`: a passthrough expression is always peeled, a
@@ -1453,10 +1457,10 @@ static bool joinGraphHasOverlappingColumnNames(
     bool merge_expression_into_join,
     bool allow_semi_anti_children)
 {
-    std::vector<SharedHeader> relation_headers;
+    VectorWithMemoryTracking<SharedHeader> relation_headers;
     collectJoinGraphRelationHeadersForJoin(join_node, join_steps_limit, join_settings, merge_expression_into_join, relation_headers, allow_semi_anti_children);
 
-    std::unordered_set<std::string_view> seen_names;
+    UnorderedSetWithMemoryTracking<std::string_view> seen_names;
     for (const auto & header : relation_headers)
     {
         if (!header)

@@ -4,6 +4,7 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/FillingRow.h>
 #include <Processors/ISimpleTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -40,7 +41,7 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
-    using MutableColumnRawPtrs = std::vector<IColumn *>;
+    using MutableColumnRawPtrs = VectorWithMemoryTracking<IColumn *>;
     void transformRange(
         const Columns & input_fill_columns,
         const Columns & input_interpolate_columns,
@@ -98,12 +99,12 @@ private:
     FillingRow next_row; /// Row to which we need to generate filling rows.
     bool filling_row_inserted = false;
 
-    using Positions = std::vector<size_t>;
+    using Positions = VectorWithMemoryTracking<size_t>;
     Positions fill_column_positions;
     Positions interpolate_column_positions;
     Positions other_column_positions;
     Positions sort_prefix_positions;
-    std::vector<std::pair<size_t, NameAndTypePair>> input_positions; /// positions in result columns required for actions
+    VectorWithMemoryTracking<std::pair<size_t, NameAndTypePair>> input_positions; /// positions in result columns required for actions
     ExpressionActionsPtr interpolate_actions;
     Columns last_row;
     Columns last_range_sort_prefix;

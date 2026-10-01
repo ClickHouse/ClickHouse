@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -31,7 +32,7 @@ SharedHeader oneColumnHeader()
 
 /// One partially aggregated two level chunk of `bucket`, reporting `ooo` as the buckets which are
 /// delayed by its producer and can still arrive after it.
-Chunk makeBucketChunk(Int32 bucket, std::vector<Int32> ooo = {})
+Chunk makeBucketChunk(Int32 bucket, VectorWithMemoryTracking<Int32> ooo = {})
 {
     auto col = ColumnUInt64::create();
     col->insertValue(static_cast<UInt64>(bucket));
@@ -128,7 +129,7 @@ struct Driver
         }
     }
 
-    void send(size_t input, Int32 bucket, std::vector<Int32> ooo = {})
+    void send(size_t input, Int32 bucket, VectorWithMemoryTracking<Int32> ooo = {})
     {
         feeders[input]->push(makeBucketChunk(bucket, std::move(ooo)));
         updated_inputs.push_back(input);
@@ -268,15 +269,15 @@ namespace
 /// The stream of one producer: the buckets in order, except that some are postponed and sent later,
 /// which is what `enable_producing_buckets_out_of_order_in_aggregation` does. Every chunk reports the
 /// buckets which are postponed and not sent yet, and a bucket can be split into several chunks.
-std::vector<std::pair<Int32, std::vector<Int32>>> generateStream(pcg64 & rng, Int32 num_buckets)
+std::vector<std::pair<Int32, VectorWithMemoryTracking<Int32>>> generateStream(pcg64 & rng, Int32 num_buckets)
 {
-    std::vector<std::pair<Int32, std::vector<Int32>>> stream;
+    std::vector<std::pair<Int32, VectorWithMemoryTracking<Int32>>> stream;
     std::vector<Int32> postponed;
     Int32 next = 0;
 
     auto emit = [&](Int32 bucket)
     {
-        std::vector<Int32> reported;
+        VectorWithMemoryTracking<Int32> reported;
         for (auto p : postponed)
             if (p != bucket)
                 reported.push_back(p);
@@ -324,7 +325,7 @@ TEST(GroupingAggregatedOOO, EveryBucketIsPushedOnceAndTheTransformFinishesFuzz)
         const size_t num_inputs = 2 + rng() % 2;
 
         Driver d(num_inputs);
-        std::vector<std::vector<std::pair<Int32, std::vector<Int32>>>> streams;
+        std::vector<std::vector<std::pair<Int32, VectorWithMemoryTracking<Int32>>>> streams;
         std::vector<size_t> positions(num_inputs, 0);
         for (size_t i = 0; i < num_inputs; ++i)
             streams.push_back(generateStream(rng, num_buckets));

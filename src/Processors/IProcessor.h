@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Processors/Port.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Common/ProcessorMemoryStats.h>
 #include <Common/Stopwatch.h>
 
@@ -20,14 +22,14 @@ namespace DB
 class IQueryPlanStep;
 
 struct StorageLimits;
-using StorageLimitsList = std::list<StorageLimits>;
+using StorageLimitsList = std::list<StorageLimits>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class RowsBeforeStepCounter;
 using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class StepWallClock;
 
@@ -183,8 +185,8 @@ public:
     virtual Status prepare();
 
     /// Optimization for prepare in case we know ports were updated.
-    using UpdatedInputPorts  = std::vector<InputPort *>;
-    using UpdatedOutputPorts = std::vector<OutputPort *>;
+    using UpdatedInputPorts  = VectorWithMemoryTracking<InputPort *>;
+    using UpdatedOutputPorts = VectorWithMemoryTracking<OutputPort *>;
     virtual Status prepare(const UpdatedInputPorts & /*updated_input_ports*/, const UpdatedOutputPorts & /*updated_output_ports*/) { return prepare(); }
 
     /** You may call this method if 'prepare' returned Ready.

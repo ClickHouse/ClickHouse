@@ -1,4 +1,5 @@
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Core/Settings.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -34,7 +35,7 @@ std::vector<String> parseIdentifiersOrStringLiterals(const String & str, const S
     return res;
 }
 
-std::unordered_set<String> parseIdentifiersOrStringLiteralsToSet(const String & str, const Settings & settings)
+UnorderedSetWithMemoryTracking<String> parseIdentifiersOrStringLiteralsToSet(const String & str, const Settings & settings)
 {
     Tokens tokens(str.data(), str.data() + str.size(), settings[Setting::max_query_size]);
     IParser::Pos pos(
@@ -43,7 +44,7 @@ std::unordered_set<String> parseIdentifiersOrStringLiteralsToSet(const String & 
         static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
 
     Expected expected;
-    std::unordered_set<std::string> res;
+    UnorderedSetWithMemoryTracking<std::string> res;
 
     auto parse_single_id_or_literal = [&]
     {

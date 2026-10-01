@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/removeUnusedColumns.h>
 
 #include <numeric>
@@ -26,12 +28,12 @@ bool addDiscardingExpressionStepIfNeeded(
     QueryPlan::Nodes & nodes,
     QueryPlan::Node & parent,
     const size_t child_id,
-    const std::vector<size_t> & required_positions,
-    const std::vector<size_t> & kept_output_positions)
+    const VectorWithMemoryTracking<size_t> & required_positions,
+    const VectorWithMemoryTracking<size_t> & kept_output_positions)
 {
     const auto output_header = parent.children[child_id]->step->getOutputHeader();
 
-    std::set<size_t> required_set(required_positions.begin(), required_positions.end());
+    SetWithMemoryTracking<size_t> required_set(required_positions.begin(), required_positions.end());
 
     /// Check whether there are any columns to discard.
     bool has_columns_to_discard = false;
@@ -58,7 +60,7 @@ bool addDiscardingExpressionStepIfNeeded(
     /// This ensures every header column is consumed by name matching in `updateHeader`,
     /// avoiding ambiguity when there are duplicate column names.
     ActionsDAG discarding_dag;
-    std::vector<const ActionsDAG::Node *> input_nodes;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> input_nodes;
     input_nodes.reserve(output_header->columns());
     for (size_t pos = 0; pos < output_header->columns(); ++pos)
     {
@@ -107,12 +109,12 @@ static bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
         [](const QueryPlan::Node * child) { return child->step->canRemoveUnusedColumns() && child->step->canRemoveColumnsFromOutput(); });
 }
 
-std::vector<size_t> effectiveKeptOutputPositions(bool changed, std::vector<size_t> && kept_output_positions, size_t num_output_columns)
+VectorWithMemoryTracking<size_t> effectiveKeptOutputPositions(bool changed, VectorWithMemoryTracking<size_t> && kept_output_positions, size_t num_output_columns)
 {
     if (changed)
         return std::move(kept_output_positions);
 
-    std::vector<size_t> all_positions(num_output_columns);
+    VectorWithMemoryTracking<size_t> all_positions(num_output_columns);
     std::iota(all_positions.begin(), all_positions.end(), 0);
     return all_positions;
 }
@@ -120,8 +122,8 @@ std::vector<size_t> effectiveKeptOutputPositions(bool changed, std::vector<size_
 bool absorbExtraChildColumns(
     QueryPlan::Node & node,
     size_t child_id,
-    const std::vector<size_t> & required_positions,
-    const std::vector<size_t> & kept_output_positions)
+    const VectorWithMemoryTracking<size_t> & required_positions,
+    const VectorWithMemoryTracking<size_t> & kept_output_positions)
 {
     ActionsDAG * dag = nullptr;
 
@@ -138,7 +140,7 @@ bool absorbExtraChildColumns(
     const auto & child_output = node.children[child_id]->step->getOutputHeader();
 
     /// Identify extra columns: positions in kept_output_positions that are not in required_positions.
-    std::set<size_t> required_set(required_positions.begin(), required_positions.end());
+    SetWithMemoryTracking<size_t> required_set(required_positions.begin(), required_positions.end());
 
     bool added_any = false;
     for (size_t new_pos = 0; new_pos < kept_output_positions.size(); ++new_pos)
@@ -178,7 +180,7 @@ static ChildUpdateResult removeSingleChildOutput(
     QueryPlan::Nodes & nodes,
     QueryPlan::Node & node,
     const size_t child_id,
-    const std::vector<size_t> & required_positions
+    const VectorWithMemoryTracking<size_t> & required_positions
 )
 {
     auto & child_step = node.children[child_id]->step;
@@ -240,7 +242,7 @@ static ChildUpdateResult removeSingleChildOutput(
 static RemoveChildrenOutputResult removeChildrenOutputs(
     QueryPlan::Nodes & nodes,
     QueryPlan::Node & node,
-    const std::vector<std::vector<size_t>> & required_input_positions)
+    const VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> & required_input_positions)
 {
     bool updated_any_child = false;
     bool added_any_discarding_step = false;
@@ -270,7 +272,7 @@ static RemoveChildrenOutputResult removeChildrenOutputs(
 
 size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &)
 {
-    std::vector<std::vector<size_t>> required_input_positions;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> required_input_positions;
 
     size_t depth = 0;
     const auto can_remove_inputs = canAllChildrenCanRemoveOutputs(*node);
@@ -279,7 +281,7 @@ size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, 
     if (node->step->canRemoveUnusedColumns())
     {
         const auto num_outputs = node->step->getOutputHeader()->columns();
-        std::vector<size_t> all_outputs(num_outputs);
+        VectorWithMemoryTracking<size_t> all_outputs(num_outputs);
         std::iota(all_outputs.begin(), all_outputs.end(), 0);
 
         auto remove_result = node->step->removeUnusedColumns(all_outputs, can_remove_inputs);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <WindowFunctions/IWindowFunction.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Interpreters/WindowDescription.h>
 
@@ -43,12 +44,12 @@ public:
             SharedHeader input_header_,
             SharedHeader output_header_,
             const WindowDescription & window_description_,
-            const std::vector<WindowFunctionDescription> &
+            const VectorWithMemoryTracking<WindowFunctionDescription> &
                 functions);
 
     ~WindowTransform() override;
 
-    void initWorkspaces(const std::vector<WindowFunctionDescription> & functions);
+    void initWorkspaces(const VectorWithMemoryTracking<WindowFunctionDescription> & functions);
 
     String getName() const override
     {
@@ -110,7 +111,7 @@ public:
     bool input_is_finished = false;
 
     // Per-window-function scratch spaces.
-    std::vector<WindowFunctionWorkspace> workspaces;
+    VectorWithMemoryTracking<WindowFunctionWorkspace> workspaces;
 
     // One arena shared by the aggregate function states of the current partition.
     // Results never live in it: plain functions write values into the output

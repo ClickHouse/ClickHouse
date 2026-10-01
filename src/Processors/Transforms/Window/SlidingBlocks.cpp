@@ -1,4 +1,5 @@
 #include <Processors/Transforms/Window/SlidingBlocks.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -12,7 +13,7 @@ namespace DB
 namespace
 {
 
-Columns materializeColumns(Columns columns, const std::vector<bool> & should_materialize)
+Columns materializeColumns(Columns columns, const VectorWithMemoryTracking<bool> & should_materialize)
 {
     for (auto && [column, materialize] : std::views::zip(columns, should_materialize))
         if (materialize)

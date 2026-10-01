@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
@@ -40,7 +42,7 @@ protected:
     {
         struct RowValue
         {
-            std::map<String, String> labels;
+            MapWithMemoryTracking<String, String> labels;
             String value;
             String timestamp;
         };
@@ -51,7 +53,7 @@ protected:
         String name;
         String help;
         String type;
-        std::vector<RowValue> values;
+        VectorWithMemoryTracking<RowValue> values;
     };
 
     /// Input rows should be grouped by the same metric.

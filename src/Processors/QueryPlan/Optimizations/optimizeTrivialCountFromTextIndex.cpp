@@ -1,4 +1,5 @@
 #include <IO/Operators.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -207,7 +208,7 @@ bool guardsHold(const ReadFromMergeTree & reading)
 
         if (max_partitions_to_read > 0)
         {
-            std::set<String> partitions;
+            SetWithMemoryTracking<String> partitions;
             for (const auto & part_with_ranges : reading.getParts())
             {
                 partitions.insert(part_with_ranges.data_part->info.getPartitionId());

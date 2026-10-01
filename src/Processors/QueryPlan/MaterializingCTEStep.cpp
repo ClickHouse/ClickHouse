@@ -1,4 +1,5 @@
 #include <Planner/Utils.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -67,7 +68,7 @@ void MaterializingCTEStep::describeActions([[maybe_unused]] FormatSettings & set
 {
 }
 
-MaterializingCTEsStep::MaterializingCTEsStep(SharedHeaders input_headers_, std::vector<MaterializedCTEPtr> ctes_)
+MaterializingCTEsStep::MaterializingCTEsStep(SharedHeaders input_headers_, VectorWithMemoryTracking<MaterializedCTEPtr> ctes_)
     : ctes(std::move(ctes_))
 {
     input_headers = std::move(input_headers_);
@@ -105,7 +106,7 @@ QueryPipelineBuilderPtr MaterializingCTEsStep::updatePipeline(QueryPipelineBuild
 
 DelayedMaterializingCTEsStep::DelayedMaterializingCTEsStep(
     SharedHeader input_header,
-    std::vector<MaterializedCTEPtr> ctes_
+    VectorWithMemoryTracking<MaterializedCTEPtr> ctes_
 )
     : ctes(std::move(ctes_))
 {
@@ -150,9 +151,9 @@ bool DelayedMaterializingCTEsStep::eraseCTEs(const MaterializedCTESet & ctes_to_
     return ctes.empty();
 }
 
-std::vector<DelayedMaterializingCTEsStep::ClaimedCTE> DelayedMaterializingCTEsStep::makePlansForCTEs(DelayedMaterializingCTEsStep && step)
+VectorWithMemoryTracking<DelayedMaterializingCTEsStep::ClaimedCTE> DelayedMaterializingCTEsStep::makePlansForCTEs(DelayedMaterializingCTEsStep && step)
 {
-    std::vector<ClaimedCTE> claimed;
+    VectorWithMemoryTracking<ClaimedCTE> claimed;
     for (auto & materialized_cte : step.ctes)
     {
         /// Every claimed entry carries a plan, so the attach site can dereference it. Skipping

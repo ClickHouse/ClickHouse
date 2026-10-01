@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/IInputFormat.h>
 
 
@@ -43,7 +44,7 @@ public:
     size_t getApproxBytesReadForChunk() const override { return underlying->getApproxBytesReadForChunk(); }
     void needOnlyCount() override { underlying->needOnlyCount(); }
     void setQueryParameters(const NameToNameMap & parameters) override { underlying->setQueryParameters(parameters); }
-    std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override { return underlying->getMatchedBuckets(); }
+    std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> getMatchedBuckets() const override { return underlying->getMatchedBuckets(); }
 
 protected:
     /// The underlying format already annotates the exceptions with the file name, no need to do it twice.

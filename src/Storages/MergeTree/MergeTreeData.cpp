@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -2299,7 +2300,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     if (partition_pruner.isUseless() && !valid)
         return {};
 
-    std::unordered_set<String> part_values;
+    UnorderedSetWithMemoryTracking<String> part_values;
     if (valid)
     {
         virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, parts);
@@ -5787,7 +5788,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
             /// Positions beyond the stored flags are ascending, and an empty vector means the whole key is ascending
             /// (the `KeyOrder` convention).
-            auto is_reversed = [](const std::vector<bool> & flags, size_t column)
+            auto is_reversed = [](const VectorWithMemoryTracking<bool> & flags, size_t column)
             {
                 return column < flags.size() && flags[column];
             };

@@ -1,4 +1,7 @@
 #include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #if USE_ORC
 
@@ -362,7 +365,7 @@ static DataTypePtr parseORCType(
         }
 
         DataTypes nested_types;
-        std::unordered_set<String> seen_type_names;
+        UnorderedSetWithMemoryTracking<String> seen_type_names;
         nested_types.reserve(subtype_count);
         for (int i = 0; i < subtype_count; ++i)
         {
@@ -941,7 +944,7 @@ static void buildORCSearchArgumentImpl(
                 const auto & set_column = ordered_set[0];
 
                 bool fail = false;
-                std::vector<orc::Literal> literals;
+                std::vector<orc::Literal> literals; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- orc::SearchArgumentBuilder::in takes std::vector
                 literals.reserve(set_column->size());
                 for (size_t i = 0; i < set_column->size(); ++i)
                 {
@@ -1164,7 +1167,7 @@ static std::optional<size_t> findORCStructFieldByName(const orc::Type * orc_type
 }
 
 static void
-updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_case, std::unordered_set<UInt64> & include_typeids)
+updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_case, UnorderedSetWithMemoryTracking<UInt64> & include_typeids)
 {
     /// Recurses the file-controlled ORC type tree in lockstep with the (parser-bounded) CH type.
     /// Keep a stack backstop here too: this runs in prepareFileReader, before the
@@ -1294,7 +1297,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
     const auto & header = getPort().getHeader();
     const auto & file_schema = file_reader->getType();
-    std::unordered_set<UInt64> include_typeids;
+    UnorderedSetWithMemoryTracking<UInt64> include_typeids;
     for (const auto & column : header)
     {
         auto adjusted_type = column.type;
@@ -1321,7 +1324,7 @@ void NativeORCBlockInputFormat::prefetchStripes()
         return;
 
     size_t total_stripe_size = 0;
-    std::vector<uint32_t> stripes;
+    std::vector<uint32_t> stripes; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- orc::Reader::preBuffer takes std::vector
     while (prefetch_iterator < selected_stripes.size() && total_stripe_size < min_bytes_for_seek)
     {
         int stripe = selected_stripes[prefetch_iterator];
@@ -1342,9 +1345,9 @@ void NativeORCBlockInputFormat::prefetchStripes()
         time.elapsedMilliseconds());
 }
 
-std::vector<int> NativeORCBlockInputFormat::calculateSelectedStripes(int num_stripes, const std::unordered_set<int> & skip_stripes)
+VectorWithMemoryTracking<int> NativeORCBlockInputFormat::calculateSelectedStripes(int num_stripes, const std::unordered_set<int> & skip_stripes) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- FormatSettings::orc::skip_stripes is std::unordered_set
 {
-    std::vector<int> result;
+    VectorWithMemoryTracking<int> result;
     result.reserve(std::max<ssize_t>(num_stripes - skip_stripes.size(), 0));
     for (int stripe = 0; stripe < num_stripes; ++stripe)
     {
@@ -2353,7 +2356,7 @@ static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const D
                 /// a subset of the ORC struct's fields, in any order. Each target field must map to
                 /// an ORC field with a recursively matching type; extra ORC fields are projected out
                 /// by the repair cast. Build a name -> ORC subtype map for the lookup.
-                std::unordered_map<String, const orc::Type *> orc_field_by_name;
+                UnorderedMapWithMemoryTracking<String, const orc::Type *> orc_field_by_name;
                 orc_field_by_name.reserve(orc_branch_type->getSubtypeCount());
                 for (size_t i = 0; i < orc_branch_type->getSubtypeCount(); ++i)
                 {
@@ -2462,16 +2465,16 @@ static DataTypes computeOrcUnionBranchHints(const orc::Type * orc_type, const Da
         return branch_hints;
 
     const auto & alternatives = variant_hint->getVariants();
-    std::vector<std::vector<size_t>> candidates(num_children);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> candidates(num_children);
     for (size_t i = 0; i < num_children; ++i)
         for (size_t a = 0; a < alternatives.size(); ++a)
             if (orcUnionBranchMatchesType(orc_type->getSubtype(i), alternatives[a], case_insensitive_matching))
                 candidates[i].push_back(a);
 
-    std::vector<bool> alternative_taken(alternatives.size(), false);
+    VectorWithMemoryTracking<bool> alternative_taken(alternatives.size(), false);
     const auto preferred_candidates = [&](size_t i)
     {
-        std::vector<size_t> preferred;
+        VectorWithMemoryTracking<size_t> preferred;
         for (const size_t a : candidates[i])
             if (orcUnionBranchPrefersType(orc_type->getSubtype(i), alternatives[a]))
                 preferred.push_back(a);
@@ -2605,8 +2608,8 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         /// wrapping the branch value in Nullable.
         DataTypes branch_types;
         Columns branch_columns;
-        std::vector<ColumnPtr> branch_null_map_columns(num_children); /// keeps the null maps alive
-        std::vector<const NullMap *> branch_null_maps(num_children, nullptr);
+        VectorWithMemoryTracking<ColumnPtr> branch_null_map_columns(num_children); /// keeps the null maps alive
+        VectorWithMemoryTracking<const NullMap *> branch_null_maps(num_children, nullptr);
         branch_types.reserve(num_children);
         branch_columns.reserve(num_children);
         for (size_t i = 0; i < num_children; ++i)
@@ -2679,7 +2682,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         /// identity is compared with LowCardinality stripped, so it does not depend on the current
         /// stripe's physical encoding (a dictionary-encoded branch materializes as LowCardinality),
         /// mirroring the schema-inference check in parseORCType.
-        std::unordered_set<String> seen_type_names;
+        UnorderedSetWithMemoryTracking<String> seen_type_names;
         for (const auto & branch_type : branch_types)
             if (!seen_type_names.insert(recursiveRemoveLowCardinality(branch_type)->getName()).second)
                 throw Exception(
@@ -2694,12 +2697,12 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         /// discriminators. The Variant sub-columns are built compactly (each must contain exactly
         /// the values referenced by its discriminator, in appended order), so they are cloned empty
         /// from the ORC branch columns and filled row by row below rather than placed wholesale.
-        std::unordered_map<String, ColumnVariant::Discriminator> type_name_to_global;
+        UnorderedMapWithMemoryTracking<String, ColumnVariant::Discriminator> type_name_to_global;
         for (size_t g = 0; g < global_variants.size(); ++g)
             type_name_to_global[global_variants[g]->getName()] = static_cast<ColumnVariant::Discriminator>(g);
 
         MutableColumns variant_columns(global_variants.size());
-        std::vector<ColumnVariant::Discriminator> tag_to_global(num_children);
+        VectorWithMemoryTracking<ColumnVariant::Discriminator> tag_to_global(num_children);
         for (size_t i = 0; i < num_children; ++i)
         {
             auto global = type_name_to_global.at(branch_types[i]->getName());
@@ -2950,7 +2953,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         {
             Columns tuple_elements;
             DataTypes tuple_types;
-            std::vector<String> tuple_names;
+            Strings tuple_names;
 
             const auto * tuple_type_hint = type_hint ? typeid_cast<const DataTypeTuple *>(type_hint.get()) : nullptr;
             const auto * orc_struct_column = dynamic_cast<const orc::StructVectorBatch *>(orc_column);
@@ -3027,7 +3030,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
 
     Columns columns_list;
     columns_list.reserve(header.columns());
-    std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
+    UnorderedMapWithMemoryTracking<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
     for (size_t column_i = 0, columns = header.columns(); column_i < columns; ++column_i)
     {
         const ColumnWithTypeAndName & header_column = header.getByPosition(column_i);

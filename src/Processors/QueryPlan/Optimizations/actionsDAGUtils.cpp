@@ -1,4 +1,8 @@
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <Core/Field.h>
@@ -29,9 +33,9 @@ MatchedTrees::Matches matchTrees(
     bool check_monotonicity,
     size_t max_size_for_sets_from_tuple_to_compare)
 {
-    using Parents = std::set<const ActionsDAG::Node *>;
-    std::unordered_map<const ActionsDAG::Node *, Parents> inner_parents;
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> inner_inputs;
+    using Parents = SetWithMemoryTracking<const ActionsDAG::Node *>;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, Parents> inner_parents;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> inner_inputs;
 
     {
         std::stack<const ActionsDAG::Node *> stack;
@@ -143,7 +147,7 @@ MatchedTrees::Matches matchTrees(
 
                     if (frame.mapped_children.size() > 1)
                     {
-                        std::vector<Parents *> other_parents;
+                        VectorWithMemoryTracking<Parents *> other_parents;
                         size_t mapped_children_size = frame.mapped_children.size();
                         other_parents.reserve(mapped_children_size);
                         for (size_t i = 1; i < mapped_children_size; ++i)
@@ -300,7 +304,7 @@ MatchedTrees::Matches matchTrees(
 struct PossiblyMonotonicChain
 {
     const ActionsDAG::Node * input_node = nullptr;
-    std::vector<size_t> non_const_arg_pos;
+    VectorWithMemoryTracking<size_t> non_const_arg_pos;
     bool changes_order = false;
     bool is_strict = true;
 };
@@ -308,7 +312,7 @@ struct PossiblyMonotonicChain
 /// Build a chain of functions which may be monotonic.
 static PossiblyMonotonicChain buildPossiblyMonitinicChain(const ActionsDAG::Node * node)
 {
-    std::vector<size_t> chain;
+    VectorWithMemoryTracking<size_t> chain;
 
     while (node->type != ActionsDAG::ActionType::INPUT)
     {
@@ -416,11 +420,11 @@ void applyActionsToSortDescription(
         bool changes_order = false;
     };
 
-    std::vector<SortColumn> sort_columns(descr_size);
-    std::unordered_map<const ActionsDAG::Node *, size_t> input_to_sort_column;
+    VectorWithMemoryTracking<SortColumn> sort_columns(descr_size);
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> input_to_sort_column;
 
     {
-        std::unordered_map<std::string_view, size_t> desc_name_to_pos;
+        UnorderedMapWithMemoryTracking<std::string_view, size_t> desc_name_to_pos;
         for (size_t pos = 0; pos < descr_size; ++pos)
             desc_name_to_pos.emplace(description[pos].column_name, pos);
 
@@ -494,9 +498,9 @@ void applyActionsToSortDescription(
     description.resize(prefix_size);
 }
 
-std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
+std::optional<UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
     const MatchedTrees::Matches & matches,
-    const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes)
 {
     struct Frame
@@ -506,8 +510,8 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     };
 
     std::stack<Frame> stack;
-    std::unordered_set<const ActionsDAG::Node *> visited;
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> new_inputs;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> new_inputs;
 
     for (const auto * node : nodes)
     {
@@ -584,16 +588,16 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
     return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u, preserves_width};
 }
 
-std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions)
+VectorWithMemoryTracking<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions)
 {
     using TraceState = std::optional<ActionsDAGInputLineage>;
 
-    std::unordered_map<const ActionsDAG::Node *, size_t> input_positions;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> input_positions;
     const auto & inputs = actions.getInputs();
     for (size_t input_position = 0; input_position < inputs.size(); ++input_position)
         input_positions[inputs[input_position]] = input_position;
 
-    std::unordered_map<const ActionsDAG::Node *, TraceState> traced;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, TraceState> traced;
     const auto & outputs = actions.getOutputs();
     for (const auto * output : outputs)
     {
@@ -648,7 +652,7 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
         }
     }
 
-    std::vector<ActionsDAGOutputLineage> result;
+    VectorWithMemoryTracking<ActionsDAGOutputLineage> result;
     result.reserve(outputs.size());
     for (size_t output_position = 0; output_position < outputs.size(); ++output_position)
         result.push_back({output_position, traced.at(outputs[output_position])});

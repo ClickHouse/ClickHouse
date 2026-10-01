@@ -261,7 +261,7 @@ struct StorageInMemoryMetadata
     Names getSortingKeyColumns() const;
     /// Returns reverse indicators of columns in sorting key specified by user in ORDER BY
     /// expression. For example: ('a' DESC, 'x * y', 'toStartOfMonth(date)' DESC) -> {1, 0, 1}.
-    std::vector<bool> getSortingKeyReverseFlags() const;
+    VectorWithMemoryTracking<bool> getSortingKeyReverseFlags() const;
 
     /// Returns column names that need to be read for FINAL to work.
     Names getColumnsRequiredForFinal() const { return getColumnsRequiredForSortingKey(); }

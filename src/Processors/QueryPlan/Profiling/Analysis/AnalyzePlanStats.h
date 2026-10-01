@@ -1,6 +1,9 @@
 #pragma once
 
 #include <optional>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <utility>
 #include <set>
 #include <string>
@@ -29,13 +32,13 @@ class AnalyzeStepsStats
 
     /// Per-processor elapsed times collected per (step, group) to compute the distribution.
     /// A multiset keeps the values sorted and preserves duplicates so the median stays correct.
-    using ElapsedTimes = std::multiset<UInt64>;
-    using ElapsedTimesPerStepGroup = std::unordered_map<StepAndGroup, ElapsedTimes, boost::hash<StepAndGroup>>;
+    using ElapsedTimes = MultiSetWithMemoryTracking<UInt64>;
+    using ElapsedTimesPerStepGroup = UnorderedMapWithMemoryTracking<StepAndGroup, ElapsedTimes, boost::hash<StepAndGroup>>;
 
-    using StatsByStep = std::unordered_map<const IQueryPlanStep *, StepIOStats>;
-    using StatsByStepAndGroup = std::unordered_map<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>>;
-    using ProcessorsByStep = std::unordered_map<const IQueryPlanStep *, std::vector<IProcessor *>>;
-    using ReportsByStep = std::unordered_map<const IQueryPlanStep *, StepAnalysisReport>;
+    using StatsByStep = UnorderedMapWithMemoryTracking<const IQueryPlanStep *, StepIOStats>;
+    using StatsByStepAndGroup = UnorderedMapWithMemoryTracking<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>>;
+    using ProcessorsByStep = UnorderedMapWithMemoryTracking<const IQueryPlanStep *, VectorWithMemoryTracking<IProcessor *>>;
+    using ReportsByStep = UnorderedMapWithMemoryTracking<const IQueryPlanStep *, StepAnalysisReport>;
 
 public:
     AnalyzeStepsStats(const QueryPipeline & pipeline, const QueryPlan & plan, StepProfiler & step_profiler, UInt64 execution_start_ns, UInt64 execution_query_time_ns_);

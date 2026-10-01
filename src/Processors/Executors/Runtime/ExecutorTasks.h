@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Processors/Executors/Runtime/ExecutionThreadContext.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/QueueWithMemoryTracking.h>
 #include <Processors/Executors/Runtime/PollingQueue.h>
 #include <Processors/Executors/Runtime/ThreadsQueue.h>
 #include <Processors/Executors/Runtime/TasksQueue.h>
@@ -29,7 +31,7 @@ class ExecutorTasks
     std::atomic_bool finished = false;
 
     /// Contexts for every executing thread.
-    std::vector<std::unique_ptr<ExecutionThreadContext>> executor_contexts;
+    VectorWithMemoryTracking<std::unique_ptr<ExecutionThreadContext>> executor_contexts;
     /// This mutex protects only executor_contexts vector. Needed to avoid race between init() and finish().
     std::mutex executor_contexts_mutex;
 
@@ -57,7 +59,7 @@ class ExecutorTasks
     size_t use_threads = 0;
 
     /// Reference counters for thread CPU slots to handle race conditions between upscale/downscale.
-    std::vector<size_t> slot_count;
+    VectorWithMemoryTracking<size_t> slot_count;
 
     /// Total number of non-preempted slots.
     size_t total_slots = 0;
@@ -75,7 +77,7 @@ public:
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
     using DequeWithMemoryTracker = boost::container::devector<IProcessor *, AllocatorWithMemoryTracking<IProcessor *>>;
-    using Queue = std::queue<IProcessor *, DequeWithMemoryTracker>;
+    using Queue = std::queue<IProcessor *, DequeWithMemoryTracker>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- already tracked: the container is a `boost::container::devector` with `AllocatorWithMemoryTracking`
 
     void finish();
     bool isFinished() const { return finished; }

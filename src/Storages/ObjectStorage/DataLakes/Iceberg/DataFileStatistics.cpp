@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/DataFileStatistics.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Columns/ColumnNullable.h>
@@ -62,7 +63,7 @@ void DataFileStatistics::update(const Chunk & chunk)
     }
 }
 
-void DataFileStatistics::addColumnSizesOnDisk(const std::unordered_map<String, size_t> & sizes_by_column_name, const Block & sample_block)
+void DataFileStatistics::addColumnSizesOnDisk(const UnorderedMapWithMemoryTracking<String, size_t> & sizes_by_column_name, const Block & sample_block)
 {
     if (sizes_by_column_name.empty())
         return;

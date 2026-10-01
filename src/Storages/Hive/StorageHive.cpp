@@ -1,4 +1,5 @@
 #include <Storages/Hive/StorageHive.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_HIVE
 

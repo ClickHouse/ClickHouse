@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <optional>
 #include <numeric>
 #include <DataTypes/DataTypeString.h>
@@ -642,7 +643,7 @@ ConditionTemplate<KeyCondition>::Ptr MergeTreeDataSelectExecutor::buildKeyCondit
     return std::make_shared<ConditionTemplate<KeyCondition>>(std::move(sub_filter_dag), std::move(factory), metadata_snapshot, context, skip_folding);
 }
 
-std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
+std::optional<UnorderedSetWithMemoryTracking<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
     const RangesInDataParts & parts,
@@ -680,7 +681,7 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
         {
             ConstantFilterDescription filter_description(*output_node.column);
             if (filter_description.always_false)
-                return std::unordered_set<String>{};
+                return UnorderedSetWithMemoryTracking<String>{};
         }
         return {};
     }
@@ -726,7 +727,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     const RangesInDataParts & parts,
     const std::optional<PartitionPruner> & partition_pruner,
     const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
-    const std::optional<std::unordered_set<String>> & part_values,
+    const std::optional<UnorderedSetWithMemoryTracking<String>> & part_values,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
     const ContextPtr & context,
@@ -1067,7 +1068,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 }
             }
 
-            auto index_order = std::make_shared<std::vector<size_t>>(skip_indexes.useful_indices.size());
+            auto index_order = std::make_shared<VectorWithMemoryTracking<size_t>>(skip_indexes.useful_indices.size());
             std::iota(index_order->begin(), index_order->end(), 0);
 
             index_sizes.clear();
@@ -3071,7 +3072,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
 RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
     const RangesInDataParts & parts,
-    const std::optional<std::unordered_set<String>> & part_values,
+    const std::optional<UnorderedSetWithMemoryTracking<String>> & part_values,
     const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
     const std::optional<PartitionPruner> & partition_pruner,

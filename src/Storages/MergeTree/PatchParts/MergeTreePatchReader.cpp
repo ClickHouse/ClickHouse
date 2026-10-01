@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
@@ -333,7 +334,7 @@ static int compareMainAndPatchKeys(
     const Block & patch_block,
     size_t patch_row,
     const Names & sorting_key_names,
-    const std::vector<bool> & reverse_flags)
+    const VectorWithMemoryTracking<bool> & reverse_flags)
 {
     /// Compares sort-key tuples at two positions: `main_block[main_row]` vs `patch_block[patch_row]`.
     for (size_t i = 0; i < sorting_key_names.size(); ++i)

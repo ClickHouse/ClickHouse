@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/Profiling/Execution/WorkInterval.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <atomic>
@@ -35,7 +36,7 @@ private:
 
     /// EXPLAIN ANALYZE statistics.
     StepProfiler * step_profiler = nullptr;
-    std::vector<WorkInterval> work_intervals;
+    VectorWithMemoryTracking<WorkInterval> work_intervals;
 
 public:
 #ifndef NDEBUG

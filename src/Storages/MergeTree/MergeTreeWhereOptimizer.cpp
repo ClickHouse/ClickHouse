@@ -1,4 +1,7 @@
 #include <algorithm>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
@@ -137,7 +140,7 @@ NameSet getSortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
 }
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
-    std::unordered_map<std::string, UInt64> column_sizes_,
+    UnorderedMapWithMemoryTracking<std::string, UInt64> column_sizes_,
     const StorageSnapshotPtr & storage_snapshot,
     ConditionSelectivityEstimatorPtr estimator_,
     const Names & queried_columns_,
@@ -228,8 +231,8 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     if (!optimize_result)
         return {};
 
-    std::unordered_set<const ActionsDAG::Node *> prewhere_conditions;
-    std::list<const ActionsDAG::Node *> prewhere_conditions_list;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> prewhere_conditions;
+    ListWithMemoryTracking<const ActionsDAG::Node *> prewhere_conditions_list;
     for (const auto & condition : optimize_result->prewhere_conditions)
     {
         for (const auto & n : condition.nodes)

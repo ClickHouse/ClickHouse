@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 namespace DB
@@ -10,7 +11,7 @@ namespace DB
 struct ProcessorsProfileLogInfo
 {
     UInt64 id = 0;
-    std::vector<UInt64> parent_ids;
+    VectorWithMemoryTracking<UInt64> parent_ids;
     UInt64 plan_step = 0;
     String plan_step_name;
     String plan_step_description;

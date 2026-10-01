@@ -1,4 +1,5 @@
 #include <Columns/ColumnNullable.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
@@ -107,9 +108,9 @@ String stringKey(UInt64 value)
     return fmt::format("runtime_filter_key_{:016x}", value);
 }
 
-std::vector<UInt64> makeShuffledKeyPermutation(size_t rows, UInt64 offset = 0)
+VectorWithMemoryTracking<UInt64> makeShuffledKeyPermutation(size_t rows, UInt64 offset = 0)
 {
-    std::vector<UInt64> keys(rows);
+    VectorWithMemoryTracking<UInt64> keys(rows);
     for (size_t row = 0; row < rows; ++row)
         keys[row] = row;
 
@@ -199,7 +200,7 @@ ColumnPtr makeNullableUInt64Column(size_t rows, size_t key_count, HitRatio hit_r
     const auto bounded_null_percent = std::min<size_t>(null_percent, 100);
     const auto null_count = (rows / 100) * bounded_null_percent + ((rows % 100) * bounded_null_percent + 99) / 100;
     /// Avoid clustering nulls in mixed probe data while preserving their exact count.
-    const auto null_order = pattern == ValuePattern::Mixed && null_count != 0 ? makeShuffledKeyPermutation(rows) : std::vector<UInt64>{};
+    const auto null_order = pattern == ValuePattern::Mixed && null_count != 0 ? makeShuffledKeyPermutation(rows) : VectorWithMemoryTracking<UInt64>{};
 
     for (size_t row = 0; row < rows; ++row)
     {
@@ -289,9 +290,9 @@ Block makeHeader(const DataTypePtr & type)
     return Block{ColumnWithTypeAndName(type->createColumn(), type, "key")};
 }
 
-std::vector<Chunk> splitColumnIntoChunks(const ColumnPtr & column, size_t chunk_rows)
+VectorWithMemoryTracking<Chunk> splitColumnIntoChunks(const ColumnPtr & column, size_t chunk_rows)
 {
-    std::vector<Chunk> chunks;
+    VectorWithMemoryTracking<Chunk> chunks;
     for (size_t offset = 0; offset < column->size(); offset += chunk_rows)
     {
         const auto rows = std::min(chunk_rows, column->size() - offset);
@@ -487,7 +488,7 @@ static void BM_ApproximateSetRuntimeFilterMergeUInt64(benchmark::State & state)
     const auto filters_to_merge = static_cast<size_t>(state.range(0));
     const auto keys_per_filter = static_cast<size_t>(state.range(1));
 
-    std::vector<std::unique_ptr<ApproximateSetRuntimeFilter>> sources;
+    VectorWithMemoryTracking<std::unique_ptr<ApproximateSetRuntimeFilter>> sources;
     sources.reserve(filters_to_merge);
     for (size_t filter_index = 0; filter_index < filters_to_merge; ++filter_index)
     {
@@ -521,7 +522,7 @@ static void BM_ExactSetRuntimeFilterMergeUInt64(benchmark::State & state)
     const auto keys_per_filter = static_cast<size_t>(state.range(1));
     const auto type = uint64Type();
 
-    std::vector<std::unique_ptr<Filter>> sources;
+    VectorWithMemoryTracking<std::unique_ptr<Filter>> sources;
     sources.reserve(filters_to_merge);
     for (size_t filter_index = 0; filter_index < filters_to_merge; ++filter_index)
     {

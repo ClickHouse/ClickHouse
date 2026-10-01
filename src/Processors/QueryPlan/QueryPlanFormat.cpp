@@ -1,4 +1,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
@@ -80,7 +82,7 @@ namespace QueryPlanFormat
         return result;
     }
 
-    std::vector<MetricGroup> collectJoinInputColumns(const JoinStep & step)
+    VectorWithMemoryTracking<MetricGroup> collectJoinInputColumns(const JoinStep & step)
     {
         const auto & input_headers = step.getInputHeaders();
         if (input_headers.size() != 2 || !input_headers[0] || !input_headers[1])
@@ -88,7 +90,7 @@ namespace QueryPlanFormat
 
         auto side_group = [](MetricGroupKey key, const Block & input_header) -> MetricGroup
         {
-            std::vector<String> columns;
+            VectorWithMemoryTracking<String> columns;
             columns.reserve(input_header.columns());
             for (const auto & column : input_header)
                 columns.push_back(trimColumnIdentifier(column.name));
@@ -101,7 +103,7 @@ namespace QueryPlanFormat
             return group;
         };
 
-        std::vector<MetricGroup> groups;
+        VectorWithMemoryTracking<MetricGroup> groups;
         groups.emplace_back(side_group(MetricGroupKey::InputLeft, *input_headers[0]));
         groups.emplace_back(side_group(MetricGroupKey::InputRight, *input_headers[1]));
         return groups;
@@ -119,7 +121,7 @@ namespace QueryPlanFormat
         }
     }
 
-    void formatOutputColumns(const std::unordered_map<String, PrettyColumnName> & pretty_names, WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)
+    void formatOutputColumns(const UnorderedMapWithMemoryTracking<String, PrettyColumnName> & pretty_names, WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)
     {
         if (!step.hasOutputHeader() || step.getOutputHeader()->empty())
         {
@@ -145,9 +147,9 @@ namespace QueryPlanFormat
     static PrettyColumnName formatFilterPretty(
         const ActionsDAG & dag,
         const String & column_name,
-        const std::unordered_map<String, PrettyColumnName> & pretty_names,
-        const std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
+        const UnorderedMapWithMemoryTracking<String, PrettyColumnName> & pretty_names,
+        const UnorderedMapWithMemoryTracking<String, RuntimeFilterInfo> & runtime_filter_names,
+        UnorderedMapWithMemoryTracking<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
     {
         const auto * root = dag.tryFindInOutputs(column_name);
         if (!root)
@@ -155,8 +157,8 @@ namespace QueryPlanFormat
 
         auto atoms = ActionsDAG::extractConjunctionAtoms(root);
 
-        std::vector<String> user_parts;
-        std::vector<String> rf_parts;
+        VectorWithMemoryTracking<String> user_parts;
+        VectorWithMemoryTracking<String> rf_parts;
         for (const auto * atom : atoms)
         {
             if (atom->type == ActionsDAG::ActionType::FUNCTION
@@ -242,7 +244,7 @@ namespace QueryPlanFormat
 
         String formatSetPretty(
             const ActionsDAG::Node * set_node,
-            std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
+            UnorderedMapWithMemoryTracking<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
         {
             static constexpr size_t MAX_SET_ELEMENTS_TO_SHOW = 10;
 
@@ -311,9 +313,9 @@ namespace QueryPlanFormat
 
     String formatNodePretty(
         const ActionsDAG::Node * node,
-        const std::unordered_map<String, PrettyColumnName> & pretty_names,
-        const std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names,
+        const UnorderedMapWithMemoryTracking<String, PrettyColumnName> & pretty_names,
+        const UnorderedMapWithMemoryTracking<String, RuntimeFilterInfo> & runtime_filter_names,
+        UnorderedMapWithMemoryTracking<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names,
         int parent_precedence)
     {
         using ActionType = ActionsDAG::ActionType;
@@ -402,7 +404,7 @@ namespace QueryPlanFormat
                 if ((func_name == "and" || func_name == "or") && node->children.size() >= 2)
                 {
                     String separator = fmt::format(" {} ", op_info->symbol);
-                    std::vector<String> parts;
+                    VectorWithMemoryTracking<String> parts;
                     parts.reserve(node->children.size());
                     for (const auto * child : node->children)
                         parts.push_back(formatNodePretty(child, pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence));
@@ -449,7 +451,7 @@ namespace QueryPlanFormat
                     return result;
                 }
 
-                std::vector<String> args;
+                VectorWithMemoryTracking<String> args;
                 args.reserve(node->children.size());
                 for (const auto * child : node->children)
                     args.push_back(formatNodePretty(child, pretty_names, runtime_filter_names, subquery_set_names));
@@ -462,7 +464,7 @@ namespace QueryPlanFormat
         }
     }
 
-    String formatColumnPretty(const String & column_name, const std::unordered_map<String, PrettyColumnName> & pretty_names)
+    String formatColumnPretty(const String & column_name, const UnorderedMapWithMemoryTracking<String, PrettyColumnName> & pretty_names)
     {
         if (auto it = pretty_names.find(column_name); it != pretty_names.end())
             return it->second.expression;
@@ -476,7 +478,7 @@ namespace QueryPlanFormat
         return {};
     }
 
-    static void addAggregatesPrettyNames(const Aggregator::Params & params, std::unordered_map<String, PrettyColumnName> & pretty_names)
+    static void addAggregatesPrettyNames(const Aggregator::Params & params, UnorderedMapWithMemoryTracking<String, PrettyColumnName> & pretty_names)
     {
         for (const auto & agg : params.aggregates)
         {
@@ -512,7 +514,7 @@ namespace QueryPlanFormat
         }
     }
 
-    static void addWindowFunctionPrettyNames(const WindowDescription & window_description, std::unordered_map<String, PrettyColumnName> & pretty_names)
+    static void addWindowFunctionPrettyNames(const WindowDescription & window_description, UnorderedMapWithMemoryTracking<String, PrettyColumnName> & pretty_names)
     {
         String spec = "(";
 
@@ -598,7 +600,7 @@ namespace QueryPlanFormat
         return {};
     }
 
-    using PerPlanColumnMaps = std::unordered_map<const QueryPlan *, PrettyColumnNameMap>;
+    using PerPlanColumnMaps = UnorderedMapWithMemoryTracking<const QueryPlan *, PrettyColumnNameMap>;
 
     static void buildPrettyNamesForNode(
         const QueryPlan::Node * node,

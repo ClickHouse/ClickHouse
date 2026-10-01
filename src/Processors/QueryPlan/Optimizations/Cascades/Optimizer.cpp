@@ -1,4 +1,6 @@
 #include <Common/ThreadStatus.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -383,7 +385,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
     /// Single-input expressions on the current DFS path, used to break enforcer self-reference
     /// cycles. Path-local: added when a frame is pushed, removed when popped, so the same expression
     /// can still be reused in an independent sibling branch.
-    std::unordered_set<GroupExpression *> active_path;
+    UnorderedSetWithMemoryTracking<GroupExpression *> active_path;
 
     /// Select the cheapest eligible (acyclic) implementation for a group. `input_is_self_referential`
     /// is true when this selection is for the self-referential input of a same-group enforcer.
@@ -405,11 +407,11 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         GroupId group_id;
         GroupExpressionPtr expression;
         size_t next_child = 0;
-        std::vector<QueryPlanPtr> child_plans;
+        VectorWithMemoryTracking<QueryPlanPtr> child_plans;
         bool on_active_path = false;  /// whether this frame's expression was added to `active_path`
     };
 
-    std::vector<Frame> stack;
+    VectorWithMemoryTracking<Frame> stack;
     QueryPlanPtr result;
 
     /// Push a frame for `expression`, recording it on the active path if it is single-input.

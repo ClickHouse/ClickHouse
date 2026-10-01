@@ -1,4 +1,5 @@
 #include <Storages/StorageFile.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -2013,7 +2014,7 @@ Chunk StorageFileSource::generate()
                 if (matching_marks.has_value())
                 {
                     const auto & marks = *matching_marks;
-                    std::vector<size_t> matching_row_groups;
+                    VectorWithMemoryTracking<size_t> matching_row_groups;
                     for (size_t i = 0; i < marks.size(); ++i)
                         if (marks[i])
                             matching_row_groups.push_back(i);
@@ -2628,7 +2629,7 @@ public:
         ReadFromFormatInfo info_,
         const ContextPtr & context_,
         size_t max_block_size_,
-        std::vector<FileLazyMaterializingRows::FileRows> files_)
+        VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files_)
         : ISource(std::move(header), false)
         , WithContext(context_)
         , storage(std::move(storage_))
@@ -2791,7 +2792,7 @@ private:
     std::shared_ptr<StorageFile> storage;
     ReadFromFormatInfo info;
     size_t max_block_size;
-    std::vector<FileLazyMaterializingRows::FileRows> files;
+    VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files;
     size_t next_file_index = 0;
 
     FormatParserSharedResourcesPtr parser_shared_resources;
@@ -2808,7 +2809,7 @@ std::shared_ptr<ISource> StorageFile::createLazyRowsSource(
     const ReadFromFormatInfo & info,
     const ContextPtr & context,
     size_t max_block_size,
-    std::vector<FileLazyMaterializingRows::FileRows> files)
+    VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files)
 {
     return std::make_shared<StorageFileLazyRowsSource>(
         std::make_shared<const Block>(info.source_header), storage, info, context, max_block_size, std::move(files));

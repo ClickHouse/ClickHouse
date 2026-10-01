@@ -1,4 +1,6 @@
 #include <Processors/Transforms/DistinctSetFilter.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsCommon.h>
@@ -83,7 +85,7 @@ struct DistinctLowCardinalityFilter::DictionariesState
     };
 
     /// Per-dictionary state which may cover multiple `IColumn` instances.
-    std::unordered_map<LCDictionaryKey, LCDictState, LCDictionaryKeyHash> lc_dict_states;
+    UnorderedMapWithMemoryTracking<LCDictionaryKey, LCDictState, LCDictionaryKeyHash> lc_dict_states;
 };
 
 DistinctLowCardinalityFilter::DistinctLowCardinalityFilter()
@@ -390,7 +392,7 @@ public:
             return {};
 
         MutableColumns columns;
-        std::vector<IColumn *> raw_columns;
+        std::vector<IColumn *> raw_columns; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `Method::insertKeyIntoColumns` and `shuffleKeyColumns` take std::vector
         columns.reserve(key_types.size());
         raw_columns.reserve(key_types.size());
         for (const auto & key_type : key_types)

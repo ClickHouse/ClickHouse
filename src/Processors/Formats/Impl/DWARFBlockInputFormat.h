@@ -1,5 +1,7 @@
 #pragma once
 #include "config.h"
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #if USE_DWARF_PARSER && defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <llvm/DebugInfo/DWARF/DWARFDebugAbbrev.h>
@@ -60,7 +62,7 @@ private:
         uint64_t base_address = UINT64_MAX;
 
         uint64_t offset = 0;
-        std::vector<StackEntry> stack;
+        VectorWithMemoryTracking<StackEntry> stack;
 
         bool eof() const { return offset == end_offset; }
 
@@ -83,8 +85,8 @@ private:
     std::mutex mutex;
     std::condition_variable deliver_chunk;
     std::condition_variable wake_up_threads;
-    std::deque<UnitState> units_queue;
-    std::deque<std::pair<Chunk, size_t>> delivery_queue;
+    DequeWithMemoryTracking<UnitState> units_queue;
+    DequeWithMemoryTracking<std::pair<Chunk, size_t>> delivery_queue;
     size_t units_in_progress = 0;
 
     std::optional<Elf> elf;

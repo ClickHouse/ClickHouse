@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -166,7 +167,7 @@ private:
     std::string filename;
     size_t max_block_size;
     std::unique_ptr<ReadBufferFromFile> file_input;
-    std::vector<UInt64> current_addresses;
+    VectorWithMemoryTracking<UInt64> current_addresses;
     Array current_stack;
     UInt64 sample_interval = 0;
     bool is_finished = false;

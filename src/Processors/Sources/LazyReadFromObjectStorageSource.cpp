@@ -1,4 +1,5 @@
 #include <Processors/Sources/LazyReadFromObjectStorageSource.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -28,7 +29,7 @@ class LazyRowsObjectIterator : public IObjectIterator
 {
 public:
     LazyRowsObjectIterator(
-        std::vector<ObjectStorageLazyMaterializingRows::FileRows> files_,
+        VectorWithMemoryTracking<ObjectStorageLazyMaterializingRows::FileRows> files_,
         ObjectStoragePtr object_storage_,
         bool etag_validated_on_read_,
         bool data_files_are_immutable_)
@@ -133,7 +134,7 @@ private:
                 changed ? "was modified" : "cannot be proven unchanged");
     }
 
-    const std::vector<ObjectStorageLazyMaterializingRows::FileRows> files;
+    const VectorWithMemoryTracking<ObjectStorageLazyMaterializingRows::FileRows> files;
     const ObjectStoragePtr object_storage;
     const bool etag_validated_on_read;
     const bool data_files_are_immutable;

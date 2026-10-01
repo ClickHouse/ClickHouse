@@ -1,4 +1,5 @@
 #include <Interpreters/ActionsDAG.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -125,8 +126,8 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
             return 0;
     }
 
-    std::vector<int> directions;
-    std::vector<int> nulls_directions;
+    std::vector<int> directions; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- moved into `Aggregator::Params::TopKParams`, which holds std::vector
+    std::vector<int> nulls_directions; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- moved into `Aggregator::Params::TopKParams`, which holds std::vector
     size_t num_key_columns = 0;
 
     if (sorting_step)

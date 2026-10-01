@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Analyzer/TableNode.h>
 
@@ -53,7 +54,7 @@ struct MemorySourceFilter
         bool remove_filter_column = false;
     };
 
-    std::vector<Step> steps;
+    VectorWithMemoryTracking<Step> steps;
 
     /// The requested physical columns, partitioned by whether some step consumes them.
     /// Both lists preserve the requested order.

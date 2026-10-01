@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Common/Logger.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 
 #include <Core/Block_fwd.h>
 #include <Core/Field.h>
@@ -26,7 +29,7 @@ class CalibrateWatermarksProcessor final : public IProcessor
 
     struct OutputState
     {
-        std::deque<Chunk> queue;
+        DequeWithMemoryTracking<Chunk> queue;
     };
 
     void handleOutputUpdate(OutputPort * output, OutputState & state);
@@ -46,13 +49,13 @@ private:
     const LoggerPtr log;
 
     /// State information.
-    std::unordered_map<OutputPort *, OutputState> outputs_state;
-    std::unordered_map<InputPort *, InputState> inputs_state;
+    UnorderedMapWithMemoryTracking<OutputPort *, OutputState> outputs_state;
+    UnorderedMapWithMemoryTracking<InputPort *, InputState> inputs_state;
     bool initialized = false;
 
     /// Runtime information.
-    std::unordered_set<OutputPort *> finished_outputs;
-    std::unordered_set<InputPort *> finished_inputs;
+    UnorderedSetWithMemoryTracking<OutputPort *> finished_outputs;
+    UnorderedSetWithMemoryTracking<InputPort *> finished_inputs;
     Field last_emitted_watermark;
     bool emitted_idle = false;
 };

@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
 
 #include <Core/Joins.h>
 #include <Interpreters/PreparedSets.h>
@@ -268,9 +271,9 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
 /// normally exactly one lazy read and it sits at the branch root. Walk the branch anyway, so that a
 /// later pass putting a step on top of it, or nesting another lazy materialization inside it, is seen
 /// rather than silently missed.
-void collectLazyReads(const QueryPlan::Node & branch_root, std::vector<LazilyReadFromMergeTree *> & lazy_reads)
+void collectLazyReads(const QueryPlan::Node & branch_root, VectorWithMemoryTracking<LazilyReadFromMergeTree *> & lazy_reads)
 {
-    std::vector<const QueryPlan::Node *> to_visit{&branch_root};
+    VectorWithMemoryTracking<const QueryPlan::Node *> to_visit{&branch_root};
     while (!to_visit.empty())
     {
         const auto * node = to_visit.back();
@@ -302,7 +305,7 @@ ReadFromMergeTree * findReadingStep(
     if (lazy_reading_step)
         *lazy_reading_step = nullptr;
 
-    std::vector<LazilyReadFromMergeTree *> lazy_reads;
+    VectorWithMemoryTracking<LazilyReadFromMergeTree *> lazy_reads;
 
     const auto * reading_step = &top_of_single_replica_plan;
     while (reading_step && !reading_step->children.empty())
@@ -380,10 +383,10 @@ ReadFromMergeTree * findReadingStep(
     return nullptr;
 }
 
-std::vector<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
+VectorWithMemoryTracking<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
 {
     Stack stack;
-    std::vector<ReadFromMergeTree *> reading_steps;
+    VectorWithMemoryTracking<ReadFromMergeTree *> reading_steps;
     traverseQueryPlan(
         stack,
         root,
@@ -448,7 +451,7 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         return ReadIdentity{&read->getMergeTreeData(), table_expression->getAlias()};
     };
 
-    std::map<ReadIdentity, ReadFromMergeTree *> single_node_by_identity;
+    MapWithMemoryTracking<ReadIdentity, ReadFromMergeTree *> single_node_by_identity;
     for (auto * read : single_node_reads)
     {
         auto identity = identify(read);
@@ -463,8 +466,8 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         }
     }
 
-    std::vector<ReadFromMergeTree *> paired_single_node_reads(replicas_reads.size());
-    std::unordered_set<const ReadFromMergeTree *> claimed_single_node_reads;
+    VectorWithMemoryTracking<ReadFromMergeTree *> paired_single_node_reads(replicas_reads.size());
+    UnorderedSetWithMemoryTracking<const ReadFromMergeTree *> claimed_single_node_reads;
     for (size_t i = 0; i < replicas_reads.size(); ++i)
     {
         auto identity = identify(replicas_reads[i]);
@@ -545,7 +548,7 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
 /// subquery runs a second time at execution, which is exactly what this transplant exists to avoid.
 void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan)
 {
-    std::map<FutureSet::Hash, SetAndKeyPtr> sets_map;
+    MapWithMemoryTracking<FutureSet::Hash, SetAndKeyPtr> sets_map;
 
     // Create a map: set_key -> set
     forEachSubquerySet(

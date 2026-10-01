@@ -1,4 +1,5 @@
 #include <Processors/Streaming/CalibrateWatermarksProcessor.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Processors/Streaming/Markers.h>
 
 #include <Processors/Port.h>
@@ -22,7 +23,7 @@ namespace ErrorCodes
 namespace
 {
 
-void drainQueue(OutputPort * output, std::deque<Chunk> & queue)
+void drainQueue(OutputPort * output, DequeWithMemoryTracking<Chunk> & queue)
 {
     if (!queue.empty() && output->canPush())
     {

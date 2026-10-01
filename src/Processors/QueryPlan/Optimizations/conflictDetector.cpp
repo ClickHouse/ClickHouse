@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/conflictDetector.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -163,18 +164,18 @@ bool rAsscomHolds(const NormOp & row, const NormOp & col, UInt32 e3)
 
 }
 
-std::vector<ConflictOperator>
-computeConflictOperators(const std::vector<ConflictOpMask> & ops, ConflictDetector detector, LoggerPtr log)
+VectorWithMemoryTracking<ConflictOperator>
+computeConflictOperators(const VectorWithMemoryTracking<ConflictOpMask> & ops, ConflictDetector detector, LoggerPtr log)
 {
     const size_t n = ops.size();
     const bool cdc = detector == ConflictDetector::CDC;
 
-    std::vector<NormOp> norm;
+    VectorWithMemoryTracking<NormOp> norm;
     norm.reserve(n);
     for (const auto & op : ops)
         norm.push_back(normalize(op));
 
-    std::vector<ConflictOperator> result;
+    VectorWithMemoryTracking<ConflictOperator> result;
     result.reserve(n);
 
     /// For each operator b we walk every operator a in b's subtrees and consult the reorderability
@@ -194,7 +195,7 @@ computeConflictOperators(const std::vector<ConflictOpMask> & ops, ConflictDetect
         /// Base required set: the ON-clause relations restricted to this operator's own relations.
         const UInt32 ses = nel & b_rel;
         UInt32 tes = ses;                  /// CD-A widens this; CD-C leaves it
-        std::vector<ConflictRule> rules;   /// CD-C fills this; CD-A leaves it empty
+        VectorWithMemoryTracking<ConflictRule> rules;   /// CD-C fills this; CD-A leaves it empty
 
         for (size_t i = 0; i < n; ++i)
         {

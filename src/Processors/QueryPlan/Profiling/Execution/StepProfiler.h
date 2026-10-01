@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Profiling/Execution/WorkInterval.h>
 
 #include <map>
@@ -15,7 +16,7 @@ class IQueryPlanStep;
 class QueryPlan;
 
 using PlanStepGroup = std::pair<const IQueryPlanStep *, size_t>;
-using StepWallClocks = std::map<PlanStepGroup, std::unique_ptr<StepWallClock>>;
+using StepWallClocks = MapWithMemoryTracking<PlanStepGroup, std::unique_ptr<StepWallClock>>;
 
 /// Statistics needed for EXPLAIN ANALYZE.
 class StepProfiler

@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstring>
+#include <Common/VectorWithMemoryTracking.h>
 #include <memory>
 
 #include <Columns/IColumn.h>
@@ -344,7 +345,7 @@ static void flattenTupleRecursiveImpl(
     }
 }
 
-Block flattenTupleRecursive(const Block & block, std::vector<Strings> * flattened_ancestors)
+Block flattenTupleRecursive(const Block & block, VectorWithMemoryTracking<Strings> * flattened_ancestors)
 {
     Block result;
     if (flattened_ancestors)

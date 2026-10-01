@@ -1,4 +1,5 @@
 #include <Planner/CollectMaterializedCTE.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Analyzer/TableNode.h>
 #include <Analyzer/traverseQueryTree.h>
@@ -149,7 +150,7 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
     // is always materialized before the CTE at level N-1 that depends on it.
     for (const auto & cte_level : materialized_ctes)
     {
-        std::vector<MaterializedCTEPtr> ctes;
+        VectorWithMemoryTracking<MaterializedCTEPtr> ctes;
         ctes.reserve(cte_level.size());
 
         for (const auto & cte_node : cte_level)

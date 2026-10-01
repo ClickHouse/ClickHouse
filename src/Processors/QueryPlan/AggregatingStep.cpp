@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <cstddef>
 #include <memory>
@@ -226,7 +227,7 @@ void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k
     params.top_k = std::move(top_k);
 }
 
-std::vector<size_t> AggregatingStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> AggregatingStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(AggregatingStage::PartialAggregation),
@@ -876,7 +877,7 @@ AggregatingProjectionStep::AggregatingProjectionStep(
     updateInputHeaders(std::move(input_headers_));
 }
 
-std::vector<size_t> AggregatingProjectionStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> AggregatingProjectionStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(AggregatingStep::AggregatingStage::PartialAggregation),

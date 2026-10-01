@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
@@ -71,7 +72,7 @@ struct SkipIndexReadInput
     size_t part_starting_offset_in_query = 0;
 };
 using RangesByIndex = std::unordered_map<size_t, SkipIndexReadInput>;
-using ProjectionRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
+using ProjectionRangesByIndex = UnorderedMapWithMemoryTracking<size_t, RangesInDataParts>;
 class MergeTreeIndexReadResultPool;
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;
 
@@ -81,7 +82,7 @@ struct MutableAtomicSizeT
     mutable std::atomic_size_t value;
 };
 
-using PartRemainingMarks = std::unordered_map<size_t, MutableAtomicSizeT>;
+using PartRemainingMarks = UnorderedMapWithMemoryTracking<size_t, MutableAtomicSizeT>;
 
 /// Provides shared context needed to build filtering indexes (e.g., skip indexes or projection indexes) during data reads.
 struct MergeTreeIndexBuildContext

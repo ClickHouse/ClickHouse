@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
@@ -24,7 +25,7 @@ public:
     bool isTransformation() const override { return false; }
 
 protected:
-    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
 bool ReplicatedReadImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const
@@ -40,7 +41,7 @@ bool ReplicatedReadImplementation::checkPattern(GroupExpressionPtr expression, c
     return read_step->getMergeTreeData().isSharedStorage() || memo.getContext().distributed_plan_execute_locally;
 }
 
-std::vector<GroupExpressionPtr> ReplicatedReadImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+VectorWithMemoryTracking<GroupExpressionPtr> ReplicatedReadImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * read_step = typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep());
     const size_t node_count = required_properties.distribution.node_count;

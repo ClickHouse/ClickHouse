@@ -1,4 +1,5 @@
 #include <Analyzer/IQueryTreeNode.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Planner/Planner.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -2503,7 +2504,7 @@ void Planner::buildPlanForUnionNode()
     const auto & union_queries_nodes = union_node.getQueries().getNodes();
     size_t queries_size = union_queries_nodes.size();
 
-    std::vector<std::unique_ptr<QueryPlan>> query_plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> query_plans;
     query_plans.reserve(queries_size);
 
     SharedHeaders query_plans_headers;

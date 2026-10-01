@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <Common/VectorWithMemoryTracking.h>
 #include <vector>
 
 #include <Columns/IColumn.h>
@@ -73,9 +74,9 @@ private:
         ExpressionActionsPtr actions;
         Block input_header;
         /// Positions of the required columns in the source chunk.
-        std::vector<size_t> required_column_positions;
+        VectorWithMemoryTracking<size_t> required_column_positions;
         /// Mapping from action inputs to positions in the reduced input header.
-        std::vector<ssize_t> action_input_positions;
+        VectorWithMemoryTracking<ssize_t> action_input_positions;
         /// Positions of the boundary columns in the evaluated result.
         std::optional<size_t> start_position;
         std::optional<size_t> end_position;
@@ -123,7 +124,7 @@ private:
     bool has_repeated_unbounded_window = false;
 
     /// Rows of the current chunk selected for output; reused across chunks.
-    std::vector<ChunkRowRange> output_slices;
+    VectorWithMemoryTracking<ChunkRowRange> output_slices;
 };
 
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatSettings.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -47,7 +48,7 @@ namespace JSONUtils
         const FormatSettings & format_settings,
         bool yield_strings);
 
-    Strings makeNamesValidJSONStrings(const Strings & names, const FormatSettings & settings, bool validate_utf8);
+    Names makeNamesValidJSONStrings(const Names & names, const FormatSettings & settings, bool validate_utf8);
 
     /// Returns true if the JSON keys derived from `names` (via `makeNamesValidJSONStrings`) would
     /// contain bytes that are not valid UTF-8 under the given settings. This can happen only when

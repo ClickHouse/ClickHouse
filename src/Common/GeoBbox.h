@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -60,7 +61,7 @@ struct BboxAccumulator
 template <typename Result, typename Extractor>
 void collectSpatialFiltersConjunctive(
     const ActionsDAG::Node & node,
-    std::unordered_set<const ActionsDAG::Node *> & visited,
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & visited,
     Extractor try_extract_spatial_filter,
     Result & result)
 {

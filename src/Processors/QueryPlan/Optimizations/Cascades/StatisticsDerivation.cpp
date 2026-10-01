@@ -1,4 +1,7 @@
 #include <Columns/ColumnConst.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -249,11 +252,11 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     /// Columns already used in a predicate on each join side. A predicate that
     /// reuses a column is redundant (implied by transitivity from a child join)
     /// and should not contribute to selectivity.
-    std::unordered_set<String> left_bound_columns;
-    std::unordered_set<String> right_bound_columns;
+    UnorderedSetWithMemoryTracking<String> left_bound_columns;
+    UnorderedSetWithMemoryTracking<String> right_bound_columns;
 
     /// Equality key pairs, for the output column equivalences.
-    std::vector<std::pair<String, String>> equi_pairs;
+    VectorWithMemoryTracking<std::pair<String, String>> equi_pairs;
 
     for (const auto & predicate_expression : join_step.getJoinOperator().expression)
     {
@@ -462,9 +465,9 @@ void StatisticsDerivation::fillReadColumnWidths(ExpressionStatistics & statistic
 /// Output names that carry an input column through unchanged: `INPUT`/`ALIAS` chains only.
 /// Value equality between renamed columns survives; a computed expression changes the values,
 /// so it must not keep an equivalence.
-static std::unordered_map<String, Names> identityOutputNames(const ActionsDAG & actions)
+static UnorderedMapWithMemoryTracking<String, Names> identityOutputNames(const ActionsDAG & actions)
 {
-    std::unordered_map<String, Names> input_to_outputs;
+    UnorderedMapWithMemoryTracking<String, Names> input_to_outputs;
     for (const auto * output : actions.getOutputs())
     {
         const auto * node = output;
@@ -481,7 +484,7 @@ static EquivalenceClasses<String> remapEquivalences(
 {
     auto input_to_outputs = identityOutputNames(actions);
     EquivalenceClasses<String> result;
-    std::unordered_set<const void *> visited_classes;
+    UnorderedSetWithMemoryTracking<const void *> visited_classes;
     for (const auto & [member, class_ptr] : equivalences.getMemberToClassMap())
     {
         if (!class_ptr || !visited_classes.insert(class_ptr.get()).second)
@@ -696,7 +699,7 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
 
     /// Group keys pass through with their values, so their equivalences survive; the column
     /// statistics at this point hold exactly the group keys.
-    std::unordered_set<const void *> visited_classes;
+    UnorderedSetWithMemoryTracking<const void *> visited_classes;
     for (const auto & [member, class_ptr] : input_statistics.equivalences.getMemberToClassMap())
     {
         if (!class_ptr || !visited_classes.insert(class_ptr.get()).second)

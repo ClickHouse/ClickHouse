@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/ColumnWithTypeAndName.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Range.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
@@ -421,7 +422,7 @@ struct RuntimeFilterIndexAnalysisDescriptor
 /// AND the descriptors into one pruning predicate; nullptr if none (fail-open).
 const ActionsDAG::Node * buildRuntimeRangePredicate(
     const IRuntimeFilterLookup & lookup,
-    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
+    const VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
     ActionsDAG & dag,
     const ContextPtr & context);
 

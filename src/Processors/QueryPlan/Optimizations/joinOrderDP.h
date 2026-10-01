@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/joinOrderBitSet.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -14,7 +15,7 @@ DPJoinEntryPtr evaluateJoin(
     const DPJoinEntryPtr & left,
     const DPJoinEntryPtr & right,
     JoinKind join_kind,
-    std::vector<JoinActionRef *> & predicates,
+    VectorWithMemoryTracking<JoinActionRef *> & predicates,
     LoggerPtr log);
 
 }

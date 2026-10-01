@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_HIVE
 

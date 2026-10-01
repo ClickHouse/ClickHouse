@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderBitSet.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
 
@@ -48,14 +50,14 @@ DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()
     dp_table.clear();
     expression_selectivity.clear();
 
-    std::deque<std::shared_ptr<DPJoinEntry>> components;
+    DequeWithMemoryTracking<std::shared_ptr<DPJoinEntry>> components;
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
         components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats));
     }
 
-    std::vector<JoinActionRef *> applied_edges;
+    VectorWithMemoryTracking<JoinActionRef *> applied_edges;
     /// Iteratively join components until we have a single plan
     while (components.size() > 1)
     {

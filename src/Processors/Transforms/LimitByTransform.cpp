@@ -1,4 +1,5 @@
 #include <Processors/Transforms/LimitByTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
@@ -47,7 +48,7 @@ UInt64 computeGroupLimitEnd(UInt64 length, UInt64 offset)
 struct GroupingKeys
 {
     Names names;
-    std::vector<size_t> positions;
+    VectorWithMemoryTracking<size_t> positions;
 };
 
 /// Collect grouping keys whose header-sample column is not `ColumnConst`.

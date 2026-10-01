@@ -1,4 +1,5 @@
 #include <Core/ProtocolDefines.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <memory>
 #include <optional>
 #include <Analyzer/QueryNode.h>
@@ -567,7 +568,7 @@ void executeQuery(
 
     const ClusterPtr & not_optimized_cluster = query_info.cluster;
 
-    std::vector<QueryPlanPtr> plans;
+    VectorWithMemoryTracking<QueryPlanPtr> plans;
     SelectStreamFactory::Shards remote_shards;
 
     auto cluster = query_info.getCluster();
@@ -946,7 +947,7 @@ static std::vector<bool> getActiveReplicasForParallelReplicas(const ContextPtr &
     return is_active;
 }
 
-static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
+static std::pair<VectorWithMemoryTracking<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -1059,7 +1060,7 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
         shuffled_pool = shard.pool->getShuffledPools(settings, priority_func);
     }
 
-    std::vector<ConnectionPoolPtr> pools_to_use;
+    VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use;
     pools_to_use.reserve(shuffled_pool.size());
     for (auto & pool : shuffled_pool)
     {
@@ -1072,7 +1073,7 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
     return {pools_to_use, max_replicas_to_use};
 }
 
-static size_t findLocalReplicaIndexAndUpdatePools(std::vector<ConnectionPoolPtr> & pools, size_t max_replicas_to_use, const ClusterPtr & cluster)
+static size_t findLocalReplicaIndexAndUpdatePools(VectorWithMemoryTracking<ConnectionPoolPtr> & pools, size_t max_replicas_to_use, const ClusterPtr & cluster)
 {
     const auto & shard = cluster->getShardsInfo().at(0);
 
@@ -1216,7 +1217,7 @@ void executeQueryWithParallelReplicas(
         input_headers.emplace_back(stub_local_plan->getCurrentHeader());
         input_headers.emplace_back(remote_plan->getCurrentHeader());
 
-        std::vector<QueryPlanPtr> plans;
+        VectorWithMemoryTracking<QueryPlanPtr> plans;
         plans.emplace_back(std::move(stub_local_plan));
         plans.emplace_back(std::move(remote_plan));
 
@@ -1289,7 +1290,7 @@ QueryPlanPtr createParallelReplicasPlan(QueryPlanPtr plan_fragment, ContextPtr c
         input_headers.emplace_back(local_plan->getCurrentHeader());
         input_headers.emplace_back(remote_plan->getCurrentHeader());
 
-        std::vector<QueryPlanPtr> plans;
+        VectorWithMemoryTracking<QueryPlanPtr> plans;
         plans.emplace_back(std::move(local_plan));
         plans.emplace_back(std::move(remote_plan));
 
@@ -1636,7 +1637,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ContextPtr & context,
     std::optional<QueryPipeline> local_pipeline,
     std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator,
-    std::vector<ConnectionPoolPtr> reused_connection_pools,
+    VectorWithMemoryTracking<ConnectionPoolPtr> reused_connection_pools,
     std::optional<size_t> reused_local_replica_index)
 {
     auto logger = getLogger("executeInsertSelectWithParallelReplicas");
@@ -1647,7 +1648,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
 
-    std::vector<ConnectionPoolPtr> connection_pools;
+    VectorWithMemoryTracking<ConnectionPoolPtr> connection_pools;
     size_t max_replicas_to_use = 0;
     std::optional<size_t> local_replica_index;
 

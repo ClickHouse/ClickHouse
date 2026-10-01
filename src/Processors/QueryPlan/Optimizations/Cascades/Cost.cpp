@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -357,7 +359,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
 
     /// Select the best implementation of each input first: the subtree cost accumulates over
     /// them, and an exchange prices its transfer on the selected child's physical output rows.
-    std::vector<ExpressionWithCost> selected_inputs;
+    VectorWithMemoryTracking<ExpressionWithCost> selected_inputs;
     selected_inputs.reserve(expression->inputs.size());
     bool has_unsatisfiable_input = false;
     for (const auto & input : expression->inputs)
@@ -368,7 +370,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
             /// itself), so the cost reflects a plan that can actually be built.
             best = memo.getGroup(input.group_id)->selectInputImplementation(
                 input.required_properties, memo.getContext().cost_config,
-                std::unordered_set<GroupExpression *>{expression.get()}, /*input_is_self_referential=*/true);
+                UnorderedSetWithMemoryTracking<GroupExpression *>{expression.get()}, /*input_is_self_referential=*/true);
         else
             best = memo.getGroup(input.group_id)->getBestImplementation(input.required_properties, memo.getContext().cost_config);
 

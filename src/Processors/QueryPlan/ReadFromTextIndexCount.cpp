@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromTextIndexCount.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -179,7 +180,7 @@ UInt64 computeCountForPart(
         *postings_stream, state, postings_serialization, granule->getIndexIdForCaches(), check_cancelled);
 
     /// `analyzePostings` already folded the small (single-block) postings into `query_builder.postings` by search mode.
-    std::vector<const TokenPostingsInfo *> tokens_to_read;
+    VectorWithMemoryTracking<const TokenPostingsInfo *> tokens_to_read;
     tokens_to_read.reserve(query_builder.tokens.size());
     for (const auto & [token, token_info] : query_builder.tokens)
         if (!analyzer.hasReadPostings(token))

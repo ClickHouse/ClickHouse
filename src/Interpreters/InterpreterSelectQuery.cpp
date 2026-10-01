@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <ranges>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <tuple>
 #include <utility>
 #include <Access/AccessControl.h>
@@ -917,7 +918,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (!column_sizes.empty())
             {
                 /// Extract column compressed sizes.
-                std::unordered_map<std::string, UInt64> column_compressed_sizes;
+                UnorderedMapWithMemoryTracking<std::string, UInt64> column_compressed_sizes;
                 for (const auto & [name, sizes] : column_sizes)
                     column_compressed_sizes[name] = sizes.data_compressed;
 
@@ -2135,12 +2136,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         /* use_new_analyzer_ = */ false);
 
                     join_step->setStepDescription(fmt::format("JOIN {}", expressions.join->pipelineType()), options.max_step_description_length);
-                    std::vector<QueryPlanPtr> plans;
+                    VectorWithMemoryTracking<QueryPlanPtr> plans;
                     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
                     plans.emplace_back(std::move(joined_plan));
 
                     query_plan = QueryPlan();
-                    query_plan.unitePlans(std::move(join_step), {std::move(plans)});
+                    query_plan.unitePlans(std::move(join_step), std::move(plans));
                 }
             }
 

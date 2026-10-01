@@ -1,4 +1,7 @@
 #include <IO/WriteBufferFromString.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -99,12 +102,12 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
     };
 }
 
-static String describeProjectionRejections(const std::unordered_map<String, String> & reject_reasons)
+static String describeProjectionRejections(const UnorderedMapWithMemoryTracking<String, String> & reject_reasons)
 {
     if (reject_reasons.empty())
         return "no projection was considered";
 
-    std::vector<String> formatted_reasons;
+    VectorWithMemoryTracking<String> formatted_reasons;
     for (const auto & [projection, reason] : reject_reasons)
         formatted_reasons.push_back(fmt::format("projection {} is rejected because {}", projection, reason));
 
@@ -241,8 +244,8 @@ void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
 {
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
-    std::unordered_set<String> applied_projection_names;
-    std::unordered_map<String, String> projection_reject_reasons;
+    UnorderedSetWithMemoryTracking<String> applied_projection_names;
+    UnorderedMapWithMemoryTracking<String, String> projection_reject_reasons;
     bool has_reading_from_mt = false;
 
     const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings);

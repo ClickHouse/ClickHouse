@@ -1,4 +1,5 @@
 #include <Processors/Sources/PostgreSQLSource.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Exception.h>
 
 #if USE_LIBPQXX
@@ -217,7 +218,7 @@ Chunk PostgreSQLSource<T>::generate()
 
     while (!isCancelled() && !stop_requested.load())
     {
-        const std::vector<pqxx::zview> * row{nullptr};
+        const std::vector<pqxx::zview> * row{nullptr}; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `pqxx::stream_from::read_row` returns a std::vector owned by the library
         try
         {
             row = stream->read_row();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/CollectionOfDerived.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Types_fwd.h>
@@ -141,7 +142,7 @@ private:
     void checkNumRowsIsConsistent();
 };
 
-using Chunks = std::vector<Chunk>;
+using Chunks = std::vector<Chunk>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// AsyncInsert needs two kinds of information:
 /// - offsets of different sub-chunks
@@ -151,13 +152,13 @@ class AsyncInsertInfo : public ChunkInfoCloneable<AsyncInsertInfo>
 public:
     AsyncInsertInfo() = default;
     AsyncInsertInfo(const AsyncInsertInfo & other) = default;
-    AsyncInsertInfo(const std::vector<size_t> & offsets_, const std::vector<String> & tokens_)
+    AsyncInsertInfo(const VectorWithMemoryTracking<size_t> & offsets_, const VectorWithMemoryTracking<String> & tokens_)
         : offsets(offsets_)
         , tokens(tokens_)
     {}
 
-    std::vector<size_t> offsets;
-    std::vector<String> tokens;
+    VectorWithMemoryTracking<size_t> offsets;
+    VectorWithMemoryTracking<String> tokens;
 };
 
 using AsyncInsertInfoPtr = std::shared_ptr<AsyncInsertInfo>;

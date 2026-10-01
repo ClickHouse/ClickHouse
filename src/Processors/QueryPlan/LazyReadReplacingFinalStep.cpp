@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -64,7 +65,7 @@ QueryPlanRawPtrs LazyReadReplacingFinalStep::getChildPlans()
     return {&*explain_plan};
 }
 
-std::vector<size_t> LazyReadReplacingFinalStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> LazyReadReplacingFinalStep::getStepGroups() const
 {
     return {static_cast<size_t>(Stage::ReadAndAggregate), static_cast<size_t>(Stage::ReplacingMerge)};
 }

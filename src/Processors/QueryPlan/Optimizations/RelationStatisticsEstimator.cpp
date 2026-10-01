@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
 #include <ranges>
@@ -104,7 +105,7 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
 /// sorted range), so the child's value ranges and NULL fraction do not describe the output.
 /// Applied whenever a limit is present: the row estimate cannot prove the limit does not
 /// truncate (e.g. a TopN read is already scaled down by its `__topKFilter` prewhere).
-void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_stats)
+void clearColumnValueRanges(UnorderedMapWithMemoryTracking<String, ColumnStats> & column_stats)
 {
     for (auto & [_, stats] : column_stats)
     {

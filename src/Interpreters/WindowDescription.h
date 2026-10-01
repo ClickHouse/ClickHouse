@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Core/Field.h>
 #include <Core/Names.h>
@@ -98,7 +99,7 @@ struct WindowDescription
     WindowFrame frame;
 
     // The window functions that are calculated for this window.
-    std::vector<WindowFunctionDescription> window_functions;
+    VectorWithMemoryTracking<WindowFunctionDescription> window_functions;
 
     std::string dump() const;
 

@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_PARQUET
 
@@ -153,7 +154,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
             for (size_t i = 0; i < columns.size(); ++i)
                 columns[i]->insertRangeFrom(*concatenated.getColumns()[i], offset, count);
 
-            Chunks piece;
+            VectorWithMemoryTracking<Chunk> piece;
             piece.emplace_back(std::move(columns), count);
             piece.back().setChunkInfos(concatenated.getChunkInfos());
 
@@ -227,7 +228,7 @@ static size_t countSchemaLeaves(const SchemaElements & schema, size_t & index)
 
 void ParquetBlockOutputFormat::collectColumnSizesOnDisk(const Block & header)
 {
-    std::vector<size_t> leaves_per_column;
+    VectorWithMemoryTracking<size_t> leaves_per_column;
     leaves_per_column.reserve(header.columns());
     size_t schema_index = 1;
     size_t num_leaves = 0;
@@ -284,7 +285,7 @@ void ParquetBlockOutputFormat::onCancel() noexcept
     is_stopped = true;
 }
 
-void ParquetBlockOutputFormat::writeRowGroup(std::vector<Chunk> chunks)
+void ParquetBlockOutputFormat::writeRowGroup(VectorWithMemoryTracking<Chunk> chunks)
 {
     if (pool)
     {
@@ -336,7 +337,7 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
     finalizeRowGroup(file_state, chunk.getNumRows(), options, out);
 }
 
-void ParquetBlockOutputFormat::writeRowGroupInParallel(std::vector<Chunk> chunks)
+void ParquetBlockOutputFormat::writeRowGroupInParallel(VectorWithMemoryTracking<Chunk> chunks)
 {
     std::unique_lock lock(mutex);
 
@@ -346,7 +347,7 @@ void ParquetBlockOutputFormat::writeRowGroupInParallel(std::vector<Chunk> chunks
     r.column_chunks.resize(header.columns());
     r.tasks_in_flight = r.column_chunks.size();
 
-    std::vector<Columns> columnses;
+    VectorWithMemoryTracking<Columns> columnses;
     for (auto & chunk : chunks)
     {
         chassert(header.columns() == chunk.getNumColumns());
@@ -477,7 +478,7 @@ void ParquetBlockOutputFormat::threadFunction()
             }
             task.column_pieces.clear();
 
-            std::vector<ColumnChunkWriteState> subcolumns;
+            VectorWithMemoryTracking<ColumnChunkWriteState> subcolumns;
             prepareColumnForWrite(
                 std::move(concatenated), task.column_type, task.column_name, options, &subcolumns,
                 /*out_schema*/ nullptr, /*column_field_ids*/ std::nullopt, iceberg_optionality);

@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/Parquet/Prefetcher.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/copyData.h>
@@ -161,7 +162,7 @@ void Prefetcher::finalizeRanges()
     }
 }
 
-void Prefetcher::startPrefetch(const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff)
+void Prefetcher::startPrefetch(const VectorWithMemoryTracking<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff)
 {
     chassert(ranges_finalized.load(std::memory_order_relaxed));
 
@@ -189,8 +190,8 @@ void Prefetcher::startPrefetch(const std::vector<PrefetchHandle *> & requests_to
     }
 }
 
-std::vector<PrefetchHandle> Prefetcher::splitRange(
-    PrefetchHandle request, const std::vector<std::pair</*global_offset*/ size_t, /*length*/ size_t>> & subranges, bool likely_to_be_used)
+VectorWithMemoryTracking<PrefetchHandle> Prefetcher::splitRange(
+    PrefetchHandle request, const VectorWithMemoryTracking<std::pair</*global_offset*/ size_t, /*length*/ size_t>> & subranges, bool likely_to_be_used)
 {
     chassert(ranges_finalized.load(std::memory_order_relaxed));
     chassert(std::is_sorted(subranges.begin(), subranges.end()));
@@ -198,7 +199,7 @@ std::vector<PrefetchHandle> Prefetcher::splitRange(
     chassert(!request.memory); // prefetch not requested
 
     RequestState * parent_req = request.request;
-    std::vector<PrefetchHandle> out_handles;
+    VectorWithMemoryTracking<PrefetchHandle> out_handles;
 
     {
         std::unique_lock lock(mutex);

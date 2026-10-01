@@ -1,4 +1,5 @@
 #include <Core/CompareHelper.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/MergeTree/PatchParts/applyPatches.h>
 #include <Storages/MergeTree/PatchParts/applyPatchesLegacy.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
@@ -216,7 +217,7 @@ ALWAYS_INLINE int compareSortKeyRows(
     size_t lhs_row,
     const ColumnRawPtrs & rhs_columns,
     size_t rhs_row,
-    const std::vector<bool> & reverse_flags)
+    const VectorWithMemoryTracking<bool> & reverse_flags)
 {
     const size_t n = lhs_columns.size();
     chassert(n == rhs_columns.size());
@@ -257,7 +258,7 @@ ALWAYS_INLINE size_t gallopingBinarySearch(
     size_t end,
     const ColumnRawPtrs & pivot_key,
     size_t pivot_row,
-    const std::vector<bool> & reverse_flags)
+    const VectorWithMemoryTracking<bool> & reverse_flags)
 {
     auto compare = [&](size_t i)
     {
@@ -380,22 +381,22 @@ struct BlockCursor
     ALWAYS_INLINE size_t runLength() const { return run_end - row; }
     ALWAYS_INLINE bool isFinished() const { return row >= num_rows; }
 
-    ALWAYS_INLINE int compare(const BlockCursor & other, const std::vector<bool> & reverse_flags) const
+    ALWAYS_INLINE int compare(const BlockCursor & other, const VectorWithMemoryTracking<bool> & reverse_flags) const
     {
         return compareSortKeyRows(sorting_key_columns, row, other.sorting_key_columns, other.row, reverse_flags);
     }
 
-    void advanceRowToCursor(const BlockCursor & other, const std::vector<bool> & reverse_flags)
+    void advanceRowToCursor(const BlockCursor & other, const VectorWithMemoryTracking<bool> & reverse_flags)
     {
         row = gallopingBinarySearch<true>(sorting_key_columns, row, num_rows, other.sorting_key_columns, other.row, reverse_flags);
     }
 
-    void advanceRunEndGalloping(const BlockCursor & other, const std::vector<bool> & reverse_flags)
+    void advanceRunEndGalloping(const BlockCursor & other, const VectorWithMemoryTracking<bool> & reverse_flags)
     {
         run_end = gallopingBinarySearch<false>(sorting_key_columns, row + 1, num_rows, other.sorting_key_columns, other.row, reverse_flags);
     }
 
-    void advanceRunEndLinear(const BlockCursor & other, const std::vector<bool> & reverse_flags)
+    void advanceRunEndLinear(const BlockCursor & other, const VectorWithMemoryTracking<bool> & reverse_flags)
     {
         run_end = row + 1;
         while (run_end < num_rows && compareSortKeyRows(sorting_key_columns, run_end, other.sorting_key_columns, other.row, reverse_flags) == 0)
@@ -511,7 +512,7 @@ void applyCursorsLinear(
     BlockCursor & result_cursor,
     std::vector<BlockCursor> & cursors,
     PatchIndicesGroups & groups,
-    const std::vector<bool> & reverse_flags)
+    const VectorWithMemoryTracking<bool> & reverse_flags)
 {
     EqualRunScratch run_scratch;
     std::vector<size_t> equal_cursors;
@@ -607,7 +608,7 @@ void applyCursorsHeap(
     BlockCursor & result_cursor,
     std::vector<BlockCursor> & cursors,
     PatchIndicesGroups & groups,
-    const std::vector<bool> & reverse_flags)
+    const VectorWithMemoryTracking<bool> & reverse_flags)
 {
     EqualRunScratch run_scratch;
     std::vector<size_t> equal_cursors;

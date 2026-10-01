@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/FillingStep.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/FillingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -163,7 +164,7 @@ void FillingStep::serialize(Serialization & ctx) const
     /// from `actions` on the other side, so a stream cannot describe a fill that disagrees with its own DAG.
     /// The pairs are sorted because the map has no stable order and these bytes are also a plan cache key.
     /// Keys are unique, so ordering the pairs orders them by key.
-    std::vector<std::pair<std::string_view, std::string_view>> required_columns;
+    VectorWithMemoryTracking<std::pair<std::string_view, std::string_view>> required_columns;
     required_columns.reserve(interpolate_description->required_columns_map.size());
     for (const auto & [key, name_and_type] : interpolate_description->required_columns_map)
         required_columns.emplace_back(key, name_and_type.name);

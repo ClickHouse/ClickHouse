@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <limits>
 #include <set>
 #include <Interpreters/Aggregator.h>
@@ -25,11 +27,11 @@ GroupingAggregatedTransform::GroupingAggregatedTransform(const Block & header_, 
 {
 }
 
-std::vector<Int32> GroupingAggregatedTransform::getDelayedBucketsBefore(Int32 bucket) const
+VectorWithMemoryTracking<Int32> GroupingAggregatedTransform::getDelayedBucketsBefore(Int32 bucket) const
 {
     /// A bucket with a smaller id can be pushed after `bucket` if either we already have its data buffered,
     /// or some of the inputs told us that it delayed that bucket and it still can arrive.
-    std::set<Int32> delayed;
+    SetWithMemoryTracking<Int32> delayed;
 
     for (const auto & [delayed_bucket, num_inputs_delayed_that_bucket] : out_of_order_buckets)
         if (delayed_bucket < bucket && num_inputs_delayed_that_bucket > 0)
@@ -46,14 +48,14 @@ std::vector<Int32> GroupingAggregatedTransform::getDelayedBucketsBefore(Int32 bu
     return {delayed.begin(), delayed.end()};
 }
 
-void GroupingAggregatedTransform::pushData(Chunks chunks, Int32 bucket, bool is_overflows)
+void GroupingAggregatedTransform::pushData(VectorWithMemoryTracking<Chunk> chunks, Int32 bucket, bool is_overflows)
 {
     auto & output = outputs.front();
 
     auto info = std::make_shared<ChunksToMerge>();
     info->bucket_num = bucket;
     info->is_overflows = is_overflows;
-    info->chunks = std::make_shared<Chunks>(std::move(chunks));
+    info->chunks = std::make_shared<VectorWithMemoryTracking<Chunk>>(std::move(chunks));
     if (!is_overflows)
         info->out_of_order_buckets = getDelayedBucketsBefore(bucket);
 
@@ -85,7 +87,7 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
         if (batch_it == chunks_map.end())
             return false;
 
-        Chunks & cur_chunks = batch_it->second;
+        VectorWithMemoryTracking<Chunk> & cur_chunks = batch_it->second;
         if (cur_chunks.empty())
         {
             chunks_map.erase(batch_it);
@@ -474,12 +476,12 @@ SortingAggregatedTransform::SortingAggregatedTransform(size_t num_inputs_, Aggre
 {
 }
 
-std::vector<Int32> SortingAggregatedTransform::getDelayedBucketsBefore(Int32 bucket) const
+VectorWithMemoryTracking<Int32> SortingAggregatedTransform::getDelayedBucketsBefore(Int32 bucket) const
 {
     /// This transform never delays a bucket on its own: it always pushes the smallest bucket it has.
     /// Hence a bucket with a smaller id can be pushed after `bucket` only if it hasn't arrived yet,
     /// and in that case the input which will deliver it has already reported it as delayed.
-    std::set<Int32> delayed;
+    SetWithMemoryTracking<Int32> delayed;
 
     for (const auto & buckets_of_input : input_out_of_order_buckets)
         for (const auto delayed_bucket : buckets_of_input)

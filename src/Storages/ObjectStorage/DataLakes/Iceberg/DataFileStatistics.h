@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/ISimpleTransform.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include "config.h"
 
 #include <Poco/JSON/Array.h>
@@ -26,7 +27,7 @@ public:
     explicit DataFileStatistics(Poco::JSON::Array::Ptr schema_);
 
     void update(const Chunk & chunk);
-    void addColumnSizesOnDisk(const std::unordered_map<String, size_t> & sizes_by_column_name, const Block & sample_block);
+    void addColumnSizesOnDisk(const UnorderedMapWithMemoryTracking<String, size_t> & sizes_by_column_name, const Block & sample_block);
     void merge(const DataFileStatistics & other);
 
     std::vector<std::pair<size_t, size_t>> getColumnSizes() const;

@@ -1,4 +1,6 @@
 #include <Columns/IColumn.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Planner/PlannerJoinTree.h>
@@ -3111,7 +3113,7 @@ JoinTreeQueryPlan joinPlansWithStep(
     JoinTreeQueryPlan left_join_tree_query_plan,
     JoinTreeQueryPlan right_join_tree_query_plan)
 {
-    std::vector<QueryPlanPtr> plans;
+    VectorWithMemoryTracking<QueryPlanPtr> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_join_tree_query_plan.query_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_join_tree_query_plan.query_plan)));
 
@@ -3184,7 +3186,7 @@ JoinTreeQueryPlan buildQueryPlanForCrossJoinNode(
             JoinOperator{JoinKind::Cross},
             std::move(join_expression_actions),
             outer_scope_columns,
-            std::unordered_map<String, const ActionsDAG::Node *>{},
+            UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>{},
             settings[Setting::join_use_nulls],
             JoinSettings(settings, query_context->getJoinAnalyzeMode()),
             SortingStep::Settings(settings));

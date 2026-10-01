@@ -1,4 +1,5 @@
 #include <cmath>
+#include <Common/VectorWithMemoryTracking.h>
 #include <functional>
 #include <iterator>
 #include <span>
@@ -2683,7 +2684,7 @@ QueryPlan ReadFromMerge::expandForParallelReplicas()
     chassert(child_plans && !child_plans->empty());
 
     SharedHeaders input_headers;
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<QueryPlanPtr> plans;
     input_headers.reserve(child_plans->size());
     plans.reserve(child_plans->size());
     for (auto & child : *child_plans)

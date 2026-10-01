@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Analyzer/Passes/CNFAtomicFormula.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/CNFQueryAtomicFormula.h>
 #include <Interpreters/ComparisonGraph.h>
 #include <Parsers/IASTHash.h>
@@ -17,7 +18,7 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-using ConstraintsExpressions = std::vector<ExpressionActionsPtr>;
+using ConstraintsExpressions = VectorWithMemoryTracking<ExpressionActionsPtr>;
 
 class NamesAndTypesList;
 

@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/Streaming/ReadingPlan/buildReadRoundPipeline.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/AlignStreams.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
@@ -144,7 +145,7 @@ Pipe buildPartitionReadingPipeline(
 
         auto align_step = std::make_unique<AlignStreamsStep>(metadata_plan->getCurrentHeader(), plan->getCurrentHeader(), partition_id, state.getPartitionWatermark(partition_id));
 
-        std::vector<QueryPlanPtr> plans;
+        VectorWithMemoryTracking<QueryPlanPtr> plans;
         plans.push_back(std::move(metadata_plan));
         plans.push_back(std::move(plan));
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <mutex>
 #include <span>
 #include <string_view>
@@ -102,7 +103,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
 class UniqueKeyDenseIndexOps;
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 
 namespace ErrorCodes
 {
@@ -231,7 +232,7 @@ public:
 
     using PinnedPartUUIDsPtr = std::shared_ptr<const PinnedPartUUIDs>;
 
-    using PartitionIdToMinBlock = std::unordered_map<String, Int64>;
+    using PartitionIdToMinBlock = UnorderedMapWithMemoryTracking<String, Int64>;
     using PartitionIdToMinBlockPtr = std::shared_ptr<const PartitionIdToMinBlock>;
 
     constexpr static auto FORMAT_VERSION_FILE_NAME = "format_version.txt";

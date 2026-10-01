@@ -42,7 +42,7 @@ void SaveSubqueryResultToBufferStep::transformPipeline(QueryPipelineBuilder & pi
 {
     const auto & input_header = getInputHeaders().front();
 
-    std::vector<size_t> columns_to_save_indices;
+    VectorWithMemoryTracking<size_t> columns_to_save_indices;
     columns_to_save_indices.reserve(columns_to_save.size());
     for (const auto & column : columns_to_save)
     {

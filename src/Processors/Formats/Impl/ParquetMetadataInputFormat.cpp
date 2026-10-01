@@ -1,4 +1,6 @@
 #include <Processors/Formats/Impl/ParquetMetadataInputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #if USE_PARQUET
 
@@ -112,7 +114,7 @@ static NamesAndTypesList getHeaderForParquetMetadata()
 static void checkHeader(const Block & header)
 {
     auto expected_names_and_types = getHeaderForParquetMetadata();
-    std::unordered_map<String, DataTypePtr> name_to_type;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> name_to_type;
     for (const auto & [name, type] : expected_names_and_types)
         name_to_type[name] = type;
 
@@ -391,7 +393,7 @@ void ParquetMetadataInputFormat::fillColumnSizeStatistics(
         unencoded_bytes.insertDefault();
     }
 
-    auto insert_histogram = [&](const std::vector<int64_t> & histogram, IColumn & histogram_column)
+    auto insert_histogram = [&](const std::vector<int64_t> & histogram, IColumn & histogram_column) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- thrift `parq::SizeStatistics` histograms are std::vector
     {
         auto & array_column = assert_cast<ColumnArray &>(histogram_column);
         auto & data_column = assert_cast<ColumnUInt64 &>(array_column.getData());
@@ -400,7 +402,7 @@ void ParquetMetadataInputFormat::fillColumnSizeStatistics(
         array_column.getOffsets().push_back(data_column.size());
     };
 
-    static const std::vector<int64_t> empty_histogram;
+    static const std::vector<int64_t> empty_histogram; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- thrift `parq::SizeStatistics` histograms are std::vector
     insert_histogram(size_statistics ? size_statistics->repetition_level_histogram : empty_histogram, size_statistics_column.getColumn(1));
     insert_histogram(size_statistics ? size_statistics->definition_level_histogram : empty_histogram, size_statistics_column.getColumn(2));
 }

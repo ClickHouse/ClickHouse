@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 
 #include <Interpreters/Context_fwd.h>
@@ -73,10 +74,10 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndex(
 
 struct SplitPartsByRanges
 {
-    using Values = std::vector<Field>;
+    using Values = VectorWithMemoryTracking<Field>;
 
-    std::vector<RangesInDataParts> layers;
-    std::vector<Values> borders;
+    VectorWithMemoryTracking<RangesInDataParts> layers;
+    VectorWithMemoryTracking<Values> borders;
     bool in_reverse_order = false;
 };
 
@@ -100,7 +101,7 @@ Pipes readByLayers(
 void addLayerRangeFilterToPipe(
     Pipe & pipe,
     const KeyDescription & primary_key,
-    const std::vector<std::vector<Field>> & borders,
+    const VectorWithMemoryTracking<SplitPartsByRanges::Values> & borders,
     size_t layer_index,
     bool in_reverse_order,
     ContextPtr context);

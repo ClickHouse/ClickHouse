@@ -1,4 +1,6 @@
 #include <Columns/IColumn.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/JSONColumnsBlockInputFormatBase.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Port.h>
@@ -154,7 +156,7 @@ Chunk JSONColumnsBlockInputFormatBase::read()
         return getChunkForCount(num_rows);
     }
 
-    std::vector<UInt8> seen_columns(columns.size(), 0);
+    VectorWithMemoryTracking<UInt8> seen_columns(columns.size(), 0);
     Int64 rows = -1;
     size_t iteration = 0;
     do
@@ -248,8 +250,8 @@ void JSONColumnsSchemaReaderBase::transformTypesFromDifferentFilesIfNeeded(DataT
 
 NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
 {
-    std::unordered_map<String, DataTypePtr> names_to_types;
-    std::vector<String> names_order;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> names_to_types;
+    VectorWithMemoryTracking<String> names_order;
     /// Read data block by block and determine the type for each column
     /// until max_rows_to_read/max_bytes_to_read is reached.
     /// Note that we can exceed max_bytes_to_read to compete block parsing.

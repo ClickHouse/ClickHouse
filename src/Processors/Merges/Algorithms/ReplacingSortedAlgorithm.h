@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
+#include <Common/QueueWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
@@ -77,7 +78,7 @@ private:
     /// `can_skip_to_run_end` and the queue actually detects batches - the condition the merge
     /// loop tests. Decided in `initialize`.
     bool skip_runs_of_equal_keys = false;
-    std::queue<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
+    QueueWithMemoryTracking<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
 
     using RowRef = detail::RowRefWithOwnedChunk;
     static constexpr size_t max_row_refs = 2; /// last, current.

@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -41,7 +42,7 @@ public:
     class StrategyEnumerator;
 
 protected:
-    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
 /// Emits the physical alternatives of one logical aggregation into the memo, one method
@@ -54,12 +55,12 @@ public:
         GroupExpressionPtr expression_,
         const ExpressionProperties & required_properties_,
         Memo & memo_,
-        std::vector<GroupExpressionPtr> & result_);
+        VectorWithMemoryTracking<GroupExpressionPtr> & result_);
 
     void addPartialAggregation(size_t node_count);
     void addLocalAggregation();
     void addShuffleAggregation(size_t node_count);
-    void addSingleKeyShuffleAggregations(const std::vector<size_t> & candidate_node_counts);
+    void addSingleKeyShuffleAggregations(const VectorWithMemoryTracking<size_t> & candidate_node_counts);
 
     /// See `addShuffleAggregation` for why each condition disables the shuffle strategy.
     bool isShuffleApplicable() const
@@ -86,7 +87,7 @@ private:
     const AggregatingStep & agg_step;
     const ExpressionProperties & required_properties;
     Memo & memo;
-    std::vector<GroupExpressionPtr> & result;
+    VectorWithMemoryTracking<GroupExpressionPtr> & result;
 };
 
 /// Logical transformation that splits a single-phase Agg into a two-phase plan:
@@ -110,7 +111,7 @@ public:
     bool isTransformation() const override { return true; }
 
 protected:
-    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
 
@@ -126,7 +127,7 @@ AggregationImplementation::StrategyEnumerator::StrategyEnumerator(
     GroupExpressionPtr expression_,
     const ExpressionProperties & required_properties_,
     Memo & memo_,
-    std::vector<GroupExpressionPtr> & result_)
+    VectorWithMemoryTracking<GroupExpressionPtr> & result_)
     : rule(rule_)
     , expression(std::move(expression_))
     , agg_step(*typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep()))
@@ -199,7 +200,7 @@ void AggregationImplementation::StrategyEnumerator::addShuffleAggregation(size_t
 /// For aggregations with 2+ group-by keys, generate a shuffle alternative for each
 /// individual key. Correctness: `GROUP BY (A, B)` with data shuffled by `A` is correct
 /// because all rows with the same `(A, B)` have the same `A`, hence the same node.
-void AggregationImplementation::StrategyEnumerator::addSingleKeyShuffleAggregations(const std::vector<size_t> & candidate_node_counts)
+void AggregationImplementation::StrategyEnumerator::addSingleKeyShuffleAggregations(const VectorWithMemoryTracking<size_t> & candidate_node_counts)
 {
     for (const auto & single_key : agg_step.getParams().keys)
     {
@@ -215,7 +216,7 @@ void AggregationImplementation::StrategyEnumerator::addSingleKeyShuffleAggregati
     }
 }
 
-std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+VectorWithMemoryTracking<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
     if (!agg_step)
@@ -230,7 +231,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     const size_t cluster_node_count = memo.getContext().cluster_node_count;
     const auto candidate_node_counts = getCandidateNodeCounts(cluster_node_count);
 
-    std::vector<GroupExpressionPtr> result;
+    VectorWithMemoryTracking<GroupExpressionPtr> result;
     StrategyEnumerator strategies(*this, expression, required_properties, memo, result);
 
     /// Partial (non-final) aggregation: create distributed implementations at each candidate
@@ -330,7 +331,7 @@ bool TwoStageAggregationTransformation::checkPattern(GroupExpressionPtr expressi
         && !agg_step->getParams().only_merge;    /// don't split a merge step that's already from a prior split
 }
 
-std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
+VectorWithMemoryTracking<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
 {
     const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
     if (!agg_step)

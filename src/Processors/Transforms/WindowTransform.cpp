@@ -1,4 +1,5 @@
 #include <Processors/Transforms/WindowTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/ColumnAggregateFunction.h>
 
@@ -45,7 +46,7 @@ namespace ErrorCodes
 WindowTransform::WindowTransform(SharedHeader input_header_,
         SharedHeader output_header_,
         const WindowDescription & window_description_,
-        const std::vector<WindowFunctionDescription> & functions)
+        const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
     : IProcessor({input_header_}, {output_header_})
     , params(WindowTransformParams::create(*input_header_, window_description_, functions))
     , input(inputs.front())
@@ -54,7 +55,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
     initWorkspaces(functions);
 }
 
-void WindowTransform::initWorkspaces(const std::vector<WindowFunctionDescription> & functions)
+void WindowTransform::initWorkspaces(const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
 {
     workspaces.reserve(functions.size());
     for (const auto & f : functions)

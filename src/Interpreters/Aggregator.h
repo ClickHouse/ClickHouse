@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <memory>
+#include <Common/ListWithMemoryTracking.h>
 #include <mutex>
 #include <optional>
 #include <type_traits>
@@ -598,7 +599,7 @@ public:
 
     bool hasTemporaryData() const;
 
-    std::list<TemporaryBlockStreamHolder> detachTemporaryData();
+    ListWithMemoryTracking<TemporaryBlockStreamHolder> detachTemporaryData();
 
     /// Part of automatic parallel replicas implementation.
     size_t estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const;
@@ -685,7 +686,7 @@ private:
     /// For external aggregation.
     TemporaryDataOnDiskScopePtr tmp_data;
     mutable std::mutex tmp_files_mutex;
-    mutable std::list<TemporaryBlockStreamHolder> tmp_files TSA_GUARDED_BY(tmp_files_mutex);
+    mutable ListWithMemoryTracking<TemporaryBlockStreamHolder> tmp_files TSA_GUARDED_BY(tmp_files_mutex);
 
     size_t min_bytes_for_prefetch = 0;
 

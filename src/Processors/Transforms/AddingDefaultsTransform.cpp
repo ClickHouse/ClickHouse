@@ -1,3 +1,6 @@
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/ExpressionActions.h>
@@ -165,7 +168,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     auto res = header.cloneWithColumns(chunk.detachColumns());
 
     /// Identify columns that need defaults computed
-    std::vector<std::pair<String, size_t>> columns_needing_defaults;
+    VectorWithMemoryTracking<std::pair<String, size_t>> columns_needing_defaults;
     for (const auto & [col_name, col_default] : column_defaults)
     {
         if (!res.has(col_name))
@@ -187,8 +190,8 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     /// and column `n` has DEFAULT 42, when inserting {"n": 2} we need to first compute
     /// n's defaults (for rows where n is missing), mix them into the block, and only
     /// then compute s's defaults so that s can see the correct values of n.
-    std::unordered_map<String, NameSet> dependencies;
-    std::unordered_set<String> columns_needing_defaults_set;
+    UnorderedMapWithMemoryTracking<String, NameSet> dependencies;
+    UnorderedSetWithMemoryTracking<String> columns_needing_defaults_set;
     for (const auto & [col_name, col_idx] : columns_needing_defaults)
         columns_needing_defaults_set.insert(col_name);
 
@@ -211,13 +214,13 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
 
     /// Process columns in dependency order (topological sort).
     /// In each iteration, process columns whose dependencies have all been satisfied.
-    std::unordered_set<String> processed;
-    std::unordered_map<size_t, MutableColumnPtr> mixed_columns;
+    UnorderedSetWithMemoryTracking<String> processed;
+    UnorderedMapWithMemoryTracking<size_t, MutableColumnPtr> mixed_columns;
 
     while (processed.size() < columns_needing_defaults.size())
     {
         /// Find columns ready to process (all dependencies satisfied)
-        std::vector<std::pair<String, size_t>> ready;
+        VectorWithMemoryTracking<std::pair<String, size_t>> ready;
         for (const auto & [col_name, col_idx] : columns_needing_defaults)
         {
             if (processed.contains(col_name))

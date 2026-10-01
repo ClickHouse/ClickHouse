@@ -1,4 +1,6 @@
 #include <cstddef>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <memory>
 #include <mutex>
 #include <boost/core/noncopyable.hpp>
@@ -298,18 +300,18 @@ static QueryPlan createHashJoinQueryPlan(const String & data_a, const String & d
             std::move(join_info),
             std::move(join_expression_actions),
             std::move(required_output_columns),
-            std::unordered_map<String, const ActionsDAG::Node *>{},
+            UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>{},
             false,
             join_settings,
             SortingStep::Settings(query_context->getSettingsRef()));
 
         join_step->setStepDescription("Join");
 
-        std::vector<QueryPlanPtr> plans;
+        VectorWithMemoryTracking<QueryPlanPtr> plans;
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_plan)));
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_plan)));
 
-        query_plan.unitePlans(std::move(join_step), {std::move(plans)});
+        query_plan.unitePlans(std::move(join_step), std::move(plans));
     }
 
     /// Create sink

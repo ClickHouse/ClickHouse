@@ -1,4 +1,6 @@
 #include <functional>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>
@@ -70,7 +72,7 @@ struct ReadToDistribute
     StorageID storage_id;
 };
 
-static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * node, bool consider_merges = false);
+static VectorWithMemoryTracking<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * node, bool consider_merges = false);
 
 /// Side of a JOIN; `Left`/`Right` double as the join node's child indices.
 enum class JoinSide : size_t
@@ -648,7 +650,7 @@ private:
 /// reads are left local): the parallel-replicas coordinator drives every read of a shipped fragment and
 /// cannot distinguish duplicate announcements for one table, so such a union must not become a single
 /// distributed fragment (mirrors StorageView::getUnderlyingMergeTreeStorageForParallelReplicas).
-static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * node, bool consider_merges)
+static VectorWithMemoryTracking<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * node, bool consider_merges)
 {
     if (!node)
         return {};
@@ -673,7 +675,7 @@ static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * 
 
             const auto & storage_ids = merge->getExpandableReads(mergeTreeReadCanBeShipped);
 
-            std::vector<ReadToDistribute> reads;
+            VectorWithMemoryTracking<ReadToDistribute> reads;
             reads.reserve(storage_ids.size());
             for (const auto & storage_id : storage_ids)
                 reads.push_back({node, storage_id});
@@ -683,14 +685,14 @@ static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * 
 
     if (typeid_cast<UnionStep *>(node->step.get()))
     {
-        std::vector<ReadToDistribute> reads;
+        VectorWithMemoryTracking<ReadToDistribute> reads;
         for (auto * child : node->children)
         {
             auto child_reads = collectReadsToDistribute(child, consider_merges);
             reads.insert(reads.end(), child_reads.begin(), child_reads.end());
         }
 
-        std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen;
+        UnorderedSetWithMemoryTracking<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen;
         for (const auto & read : reads)
             if (!seen.insert(read.storage_id).second)
                 return {};
@@ -749,7 +751,7 @@ static void expandMergeReadsForParallelReplicas(QueryPlan & query_plan)
         return;
 
     /// Collect first: the expansion replaces the step of a visited node.
-    std::vector<QueryPlan::Node *> merge_nodes;
+    VectorWithMemoryTracking<QueryPlan::Node *> merge_nodes;
     Stack stack;
     traverseQueryPlan(
         stack,
@@ -798,7 +800,7 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
     /// of its own to distribute but is shipped inside the fragment and read in full by every replica.
     expandMergeReadsForParallelReplicas(query_plan);
 
-    std::unordered_set<const QueryPlan::Node *> eligible;
+    UnorderedSetWithMemoryTracking<const QueryPlan::Node *> eligible;
     for (const auto & read : collectReadsToDistribute(root))
         eligible.insert(read.node);
     if (eligible.empty())
@@ -822,7 +824,7 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
 
     /// Collect (parent, child index) of every eligible read first, then wrap — avoids mutating the tree
     /// while traversing it.
-    std::vector<std::pair<QueryPlan::Node *, size_t>> to_wrap;
+    VectorWithMemoryTracking<std::pair<QueryPlan::Node *, size_t>> to_wrap;
     Stack stack;
     traverseQueryPlan(
         stack,

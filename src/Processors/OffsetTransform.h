@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <unordered_map>
 
 #include <Core/SortDescription.h>
@@ -32,9 +34,9 @@ private:
         bool is_finished = false;
     };
 
-    std::vector<PortsData> ports_data;
-    std::unordered_map<const InputPort *, PortsData *> input_port_to_data;
-    std::unordered_map<const OutputPort *, PortsData *> output_port_to_data;
+    VectorWithMemoryTracking<PortsData> ports_data;
+    UnorderedMapWithMemoryTracking<const InputPort *, PortsData *> input_port_to_data;
+    UnorderedMapWithMemoryTracking<const OutputPort *, PortsData *> output_port_to_data;
     size_t num_finished_port_pairs = 0;
 
 public:

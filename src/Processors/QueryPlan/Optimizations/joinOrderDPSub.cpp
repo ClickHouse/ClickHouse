@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
 #include <Processors/QueryPlan/Optimizations/joinEnum.h>
 #include <Processors/QueryPlan/Optimizations/dpTable.h>
@@ -78,8 +80,8 @@ private:
         return query_graph.conflict_detector == JoinOrderConflictDetector::CD_C ? ConflictDetector::CDC : ConflictDetector::CDA;
     }
 
-    const std::vector<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
-    double computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
+    const VectorWithMemoryTracking<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
+    double computeSelectivityMask(const VectorWithMemoryTracking<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
 
     QueryGraph & query_graph;
     SelectivityCache expression_selectivity;
@@ -96,9 +98,9 @@ private:
     {
         using EquivClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
 
-        std::vector<TUInt> edge_source_mask;   /// per edge: source relations
-        std::vector<TUInt> edge_pin_mask;      /// per edge: relations that must all be present (if pinned)
-        std::vector<char> edge_pinned;         /// per edge: whether a pin applies
+        VectorWithMemoryTracking<TUInt> edge_source_mask;   /// per edge: source relations
+        VectorWithMemoryTracking<TUInt> edge_pin_mask;      /// per edge: relations that must all be present (if pinned)
+        VectorWithMemoryTracking<char> edge_pinned;         /// per edge: whether a pin applies
 
         struct Restriction
         {
@@ -106,14 +108,14 @@ private:
             JoinKind kind = JoinKind::Inner;
             bool present = false;
         };
-        std::vector<Restriction> restriction_by_rel; /// indexed by relation id
+        VectorWithMemoryTracking<Restriction> restriction_by_rel; /// indexed by relation id
 
-        std::vector<EquivClassPtr> equiv_classes;        /// distinct equivalence classes
-        std::vector<std::vector<TUInt>> rel_to_classes; /// relation id -> indices into equiv_classes
+        VectorWithMemoryTracking<EquivClassPtr> equiv_classes;        /// distinct equivalence classes
+        VectorWithMemoryTracking<VectorWithMemoryTracking<TUInt>> rel_to_classes; /// relation id -> indices into equiv_classes
 
-        std::vector<UInt64> class_visited;        /// generation stamp per equivalence class
+        VectorWithMemoryTracking<UInt64> class_visited;        /// generation stamp per equivalence class
         UInt64 equiv_generation = 0;              /// bumped on each computeSelectivityMask call
-        std::vector<JoinActionRef *> applicable_scratch; /// reused output of collectJoinEdgesMask
+        VectorWithMemoryTracking<JoinActionRef *> applicable_scratch; /// reused output of collectJoinEdgesMask
 
         /// Whether the relations fall apart once cross products are set aside, computed in
         /// `initDPsubScratch` from the masks below. DPsub builds the full set out of connected
@@ -124,7 +126,7 @@ private:
         /// when a conflict detector is enabled. When non-empty, `isValidJoinOrderMaskConflict` uses
         /// these (per-operator required-set + conflict rules) instead of the per-relation
         /// `restriction_by_rel`, which lets non-commutative outer and semi/anti joins be reordered.
-        std::vector<ConflictOperator> conflict_operators;
+        VectorWithMemoryTracking<ConflictOperator> conflict_operators;
     };
     DPsubMaskData<UInt32> dpsub_data;
 
@@ -174,7 +176,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     dpsub_data.conflict_operators.clear();
     if (useConflictDetector())
     {
-        std::vector<ConflictOpMask> ops;
+        VectorWithMemoryTracking<ConflictOpMask> ops;
         ops.reserve(query_graph.conflict_ops.size());
         for (const auto & op : query_graph.conflict_ops)
             ops.push_back(ConflictOpMask{toMask(op.left), toMask(op.right), toMask(op.nel), toMask(op.nr_rels), op.kind, op.strictness});
@@ -200,7 +202,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     /// visits the classes touching the left side instead of rescanning the whole member map
     dpsub_data.equiv_classes.clear();
     dpsub_data.rel_to_classes.assign(num_relations, {});
-    std::unordered_map<const EquivClass *, UInt32> class_index;
+    UnorderedMapWithMemoryTracking<const EquivClass *, UInt32> class_index;
     for (const auto & [member, class_ptr] : query_graph.column_equivalences.getMemberToClassMap())
     {
         if (!class_ptr)
@@ -222,7 +224,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     /// Cross products are left out - they join on nothing, so a graph they alone hold together is
     /// disconnected. A query whose other predicates tie the same relations together still counts as
     /// connected, which is what lets DPsub plan a cross product feeding an inner join.
-    std::vector<size_t> component(num_relations);
+    VectorWithMemoryTracking<size_t> component(num_relations);
     for (size_t i = 0; i < num_relations; ++i)
         component[i] = i;
 
@@ -420,7 +422,7 @@ DPSubJoinOrderOptimizer::resolveJoinMask(UInt32 left_mask, UInt32 right_mask) co
     return std::nullopt;
 }
 
-const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask)
+const VectorWithMemoryTracking<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask)
 {
     auto & out = dpsub_data.applicable_scratch;
     out.clear();
@@ -474,7 +476,7 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
 }
 
 double DPSubJoinOrderOptimizer::computeSelectivityMask(
-    const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask)
+    const VectorWithMemoryTracking<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask)
 {
     double selectivity = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
 
@@ -588,12 +590,12 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         Bitvector left{0};
         Bitvector right{0};
         std::optional<UInt64> estimated_rows = {};
-        std::unordered_map<String, ColumnStats> column_stats = {};
+        UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats = {};
         double cost{.0};
         double sel{.0};
         JoinKind kind{JoinKind::Inner};
         JoinStrictness strictness{JoinStrictness::All};
-        std::vector<JoinActionRef*> edges; // needed for physical plan generation
+        VectorWithMemoryTracking<JoinActionRef*> edges; // needed for physical plan generation
     };
     using DPTable = DPTable<DPEntry, Bitvector>;
     using Checker = EnumeratorCheckerWithCosts<DPTable, DPSubJoinOrderOptimizer>;

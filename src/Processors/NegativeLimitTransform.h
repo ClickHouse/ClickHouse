@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <deque>
 #include <Columns/IColumn.h>
 #include <Core/Block_fwd.h>
@@ -47,7 +49,7 @@ private:
     bool with_ties;
     const SortDescription description;
     bool is_shard_limit = false;
-    std::vector<size_t> sort_column_positions;
+    VectorWithMemoryTracking<size_t> sort_column_positions;
 
     /// Total rows currently queued across all inputs.
     UInt64 queued_row_count = 0;
@@ -69,7 +71,7 @@ private:
 
     UInt64 num_input_ports_finished = 0;
 
-    std::vector<PortsData> ports_data;
+    VectorWithMemoryTracking<PortsData> ports_data;
 
     /// `Pull` stage: it ends when all input ports are closed.
     /// `Push` stage: it starts immediately after the `Pull` stage and it ends
@@ -87,7 +89,7 @@ private:
 
     /// Stores the pending chunks. With ties, chunks before the tie-run start are
     /// discarded during Pull. A deque is used for indexed access during boundary tracking.
-    std::deque<Chunk> chunks;
+    DequeWithMemoryTracking<Chunk> chunks;
 
     /// WITH TIES boundary tracking state.
     /// The boundary is the first row of the limit window.

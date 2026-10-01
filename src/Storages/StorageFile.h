@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Formats/FormatFilterInfo.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Interpreters/ActionsDAG.h>
@@ -172,7 +173,7 @@ public:
         const ReadFromFormatInfo & info,
         const ContextPtr & context,
         size_t max_block_size,
-        std::vector<FileLazyMaterializingRows::FileRows> files);
+        VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files);
 
 protected:
     friend class StorageFileSource;

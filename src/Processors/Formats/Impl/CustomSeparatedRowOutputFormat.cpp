@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/CustomSeparatedRowOutputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/isValidUTF8.h>
 #include <Formats/EscapingRuleUtils.h>
@@ -23,7 +24,7 @@ CustomSeparatedRowOutputFormat::CustomSeparatedRowOutputFormat(
 {
 }
 
-void CustomSeparatedRowOutputFormat::writeLine(const std::vector<String> & values)
+void CustomSeparatedRowOutputFormat::writeLine(const Names & values)
 {
     writeRowStartDelimiter();
     for (size_t i = 0; i != values.size(); ++i)

@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
@@ -31,7 +32,10 @@ namespace DB::ErrorCodes
 
 namespace DB::Graphite
 {
-static std::unordered_map<RuleType, const String> ruleTypeMap =
+/// A process-wide constant built during static initialization. A `-WithMemoryTracking` container would
+/// charge it to whichever thread's memory tracker happens to be current, and would throw on allocation
+/// failure before any tracker is set up.
+static std::unordered_map<RuleType, const String> ruleTypeMap = /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
    { RuleTypeAll, "all" },
    { RuleTypePlain, "plain" },
@@ -298,7 +302,7 @@ std::string buildTaggedRegex(std::string regexp_str)
     * nam.*\?(.*&)?tag1=val1&(.*&)?tag2=val2(&.*)?$
     */
 
-    std::vector<std::string> tags;
+    VectorWithMemoryTracking<std::string> tags;
 
     splitInto<';'>(tags, regexp_str);
     /* remove empty elements */

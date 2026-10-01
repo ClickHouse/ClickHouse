@@ -1,6 +1,8 @@
 #pragma once
 
 #include <queue>
+#include <Common/QueueWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
@@ -34,7 +36,7 @@ private:
 
     UInt64 num_input_ports_finished = 0;
 
-    std::vector<PortsData> ports_data;
+    VectorWithMemoryTracking<PortsData> ports_data;
 
     /// `Pull` stage: it ends when all input ports are closed.
     /// `Push` stage: it starts immediately after the `Pull` stage and it ends
@@ -57,7 +59,7 @@ private:
     /// Stores the pending chunks which are not yet confirmed whether they are
     /// full outside the offset or not. Once we can be sure that a chunk is fully
     /// outside the offset, it is pushed to the output port and popped from the queue.
-    std::queue<ChunkWithPort> queue;
+    QueueWithMemoryTracking<ChunkWithPort> queue;
 
 public:
     NegativeOffsetTransform(const Block & header_, UInt64 offset_, size_t num_streams = 1);

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
@@ -51,8 +54,8 @@ private:
     const std::string log_name;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
-    std::vector<std::list<Chunk>> chunks;
-    std::unordered_map<const InputPort *, size_t> input_port_to_index;
+    VectorWithMemoryTracking<ListWithMemoryTracking<Chunk>> chunks;
+    UnorderedMapWithMemoryTracking<const InputPort *, size_t> input_port_to_index;
     size_t next_chunk_to_process = 0;
     InputPorts::iterator next_input_to_process;
 

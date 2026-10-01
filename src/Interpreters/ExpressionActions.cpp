@@ -1,4 +1,6 @@
 #include <Interpreters/Set.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
@@ -49,7 +51,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
+static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
 
 ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
     : actions_dag(std::move(actions_dag_))
@@ -57,7 +59,7 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
     , settings(settings_)
 {
     /// It's important to determine lazy executed nodes before compiling expressions.
-    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(actions_dag, settings.short_circuit_function_evaluation);
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(actions_dag, settings.short_circuit_function_evaluation);
 
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
@@ -76,7 +78,7 @@ ExpressionActionsPtr ExpressionActions::clone() const
 {
     auto copy = std::make_shared<ExpressionActions>(ExpressionActions());
 
-    std::unordered_map<const Node *, const Node *> copy_map;
+    ActionsDAG::NodeMapping copy_map;
     copy->actions_dag = actions_dag.clone(copy_map);
     copy->actions = actions;
     for (auto & action : copy->actions)
@@ -252,7 +254,7 @@ static bool findLazyExecutedNodes(
     const ActionsDAG::NodeRawConstPtrs & children,
     std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> & lazy_execution_infos,
     bool force_enable_lazy_execution,
-    std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes_out)
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes_out)
 {
     bool has_lazy_node = false;
     for (const auto * child : children)
@@ -304,7 +306,7 @@ static bool findLazyExecutedNodes(
     return has_lazy_node;
 }
 
-static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation)
+static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation)
 {
     if (short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::DISABLE)
         return {};
@@ -331,7 +333,7 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     for (const auto & node : nodes)
         setLazyExecutionInfo(&node, reverse_info, short_circuit_nodes, lazy_execution_infos);
 
-    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> lazy_executed_nodes;
     for (const auto & [node, settings] : short_circuit_nodes)
     {
         /// Recursively find nodes that should be lazy executed.
@@ -344,7 +346,7 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     return lazy_executed_nodes;
 }
 
-void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
+void ExpressionActions::linearizeActions(const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     /// This function does the topological sort on DAG and fills all the fields of ExpressionActions.
     /// Algorithm traverses DAG starting from nodes without children.
@@ -616,7 +618,7 @@ namespace
     {
         ColumnsWithTypeAndName & inputs;
         ColumnsWithTypeAndName columns = {};
-        std::vector<ssize_t> inputs_pos = {};
+        VectorWithMemoryTracking<ssize_t> inputs_pos = {};
         size_t num_rows = 0;
     };
 }
@@ -891,9 +893,9 @@ void ExpressionActions::execute(
     num_rows = execution_context.num_rows;
 }
 
-std::vector<ssize_t> ExpressionActions::getInputPositions(const Block & header) const
+VectorWithMemoryTracking<ssize_t> ExpressionActions::getInputPositions(const Block & header) const
 {
-    std::vector<ssize_t> inputs_pos(required_columns.size(), -1);
+    VectorWithMemoryTracking<ssize_t> inputs_pos(required_columns.size(), -1);
 
     for (size_t pos = 0; pos < header.columns(); ++pos)
     {
@@ -917,7 +919,7 @@ std::vector<ssize_t> ExpressionActions::getInputPositions(const Block & header) 
 Columns ExpressionActions::executeOnColumns(
     Columns columns,
     const Block & header,
-    const std::vector<ssize_t> & input_positions_for_header,
+    const VectorWithMemoryTracking<ssize_t> & input_positions_for_header,
     size_t & num_rows,
     bool dry_run,
     CheckCancelled check_cancelled) const

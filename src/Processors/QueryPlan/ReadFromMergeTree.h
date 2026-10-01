@@ -1,5 +1,9 @@
 #pragma once
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
@@ -25,7 +29,7 @@ class ParallelReadingExtension;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 class LazilyReadFromMergeTree;
@@ -44,13 +48,13 @@ struct UsefulSkipIndexes
 {
     bool empty() const { return useful_indices.empty() && !skip_index_for_top_k_filtering; }
 
-    std::vector<MergeTreeIndexWithCondition> useful_indices;
+    VectorWithMemoryTracking<MergeTreeIndexWithCondition> useful_indices;
     MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};
     TopKThresholdTrackerPtr threshold_tracker{nullptr};
 };
 
 /// The order in which the useful skip indexes are applied to a single part: cheapest and coarsest first.
-using SkipIndexOrder = std::shared_ptr<const std::vector<size_t>>;
+using SkipIndexOrder = std::shared_ptr<const VectorWithMemoryTracking<size_t>>;
 
 /// Memoizes `SkipIndexOrder` per part for one `ReadFromMergeTree::Indexes` object.
 /// The order is derived from the part's index formats and file sizes, so it is stable for a given part,
@@ -60,7 +64,7 @@ using SkipIndexOrder = std::shared_ptr<const std::vector<size_t>>;
 struct SkipIndexOrderCache
 {
     std::mutex mutex;
-    std::unordered_map<String, SkipIndexOrder> orders TSA_GUARDED_BY(mutex);
+    UnorderedMapWithMemoryTracking<String, SkipIndexOrder> orders TSA_GUARDED_BY(mutex);
 
     /// The key must be unique within the table: a projection part is named after the projection,
     /// which repeats in every parent part, so it is qualified with the parent part name.
@@ -69,14 +73,14 @@ struct SkipIndexOrderCache
 using SkipIndexOrderCachePtr = std::shared_ptr<SkipIndexOrderCache>;
 
 /// Contains parts each from different projection index
-using ProjectionIndexReadRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
+using ProjectionIndexReadRangesByIndex = UnorderedMapWithMemoryTracking<size_t, RangesInDataParts>;
 
 struct ProjectionIndexReadInfo
 {
     ProjectionDescriptionRawPtr projection;
     PrewhereInfoPtr prewhere_info;
 };
-using ProjectionIndexReadInfos = std::vector<ProjectionIndexReadInfo>;
+using ProjectionIndexReadInfos = VectorWithMemoryTracking<ProjectionIndexReadInfo>;
 
 struct ProjectionIndexReadDescription
 {
@@ -158,15 +162,15 @@ public:
         std::string part_name = {};
         std::string description = {};
         std::string condition = {};
-        std::vector<std::string> used_keys = {};
+        VectorWithMemoryTracking<std::string> used_keys = {};
         size_t num_parts_after;
         size_t num_granules_after;
         MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
 
-        std::vector<DistributedIndexStat> distributed = {};
+        VectorWithMemoryTracking<DistributedIndexStat> distributed = {};
     };
 
-    using IndexStats = std::vector<IndexStat>;
+    using IndexStats = VectorWithMemoryTracking<IndexStat>;
 
     /// Information about used projections.
     struct ProjectionStat
@@ -183,7 +187,7 @@ public:
     };
 
     /// `deque` is used to ensure stable addresses during projection analysis stats building.
-    using ProjectionStats = std::deque<ProjectionStat>;
+    using ProjectionStats = DequeWithMemoryTracking<ProjectionStat>;
 
     using ReadType = MergeTreeReadType;
 
@@ -344,7 +348,7 @@ public:
         bool use_skip_indexes_for_disjunctions;
         bool use_skip_indexes_if_final_exact_mode;
         bool use_skip_indexes_on_data_read;
-        std::optional<std::unordered_set<String>> part_values;
+        std::optional<UnorderedSetWithMemoryTracking<String>> part_values;
     };
 
     void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
@@ -571,12 +575,12 @@ public:
     size_t setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets);
     /// Serializes each bucket (its marks, the merge flag, and a merge layer's borders + index) into a
     /// per-bucket blob shipped as the per-read bucket task parameter; empty unless this is a distributed read.
-    std::vector<String> serializeDistributedReadBuckets() const;
+    VectorWithMemoryTracking<String> serializeDistributedReadBuckets() const;
     /// Makes a list of shards to read in parallel in distributed query plan
     Strings getShardsForDistributedRead() const;
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const VectorWithMemoryTracking<size_t> & required_output_positions, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
@@ -701,7 +705,7 @@ private:
     /// is lost); propagating it there is a follow-up. This is part of the setting's documented contract
     /// (see its description in `Settings.cpp`) and is pinned by
     /// `05153_join_runtime_filters_index_analysis_distributed_noop`.
-    std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
+    VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
     FilterDAGInfoPtr deferred_row_level_filter;
@@ -855,11 +859,11 @@ private:
     String distributed_read_param_name;
     /// Initiator side: every virtual bucket across all tasks; `serializeDistributedReadBuckets` groups
     /// `distributed_read_lanes_per_task` of them into each task's bucket parameter. Empty on a worker.
-    std::vector<DistributedReadBucket> distributed_read_buckets;
+    VectorWithMemoryTracking<DistributedReadBucket> distributed_read_buckets;
     size_t distributed_read_lanes_per_task = 1;
     /// Worker side: the virtual buckets (lanes) of this worker's task, filled from its bucket
     /// parameter. A FINAL worker builds one merge/non-merge pipe per lane and unites them.
-    std::vector<DistributedReadBucket> distributed_read_task_buckets;
+    VectorWithMemoryTracking<DistributedReadBucket> distributed_read_task_buckets;
 };
 
 }

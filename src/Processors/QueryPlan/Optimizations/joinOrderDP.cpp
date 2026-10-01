@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/joinOrderDP.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Interpreters/JoinOperator.h>
 #include <IO/Operators.h>
@@ -22,7 +23,7 @@ DPJoinEntryPtr evaluateJoin(
     const DPJoinEntryPtr & left,
     const DPJoinEntryPtr & right,
     JoinKind join_kind,
-    std::vector<JoinActionRef *> & predicates,
+    VectorWithMemoryTracking<JoinActionRef *> & predicates,
     LoggerPtr log)
 {
     auto selectivity = computeSelectivity(query_graph, dp_table, expression_selectivity, predicates, left->relations, right->relations);
@@ -40,7 +41,7 @@ DPJoinEntryPtr evaluateJoin(
     auto cardinality = estimateJoinCardinality(left, right, selectivity, effective_kind);
     JoinOperator join_operator(
         effective_kind, JoinStrictness::All, JoinLocality::Unspecified,
-        std::ranges::to<std::vector>(predicates | std::views::transform([](const auto * p) { return *p; })));
+        std::ranges::to<VectorWithMemoryTracking<JoinActionRef>>(predicates | std::views::transform([](const auto * p) { return *p; })));
     auto new_entry = std::make_shared<DPJoinEntry>(left, right, new_cost, selectivity, cardinality, std::move(join_operator));
 
     LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
