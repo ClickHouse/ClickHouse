@@ -13,7 +13,9 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TableJoin.h>
+#include <Planner/Utils.h>
 #include <Processors/QueryPlan/ConvertingActions.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -257,6 +259,17 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
 
     auto interpreter = InterpreterSelectQueryAnalyzer(local_query_tree, new_context, select_query_options);
     auto query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
+
+    /// The parallel-replicas row-count estimate already index-analyzed this scan and filled its filter's sets.
+    if (const auto * analyzed_merge_tree = typeid_cast<const ReadFromMergeTree *>(analyzed_read_from_merge_tree.get()))
+    {
+        if (const auto & filter_dag = analyzed_merge_tree->getQueryInfo().filter_actions_dag)
+        {
+            auto built = std::make_shared<BuiltSetsByHash>();
+            appendBuiltSetsFromActionsDAG(*filter_dag, *built);
+            reuseBuiltSets(*query_plan, built);
+        }
+    }
 
     const bool allow_view_over_mergetree = context->getSettingsRef()[Setting::parallel_replicas_allow_view_over_mergetree];
     bool right_branch_selected = false;
