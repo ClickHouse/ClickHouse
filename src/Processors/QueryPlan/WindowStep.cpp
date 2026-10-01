@@ -185,16 +185,14 @@ QueryPlanStepPtr WindowStep::clone() const
 
 static void serializeIntervalKind(const IntervalKind & kind, WriteBuffer & out)
 {
-    writeIntBinary(static_cast<UInt8>(kind.kind), out);
+    writeIntBinary(kind.toBinary(), out);
 }
 
 static IntervalKind deserializeIntervalKind(ReadBuffer & in)
 {
     UInt8 kind = 0;
     readIntBinary(kind, in);
-    if (kind > static_cast<UInt8>(IntervalKind::Kind::Year))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "WindowStep: invalid interval kind {}", static_cast<UInt16>(kind));
-    return IntervalKind{static_cast<IntervalKind::Kind>(kind)};
+    return IntervalKind::fromBinary(kind);
 }
 
 static void serializeWindowFrame(const WindowFrame & frame, WriteBuffer & out, UInt64 step_version, UInt64 version)
