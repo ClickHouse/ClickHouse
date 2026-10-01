@@ -5918,7 +5918,11 @@ Possible values:
 - 0 — No locking timeout.
 )", 0) \
     DECLARE(Milliseconds, get_zookeeper_lock_acquire_timeout_ms, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC * 1000, R"(
-Defines how many milliseconds query-visible Keeper operations wait to acquire the corresponding mutex before failing.
+Defines how many milliseconds a Keeper client waits to acquire the corresponding `Context` mutex before failing.
+
+The value is taken from the `Context` that performs the acquisition. A per-query override applies only when the operation uses the query context, such as reads from `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER`, and query-context auxiliary Keeper access.
+Operations that use a global or background context, including `BACKUP` and `RESTORE` coordination and `Replicated` database activity, use that context's value instead.
+`SYSTEM RELOAD CONFIG` and `SYSTEM RELOAD ASYNCHRONOUS METRICS` are not covered because they use independently serialized reload paths.
 
 Possible values:
 
