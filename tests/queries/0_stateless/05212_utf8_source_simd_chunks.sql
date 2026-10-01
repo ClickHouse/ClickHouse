@@ -55,13 +55,13 @@ SELECT throwIf(
     OR substringUTF8(materialize(s), -toInt64(code_point_count + 5), 5) != ''
     , 'UTF-8 source short request or clipped offset mismatch')
 FROM
-    (SELECT arrayJoin([0, 1, 7, 8, 9, 15, 16, 17, 31, 32, 33, 64]) AS prefix)
+    (SELECT arrayJoin([0, 1, 7, 8, 9, 15, 16, 17, 31, 32, 33, 64]) AS prefix) AS prefixes
 CROSS JOIN
-    (SELECT arrayJoin([0, 7, 15, 31, 64]) AS suffix)
+    (SELECT arrayJoin([0, 7, 15, 31, 64]) AS suffix) AS suffixes
 CROSS JOIN
-    (SELECT arrayJoin([0, 1, 7, 8, 9, 15, 16, 17, 24, 31, 32, 33, 39, 40, 41, 47, 48, 49, 55, 56, 57, 63, 64, 65, 71, 72, 73, 95, 96, 97, 127, 128, 129]) AS skip)
+    (SELECT arrayJoin([0, 1, 7, 8, 9, 15, 16, 17, 24, 31, 32, 33, 39, 40, 41, 47, 48, 49, 55, 56, 57, 63, 64, 65, 71, 72, 73, 95, 96, 97, 127, 128, 129]) AS skip) AS skips
 CROSS JOIN
-    (SELECT arrayJoin([unhex('00'), 'a', unhex('C3A9'), unhex('E4BDA0'), unhex('F09F9880')]) AS code_point)
+    (SELECT arrayJoin([unhex('00'), 'a', unhex('C3A9'), unhex('E4BDA0'), unhex('F09F9880')]) AS code_point) AS code_points_source
 FORMAT Null;
 
 SELECT 'OK';
