@@ -4,6 +4,9 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <Compression/CachedCompressedReadBuffer.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
@@ -25,8 +28,20 @@ try
     checkNumberOfColumns(num_columns);
     createColumnsForReading(res_columns);
 
+    /// One call reads every mark of the requested block, and query limits are otherwise only
+    /// enforced between blocks. With a small index_granularity a single block spans tens of
+    /// thousands of marks, so without a check here a cancelled query keeps reading to completion.
+    QueryStatusPtr query_status;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        query_status = query_context->getProcessListElementSafe();
+
     while (read_rows < max_rows_to_read)
     {
+        /// Throws QUERY_WAS_CANCELLED on a cancelled query and TIMEOUT_EXCEEDED past
+        /// max_execution_time in throw mode.
+        if (query_status)
+            query_status->checkTimeLimit();
+
         size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
 
         deserialize_binary_bulk_state_map.clear();
@@ -93,7 +108,7 @@ try
 }
 catch (...)
 {
-    if (!isRetryableException(std::current_exception()))
+    if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
         data_part_info_for_read->reportBroken();
 
     /// Better diagnostics.
