@@ -547,18 +547,6 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
             sampling_column_type->getName());
 }
 
-static bool hasColumnsWithDynamicSubcolumns(const Block & block)
-{
-    for (const auto & column : block.getColumnsWithTypeAndName())
-    {
-        if (column.type->hasDynamicSubcolumns())
-            return true;
-    }
-
-    return false;
-}
-
-
 void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & relative_data_path_, bool attach, const std::string & date_column_name, bool need_create_directories)
 {
     auto settings = getSettings();
