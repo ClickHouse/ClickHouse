@@ -32,6 +32,11 @@ void validateSupportedColumns(
 /// An empty column name has no identifier to render it with, so it cannot survive analysis.
 void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name);
 
+/// Clears `metadata.sorting_key` unless every column the key expression reads is present in
+/// `metadata.columns`, as a column or a subcolumn, with the same type. Read-in-order trusts the
+/// key to describe the columns being emitted, so a key that does not is unsound rather than stale.
+void dropSortingKeyIfItDoesNotDescribeColumns(StorageInMemoryMetadata & metadata);
+
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     RelativePathWithMetadata & object_info,
     const ObjectStoragePtr & object_storage,
