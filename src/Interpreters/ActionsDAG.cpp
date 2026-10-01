@@ -1405,19 +1405,17 @@ EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
 
 }
 
-void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filter_column_name)
+void ActionsDAG::foldFilterPredicateThroughMaterialize(
+    std::string & filter_column_name, bool & remove_filter_column, const Block & input_header)
 {
     if (filter_column_name.empty())
         return;
 
     const auto it = std::ranges::find_if(outputs, [&](const Node * output) { return output->result_name == filter_column_name; });
-    if (it != outputs.end())
-        foldFilterPredicateThroughMaterialize(static_cast<size_t>(it - outputs.begin()));
-}
+    if (it == outputs.end())
+        return;
 
-void ActionsDAG::foldFilterPredicateThroughMaterialize(size_t filter_output_position)
-{
-    const Node * filter_node = outputs.at(filter_output_position);
+    const Node * filter_node = *it;
 
     /// A prior optimizer pass may already have folded this filter. Replacing an
     /// existing const output with another const output makes the pass report a
@@ -1430,13 +1428,32 @@ void ActionsDAG::foldFilterPredicateThroughMaterialize(size_t filter_output_posi
     if (!folded || !folded->column)
         return;
 
-    /// add a fresh const COLUMN and re-route the filter output, leave the original predicate
-    /// subtree intact so other parents that may share parts of it are unaffected -
-    /// `removeUnusedActions` prunes the now-orphan subtree later
+    /// Add a fresh const COLUMN and re-route the filter to it, leave the original predicate subtree intact so other
+    /// parents that may share parts of it are unaffected - `removeUnusedActions` prunes the now-orphan subtree later.
+    if (remove_filter_column)
+    {
+        const Node & new_const = addColumn(
+            std::move(folded->column), filter_node->result_type,
+            filter_node->result_name, folded->deterministic, folded->masked_secret);
+        *it = &new_const;
+        return;
+    }
+
+    const auto is_taken = [&](const std::string & name)
+    {
+        return input_header.has(name) || std::ranges::any_of(outputs, [&](const Node * output) { return output->result_name == name; });
+    };
+
+    std::string folded_name = filter_column_name + "_folded";
+    for (size_t suffix = 1; is_taken(folded_name); ++suffix)
+        folded_name = fmt::format("{}_folded_{}", filter_column_name, suffix);
+
     const Node & new_const = addColumn(
-        std::move(folded->column), filter_node->result_type,
-        filter_node->result_name, folded->deterministic, folded->masked_secret);
-    outputs[filter_output_position] = &new_const;
+        std::move(folded->column), filter_node->result_type, folded_name, folded->deterministic, folded->masked_secret);
+    outputs.push_back(&new_const);
+
+    filter_column_name = std::move(folded_name);
+    remove_filter_column = true;
 }
 
 void ActionsDAG::deduplicateSubtrees()
