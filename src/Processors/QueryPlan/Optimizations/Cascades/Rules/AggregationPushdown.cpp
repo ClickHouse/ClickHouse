@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -496,14 +497,16 @@ GroupExpressionPtr registerPushdownAlternative(
 /// `deriveAggregatingStatistics` falls back to `0.1 * input_rows` for a key without stats -
 /// a reasonable guess for pricing the ORIGINAL aggregation, but the pushdown widens the key set
 /// to `(G ∩ S) ∪ J_S`, and the fallback would then price the widened set the same as `G` alone,
-/// hiding the extra aggregation stage as if it cost nothing. Require a real NDV for every pushed
-/// key instead.
+/// hiding the extra aggregation stage as if it cost nothing. Require a non-zero NDV upper bound
+/// for every pushed key instead.
 bool pushedKeysHaveReliableCardinality(const ExpressionStatistics & input_statistics, const Names & pushed_keys)
 {
     for (const auto & key : pushed_keys)
     {
         auto it = input_statistics.column_statistics.find(key);
-        if (it == input_statistics.column_statistics.end() || it->second.num_distinct_values == 0)
+        if (it == input_statistics.column_statistics.end()
+            || it->second.num_distinct_values == 0
+            || !QueryPlanOptimizations::isDistinctCountUpperBound(it->second.ndv_provenance))
             return false;
     }
     return true;
@@ -512,8 +515,8 @@ bool pushedKeysHaveReliableCardinality(const ExpressionStatistics & input_statis
 /// Minimum shrinkage the composite bound must prove (see `pushedKeysGuaranteeReduction`).
 constexpr Float64 MIN_GUARANTEED_REDUCTION = 2.0;
 
-/// The product of the pushed keys' NDVs (each clamped to the input estimate, keeping the whole
-/// comparison in estimated-row space) is a proven upper bound on the partial's output row count.
+/// The product of the pushed keys' NDV upper bounds (each clamped to the input's proven maximum
+/// row count) is an upper bound on the partial's output row count.
 /// The memo will later price the alternative optimistically, by the max of the keys'
 /// NDVs rather than this composite, so requiring the composite to guarantee at least
 /// `MIN_GUARANTEED_REDUCTION` below the input compensates: a key set that provably does not
@@ -523,7 +526,10 @@ bool pushedKeysGuaranteeReduction(const ExpressionStatistics & input_statistics,
     Float64 composite = 1;
     for (const auto & key : pushed_keys)
     {
-        const Float64 ndv = std::min(Float64(input_statistics.column_statistics.at(key).num_distinct_values), input_statistics.estimated_row_count);
+        const auto & column_stats = input_statistics.column_statistics.at(key);
+        if (!QueryPlanOptimizations::isDistinctCountUpperBound(column_stats.ndv_provenance))
+            return false;
+        const Float64 ndv = std::min(Float64(column_stats.num_distinct_values), input_statistics.max_row_count);
         composite *= ndv;
         if (composite >= input_statistics.estimated_row_count)
         {

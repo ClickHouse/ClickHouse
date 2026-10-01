@@ -257,6 +257,18 @@ ColumnStatisticsPtr createTestStats(
     return MergeTreeStatisticsFactory::instance().get(desc);
 }
 
+ColumnStatisticsPtr buildInt32Stats(const std::vector<StatisticsType> & types, size_t total)
+{
+    const auto data_type = std::make_shared<DataTypeInt32>();
+    MutableColumnPtr column = data_type->createColumn();
+    for (size_t i = 0; i < total; ++i)
+        column->insert(static_cast<Int32>(i));
+
+    auto stats = createTestStats(types, data_type);
+    stats->build(std::move(column));
+    return stats;
+}
+
 /// Build a `Nullable(Int32)` column with `total` rows where every `null_every`-th row is NULL.
 /// Non-NULL row `i` carries value `static_cast<Int32>(i)`. Returns built statistics.
 ColumnStatisticsPtr buildNullableInt32Stats(
@@ -294,6 +306,58 @@ Float64 estimateRowsFor(Estimator & estimator, const String & expression)
     return static_cast<Float64>(estimator->estimateRelationProfile(nullptr, node).rows);
 }
 
+}
+
+TEST(Statistics, ColumnStatsOriginsTransformationsAndPartialCoverage)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto measured_stats = buildInt32Stats({StatisticsType::Basic, StatisticsType::Uniq}, 100);
+    ConditionSelectivityEstimatorBuilder measured_builder(getContext().context);
+    measured_builder.addStatistics("k", measured_stats);
+    measured_builder.addStatistics("j", measured_stats);
+    measured_builder.incrementRowCount(100);
+    auto measured_estimator = measured_builder.getEstimator();
+
+    const auto measured_profile = measured_estimator->estimateRelationProfile();
+    const auto & measured = measured_profile.column_stats.at("k");
+    EXPECT_EQ(measured.ndv_provenance.origin, ColumnStatsOrigin::PartStatistics);
+    EXPECT_EQ(measured.range_provenance.origin, ColumnStatsOrigin::PartStatistics);
+    EXPECT_FALSE(measured.ndv_provenance.has(PartialPartCoverage));
+    EXPECT_FALSE(measured.range_provenance.has(PartialPartCoverage));
+
+    auto basic_stats = buildInt32Stats({StatisticsType::Basic}, 100);
+    ConditionSelectivityEstimatorBuilder basic_builder(getContext().context);
+    basic_builder.addStatistics("k", basic_stats);
+    basic_builder.incrementRowCount(100);
+    const auto basic_profile = basic_builder.getEstimator()->estimateRelationProfile();
+    const auto & basic = basic_profile.column_stats.at("k");
+    EXPECT_EQ(basic.ndv_provenance.origin, ColumnStatsOrigin::SyntheticFallback);
+    EXPECT_EQ(basic.range_provenance.origin, ColumnStatsOrigin::PartStatistics);
+
+    ConditionSelectivityEstimatorBuilder partial_builder(getContext().context);
+    partial_builder.addStatistics("k", measured_stats);
+    partial_builder.incrementRowCount(1000);
+    const auto partial_profile = partial_builder.getEstimator()->estimateRelationProfile();
+    const auto & partial = partial_profile.column_stats.at("k");
+    EXPECT_EQ(partial.ndv_provenance.origin, ColumnStatsOrigin::PartStatistics);
+    EXPECT_EQ(partial.range_provenance.origin, ColumnStatsOrigin::PartStatistics);
+    EXPECT_TRUE(partial.ndv_provenance.has(PartialPartCoverage));
+    EXPECT_TRUE(partial.range_provenance.has(PartialPartCoverage));
+
+    ParserExpressionWithOptionalAlias parser(false);
+    RPNBuilderTreeContext tree_context(
+        getContext().context,
+        Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}},
+        {});
+    ASTPtr ast = parseQuery(parser, "k < 90 AND j < 50", 1000, 1000, 1000);
+    RPNBuilderTreeNode predicate(ast.get(), tree_context);
+    const auto filtered_profile = measured_estimator->estimateRelationProfile(nullptr, predicate);
+    const auto & filtered = filtered_profile.column_stats.at("k");
+    EXPECT_TRUE(filtered.ndv_provenance.has(RowSubset));
+    EXPECT_TRUE(filtered.range_provenance.has(RowSubset));
+    EXPECT_TRUE(filtered.ndv_provenance.has(EstimatedRowCountClamp));
 }
 
 TEST(Statistics, NullableEstimatorWithBasic)
@@ -793,7 +857,7 @@ TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
 {
     auto data_type = std::make_shared<DataTypeInt32>();
 
-    auto lengthPrefixed = [](WriteBuffer & out, const String & stat_payload)
+    auto length_prefixed = [](WriteBuffer & out, const String & stat_payload)
     {
         writeIntBinary(static_cast<UInt64>(stat_payload.size()), out);
         out.write(stat_payload.data(), stat_payload.size());
@@ -824,8 +888,8 @@ TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
         /// bit 3 = `MinMax`, bit 4 = the reverted `NullCount`, which is today's `Basic` slot
         writeIntBinary(static_cast<UInt64>((1ULL << 3) | (1ULL << 4)), buf);
         writeIntBinary(static_cast<UInt64>(100), buf); /// rows
-        lengthPrefixed(buf, minmax_payload);
-        lengthPrefixed(buf, null_count_payload);
+        length_prefixed(buf, minmax_payload);
+        length_prefixed(buf, null_count_payload);
         buf.finalize();
     }
 

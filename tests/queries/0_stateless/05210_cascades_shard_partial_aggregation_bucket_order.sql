@@ -15,16 +15,19 @@ SET max_rows_to_group_by = 0;
 
 DROP TABLE IF EXISTS t_cascades_bucket_order;
 CREATE TABLE t_cascades_bucket_order (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS index_granularity = 256, auto_statistics_types = '';
-INSERT INTO t_cascades_bucket_order SELECT number % 50000, number FROM numbers(200000);
+    SETTINGS index_granularity = 256, auto_statistics_types = 'basic, uniq_v2';
+SET materialize_statistics_on_insert = 1;
+INSERT INTO t_cascades_bucket_order SELECT number % 5000, number FROM numbers(200000);
 
 SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 1;
 SET distributed_plan_execute_locally = 1;
 -- Two planning nodes, so the shard has a multi-node partial aggregation to choose from.
 SET distributed_plan_workers_num = 2;
--- No statistics, so the plan does not depend on an estimated group count.
-SET use_statistics = 0;
+-- A measured, exact-coverage NDV pins enough reduction for the distributed two-stage alternative
+-- to win. An absent NDV deliberately uses the Cascades 10% fallback, which makes the valid
+-- single-node alternative cheaper for this fixture and would stop exercising the bucket-order fix.
+SET use_statistics = 1;
 -- A shard plan otherwise carries `BlocksMarshallingStep`, which cannot run on a worker, and a plan
 -- holding it is executed with its exchanges turned into no-ops instead of being distributed.
 SET enable_parallel_blocks_marshalling = 0;

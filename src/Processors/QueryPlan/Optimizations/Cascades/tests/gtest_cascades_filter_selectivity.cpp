@@ -31,7 +31,9 @@ struct Fixture
 
         stats.estimated_row_count = 1000000;
         stats.column_statistics["k"].num_distinct_values = 1000;
+        stats.column_statistics["k"].ndv_provenance.origin = ColumnStatsOrigin::PartStatistics;
         stats.column_statistics["v"].num_distinct_values = 10;
+        stats.column_statistics["v"].ndv_provenance.origin = ColumnStatsOrigin::PartStatistics;
         stats.equivalences.add("a", "b");
     }
 
@@ -64,6 +66,27 @@ TEST(CascadesFilterSelectivity, ComparisonWithConstant)
     EXPECT_DOUBLE_EQ(f.estimate(f.function("equals", {f.inputs["u"], f.constant(42)})), 0.01);
     /// The column statistics carry no value ranges, so ranges keep the default factor.
     EXPECT_DOUBLE_EQ(f.estimate(f.function("greater", {f.inputs["k"], f.constant(42)})), 0.33);
+}
+
+TEST(CascadesFilterSelectivity, RejectsUnsafeDistinctCounts)
+{
+    Fixture f;
+    const auto * equality = f.function("equals", {f.inputs["k"], f.constant(42)});
+
+    f.stats.column_statistics["k"].ndv_provenance.add(RowSubset);
+    EXPECT_DOUBLE_EQ(f.estimate(equality), 1.0 / 1000);
+
+    f.stats.column_statistics["k"].ndv_provenance.add(PartialPartCoverage);
+    EXPECT_DOUBLE_EQ(f.estimate(equality), 0.01);
+
+    f.stats.column_statistics["k"].ndv_provenance = {ColumnStatsOrigin::PartStatistics, EstimatedRowCountClamp};
+    EXPECT_DOUBLE_EQ(f.estimate(equality), 0.01);
+
+    f.stats.column_statistics["k"].ndv_provenance = {ColumnStatsOrigin::SyntheticFallback, 0};
+    EXPECT_DOUBLE_EQ(f.estimate(equality), 0.01);
+
+    f.stats.column_statistics["k"].ndv_provenance = {ColumnStatsOrigin::SyntheticOverride, 0};
+    EXPECT_DOUBLE_EQ(f.estimate(equality), 1.0 / 1000);
 }
 
 TEST(CascadesFilterSelectivity, TwoColumns)

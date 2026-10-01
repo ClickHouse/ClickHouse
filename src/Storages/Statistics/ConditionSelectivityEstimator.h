@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/Statistics/ColumnStatsProvenance.h>
 #include <Storages/Statistics/Statistics.h>
 
 #include <Core/Field.h>
@@ -14,14 +15,30 @@ class RPNBuilderTreeNode;
 struct ColumnStats
 {
     UInt64 num_distinct_values = 0;
+    ColumnStatsProvenance ndv_provenance = {};
     /// Average uncompressed size of one value; 0 means unknown.
     Float64 avg_bytes = 0;
     /// Value range from `basic`/`minmax` statistics; unset when unknown.
     std::optional<Field> min_value = {};
     std::optional<Field> max_value = {};
-    /// Fraction of NULL values; unset when unknown.
+    ColumnStatsProvenance range_provenance = {};
+    /// Fraction of NULL values; unset when unknown. This is a value fact for the same rows as
+    /// `min_value` and `max_value`, so consumers must consult `range_provenance` before using it.
     std::optional<Float64> null_fraction = {};
 };
+
+/// Basic statistics keep numeric min/max values as these three Field variants. Return no value
+/// for unsupported representations instead of deriving an estimate on the wrong numeric scale.
+inline std::optional<Float64> statisticsFieldToFloat64(const Field & value)
+{
+    if (value.getType() == Field::Types::UInt64)
+        return static_cast<Float64>(value.safeGet<UInt64>());
+    if (value.getType() == Field::Types::Int64)
+        return static_cast<Float64>(value.safeGet<Int64>());
+    if (value.getType() == Field::Types::Float64)
+        return value.safeGet<Float64>();
+    return {};
+}
 
 struct RelationProfile
 {
@@ -66,7 +83,7 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
-    RelationProfile estimateRelationProfile() const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata = {}) const;
 
     /// Return true if the estimator was built from a different ordered sequence of data parts.
     bool isStale(const std::vector<DataPartPtr> & data_parts) const;
