@@ -13,6 +13,8 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <algorithm>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -102,6 +104,47 @@ namespace
         return normalized;
     }
 
+    /// The librdkafka property that a `Kafka` key sets, and whether the key is a flat `kafka_*` table setting.
+    /// `KafkaConfigLoader` sets the properties from nested collection keys (`kafka.<property>`, `kafka.consumer.<property>`
+    /// and `kafka.producer.<property>`, with `_` converted to `.`), and the non-empty flat settings overwrite them afterwards.
+    struct KafkaProperty
+    {
+        String name;
+        bool is_flat_setting;
+    };
+
+    std::optional<KafkaProperty> getKafkaProperty(std::string_view key)
+    {
+        static constexpr auto flat_settings = std::to_array<std::pair<std::string_view, std::string_view>>({
+            {"kafka_security_protocol", "security.protocol"},
+            {"kafka_sasl_mechanism", "sasl.mechanism"},
+            {"kafka_sasl_username", "sasl.username"},
+            {"kafka_sasl_password", "sasl.password"},
+            {"kafka_compression_codec", "compression.codec"},
+            {"kafka_compression_level", "compression.level"},
+            {"kafka_autodetect_client_rack", "client.rack"},
+        });
+
+        for (const auto & [setting, property] : flat_settings)
+        {
+            if (key == setting)
+                return KafkaProperty{String(property), true};
+        }
+
+        for (const std::string_view prefix : {"kafka.consumer.", "kafka.producer.", "kafka."})
+        {
+            if (!key.starts_with(prefix))
+                continue;
+
+            KafkaProperty property{String(key.substr(prefix.size())), false};
+            /// `log_level` is the only librdkafka property with an underscore.
+            if (property.name != "log_level")
+                std::ranges::replace(property.name, '_', '.');
+            return property;
+        }
+        return std::nullopt;
+    }
+
     bool areEquivalentKeys(std::string_view key, std::string_view other)
     {
         if (NamedCollectionValidateKey<ExternalDatabaseEqualKeysSet>{key} == NamedCollectionValidateKey<ExternalDatabaseEqualKeysSet>{other}
@@ -130,6 +173,13 @@ namespace
             if ((key == first && other == second) || (key == second && other == first))
                 return true;
         }
+
+        /// A flat `Kafka` setting and a nested collection key that set the same librdkafka property replace each other.
+        const auto kafka_property = getKafkaProperty(key);
+        const auto other_kafka_property = getKafkaProperty(other);
+        if (kafka_property && other_kafka_property && kafka_property->name == other_kafka_property->name
+            && (kafka_property->is_flat_setting || other_kafka_property->is_flat_setting))
+            return true;
 
         /// Configuration values include the text of their descendants. Replacing a subtree,
         /// or adding a child of an alias, can therefore replace a stored value as well.
