@@ -20,6 +20,7 @@ STALENESS caps the sequence before TO, so the TO bound is not rejected
 [250,251,252,253,254]
 [250]
 an INTERVAL step can never reach a TO out of range in the fill direction, so such a fill is rejected
+51	1970-01-01	2020-01-01
 1	2020-01-01	2020-01-01
 1	2020-01-01	2020-01-01
 3	2026-03-05	2028-03-05
@@ -85,6 +86,5 @@ NaN and infinity in a float fill column stay accepted
 5
 nan
 1e300
-5
 the runtime check covers a trailing fill column as well
 162	254

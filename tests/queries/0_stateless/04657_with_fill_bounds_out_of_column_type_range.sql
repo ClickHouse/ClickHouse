@@ -1,7 +1,8 @@
 -- WITH FILL bound values that do not fit the type of the ORDER BY column used to be silently truncated when the
 -- generated values were written into the column, so the filled stream wrapped around and was not sorted anymore,
 -- while the query plan kept claiming it was. DISTINCT in order then deduplicated within wrong ranges.
--- An out of range FROM is rejected up front; every generated value is checked when it is generated.
+-- A fill with FROM generates the same sequence for any data, so it is checked up front; a fill anchored at a data
+-- value is checked value by value as it is generated.
 
 SELECT 'out of range bounds are rejected';
 
@@ -69,8 +70,10 @@ SELECT 'an INTERVAL step can never reach a TO out of range in the fill direction
 -- these fills generate wrapped-around values forever. The wraparound is detected as a step that turns back.
 SELECT * FROM (SELECT toDate(0) AS d ORDER BY d ASC WITH FILL FROM toDate(0) TO 70000 STEP INTERVAL 100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT * FROM (SELECT toDate('1970-03-05') AS d ORDER BY d ASC WITH FILL TO 70000 STEP INTERVAL 100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT * FROM (SELECT toDate('2020-01-01') AS d ORDER BY d DESC WITH FILL TO -5 STEP INTERVAL -1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT * FROM (SELECT toDateTime(0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime(0, 'UTC') TO 4294967297 STEP INTERVAL 50 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- Without FROM the fill is checked as it is generated. The calendar arithmetic of Date saturates at 1970-01-01
+-- when going down, so a step that would go below it stops advancing the value and ends the fill there.
+SELECT count(), min(d), max(d) FROM (SELECT toDate('2020-01-01') AS d ORDER BY d DESC WITH FILL TO -5 STEP INTERVAL -1 YEAR);
 -- A TO out of range against the fill direction can never make filling take a single step: every possible
 -- anchor is already past it, so the query is a no-op.
 SELECT count(), min(d), max(d) FROM (SELECT toDate('2020-01-01') AS d ORDER BY d DESC WITH FILL TO 70000 STEP INTERVAL -1 YEAR);
@@ -250,9 +253,8 @@ SELECT b FROM (SELECT 0. AS b UNION ALL SELECT nan UNION ALL SELECT 5.) ORDER BY
 -- A staleness border the step arithmetic fails to advance (1e300 + 1 == 1e300 in the float precision) simply
 -- generates nothing, as on any stagnated border, instead of rejecting the query.
 SELECT x FROM (SELECT 1e300 AS x) ORDER BY x WITH FILL STALENESS 1;
--- A NaN border itself (here as a literal TO) generates nothing instead of filling until the step stagnates
--- in the float precision.
-SELECT b FROM (SELECT 5. AS b) ORDER BY b WITH FILL TO nan STEP 1;
+-- A NaN literal TO is rejected up front.
+SELECT b FROM (SELECT 5. AS b) ORDER BY b WITH FILL TO nan STEP 1; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 
 SELECT 'the runtime check covers a trailing fill column as well';
 
