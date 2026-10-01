@@ -1,0 +1,4 @@
+function nth_value must be in
+BAD_ARGUMENTS
+Argument of 'ntile' function must be greater than zero
+BAD_ARGUMENTS
