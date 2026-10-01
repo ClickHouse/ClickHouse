@@ -44,6 +44,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
@@ -791,7 +792,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 const Float64 supplied_decay_length = tuple[2].safeGet<Float64>();
                 if (!std::isfinite(supplied_decay_length) || supplied_decay_length != decay_length)
                     throw Exception(
-                        ErrorCodes::TYPE_MISMATCH,
+                        ErrorCodes::BAD_ARGUMENTS,
                         "ExponentialTimeDecaying value supplies decay length {}, expected {}",
                         supplied_decay_length,
                         decay_length);
