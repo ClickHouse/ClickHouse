@@ -86,6 +86,21 @@ void WindowFrame::toString(WriteBuffer & buf) const
         buf << " "
             << (end_preceding ? "PRECEDING" : "FOLLOWING");
     }
+
+    switch (exclusion)
+    {
+        case Exclusion::NoOthers:
+            break;
+        case Exclusion::CurrentRow:
+            buf << " EXCLUDE CURRENT ROW";
+            break;
+        case Exclusion::Group:
+            buf << " EXCLUDE GROUP";
+            break;
+        case Exclusion::Ties:
+            buf << " EXCLUDE TIES";
+            break;
+    }
 }
 
 void WindowFrame::checkValid() const

@@ -78,6 +78,12 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    /// The row at the offset is taken when it lies between the frame bounds, so a row that an
+    /// exclusion takes out of the frame would still be read. Only `lagInFrame`/`leadInFrame` reach
+    /// this: `lag`/`lead` are refused an explicit frame by name in `resolveFunction.cpp`, so a frame
+    /// with an exclusion never gets as far as them.
+    bool readsFrameRows() const override { return true; }
+
     std::optional<WindowFrame> getDefaultFrame() const override
     {
         if constexpr (!full_partition_default_frame)
@@ -160,6 +166,8 @@ void registerWindowFunctionsLagLead(AggregateFunctionFactory & factory, const Ag
                 name, argument_types, parameters);
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
+
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
 
 <Warning>
 `lagInFrame` behavior differs from the standard SQL `lag` window function.
@@ -320,6 +328,8 @@ ORDER BY date DESC
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is offset rows after the current row within the ordered frame.
 
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
+
 <Warning>
 `leadInFrame` behavior differs from the standard SQL `lead` window function.
 ClickHouse window function `leadInFrame` respects the window frame.
@@ -429,9 +439,7 @@ FROM file('nobel_laureates_data.csv');
 ```sql title="Query"
 SELECT
     fullName,
-    lead(year, 1, year) OVER (PARTITION BY category ORDER BY year ASC
-      ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-    ) AS year,
+    lead(year, 1, year) OVER (PARTITION BY category ORDER BY year ASC) AS year,
     category,
     motivation
 FROM nobel_prize_laureates

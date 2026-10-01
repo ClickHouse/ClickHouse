@@ -47,6 +47,8 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    bool readsFrameRows() const override { return true; }
+
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
     {
@@ -97,6 +99,8 @@ void registerWindowFunctionNthValue(AggregateFunctionFactory & factory, const Ag
                 name, argument_types, parameters);
         }, {.description = R"DOCS_MD(
 Returns the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
+
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
 
 **Syntax**
 

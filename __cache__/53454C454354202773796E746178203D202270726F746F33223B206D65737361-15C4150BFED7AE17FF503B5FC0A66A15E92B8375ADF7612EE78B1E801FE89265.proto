@@ -1,0 +1,1 @@
+syntax = "proto3"; message KVP { uint64 key = 1; string value = 2; }

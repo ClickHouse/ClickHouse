@@ -49,6 +49,10 @@ public:
     ~WindowTransform() override;
 
     void initWorkspaces(const std::vector<WindowFunctionDescription> & functions);
+    /// Refuses a frame exclusion that this function cannot be given: one that reads the frame rows
+    /// itself, one whose peers would be decided without the collator of the window order, and one
+    /// that allocates its state in the arena.
+    void checkFrameExclusion(const WindowFunctionWorkspace & workspace) const;
 
     String getName() const override
     {
@@ -71,6 +75,9 @@ public:
     void advancePartitionEnd();
 
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
+    bool areOrderByPeers(const RowNumber & x, const RowNumber & y) const;
+    RowNumber peerGroupStartWithinFrame() const;
+    RowNumber peerGroupEndWithinFrame() const;
 
     void advanceFrameStartRowsOffset();
     void advanceFrameStartRangeOffset();
@@ -178,6 +185,12 @@ public:
     // state after we find the new frame.
     RowNumber prev_frame_start;
     RowNumber prev_frame_end;
+    /// Whether the aggregate state of the current row, and of the one before it, was built with a
+    /// hole in it. An exclusion that takes nothing out leaves both false, and then the frame behaves
+    /// as it would without the clause.
+    bool current_row_excluded_rows = false;
+    bool previous_row_excluded_rows = false;
+
 };
 
 }

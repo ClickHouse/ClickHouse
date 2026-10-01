@@ -31,7 +31,11 @@ struct WindowFunctionPercentRank final : public StatefulWindowFunction<PercentRa
     bool checkWindowFrameType(const WindowTransform * transform) const override
     {
         auto default_window_frame = getDefaultFrame();
-        if (transform->params.window_description.frame != default_window_frame)
+        /// This function does not read the rows of the frame, so an exclusion leaves it alone and
+        /// must not make the frame count as a different one.
+        WindowFrame frame = transform->params.window_description.frame;
+        frame.exclusion = WindowFrame::Exclusion::NoOthers;
+        if (frame != default_window_frame)
         {
             LOG_ERROR(
                 getLogger("WindowFunctionPercentRank"),
@@ -136,12 +140,14 @@ Alias: `percentRank` (case-sensitive)
 ```sql
 percent_rank ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING [frame_exclusion]]] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING [frame_exclusion])
 ```
 
 The default and required window frame definition is `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+An `EXCLUDE` on that frame is accepted and leaves the result alone: the function is read off the ranks and the
+size of the partition, not off the rows of the frame.
 
 For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
 

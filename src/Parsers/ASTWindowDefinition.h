@@ -25,6 +25,7 @@ struct ASTWindowDefinition : public IAST
     WindowFrame::BoundaryType frame_end_type = WindowFrame::BoundaryType::Current;
     ASTPtr frame_end_offset;
     bool frame_end_preceding = false;
+    WindowFrame::Exclusion frame_exclusion = WindowFrame::Exclusion::NoOthers;
 
     ASTPtr clone() const override;
 
