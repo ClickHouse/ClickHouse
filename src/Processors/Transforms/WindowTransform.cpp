@@ -430,8 +430,8 @@ bool WindowTransform::areOrderByPeers(const RowNumber & x, const RowNumber & y) 
 
     for (const size_t key : params.order_by_indices)
     {
-        const auto * column_x = inputAt(x)[key].get();
-        const auto * column_y = inputAt(y)[key].get();
+        const auto * column_x = blocks.blockAt(x.block).materialized_columns[key].get();
+        const auto * column_y = blocks.blockAt(y.block).materialized_columns[key].get();
         if (column_x->compareAt(x.row, y.row, *column_y, /*nan_direction_hint=*/1) != 0)
             return false;
     }
@@ -813,8 +813,7 @@ RowNumber WindowTransform::peerGroupStartWithinFrame() const
     RowNumber result = current_row;
     while (result > frame_start)
     {
-        RowNumber previous = result;
-        retreatRowNumber(previous);
+        const RowNumber previous = blocks.prev(result);
         if (!areOrderByPeers(previous, current_row))
             break;
         result = previous;
@@ -831,7 +830,7 @@ RowNumber WindowTransform::peerGroupEndWithinFrame() const
     {
         if (!areOrderByPeers(result, current_row))
             break;
-        advanceRowNumber(result);
+        result = blocks.next(result);
     }
     return result;
 }
@@ -891,8 +890,7 @@ void WindowTransform::updateAggregationState()
         previous_row_excluded_rows = current_row_excluded_rows;
 
         RowNumber excluded_start = current_row;
-        RowNumber excluded_end = current_row;
-        advanceRowNumber(excluded_end);
+        RowNumber excluded_end = blocks.next(current_row);
 
         if (params.window_description.frame.exclusion != WindowFrame::Exclusion::CurrentRow)
         {
@@ -905,8 +903,7 @@ void WindowTransform::updateAggregationState()
         excluded_start = std::max(excluded_start, frame_start);
         excluded_end = std::min(excluded_end, frame_end);
 
-        RowNumber after_current = current_row;
-        advanceRowNumber(after_current);
+        const RowNumber after_current = blocks.next(current_row);
 
         // Clamping can leave nothing to take out - the current row is not in the frame to begin
         // with, or the peer group falls outside it. TIES keeps the current row, so a range holding
