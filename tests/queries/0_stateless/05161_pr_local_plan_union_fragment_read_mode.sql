@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- A fragment can hold more than one coordinated read: `parallel_replicas_allow_view_over_mergetree`
 -- ships the outer query of a view, and a view that expands to `UNION ALL` puts every branch's read in
 -- the one fragment, each answering to the coordinator. A condition arriving from outside that fragment
