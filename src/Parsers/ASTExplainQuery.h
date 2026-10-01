@@ -181,9 +181,7 @@ protected:
             ostr << settings.nl_or_ws;
 
             /// Trailing output options belong to the EXPLAIN only if the inner query cannot take them on re-parse.
-            /// EXPLAIN AST accepts any parenthesized query, except the ones the subquery parser reads instead:
-            /// a SELECT, an EXPLAIN AST, an EXPLAIN without a query, and an EXPLAIN of a SELECT.
-            /// Other kinds have a parenthesized form only for a SELECT.
+            /// EXPLAIN AST accepts any parenthesized query except one the subquery parser reads; other kinds parenthesize only a SELECT.
             bool need_parens = false;
             if (frame.has_trailing_output_options)
             {
