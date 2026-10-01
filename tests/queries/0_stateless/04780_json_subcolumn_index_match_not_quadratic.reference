@@ -2,6 +2,8 @@ plain OK
 longidx OK
 withjson OK
 tokens OK
+dotted subcolumn indexed	1	1
+dotted subcolumn OK
 0
 Parts: 0 | Granules: 0
 Granules: 0/1000
