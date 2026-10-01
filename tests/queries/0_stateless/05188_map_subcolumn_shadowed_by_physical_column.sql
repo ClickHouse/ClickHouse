@@ -135,6 +135,23 @@ SELECT 'json genuine key subcolumn still prunes',
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_shadow_json_path WHERE j.m.key_zzz = 'x')
 SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
 
+-- A subcolumn of an EPHEMERAL column is not readable, so it does not claim the name: `a.b.key_zzz` below
+-- reads the map `a.b`, and the index must still prune. Expecting `1 1`.
+DROP TABLE IF EXISTS t_shadow_ephemeral;
+CREATE TABLE t_shadow_ephemeral
+(
+    `a.b` Map(String, String),
+    a Tuple(b Tuple(key_zzz String)) EPHEMERAL,
+    INDEX idx mapKeys(`a.b`) TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_shadow_ephemeral (`a.b`) VALUES ({'abc' : 'x'});
+SELECT 'ephemeral claimant, genuine key subcolumn still prunes',
+       countIf(trim(explain) ILIKE 'Name: idx'),
+       countIf(trim(explain) ILIKE 'Granules: 0/1')
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_shadow_ephemeral WHERE a.b.key_zzz = 'x')
+SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
+
 DROP TABLE t_shadow_ngrambf;
 DROP TABLE t_shadow_ngrambf_values;
 DROP TABLE t_shadow_bloom_filter;
@@ -143,3 +160,4 @@ DROP TABLE t_shadow_text_keys;
 DROP TABLE t_shadow_text_values;
 DROP TABLE t_shadow_tuple_element;
 DROP TABLE t_shadow_json_path;
+DROP TABLE t_shadow_ephemeral;

@@ -359,8 +359,6 @@ struct IMergeTreeIndex
     Names getColumnsRequiredForIndexCalc() const;
     const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
 
-    NameSet getColumnsShadowingMapSubcolumns() const;
-
     StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;
 };
