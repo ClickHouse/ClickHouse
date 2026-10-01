@@ -150,8 +150,7 @@ void signalHandler(int, siginfo_t * info, void * context)
     int notification_num = sequence_num.load(std::memory_order_acquire);
 #endif
 
-    /// Check again under the latch: a handler delayed between the check above and the latch may run after the reader
-    /// has timed out and moved on to another thread, whose data it must not overwrite.
+    /// Re-check under the latch: a handler delayed past the reader's timeout must not overwrite the next thread's data.
 #ifdef OS_LINUX
     const bool still_expected = notification_num == sequence_num.load(std::memory_order_acquire);
 #else
