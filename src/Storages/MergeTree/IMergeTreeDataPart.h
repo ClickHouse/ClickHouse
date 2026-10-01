@@ -334,6 +334,10 @@ public:
     bool is_temp = false;
     std::atomic<bool> is_removed = false;
 
+    /// Set before loading files fetched into or attached from `detached/`,
+    /// which may have been written by a table with another `index_granularity`.
+    bool is_loaded_from_detached = false;
+
     /// This type and the field remove_tmp_policy is used as a hint
     /// to help avoid communication with keeper when temporary part is deleting.
     /// The common procedure is to ask the keeper with unlock request to release a references to the blobs.

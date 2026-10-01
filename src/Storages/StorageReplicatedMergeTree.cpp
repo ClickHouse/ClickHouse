@@ -223,6 +223,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat fault_probability_after_part_commit;
     extern const MergeTreeSettingsFloat fault_probability_before_part_commit;
     extern const MergeTreeSettingsBool fsync_after_insert;
+    extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 max_merge_selecting_sleep_ms;
@@ -8484,6 +8485,14 @@ void StorageReplicatedMergeTree::fetchPartition(
     if (from.back() == '/')
         from.resize(from.size() - 1);
 
+    /// A non-adaptive part does not store rows per mark, it is read with this table's `index_granularity`.
+    auto source_has_inconsistent_granularity = [&]
+    {
+        auto source_metadata = ReplicatedMergeTreeTableMetadata::parseRaw(zookeeper->get(fs::path(from) / "metadata"));
+        return source_metadata.index_granularity_bytes == 0
+            && source_metadata.index_granularity != (*settings)[MergeTreeSetting::index_granularity];
+    };
+
     if (fetch_part)
     {
         const auto * literal = partition->as<ASTLiteral>();
@@ -8499,6 +8508,8 @@ void StorageReplicatedMergeTree::fetchPartition(
           */
         if (checkIfDetachedPartExists(part_name))
             throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Detached part {} already exists.", part_name);
+        if (source_has_inconsistent_granularity())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot fetch part '{}' because it has inconsistent granularity with table", part_name);
         LOG_INFO(log, "Will fetch part {} from shard {}", part_name, from_);
 
         try
@@ -8580,6 +8591,8 @@ void StorageReplicatedMergeTree::fetchPartition(
 
     LOG_INFO(log, "Found {} replicas, {} of them are active. Selected {} to fetch from.", replicas.size(), active_replicas.size(), best_replica);
 
+    const bool inconsistent_granularity = source_has_inconsistent_granularity();
+
     String best_replica_path = fs::path(from) / "replicas" / best_replica;
 
     /// Let's find out which parts are on the best replica.
@@ -8637,6 +8650,11 @@ void StorageReplicatedMergeTree::fetchPartition(
         }
 
         LOG_INFO(log, "Parts to fetch: {}", parts_to_fetch.size());
+
+        if (inconsistent_granularity && !parts_to_fetch.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot fetch partition '{}' because part '{}' has inconsistent granularity with table",
+                partition_id, parts_to_fetch.front());
 
         missing_parts.clear();
 

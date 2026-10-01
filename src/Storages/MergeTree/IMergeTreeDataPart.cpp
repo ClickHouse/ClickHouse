@@ -2466,60 +2466,68 @@ void IMergeTreeDataPart::loadRowsCount()
         else
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No count.txt in part {}", name);
 
-#ifndef NDEBUG
-        /// columns have to be loaded
-        for (const auto & column : getColumns())
+        const bool from_detached = parent_part ? parent_part->is_loaded_from_detached : is_loaded_from_detached;
+#ifdef NDEBUG
+        const bool check_rows_against_marks = from_detached;
+#else
+        const bool check_rows_against_marks = true;
+#endif
+        if (check_rows_against_marks)
         {
-            /// Most trivial types
-            if (column.type->isValueRepresentedByNumber()
-                && !column.type->haveSubtypes()
-                && getSerialization(column.name)->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT})
+            const int error_code = from_detached ? ErrorCodes::CORRUPTED_DATA : ErrorCodes::LOGICAL_ERROR;
+            /// columns have to be loaded
+            for (const auto & column : getColumns())
             {
-                auto size = getColumnSize(column.name);
-
-                if (size.data_uncompressed == 0)
-                    continue;
-
-                size_t rows_in_column = size.data_uncompressed / column.type->getSizeOfValueInMemory();
-                if (rows_in_column != rows_count)
+                /// Most trivial types
+                if (column.type->isValueRepresentedByNumber()
+                    && !column.type->haveSubtypes()
+                    && getSerialization(column.name)->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT})
                 {
-                    throw Exception(
-                                    ErrorCodes::LOGICAL_ERROR,
-                                    "Column {} has rows count {} according to size in memory "
-                                    "and size of single value, but data part {} has {} rows",
-                                    backQuote(column.name), rows_in_column, name, rows_count);
-                }
+                    auto size = getColumnSize(column.name);
 
-                size_t last_possibly_incomplete_mark_rows = index_granularity->getLastNonFinalMarkRows();
-                /// All this rows have to be written in column
-                size_t index_granularity_without_last_mark = index_granularity->getTotalRows() - last_possibly_incomplete_mark_rows;
-                /// We have more rows in column than in index granularity without last possibly incomplete mark
-                if (rows_in_column < index_granularity_without_last_mark)
-                {
-                    throw Exception(
-                                    ErrorCodes::LOGICAL_ERROR,
-                                    "Column {} has rows count {} according to size in memory "
-                                    "and size of single value, "
-                                    "but index granularity in part {} without last mark has {} rows, which "
-                                    "is more than in column",
-                                    backQuote(column.name), rows_in_column, name, index_granularity->getTotalRows());
-                }
+                    if (size.data_uncompressed == 0)
+                        continue;
 
-                /// In last mark we actually written less or equal rows than stored in last mark of index granularity
-                if (rows_in_column - index_granularity_without_last_mark > last_possibly_incomplete_mark_rows)
-                {
-                     throw Exception(
-                                     ErrorCodes::LOGICAL_ERROR,
-                                     "Column {} has rows count {} in last mark according to size in memory "
-                                     "and size of single value, "
-                                     "but index granularity in part {} "
-                                     "in last mark has {} rows which is less than in column",
-                                     backQuote(column.name), rows_in_column - index_granularity_without_last_mark,
-                                     name, last_possibly_incomplete_mark_rows);
+                    size_t rows_in_column = size.data_uncompressed / column.type->getSizeOfValueInMemory();
+                    if (rows_in_column != rows_count)
+                    {
+                        throw Exception(
+                                        error_code,
+                                        "Column {} has rows count {} according to size in memory "
+                                        "and size of single value, but data part {} has {} rows",
+                                        backQuote(column.name), rows_in_column, name, rows_count);
+                    }
+
+                    size_t last_possibly_incomplete_mark_rows = index_granularity->getLastNonFinalMarkRows();
+                    /// All this rows have to be written in column
+                    size_t index_granularity_without_last_mark = index_granularity->getTotalRows() - last_possibly_incomplete_mark_rows;
+                    /// We have more rows in column than in index granularity without last possibly incomplete mark
+                    if (rows_in_column < index_granularity_without_last_mark)
+                    {
+                        throw Exception(
+                                        error_code,
+                                        "Column {} has rows count {} according to size in memory "
+                                        "and size of single value, "
+                                        "but index granularity in part {} without last mark has {} rows, which "
+                                        "is more than in column",
+                                        backQuote(column.name), rows_in_column, name, index_granularity->getTotalRows());
+                    }
+
+                    /// In last mark we actually written less or equal rows than stored in last mark of index granularity
+                    if (rows_in_column - index_granularity_without_last_mark > last_possibly_incomplete_mark_rows)
+                    {
+                         throw Exception(
+                                         error_code,
+                                         "Column {} has rows count {} in last mark according to size in memory "
+                                         "and size of single value, "
+                                         "but index granularity in part {} "
+                                         "in last mark has {} rows which is less than in column",
+                                         backQuote(column.name), rows_in_column - index_granularity_without_last_mark,
+                                         name, last_possibly_incomplete_mark_rows);
+                    }
                 }
             }
         }
-#endif
     }
     else
     {

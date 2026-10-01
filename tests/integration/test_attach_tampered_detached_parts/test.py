@@ -1,6 +1,7 @@
 # Detached part directories manipulated on disk before ATTACH / DROP DETACHED:
-# fabricated `_tryN` leftovers, injected canned old-version parts, and legacy
-# index file renames (`.idx` vs `.idx2`, `checksums.txt` removal). These tests
+# fabricated `_tryN` leftovers, injected canned old-version parts, legacy
+# index file renames (`.idx` vs `.idx2`, `checksums.txt` removal), and parts
+# copied from a table with another `index_granularity`. These tests
 # emulate parts written by OLD ClickHouse versions, so they tamper with the
 # server's on-disk data and therefore live here rather than in stateless tests.
 #
@@ -643,3 +644,43 @@ def test_mutate_mixed_legacy_idx_minmax(started_cluster):
     assert node.query("CHECK TABLE t_mixed_minmax_drop SETTINGS check_query_single_value_result = 1") == "1\n"
 
     node.query("DROP TABLE t_mixed_minmax_drop SYNC")
+
+
+def test_attach_part_written_with_other_index_granularity(started_cluster):
+    # A non-adaptive part does not record rows per mark, so it is read with the attaching table's
+    # `index_granularity`. A part written with another value must be rejected as corrupted.
+    for table, granularity in (("src_g8", 8), ("dst_g4", 4), ("dst_g8", 8)):
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node.query(
+            f"""
+            CREATE TABLE {table} (a UInt64)
+            ENGINE = MergeTree ORDER BY a
+            SETTINGS index_granularity = {granularity}, index_granularity_bytes = 0, storage_policy = 'default'
+            """
+        )
+
+    node.query("INSERT INTO src_g8 SELECT number FROM numbers(18)")
+
+    src_part_dir = active_part_dir("src_g8")
+    part = os.path.basename(src_part_dir)
+    for table in ("dst_g4", "dst_g8"):
+        exec_root(f"cp -a {src_part_dir} {table_data_path(table)}detached/{part}")
+
+    error = node.query_and_get_error(f"ALTER TABLE dst_g4 ATTACH PART '{part}'")
+    assert "CORRUPTED_DATA" in error, error
+    assert node.query("SELECT 1") == "1\n"
+    # The failed ATTACH leaves the part in detached/ under its original name.
+    assert (
+        node.query(
+            "SELECT name FROM system.detached_parts WHERE database = 'default' AND table = 'dst_g4'"
+        )
+        == f"{part}\n"
+    )
+
+    # Control: the same files attach into a table with the same `index_granularity`.
+    node.query(f"ALTER TABLE dst_g8 ATTACH PART '{part}'")
+    assert node.query("SELECT count(), sum(a) FROM dst_g8") == "18\t153\n"
+    assert node.query("SELECT count() FROM dst_g8 WHERE a >= 9") == "9\n"
+
+    for table in ("src_g8", "dst_g4", "dst_g8"):
+        node.query(f"DROP TABLE {table} SYNC")
