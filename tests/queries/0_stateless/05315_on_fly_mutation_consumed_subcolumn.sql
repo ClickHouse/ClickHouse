@@ -197,3 +197,96 @@ SELECT 'pending mutations', count() FROM system.mutations WHERE database = curre
 SELECT 'materialized', id, a.size0, b FROM t_added_default ORDER BY id;
 
 DROP TABLE t_added_default;
+
+SET enable_lightweight_update = 1;
+
+SELECT 'lightweight update older than the mutation';
+
+DROP TABLE IF EXISTS t_patch_older;
+
+CREATE TABLE t_patch_older (id UInt8, a Array(UInt32), x Nullable(UInt32), b UInt64, c UInt8)
+ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+
+INSERT INTO t_patch_older VALUES (1, [1, 2], NULL, 0, 0), (2, [3], 4, 0, 0);
+
+SYSTEM STOP MERGES t_patch_older;
+
+UPDATE t_patch_older SET a = [1, 1, 1], x = 5 WHERE id = 1;
+ALTER TABLE t_patch_older UPDATE b = a.size0, c = x.null WHERE 1;
+
+SELECT 'pending mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_patch_older' AND NOT is_done;
+SELECT 'pending', id, a.size0, b, x.null, c FROM t_patch_older ORDER BY id;
+SELECT 'pending', id, b FROM t_patch_older PREWHERE a.size0 = 3 ORDER BY id;
+SELECT 'pending', id, a.size0 FROM t_patch_older PREWHERE b = 3 ORDER BY id;
+SELECT 'pending', id, length(a), b FROM t_patch_older ORDER BY id;
+
+SYSTEM START MERGES t_patch_older;
+ALTER TABLE t_patch_older UPDATE b = b WHERE 1 SETTINGS mutations_sync = 2;
+OPTIMIZE TABLE t_patch_older FINAL;
+
+SELECT 'pending mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_patch_older' AND NOT is_done;
+SELECT 'materialized', id, a.size0, b, x.null, c FROM t_patch_older ORDER BY id;
+SELECT 'materialized', id, b FROM t_patch_older PREWHERE a.size0 = 3 ORDER BY id;
+SELECT 'materialized', id, a.size0 FROM t_patch_older PREWHERE b = 3 ORDER BY id;
+SELECT 'materialized', id, length(a), b FROM t_patch_older ORDER BY id;
+
+DROP TABLE t_patch_older;
+
+SELECT 'lightweight update newer than the mutation';
+
+DROP TABLE IF EXISTS t_patch_newer;
+
+CREATE TABLE t_patch_newer (id UInt8, a Array(UInt32), b UInt64)
+ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+
+INSERT INTO t_patch_newer VALUES (1, [1, 2], 0), (2, [3], 0);
+
+SYSTEM STOP MERGES t_patch_newer;
+
+ALTER TABLE t_patch_newer UPDATE b = a.size0 WHERE 1;
+UPDATE t_patch_newer SET a = [1, 1, 1] WHERE id = 1;
+
+SELECT 'pending mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_patch_newer' AND NOT is_done;
+SELECT 'pending', id, a.size0, b FROM t_patch_newer ORDER BY id;
+
+SYSTEM START MERGES t_patch_newer;
+ALTER TABLE t_patch_newer UPDATE b = b WHERE 1 SETTINGS mutations_sync = 2;
+OPTIMIZE TABLE t_patch_newer FINAL;
+
+SELECT 'pending mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_patch_newer' AND NOT is_done;
+SELECT 'materialized', id, a.size0, b FROM t_patch_newer ORDER BY id;
+
+DROP TABLE t_patch_newer;
+
+SELECT 'lightweight updates before and between two mutations';
+
+DROP TABLE IF EXISTS t_patch_between;
+
+CREATE TABLE t_patch_between (id UInt8, a Array(UInt32), b UInt64, y UInt8)
+ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+
+INSERT INTO t_patch_between VALUES (1, [1, 2], 0, 0), (2, [3], 0, 0);
+
+SYSTEM STOP MERGES t_patch_between;
+
+UPDATE t_patch_between SET a = [1, 1, 1] WHERE id = 1;
+ALTER TABLE t_patch_between UPDATE b = a.size0 WHERE id = 1;
+UPDATE t_patch_between SET a = [5, 5] WHERE id = 2;
+ALTER TABLE t_patch_between UPDATE y = 1 WHERE 1;
+
+SELECT 'pending mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_patch_between' AND NOT is_done;
+SELECT 'pending', id, a.size0, b, y FROM t_patch_between ORDER BY id;
+SELECT 'pending', id, b, y FROM t_patch_between PREWHERE a.size0 = 2 ORDER BY id;
+
+SYSTEM START MERGES t_patch_between;
+ALTER TABLE t_patch_between UPDATE b = b WHERE 1 SETTINGS mutations_sync = 2;
+OPTIMIZE TABLE t_patch_between FINAL;
+
+SELECT 'pending mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_patch_between' AND NOT is_done;
+SELECT 'materialized', id, a.size0, b, y FROM t_patch_between ORDER BY id;
+SELECT 'materialized', id, b, y FROM t_patch_between PREWHERE a.size0 = 2 ORDER BY id;
+
+DROP TABLE t_patch_between;

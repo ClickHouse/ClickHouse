@@ -423,6 +423,15 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         MergeTreeRangeReader::filterColumns(read_columns, result.final_filter);
     }
 
+    /// A column read on this step may have been read and dropped by an earlier step: forget the copy and the patch version
+    /// that step left for it, so it is patched and evaluated like a column read for the first time.
+    for (const auto & column : range_reader.getReadSampleBlock())
+    {
+        if (result.additional_columns.has(column.name))
+            result.additional_columns.erase(column.name);
+        removeDataVersionForColumn(result.patch_versions_block, column.name);
+    }
+
     auto patch_max_version = getMaxPatchVersionForStep(range_reader);
     const auto & result_header = range_reader.getReadSampleBlock();
     auto columns_for_patches = getColumnsForPatches(result_header, read_columns);
@@ -531,13 +540,8 @@ void MergeTreeReadersChain::evaluateMissingDefaults(
     if (!previous_header.empty())
         additional_columns = previous_header.cloneWithColumns(result.columns);
 
-    /// A column this step reads is not provided by earlier steps, so its copy carried from them is older than its own value.
-    const auto & read_sample_block = range_reader.getReadSampleBlock();
     for (const auto & col : result.additional_columns)
-    {
-        if (!read_sample_block.has(col.name))
-            additional_columns.insert(col);
-    }
+        additional_columns.insert(col);
 
     addDummyColumnWithRowCount(additional_columns, result.num_rows);
     range_reader.getReader()->evaluateMissingDefaults(additional_columns, columns);
