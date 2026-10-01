@@ -693,8 +693,7 @@ private:
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
-    /// True if `applyFilters` built `indexes`. When `adoptFiltersFrom` copies `indexes` from another read,
-    /// it copies this flag too.
+    /// True if `applyFilters` built `indexes` from the filters pushed down to this step.
     bool indexes_built_by_apply_filters = false;
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).

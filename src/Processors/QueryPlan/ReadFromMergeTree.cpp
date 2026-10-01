@@ -3300,9 +3300,8 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
     if (query_info.isStream())
         return;
 
-    /// If `applyFilters` did not build `indexes`, they come from a range analysis that ran without the
-    /// filters pushed down to this step. Drop them and the result of that analysis. The code below rebuilds
-    /// `indexes` from those filters, and the read later analyzes its ranges again.
+    /// If `indexes` were built before the filters were pushed down to this step, they do not use those
+    /// filters. Drop them and the range analysis made with them; `indexes` are rebuilt below.
     if (indexes && !indexes_built_by_apply_filters)
     {
         indexes.reset();
