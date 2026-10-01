@@ -285,7 +285,22 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// from result.settings_changes to drive implicit-minmax skip-index creation.
     auto merge_tree_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
     if (projection_definition->with_settings)
+    {
         merge_tree_settings->applyChanges(projection_definition->with_settings->changes, query_context, isLoadingFromExistingMetadata(mode));
+
+        /// `name = DEFAULT` is kept in `ASTSetQuery::default_settings`, not in `changes`. Record it as an
+        /// explicit change to the projection's own default: the runtime settings of the projection
+        /// (`MergeTreeData::getSettings`) are the table settings with `settings_changes` applied on top,
+        /// so a reset missing from `settings_changes` would silently give the projection the table's value.
+        if (!projection_definition->with_settings->default_settings.empty())
+        {
+            const auto projection_defaults = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
+            SettingsChanges resets;
+            for (const auto & setting_name : projection_definition->with_settings->default_settings)
+                resets.emplace_back(setting_name, projection_defaults->get(setting_name));
+            merge_tree_settings->applyChanges(resets, query_context, isLoadingFromExistingMetadata(mode));
+        }
+    }
     result.settings_changes = merge_tree_settings->changes();
 
     /// A projection is written with the implicit min-max indices of its own metadata, so a table that
