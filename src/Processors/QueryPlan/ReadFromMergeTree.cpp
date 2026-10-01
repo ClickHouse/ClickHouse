@@ -257,6 +257,7 @@ bool restorePrewhereInputs(FilterDAGInfo * row_level_filter, PrewhereInfo * info
 
 namespace ProfileEvents
 {
+    extern const Event RuntimeFilterIndexAnalysisReads;
     extern const Event IndexAnalysisRounds;
     extern const Event SelectedParts;
     extern const Event SelectedPartsTotal;
@@ -5322,6 +5323,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         /// which costs coverage, not correctness; `make_distributed_plan` still reads that way.
         && indexes.has_value())
     {
+        /// A read that gets here kept its descriptors through every rebuild of the step, which is the
+        /// invariant the parallel-replicas paths kept breaking; the granule counters below only move once a
+        /// granule is actually examined, which depends on the coordinator's assignment and on the filter
+        /// being ready, so they cannot stand in for it.
+        ProfileEvents::increment(ProfileEvents::RuntimeFilterIndexAnalysisReads);
+
         /// The PK path only needs the data-read safety checks above; only the secondary skip-index
         /// part is gated by use_skip_indexes (buildIndexes builds key_condition_rpn_template regardless).
         const bool collect_skip_indexes = context->getSettingsRef()[Setting::use_skip_indexes];
