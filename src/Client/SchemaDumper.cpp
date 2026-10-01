@@ -23,12 +23,18 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
 #include <Interpreters/misc.h>
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -323,6 +329,8 @@ struct TableInfo
     /// replay, which does not contain them either, so the dump cannot create them.
     std::vector<String> unresolved_references;
     NamedCollectionDependencies named_collections;
+    /// Materialized view only: replay may reach a check that `allow_materialized_view_with_bad_select` relaxes.
+    bool needs_bad_select_gate = false;
 };
 
 /// One `system.tables` row as fetched, before implicit storage tables are filtered out and the
@@ -2291,6 +2299,7 @@ struct ReplayGateNeeds
     bool explicit_uuid = false;
     bool replicated_engine_arguments = false;
     bool materialized_view = false;
+    bool parse_failed = false; /// a statement did not parse, so the gates it might need are unknown
     bool analyzable_query_text = false;
     bool ordinary_database = false;
     bool replicated_database = false;
@@ -2305,6 +2314,32 @@ struct ReplayGateNeeds
     bool ytsaurus_table = false;
     bool paimon_table = false;
     bool delta_lake_table = false;
+
+    /// Carriers of the shared gates, `parse_failed` keeps all of them.
+    bool funnel_functions = false;
+    bool nlp_functions = false;
+    bool fuzz_query_functions = false;
+    bool error_prone_window_functions = false;
+    bool hyperscan_functions = false;
+    bool time_series_aggregate_functions = false;
+    bool ytsaurus_table_function = false;
+    bool eval_table_function = false;
+    bool ytsaurus_dictionary_source = false;
+    bool low_cardinality_type = false;
+    bool fixed_string_type = false;
+    bool variant_type = false;
+    bool time_type = false;
+    bool suspicious_indices = false;
+    bool minmax_index_for_json = false;
+    bool suspicious_codecs = false;
+    bool deprecated_merge_tree_syntax = false;
+    bool suspicious_primary_key = false;
+    bool suspicious_ttl_expressions = false;
+    bool full_text_index = false;
+    bool dynamic_type_in_join_keys = false;
+    bool queue_hive_partitioning = false;
+    bool url_wildcard = false;
+    std::set<String> codec_gates; /// `enable_<family>_codec` of the codecs the statements name
 };
 
 /// Kafka reads its Keeper-offsets gate only when `kafka_keeper_path` or `kafka_replica_name` is set,
@@ -2322,9 +2357,76 @@ bool kafkaMayStoreOffsetsInKeeper(const ASTStorage & storage)
     return false;
 }
 
+/// Whether the lowercase `text` has `token` starting at an identifier boundary, and ending at one unless `prefix`.
+bool hasToken(std::string_view text, std::string_view token, bool prefix = false)
+{
+    for (size_t pos = text.find(token); pos != std::string_view::npos; pos = text.find(token, pos + 1))
+    {
+        if (pos > 0 && isWordCharASCII(text[pos - 1]))
+            continue;
+        const size_t end = pos + token.size();
+        if (prefix || end == text.size() || !isWordCharASCII(text[end]))
+            return true;
+    }
+    return false;
+}
+
+/// A `timeSeries*` aggregate function; the bare `TimeSeries` engine name does not match.
+bool hasTimeSeriesFunction(std::string_view text)
+{
+    constexpr std::string_view token = "timeseries";
+    for (size_t pos = text.find(token); pos != std::string_view::npos; pos = text.find(token, pos + 1))
+    {
+        const size_t end = pos + token.size();
+        if ((pos == 0 || !isWordCharASCII(text[pos - 1])) && end < text.size() && isAlphaASCII(text[end]))
+            return true;
+    }
+    return false;
+}
+
+/// The queue engines read `use_hive_partitioning` from SETTINGS, or from a named collection.
+bool queueMayUseHivePartitioning(const ASTStorage & storage)
+{
+    if (storage.engine->arguments && !storage.engine->arguments->children.empty()
+        && !storage.engine->arguments->children.front()->as<ASTLiteral>())
+        return true;
+    if (storage.settings)
+        for (const auto & change : storage.settings->changes)
+        {
+            std::string_view name = change.name;
+            if (name.starts_with("s3queue_"))
+                name.remove_prefix(std::string_view("s3queue_").size());
+            if (name == "use_hive_partitioning")
+                return true;
+        }
+    return false;
+}
+
+/// `url` and `ENGINE = URL` expand wildcards from index pages only for a `*` in the path,
+/// which a named collection can hide.
+bool urlMayHaveWildcard(const ASTFunction & function_or_engine, std::string_view text)
+{
+    if (text.contains('*'))
+        return true;
+    return function_or_engine.arguments && !function_or_engine.arguments->children.empty()
+        && !function_or_engine.arguments->children.front()->as<ASTLiteral>();
+}
+
+void forEachNode(const IAST & node, const std::function<void(const IAST &)> & visit)
+{
+    visit(node);
+    for (const auto & child : node.children)
+        forEachNode(*child, visit);
+}
+
 ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_queries)
 {
     ReplayGateNeeds needs;
+    std::vector<String> codec_gate_names;
+    for (const auto & name : allExperimentalSettingNames())
+        if (name.starts_with("enable_") && name.ends_with("_codec"))
+            codec_gate_names.push_back(name);
+
     for (const auto & create_query : create_queries)
     {
         ASTPtr create_ast;
@@ -2337,12 +2439,12 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
         {
             /// Cannot rule any gate out for a statement that does not parse, so keep them all.
             return {.explicit_uuid = true, .replicated_engine_arguments = true, .materialized_view = true,
-                    .analyzable_query_text = true, .ordinary_database = true, .replicated_database = true,
+                    .parse_failed = true, .analyzable_query_text = true, .ordinary_database = true, .replicated_database = true,
                     .materialized_postgresql_database = true, .materialized_mysql_database = true,
                     .materialized_postgresql_table = true, .time_series_table = true,
                     .kafka_keeper_offsets = true, .nullable_tuple_type = true, .unique_key = true,
                     .data_lake_catalog_database = true, .ytsaurus_table = true, .paimon_table = true,
-                    .delta_lake_table = true};
+                    .delta_lake_table = true, .codec_gates = {}};
         }
 
         const auto * create = create_ast->as<ASTCreateQuery>();
@@ -2354,7 +2456,8 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
             needs.explicit_uuid = true;
 
         /// All three `allow_materialized_view_with_bad_select` checks sit inside
-        /// `InterpreterCreateQuery`'s materialized-view branch, so none can fire without one.
+        /// `InterpreterCreateQuery`'s materialized-view branch, so none can fire without one;
+        /// whether one can fire for a given view is decided by `needs_bad_select_gate`.
         if (create->is_materialized_view)
             needs.materialized_view = true;
 
@@ -2431,11 +2534,111 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
                 if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getType())
                     if (column->getType()->formatWithSecretsOneLine().contains("Nullable(Tuple"))
                         needs.nullable_tuple_type = true;
+
+        /// Shared gates: each carrier is matched on the statement text or AST, over-approximated
+        /// where the exact check site is not worth mirroring.
+        String lower = create_query;
+        std::ranges::transform(lower, lower.begin(), [](unsigned char c) { return std::tolower(c); });
+
+        needs.funnel_functions |= hasToken(lower, "sequencenextnode");
+        needs.nlp_functions |= hasToken(lower, "synonyms") || hasToken(lower, "lemmatize") || hasToken(lower, "detectlanguage", true)
+            || hasToken(lower, "detectcharset") || hasToken(lower, "detecttonality");
+        needs.fuzz_query_functions |= hasToken(lower, "fuzzquery");
+        needs.error_prone_window_functions |= hasToken(lower, "runningaccumulate") || hasToken(lower, "runningdifference", true)
+            || hasToken(lower, "neighbor");
+        needs.hyperscan_functions |= hasToken(lower, "multimatch", true) || hasToken(lower, "multifuzzymatch", true);
+        needs.time_series_aggregate_functions |= hasTimeSeriesFunction(lower);
+
+        /// Substrings, so that `toLowCardinality` and `toFixedString` also count.
+        needs.low_cardinality_type |= lower.contains("lowcardinality");
+        needs.fixed_string_type |= lower.contains("fixedstring");
+        needs.variant_type |= lower.contains("variant");
+        needs.time_type |= hasToken(lower, "time") || hasToken(lower, "time64");
+
+        if (hasToken(lower, "codec"))
+        {
+            needs.suspicious_codecs = true;
+            for (const auto & gate : codec_gate_names)
+                if (hasToken(lower, std::string_view(gate).substr(7, gate.size() - 7 - 6)))
+                    needs.codec_gates.insert(gate);
+        }
+
+        if (create->dictionary && create->dictionary->source && equalsCaseInsensitive(create->dictionary->source->name, "ytsaurus"))
+            needs.ytsaurus_dictionary_source = true;
+
+        const IAST * main_engine = create->storage ? create->storage->engine : nullptr;
+        forEachNode(*create_ast, [&](const IAST & node)
+        {
+            const auto * function = node.as<ASTFunction>();
+            if (!function)
+                return;
+            if (equalsCaseInsensitive(function->name, "ytsaurus") && &node != main_engine)
+                needs.ytsaurus_table_function = true;
+            else if (equalsCaseInsensitive(function->name, "eval"))
+                needs.eval_table_function = true;
+            else if ((equalsCaseInsensitive(function->name, "url") || equalsCaseInsensitive(function->name, "urlCluster"))
+                     && urlMayHaveWildcard(*function, lower))
+                needs.url_wildcard = true;
+        });
+
+        if (create->select)
+            forEachNode(*create->select, [&](const IAST & node)
+            {
+                if (node.as<ASTTableJoin>())
+                    needs.dynamic_type_in_join_keys = true;
+            });
+
+        const bool has_indices = create->columns_list && create->columns_list->indices && !create->columns_list->indices->children.empty();
+        const bool has_projections = create->columns_list && create->columns_list->projections
+            && !create->columns_list->projections->children.empty();
+        if (has_indices)
+            for (const auto & child : create->columns_list->indices->children)
+                if (const auto * index = child->as<ASTIndexDeclaration>())
+                    if (const auto type = index->getType(); type && equalsCaseInsensitive(type->name, "text"))
+                        needs.full_text_index = true;
+
+        std::vector<const ASTStorage *> storages;
+        if (create->storage && create->storage->engine)
+            storages.push_back(create->storage);
+        if (create->targets)
+            for (const auto * inner : create->targets->getInnerEngines())
+                if (inner->engine)
+                    storages.push_back(inner);
+
+        bool has_merge_tree = false;
+        for (const auto * storage : storages)
+        {
+            const auto & engine = *storage->engine;
+            if (endsWithCaseInsensitive(engine.name, "MergeTree"))
+            {
+                has_merge_tree = true;
+                /// `checkSuspiciousIndices` looks only at a sorting key written as an expression.
+                if ((storage->order_by && storage->order_by->as<ASTFunction>()) || (storage->primary_key && storage->primary_key->as<ASTFunction>()))
+                    needs.suspicious_indices = true;
+                /// The old `MergeTree(date, key, granularity)` form: arguments and no extended clause.
+                if (engine.arguments && !engine.arguments->children.empty() && !storage->isExtendedStorageDefinition()
+                    && !has_indices && !has_projections)
+                    needs.deprecated_merge_tree_syntax = true;
+            }
+            else if ((equalsCaseInsensitive(engine.name, "S3Queue") || equalsCaseInsensitive(engine.name, "AzureQueue"))
+                     && queueMayUseHivePartitioning(*storage))
+                needs.queue_hive_partitioning = true;
+        }
+
+        if (has_merge_tree)
+        {
+            if (has_indices || has_projections)
+                needs.suspicious_indices = true;
+            needs.minmax_index_for_json |= hasToken(lower, "minmax") && (hasToken(lower, "json") || hasToken(lower, "object"));
+            needs.suspicious_primary_key |= hasToken(lower, "simpleaggregatefunction");
+            needs.suspicious_ttl_expressions |= hasToken(lower, "ttl");
+        }
     }
     return needs;
 }
 
-String replaySettingsPrelude(const std::set<String> & settings_known_to_server, const std::vector<String> & create_queries)
+String replaySettingsPrelude(
+    const std::set<String> & settings_known_to_server, const std::vector<String> & create_queries, bool materialized_view_may_need_bad_select)
 {
     /// Nothing to replay means no gate can fire. Reachable whenever every database is predefined
     /// or excluded, which leaves the dump empty.
@@ -2462,14 +2665,14 @@ String replaySettingsPrelude(const std::set<String> & settings_known_to_server, 
     };
     /// Emit only dump-specific gates known by the source server and required by these statements.
     const ReplayGateNeeds needs = collectReplayGateNeeds(create_queries);
-    auto is_needed = [&needs](const String & name)
+    auto is_needed = [&needs, materialized_view_may_need_bad_select](const String & name)
     {
         if (name == "database_replicated_allow_explicit_uuid")
             return needs.explicit_uuid;
         if (name == "database_replicated_allow_replicated_engine_arguments")
             return needs.replicated_engine_arguments;
         if (name == "allow_materialized_view_with_bad_select")
-            return needs.materialized_view;
+            return needs.materialized_view && (needs.parse_failed || materialized_view_may_need_bad_select);
         if (name == "allow_deprecated_database_ordinary")
             return needs.ordinary_database;
         if (name == "allow_experimental_database_replicated")
@@ -2495,6 +2698,10 @@ String replaySettingsPrelude(const std::set<String> & settings_known_to_server, 
         "allow_experimental_window_functions",
         "allow_experimental_hash_functions",
         "allow_simdjson",
+        /// Read only by `CREATE INDEX`, `UPDATE` and `ALTER`, never by a replayed `CREATE`.
+        "allow_create_index_without_type",
+        "allow_experimental_lightweight_update",
+        "allow_experimental_json_lazy_type_hints",
     };
     static const std::set<std::string_view> analyzer_settings = {
         "allow_suspicious_types_in_group_by",
@@ -2524,8 +2731,48 @@ String replaySettingsPrelude(const std::set<String> & settings_known_to_server, 
         "allow_delta_kernel_rs",
         "allow_experimental_delta_lake_writes",
     };
+    /// The CREATE-statement feature that reads each remaining shared gate. A gate not listed here is always emitted,
+    /// except a per-codec `enable_<family>_codec`, which is emitted when that codec is named.
+    static const std::map<std::string_view, bool ReplayGateNeeds::*> residual_carriers = {
+        {"allow_experimental_funnel_functions", &ReplayGateNeeds::funnel_functions},
+        {"allow_experimental_nlp_functions", &ReplayGateNeeds::nlp_functions},
+        {"allow_fuzz_query_functions", &ReplayGateNeeds::fuzz_query_functions},
+        {"allow_deprecated_error_prone_window_functions", &ReplayGateNeeds::error_prone_window_functions},
+        {"allow_hyperscan", &ReplayGateNeeds::hyperscan_functions},
+        {"allow_experimental_time_series_aggregate_functions", &ReplayGateNeeds::time_series_aggregate_functions},
+        {"allow_experimental_ytsaurus_table_function", &ReplayGateNeeds::ytsaurus_table_function},
+        {"allow_experimental_eval_table_function", &ReplayGateNeeds::eval_table_function},
+        {"allow_experimental_ytsaurus_dictionary_source", &ReplayGateNeeds::ytsaurus_dictionary_source},
+        {"allow_suspicious_low_cardinality_types", &ReplayGateNeeds::low_cardinality_type},
+        {"allow_suspicious_fixed_string_types", &ReplayGateNeeds::fixed_string_type},
+        {"allow_suspicious_variant_types", &ReplayGateNeeds::variant_type},
+        {"allow_experimental_time_time64_type", &ReplayGateNeeds::time_type},
+        {"allow_suspicious_indices", &ReplayGateNeeds::suspicious_indices},
+        {"allow_minmax_index_for_json", &ReplayGateNeeds::minmax_index_for_json},
+        {"allow_suspicious_codecs", &ReplayGateNeeds::suspicious_codecs},
+        {"allow_deprecated_syntax_for_merge_tree", &ReplayGateNeeds::deprecated_merge_tree_syntax},
+        {"allow_suspicious_primary_key", &ReplayGateNeeds::suspicious_primary_key},
+        {"allow_suspicious_ttl_expressions", &ReplayGateNeeds::suspicious_ttl_expressions},
+        {"allow_experimental_full_text_index", &ReplayGateNeeds::full_text_index},
+        {"allow_dynamic_type_in_join_keys", &ReplayGateNeeds::dynamic_type_in_join_keys},
+        {"allow_experimental_object_storage_queue_hive_partitioning", &ReplayGateNeeds::queue_hive_partitioning},
+        {"allow_experimental_url_wildcard_from_index_pages", &ReplayGateNeeds::url_wildcard},
+    };
+    auto residual_needed = [&needs](const String & name)
+    {
+        if (needs.parse_failed)
+            return true;
+        if (auto it = residual_carriers.find(name); it != residual_carriers.end())
+            return needs.*(it->second);
+        return !(name.starts_with("enable_") && name.ends_with("_codec")) || needs.codec_gates.contains(name);
+    };
+    /// A dump-specific gate is emitted by the loop below, with its own value and condition.
+    std::set<String> dump_specific_names;
+    for (const auto & [name, value] : dump_specific)
+        dump_specific_names.insert(name);
     for (const auto & name : allExperimentalSettingNames())
         if (settings_known_to_server.contains(name) && !dead_settings.contains(name)
+            && !dump_specific_names.contains(name) && residual_needed(name)
             && !iceberg_write_settings.contains(name)
             && (!analyzer_settings.contains(name) || needs.analyzable_query_text)
             && (name != "allow_experimental_unique_key" || needs.unique_key)
@@ -2541,6 +2788,139 @@ String replaySettingsPrelude(const std::set<String> & settings_known_to_server, 
             res += "SET " + name + " = " + value + ";\n";
     res += "\n";
     return res;
+}
+
+ASTPtr tryParseCreate(const String & create_query)
+{
+    try
+    {
+        ParserCreateQuery create_parser;
+        return parseQuery(create_parser, create_query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    }
+    catch (const Exception &)
+    {
+        return nullptr;
+    }
+}
+
+/// The columns `InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine` treats as insertable.
+std::set<String> insertableColumnNames(const ASTCreateQuery & create)
+{
+    std::set<String> names;
+    if (create.columns_list && create.columns_list->columns)
+        for (const auto & child : create.columns_list->columns->children)
+            if (const auto * column = child->as<ASTColumnDeclaration>();
+                column && column->default_specifier != ColumnDefaultSpecifier::Materialized
+                && column->default_specifier != ColumnDefaultSpecifier::Alias)
+                names.insert(column->name);
+    return names;
+}
+
+bool containsTableFunction(const IAST & node)
+{
+    if (const auto * table_expression = node.as<ASTTableExpression>(); table_expression && table_expression->table_function)
+        return true;
+    return std::any_of(node.children.begin(), node.children.end(), [](const auto & child) { return containsTableFunction(*child); });
+}
+
+/// True when the leftmost SELECT may output a column whose name is not in `target_columns`: the
+/// output names of a UNION come from its first branch, and a name that cannot be read off the AST counts as unknown.
+bool selectMayOutputUnknownColumn(const IAST & select, const std::set<String> & target_columns)
+{
+    const IAST * node = &select;
+    while (!node->as<ASTSelectQuery>())
+    {
+        ASTs branches;
+        if (const auto * union_query = node->as<ASTSelectWithUnionQuery>())
+        {
+            if (union_query->list_of_selects)
+                branches = union_query->list_of_selects->children;
+        }
+        else if (const auto * intersect_except = node->as<ASTSelectIntersectExceptQuery>())
+            branches = intersect_except->getListOfSelects();
+        if (branches.empty())
+            return true;
+        node = branches.front().get();
+    }
+
+    const ASTPtr select_list = node->as<ASTSelectQuery>()->select();
+    if (!select_list)
+        return true;
+    for (const auto & column : select_list->children)
+    {
+        if (column->as<ASTAsterisk>() || column->as<ASTQualifiedAsterisk>() || column->as<ASTColumnsRegexpMatcher>()
+            || column->as<ASTColumnsListMatcher>() || column->as<ASTQualifiedColumnsRegexpMatcher>()
+            || column->as<ASTQualifiedColumnsListMatcher>())
+            return true;
+
+        String name = column->tryGetAlias();
+        if (name.empty())
+        {
+            const auto * identifier = column->as<ASTIdentifier>();
+            if (!identifier || identifier->compound())
+                return true;
+            name = identifier->shortName();
+        }
+        if (!target_columns.contains(name))
+            return true;
+    }
+    return false;
+}
+
+/// Whether replaying this materialized view can reach a check that `allow_materialized_view_with_bad_select`
+/// relaxes in `validateMaterializedViewColumnsAndEngine`: a `TO` target that may not exist yet, a SELECT
+/// that may not analyze, or an output column the target does not have. Every unknown answers true, so
+/// the gate is only ever over-emitted. The stored `CREATE` always carries a column list, so the column
+/// check runs at replay for every view. SQL UDFs the SELECT calls are not tracked.
+bool materializedViewMayNeedBadSelectGate(
+    const TableInfo & table, const std::map<std::pair<String, String>, const TableInfo *> & emitted_tables)
+{
+    const ASTPtr ast = tryParseCreate(table.create_query);
+    if (!ast)
+        return true;
+    const auto * create = ast->as<ASTCreateQuery>();
+    if (!create || !create->is_materialized_view)
+        return false;
+    if (!create->select)
+        return true;
+
+    /// A target that is not an emitted table (generated helpers included) is not ordered before the view.
+    std::set<String> target_columns;
+    if (create->hasTargetTableID(ViewTarget::To))
+    {
+        const StorageID target_id = create->getTargetTableID(ViewTarget::To);
+        auto it = emitted_tables.find({target_id.database_name, target_id.table_name});
+        if (it == emitted_tables.end())
+            return true;
+        const ASTPtr target_ast = tryParseCreate(it->second->create_query);
+        const auto * target_create = target_ast ? target_ast->as<ASTCreateQuery>() : nullptr;
+        if (!target_create)
+            return true;
+        target_columns = insertableColumnNames(*target_create);
+    }
+    else
+        target_columns = insertableColumnNames(*create);
+
+    if (!table.unresolved_references.empty())
+        return true;
+    for (const auto & dependency : table.dependencies)
+        if (!DatabaseCatalog::isPredefinedDatabase(dependency.first) && !emitted_tables.contains(dependency))
+            return true;
+    if (containsTableFunction(*create->select))
+        return true;
+
+    return selectMayOutputUnknownColumn(*create->select, target_columns);
+}
+
+void markMaterializedViewsNeedingBadSelectGate(std::vector<TableInfo> & tables)
+{
+    std::map<std::pair<String, String>, const TableInfo *> emitted_tables;
+    for (const auto & table : tables)
+        if (table.emit)
+            emitted_tables.emplace(std::pair(table.database, table.name), &table);
+    for (auto & table : tables)
+        if (table.emit)
+            table.needs_bad_select_gate = materializedViewMayNeedBadSelectGate(table, emitted_tables);
 }
 
 }
@@ -2668,9 +3048,9 @@ void dumpDatabaseSchema(
         create_database_query_by_db.emplace(db, std::move(create_database_query.front()));
     }
 
-    /// Names the source server actually has, used to filter the replay prelude below.
-    std::vector<String> server_setting_names
-        = fetchStringColumn(connection, timeouts, client_info, "SELECT name FROM system.settings", context->getSettingsRef());
+    /// Names the source server actually has and still acts on, used to filter the replay prelude below.
+    std::vector<String> server_setting_names = fetchStringColumn(
+        connection, timeouts, client_info, "SELECT name FROM system.settings WHERE NOT is_obsolete", context->getSettingsRef());
     std::set<String> settings_known_to_server(server_setting_names.begin(), server_setting_names.end());
 
     std::vector<TableInfo> tables;
@@ -2696,6 +3076,7 @@ void dumpDatabaseSchema(
         reportDependenciesOutsideDumpSet(tables, database_named_collections, target_databases, err);
         reportMaskedSecrets(tables, create_database_query_by_db, err);
         order = orderTablesByDependencies(tables);
+        markMaterializedViewsNeedingBadSelectGate(tables);
     }
 
     if (output_dir.empty())
@@ -2707,7 +3088,10 @@ void dumpDatabaseSchema(
             if (tables[i].emit)
                 dumped_creates.push_back(tables[i].create_query);
 
-        out << replaySettingsPrelude(settings_known_to_server, dumped_creates);
+        out << replaySettingsPrelude(
+            settings_known_to_server,
+            dumped_creates,
+            std::any_of(tables.begin(), tables.end(), [](const TableInfo & table) { return table.emit && table.needs_bad_select_gate; }));
 
         for (const auto & db : target_databases)
             out << create_database_query_by_db.at(db) << ";\n\n";
@@ -2777,7 +3161,13 @@ void dumpDatabaseSchema(
             if (tables[i].emit && tables[i].database == db)
                 dumped_creates.push_back(tables[i].create_query);
 
-        file << replaySettingsPrelude(settings_known_to_server, dumped_creates);
+        file << replaySettingsPrelude(
+            settings_known_to_server,
+            dumped_creates,
+            std::any_of(
+                tables.begin(),
+                tables.end(),
+                [&](const TableInfo & table) { return table.database == db && table.emit && table.needs_bad_select_gate; }));
         file << create_database_query_by_db.at(db) << ";\n\nUSE " << backQuoteIfNeed(db) << ";\n\n";
         for (size_t i : order)
             if (tables[i].emit && tables[i].database == db)

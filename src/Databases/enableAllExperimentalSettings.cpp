@@ -71,6 +71,9 @@ const std::vector<std::string> & allExperimentalSettingNames()
         "allow_experimental_json_lazy_type_hints",
         "allow_experimental_url_wildcard_from_index_pages",
         "allow_experimental_full_text_index",
+        "allow_experimental_time_series_table",
+        "allow_experimental_kafka_offsets_storage_in_keeper",
+        "allow_experimental_materialized_postgresql_table",
 
         /// clickhouse-private settings
         "allow_experimental_shared_set_join",

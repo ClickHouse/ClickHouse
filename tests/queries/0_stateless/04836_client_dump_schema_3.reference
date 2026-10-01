@@ -33,6 +33,7 @@ masked credential reported: 1
 secret in the dump: 0
 --- a materialized view accepted under a relaxed check replays through the prelude ---
 bad-select view replayed: 1
+bad-select view, bad-select gate emitted: 1
 --- the prelude is scoped to what the dumped statements can reach ---
 no-mv schema, mv gate emitted: 0
 no-mv schema, ungated gate emitted: 0
@@ -46,11 +47,13 @@ projection schema, dead gates emitted: 0
 --- a plain dump replays under unrelated analyzer, UNIQUE KEY, DataLakeCatalog, YTsaurus, Iceberg write, Paimon, Delta Lake and nullable-tuple constraints ---
 OK: constrained replay succeeded
 constrained replay table present: 1
---- the prelude keeps the residual shared gates conservative ---
+--- the prelude emits residual shared gates only for their carriers ---
 unique-key gate present: 0
-suspicious-primary-key gate present: 1
-fuzz-functions gate present: 1
-deprecated-mt-syntax gate present: 1
+suspicious-primary-key gate present: 0
+fuzz-functions gate present: 0
+deprecated-mt-syntax gate present: 0
+hive-partitioning gate present: 0
+s3queue gate present: 0
 --- a UNIQUE KEY in a materialized view engine keeps its gate ---
 mv unique-key gate present: 1
 --- a dump with a MATERIALIZED expression replays through the prelude ---

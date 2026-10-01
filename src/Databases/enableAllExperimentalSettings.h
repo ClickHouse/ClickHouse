@@ -8,7 +8,8 @@ namespace DB
 {
 
 /// Settings that allow experimental, deprecated or unsafe features in a CREATE query.
-/// recoverLostReplica() enables all of them, and --dump-schema emits those its CREATEs can reach.
+/// The list covers every gate that recovery needs: recoverLostReplica() enables all of them.
+/// --dump-schema emits only those that the CREATE statements it dumps can reach.
 const std::vector<std::string> & allExperimentalSettingNames();
 
 /*

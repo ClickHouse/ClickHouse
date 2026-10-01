@@ -243,6 +243,7 @@ CREATE MATERIALIZED VIEW ${DB}.mv TO ${DB}.dst AS SELECT x, y FROM ${DB}.src;
 $CLICKHOUSE_LOCAL --path "$BADSEL_PATH" --dump-schema="${DB}" > "$BADSEL_DUMP_FILE" 2>"$ERR_FILE"
 $CLICKHOUSE_LOCAL --path "$BADSEL_DST" --multiquery --queries-file "$BADSEL_DUMP_FILE" > /dev/null 2>"$ERR_FILE"
 echo "bad-select view replayed: $($CLICKHOUSE_LOCAL --path "$BADSEL_DST" --query "SELECT count() FROM system.tables WHERE database = '${DB}' AND name = 'mv'")"
+echo "bad-select view, bad-select gate emitted: $(grep -c 'SET allow_materialized_view_with_bad_select = 1;' "$BADSEL_DUMP_FILE")"
 rm -rf "$BADSEL_PATH" "$BADSEL_DST" "$BADSEL_DUMP_FILE"
 
 echo '--- the prelude is scoped to what the dumped statements can reach ---'
@@ -256,7 +257,7 @@ CREATE TABLE ${DB}.plain (x Int64) ENGINE = MergeTree ORDER BY tuple();
 "
 $CLICKHOUSE_LOCAL --path "$NOMV_PATH" --dump-schema="${DB}" > "$NOMV_DUMP_FILE" 2>"$ERR_FILE"
 echo "no-mv schema, mv gate emitted: $(grep -c 'SET allow_materialized_view_with_bad_select' "$NOMV_DUMP_FILE")"
-echo "no-mv schema, ungated gate emitted: $(grep -c 'SET allow_experimental_time_series_table' "$NOMV_DUMP_FILE")"
+echo "no-mv schema, ungated gate emitted: $(grep -cE 'SET (allow_experimental_time_series_table|enable_time_series_table)' "$NOMV_DUMP_FILE")"
 # Analyzer-only gates are omitted when no stored query text can reach them.
 echo "no-mv schema, analyzer gate emitted: $(grep -c 'SET allow_suspicious_types_in_group_by' "$NOMV_DUMP_FILE")"
 # DataLakeCatalog and YTsaurus gates are omitted without a database or table of that engine.
@@ -301,7 +302,7 @@ $CLICKHOUSE_CLIENT --multiquery --query "
     DROP DATABASE IF EXISTS ${CONSTRAINT_DB};
     DROP USER IF EXISTS ${CONSTRAINT_USER};
     DROP SETTINGS PROFILE IF EXISTS ${CONSTRAINT_PROFILE};
-    CREATE SETTINGS PROFILE ${CONSTRAINT_PROFILE} SETTINGS allow_suspicious_types_in_group_by = 0 CONST, enable_unique_key = 0 CONST, allow_database_iceberg = 0 CONST, allow_experimental_ytsaurus_table_engine = 0 CONST, allow_insert_into_iceberg = 0 CONST, allow_experimental_paimon_storage_engine = 0 CONST, allow_delta_lake_create_table = 0 CONST, allow_delta_kernel_rs = 0 CONST, enable_nullable_tuple_type = 0 CONST;
+    CREATE SETTINGS PROFILE ${CONSTRAINT_PROFILE} SETTINGS allow_suspicious_types_in_group_by = 0 CONST, enable_unique_key = 0 CONST, allow_database_iceberg = 0 CONST, allow_experimental_ytsaurus_table_engine = 0 CONST, allow_insert_into_iceberg = 0 CONST, allow_experimental_paimon_storage_engine = 0 CONST, allow_delta_lake_create_table = 0 CONST, allow_delta_kernel_rs = 0 CONST, enable_nullable_tuple_type = 0 CONST, allow_experimental_object_storage_queue_hive_partitioning = 0 CONST, allow_materialized_view_with_bad_select = 0 CONST;
     CREATE USER ${CONSTRAINT_USER} SETTINGS PROFILE '${CONSTRAINT_PROFILE}';
     GRANT CREATE DATABASE, CREATE TABLE ON *.* TO ${CONSTRAINT_USER};
     GRANT TABLE ENGINE ON * TO ${CONSTRAINT_USER};
@@ -317,8 +318,8 @@ $CLICKHOUSE_CLIENT --multiquery --query "
 "
 rm -rf "$CONSTRAINT_PATH" "$CONSTRAINT_DUMP_FILE"
 
-echo '--- the prelude keeps the residual shared gates conservative ---'
-# Plain tables can still reach type, expression, key, and deprecated-syntax validators.
+echo '--- the prelude emits residual shared gates only for their carriers ---'
+# A plain table carries none of the type, expression, key or deprecated-syntax features.
 SHARED_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_shared"
 SHARED_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_shared.sql"
 rm -rf "$SHARED_PATH"
@@ -329,12 +330,15 @@ CREATE TABLE ${DB}.plain (x Int64) ENGINE = MergeTree ORDER BY tuple();
 $CLICKHOUSE_LOCAL --path "$SHARED_PATH" --dump-schema="${DB}" > "$SHARED_DUMP_FILE" 2>"$ERR_FILE"
 # Only a UNIQUE KEY reaches this gate, so a plain table does not get it.
 echo "unique-key gate present: $(grep -c 'SET allow_experimental_unique_key = 1;' "$SHARED_DUMP_FILE")"
-# A suspicious-type gate from the shared list — always emitted.
+# A suspicious-type gate is emitted only for a carrier (a SimpleAggregateFunction key), so a plain table has none.
 echo "suspicious-primary-key gate present: $(grep -c 'SET allow_suspicious_primary_key = 1;' "$SHARED_DUMP_FILE")"
-# A default-expression / function gate from the shared list — always emitted.
+# The fuzz-functions gate is emitted only for a statement that names fuzzQuery.
 echo "fuzz-functions gate present: $(grep -c 'SET allow_fuzz_query_functions = 1;' "$SHARED_DUMP_FILE")"
-# A deprecated-syntax gate from the shared list — always emitted.
+# The deprecated-syntax gate is emitted only for the old MergeTree(date, key, granularity) form.
 echo "deprecated-mt-syntax gate present: $(grep -c 'SET allow_deprecated_syntax_for_merge_tree = 1;' "$SHARED_DUMP_FILE")"
+# Carrier-specific gates are not part of the shared list, so a plain table does not get them.
+echo "hive-partitioning gate present: $(grep -c 'SET allow_experimental_object_storage_queue_hive_partitioning = 1;' "$SHARED_DUMP_FILE")"
+echo "s3queue gate present: $(grep -cE 'SET allow_experimental_s3queue = 1;' "$SHARED_DUMP_FILE")"
 rm -rf "$SHARED_PATH" "$SHARED_DUMP_FILE"
 
 echo '--- a UNIQUE KEY in a materialized view engine keeps its gate ---'

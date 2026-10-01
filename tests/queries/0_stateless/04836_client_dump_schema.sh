@@ -50,7 +50,7 @@ CREATE TABLE ${DB}.aaa_ts ENGINE = TimeSeries;
 GATED_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_gated_dump.sql"
 $CLICKHOUSE_LOCAL --path "$GATED_PATH" --dump-schema="${DB}" > "$GATED_DUMP_FILE" 2>"$ERR_FILE"
 echo "dump enables the Ordinary setting: $(grep -c '^SET allow_deprecated_database_ordinary = 1;' "$GATED_DUMP_FILE")"
-echo "dump enables the TimeSeries setting: $(grep -c '^SET allow_experimental_time_series_table = 1;' "$GATED_DUMP_FILE")"
+echo "dump enables the TimeSeries setting: $(grep -cE '^SET (allow_experimental_time_series_table|enable_time_series_table) = 1;' "$GATED_DUMP_FILE")"
 GATED_REPLAY_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_gated_replay"
 rm -rf "$GATED_REPLAY_PATH"
 $CLICKHOUSE_LOCAL --path "$GATED_REPLAY_PATH" --queries-file "$GATED_DUMP_FILE"
@@ -479,7 +479,7 @@ rm -rf "$PREDEF_PATH" "$PREDEF_DUMP_FILE"
 
 echo '--- the prelude omits dump-specific gates this schema cannot need ---'
 # Dump-specific gates are emitted only when the dumped AST contains their markers.
-echo "ungated gate emitted: $(grep -c 'SET allow_experimental_time_series_table' "${DUMP_FILE}")"
+echo "ungated gate emitted: $(grep -cE 'SET (allow_experimental_time_series_table|enable_time_series_table)' "${DUMP_FILE}")"
 echo "explicit-uuid gate emitted: $(grep -c 'SET database_replicated_allow_explicit_uuid' "${DUMP_FILE}")"
 echo "replicated-args gate emitted: $(grep -c 'SET database_replicated_allow_replicated_engine_arguments' "${DUMP_FILE}")"
 # These three cannot gate a replay on any schema (obsolete / readerless / parser-implementation
