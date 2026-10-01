@@ -37,6 +37,13 @@ namespace S3
 namespace
 {
 
+/// `Common/maskURIPassword.h` has no `maskURIUserinfo` on this release; this is the regular expression it replaced.
+bool maskURIUserinfo(String & url)
+{
+    static const re2::RE2 userinfo(R"(^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#]+@)");
+    return RE2::Replace(&url, userinfo, "\\1[HIDDEN]@");
+}
+
 /// `Poco::URI::toString` renders the userinfo (`user:password@`) and the query parameters of a presigned
 /// URL verbatim. Exception messages reach `system.query_log` and the server log, which, unlike the query
 /// text, are not masked, so a URI must not be put into them as is.
