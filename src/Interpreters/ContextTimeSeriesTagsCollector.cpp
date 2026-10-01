@@ -1541,7 +1541,7 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags(co
     if (groups_.empty())
         return {};
 
-    size_t num_groups;
+    size_t num_groups = 0;
     {
         SharedLockGuard lock{mutex};
         num_groups = groups.size();
@@ -1699,7 +1699,7 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags2(c
     if (groups1.empty())
         return {};
 
-    size_t num_groups;
+    size_t num_groups = 0;
     {
         SharedLockGuard lock{mutex};
         num_groups = groups.size();
@@ -1787,7 +1787,6 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags2(c
     /// pair without keeping the pair hash map alive while constructing the component maps below.
     VectorWithMemoryTracking<std::pair<Group, Group>> unique_pairs;
     unique_pairs.reserve(num_unique_pairs);
-
     size_t next_pair_index = 0;
     for (size_t i = 0; i != groups1.size(); ++i)
     {
