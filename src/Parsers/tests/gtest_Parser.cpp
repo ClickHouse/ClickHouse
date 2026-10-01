@@ -1,5 +1,6 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
@@ -20,6 +21,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Common/re2.h>
+#include <span>
 #include <string_view>
 #include <unordered_set>
 #include <gtest/gtest.h>
@@ -295,8 +297,8 @@ TEST(ParserCreateQuery, MaskNATSTableEngineCredentials)
 
 TEST(ParserCreateQuery, MaskNATSTableEngineURLPassword)
 {
-    /// A `nats_url` override can carry the credentials in its userinfo. Only the password is hidden,
-    /// keeping the rest of the url visible, the same way the `SETTINGS` clause form is masked.
+    /// A `nats_url` override carrying an '@' is hidden whole, the same way the `SETTINGS` clause form
+    /// is masked: libnats reads a credential that no URI masker can bound.
     const String query =
         "CREATE TABLE test_nats (key UInt64) "
         "ENGINE = NATS(nats1, nats_url = 'nats://plain_user:plain_password@example.com:4222')";
@@ -307,7 +309,8 @@ TEST(ParserCreateQuery, MaskNATSTableEngineURLPassword)
     const String masked = ast->formatForLogging();
 
     EXPECT_EQ(masked.find("plain_password"), String::npos);
-    EXPECT_NE(masked.find("nats://plain_user:[HIDDEN]@example.com:4222"), String::npos);
+    EXPECT_EQ(masked.find("plain_user"), String::npos);
+    EXPECT_NE(masked.find("nats_url = '[HIDDEN]'"), String::npos);
 }
 
 TEST(ParserCreateQuery, MaskNATSTableEngineServerListPassword)
@@ -376,6 +379,158 @@ TEST(ParserCreateQuery, MaskNATSTableEnginePositionalArguments)
     /// The collection name is the one legitimate positional argument and stays visible.
     EXPECT_NE(masked.find("nats1"), String::npos);
     EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskXDBCTableEnginePositionalAfterCollection)
+{
+    /// After a collection name every XDBC argument must be a named override, but the statement is
+    /// formatted for logging before validation rejects a positional one, and that positional can be
+    /// the connection string itself. The engine spelling takes more positional arguments than the
+    /// table function does, so it is asserted separately.
+    const String query =
+        "CREATE TABLE test_jdbc (key UInt64) "
+        "ENGINE = JDBC(jdbc1, 'DSN=mydb;Uid=user;Pwd=plain_password', 'mydb', 'mytable')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("Uid=user"), String::npos);
+    /// The collection name is the one legitimate positional argument and stays visible.
+    EXPECT_NE(masked.find("jdbc1"), String::npos);
+    EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
+
+    /// A named override of the same connection string keeps its key visible, as before.
+    const String named_query =
+        "CREATE TABLE test_jdbc (key UInt64) "
+        "ENGINE = JDBC(jdbc1, datasource = 'DSN=mydb;Uid=user;Pwd=plain_named_password', "
+        "external_database = 'mydb', external_table = 'mytable')";
+
+    DB::ASTPtr named_ast = DB::parseQuery(parser, named_query, 0, 0, 0);
+    const String named_masked = named_ast->formatForLogging();
+
+    EXPECT_EQ(named_masked.find("plain_named_password"), String::npos);
+    EXPECT_NE(named_masked.find("datasource = '[HIDDEN]'"), String::npos);
+    /// The non-secret named arguments stay visible: the positional scan must not widen to them.
+    EXPECT_NE(named_masked.find("external_table = 'mytable'"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskXDBCNamedArgumentsWithoutCollection)
+{
+    /// A named argument at index 0 is not a collection name, so this call is not the positional form:
+    /// the connection string can be under either alias at any index, and the statement is formatted
+    /// for logging before validation rejects it.
+    const String query =
+        "CREATE TABLE test_jdbc (key UInt64) ENGINE = JDBC(external_database = 'mydb', "
+        "datasource = 'DSN=mydb;Uid=user;Pwd=plain_password')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("Uid=user"), String::npos);
+    EXPECT_NE(masked.find("datasource = '[HIDDEN]'"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskRabbitMQTableEngineCredentials)
+{
+    /// `RabbitMQ` also takes its settings as overrides of a named collection, so the same credentials
+    /// reach `SHOW CREATE TABLE` through the engine arguments and through the `SETTINGS` clause.
+    const String query =
+        "CREATE TABLE test_rabbitmq (key UInt64) ENGINE = RabbitMQ(rabbitmq1, "
+        "rabbitmq_password = 'plain_password', "
+        "rabbitmq_address = 'amqp://plain_user:plain_address_password@example.com:5672/vhost')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("plain_address_password"), String::npos);
+    EXPECT_EQ(masked.find("plain_user"), String::npos);
+    /// The keys of the named overrides are not secrets and stay visible, as does the collection name.
+    EXPECT_NE(masked.find("rabbitmq1"), String::npos);
+    EXPECT_NE(masked.find("rabbitmq_password = '[HIDDEN]'"), String::npos);
+    EXPECT_NE(masked.find("rabbitmq_address = '[HIDDEN]'"), String::npos);
+
+    /// An address with no '@' carries no credential and stays fully visible.
+    const String control_query =
+        "CREATE TABLE test_rabbitmq (key UInt64) "
+        "ENGINE = RabbitMQ(rabbitmq1, rabbitmq_address = 'amqp://example.com:5672/vhost')";
+
+    DB::ASTPtr control_ast = DB::parseQuery(parser, control_query, 0, 0, 0);
+    EXPECT_NE(control_ast->formatForLogging().find("amqp://example.com:5672/vhost"), String::npos);
+
+    /// The `SETTINGS` clause form is masked by `RabbitMQ::SETTINGS_TO_HIDE` and must agree.
+    const String settings_query =
+        "CREATE TABLE test_rabbitmq_settings (key UInt64) ENGINE = RabbitMQ "
+        "SETTINGS rabbitmq_password = 'plain_settings_password'";
+
+    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
+    const String settings_masked = settings_ast->formatForLogging();
+
+    EXPECT_EQ(settings_masked.find("plain_settings_password"), String::npos);
+    EXPECT_NE(settings_masked.find("rabbitmq_password = '[HIDDEN]'"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskKafkaTableEngineCredentials)
+{
+    /// `Kafka` reads named overrides of a collection too, so `kafka_sasl_password` needs masking in the
+    /// engine arguments and not only in the `SETTINGS` clause.
+    const String query =
+        "CREATE TABLE test_kafka (key UInt64) ENGINE = Kafka(kafka1, kafka_sasl_password = 'plain_password')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_NE(masked.find("kafka1"), String::npos);
+    EXPECT_NE(masked.find("kafka_sasl_password = '[HIDDEN]'"), String::npos);
+
+    /// Unlike `NATS` and `RabbitMQ`, `Kafka` accepts a legacy positional form whose arguments are all
+    /// non-secret, so a positional argument must stay visible rather than fail closed.
+    const String positional_query =
+        "CREATE TABLE test_kafka (key UInt64) "
+        "ENGINE = Kafka('broker:9092', 'topic', 'group', 'JSONEachRow')";
+
+    DB::ASTPtr positional_ast = DB::parseQuery(parser, positional_query, 0, 0, 0);
+    const String positional_masked = positional_ast->formatForLogging();
+
+    EXPECT_NE(positional_masked.find("broker:9092"), String::npos);
+    EXPECT_NE(positional_masked.find("group"), String::npos);
+    EXPECT_EQ(positional_masked.find("[HIDDEN]"), String::npos);
+
+    /// The legacy positional form makes the collection name optional, so a named argument can be the
+    /// first one, and the statement is formatted for logging before it is rejected.
+    const String first_arg_query =
+        "CREATE TABLE test_kafka (key UInt64) "
+        "ENGINE = Kafka(kafka_sasl_password = 'plain_first_password', 'clickhouse')";
+
+    DB::ASTPtr first_arg_ast = DB::parseQuery(parser, first_arg_query, 0, 0, 0);
+    const String first_arg_masked = first_arg_ast->formatForLogging();
+
+    EXPECT_EQ(first_arg_masked.find("plain_first_password"), String::npos);
+    EXPECT_NE(first_arg_masked.find("kafka_sasl_password = '[HIDDEN]'"), String::npos);
+    /// The positional argument beside it is not a secret and stays visible.
+    EXPECT_NE(first_arg_masked.find("'clickhouse'"), String::npos);
+
+    /// The `SETTINGS` clause form is masked by `Kafka::SETTINGS_TO_HIDE` and must agree.
+    const String settings_query =
+        "CREATE TABLE test_kafka_settings (key UInt64) ENGINE = Kafka "
+        "SETTINGS kafka_sasl_password = 'plain_settings_password'";
+
+    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
+    const String settings_masked = settings_ast->formatForLogging();
+
+    EXPECT_EQ(settings_masked.find("plain_settings_password"), String::npos);
+    EXPECT_NE(settings_masked.find("kafka_sasl_password = '[HIDDEN]'"), String::npos);
 }
 
 TEST_P(ParserTest, parseQuery)
@@ -1329,6 +1484,189 @@ TEST(RemoveSettingsFromQuery, StripsSettingsCarriersOutsideChildrenWalk)
     }
 }
 
+/// The server-side AST fuzzer can hand the strip a structurally-invalid AST whose SETTINGS slot is
+/// desynced from `children` (a mutated child list left the `settings_ast` pointer set but no longer in
+/// `children`). Detaching that slot via IAST::reset hard-throws LOGICAL_ERROR "AST subtree not found in
+/// children", which aborted the server (the strip runs before the format-time try/catch that skips such
+/// ASTs). The transform must instead tolerate the desync and detach the slot. Reproduces STID 1218-27e6.
+TEST(RemoveSettingsFromQuery, ToleratesSettingsSlotDesyncedFromChildren)
+{
+    static constexpr std::string_view safety_settings[] = {
+        "max_rows_to_read",
+        "read_overflow_mode",
+        "max_execution_time",
+        "max_memory_usage",
+        "max_result_rows",
+        "max_result_bytes",
+    };
+
+    /// Each carrier holds ONLY safety settings, so the strip empties the clause and tries to detach the
+    /// slot. Before the strip we mimic the fuzzer by erasing the settings node from `children` while
+    /// leaving the owner's slot pointer set - exactly the desync the reset()-based detach aborted on.
+    /// Covers every owner branch that detaches: ASTQueryWithOutput (SELECT-UNION), ASTInsertQuery and
+    /// ASTStorage (CREATE ... SETTINGS).
+    const std::vector<String> queries = {
+        /// SETTINGS after FORMAT parks the clause in ASTQueryWithOutput::settings_ast.
+        "SELECT 1 FORMAT Null SETTINGS max_rows_to_read = 0, max_execution_time = 0",
+        "INSERT INTO t SELECT number FROM numbers(100) SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw'",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS max_rows_to_read = 0",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        /// Desync the SETTINGS slot from `children` on whichever owner carries it, leaving the slot set.
+        /// The desync must be "slot points at a node no longer in `children`", NOT "slot points at a
+        /// freed node": for ASTStorage the slot is a bare `ASTSetQuery *` whose ONLY owner is `children`,
+        /// so simply erasing the matching child would drop the last owning intrusive_ptr and leave the
+        /// slot dangling - a use-after-free, not the desync we mean to test. Keep an owning `ASTPtr` for
+        /// every erased settings node alive for the whole test body so the slot stays valid-but-desynced.
+        std::vector<ASTPtr> kept_alive;
+        std::vector<IAST *> desynced_owners;
+        std::vector<IAST *> nodes{ast.get()};
+        while (!nodes.empty())
+        {
+            auto * node = nodes.back();
+            nodes.pop_back();
+
+            IAST * settings_slot = nullptr;
+            if (auto * insert_query = node->as<ASTInsertQuery>())
+                settings_slot = insert_query->settings_ast.get();
+            else if (auto * storage = node->as<ASTStorage>())
+                settings_slot = storage->settings;
+            else if (auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(node))
+                settings_slot = query_with_output->settings_ast.get();
+
+            if (settings_slot)
+            {
+                const size_t before = node->children.size();
+                node->children.erase(
+                    std::remove_if(
+                        node->children.begin(),
+                        node->children.end(),
+                        [&](const ASTPtr & child)
+                        {
+                            if (child.get() != settings_slot)
+                                return false;
+                            kept_alive.push_back(child);
+                            return true;
+                        }),
+                    node->children.end());
+                if (node->children.size() < before)
+                    desynced_owners.push_back(node);
+            }
+
+            for (const auto & child : node->children)
+                if (child)
+                    nodes.push_back(child.get());
+        }
+        ASSERT_FALSE(desynced_owners.empty()) << "setup: SETTINGS node was not in children for: " << query;
+
+        /// Must not throw: before the fix this aborted with "AST subtree not found in children".
+        EXPECT_NO_THROW(removeSettingsFromQuery(ast, safety_settings)) << "query: " << query;
+
+        /// Assert on the carrier's own slot, not through the tree: the desynced node is no longer in
+        /// `children`, so the `settingNamePresent` walk below cannot see it and would pass even if the
+        /// transform had left the slot set. The owner formatters print from that slot, so a slot left
+        /// set-but-emptied re-serializes as a bare `SETTINGS` and the fuzzer skips the query instead of
+        /// running it under the caps - which the re-parse at the end of the loop catches too.
+        for (auto * owner : desynced_owners)
+        {
+            if (auto * insert_query = owner->as<ASTInsertQuery>())
+                EXPECT_EQ(nullptr, insert_query->settings_ast) << "INSERT slot not detached for: " << query;
+            else if (auto * storage = owner->as<ASTStorage>())
+                EXPECT_EQ(nullptr, storage->settings) << "storage slot not detached for: " << query;
+            else if (auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(owner))
+                EXPECT_EQ(nullptr, query_with_output->settings_ast) << "query slot not detached for: " << query;
+        }
+
+        for (const auto & name : safety_settings)
+            EXPECT_FALSE(settingNamePresent(ast, name))
+                << "safety setting '" << name << "' survived for: " << query;
+
+        const String formatted = ast->formatWithSecretsOneLine();
+        ParserQuery reparser(formatted.data() + formatted.size());
+        EXPECT_NE(nullptr, parseQuery(reparser, formatted, "", 0, 0, 0)) << "did not re-parse: " << formatted;
+    }
+}
+
+/// An ASTStorage `settings` slot that is NOT backed by an owning child in `storage->children` must be
+/// cleared without ever being dereferenced - the fail-closed case. Only an owning child proves the slot
+/// is that same live node; an address-reachability test does not, because a freed node's address can be
+/// handed to an unrelated live one. So a slot still owned somewhere else is treated as unprovable and
+/// cleared, never stripped in place, which is what this pins - together with its cost: the clause goes
+/// whole, taking a surviving engine setting with it. The cost is not hypothetical, because an unbacked
+/// slot is unprovable rather than provably freed: a caller can own the node outside `children`, as this
+/// setup does. Losing the clause is the safe direction. The transform must reach that result by pointer
+/// value alone; the node is kept alive here only so the test itself constructs no use-after-free.
+TEST(RemoveSettingsFromQuery, ClearsStorageSettingsSlotNotBackedByAnOwningChild)
+{
+    static constexpr std::string_view safety_settings[] = {
+        "max_rows_to_read",
+        "read_overflow_mode",
+        "max_execution_time",
+        "max_memory_usage",
+        "max_result_rows",
+        "max_result_bytes",
+    };
+
+    const String query
+        = "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS max_rows_to_read = 0, index_granularity = 1024";
+    ParserQuery parser(query.data() + query.size());
+    ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+    ASSERT_NE(nullptr, ast) << "query: " << query;
+
+    auto * create = ast->as<ASTCreateQuery>();
+    ASSERT_NE(nullptr, create);
+    ASSERT_NE(nullptr, create->storage);
+    ASSERT_NE(nullptr, create->storage->settings);
+
+    /// Move the owning `ASTPtr` out of `storage->children` and into the CREATE query's own `children`,
+    /// leaving the raw `storage->settings` slot set. The node stays alive and reachable from the root,
+    /// but is no longer backed by an owning child of `storage`. A fuzzer that drops the last
+    /// storage-owned reference reaches the same shape (only then the node may be freed) - the strip must
+    /// decide by the owning child alone, so it cannot tell this apart from freed and must fail closed.
+    auto & storage_children = create->storage->children;
+    ASTPtr moved;
+    for (const auto & child : storage_children)
+        if (child.get() == create->storage->settings)
+            moved = child;
+    ASSERT_NE(nullptr, moved) << "storage settings node was not in children to begin with";
+    storage_children.erase(
+        std::remove_if(
+            storage_children.begin(),
+            storage_children.end(),
+            [&](const ASTPtr & child) { return child.get() == create->storage->settings; }),
+        storage_children.end());
+    create->children.push_back(moved);
+
+    EXPECT_NO_THROW(removeSettingsFromQuery(ast, safety_settings)) << "query: " << query;
+
+    /// Fail-closed: the slot is cleared (not stripped in place), so the surrounding CREATE never
+    /// re-serializes a pointer it cannot prove live. The whole clause goes with it - the safety cap and
+    /// the surviving engine setting alike - which an address-reachability proof would have avoided only
+    /// by dereferencing that pointer.
+    EXPECT_EQ(nullptr, create->storage->settings) << "unbacked storage SETTINGS slot was not cleared";
+    const String formatted = ast->formatWithSecretsOneLine();
+    EXPECT_EQ(String::npos, formatted.find("max_rows_to_read")) << "safety cap survived in output: " << formatted;
+    EXPECT_EQ(String::npos, formatted.find("index_granularity"))
+        << "cleared slot still serialized an engine setting: " << formatted;
+
+    /// The node the slot pointed at must come out untouched: a slot with no owning child is never written
+    /// through, only cleared. Production reaches this branch with a pointer that may already be freed, so
+    /// this is the observable half of "not dereferenced" that a test can assert without itself
+    /// constructing a use-after-free. It stays out of the tree and is never re-serialized (above).
+    const auto & detached = moved->as<ASTSetQuery &>();
+    EXPECT_TRUE(detached.changes.tryGet("max_rows_to_read")) << "the unbacked node was stripped in place";
+    EXPECT_TRUE(detached.changes.tryGet("index_granularity")) << "the unbacked node was stripped in place";
+    ParserQuery reparser(formatted.data() + formatted.size());
+    ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+    EXPECT_NE(nullptr, reparsed) << "did not re-parse: " << formatted;
+}
+
 /// max_rows_to_read + read_overflow_mode = break bound the number of chunks a fuzzed query reads, but
 /// not the size of the first chunk. The block-forming settings decide that size: for a trivial
 /// INSERT ... SELECT into a table that prefers large blocks, applyTrivialInsertSelectOptimization
@@ -1401,4 +1739,133 @@ TEST(RemoveSettingsFromQuery, StripsBlockFormingOverrides)
         EXPECT_NE(String::npos, formatted.find("max_threads")) << "dropped a non-safety setting: " << formatted;
         EXPECT_EQ(String::npos, formatted.find("min_insert_block_size_rows")) << "kept a block-forming setting: " << formatted;
     }
+}
+
+/// `Bugfix validation (unit tests)` compiles the merge-base sources with only this PR's test files
+/// overlaid, so the test below must compile without the fix (which introduces
+/// `removeSettingsFromQueryTopLevel`). Resolve the function through ADL when it exists; without the fix,
+/// fall back to the whole-AST `removeSettingsFromQuery`, which also strips the timeouts the user wrote
+/// inside nested subqueries and thereby fails the expectations below - demonstrating the regression.
+template <typename Ast>
+auto stripTopLevelTimeoutCarriers(const Ast & ast, std::span<const std::string_view> names, int)
+    -> decltype(removeSettingsFromQueryTopLevel(ast, names))
+{
+    return removeSettingsFromQueryTopLevel(ast, names);
+}
+
+template <typename Ast>
+void stripTopLevelTimeoutCarriers(const Ast & ast, std::span<const std::string_view> names, Int64)
+{
+    removeSettingsFromQuery(ast, names);
+}
+
+/// `removeSettingsFromQueryTopLevel` strips only the top-level SETTINGS carriers of the query itself
+/// and must not descend into subqueries or table expressions. Parallel-replica INSERT SELECT uses it to
+/// drop the outer `max_execution_time` / `timeout_overflow_mode` (which would override the leaf values
+/// shipped with the context) while preserving a user-authored timeout inside a nested subquery - the
+/// documented leaf-node pattern for `max_execution_time_leaf`.
+TEST(RemoveSettingsFromQuery, TopLevelVariantSparesNestedSubqueries)
+{
+    static constexpr std::string_view leaf_timeout_settings[] = {"max_execution_time", "timeout_overflow_mode"};
+
+    /// {query, expected number of surviving `max_execution_time` occurrences (all in nested positions)}.
+    const std::vector<std::pair<String, size_t>> queries = {
+        /// Top-level SELECT clause is stripped (and pruned when it becomes empty).
+        {"SELECT sum(number) FROM numbers(100) SETTINGS max_execution_time = 100", 0},
+        /// Repeated occurrences are all stripped, not just the first.
+        {"SELECT 1 SETTINGS max_execution_time = 100, max_execution_time = 100, timeout_overflow_mode = 'break'", 0},
+        /// Both the INSERT clause and the top-level SELECT clause are stripped.
+        {"INSERT INTO t SETTINGS max_execution_time = 100 SELECT number FROM numbers(100) SETTINGS max_execution_time = 100", 0},
+        /// Every first-order SELECT of a UNION tree is stripped.
+        {"SELECT 1 SETTINGS max_execution_time = 100 UNION ALL SELECT 2 SETTINGS max_execution_time = 100", 0},
+        /// A nested subquery keeps its user-authored timeout; only the top-level clause is stripped.
+        {"SELECT * FROM (SELECT number FROM numbers(100) SETTINGS max_execution_time = 1) SETTINGS max_execution_time = 100", 1},
+        /// The same holds under an INSERT SELECT (the parallel-replica shape this variant exists for).
+        {"INSERT INTO t SELECT * FROM (SELECT number FROM numbers(100) SETTINGS max_execution_time = 1) "
+         "SETTINGS max_execution_time = 100, timeout_overflow_mode = 'break'", 1},
+        /// A subquery timeout survives even with no top-level clause at all.
+        {"INSERT INTO t SELECT * FROM (SELECT number FROM numbers(100) SETTINGS max_execution_time = 1)", 1},
+    };
+
+    for (const auto & [query, expected_nested_survivors] : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        stripTopLevelTimeoutCarriers(ast, leaf_timeout_settings, 0);
+
+        EXPECT_EQ(expected_nested_survivors, countSettingOccurrences(ast, "max_execution_time")) << "query: " << query;
+        EXPECT_EQ(0u, countSettingOccurrences(ast, "timeout_overflow_mode")) << "query: " << query;
+        EXPECT_FALSE(hasEmptySettingsNode(ast)) << "empty SETTINGS left for: " << query;
+
+        /// The serialized query must re-parse (no bare `SETTINGS` keyword after pruning).
+        const String formatted = ast->formatWithSecretsOneLine();
+        ParserQuery reparser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+        EXPECT_NE(nullptr, reparsed) << "did not re-parse: " << formatted;
+    }
+
+    /// Other settings in a stripped top-level clause survive, and the clause is kept.
+    {
+        const String query = "INSERT INTO t SELECT 1 SETTINGS max_execution_time = 100, max_block_size = 1";
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        stripTopLevelTimeoutCarriers(ast, leaf_timeout_settings, 0);
+
+        EXPECT_EQ(0u, countSettingOccurrences(ast, "max_execution_time")) << "query: " << query;
+        /// ParserInsertQuery parks the trailing SETTINGS on both the INSERT clause and the SELECT,
+        /// so the unrelated setting survives in two carriers (and the timeout is stripped from both).
+        EXPECT_EQ(2u, countSettingOccurrences(ast, "max_block_size")) << "dropped an unrelated setting: " << query;
+        EXPECT_FALSE(hasEmptySettingsNode(ast)) << "query: " << query;
+    }
+}
+
+/// `rewriteSettingsWithoutOnCluster` runs only for ON CLUSTER, which stateless tests cannot reach, hence a
+/// unit test.
+TEST(BackupSettingsDefault, OnClusterRebuildCarriesDefaultedNames)
+{
+    /// The rewrite injects `internal`, `async` and `host_id`, so it strips them from both carriers; `foo`
+    /// and `structure_only` are the controls.
+    const String query = "BACKUP TABLE t ON CLUSTER 'c' TO Disk('d', 'b') "
+                         "SETTINGS foo = DEFAULT, async = DEFAULT, internal = DEFAULT, host_id = DEFAULT, "
+                         "structure_only = 1";
+    ParserQuery parser(query.data() + query.size());
+    ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+    ASSERT_NE(nullptr, ast) << "query: " << query;
+
+    auto * backup_query = ast->as<ASTBackupQuery>();
+    ASSERT_NE(nullptr, backup_query) << "expected a BACKUP query";
+    /// All four names are in `default_settings` before the rewrite, so the checks below are not vacuous.
+    ASSERT_NE(nullptr, backup_query->settings);
+    const auto & parsed = backup_query->settings->as<const ASTSetQuery &>();
+    ASSERT_EQ(4u, parsed.default_settings.size()) << "query: " << query;
+
+    ASTPtr rewritten = backup_query->getRewrittenASTWithoutOnCluster({.default_database = "d", .host_id = "h"});
+    ASSERT_NE(nullptr, rewritten);
+    auto * rewritten_backup = rewritten->as<ASTBackupQuery>();
+    ASSERT_NE(nullptr, rewritten_backup);
+    ASSERT_NE(nullptr, rewritten_backup->settings);
+    const auto & rebuilt = rewritten_backup->settings->as<const ASTSetQuery &>();
+
+    EXPECT_EQ((std::vector<String>{"foo"}), rebuilt.default_settings)
+        << "the rewrite must strip exactly `async`, `internal` and `host_id` from `default_settings` "
+           "and keep every unrelated name";
+
+    /// `tryGet` returns the first match, and the strip erases all matches before the injection, so each
+    /// name below resolves to the injected copy.
+    const auto * async_change = rebuilt.changes.tryGet("async");
+    ASSERT_NE(nullptr, async_change) << "the rewrite did not inject `async`";
+    EXPECT_TRUE(async_change->safeGet<bool>());
+    const auto * internal_change = rebuilt.changes.tryGet("internal");
+    ASSERT_NE(nullptr, internal_change) << "the rewrite did not inject `internal`";
+    EXPECT_TRUE(internal_change->safeGet<bool>());
+    const auto * host_id_change = rebuilt.changes.tryGet("host_id");
+    ASSERT_NE(nullptr, host_id_change) << "the rewrite did not inject `host_id`";
+    EXPECT_EQ("h", host_id_change->safeGet<String>());
+    const auto * structure_only_change = rebuilt.changes.tryGet("structure_only");
+    ASSERT_NE(nullptr, structure_only_change) << "dropped an unrelated ordinary change";
+    EXPECT_TRUE(structure_only_change->safeGet<bool>());
 }

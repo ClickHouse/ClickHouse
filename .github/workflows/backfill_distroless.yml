@@ -27,7 +27,16 @@ jobs:
     # `steps: []`), so no distroless rebuild reached Docker Hub for a month.
     # This job only downloads prebuilt release debs and assembles layers, so it
     # does not need release-grade hardware.
-    runs-on: [self-hosted, arm-small]
+    #
+    # It does need to be x86_64. `ch-builder` installs the release debs, and
+    # clickhouse-server's postinst executes the binary to check the CPU. Under
+    # QEMU's amd64 emulation that check fails ("Instruction check fail. The CPU
+    # does not support SSSE3 instruction set."), dpkg --configure exits 1 and
+    # the build dies, so the amd64 image cannot be built on an aarch64 host at
+    # all. Run where amd64 is native and arm64 is the emulated arch, the same
+    # direction as ci/jobs/release_job.py and the amd-tiny docker_server /
+    # docker_keeper jobs that build these same images.
+    runs-on: [self-hosted, amd-medium]
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
@@ -44,7 +53,7 @@ jobs:
           # migration in ci/jobs/release_job.py. Two things are needed:
           #
           # 1. QEMU/binfmt registration. Both linux/amd64 and linux/arm64 are
-          #    built in one buildx invocation; this pool is aarch64, so amd64
+          #    built in one buildx invocation; this pool is x86_64, so arm64
           #    is the emulated arch. binfmt is pinned by digest (not `latest`)
           #    because it runs --privileged.
           # 2. A `docker-container` builder with host networking. The default

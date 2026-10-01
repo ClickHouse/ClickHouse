@@ -12,7 +12,7 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-upstream = cluster.add_instance("upstream", use_old_analyzer=True)
+upstream = cluster.add_instance("upstream")
 backward = cluster.add_instance(
     "backward",
     image="clickhouse/clickhouse-server",

@@ -43,6 +43,19 @@
       ]
     },
     {
+      "group": "Guides",
+      "pages": [
+        "products/managed-postgres/guides/bun",
+        "products/managed-postgres/guides/cloudflare-workers",
+        "products/managed-postgres/guides/drizzle",
+        "products/managed-postgres/guides/kysely",
+        "products/managed-postgres/guides/laravel",
+        "products/managed-postgres/guides/nodejs",
+        "products/managed-postgres/guides/prisma",
+        "products/managed-postgres/guides/ruby-on-rails"
+      ]
+    },
+    {
       "group": "Pricing",
       "pages": [
         "products/managed-postgres/pricing"
@@ -51,7 +64,8 @@
     {
       "group": "ClickHouse Integration",
       "pages": [
-        "products/managed-postgres/clickhouse-integration"
+        "products/managed-postgres/sync-to-clickhouse/clickpipes",
+        "products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {

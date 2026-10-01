@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 SET enable_parallel_replicas = 0;
 SET explain_query_plan_default = 'legacy';
 -- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so pin it to 0.
@@ -35,7 +33,8 @@ SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_join_order_limit = 10;
 SET use_statistics = 1, use_statistics_cache = 1;
 
-SELECT count() FROM test AS en, test AS de WHERE (en.path = de.path) AND (en.lang = 'en') AND (de.lang = 'de');
+SELECT count() FROM test AS en, test AS de WHERE (en.path = de.path) AND (en.lang = 'en') AND (de.lang = 'de')
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT REGEXP_REPLACE(REGEXP_REPLACE(explain, '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID'), '\\[.*?\\d+\\]', '[N]') AS explain FROM (
     EXPLAIN actions = 1 SELECT count() FROM test AS en, test AS de WHERE (en.path = de.path) AND (en.lang = 'en') AND (de.lang = 'de')
