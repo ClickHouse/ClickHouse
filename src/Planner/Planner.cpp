@@ -1271,6 +1271,14 @@ void addTotalsHavingStep(QueryPlan & query_plan,
 
     /// `TotalsHavingStep` evaluates `HAVING` itself, so a correlated subquery in `HAVING` has to be
     /// decorrelated into the plan before the step, the same way `addFilterStep` does it.
+    /// The decorrelation joins the aggregated stream, which drops the `AggregatedChunkInfo` of its chunks
+    /// and mixes the overflow row (the keys not included in `max_rows_to_group_by`) into the ordinary rows,
+    /// so it cannot be combined with the overflow row that `TotalsHavingStep` expects.
+    if (query_analysis_result.aggregate_overflow_row && having_analysis_result.correlated_subtrees.notEmpty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Correlated subqueries in HAVING are not supported yet with WITH TOTALS, max_rows_to_group_by, "
+            "group_by_overflow_mode = 'any' and totals_mode other than 'after_having_exclusive'");
+
     for (const auto & correlated_subquery : having_analysis_result.correlated_subtrees.subqueries)
         buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
 

@@ -7,7 +7,6 @@ doc_type: 'reference'
 ---
 
 import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 import { VersionBadge } from "/snippets/ru/components/VersionBadge/VersionBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
@@ -249,17 +248,13 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
 
 Чтобы использовать этот аутентификатор, ничего настраивать не нужно. Он создаётся автоматически при создании сервиса.
 
-<div id="enabling-jwt-authentication-for-your-service">
-  ## Включение JWT-аутентификации для сервиса
-</div>
-
-<BetaBadge />
+## Включение JWT-аутентификации для сервиса {#enabling-jwt-authentication-for-your-service}
 
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="JWT authentication with a custom identity provider" />
 
-Помимо встроенного аутентификатора, вы можете настроить сервис ClickHouse Cloud для приема JWT, выданных вашим провайдером идентификации (например, Microsoft Entra или Okta). Это бета-возможность, доступная в тарифе Enterprise для сервисов с ClickHouse версии 26.4 или более поздней. Вы можете настроить ее самостоятельно в консоли Cloud в разделе **Настройки → Безопасность → JWT-аутентификация** — пошаговые инструкции см. в разделе [Настройка JWT-аутентификации](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup). Каждый провайдер определяется следующими параметрами:
+Помимо встроенного аутентификатора, вы можете настроить сервис ClickHouse Cloud для приема JWT, выданных вашим провайдером идентификации (например, Microsoft Entra или Okta). Эта возможность доступна в тарифе Enterprise для сервисов с ClickHouse версии 26.4 или более поздней. Вы можете настроить ее самостоятельно в консоли Cloud в разделе **Настройки → Безопасность → JWT-аутентификация** — пошаговые инструкции см. в разделе [Настройка JWT-аутентификации](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup). Каждый провайдер определяется следующими параметрами:
 
 | Параметр                          | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
