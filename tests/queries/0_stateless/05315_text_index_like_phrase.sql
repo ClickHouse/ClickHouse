@@ -66,6 +66,10 @@ SELECT 'ilike, only word with k, no index', groupArray(id) FROM tab WHERE messag
 SELECT 'ilike, only word with s', groupArray(id) FROM tab WHERE message ILIKE '%java sunrise%' SETTINGS log_comment = '05315_ilike_s';
 SELECT 'ilike, only word with s, no index', groupArray(id) FROM tab WHERE message ILIKE '%java sunrise%' SETTINGS use_skip_indexes = 0;
 
+-- Both 'heap' and 'ab001' can be searched; 'ab001' is chosen, as more of its leading characters narrow the dictionary scan.
+SELECT 'ilike, two searchable words', groupArray(id) FROM tab WHERE message ILIKE '%java heap ab001%' SETTINGS log_comment = '05315_ilike_two_words';
+SELECT 'ilike, two searchable words, no index', groupArray(id) FROM tab WHERE message ILIKE '%java heap ab001%' SETTINGS use_skip_indexes = 0;
+
 SELECT 'not like', count() FROM tab WHERE NOT (message LIKE '%java heap%');
 SELECT 'not like, no index', count() FROM tab WHERE NOT (message LIKE '%java heap%') SETTINGS use_skip_indexes = 0;
 SELECT 'not ilike', count() FROM tab WHERE NOT (message ILIKE '%java heap%');
@@ -97,6 +101,15 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_databa
   AND log_comment IN ('05315_like', '05315_like_punctuation', '05315_like_short', '05315_ilike', '05315_ilike_three',
                       '05315_ilike_kelvin', '05315_ilike_k', '05315_ilike_s', '05315_like_and_ilike', '05315_like_budget',
                       '05315_ilike_prefix', '05315_ilike_all_blocks')
+ORDER BY log_comment;
+
+-- Every row is a granule, so a phrase query reads exactly the rows holding a token that matches its searched word.
+SELECT log_comment, read_rows
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND log_comment IN ('05315_like', '05315_like_punctuation', '05315_ilike', '05315_ilike_three', '05315_ilike_kelvin',
+                      '05315_ilike_two_words')
 ORDER BY log_comment;
 
 DROP TABLE tab;

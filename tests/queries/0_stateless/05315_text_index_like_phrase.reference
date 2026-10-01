@@ -14,6 +14,8 @@ ilike, only word with k	[114]
 ilike, only word with k, no index	[114]
 ilike, only word with s	[111,112]
 ilike, only word with s, no index	[111,112]
+ilike, two searchable words	[]
+ilike, two searchable words, no index	[]
 not like	61
 not like, no index	61
 not ilike	58
@@ -37,6 +39,12 @@ every dictionary block	[11,12,13,14,15,16,17,18,19,20]
 05315_like_budget	1	1	0
 05315_like_punctuation	1	0	1
 05315_like_short	0	0	0
+05315_ilike	9
+05315_ilike_kelvin	9
+05315_ilike_three	7
+05315_ilike_two_words	1
+05315_like	5
+05315_like_punctuation	1
 Nullable
 like	[101]
 like, no index	[101]
