@@ -2269,6 +2269,8 @@ struct ConvertImpl
             || std::is_same_v<FromDataType, DataTypeFloat32>
             || std::is_same_v<FromDataType, DataTypeFloat64>
             || std::is_same_v<FromDataType, DataTypeBFloat16>
+            || std::is_same_v<FromDataType, DataTypeEnum8>
+            || std::is_same_v<FromDataType, DataTypeEnum16>
             ) && std::is_same_v<ToDataType, DataTypeDate>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransformFromSecondsOrDays<typename FromDataType::FieldType, date_time_overflow_behavior>, false>::template execute<Additions>(
@@ -2315,10 +2317,13 @@ struct ConvertImpl
         /// convenience, Float32, Float64, BFloat16) to DateTime. Without the wide integers here the
         /// conversion would fall through to the generic numeric path, which narrows to `UInt32` modulo
         /// 2^32 instead of saturating - and the monotonicity `toDateTime` claims would not hold.
+        /// `Enum8`/`Enum16` are stored as `Int8`/`Int16`, so they take the same saturating transform.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeInt8>
                 || std::is_same_v<FromDataType, DataTypeInt16>
-                || std::is_same_v<FromDataType, DataTypeInt32>)
+                || std::is_same_v<FromDataType, DataTypeInt32>
+                || std::is_same_v<FromDataType, DataTypeEnum8>
+                || std::is_same_v<FromDataType, DataTypeEnum16>)
             && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, date_time_overflow_behavior>, false>::template execute<Additions>(
@@ -3585,7 +3590,10 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return std::is_same_v<Name, NameToString>; }
+    bool isInjective(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return std::is_same_v<Name, NameToString> && arguments.size() <= 1;
+    }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));
