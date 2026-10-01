@@ -480,8 +480,8 @@ def send_test_data():
                 {"__name__": "bad_le_bucket", "le": "+Inf"},
                 {300: 60},
             ),
-            # A NaN `le` label is parseable as a Float64, but it is not a valid
-            # histogram bucket bound and must be dropped like other malformed bounds.
+            # A NaN `le` label is parseable as a Float64. Prometheus keeps the series,
+            # while ClickHouse's existing histogram aggregate ignores the NaN bound.
             (
                 {"__name__": "nan_le_bucket", "le": "NaN"},
                 {300: 25},
@@ -5317,14 +5317,16 @@ def test_histogram_quantile():
         eps=1e-12,
     )
 
-    # A NaN `le` label is parseable by toFloat64OrNull, but Prometheus drops it as
-    # an invalid bucket. In particular, it must not turn an all-invalid histogram
-    # into a zero-valued result.
+    # A NaN `le` label is parseable as Float64. Prometheus keeps the series and
+    # returns NaN for this invalid one-bucket histogram. ClickHouse's existing scalar
+    # histogram aggregate ignores NaN bounds and returns its default value, so keep
+    # that baseline behavior in this performance-only change.
     do_query_test(
         "histogram_quantile(0.5, nan_le_bucket)",
         300,
-        '{"resultType": "vector", "result": []}',
-        [],
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "NaN"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "0"]],
+        clickhouse_http_api_result_is_same_as_prometheus=False,
     )
 
     # Idiomatic `histogram_quantile(phi, rate(bucket[window]))` pattern.
@@ -5415,12 +5417,12 @@ def test_histogram_quantile():
 def test_histogram_quantile_with_float32_scalar():
     node.query(
         "CREATE TABLE prometheus_f32_histogram "
-        "(time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+        "(samples Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
     )
 
     try:
         node.query(
-            "INSERT INTO prometheus_f32_histogram (metric_name, tags, time_series) VALUES"
+            "INSERT INTO prometheus_f32_histogram (metric_name, tags, samples) VALUES"
             " ('rate_bucket', {'le': '0.1'}, [(toDateTime64(300, 3), toFloat32(10)), (toDateTime64(330, 3), toFloat32(15)), (toDateTime64(360, 3), toFloat32(20))]),"
             " ('rate_bucket', {'le': '0.5'}, [(toDateTime64(300, 3), toFloat32(30)), (toDateTime64(330, 3), toFloat32(45)), (toDateTime64(360, 3), toFloat32(60))]),"
             " ('rate_bucket', {'le': '1.0'}, [(toDateTime64(300, 3), toFloat32(50)), (toDateTime64(330, 3), toFloat32(75)), (toDateTime64(360, 3), toFloat32(100))]),"

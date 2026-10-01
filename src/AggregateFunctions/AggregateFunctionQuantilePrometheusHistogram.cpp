@@ -776,8 +776,8 @@ struct QuantilePrometheusHistogramArrayData
             if (sorted_values.empty())
             {
                 /// Match the nested aggregate's empty-state result when all non-NULL values had
-                /// an invalid upper bound. The PromQL lowering filters those rows before this
-                /// aggregate is called, but keeping the direct aggregate equivalent is useful.
+                /// an invalid upper bound. This also preserves the previous ForEach lowering
+                /// behavior for parsable NaN bucket labels.
                 result_value = 0;
             }
             else if (sorted_values.size() >= 2 && sorted_values.back().first == std::numeric_limits<UnderlyingType>::infinity())
