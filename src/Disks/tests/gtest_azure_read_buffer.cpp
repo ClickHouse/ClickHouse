@@ -262,14 +262,11 @@ TEST(AzureReadUntilPosition, ExactRangeResponse)
 }
 
 /// An endpoint that returns less than the requested range must not make the reader report bytes it
-/// never received.
+/// never received, nor report the end of the data before the right bound: the bound is set locally
+/// and taken as the length of the data, so the read fails instead of being silently truncated.
 TEST(AzureReadUntilPosition, ShortRangeResponse)
 {
-    std::string data;
-    ASSERT_NO_THROW(data = readWithRightBound(/* response_size */ 40, /* read_until_position */ 100, /* buffer_size */ 64));
-
-    ASSERT_EQ(data.size(), static_cast<size_t>(40));
-    assertCountsUpFromZero(data);
+    ASSERT_THROW(readWithRightBound(/* response_size */ 40, /* read_until_position */ 100, /* buffer_size */ 64), DB::Exception);
 }
 
 namespace
