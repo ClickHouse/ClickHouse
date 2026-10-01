@@ -1,0 +1,6 @@
+INCORRECT_DATA
+INCORRECT_DATA
+root type of an ORC file must be a struct
+INCORRECT_DATA
+but it is bigint
+10

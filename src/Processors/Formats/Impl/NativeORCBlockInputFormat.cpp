@@ -1066,7 +1066,11 @@ static void getFileReader(
     options.setCacheOptions(orc::CacheOptions{.holeSizeLimit = hole_size_limit, .rangeSizeLimit = range_size_limit});
 
     auto input_stream = asORCInputStream(in, format_settings, use_prefetch, is_stopped);
-    file_reader = orc::createReader(std::move(input_stream), options);
+    auto reader = orc::createReader(std::move(input_stream), options);
+    if (reader->getType().getKind() != orc::STRUCT)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "The root type of an ORC file must be a struct, but it is {}", reader->getType().toString());
+    file_reader = std::move(reader);
 }
 
 static const orc::Type *
@@ -1557,7 +1561,7 @@ void ORCColumnToCHColumn::orcTableToCHChunk(
 {
     const auto * struct_batch = dynamic_cast<const orc::StructVectorBatch *>(table);
     if (!struct_batch)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC table must be StructVectorBatch but is {}", struct_batch->toString());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC table must be StructVectorBatch but is {}", table->toString());
 
     if (schema->getSubtypeCount() != struct_batch->fields.size())
         throw Exception(
