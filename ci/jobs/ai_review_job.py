@@ -137,8 +137,10 @@ def _run_codex_once(loom_config, commit="HEAD"):
         }
         # -s workspace-write: writable workspace + /tmp + CODEX_HOME,
         #   read-only elsewhere; sufficient for the review output.
-        # sandbox_workspace_write.network_access=true: the Loom CLI needs
-        #   network.
+        # sandbox_workspace_write.network_access: the agent's commands reach
+        #   the network only when Loom is configured, for the Loom CLI; the
+        #   agent needs nothing else from the network (Codex's own model calls
+        #   do not depend on this).
         # approval_policy=never: codex `exec` is non-interactive,
         #   but the approval policy still applies; "never" lets the
         #   agent execute without blocking on an approval request.
@@ -152,7 +154,8 @@ def _run_codex_once(loom_config, commit="HEAD"):
         #   which has no argument size limit.
         command = [
             codex, "exec", "-m", MODEL, "-c", f"model_reasoning_effort={REASONING_EFFORT}",
-            "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
+            "-s", "workspace-write",
+            "-c", f"sandbox_workspace_write.network_access={'true' if loom_config.available() else 'false'}",
             "-c", "approval_policy=never", "-c", "project_doc_max_bytes=0",
             "--color", "never", "--skip-git-repo-check", "-",
         ]
