@@ -20,11 +20,13 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionNotHas>(FunctionFactory::instance().get("not", context));
+        return std::make_shared<FunctionNotHas>(
+            FunctionFactory::instance().get("not", context), createInternalFunctionHasOverloadResolver(context));
     }
 
-    explicit FunctionNotHas(FunctionOverloadResolverPtr not_function_resolver_)
+    FunctionNotHas(FunctionOverloadResolverPtr not_function_resolver_, FunctionOverloadResolverPtr has_function_resolver_)
         : not_function_resolver(std::move(not_function_resolver_))
+        , has_function_resolver(std::move(has_function_resolver_))
     {
     }
 
@@ -40,14 +42,14 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto has_function = createInternalFunctionHasOverloadResolver()->build(arguments);
+        auto has_function = has_function_resolver->build(arguments);
         ColumnsWithTypeAndName not_arguments{{nullptr, has_function->getResultType(), ""}};
         return not_function_resolver->build(not_arguments)->getResultType();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto has_function = createInternalFunctionHasOverloadResolver()->build(arguments);
+        auto has_function = has_function_resolver->build(arguments);
         auto has_result = has_function->execute(arguments, has_function->getResultType(), input_rows_count, /*dry_run*/ false);
 
         ColumnsWithTypeAndName not_arguments{{has_result, has_function->getResultType(), ""}};
@@ -57,6 +59,7 @@ public:
 
 private:
     FunctionOverloadResolverPtr not_function_resolver;
+    FunctionOverloadResolverPtr has_function_resolver;
 };
 
 }
