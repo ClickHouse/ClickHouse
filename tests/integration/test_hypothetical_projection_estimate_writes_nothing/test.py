@@ -24,7 +24,9 @@ def test_estimate_does_not_touch_the_part_directory(started_cluster):
     node.query("DROP TABLE IF EXISTS t_writes SYNC")
     node.query(
         "CREATE TABLE t_writes (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a "
-        "SETTINGS index_granularity = 100, min_bytes_for_wide_part = 0"
+        "SETTINGS index_granularity = 100, min_bytes_for_wide_part = 0, "
+        # implicit min-max indices would be inherited by the projection, which `EXPLAIN WHATIF` does not estimate
+        "add_minmax_index_for_numeric_columns = 0"
     )
     node.query("INSERT INTO t_writes SELECT number, number % 100 FROM numbers(1000)")
 
