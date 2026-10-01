@@ -258,6 +258,16 @@ public:
         is_merge_tree = is_merge_tree_value;
     }
 
+    bool producesMergeableState() const
+    {
+        return produces_mergeable_state;
+    }
+
+    void setProducesMergeableState(bool produces_mergeable_state_value)
+    {
+        produces_mergeable_state = produces_mergeable_state_value;
+    }
+
     const std::optional<ActionsDAG> & getPrewhereFilterActions() const
     {
         return prewhere_filter_actions;
@@ -370,6 +380,9 @@ private:
 
     /// Is storage merge tree
     bool is_merge_tree = false;
+
+    /// Does storage produce mergeable partial state (see `IStorage::producesMergeableState`)
+    bool produces_mergeable_state = false;
 };
 
 }
