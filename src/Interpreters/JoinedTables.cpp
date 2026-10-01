@@ -42,7 +42,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int ALIAS_REQUIRED;
     extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int LOGICAL_ERROR;
@@ -349,20 +348,11 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
         StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
 
         /// A special storage replaces the right-side plan, and with it the `FilterStep` carrying the
-        /// table's row policy, so such a table has to be joined as an ordinary stream. A `Join` table
-        /// is a prebuilt hash table read as is, so it cannot be filtered at all.
-        if (storage)
-        {
-            auto row_policy_filter = context->getRowPolicyFilter(
-                joined_table_id.getDatabaseName(), joined_table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-            if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
-            {
-                if (typeid_cast<StorageJoin *>(storage.get()))
-                    throw Exception(ErrorCodes::ACCESS_DENIED,
-                        "Cannot join table {} with the Join engine because a row policy is applied on it", joined_table_id.getNameForLogs());
-                storage = nullptr;
-            }
-        }
+        /// table's row policy, so such a table has to be joined as an ordinary stream.
+        auto joined_table_row_policy = context->getRowPolicyFilter(
+            joined_table_id.getDatabaseName(), joined_table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        if (joined_table_row_policy && !joined_table_row_policy->isAlwaysTrue())
+            storage = nullptr;
 
         if (storage)
         {
