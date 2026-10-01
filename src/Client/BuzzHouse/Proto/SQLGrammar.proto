@@ -2547,6 +2547,9 @@ message BackupRestoreElement {
         bool all = 2;
     }
     repeated ExprSchemaTable except_tables = 3;
+    /// EXCEPT DATA FROM TABLE[S], BACKUP only
+    optional bool except_data_plural = 4;
+    repeated ExprSchemaTable except_data_tables = 5;
 }
 
 message BackupRestore {

@@ -5606,6 +5606,20 @@ CONV_FN(BackupRestoreElement, backup)
             ExprSchemaTableToString(ret, backup.except_tables(i));
         }
     }
+    if (backup.except_data_tables_size())
+    {
+        ret += " EXCEPT DATA FROM TABLE";
+        ret += backup.except_data_plural() ? "S" : "";
+        ret += " ";
+        for (int i = 0; i < backup.except_data_tables_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ExprSchemaTableToString(ret, backup.except_data_tables(i));
+        }
+    }
 }
 
 CONV_FN(BackupRestore, backup)

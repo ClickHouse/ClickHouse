@@ -3189,6 +3189,33 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
                   bre->mutable_bobject(), rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)));
           }},
          {everything, [&] { bre->set_all(true); }}});
+    if (rg.nextSmallNumber() < 3)
+    {
+        /// EXCEPT DATA FROM TABLE[S]: back up table definitions without their rows
+        if (bre->has_bobject() && bre->bobject().sobject() != SQLObject::DATABASE)
+        {
+            /// A single-object element can only name its own object
+            bre->add_except_data_tables()->CopyFrom(bre->bobject().object().est());
+        }
+        else
+        {
+            /// A DATABASE element can name its own tables, ALL can name any
+            const std::optional<String> dname
+                = bre->has_bobject() ? std::make_optional(bre->bobject().object().database().value()) : std::nullopt;
+            const auto in_scope = [&](const SQLTable & t) { return t.isAttached() && (!dname || t.getDatabaseName() == dname.value()); };
+
+            if (collectionHas<SQLTable>(in_scope))
+            {
+                const uint32_t ntables = rg.randomInt<uint32_t>(1, 3);
+
+                for (uint32_t i = 0; i < ntables; i++)
+                {
+                    rg.pickRandomly(filterCollection<SQLTable>(in_scope)).get().setName(bre->add_except_data_tables(), rg.nextBool());
+                }
+            }
+        }
+        bre->set_except_data_plural(rg.nextBool());
+    }
     setClusterClause(rg, cluster, br->mutable_cluster());
     setBackupOut(rg, br->mutable_out());
 
@@ -3258,6 +3285,12 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
               }},
              {restore_database,
               [&] { cluster = backupOrRestoreDatabase(bre->mutable_bobject(), rg.pickValueRandomlyFromMap(backup.databases)); }}});
+    }
+    if (bre->has_bobject() && bre->bobject().sobject() == SQLObject::TABLE && rg.nextMediumNumber() < 3)
+    {
+        /// EXCEPT DATA FROM TABLE[S] is BACKUP only, RESTORE rejects it
+        bre->add_except_data_tables()->CopyFrom(bre->bobject().object().est());
+        bre->set_except_data_plural(rg.nextBool());
     }
 
     setClusterClause(rg, cluster, br->mutable_cluster());
