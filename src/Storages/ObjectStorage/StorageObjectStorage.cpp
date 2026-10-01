@@ -39,6 +39,7 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Databases/IDatabase.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DataLake/Common.h>
@@ -69,12 +70,14 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
     extern const int ACCESS_DENIED;
     extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace FailPoints
 {
+    extern const char iceberg_drop_catalog_remove_fail[];
     extern const char datalake_simulate_missing_table_state[];
 }
 
@@ -989,16 +992,54 @@ void StorageObjectStorage::truncate(
     object_storage->removeObjectsIfExist(objects);
 }
 
+void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) const
+{
+    /// All settings, the Iceberg metadata init in drop() reads more than `iceberg_delete_data_on_drop`.
+    drop_query_settings = std::make_shared<const Settings>(query_context->getSettingsCopy());
+}
+
 void StorageObjectStorage::drop()
 {
-    /// We cannot use query context here, because drop is executed in the background.
-    auto drop_context = Context::getGlobalContextInstance();
-    if (catalog)
+    dropImpl(configuration, object_storage, catalog, storage_id, drop_query_settings);
+}
+
+void StorageObjectStorage::dropImpl(
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStoragePtr & object_storage,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const StorageID & storage_id,
+    const std::shared_ptr<const Settings> & query_settings)
+{
+    auto drop_context = Context::createCopy(Context::getGlobalContextInstance());
+    if (query_settings)
+        drop_context->setSettings(*query_settings);
+    const bool delete_data_on_drop = drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
+    /// A table from a DataLakeCatalog database is a fresh instance with no metadata loaded yet.
+    if (delete_data_on_drop && configuration->isIcebergConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, drop_context);
+
+    auto commit = [&catalog, &storage_id, delete_data_on_drop]
     {
-        const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
+        fiu_do_on(FailPoints::iceberg_drop_catalog_remove_fail, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop catalog removal");
+        });
+
+        if (catalog)
+        {
+            const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+            catalog->dropTable(namespace_name, table_name, delete_data_on_drop);
+        }
+    };
+
+    /// A Nil database UUID means Ordinary/Memory, as in InterpreterDropQuery.
+    DropCleanupPolicy policy = DropCleanupPolicy::CatalogRetry;
+    if (catalog == nullptr)
+    {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.database_name);
+        policy = (database && database->getUUID() == UUIDHelpers::Nil) ? DropCleanupPolicy::Reattaching
+                                                                       : DropCleanupPolicy::AsyncRetry;
     }
-    configuration->drop(drop_context);
+    configuration->drop(drop_context, commit, policy);
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(

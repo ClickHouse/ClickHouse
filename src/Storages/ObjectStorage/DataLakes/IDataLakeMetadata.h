@@ -31,6 +31,14 @@ namespace ErrorCodes
 extern const int UNSUPPORTED_METHOD;
 }
 
+/// Which failed file deletes a drop may ignore, depending on how the owning database handles a throwing drop().
+enum class DropCleanupPolicy : uint8_t
+{
+    Reattaching, /// Ordinary/Memory reattach the table: ignore failures once any file was deleted.
+    AsyncRetry, /// Atomic/Replicated retry the drop: ignore nothing.
+    CatalogRetry, /// DataLakeCatalog: retryable until the catalog entry is removed, ignore failures only after that.
+};
+
 class BackgroundJobsAssignee;
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
@@ -198,7 +206,8 @@ public:
         throwNotImplemented(fmt::format("EXECUTE {}", command_name));
     }
 
-    virtual void drop(ContextPtr) { }
+    /// Deletes the table files; must call `commit` (the catalog entry removal) exactly once.
+    virtual void drop(ContextPtr, const std::function<void()> & commit, DropCleanupPolicy /*policy*/) { commit(); }
 
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
 

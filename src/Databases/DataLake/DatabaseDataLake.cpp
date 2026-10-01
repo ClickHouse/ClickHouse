@@ -1104,7 +1104,11 @@ void DatabaseDataLake::dropTable( /// NOLINT
 
     auto table = tryGetTableImpl(name, context_, /*lightweight*/ false, /*ignore_if_not_iceberg*/ false, /*use_stateful_tables*/ false);
     if (table)
+    {
+        /// A fresh instance, so pass it the DROP query settings the way InterpreterDropQuery does.
+        table->checkTableCanBeDropped(context_);
         table->drop();
+    }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot drop table {} because it does not exist", name);
 }

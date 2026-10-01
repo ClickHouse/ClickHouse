@@ -372,10 +372,12 @@ public:
         return getMetadata()->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
     }
 
-    void drop(ContextPtr local_context) override
+    void drop(ContextPtr local_context, const std::function<void()> & commit, DropCleanupPolicy policy) override
     {
         if (auto metadata = tryGetMetadata())
-            metadata->drop(local_context);
+            metadata->drop(local_context, commit, policy);
+        else
+            commit();
     }
 
     SinkToStoragePtr write(

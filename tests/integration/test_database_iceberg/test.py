@@ -1454,6 +1454,97 @@ def test_drop_table(started_cluster):
     assert len(catalog.list_tables(root_namespace)) == 0
 
 
+PARALLEL_REPLICAS = {
+    "parallel_replicas_for_cluster_engines": 1,
+    "enable_parallel_replicas": 2,
+    "cluster_for_parallel_replicas": "cluster_simple",
+}
+
+
+def create_table_with_data(started_cluster, node, namespace, table_name, additional_settings={}):
+    create_clickhouse_iceberg_table(started_cluster, node, namespace, table_name, "(x String)", additional_settings)
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{namespace}.{table_name}` VALUES ('a')",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+
+
+def drop_table_delete_data(node, namespace, table_name, settings={}):
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.{table_name}`",
+        settings={"iceberg_delete_data_on_drop": 1, **settings},
+    )
+
+
+def table_files(started_cluster, table_name):
+    return list_s3_objects(started_cluster.minio_client, "warehouse-rest", prefix=f"{table_name}/")
+
+
+def test_drop_table_delete_data(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    namespace = f"test_drop_delete_data_{uuid.uuid4()}"
+
+    for suffix, settings in (("on", {}), ("on_parallel_replicas", PARALLEL_REPLICAS)):
+        table_name = f"{namespace}_{suffix}"
+        create_table_with_data(started_cluster, node, namespace, table_name)
+        drop_table_delete_data(node, namespace, table_name, settings)
+        assert len(table_files(started_cluster, table_name)) == 0
+
+    # Without the setting the files are kept.
+    table_name = f"{namespace}_off"
+    create_table_with_data(started_cluster, node, namespace, table_name)
+    node.query(f"DROP TABLE {CATALOG_NAME}.`{namespace}.{table_name}`")
+    assert len(table_files(started_cluster, table_name)) > 0
+    assert len(catalog.list_tables(namespace)) == 0
+
+
+def test_drop_table_delete_data_retry_after_failure(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    namespace = f"test_drop_delete_data_retry_{uuid.uuid4()}"
+    table_name = f"{namespace}_tbl"
+    create_table_with_data(started_cluster, node, namespace, table_name, {"iceberg_use_version_hint": 1})
+
+    # Fail the catalog entry removal: the table and its metadata files must survive for a retry.
+    node.query("SYSTEM ENABLE FAILPOINT iceberg_drop_catalog_remove_fail")
+    try:
+        error = node.query_and_get_error(
+            f"DROP TABLE {CATALOG_NAME}.`{namespace}.{table_name}`",
+            settings={"iceberg_delete_data_on_drop": 1},
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_drop_catalog_remove_fail")
+    assert "FAULT_INJECTED" in error
+    assert len(catalog.list_tables(namespace)) == 1
+    files = table_files(started_cluster, table_name)
+    assert any(f.endswith(".metadata.json") for f in files)
+    assert any(f.endswith("metadata/version-hint.text") for f in files)
+
+    drop_table_delete_data(node, namespace, table_name)
+    assert len(catalog.list_tables(namespace)) == 0
+    assert len(table_files(started_cluster, table_name)) == 0
+
+
+def test_drop_table_delete_data_metadata_delete_failure(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    namespace = f"test_drop_delete_data_metadata_failure_{uuid.uuid4()}"
+    table_name = f"{namespace}_tbl"
+    create_table_with_data(started_cluster, node, namespace, table_name)
+
+    # The catalog entry is already removed when the metadata files are deleted, so their failure does not fail the DROP.
+    node.query("SYSTEM ENABLE FAILPOINT iceberg_drop_metadata_anchor_fail")
+    try:
+        drop_table_delete_data(node, namespace, table_name)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_drop_metadata_anchor_fail")
+    assert len(catalog.list_tables(namespace)) == 0
+
+
 def test_table_with_slash(started_cluster):
     node = started_cluster.instances["node1"]
 
