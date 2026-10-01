@@ -1,4 +1,4 @@
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 -- ClickHouse aggregate names must not bypass KQL's `summarize` requirement.

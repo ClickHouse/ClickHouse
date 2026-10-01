@@ -1,7 +1,7 @@
 -- The table function `eval` resolves to a StorageView, so the AST-based arms of EXPLAIN AST and
 -- EXPLAIN SYNTAX rewrite it into a subquery, the same way `view` is rewritten.
 
-SET allow_experimental_eval_table_function = 1;
+SET enable_eval_table_function = 1;
 
 -- The rewrite replaces the `eval(...)` node with the generated query, which is what lets the
 -- analysis behind it expand `*` into the generated column.

@@ -1,4 +1,4 @@
-set allow_experimental_kusto_dialect=1;
+set enable_kusto_dialect=1;
 set dialect='kusto';
 print ' -- binary functions';
 -- [removed in the KQL rewrite] Received exception from server (version 26.8.1):

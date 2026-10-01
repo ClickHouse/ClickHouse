@@ -3,7 +3,7 @@
 -- died on the `.` as unsupported member access. Every carrier of that classifier is covered here:
 -- a `let` binding, a tabular function body reached through a second `let`, and `in (...)`.
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- a let binds a database-qualified table --';
