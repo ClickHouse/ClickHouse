@@ -820,6 +820,12 @@ def test_dates_casting(started_cluster):
     )
     assert (
         node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date NOT IN (toDateTime('2000-01-01 12:00:00'))"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
             "SELECT COUNT() FROM dates_table WHERE k_dateTime IN (toDateTime64('1999-02-28 11:23:16.5', 3))"
         )
         == "0\n"

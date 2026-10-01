@@ -389,7 +389,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
         /// A member converts as `IN` converts it, strictly but to the column's type; a member the type cannot
         /// hold matches nothing. MongoDB compares the stored value, though: a `Date` member made of a `DateTime`
         /// with a time of day would be sent as midnight and miss the row, so such a member is refused like a
-        /// lossy bound.
+        /// lossy bound. `$nin` only returns more rows, which the `WHERE` drops, so it keeps the member.
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(const_type.get());
         const auto * array_type = typeid_cast<const DataTypeArray *>(const_type.get());
         Array converted_elements;
@@ -419,7 +419,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
                 LOG_DEBUG(log, "Constant value {} matches no value of column type {}", value_string, column_type->getName());
                 continue;
             }
-            if (tryConvertFieldToTypeExact(elements[i], *column_type, element_type.get()).isNull())
+            if (func_name == "$in" && tryConvertFieldToTypeExact(elements[i], *column_type, element_type.get()).isNull())
             {
                 auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
                 LOG_DEBUG(log, "Constant value {} is not stored as a value of column type {}", value_string, column_type->getName());
