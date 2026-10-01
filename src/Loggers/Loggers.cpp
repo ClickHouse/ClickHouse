@@ -6,6 +6,7 @@
 #include <Loggers/OwnPatternFormatter.h>
 #include <Loggers/OwnSplitChannel.h>
 
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 
@@ -68,40 +69,15 @@ static std::string renderFileNameTemplate(time_t now, const std::string & file_p
     return path.replace_filename(ss.str());
 }
 
-/// RFC 5424 defines APP-NAME as 1-48 printable ASCII characters (%d33-126), which excludes space.
-/// `Poco::Net::RemoteSyslogChannel` writes the name verbatim into the message header, so a value containing
-/// whitespace would shift every following header field and produce a malformed record.
-static constexpr size_t max_syslog_program_name_length = 48;
-
-static bool isValidSyslogProgramName(const std::string & program_name)
-{
-    if (program_name.empty() || program_name.size() > max_syslog_program_name_length)
-        return false;
-
-    for (const char c : program_name)
-    {
-        if (c < '!' || c > '~')
-            return false;
-    }
-
-    return true;
-}
-
-/// Reject an explicitly configured name early instead of silently emitting broken syslog messages.
+/// RFC 5424 APP-NAME: 1-48 printable ASCII characters, no spaces.
 static void validateSyslogProgramName(const std::string & program_name)
 {
-    if (program_name.empty() || program_name.size() > max_syslog_program_name_length)
+    if (program_name.empty()
+        || program_name.size() > 48
+        || std::any_of(program_name.begin(), program_name.end(), [](char c) { return c < '!' || c > '~'; }))
         throw DB::Exception(
             DB::ErrorCodes::BAD_ARGUMENTS,
-            "logger.syslog.programname must be between 1 and {} characters long (RFC 5424 APP-NAME), got {}",
-            max_syslog_program_name_length,
-            program_name.size());
-
-    if (!isValidSyslogProgramName(program_name))
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "logger.syslog.programname must contain only printable ASCII characters and no whitespace "
-            "(RFC 5424 APP-NAME), got '{}'",
+            "logger.syslog.programname must be 1 to 48 printable ASCII characters without spaces, got '{}'",
             program_name);
 }
 
@@ -242,10 +218,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         auto syslog_level = Poco::Logger::parseLevel(config.getString("logger.syslog_level", log_level_string));
         max_log_level = std::max(syslog_level, max_log_level);
 
-        /// Only an explicitly configured name is validated: the `cmd_name` fallback comes from the binary name
-        /// and has always been passed to local syslog as-is, so rejecting it could break existing setups.
         std::string syslog_program_name = cmd_name;
-        if (config.has("logger.syslog.programname"))
+        const bool has_program_name = config.has("logger.syslog.programname");
+        if (has_program_name)
         {
             syslog_program_name = config.getString("logger.syslog.programname");
             validateSyslogProgramName(syslog_program_name);
@@ -260,12 +235,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             {
                 syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_HOST, config.getString("logger.syslog.hostname"));
             }
-            /// This path never set the name before, so `Poco` kept its `-` default for RFC 5424 `APP-NAME`.
-            /// Only take that default over when the value is a valid `APP-NAME`. An explicitly configured value
-            /// is already guaranteed valid by `validateSyslogProgramName` above, so this only guards the
-            /// `cmd_name` fallback: an unusual binary name must not start producing malformed headers for a
-            /// deployment that never configured this setting.
-            if (isValidSyslogProgramName(syslog_program_name))
+            if (has_program_name)
                 syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_NAME, syslog_program_name);
             syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_FORMAT, config.getString("logger.syslog.format", "syslog"));
             syslog_channel->setProperty(
