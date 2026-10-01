@@ -3,7 +3,8 @@
 -- only for the statistics, and an unsupported shape leaves both byte counters at zero. Once a shape
 -- becomes supported its counters stop being zero and this test fails, which is the signal to drop
 -- the case from here and cover the new behaviour elsewhere. The reason a shape is rejected is
--- printed by `optimizeTree` and `RuntimeDataflowStatisticsCacheUpdater` at the debug level.
+-- printed by the `AutoParallelReplicas` and `RuntimeDataflowStatisticsCacheUpdater` loggers, mostly
+-- at the trace level.
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
