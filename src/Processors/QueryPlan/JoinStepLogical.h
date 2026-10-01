@@ -285,7 +285,7 @@ public:
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override;
     String getName() const override { return "JoinStepLogicalLookup"; }
 
-    QueryPlanRawPtrs getChildPlans() override;
+    QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
 
     PreparedJoinStorage & getPreparedJoinStorage() { return prepared_join_storage; }
 
