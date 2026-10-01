@@ -99,7 +99,24 @@ of the PR surface that existed when the worker began:
 
 ```bash
 git fetch origin "$BASE_BRANCH"
-git reset --hard "$HEAD_REMOTE/$HEAD_BRANCH"
+# The automation may have already prepared a validated, conflict-free merge of
+# the base branch into the pull-request head in this worktree (the triage phase
+# of `utils/continue-all-prs.sh` records it). Keep that merge instead of
+# throwing it away and paying for a second merge and rebuild. Accept the
+# recorded commit only when it is exactly that merge: a two-parent commit whose
+# first parent is the current remote pull-request head and whose second parent
+# is the current base-branch head. Anything else - a stale marker from an
+# earlier pull request, a commit with a different shape - is ignored.
+VALIDATED_MERGE_FILE="$(pwd)/tmp/continue-all-prs/validated-base-merge"
+CHECKOUT_TARGET="$HEAD_REMOTE/$HEAD_BRANCH"
+if [ -s "$VALIDATED_MERGE_FILE" ]; then
+    VALIDATED_MERGE=$(cat "$VALIDATED_MERGE_FILE")
+    if git cat-file -e "${VALIDATED_MERGE}^{commit}" 2>/dev/null \
+        && [ "$(git rev-parse "${VALIDATED_MERGE}^@")" = "$(git rev-parse "$HEAD_REMOTE/$HEAD_BRANCH" "origin/$BASE_BRANCH")" ]; then
+        CHECKOUT_TARGET="$VALIDATED_MERGE"
+    fi
+fi
+git reset --hard "$CHECKOUT_TARGET"
 git clean -ffdx -e build/ -e tmp/continue-all-prs/
 test -z "$(git status --porcelain)"
 mkdir -p tmp
@@ -107,7 +124,9 @@ PR_BASELINE_DIR="$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline"
 rm -rf "$PR_BASELINE_DIR"
 mkdir -p "$PR_BASELINE_DIR"
 INITIAL_PR_HEAD=$(git rev-parse "$HEAD_REMOTE/$HEAD_BRANCH")
-test "$(git rev-parse HEAD)" = "$INITIAL_PR_HEAD"
+# The pull-request head stays the baseline even when the worktree already
+# carries the validated base-branch merge on top of it.
+git merge-base --is-ancestor "$INITIAL_PR_HEAD" HEAD
 INITIAL_BASE_HEAD=$(git rev-parse "origin/$BASE_BRANCH")
 printf '%s\n%s\n' "$INITIAL_PR_HEAD" "$INITIAL_BASE_HEAD" > "$PR_BASELINE_DIR/state"
 git diff --name-status "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/name-status"

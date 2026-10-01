@@ -53,7 +53,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
-    extern const SettingsBool allow_experimental_unique_key;
+    extern const SettingsBool enable_unique_key;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool create_table_empty_primary_key_by_default;
@@ -83,6 +83,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString marks_compression_codec;
     extern const MergeTreeSettingsString primary_key_compression_codec;
     extern const MergeTreeSettingsString storage_policy;
+    extern const MergeTreeSettingsBool table_readonly;
 }
 
 namespace ServerSetting
@@ -100,6 +101,7 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ILLEGAL_STATISTICS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -802,29 +804,27 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->unique_key)
         {
-            /// Gate on CREATE only; ATTACH must load existing metadata regardless of session setting.
-            if (args.mode <= LoadingStrictnessLevel::CREATE
-                && !local_settings[Setting::allow_experimental_unique_key])
+            /// Fresh definitions only; previously validated metadata loads with the setting off.
+            /// `isFreshTableDefinition` and not `mode <= CREATE`: a short-syntax ATTACH replaying
+            /// stored metadata is not a fresh definition, and gating it makes such a table
+            /// unattachable -- and therefore undroppable.
+            if (is_fresh_definition && !local_settings[Setting::enable_unique_key])
             {
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "UNIQUE KEY is an experimental feature. "
-                    "Set the session setting `allow_experimental_unique_key = 1` to enable it.");
+                    "Set the session setting `enable_unique_key = 1` to enable it.");
+            }
+
+            if (is_fresh_definition && merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "UNIQUE KEY is only supported on the plain MergeTree engine, not on {}MergeTree",
+                    merging_params.getModeName());
             }
 
             /// Reject expression-style elements at parse time: runtime consumers
             /// look up keys via `block.getByName(<column name>)`, so an
             /// expression-style UK passes DDL but crashes the first INSERT.
-            ///
-            /// Also reject a UK element that names a non-stored column: an existing
-            /// ALIAS / EPHEMERAL column, or a virtual column (`_part`, ...). The
-            /// INSERT-time SST write (`block.getByName(...)`) and the load-time
-            /// dense-index rebuild (`part->getColumns()`) both read the stored
-            /// block, so such a column would be absent at runtime. `getKeyFromAST`
-            /// below resolves against physical + virtual columns, so it would let a
-            /// virtual element pass DDL entirely, and reject an ALIAS/EPHEMERAL one
-            /// only with a confusing UNKNOWN_IDENTIFIER ("missing column"); this
-            /// gives a clear reason. A name that matches no column at all (not
-            /// physical, not virtual) is left for `getKeyFromAST` (UNKNOWN_IDENTIFIER).
             {
                 const ASTPtr & uk_ast = args.storage_def->unique_key->ptr();
                 auto is_plain_identifier = [](const ASTPtr & node) -> const ASTIdentifier *
@@ -1090,6 +1090,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 {
                     if (args.mode < LoadingStrictnessLevel::FORCE_ATTACH)
                         throw;
+                    /// Only the analyzed description, which query execution needs, is missing. The declaration itself
+                    /// stays in the metadata, so a later rewrite of the CREATE query still contains it.
+                    metadata.projections.addUnavailable(projection_ast->clone());
                     tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format(
                         "Cannot parse projection {} during server startup, skipping it. "
                         "It may be caused by a dependency on a dropped dictionary or a missing object. "
@@ -1221,6 +1224,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
+        /** `table_readonly` is not supported for `ReplicatedMergeTree`, so a definition that states it
+          * is refused. Only a fresh definition is: a table that already exists has to keep loading,
+          * however its metadata came to carry the setting - which the `convert_to_replicated` flag
+          * produced before it learned to refuse such a table. That covers a short `ATTACH TABLE t`,
+          * `SECONDARY_CREATE` (`RESTORE` from a backup) and the startup levels, as well as the replays
+          * of a definition an older initiator committed. `ALTER TABLE ... RESET SETTING table_readonly`
+          * is the way out of that state.
+          */
+        if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay
+            && (*storage_settings)[MergeTreeSetting::table_readonly])
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
+
         bool need_check_table_structure = true;
         if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
             need_check_table_structure = txn->isInitialQuery();
@@ -1863,6 +1878,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)                                          | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)                                      | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [mapContainsKeyValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyValue)                                        | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 
 Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
 
@@ -2526,7 +2542,9 @@ They can be used for prewhere optimization only if we enable `set use_statistics
 #### Part Pruning with Statistics {#part-pruning-with-statistics}
 
 When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
-Currently, only `basic` statistics (and the deprecated `minmax` statistics) support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
+Currently, only `basic` statistics (and the deprecated `minmax` statistics) support part pruning.
+On numeric and temporal columns, `basic` (and explicit `minmax`) track the minimum and maximum values in each part, so range predicates can skip parts whose bounds cannot match.
+For `Nullable` columns of any type, `basic` also tracks the number of `NULL` values in each part. That enables pruning based on `IS NULL` / `IS NOT NULL` predicates. On numeric and temporal columns it also tightens range bounds for parts that contain no `NULL` values.
 Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
 
 **Example:**

@@ -1,0 +1,17 @@
+1970-01-01 01:02:03	01:02:03
+2106-02-07 06:28:15	-01:02:04
+2106-02-07 06:28:15	-01:02:04
+1970-01-01 01:02:03	01:02:03
+1970-01-01 01:01:01
+2106-02-07 06:28:15
+2106-02-07 06:28:15	1970-01-01 01:01:01
+1
+in_datetime_time	1
+in_datetime_time64	1
+in_datetime64_time	1
+in_date_time	1
+in_date32_time	1
+in_neg_time	0
+in_neg_time64	0
+in_saturate_agree	1
+in_throw_agree	1
