@@ -5775,20 +5775,6 @@ This is local insert-path atomicity: the exclusive lock only serializes with ins
 This requires the source table to support reading a pinned point-in-time snapshot (the `MergeTree` family and `Memory`). For any other source (a view, `Distributed`, `Merge`, the `Log` family, or a table not in an `Atomic` database) the population falls back to the legacy, non-atomic behavior (recorded in the server log): existing data is read with a separate, non-coordinated snapshot, so rows inserted during the population can be missed or duplicated. Set this setting to `false` to force the legacy behavior for all sources. Applies to plain `CREATE MATERIALIZED VIEW` only; `CREATE OR REPLACE` / `REPLACE` always use the legacy non-atomic population, and so does a view created in a `Replicated` database (where `POPULATE` requires `database_replicated_allow_heavy_create`), because a failed population could not be rolled back consistently on all replicas there.
 )", 0, \
         {"26.8", false, true, "New setting that makes plain `CREATE MATERIALIZED VIEW ... POPULATE` locally atomic: existing data is snapshotted and the view is subscribed to new inserts together, under a brief exclusive lock on the source, so rows inserted through the same server are neither missed nor duplicated. The guarantee covers the local insert path only - inserts arriving on another replica or through a distributed write are outside the cut - and it requires a source that can provide a pinned snapshot (the `MergeTree` family and `Memory`); other sources, as well as `CREATE OR REPLACE` / `REPLACE`, keep the legacy non-atomic population. Set to `false` for the legacy non-atomic behavior everywhere."}) \
-    DECLARE(Bool, use_compact_format_in_distributed_parts_names, true, R"(
-Uses compact format for storing blocks for background (`distributed_foreground_insert`) INSERT into tables with `Distributed` engine.
-
-Possible values:
-
-- 0 — Uses `user[:password]@host:port#default_database` directory format.
-- 1 — Uses `[shard{shard_index}[_replica{replica_index}]]` directory format.
-
-<Note>
-- with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for background INSERT.
-- with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
-</Note>
-)", 0, \
-        {"21.1", false, true, "Use compact format for async INSERT into Distributed tables by default"}) \
     DECLARE(Bool, validate_polygons, true, R"(
 Enables or disables throwing an exception in the [pointInPolygon](/reference/functions/regular-functions/geo/coordinates#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
 
@@ -10822,7 +10808,10 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Float, text_index_lazy_intersection_density_threshold, 0.2f, \
         {"26.7", 0.2, 0.2, "Renamed from `text_index_density_threshold` (kept as an alias); selects the posting list intersection algorithm in lazy posting list apply mode."}) \
     MAKE_OBSOLETE(M, Float, text_index_density_threshold, 0.2f, \
-        {"26.6", 0.2, 0.2, "New setting for lazy posting list density threshold"})
+        {"26.6", 0.2, 0.2, "New setting for lazy posting list density threshold"}) \
+    MAKE_OBSOLETE(M, Bool, use_compact_format_in_distributed_parts_names, true, \
+        {"26.10", true, true, "Obsolete setting. The non-compact directory format for the async `INSERT` queue of a `Distributed` table has been removed. The setting was 1 by default since version 21.1. Switch to `1` and let the queue drain before upgrading."}, \
+        {"21.1", false, true, "Use compact format for async INSERT into Distributed tables by default"})
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
