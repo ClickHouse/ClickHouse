@@ -89,6 +89,13 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
 
     client = object_storage->getAzureBlobStorageClient();
     settings = object_storage->getSettings();
+
+    if (auto blob_storage_system_log = context_->getBlobStorageLog())
+    {
+        blob_storage_log = std::make_shared<BlobStorageLogWriter>(blob_storage_system_log);
+        if (context_->hasQueryContext())
+            blob_storage_log->query_id = context_->getQueryContext()->getCurrentQueryId();
+    }
 }
 
 BackupReaderAzureBlobStorage::~BackupReaderAzureBlobStorage() = default;
@@ -147,7 +154,8 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
                 settings,
                 read_settings,
                 std::optional<ObjectAttributes>(),
-                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_READER));
+                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_READER),
+                blob_storage_log);
 
             return file_size;
         };
@@ -192,6 +200,13 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
 
     client = object_storage->getAzureBlobStorageClient();
     settings = object_storage->getSettings();
+
+    if (auto blob_storage_system_log = context_->getBlobStorageLog())
+    {
+        blob_storage_log = std::make_shared<BlobStorageLogWriter>(blob_storage_system_log);
+        if (context_->hasQueryContext())
+            blob_storage_log->query_id = context_->getQueryContext()->getCurrentQueryId();
+    }
 }
 
 void BackupWriterAzureBlobStorage::copyFileFromDisk(
@@ -228,7 +243,8 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(
                     settings,
                     read_settings,
                     std::optional<ObjectAttributes>(),
-                    threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_WRITER));
+                    threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_WRITER),
+                    blob_storage_log);
                 return; /// copied!
             }
 
@@ -258,7 +274,8 @@ void BackupWriterAzureBlobStorage::copyFile(const String & destination, const St
        settings,
        read_settings,
        std::optional<ObjectAttributes>(),
-       threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_WRITER));
+       threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_WRITER),
+       blob_storage_log);
 }
 
 void BackupWriterAzureBlobStorage::copyDataToFile(
@@ -276,7 +293,8 @@ void BackupWriterAzureBlobStorage::copyDataToFile(
         fs::path(blob_path) / path_in_backup,
         settings,
         threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(),
-        ThreadName::AZURE_BACKUP_WRITER));
+        ThreadName::AZURE_BACKUP_WRITER),
+        blob_storage_log);
 }
 
 BackupWriterAzureBlobStorage::~BackupWriterAzureBlobStorage() = default;
@@ -317,7 +335,7 @@ std::unique_ptr<WriteBuffer> BackupWriterAzureBlobStorage::writeFile(const Strin
         write_settings,
         settings,
         connection_params.getContainer(),
-        /* blob_log */ nullptr,
+        blob_storage_log,
         threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_WRITER));
 }
 
@@ -333,7 +351,7 @@ std::unique_ptr<WriteBuffer> BackupWriterAzureBlobStorage::writeFileIfNotExists(
         conditional_write_settings,
         settings,
         connection_params.getContainer(),
-        /* blob_log */ nullptr,
+        blob_storage_log,
         threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_WRITER));
 }
 
