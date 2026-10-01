@@ -52,6 +52,25 @@ Maximum number of texts to include in a single HTTP request made by the embeddin
 
 Maximum number of HTTP requests that AI functions may dispatch per query. 0 (default) disables the limit. Enforced independently by each server and query fragment: within one execution context it is an exact cap shared by every AI function, block, and thread there, but a distributed query (across shards or parallel-replica fragments) may dispatch up to this many requests per shard/fragment. It must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
+## ai_function_max_concurrent_requests_per_thread {#ai_function_max_concurrent_requests_per_thread}
+
+<BetaBadge/>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "8"},{"label": "New setting"}]}]}/>
+
+Maximum number of provider requests one query thread has in flight at the same time. `1` issues requests one at a time.
+
+A query running on several threads (at most `max_threads`) can have up to this many requests in flight per thread. Use a settings profile constraint (`<constraints><ai_function_max_concurrent_requests_per_thread><max>...</max></...>`) to put a ceiling on it that a query cannot raise. The ceiling is still per thread.
+
+A value above `1` loosens two guarantees:
+
+- A request's token usage is only known once its response arrives, so the token quotas (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`) may overshoot by one request's worth per request in flight - that is, by up to this many requests' worth rather than by one.
+- A whole wave of requests is dispatched before any of their errors is seen, so a query that fails on its first row may still have issued, and been billed for, up to this many requests.
+
+`ai_function_max_api_calls_per_query` is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
+
 ## ai_function_max_input_tokens_per_query {#ai_function_max_input_tokens_per_query}
 
 <BetaBadge/>
@@ -76,32 +95,13 @@ Maximum total output (completion) tokens across all AI function API calls in a s
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to the embedding functions (`aiEmbed`, `aiSimilarity`), which never produce output tokens.
 
-## ai_function_max_concurrent_requests_per_stream {#ai_function_max_concurrent_requests_per_stream}
-
-<BetaBadge/>
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "8"},{"label": "New setting"}]}]}/>
-
-Maximum number of provider requests one pipeline stream has in flight at the same time. `1` issues requests one at a time.
-
-A query running several streams (at most `max_threads`) can have up to this many requests in flight per stream. Use a settings profile constraint (`<constraints><ai_function_max_concurrent_requests_per_stream><max>...</max></...>`) to put a ceiling on it that a query cannot raise. The ceiling is still per stream.
-
-A value above `1` loosens two guarantees:
-
-- A request's token usage is only known once its response arrives, so the token quotas (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`) may overshoot by one request's worth per request in flight - that is, by up to this many requests' worth rather than by one.
-- A whole wave of requests is dispatched before any of their errors is seen, so a query that fails on its first row may still have issued, and been billed for, up to this many requests.
-
-`ai_function_max_api_calls_per_query` is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
-
 ## ai_function_max_retries {#ai_function_max_retries}
 
 <BetaBadge/>
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="UInt64" default_value="3" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "New setting"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "3"},{"label": "Retry a transient API error up to three times by default, to reduce load on an overloaded rate-limited provider under concurrent requests."}]}]}/>
 
 Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_function_retry_initial_delay_ms`.
 

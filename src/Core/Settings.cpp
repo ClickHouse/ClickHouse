@@ -9955,10 +9955,10 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
 Maximum number of texts to include in a single HTTP request made by the embedding functions (`aiEmbed`, `aiSimilarity`). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
 )", BETA, \
         {"26.6", 100, 100, "New setting"}) \
-    DECLARE(NonZeroUInt64, ai_function_max_concurrent_requests_per_stream, 8, R"(
-Maximum number of provider requests one pipeline stream has in flight at the same time. `1` issues requests one at a time.
+    DECLARE(NonZeroUInt64, ai_function_max_concurrent_requests_per_thread, 8, R"(
+Maximum number of provider requests one query thread has in flight at the same time. `1` issues requests one at a time.
 
-A query running several streams (at most `max_threads`) can have up to this many requests in flight per stream. Use a settings profile constraint (`<constraints><ai_function_max_concurrent_requests_per_stream><max>...</max></...>`) to put a ceiling on it that a query cannot raise. The ceiling is still per stream.
+A query running on several threads (at most `max_threads`) can have up to this many requests in flight per thread. Use a settings profile constraint (`<constraints><ai_function_max_concurrent_requests_per_thread><max>...</max></...>`) to put a ceiling on it that a query cannot raise. The ceiling is still per thread.
 
 A value above `1` loosens two guarantees:
 
