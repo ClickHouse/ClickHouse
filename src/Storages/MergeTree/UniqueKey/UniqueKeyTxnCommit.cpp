@@ -256,7 +256,7 @@ private:
     const Block & incomingBlock() const { return *block; }
 
     /// Rewrite the part without the conflicting rows.
-    /// Return false (with `part_discarded`) when nothing survives the filter.
+    /// Return false (with `part_discarded`) when nothing survives the filter or the rewrite.
     bool rewritePartIgnoreConflicts(const IColumn::Filter & keep);
 
     MergeTreeSink & sink;
@@ -327,8 +327,16 @@ bool UniqueKeyTxnCommit::InsertCommit::rewritePartIgnoreConflicts(const IColumn:
 
     /// From the part, not the sink's block: writing the part moved the partition value into it.
     BlockWithPartition filtered_with_partition(std::make_shared<Block>(std::move(filtered)), own_part->partition.value);
-    temp_part = sink.writeNewTempPart(filtered_with_partition, transaction.getTransaction());
-    temp_part->finalize();
+    auto rewritten = sink.writeNewTempPart(filtered_with_partition, transaction.getTransaction());
+    /// `optimize_on_insert` can collapse every surviving row, and then no part is written.
+    if (!rewritten->part)
+    {
+        part_discarded = true;
+        return false;
+    }
+
+    rewritten->finalize();
+    temp_part = std::move(rewritten);
     own_part = temp_part->part;
     /// The dedup log registered the allocated block number, so the rewritten part takes it over
     /// rather than the fresh one the writer assigns.
