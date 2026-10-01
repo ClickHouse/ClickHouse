@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "بدء الاستخدام",
+      "group": "البدء",
       "pages": [
         "ar/chdb/index",
         "ar/chdb/getting-started"
       ]
     },
     {
-      "group": "تكاملات لغات البرمجة",
+      "group": "تكاملات اللغات",
       "pages": [
         "ar/chdb/install/index",
         "ar/chdb/install/python",
@@ -54,7 +54,7 @@
       ]
     },
     {
-      "group": "أدلة المطوّرين",
+      "group": "أدلة المطورين",
       "pages": [
         "ar/chdb/guides/index",
         "ar/chdb/guides/jupysql",

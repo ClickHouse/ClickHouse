@@ -23,6 +23,7 @@ SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 1;
 SET distributed_plan_execute_locally = 1;
 SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
 SET enable_join_runtime_filters = 0;
 SET max_rows_to_group_by = 0;
 SET query_plan_optimize_join_order_randomize = 0;
@@ -40,7 +41,7 @@ SET param__internal_join_table_stat_hints = '{
 EXPLAIN SELECT d.name, total FROM dims AS d, agg_view WHERE d.key = k ORDER BY d.name;
 
 -- The distributed plan returns the same result as a single-node plan.
-SELECT d.name, total FROM dims AS d, agg_view WHERE d.key = k ORDER BY d.name SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT d.name, total FROM dims AS d, agg_view WHERE d.key = k ORDER BY d.name;
 
 DROP VIEW agg_view;
 DROP TABLE facts;

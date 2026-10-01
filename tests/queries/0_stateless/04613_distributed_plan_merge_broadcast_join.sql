@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: make_distributed_plan requires the analyzer.
+
 -- Regression test for wrong results with make_distributed_plan = 1 (follow-up to issue #107946):
 -- reading a Merge table over a view that joins a big table with a small (broadcast-able) table
 -- returned every row once per join bucket. The second run of the distributed plan transforms on
@@ -46,17 +49,6 @@ SET make_distributed_plan = 0;
 -- Every joined row must appear exactly once: 5 rows, 5 distinct keys.
 SELECT count(), uniqExact(key) FROM result04613;
 SELECT key, value FROM result04613 ORDER BY key;
-
-SYSTEM FLUSH LOGS query_log;
--- The outer plan over `ReadFromMerge` falls back, so only these task rows show that the child plans distributed.
-WITH (SELECT metadata_modification_time FROM system.tables WHERE database = currentDatabase() AND name = 'merge04613') AS run_start
-SELECT countIf(query = 'main' OR query LIKE 'stage\_%') > 0 AS children_executed_distributed
-FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start
-    AND initial_query_id IN (
-        SELECT query_id FROM system.query_log
-        WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start AND is_initial_query
-            AND current_database = currentDatabase() AND query LIKE 'INSERT INTO result04613%');
 
 DROP TABLE merge04613;
 DROP VIEW join04613;

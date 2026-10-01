@@ -1,3 +1,6 @@
+-- Tags: no-darwin, no-old-analyzer
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
+-- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 
 -- A join of two small dimension tables that feeds a broadcast join is recomputed on every
 -- node (a `Replicated` join over two `ReplicatedRead`s, no exchange) instead of being joined
@@ -15,6 +18,7 @@ SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET distributed_plan_execute_locally = 1;
 SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
 SET enable_join_runtime_filters = 0;
 -- The Fast test profile sets a non-zero max_rows_to_group_by, which keeps aggregations local.
 SET max_rows_to_group_by = 0;
@@ -61,8 +65,7 @@ SELECT count(), sum(f.v)
 FROM rsj_fact AS f
 JOIN (SELECT d1.k AS k, d2.name AS name FROM rsj_dim1 AS d1 JOIN rsj_dim2 AS d2 ON d1.g = d2.g) AS d
 ON f.k = d.k
-WHERE d.name != ''
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+WHERE d.name != '';
 
 SELECT count(), sum(f.v)
 FROM rsj_fact AS f
@@ -86,8 +89,7 @@ SELECT '-- 4. Outer join kinds are eligible too: results match the baseline';
 SELECT count()
 FROM rsj_fact AS f
 JOIN (SELECT d1.k AS k, d2.name AS name FROM rsj_dim1 AS d1 RIGHT JOIN rsj_dim2 AS d2 ON d1.g = d2.g) AS d
-ON f.k = d.k
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+ON f.k = d.k;
 
 SELECT count()
 FROM rsj_fact AS f

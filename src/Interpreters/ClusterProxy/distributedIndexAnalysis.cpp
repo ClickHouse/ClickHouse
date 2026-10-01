@@ -14,7 +14,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
 #include <Client/HedgedConnectionsFactory.h>
 #include <Common/Epoll.h>
 #endif
@@ -102,7 +102,7 @@ ShuffledPool extractLocalReplica(std::vector<ShuffledPool> & pools, const Cluste
 {
     for (size_t i = 0, s = pools.size(); i < s; ++i)
     {
-        const auto & pool = *pools[i].pool;
+        const auto & pool = dynamic_cast<ConnectionPool &>(*pools[i].pool);
         const auto & hostname = pool.getHost();
         const auto & port = pool.getPort();
         const auto found = std::find_if(begin(local_addresses), end(local_addresses), [&hostname, &port](const auto & local_addr)
@@ -258,7 +258,7 @@ public:
         , context(std::move(context_))
         , logger(getLogger("DistributedIndexAnalysis"))
         , settings(context->getSettingsRef())
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
         , use_hedged_requests(settings[Setting::use_hedged_requests])
         , use_async_reading(settings[Setting::async_socket_for_remote])
 #endif
@@ -268,7 +268,7 @@ public:
         original_pool = shard.pool;
         remote_pools = shard.pool->getShuffledPools(settings, replicaIndexPriorityFunc());
         auto local_pool = extractLocalReplica(remote_pools, shard.local_addresses);
-        local_address = local_pool.pool->getAddress();
+        local_address = dynamic_cast<ConnectionPool &>(*local_pool.pool).getAddress();
         local_original_index = local_pool.index;
         total_replicas = shard.getAllNodeCount();
         remote_replicas = remote_pools.size();
@@ -276,7 +276,7 @@ public:
 
         replica_addresses.resize(remote_replicas);
         for (size_t i = 0; i < remote_replicas; ++i)
-            replica_addresses[i] = remote_pools[i].pool->getAddress();
+            replica_addresses[i] = dynamic_cast<ConnectionPool &>(*remote_pools[i].pool).getAddress();
 
         execution_context = Context::createCopy(context);
         external_tables = execution_context->getExternalTables();
@@ -345,7 +345,7 @@ private:
     /// so that subsequent queries can deprioritize replicas that failed during this analysis.
     void propagateErrorCounts()
     {
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
         if (hedged_factory.has_value())
         {
             /// Reset the factory so its destructor propagates error counts into remote_pool via updateSharedError.
@@ -372,7 +372,7 @@ private:
         return establishConnectionsSync(timeouts);
     }
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
     std::vector<Connection *> establishConnectionsAsync(const ConnectionTimeouts & timeouts)
     {
         std::vector<Connection *> connections(remote_replicas, nullptr);
@@ -393,7 +393,6 @@ private:
             /// Exclude local replica
             max_active_replicas - 1,
             /*skip_unavailable_shards_=*/ true,
-            /*fail_if_replica_unprobed_=*/ false,
             /// FIXME: we can pass db.table, but, we use UUIDs internally, so we need first to add support of checking UUIDs
             /*table_to_check=*/ nullptr,
             replicaIndexPriorityFunc());
@@ -406,7 +405,7 @@ private:
 
         std::unordered_map<std::string, size_t> address_to_replica;
         for (size_t i = 0; i < remote_replicas; ++i)
-            address_to_replica[host_port(*remote_pools[i].pool)] = i;
+            address_to_replica[host_port(dynamic_cast<ConnectionPool &>(*remote_pools[i].pool))] = i;
         for (auto * conn : ready_connections)
         {
             if (auto it = address_to_replica.find(host_port(*conn)); it != address_to_replica.end())
@@ -596,7 +595,7 @@ private:
             executeRemoteAnalysisSync(active_remote_indexes, connections, remote_parts, remote_marks, remote_rows, res);
     }
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
     void executeRemoteAnalysisAsync(
         const std::vector<size_t> & active_remote_indexes,
         const std::vector<Connection *> & connections,
@@ -613,7 +612,7 @@ private:
         };
 
         auto sample_block = indexAnalysisSampleBlock();
-        Epoll readers_epoll{EpollNesting::PipelinePoller};
+        Epoll readers_epoll;
         std::vector<ReplicaReader> readers;
         std::unordered_map<int, size_t> fd_to_reader;
 
@@ -861,7 +860,7 @@ private:
     /// Keep `ConnectionPool::Entry` objects alive for the sync path.
     std::vector<ConnectionPool::Entry> connection_entries;
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
     /// Keep `HedgedConnectionsFactory` alive for the async path.
     std::optional<HedgedConnectionsFactory> hedged_factory;
 #endif

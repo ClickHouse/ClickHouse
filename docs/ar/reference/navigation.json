@@ -12,7 +12,7 @@
         {
           "expandable": true,
           "expanded": false,
-          "group": "العبارات",
+          "group": "تعليمات SQL",
           "pages": [
             "ar/reference/statements/index",
             {
@@ -66,7 +66,7 @@
                     "ar/reference/statements/create/dictionary/lifetime",
                     {
                       "expanded": false,
-                      "group": "التخطيطات",
+                      "group": "Layouts",
                       "pages": [
                         "ar/reference/statements/create/dictionary/layouts/overview",
                         "ar/reference/statements/create/dictionary/layouts/flat",
@@ -108,7 +108,6 @@
                 },
                 "ar/reference/statements/create/masking-policy",
                 "ar/reference/statements/create/function",
-                "ar/reference/statements/create/handler",
                 "ar/reference/statements/create/named-collection",
                 "ar/reference/statements/create/quota",
                 "ar/reference/statements/create/role",
@@ -116,7 +115,7 @@
                 "ar/reference/statements/create/settings-profile",
                 {
                   "expanded": false,
-                  "group": "TABLE",
+                  "group": "جدول",
                   "pages": [
                     "ar/reference/statements/create/table",
                     "ar/reference/statements/create/table/codec",
@@ -124,7 +123,6 @@
                     "ar/reference/statements/create/table/replace-table"
                   ]
                 },
-                "ar/reference/statements/create/token",
                 "ar/reference/statements/create/user",
                 "ar/reference/statements/create/view"
               ]
@@ -140,7 +138,6 @@
             "ar/reference/statements/explain",
             "ar/reference/statements/grant",
             "ar/reference/statements/hypothetical-index",
-            "ar/reference/statements/hypothetical-projection",
             "ar/reference/statements/in",
             "ar/reference/statements/insert-into",
             "ar/reference/statements/kill",
@@ -188,13 +185,14 @@
             "ar/reference/statements/truncate",
             "ar/reference/statements/undrop",
             "ar/reference/statements/update",
-            "ar/reference/statements/use"
+            "ar/reference/statements/use",
+            "ar/reference/statements/watch"
           ]
         },
         {
           "expandable": true,
           "expanded": false,
-          "group": "المعاملات",
+          "group": "العوامل",
           "pages": [
             "ar/reference/operators/index",
             "ar/reference/operators/exists",
@@ -221,7 +219,7 @@
         },
         {
           "expanded": false,
-          "group": "الأنواع النصية",
+          "group": "أنواع String",
           "pages": [
             "ar/reference/data-types/string",
             "ar/reference/data-types/fixedstring"
@@ -241,7 +239,7 @@
         },
         {
           "expanded": false,
-          "group": "أنواع الشبكات",
+          "group": "أنواع الشبكة",
           "pages": [
             "ar/reference/data-types/ipv4",
             "ar/reference/data-types/ipv6"
@@ -249,7 +247,7 @@
         },
         {
           "expanded": false,
-          "group": "الأنواع المركّبة",
+          "group": "الأنواع المركبة",
           "pages": [
             "ar/reference/data-types/array",
             "ar/reference/data-types/tuple",
@@ -268,7 +266,7 @@
         },
         {
           "expanded": false,
-          "group": "الأنواع التي تقبل القيم الفارغة والأنواع الاختيارية",
+          "group": "الأنواع القابلة لـ NULL والاختيارية",
           "pages": [
             "ar/reference/data-types/nullable",
             "ar/reference/data-types/lowcardinality"
@@ -388,7 +386,7 @@
             },
             {
               "expanded": false,
-              "group": "أنواع خاصة",
+              "group": "خاص",
               "pages": [
                 "ar/reference/engines/table-engines/special/index",
                 "ar/reference/engines/table-engines/special/alias",
@@ -421,20 +419,13 @@
             "ar/reference/engines/database-engines/atomic",
             "ar/reference/engines/database-engines/backup",
             "ar/reference/engines/database-engines/datalake",
-            "ar/reference/engines/database-engines/dictionary",
-            "ar/reference/engines/database-engines/filesystem",
-            "ar/reference/engines/database-engines/hdfs",
             "ar/reference/engines/database-engines/materialized-postgresql",
-            "ar/reference/engines/database-engines/memory",
             "ar/reference/engines/database-engines/mysql",
-            "ar/reference/engines/database-engines/ordinary",
             "ar/reference/engines/database-engines/postgresql",
             "ar/reference/engines/database-engines/remote",
             "ar/reference/engines/database-engines/replicated",
-            "ar/reference/engines/database-engines/s3",
             "ar/reference/engines/database-engines/shared",
-            "ar/reference/engines/database-engines/sqlite",
-            "ar/reference/engines/database-engines/url"
+            "ar/reference/engines/database-engines/sqlite"
           ]
         }
       ]
@@ -469,7 +460,7 @@
             "ar/reference/functions/regular-functions/functions-for-nulls",
             {
               "expanded": false,
-              "group": "البيانات الجغرافية",
+              "group": "Geo",
               "pages": [
                 "ar/reference/functions/regular-functions/geo/index",
                 "ar/reference/functions/regular-functions/geo/coordinates",
@@ -566,7 +557,6 @@
                 "ar/reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "ar/reference/functions/aggregate-functions/first_value",
                 "ar/reference/functions/aggregate-functions/flame_graph",
-                "ar/reference/functions/aggregate-functions/gini",
                 "ar/reference/functions/aggregate-functions/groupArray",
                 "ar/reference/functions/aggregate-functions/groupArrayArray",
                 "ar/reference/functions/aggregate-functions/groupArrayInsertAt",
@@ -689,7 +679,7 @@
         },
         {
           "expanded": false,
-          "group": "دالات الجداول",
+          "group": "دوال الجداول",
           "pages": [
             "ar/reference/functions/table-functions/index",
             "ar/reference/functions/table-functions/arrowflight",
@@ -742,7 +732,7 @@
             "ar/reference/functions/table-functions/s3Cluster",
             "ar/reference/functions/table-functions/sqlite",
             "ar/reference/functions/table-functions/timeSeriesData",
-            "ar/reference/functions/table-functions/timeSeriesMetricFamilies",
+            "ar/reference/functions/table-functions/timeSeriesMetrics",
             "ar/reference/functions/table-functions/timeSeriesSamples",
             "ar/reference/functions/table-functions/timeSeriesSelector",
             "ar/reference/functions/table-functions/timeSeriesTags",
@@ -776,7 +766,7 @@
           ]
         },
         {
-          "group": "الدوال المعرّفة من قِبل المستخدم",
+          "group": "الدوال المعرّفة من قبل المستخدم",
           "pages": [
             "ar/reference/functions/regular-functions/udf",
             "ar/reference/functions/regular-functions/wasm_udf"
@@ -787,7 +777,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "الصيغ",
+      "group": "التنسيقات",
       "pages": [
         "ar/reference/formats/index",
         {
@@ -974,6 +964,15 @@
     {
       "expandable": true,
       "expanded": false,
+      "group": "الواجهات",
+      "pages": [
+        "ar/reference/interfaces/specs/NativeProtocol",
+        "ar/reference/interfaces/specs/NativeFormat"
+      ]
+    },
+    {
+      "expandable": true,
+      "expanded": false,
       "group": "الإعدادات",
       "pages": [
         "ar/reference/settings/index",
@@ -1066,17 +1065,14 @@
         "ar/reference/system-tables/histogram_metric_log",
         "ar/reference/system-tables/histogram_metrics",
         "ar/reference/system-tables/hypothetical_indexes",
-        "ar/reference/system-tables/hypothetical_projections",
         "ar/reference/system-tables/iceberg_files",
         "ar/reference/system-tables/iceberg_history",
         "ar/reference/system-tables/iceberg_metadata_log",
         "ar/reference/system-tables/information_schema",
         "ar/reference/system-tables/instrumentation",
-        "ar/reference/system-tables/jemalloc_arena_bins",
         "ar/reference/system-tables/jemalloc_bins",
-        "ar/reference/system-tables/jemalloc_profile_text",
-        "ar/reference/system-tables/jemalloc_sampled_allocations",
         "ar/reference/system-tables/jemalloc_stats",
+        "ar/reference/system-tables/jemalloc_profile_text",
         "ar/reference/system-tables/kafka_consumers",
         "ar/reference/system-tables/keeper_changelogs",
         "ar/reference/system-tables/keeper_cluster",
@@ -1138,13 +1134,11 @@
         "ar/reference/system-tables/schema_inference_cache",
         "ar/reference/system-tables/server_settings",
         "ar/reference/system-tables/session_log",
-        "ar/reference/system-tables/session_query_ids",
         "ar/reference/system-tables/settings",
         "ar/reference/system-tables/settings_changes",
         "ar/reference/system-tables/settings_profile_elements",
         "ar/reference/system-tables/settings_profiles",
         "ar/reference/system-tables/stack_trace",
-        "ar/reference/system-tables/statements",
         "ar/reference/system-tables/stemmers",
         "ar/reference/system-tables/storage_policies",
         "ar/reference/system-tables/symbols",
