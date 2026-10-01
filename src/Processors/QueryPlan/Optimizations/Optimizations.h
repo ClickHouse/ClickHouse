@@ -97,6 +97,7 @@ struct Optimization
         /// AND in this mode.
         bool short_circuit_function_evaluation_disabled = false;
         bool lower_array_join_function = false;
+        bool legacy_array_join_function_nondeterministic_evaluation = false;
         bool enable_lazy_columns_replication = false;
     };
 
@@ -292,9 +293,6 @@ void processAndOptimizeTextIndexFunctions(
     const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
-/// Builds the dynamic `__topKFilter` PREWHERE condition that `tryOptimizeTopK` requested and merges
-/// it into whatever PREWHERE the read already has. Must run after `optimizePrewhere`, after
-/// projection replacement and after `optimizeReadInOrder`.
 void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);
