@@ -3691,8 +3691,32 @@ public:
 
                 ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(arguments);
                 auto temporary_result_type = removeNullable(result_type);
-                ColumnPtr res = executeInternal(temporary_columns, temporary_result_type, input_rows_count, /*to_nullable=*/ true);
 
+                /// Parsing a string to DateTime64 or Time64 throws on the empty value behind a NULL, so those rows are not parsed.
+                WhichDataType which_result(temporary_result_type);
+                if (result_null_map && (which_result.isDateTime64() || which_result.isTime64())
+                    && isStringOrFixedString(removeNullable(arguments[0].type)))
+                {
+                    const auto & null_map_data = assert_cast<const ColumnUInt8 &>(*result_null_map).getData();
+                    size_t rows_without_nulls = input_rows_count - countBytesInFilter(null_map_data.data(), 0, input_rows_count);
+                    if (rows_without_nulls == 0)
+                        return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
+
+                    if (rows_without_nulls < input_rows_count)
+                    {
+                        IColumn::Filter filter_mask(input_rows_count);
+                        for (size_t i = 0; i < input_rows_count; ++i)
+                            filter_mask[i] = !null_map_data[i];
+                        for (auto & column : temporary_columns)
+                            column.column = column.column->filter(filter_mask, rows_without_nulls);
+
+                        auto res = IColumn::mutate(executeInternal(temporary_columns, temporary_result_type, rows_without_nulls, /*to_nullable=*/ true));
+                        res->expand(filter_mask, /*inverted=*/ false);
+                        return wrapInNullable(std::move(res), std::move(result_null_map));
+                    }
+                }
+
+                ColumnPtr res = executeInternal(temporary_columns, temporary_result_type, input_rows_count, /*to_nullable=*/ true);
                 return wrapInNullable(res, std::move(result_null_map));
             }
             else
