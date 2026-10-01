@@ -321,45 +321,41 @@ def _run_agent(loom_config, watch=None, commit="HEAD"):
 _MARKER_RE = re.compile(r"\n*<!-- ai-review-(?:reviewed-sha|model|state): [^>]*-->")
 
 
-def _verified_dismissals(repo, records):
-    """The memory records that may suppress a finding, rebuilt from GitHub.
+def _verified_memory(repo, records):
+    """The recalled memory records rebuilt from GitHub, dropping those GitHub
+    does not confirm.
 
     The agent holds the Loom token, so a prompt-injected agent could write a
-    record that claims an author dismissed some finding. Of a record, only the
-    comment id is used: the comment must exist and have been posted by the app,
-    and its thread's state, path, replies and finding text are all taken from
-    GitHub. Records that do not check out are kept for the prompt's context
-    (which treats them as untrusted) but cannot drive the job's filter."""
+    record that claims an author dismissed some finding, or rewrite one. Of a
+    record only the comment id is used: the comment must exist and have been
+    posted by the app, and the finding, the thread's state and path and every
+    reply by a person are taken from GitHub."""
     out = []
     pr_threads = {}  # one listing per earlier PR, however many of its threads were recalled
     for r in records or []:
-        claimed = r.get("author_replied") and r.get("state") in ("resolved_by_author", "open")
-        if not claimed or not r.get("comment_id"):
-            out.append({**r, "author_replied": False})
-            continue
         comment = review_context.gh_json(f"/repos/{repo}/pulls/comments/{r['comment_id']}") or {}
         pr = (comment.get("pull_request_url") or "").rsplit("/", 1)[-1]
-        thread = None
-        if pr.isdigit() and review_context.is_bot((comment.get("user") or {}).get("login")):
-            if pr not in pr_threads:
-                try:
-                    pr_threads[pr] = GH.list_pr_review_threads(pr=int(pr), repo=repo)
-                except Exception as e:  # noqa: BLE001 - unverifiable means not a dismissal
-                    print(f"WARNING: could not list the review threads of PR #{pr}: {e}")
-                    pr_threads[pr] = []
-            thread = next((t for t in pr_threads[pr]
-                           if ((t.get("comments") or {}).get("nodes") or [{}])[0].get("databaseId") == r["comment_id"]),
-                          None)
-        replies = ((thread or {}).get("comments") or {}).get("nodes", [])[1:]
-        replied = any((c.get("body") or "").strip() and not c.get("viewerDidAuthor")
-                      and not review_context.is_automation((c.get("author") or {}).get("login")) for c in replies)
-        state = loom.thread_state(thread) if thread else ""
-        if not (thread and replied and state in ("resolved_by_author", "open")):
-            print(f"Memory record for comment {r['comment_id']} not confirmed by GitHub; not used as a dismissal")
-            out.append({**r, "author_replied": False})
+        if not (pr.isdigit() and review_context.is_bot((comment.get("user") or {}).get("login"))):
+            print(f"Memory record for comment {r['comment_id']} not confirmed by GitHub; not used")
             continue
-        out.append({**r, "path": thread.get("path") or comment.get("path") or "", "state": state,
-                    "author_replied": True, "finding": comment.get("body") or ""})
+        if pr not in pr_threads:
+            try:
+                pr_threads[pr] = GH.list_pr_review_threads(pr=int(pr), repo=repo)
+            except Exception as e:  # noqa: BLE001 - unverifiable means not used
+                print(f"WARNING: could not list the review threads of PR #{pr}: {e}")
+                pr_threads[pr] = []
+        thread = next((t for t in pr_threads[pr]
+                       if ((t.get("comments") or {}).get("nodes") or [{}])[0].get("databaseId") == r["comment_id"]), None)
+        if not thread:
+            print(f"Memory record for comment {r['comment_id']} not confirmed by GitHub; not used")
+            continue
+        replies = [((c.get("author") or {}).get("login") or "?", review_context.untrusted(c.get("body")))
+                   for c in thread["comments"]["nodes"][1:]
+                   if (c.get("body") or "").strip() and not c.get("viewerDidAuthor")
+                   and not review_context.is_automation((c.get("author") or {}).get("login"))]
+        out.append({"path": thread.get("path") or comment.get("path") or "", "pr": pr,
+                    "state": loom.thread_state(thread), "comment_id": r["comment_id"],
+                    "finding": review_context.untrusted(comment.get("body")), "replies": replies})
     return out
 
 
@@ -433,12 +429,13 @@ def review():
         brief = ""
     print(f"Loom brief: {'written' if brief else 'not available'}")
     try:
-        memory_md, memory = loom.recall_outcomes(
+        memory = loom.recall_outcomes(
             loom_config, info.pr_number, loom.source_first([f["filename"] for f in ctx.files]))
     except Exception as e:  # noqa: BLE001
         print(f"WARNING: Loom memory recall failed: {type(e).__name__}: {e}")
-        memory_md, memory = "", []
-    memory = _verified_dismissals(repo, memory)
+        memory = []
+    memory = _verified_memory(repo, memory)
+    memory_md = loom.render_outcomes(memory)
     if memory_md:
         with open(f"{CONTEXT_DIR}/memory.md", "w", encoding="utf-8") as f:
             f.write("# Earlier review findings on the files this PR changes\n\n" + memory_md)
@@ -502,7 +499,7 @@ def review():
             os.unlink(action_file)
 
     summary, _ = publish._read_body({"body_file": SUMMARY_FILE}, OUTPUT_DIR)
-    summary = publish.publish(GH, repo, info.pr_number, ctx.head_sha, ctx.files, threads, OUTPUT_DIR, summary, memory,
+    summary = publish.publish(GH, repo, info.pr_number, ctx.head_sha, ctx.files, threads, OUTPUT_DIR, summary,
                               ctx.units, ctx.previous_state, simplicity=not is_backport, activity=ctx.activity)
     _post_summary(summary, ctx.head_sha, model)
 

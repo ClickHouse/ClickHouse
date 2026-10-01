@@ -137,17 +137,6 @@ def _read_body(entry, base_dir):
         return f.read().strip(), resolved
 
 
-def dismissed_findings(records):
-    """From recalled review memory: the findings authors pushed back on (they
-    replied, and the review did not resolve the thread as fixed), per path."""
-    out = {}
-    for r in records or []:
-        if r.get("author_replied") and r.get("state") in ("resolved_by_author", "open"):
-            finding = (r.get("finding") or "").split("\n\nReply by", 1)[0]
-            out.setdefault(r.get("path"), []).append(finding)
-    return out
-
-
 class _Posted:
     """Writes the text the job posts, each body to a new file of its own under
     `<output>/_posted/`, after every check has passed. The text is defused of
@@ -194,12 +183,11 @@ def _thread_texts(threads):
     return texts
 
 
-def validate_comments(entries, files, threads, base_dir, dismissed=None, units=None, known_findings=None,
+def validate_comments(entries, files, threads, base_dir, units=None, known_findings=None,
                       repo="", sha="", posted=None):
     """Split the agent's inline comments into (postable, moved) where `moved`
     are (entry, body, reason) to be listed in the summary instead. Nothing
-    the agent wrote is dropped silently. `dismissed` maps a path to findings
-    authors pushed back on in earlier PRs."""
+    the agent wrote is dropped silently."""
     posted = posted or _Posted(base_dir, repo, sha)
     lines_by_path = {f["filename"]: commentable_lines(f.get("patch")) for f in files}
     open_ours = {(t.get("path"), t["line"]) for t in threads or []
@@ -260,9 +248,6 @@ def validate_comments(entries, files, threads, base_dir, dismissed=None, units=N
             continue
         if any(_similar(body, other) for other in thread_texts.get(path, [])):
             moved.append((e, body, "repeats an existing thread on this file"))
-            continue
-        if any(_similar(body, other) for other in (dismissed or {}).get(path, [])):
-            moved.append((e, body, "an author pushed back on the same finding in an earlier PR"))
             continue
         unit = review_units.unit_for_line(units or [], path, line, side)
         fingerprint = review_units.finding_fingerprint(path, unit["key"] if unit else "", body)
@@ -534,7 +519,7 @@ def _post_review_once(repo, pr_number, head_sha, comments):
         os.unlink(payload_file)
 
 
-def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_text, memory=None,
+def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_text,
             units=None, previous_state=None, simplicity=True, activity=""):
     """Post the inline review and the thread actions. `gh` is the praktika GH
     class (injected for tests). Returns the summary text to post, with the
@@ -543,7 +528,7 @@ def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_t
     posted = _Posted(output_dir, repo, head_sha)
     comments, moved = validate_comments(
         _load_json_list(os.path.join(output_dir, "comments.json")), files, threads, output_dir,
-        dismissed_findings(memory), units, known, repo, head_sha, posted)
+        units, known, repo, head_sha, posted)
     simplicity_inline, simplicity_listed = ([], [])
     if simplicity:
         simplicity_inline, simplicity_listed = validate_simplicity(

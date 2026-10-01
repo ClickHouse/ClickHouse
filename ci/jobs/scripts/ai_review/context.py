@@ -22,6 +22,7 @@ Everything lands in one directory (`CONTEXT_DIR`), described to the agent by
   loom/                  Loom brief and raw answers (see loom.py)
 """
 
+import hashlib
 import json
 import os
 import re
@@ -306,6 +307,29 @@ def _sanitized_threads(threads):
     return out
 
 
+def discussion_fingerprint(threads, issue_comments, reviews):
+    """A digest of what people have said and decided on the PR: the text of
+    every comment and review by a person (so an edit counts), and which threads
+    a person resolved (so a silent resolution counts). Resolutions by the
+    review itself are left out, or every run that resolves a thread would make
+    the next one look like new discussion."""
+    items = []
+    for t in threads or []:
+        resolver = (t.get("resolvedBy") or {}).get("login") or ""
+        by_person = bool(t.get("isResolved")) and not is_automation(resolver)
+        items.append(f"t {t.get('id')} {int(by_person)}")
+        for c in (t.get("comments") or {}).get("nodes") or []:
+            if not (c.get("viewerDidAuthor") or is_automation((c.get("author") or {}).get("login"))):
+                items.append(f"c {c.get('databaseId')} {c.get('body') or ''}")
+    for c in issue_comments or []:
+        if (c.get("user") or {}).get("type") != "Bot" and not is_automation((c.get("user") or {}).get("login")):
+            items.append(f"i {c.get('id')} {c.get('body') or ''}")
+    for r in reviews or []:
+        if (r.get("user") or {}).get("type") != "Bot" and not is_automation((r.get("user") or {}).get("login")):
+            items.append(f"r {r.get('id')} {r.get('state')} {r.get('body') or ''}")
+    return hashlib.sha256("\0".join(sorted(items)).encode()).hexdigest()[:16]
+
+
 class Context:
     """The fetched context. Holds what the job needs again after the run."""
 
@@ -319,7 +343,7 @@ class Context:
         self.previous_review = previous_review
         self.units = units or []
         self.previous_state = previous_state
-        # Time of the latest comment by a person (not the review), ISO 8601.
+        # `discussion_fingerprint` of the PR when the context was fetched.
         self.activity = activity
 
     @property
@@ -328,7 +352,7 @@ class Context:
         since: a run would only repeat the previous review."""
         return (self.previous_state is not None
                 and not any(review_units.in_scope(u) for u in self.units)
-                and self.activity <= (self.previous_state.get("activity") or ""))
+                and self.activity == self.previous_state.get("activity"))
 
     @property
     def head_sha(self):
@@ -343,9 +367,19 @@ def fetch(directory, repo, pr_number):
     """Fetch everything into `directory`. The PR and its files are required
     (raise on failure); everything else is best effort."""
     os.makedirs(directory, exist_ok=True)
-    pr = gh_json(f"/repos/{repo}/pulls/{pr_number}", strict=True)
-    files = gh_json(f"/repos/{repo}/pulls/{pr_number}/files?per_page=100", paginate=True, strict=True) or []
-    head_sha = (pr.get("head") or {}).get("sha") or ""
+    # The files listing is always of the current head, so a push between the
+    # two requests would pair one commit's metadata (and checkout) with
+    # another's diff. Re-read the PR until both are of the same head.
+    for attempt in range(3):
+        pr = gh_json(f"/repos/{repo}/pulls/{pr_number}", strict=True)
+        files = gh_json(f"/repos/{repo}/pulls/{pr_number}/files?per_page=100", paginate=True, strict=True) or []
+        head_sha = (pr.get("head") or {}).get("sha") or ""
+        after = (gh_json(f"/repos/{repo}/pulls/{pr_number}", strict=True).get("head") or {}).get("sha") or ""
+        if after == head_sha:
+            break
+        print(f"PR head moved from {head_sha[:12]} to {after[:12]} while fetching the diff; fetching again")
+    else:
+        raise RuntimeError("the PR head kept moving while its diff was fetched")
 
     try:
         threads = GH.list_pr_review_threads(pr=pr_number, repo=repo)
@@ -378,13 +412,8 @@ def fetch(directory, repo, pr_number):
             repo, pr_number, (pr.get("base") or {}).get("ref") or "master", reviewed_sha(previous), head_sha, files)
         if since:
             _write(os.path.join(directory, "since_last_review.md"), since)
-    times = [c.get("createdAt") or "" for t in threads for c in (t.get("comments") or {}).get("nodes") or []
-             if not (c.get("viewerDidAuthor") or is_automation((c.get("author") or {}).get("login")))]
-    times += [c.get("created_at") or "" for c in issue_comments
-              if (c.get("user") or {}).get("type") != "Bot" and not is_automation((c.get("user") or {}).get("login"))]
-    times += [r.get("submitted_at") or "" for r in reviews
-              if (r.get("user") or {}).get("type") != "Bot" and not is_automation((r.get("user") or {}).get("login"))]
-    return Context(directory, repo, pr, files, threads, previous, units, previous_state, max(times, default=""))
+    return Context(directory, repo, pr, files, threads, previous, units, previous_state,
+                   discussion_fingerprint(threads, issue_comments, reviews))
 
 
 def index_markdown(directory):

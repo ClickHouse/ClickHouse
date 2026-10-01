@@ -114,7 +114,7 @@ class Config:
         """Environment for the agent process, so the CLI sees the same config.
         The token can also write review memory; what the job reads back from
         memory is checked against GitHub before it affects anything (see
-        `verified_dismissals` in the job)."""
+        `_verified_memory` in the job)."""
         return {
             "LOOM_BASE_URL": self.base_url,
             "LOOM_TOKEN": self.token,
@@ -661,12 +661,13 @@ _MAX_RECALLED = 15
 
 
 def recall_outcomes(config, pr_number, paths):
-    """Earlier review threads on the files this PR changes, from other PRs:
-    what was found, what the author answered, how it ended. Returns
-    (markdown, records); records carry `path`, `state`, `author_replied` and
-    `finding` for the job's own filter. Empty when Loom has nothing."""
+    """Earlier review threads of ours on the files this PR changes, from other
+    PRs, newest first: `path`, `pr`, `state` and the `comment_id` of the
+    thread's first comment. The job checks each against GitHub and renders
+    the confirmed ones (`render_outcomes`); the memory's own copy of the text
+    is not used, since the agent holds the token that could rewrite it."""
     if not (config.available() and config.memory_namespace and paths):
-        return "", []
+        return []
 
     def by_path(path):
         # `tags` matches any of the given tags, so query by the path tag alone
@@ -683,7 +684,7 @@ def recall_outcomes(config, pr_number, paths):
             entries = [e for batch in pool.map(by_path, paths[:20]) for e in batch]
     except Exception as e:  # noqa: BLE001 - memory is an aid; its failure must not fail the review
         print(f"WARNING: Loom memory recall failed: {type(e).__name__}: {e}")
-        return "", []
+        return []
     records, seen = [], set()
     for e in sorted(entries, key=lambda e: str(e.get("updated_at") or ""), reverse=True):
         tags = set(e.get("tags") or [])
@@ -693,24 +694,28 @@ def recall_outcomes(config, pr_number, paths):
         state = next((t.split(":", 1)[1] for t in tags if t.startswith("state:")), "")
         path = next((t.split(":", 1)[1] for t in tags if t.startswith("path:")), "")
         pr = next((t.split(":", 1)[1] for t in tags if t.startswith("pr:")), "?")
-        value = e.get("value") if isinstance(e.get("value"), str) else ""
         key = str(e.get("memory_key") or "")
         comment_id = key.rsplit(":", 1)[-1] if key.startswith("review-thread:") else ""
-        records.append({"path": path, "state": state, "author_replied": "author_replied" in tags, "pr": pr,
-                        "comment_id": int(comment_id) if comment_id.isdigit() else 0,
-                        "finding": value.split("\n\n", 1)[1] if "\n\n" in value else value})
+        if comment_id.isdigit():
+            records.append({"path": path, "state": state, "pr": pr, "comment_id": int(comment_id)})
         if len(records) >= _MAX_RECALLED:
             break
-    if not records:
-        return "", []
+    return records
+
+
+def render_outcomes(records):
+    """`memory.md`: per earlier thread, the finding, how it ended and every
+    reply by a person, so the agent can tell a fix from a pushback."""
     out = []
     for r in records:
-        excerpt = " ".join(r["finding"].split())
+        excerpt = " ".join((r.get("finding") or "").split())
         if len(excerpt) > 700:
             excerpt = excerpt[:700] + " ..."
-        out.append(f"- `{r['path']}`, PR #{r['pr']}, {_STATE_TEXT.get(r['state'], r['state'])}"
-                   f"{', the author replied' if r['author_replied'] else ''}: {excerpt}")
-    return "\n".join(out) + "\n", records
+        out.append(f"- `{r['path']}`, PR #{r['pr']}, {_STATE_TEXT.get(r['state'], r['state'])}: {excerpt}")
+        for login, body in r.get("replies") or []:
+            reply = " ".join(body.split())
+            out.append(f"  - Reply by {login}: {reply[:500] + ' ...' if len(reply) > 500 else reply}")
+    return "\n".join(out) + "\n" if out else ""
 
 
 # ── CLI used by the agent ─────────────────────────────────────────────────────

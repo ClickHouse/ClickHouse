@@ -171,8 +171,8 @@ def finding_fingerprint(path, unit_key, body):
 
 
 def encode_state(units, findings, contract, activity=""):
-    """`activity` is the time of the latest comment by a person when the
-    review started, so the next run can tell whether anyone wrote since."""
+    """`activity` is the discussion fingerprint when the review started, so
+    the next run can tell whether anyone wrote, edited or resolved since."""
     state = {"v": STATE_VERSION, "units": base64.b64encode(b"".join(_digest(u) for u in units)).decode(),
              "findings": [f for f in findings if isinstance(f, dict)][-200:],
              "contract": neutralize(contract or "")[:4000], "activity": activity or ""}
