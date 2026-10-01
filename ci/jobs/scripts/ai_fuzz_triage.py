@@ -20,9 +20,9 @@ issue link plus reproducer into the job report.
 
 Fail-close: the downgrade to OK happens only on PR runs, on an explicit
 `unrelated` verdict whose GitHub issue is verified to carry the failure's
-fingerprint and the `fuzz` label, and only when every failure has a stable
-signature (a stack trace ID) to dedup the issue on; a generic name such as
-`Server died` gets no issue at all. Any triage problem
+fingerprint and the `fuzz` label, and only when every failure shares the
+stable signature (a stack trace ID) that fingerprint is built from; a generic
+name such as `Server died` gets no issue at all. Any triage problem
 (agent CLI missing, secrets unavailable, malformed verdict, timeout) leaves the
 job status exactly as the fuzzer set it and only appends a note that triage
 was unavailable.
@@ -127,9 +127,24 @@ def _stable_signature(name):
     return _normalize_failure_name(name)
 
 
-def unsigned_failure_names(failures):
-    """Names of the failures that no fingerprint can track."""
-    return [name or "(unnamed)" for name, _ in failures if not _stable_signature(name)]
+def _tracked_signature(failures):
+    """The signature the fingerprint is built from, or "" when there is none."""
+    names = sorted(n for n in (_stable_signature(name) for name, _ in failures) if n)
+    return names[0] if names else ""
+
+
+def uncovered_failure_names(failures):
+    """Names of the failures the fingerprint does not track.
+
+    A stress run may hit two different bugs; one issue vouches only for the
+    failures sharing its signature.
+    """
+    tracked = _tracked_signature(failures)
+    return [
+        name or "(unnamed)"
+        for name, _ in failures
+        if not tracked or _stable_signature(name) != tracked
+    ]
 
 
 def failure_fingerprint(failures):
@@ -144,10 +159,10 @@ def failure_fingerprint(failures):
     between runs, so the key is the smallest normalized name rather than the
     first one - otherwise two jobs hitting the same bug disagree.
     """
-    names = sorted(n for n in (_stable_signature(name) for name, _ in failures) if n)
-    if not names:
+    tracked = _tracked_signature(failures)
+    if not tracked:
         return ""
-    return hashlib.sha1(names[0].encode("utf-8", "replace")).hexdigest()[:12]
+    return hashlib.sha1(tracked.encode("utf-8", "replace")).hexdigest()[:12]
 
 
 def _failures_section(failures):
@@ -574,7 +589,7 @@ def _verify_issue_marker(issue_url, fingerprint):
     return True, problems
 
 
-def _apply_verdict(result, verdict, pr_mode, fingerprint="", unsigned=()):
+def _apply_verdict(result, verdict, pr_mode, fingerprint="", uncovered=()):
     kind = verdict["verdict"]
     reasoning = (verdict.get("reasoning") or "").strip()[:1200]
     signature = (verdict.get("signature") or "").strip()
@@ -606,13 +621,13 @@ def _apply_verdict(result, verdict, pr_mode, fingerprint="", unsigned=()):
             "`fuzz` label, so fingerprint dedup will not find it - label it by hand"
         )
     # The issue tracks the fingerprinted failure only; going green on it would
-    # also hide every failure that no fingerprint covers.
-    untracked = not fingerprint or bool(unsigned)
+    # also hide every failure that fingerprint does not cover.
+    untracked = not fingerprint or bool(uncovered)
     if pr_mode and kind == "unrelated" and untracked:
-        names = ", ".join(f"`{name}`" for name in unsigned) or "the failure"
+        names = ", ".join(f"`{name}`" for name in uncovered) or "the failure"
         lines.append(
-            f"AI triage: verdict was `unrelated`, but {names} has no stable "
-            f"signature (stack trace ID) that an issue could be matched on - "
+            f"AI triage: verdict was `unrelated`, but {names} is not covered by "
+            f"the issue's fingerprint (no stack trace ID, or a different bug) - "
             f"keeping the job red (fail-close)"
         )
         if issue_url:
@@ -729,16 +744,18 @@ def triage_and_apply(
             return
         TRIAGE_DIR.mkdir(parents=True, exist_ok=True)
         fingerprint = failure_fingerprint(failures)
-        unsigned = unsigned_failure_names(failures)
+        uncovered = uncovered_failure_names(failures)
         print(f"AI fuzz triage: failure fingerprint {fingerprint or '(none)'}")
-        if unsigned:
-            print(f"AI fuzz triage: failures without a stable signature: {unsigned}")
+        if uncovered:
+            print(
+                f"AI fuzz triage: failures the fingerprint does not cover: {uncovered}"
+            )
         prompt = _build_prompt(
             info, job_kind, failures, evidence_paths, repro_hint, pr_mode, fingerprint
         )
         timeout_sec = int(os.environ.get("AI_FUZZ_TRIAGE_TIMEOUT", agent_timeout_sec))
         verdict = _run_agent(prompt, timeout_sec)
-        _apply_verdict(result, verdict, pr_mode, fingerprint, unsigned)
+        _apply_verdict(result, verdict, pr_mode, fingerprint, uncovered)
     except Exception as e:  # noqa: BLE001 - triage must never break the job
         print(f"WARNING: AI fuzz triage unavailable: {e}")
         traceback.print_exc()
