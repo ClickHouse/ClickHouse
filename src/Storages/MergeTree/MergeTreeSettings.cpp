@@ -1047,6 +1047,12 @@ Enable heuristic for selecting parts for merge which removes parts from right
 side of range, if their size is less than specified ratio (0.01) of sum_size.
 Works for Simple and StochasticSimple merge selectors
 )", 0) \
+    DECLARE(UInt64, merge_selector_min_age_to_disable_right_tail_heuristic, 0, R"(
+If greater than zero and `merge_selector_enable_heuristic_to_remove_small_parts_at_right` is enabled,
+disables that heuristic for ranges where every part is at least this many seconds old. `0` disables this check.
+Works for Simple and StochasticSimple merge selectors.
+)", 0, \
+        {"26.10", 0, 0, "New setting"}) \
     DECLARE(Float, merge_selector_base, 5.0, R"(Affects write amplification of
     assigned merges (expert level setting, don't change if you don't understand
     what it is doing). Works for Simple and StochasticSimple merge selectors
@@ -1383,7 +1389,9 @@ Possible values:
 )", 0, \
         {"26.1", 500, 500, "New setting"}) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
-Initial size of an adaptive write buffer
+Sets the initial size, in bytes, of each adaptive write buffer used when writing MergeTree data. Buffers grow automatically as needed. Lower values reduce initial memory use, especially for tables with many columns, but may cause more frequent buffer flushes. This is a starting size, not a memory limit.
+
+Adaptive write buffers are only used in wide parts, as controlled by [`min_columns_to_activate_adaptive_write_buffer`](#min_columns_to_activate_adaptive_write_buffer) and [`use_adaptive_write_buffer_for_dynamic_subcolumns`](#use_adaptive_write_buffer_for_dynamic_subcolumns).
 )", 0) \
     DECLARE(UInt64, min_free_disk_bytes_to_perform_insert, 0, R"(
 The minimum number of bytes that should be free in disk space in order to
@@ -2553,7 +2561,7 @@ Requires `enable_block_number_column` and `enable_block_offset_column` to be ena
         {"26.4", false, false, "New setting"}) \
     DECLARE(Bool, enable_adaptive_codec_selection, false, R"(
 When enabled, merges and mutations choose a codec per block for columns that use the default codec (no `CODEC` clause, or `CODEC(Default)`).
-The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type.
+The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it.
 The smallest output wins. Compression is therefore never worse than the default, and incompressible blocks are stored raw.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
 Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions) table function.
@@ -2713,6 +2721,18 @@ The interval of refreshing statistics cache in seconds. If it is set to zero, th
 )", 0, \
         {"26.2", 0, 300, "Enable statistics cache"}, \
         {"25.11", 0, 0, "New setting"}) \
+    DECLARE(UniqueKeyConflictAction, unique_key_conflict_action, UniqueKeyConflictAction::Overwrite, R"(
+For `UNIQUE KEY` tables, how an INSERT resolves a key that already exists live in the partition:
+
+- `overwrite` — the incoming row supersedes the existing live row (UPSERT). Default.
+- `ignore` — the existing row is kept and the conflicting incoming row is dropped.
+- `abort` — the INSERT fails on the first live duplicate and publishes nothing.
+
+The policy is a property of the table, so every writer is held to it. Note that an INSERT is
+atomic only when it produces a single part, so `abort` may reject one part of a multi-part
+INSERT after earlier parts committed, exactly as plain MergeTree does.
+)", EXPERIMENTAL, \
+        {"26.10", "overwrite", "overwrite", "New table setting: how an INSERT on a UNIQUE KEY table resolves a key already live in the partition (overwrite / ignore / abort)"}) \
     DECLARE(UInt64, distributed_index_analysis_min_parts_to_activate, 10, R"(
 Minimal number of parts to activated distributed index analysis
 )", EXPERIMENTAL, \
