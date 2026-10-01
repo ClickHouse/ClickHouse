@@ -1,0 +1,36 @@
+subcolumn kinds
+pending mutations	2
+pending	1	2	2	1	1	3	3	['k1','k2']	2	hello	hello	3	3	7	7	1	2
+pending	2	1	1	0	0	9	9	[]	0	42	42	0	0	\N	\N	1	1
+pending	1	2
+pending	1	2
+pending	1	2
+pending mutations	0
+materialized	1	2	2	1	1	3	3	['k1','k2']	2	hello	hello	3	3	7	7	1	2
+materialized	2	1	1	0	0	9	9	[]	0	42	42	0	0	\N	\N	1	1
+materialized	1	2
+materialized	1	2
+materialized	1	2
+predicates reading a subcolumn
+pending mutations	3
+pending	1	2	5
+pending	3	1	0
+pending	1	2
+pending	3	1
+pending mutations	0
+materialized	1	2	5
+materialized	3	1	0
+materialized	1	2
+materialized	3	1
+column read before the mutations
+pending mutations	1
+pending	1	1	7
+pending mutations	0
+materialized	1	1	7
+non-adaptive granularity
+pending mutations	1
+pending	1	2	2
+pending	2	1	1
+pending mutations	0
+materialized	1	2	2
+materialized	2	1	1
