@@ -127,6 +127,12 @@ static constexpr auto DBMS_MIN_REVISION_WITH_NULLABLE_SPARSE_SERIALIZATION = 544
 
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROGRESS_IN_ASYNC_INSERT = 54484;
 
+/// This branch carries the wire format of the two fields below for compatibility with newer peers,
+/// but neither detects an agent nor exposes either field anywhere.
+static constexpr auto DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO = 54485;
+
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG = 54486;
+
 
 /// Version of ClickHouse TCP protocol.
 ///

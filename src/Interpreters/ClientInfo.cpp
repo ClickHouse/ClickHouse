@@ -61,7 +61,7 @@ String ClientInfo::getLastForwardedForHost() const
 }
 
 
-void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
+void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_trailing_fields) const
 {
     if (server_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method ClientInfo::write is called for unsupported server revision");
@@ -155,10 +155,16 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
         else
             writeBinary(static_cast<UInt8>(0), out);
     }
+
+    if (with_trailing_fields && server_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
+        writeBinary(client_agent, out);
+
+    if (with_trailing_fields && server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG)
+        writeBinary(is_internal, out);
 }
 
 
-void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
+void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_trailing_fields)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method ClientInfo::read is called for unsupported client revision");
@@ -259,6 +265,12 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
         if (have_jwt)
             readBinary(jwt, in);
     }
+
+    if (with_trailing_fields && client_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
+        readBinary(client_agent, in);
+
+    if (with_trailing_fields && client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG)
+        readBinary(is_internal, in);
 }
 
 
