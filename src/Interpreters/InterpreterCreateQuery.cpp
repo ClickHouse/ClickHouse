@@ -947,9 +947,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             /// anyway. Reloading the stored definition (ATTACH, server startup, `Replicated`
             /// database replay) therefore never consults the setting again, so one `CREATE VIEW`
             /// definition always materializes the same way on every replica and across restarts.
-            if (create.isParameterizedView()
+            const bool latches_parameterized_view_schema = create.isParameterizedView()
                 && (mode == LoadingStrictnessLevel::CREATE
-                    || (mode == LoadingStrictnessLevel::ATTACH && create.select && !create.attach_short_syntax))
+                    || (mode == LoadingStrictnessLevel::ATTACH && create.select && !create.attach_short_syntax));
+            if (latches_parameterized_view_schema
                 && !getContext()->getSettingsRef()[Setting::use_declared_schema_for_parameterized_views])
             {
                 create.columns_list->reset(create.columns_list->columns);
@@ -963,6 +964,22 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
                 properties.columns = getColumnsDescription(
                     *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
+
+                /// A latched schema is validated against the output of the substituted `SELECT` and the
+                /// view is executed with that output, so only ordinary columns can be declared: an `ALIAS`,
+                /// `MATERIALIZED` or `EPHEMERAL` column would be exposed but could never be produced.
+                if (latches_parameterized_view_schema)
+                {
+                    for (const auto & column : properties.columns)
+                    {
+                        if (column.default_desc.kind != ColumnDefaultKind::Default)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "The declared schema of a parameterized view can contain only ordinary columns, but column {} is {}",
+                                backQuoteIfNeed(column.name),
+                                toString(column.default_desc.kind));
+                    }
+                }
             }
         }
 
