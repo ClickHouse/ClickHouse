@@ -1,7 +1,7 @@
 ---
 alias: []
 description: 'Documentation for the JSONCompactStringsEachRowWithProgress format'
-input_format: false
+input_format: true
 keywords: ['JSONCompactStringsEachRowWithProgress']
 output_format: true
 slug: /interfaces/formats/JSONCompactStringsEachRowWithProgress
@@ -25,6 +25,8 @@ Key features:
 - Useful for clients that prefer or require string-based data
 
 ## Example usage {#example-usage}
+
+### Inserting data {#inserting-data}
 
 ```sql title="Query"
 SELECT *

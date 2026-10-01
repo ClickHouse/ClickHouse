@@ -21,10 +21,6 @@ except ImportError:
 
 
 DOWNLOAD_RETRIES_COUNT = 5
-# Cap the exponential backoff so that increasing the number of retries extends
-# the total time we keep trying through a transient outage instead of exploding
-# the per-attempt sleep.
-DOWNLOAD_RETRY_MAX_BACKOFF = 60
 
 logger = logging.getLogger(__name__)
 
@@ -121,11 +117,9 @@ def get_gh_api(
     raise APIException(f"Unable to request data from GH API: {url}") from exc
 
 
-def download_build_with_progress(
-    url: str, path: Path, retries: int = DOWNLOAD_RETRIES_COUNT
-) -> None:
+def download_build_with_progress(url: str, path: Path) -> None:
     logger.info("Downloading from %s to temp path %s", url, path)
-    for i in range(retries):
+    for i in range(DOWNLOAD_RETRIES_COUNT):
         try:
             response = get_with_retries(url, retries=1, stream=True)
             total_length = int(response.headers.get("content-length", 0))
@@ -138,15 +132,14 @@ def download_build_with_progress(
                 return
 
             with open(path, "wb") as f:
-                dl = 0
                 if total_length == 0:
                     logger.info(
                         "No content-length, will download file without progress"
                     )
-                    content = response.content
-                    dl = len(content)
-                    f.write(content)
+                    f.write(response.content)
                 else:
+                    dl = 0
+
                     logger.info("Content length is %ld bytes", total_length)
                     for data in response.iter_content(chunk_size=4096):
                         dl += len(data)
@@ -158,14 +151,6 @@ def download_build_with_progress(
                             space_str = " " * (50 - done)
                             sys.stdout.write(f"\r[{eq_str}{space_str}] {percent}%")
                             sys.stdout.flush()
-
-            # A truncated response is a transient failure too: without this check a
-            # short read produces a corrupt file that only fails much later (e.g. as
-            # an opaque `dpkg` error), hiding the real download problem.
-            if total_length and dl != total_length:
-                raise DownloadException(
-                    f"Downloaded {dl} of {total_length} bytes from {url}"
-                )
             break
         except Exception as e:
             if sys.stdout.isatty():
@@ -173,30 +158,17 @@ def download_build_with_progress(
             if path.exists():
                 path.unlink()
 
-            # A 404 means the artifact genuinely does not exist (e.g. packages were
-            # not uploaded for this tag yet). Retrying cannot help, so fail fast with
-            # a clear, attributable message instead of burning the whole retry budget.
-            status_code = getattr(getattr(e, "response", None), "status_code", None)
-            if status_code == 404:
-                raise DownloadException(
-                    f"Cannot download {url}: the file does not exist (HTTP 404)"
-                ) from e
-
-            if i + 1 < retries:
-                sleep_time = min(3 * (2**i), DOWNLOAD_RETRY_MAX_BACKOFF)
-                logger.warning(
-                    "Download attempt %i of %i for %s failed (%s), retrying in %i seconds",
+            if i + 1 < DOWNLOAD_RETRIES_COUNT:
+                sleep_time = 3 * (2**i)
+                logger.info(
+                    "Download attempt %i failed, retrying in %i seconds",
                     i + 1,
-                    retries,
-                    url,
-                    e,
                     sleep_time,
                 )
                 time.sleep(sleep_time)
             else:
                 raise DownloadException(
-                    f"Cannot download {url}, all {retries} retries exceeded; "
-                    f"last error: {e}"
+                    f"Cannot download dataset from {url}, all retries exceeded"
                 ) from e
 
     if sys.stdout.isatty():

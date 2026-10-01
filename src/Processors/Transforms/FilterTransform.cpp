@@ -11,13 +11,11 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/IFunction.h>
-#include <Common/assert_cast.h>
 
 namespace ProfileEvents
 {
@@ -59,7 +57,7 @@ Block FilterTransform::transformHeader(
     auto filter_type = result.getByName(filter_column_name).type;
     if (!canUseType(filter_type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-            "Illegal type {} of column {} for filter. Must be native integer or float type",
+            "Illegal type {} of column {} for filter. Must be UInt8 or Nullable(UInt8).",
             filter_type->getName(), filter_column_name);
 
     if (remove_filter_column)
@@ -75,8 +73,7 @@ FilterTransform::FilterTransform(
     bool remove_filter_column_,
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
-    std::optional<std::pair<UInt64, String>> condition_,
-    bool update_row_numbers_info_)
+    std::optional<std::pair<UInt64, String>> condition_)
     : ISimpleTransform(
             header_,
             std::make_shared<const Block>(transformHeader(*header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_)),
@@ -85,27 +82,24 @@ FilterTransform::FilterTransform(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
-    , update_row_numbers_info(update_row_numbers_info_)
     , rows_filtered(rows_filtered_)
     , condition(condition_)
 {
-    /// Use transformHeader (which calls ActionsDAG::updateHeader) to compute the header.
-    /// This correctly handles constant propagation through dry-run evaluation,
-    /// unlike expression->execute() which would fail with not-ready sets.
-    const auto * dag = expression ? &expression->getActionsDAG() : nullptr;
-    transformed_header = transformHeader(getInputPort().getHeader(), dag, filter_column_name, /*remove_filter_column=*/false);
-
+    transformed_header = getInputPort().getHeader();
     if (expression)
     {
+        expression->execute(transformed_header);
+
         /// Special check to stop queries like "WHERE ignore(...)"
-        const auto * node = &expression->getActionsDAG().findInOutputs(filter_column_name);
-        while (node->type == ActionsDAG::ActionType::ALIAS)
-            node = node->children[0];
+        {
+            const auto * node = &expression->getActionsDAG().findInOutputs(filter_column_name);
+            while (node->type == ActionsDAG::ActionType::ALIAS)
+                node = node->children[0];
 
-        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "ignore")
-            always_false = true;
+            if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "ignore")
+                always_false = true;
+        }
     }
-
     filter_column_position = transformed_header.getPositionByName(filter_column_name);
 
     auto & column = transformed_header.getByPosition(filter_column_position).column;
@@ -118,28 +112,12 @@ FilterTransform::FilterTransform(
 
 IProcessor::Status FilterTransform::prepare()
 {
-    /// Re-evaluate the filter on the header to enable constant-fold early exit
-    /// for expressions like `WHERE 1 IN (subquery)` or `WHERE x IN (empty set)`
-    /// where the result becomes known only after the set is built.
-    /// Use updateHeader (dry-run) because sets may not be ready yet even when
-    /// output.isNeeded() is true (e.g. delayed set creation in mutations).
-    if (!are_prepared_sets_initialized && output.isNeeded())
-    {
-        are_prepared_sets_initialized = true;
-
-        if (!always_false && expression && !on_totals)
-        {
-            auto header = expression->getActionsDAG().updateHeader(getInputPort().getHeader());
-            auto & column = header.getByPosition(filter_column_position).column;
-            if (column)
-            {
-                ConstantFilterDescription constant_filter(*column);
-                always_false = constant_filter.always_false;
-            }
-        }
-    }
-
-    if (always_false && !on_totals)
+    if (!on_totals
+        && (always_false
+            /// Optimization for `WHERE column in (empty set)`.
+            /// The result will not change after set was created, so we can skip this check.
+            /// It is implemented in prepare() stop pipeline before reading from input port.
+            || (!are_prepared_sets_initialized && expression && expression->checkColumnIsAlwaysFalse(filter_column_name))))
     {
         input.close();
         output.finish();
@@ -147,6 +125,10 @@ IProcessor::Status FilterTransform::prepare()
     }
 
     auto status = ISimpleTransform::prepare();
+
+    /// Until prepared sets are initialized, output port will be unneeded, and prepare will return PortFull.
+    if (status != IProcessor::Status::PortFull)
+        are_prepared_sets_initialized = true;
 
     if (status == IProcessor::Status::Finished)
         writeIntoQueryConditionCache({});
@@ -167,50 +149,6 @@ void FilterTransform::transform(Chunk & chunk)
     doTransform(chunk);
     if (rows_filtered)
         *rows_filtered += chunk_rows_before - chunk.getNumRows();
-}
-
-namespace
-{
-
-/// Compose `filter` (a dense mask over this chunk's pre-filter rows) into the chunk's
-/// `ChunkInfoRowNumbers.applied_filter`, mirroring `DeletionVectorTransform`, so physical row
-/// numbers survive filtering. No-op when the chunk carries no such info.
-void updateRowNumbersInfo(const Chunk & chunk, const IColumn::Filter & filter)
-{
-    auto row_numbers_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
-    if (!row_numbers_info)
-        return;
-
-    auto & applied_filter = row_numbers_info->applied_filter;
-    if (applied_filter.has_value())
-    {
-        /// The mask must have one element per set bit of the existing one. A mismatch means an
-        /// upstream row-changing transform already left the info stale, so it cannot be repaired
-        /// here; the callers that opt in are exactly those whose upstream transforms maintain it.
-        if (countBytesInFilter(*applied_filter) != filter.size())
-            return;
-
-        /// Walk the set bits of the existing mask and clear the ones this filter drops.
-        size_t idx_in_chunk = 0;
-        for (auto & passed : applied_filter.value())
-        {
-            if (passed)
-            {
-                if (!filter[idx_in_chunk])
-                    passed = 0;
-                ++idx_in_chunk;
-            }
-        }
-    }
-    else
-    {
-        /// First filtering on this chunk: the mask directly becomes the applied filter.
-        /// `IColumnFilter` (PaddedPODArray) is noncopyable, so copy explicitly via `assign`.
-        applied_filter.emplace();
-        applied_filter->assign(filter);
-    }
-}
-
 }
 
 void FilterTransform::doTransform(Chunk & chunk)
@@ -323,17 +261,6 @@ void FilterTransform::doTransform(Chunk & chunk)
         removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         return;
-    }
-
-    /// Rows are actually being dropped here. When enabled and the chunk carries `ChunkInfoRowNumbers`,
-    /// record the mask so downstream `_row_number` / positional-delete consumers keep the correct
-    /// physical row numbers. Opt-in (see `update_row_numbers_info`) and only worth building the dense
-    /// mask when the info is present, so guard on both.
-    if (update_row_numbers_info && chunk.getChunkInfos().get<ChunkInfoRowNumbers>())
-    {
-        auto mask_column = FilterDescription::preprocessFilterColumn(filter_column);
-        const IColumn::Filter & mask = assert_cast<const ColumnUInt8 &>(*mask_column).getData();
-        updateRowNumbersInfo(chunk, mask);
     }
 
     /// Filter the rest of the columns.

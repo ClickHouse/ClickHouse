@@ -21,7 +21,7 @@ censor.net
 censor.net
 censor.net
 censor.net
-SELECT if(greater(number, 5), \'censor.net\', \'google\')
+SELECT if(number > 5, \'censor.net\', \'google\')
 FROM system.numbers
 LIMIT 10
 other
@@ -47,6 +47,6 @@ censor.net
 censor.net
 censor.net
 censor.net
-SELECT if(greater(number, 5), \'censor.net\', \'google\')
+SELECT if(number > 5, \'censor.net\', \'google\')
 FROM system.numbers
 LIMIT 10

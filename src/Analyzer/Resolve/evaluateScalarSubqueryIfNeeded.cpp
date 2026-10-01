@@ -1,6 +1,4 @@
 #include <Analyzer/Resolve/QueryAnalyzer.h>
-#include <DataTypes/DataTypeString.h>
-#include <Columns/ColumnTuple.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
@@ -25,7 +23,6 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
 {
@@ -48,7 +45,6 @@ namespace Setting
 {
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsBool extremes;
-    extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
@@ -97,17 +93,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     auto & context = scope.context;
 
-    /// Scalar subqueries in table function or parameterized view arguments are executed even in
-    /// only-analyze mode. The table function / view is resolved into a storage during analysis
-    /// (its header is needed), so it requires real argument values rather than type-only
-    /// placeholders. Otherwise a placeholder would be passed, e.g. an empty URL to `s3`:
-    /// CREATE TABLE t ENGINE = MergeTree ORDER BY () AS
-    /// WITH (SELECT path FROM table_with_paths) AS path SELECT * FROM s3(path, NOSIGN);
-    /// or a default (empty) value substituted for a parameterized view parameter.
-    const bool only_analyze_subquery = only_analyze
-        && !table_function_arguments_in_resolve_process
-        && !parameterized_view_arguments_in_resolve_process;
-
     Block scalar_block;
 
     auto node_without_alias = node->clone();
@@ -116,7 +101,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
     auto str_hash = DB::toString(node_with_hash.hash);
 
-    bool can_use_global_scalars = !only_analyze_subquery && !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));
+    bool can_use_global_scalars = !only_analyze && !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));
 
     auto & scalars_cache = can_use_global_scalars ? scalar_subquery_to_scalar_value_global : scalar_subquery_to_scalar_value_local;
 
@@ -157,45 +142,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         if (auto * new_union_node = query_tree->as<UnionNode>())
             new_union_node->getMutableContext() = subquery_context;
 
-        /// The Planner reads the context from every node, so parallel replicas must be disabled
-        /// in nested QueryNode/UnionNode contexts too, not just on the top node. Same recursive
-        /// walk as createLocalPlanForParallelReplicas.
-        std::vector<IQueryTreeNode *> nodes_to_visit;
-        for (const auto & child : query_tree->getChildren())
-            if (child)
-                nodes_to_visit.push_back(child.get());
-        while (!nodes_to_visit.empty())
-        {
-            auto * current = nodes_to_visit.back();
-            nodes_to_visit.pop_back();
-
-            if (auto * nested_query_node = current->as<QueryNode>())
-            {
-                auto nested_context = Context::createCopy(nested_query_node->getContext());
-                nested_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-                nested_query_node->getMutableContext() = std::move(nested_context);
-            }
-            else if (auto * nested_union_node = current->as<UnionNode>())
-            {
-                auto nested_context = Context::createCopy(nested_union_node->getContext());
-                nested_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-                nested_union_node->getMutableContext() = std::move(nested_context);
-            }
-
-            for (const auto & child : current->getChildren())
-                if (child)
-                    nodes_to_visit.push_back(child.get());
-        }
-
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
-        options.only_analyze = only_analyze_subquery;
-
-        /// Scalar subqueries may reference materialized CTEs that haven't been populated yet.
-        /// Force CTE materialization in the sub-plan so that the pipeline execution
-        /// populates the CTE StorageMemory tables before the scalar subquery reads from them.
-        /// This is analogous to addBuildSubqueriesForSetsStepIfNeeded using forceMaterializeCTE()
-        /// for set subqueries that reference CTEs.
-        options.forceMaterializeCTE();
+        options.only_analyze = only_analyze;
 
         QueryTreePassManager query_tree_pass_manager(subquery_context);
         addQueryTreePasses(query_tree_pass_manager, options.only_analyze);
@@ -234,7 +182,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             }
         };
 
-        if (only_analyze_subquery)
+        if (only_analyze)
         {
             /// If query is only analyzed, then constants are not correct.
             scalar_block = *interpreter->getSampleBlock();
@@ -278,7 +226,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
                 io.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
                 io.pipeline.setQuota(subquery_context->getQuota());
-                io.pipeline.setNormalizedQueryHash(subquery_context->getNormalizedQueryHash());
             }
 
             std::optional<PullingAsyncPipelineExecutor> executor;
@@ -291,8 +238,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
                 executor.emplace(io.pipeline);
-                if (auto cancel_cb = context->hasQueryContext() ? context->getQueryContext()->getInteractiveCancelCallback() : nullptr)
-                    executor->setCancelCallback(std::move(cancel_cb), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
                 while (chunk.getNumRows() == 0 && executor->pull(chunk))
                 {
                 }
@@ -372,13 +317,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     static const std::set<std::string_view> useless_literal_types = {"Array", "Tuple", "AggregateFunction", "Function", "Set", "LowCardinality"};
     auto * nearest_query_scope = scope.getNearestQueryScope();
 
-    /// Always convert to literals when there is no query context, or when resolving a
-    /// parameterized view argument (its value must fold to a literal to be matched against
-    /// the view's query parameters, see `parameterized_view_arguments_in_resolve_process`).
+    /// Always convert to literals when there is no query context
     if (!context->getSettingsRef()[Setting::enable_scalar_subquery_optimization] || !useless_literal_types.contains(scalar_type_name)
-        || !context->hasQueryContext() || !nearest_query_scope || parameterized_view_arguments_in_resolve_process)
+        || !context->hasQueryContext() || !nearest_query_scope)
     {
-        ConstantValue constant_value{ ConstantValue::wrapToColumnConst(scalar_column_with_type.column), scalar_type };
+        ConstantValue constant_value{ scalar_column_with_type.column, scalar_type };
         auto constant_node = std::make_shared<ConstantNode>(constant_value, node);
 
         if (scalar_column_with_type.column->isNullAt(0))
@@ -395,7 +338,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     auto & nearest_query_scope_query_node = nearest_query_scope->scope_node->as<QueryNode &>();
     auto & mutable_context = nearest_query_scope_query_node.getMutableContext();
 
-    auto scalar_query_hash_string = DB::toString(node_with_hash.hash) + (only_analyze_subquery ? "_analyze" : "");
+    auto scalar_query_hash_string = DB::toString(node_with_hash.hash) + (only_analyze ? "_analyze" : "");
 
     if (mutable_context->hasQueryContext())
         mutable_context->getQueryContext()->addScalar(scalar_query_hash_string, scalar_block);

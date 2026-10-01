@@ -1,8 +1,4 @@
 #include <string_view>
-#include <Storages/System/SystemTableSourceRegistry.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <DataTypes/DataTypeString.h>
-#include <Core/NamesAndTypes.h>
 #include <Storages/System/StorageSystemDashboards.h>
 #include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
@@ -20,17 +16,12 @@ ColumnsDescription StorageSystemDashboards::getColumnsDescription()
     };
 }
 
-static String trim(const char * text)
+String trim(const char * text)
 {
     std::string_view view(text);
     ::trim(view, '\n');
     return String(view);
 }
-
-#if ENABLE_DISTRIBUTED_CACHE
-/// Defined in StorageSystemDashboardsDistributedCache.cpp, which exists only in the private repo.
-const std::vector<std::map<String, String>> & getDistributedCacheDashboards();
-#endif
 
 void StorageSystemDashboards::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
@@ -2267,6 +2258,319 @@ ORDER BY t ASC WITH FILL STEP {rounding:UInt32}
 SETTINGS skip_unavailable_shards = 1
 )EOQ") }
         },
+        /// Distributed cache client metrics start
+        {
+            { "dashboard", "Distributed cache client overview" },
+            { "title", "Read from Distributed Cache (bytes/sec)" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (
+    SELECT event_time, sum(ProfileEvent_DistrCacheReceivedDataPacketsBytes) AS metric
+    FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+    WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+    GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache client overview" },
+            { "title", "Read from Distributed Cache fallback buffer (bytes/sec)" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (
+    SELECT event_time, sum(ProfileEvent_DistrCacheReadBytesFromFallbackBuffer) AS metric
+    FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+    WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+    GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache client overview" },
+            { "title", "Read From Filesystem (no Distributed Cache) (bytes/sec)" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_OSReadChars) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache client overview" },
+            { "title", "Read From S3 (no Distributed Cache) (bytes/sec)" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_ReadBufferFromS3Bytes) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache client overview" },
+            { "title", "Distributed Cache read requests" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (
+    SELECT event_time, sum(CurrentMetric_DistrCacheReadRequests) AS metric
+    FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+    WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+    GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache client overview" },
+            { "title", "Distributed Cache write requests" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (
+    SELECT event_time, sum(CurrentMetric_DistrCacheWriteRequests) AS metric
+    FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+    WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+    GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache client overview" },
+            { "title", "Distributed Cache open connections" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (
+    SELECT event_time, sum(CurrentMetric_DistrCacheOpenedConnections) AS metric
+    FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+    WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+    GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache client overview" },
+            { "title", "Distributed Cache registered servers" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (
+    SELECT event_time, sum(CurrentMetric_DistrCacheRegisteredServersCurrentAZ) AS metric
+    FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+    WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+    GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache client overview" },
+            { "title", "Distributed Cache read errors" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (
+    SELECT event_time, sum(ProfileEvent_DistrCacheReadErrors) AS metric
+    FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+    WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+    GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache client overview" },
+            { "title", "Distributed Cache make request errors" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (SELECT event_time, sum(ProfileEvent_DistrCacheMakeRequestErrors) AS metric FROM clusterAllReplicas(default, merge(system, '^metric_log'))
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+GROUP BY event_time)
+GROUP BY t ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache client overview" },
+            { "title", "Distributed Cache receive response errors" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (SELECT event_time, sum(ProfileEvent_DistrCacheReceiveResponseErrors) AS metric FROM clusterAllReplicas(default, merge(system, '^metric_log'))
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+GROUP BY event_time)
+GROUP BY t ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache client overview" },
+            { "title", "Distributed Cache registry updates" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(metric)
+FROM (
+    SELECT event_time, sum(ProfileEvent_DistrCacheHashRingRebuilds) AS metric
+    FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+    WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+    GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache client overview" },
+            { "title", "Distributed Cache unused packets" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (
+    SELECT event_time, sum(ProfileEvent_DistrCacheUnusedPackets) AS metric
+    FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+    WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+    GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        /// Distributed cache client metrics end
+        ///
+        /// Distributed cache server metrics start
+        {
+            { "dashboard", "Distributed cache server overview" },
+            { "title", "Distributed Cache open connections" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (SELECT event_time, sum(CurrentMetric_DistrCacheServerConnections) AS metric FROM clusterAllReplicas(default, merge(system, '^metric_log'))
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+GROUP BY event_time)
+GROUP BY t ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache server overview" },
+            { "title", "Distributed Cache StartRequest packets" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (SELECT event_time, sum(ProfileEvent_DistrCacheServerStartRequestPackets) AS metric FROM clusterAllReplicas(default, merge(system, '^metric_log'))
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+GROUP BY event_time)
+GROUP BY t ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache server overview" },
+            { "title", "Distributed Cache ContinueRequest packets" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (SELECT event_time, sum(ProfileEvent_DistrCacheServerContinueRequestPackets) AS metric FROM clusterAllReplicas(default, merge(system, '^metric_log'))
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+GROUP BY event_time)
+GROUP BY t ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache server overview" },
+            { "title", "Distributed Cache EndRequest packets" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (SELECT event_time, sum(ProfileEvent_DistrCacheServerEndRequestPackets) AS metric FROM clusterAllReplicas(default, merge(system, '^metric_log'))
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+GROUP BY event_time)
+GROUP BY t ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache server overview" },
+            { "title", "Distributed Cache AckRequest packets" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (SELECT event_time, sum(ProfileEvent_DistrCacheServerAckRequestPackets) AS metric FROM clusterAllReplicas(default, merge(system, '^metric_log'))
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+GROUP BY event_time)
+GROUP BY t ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache server overview" },
+            { "title", "Distributed Cache reused s3 clients" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (SELECT event_time, sum(ProfileEvent_DistrCacheServerReusedS3CachedClients) AS metric FROM clusterAllReplicas(default, merge(system, '^metric_log'))
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+GROUP BY event_time)
+GROUP BY t ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Distributed cache server overview" },
+            { "title", "Distributed Cache new s3 clients" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric)
+FROM (SELECT event_time, sum(ProfileEvent_DistrCacheServerNewS3CachedClients) AS metric FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+GROUP BY event_time)
+GROUP BY t ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        /// Distributed cache server metrics end
     };
 
     auto add_dashboards = [&](const auto & dashboards)
@@ -2282,19 +2586,9 @@ SETTINGS skip_unavailable_shards = 1
 
     const auto & context_dashboards = context->getDashboards();
     if (context_dashboards.has_value())
-    {
         add_dashboards(*context_dashboards);
-    }
     else
-    {
         add_dashboards(default_dashboards);
-#if ENABLE_DISTRIBUTED_CACHE
-        add_dashboards(getDistributedCacheDashboards());
-#endif
-    }
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDashboards) }

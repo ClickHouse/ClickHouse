@@ -32,49 +32,18 @@ struct JoinOnKeyColumns
     Sizes key_sizes;
 
     JoinOnKeyColumns(
-        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_,
-        bool keep_lowcardinality = false);
+        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_);
 
     bool isRowFiltered(size_t i) const
     {
         return join_mask_column.isRowFiltered(i);
     }
-
-    /// A row with a NULL key and a row filtered out by the ON-section mask have the same
-    /// effect - the row matches nothing - so the probe loop needs a single skip byte per
-    /// row instead of two checks. Returns the skip bytes (indexed by source-block row,
-    /// 1 = skip), prepared once per call: without an ON-section condition the null map is
-    /// returned directly, no copy (nullptr when the keys are not nullable either = no row
-    /// is skipped); with one, `buffer` is filled with the merged null-and-mask bytes.
-    /// Only the positions the caller will probe are written (continuation chunks and
-    /// scattered shards visit a subset of the source block); the rest of `buffer` stays
-    /// uninitialized and must not be read.
-    const UInt8 * buildRowSkipData(IColumn::Filter & buffer, size_t range_begin, size_t range_size) const;
-    const UInt8 * buildRowSkipData(IColumn::Filter & buffer, const ScatteredBlock::Indexes & indexes) const;
 };
 
 struct LazyOutput
 {
-    /// Entries share the encoding of the join hash map cell values (see RowRefs.h):
-    ///   0 - default row; bit 63 set - inline encoded RowRef; otherwise - a RowRefList
-    ///   list word (pointer to a Batch node in the low 48 bits + row count).
-    /// ASOF matches are inline encoded RowRef words too (the leaf of the sorted lookup vector).
     PaddedPODArray<UInt64> row_refs;
-    size_t row_count = 0;   /// Total number of rows in all refs and ref lists
-
-    /// Resolves RowRef::block_no at emit time; points into the join's StoredColumnsIndex,
-    /// which is immutable once the build phase is finished. Used by the cold paths
-    /// (joinGet / ColumnsWithRowNumbers / ASOF). These keep the raw `StoredBlock *` rather than
-    /// the hot-path emit table below because they need the whole block, not just a resolved column:
-    /// per-row `byteSizeAt` accounting (`buildOutputFromBlocksLimitAndOffset`), nullable-column
-    /// dispatch (`buildJoinGetOutput`), and feeding `ColumnsWithRowNumbers` (`buildOutputFromBlocks`).
-    const StoredBlock * const * stored_columns = nullptr;
-
-    /// Per output column (parallel to `right_indexes`): the StoredColumnsIndex emit table base pointers,
-    /// i.e. the resolved source `const IColumn *` per block and its `ColumnReplicated *` counterpart.
-    /// Filled in the AddedColumns ctor for the hot `fillFromRowRefs` path; empty for joinGet / ASOF.
-    std::vector<const IColumn * const *> emit_block_columns;
-    std::vector<const ColumnReplicated * const *> emit_block_replicated;
+    size_t row_count = 0;   /// Total number of rows in all RowRef-s and RowRefList-s
 
     std::vector<size_t> right_indexes;
     NamesAndTypes type_name;
@@ -89,12 +58,16 @@ struct LazyOutput
 
     void reserve(size_t size) { row_refs.reserve(size); }
 
-    /// `ref_word` is either an inline single ref or a RowRefList list word (pointer + count).
-    void addRef(UInt64 ref_word)
+    void addRowRef(const RowRef * row_ref)
     {
-        chassert(ref_word != 0);
-        row_refs.emplace_back(ref_word);
-        row_count += refWordRows(ref_word);
+        row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref));
+        ++row_count;
+    }
+
+    void addRowRefList(const RowRefList * row_ref_list)
+    {
+        row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref_list));
+        row_count += row_ref_list->rows;
     }
 
     void addDefault()
@@ -116,8 +89,8 @@ struct LazyOutput
 
     void buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
-    /** Build output from the blocks that extract from the encoded refs, to avoid block cache miss which may cause performance slow down.
-     *  And This problem would happen it we directly build output from the encoded refs.
+    /** Build output from the blocks that extract from `RowRef` or `RowRefList`, to avoid block cache miss which may cause performance slow down.
+     *  And This problem would happen it we directly build output from `RowRef` or `RowRefList`.
      */
     template<bool from_row_list>
     void buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
@@ -152,7 +125,6 @@ public:
         , additional_filter_expression(additional_filter_expression_)
         , additional_filter_required_rhs_pos(additional_filter_required_rhs_pos_)
         , rows_to_add(left_block_.rows())
-        , enable_prefetch(join.enableSoftwarePrefetch())
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -172,7 +144,6 @@ public:
         lazy_output.output_by_row_list_threshold = join.getTableJoin().outputByRowListPerkeyRowsThreshold();
         lazy_output.join_data_sorted = join.getJoinedData()->sorted;
         lazy_output.join_data_avg_perkey_rows = join.getJoinedData()->avgPerKeyRows();
-        lazy_output.stored_columns = join.getJoinedData()->stored_columns_index->blocksData();
 
         for (const auto & src_column : block_with_columns_to_add)
         {
@@ -186,7 +157,7 @@ public:
 
         if (is_asof_join)
         {
-            chassert(join_on_keys.size() == 1);
+            assert(join_on_keys.size() == 1);
             const ColumnWithTypeAndName & right_asof_column = join.rightAsofKeyColumn();
             addColumn(right_asof_column);
             left_asof_key = join_on_keys[0].key_columns.back();
@@ -205,22 +176,6 @@ public:
             if (columns[j]->isNullable() && !saved_column->isNullable())
                 nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
         }
-
-        /// Resolve the StoredColumnsIndex emit table for the hot `fillFromRowRefs` path: cache, per output
-        /// column, the per-block base pointers it hands to `fillFromRowRefs`. Only normal joins reach it
-        /// (joinGet and ASOF use the cold per-block paths). `resolveEmitColumns` builds exactly the
-        /// requested positions (this query's `right_indexes`) under the index mutex, so StorageJoin queries
-        /// selecting different right-column subsets each get their columns built rather than reusing a
-        /// table scoped to some other query's columns.
-        if constexpr (lazy)
-        {
-            if (!is_join_get && !is_asof_join)
-                join.getJoinedData()->stored_columns_index->resolveEmitColumns(
-                    saved_block_sample.columns(),
-                    lazy_output.right_indexes,
-                    lazy_output.emit_block_columns,
-                    lazy_output.emit_block_replicated);
-        }
     }
 
     size_t size() const { return columns.size(); }
@@ -230,9 +185,25 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), lazy_output.type_name[i].type, lazy_output.type_name[i].name);
     }
 
-    /// Encoded RowRef word (inline single ref, including an ASOF match) or a RowRefList
-    /// list word (pointer + count).
-    void appendFromBlock(UInt64 ref_word, bool has_default);
+    void appendFromBlock(const RowRefList * row_ref_list, bool)
+    {
+        if constexpr (lazy)
+        {
+#ifndef NDEBUG
+            checkColumns(row_ref_list->columns_info->columns);
+#endif
+            if (has_columns_to_add)
+            {
+                lazy_output.addRowRefList(row_ref_list);
+            }
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "AddedColumns are not implemented for RowRefList in non-lazy mode");
+        }
+    }
+
+    void appendFromBlock(const RowRef * row_ref, bool has_default);
 
     void appendDefaultRow()
     {
@@ -261,7 +232,6 @@ public:
     size_t max_joined_block_rows = 0;
     size_t rows_to_add;
     bool need_filter = false;
-    bool enable_prefetch = true;
 
     MutableColumns columns;
     IColumn::Offsets offsets_to_replicate;
@@ -270,7 +240,7 @@ public:
     IColumn::Offsets matched_rows;
 
     /// for lazy
-    // The default row is represented by a zero ref word, so that fixed-size blocks can be generated sequentially,
+    // The default row is represented by an empty RowRef, so that fixed-size blocks can be generated sequentially,
     // default_count cannot represent the position of the row
     LazyOutput lazy_output;
     bool has_columns_to_add;
@@ -347,6 +317,6 @@ private:
     }
 };
 
-std::pair<const IColumn *, size_t> getBlockColumnAndRow(const StoredBlock * block, size_t row_num, size_t column_index);
+std::pair<const IColumn *, size_t> getBlockColumnAndRow(const RowRef * row_ref, size_t column_index);
 
 }

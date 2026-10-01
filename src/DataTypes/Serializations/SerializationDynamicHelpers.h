@@ -17,7 +17,7 @@ struct FlattenedDynamicColumn
     DataTypes types;
     /// Columns with data for each type.
     /// columns[i] contains values of type types[i].
-    Columns columns;
+    std::vector<ColumnPtr> columns;
     /// Column with indexes of types for each row in Dynamic column.
     ColumnPtr indexes_column;
     /// Type of indexes column is dynamic and depends on the number of types.

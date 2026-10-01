@@ -153,16 +153,6 @@ inline Int64 decodeZigZag(UInt64 n)
     return static_cast<Int64>((n >> 1) ^ -(n & 1));
 }
 
-inline UInt32 encodeZigZag32(Int32 value)
-{
-    return (static_cast<UInt32>(value) << 1) ^ static_cast<UInt32>(value >> 31);
-}
-
-inline Int32 decodeZigZag32(UInt32 n)
-{
-    return static_cast<Int32>((n >> 1) ^ -(n & 1));
-}
-
 template <typename InBuf>
 inline void ALWAYS_INLINE readVarInt(Int64 & x, InBuf & istr)
 {
@@ -179,28 +169,28 @@ inline const char * ALWAYS_INLINE readVarInt(Int64 & x, const char * istr, size_
 
 inline void ALWAYS_INLINE readVarUInt(UInt32 & x, ReadBuffer & istr)
 {
-    UInt64 tmp = 0;
+    UInt64 tmp;
     readVarUInt(tmp, istr);
     x = static_cast<UInt32>(tmp);
 }
 
 inline void ALWAYS_INLINE readVarInt(Int32 & x, ReadBuffer & istr)
 {
-    Int64 tmp = 0;
+    Int64 tmp;
     readVarInt(tmp, istr);
     x = static_cast<Int32>(tmp);
 }
 
 inline void ALWAYS_INLINE readVarUInt(UInt16 & x, ReadBuffer & istr)
 {
-    UInt64 tmp = 0;
+    UInt64 tmp;
     readVarUInt(tmp, istr);
     x = static_cast<UInt16>(tmp);
 }
 
 inline void ALWAYS_INLINE readVarInt(Int16 & x, ReadBuffer & istr)
 {
-    Int64 tmp = 0;
+    Int64 tmp;
     readVarInt(tmp, istr);
     x = static_cast<Int16>(tmp);
 }
@@ -209,7 +199,7 @@ template <typename T>
 requires(!std::is_same_v<T, UInt64>)
 inline void ALWAYS_INLINE readVarUInt(T & x, ReadBuffer & istr)
 {
-    UInt64 tmp = 0;
+    UInt64 tmp;
     readVarUInt(tmp, istr);
     x = static_cast<T>(tmp);
 }

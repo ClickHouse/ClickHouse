@@ -38,7 +38,7 @@ struct GroupByKeyComparator
 {
     GroupByKeyComparator(QueryTreeNodePtr node_) /// NOLINT
         : node(std::move(node_))
-        , hash(node->getTreeHash({.compare_aliases = false}))
+        , hash(node->getTreeHash({.compare_aliases = false, .compare_types = true}))
     {}
 
     bool operator==(const GroupByKeyComparator & other) const { return hash == other.hash && compareGroupByKeys(node, other.node); }
@@ -147,7 +147,7 @@ public:
 
         if (add_grouping_set_column)
         {
-            TableExpressionNodeWeakPtr column_source;
+            QueryTreeNodeWeakPtr column_source;
             auto grouping_set_column = NameAndTypePair{"__grouping_set", std::make_shared<DataTypeUInt64>()};
             auto grouping_set_argument_column = std::make_shared<ColumnNode>(std::move(grouping_set_column), std::move(column_source));
             function_arguments.insert(function_arguments.begin(), std::move(grouping_set_argument_column));

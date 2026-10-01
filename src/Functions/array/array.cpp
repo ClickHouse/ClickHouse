@@ -1,5 +1,4 @@
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -13,33 +12,25 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
-#include <Common/VectorWithMemoryTracking.h>
-
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
-    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 /// array(c1, c2, ...) - create an array.
-class FunctionArray final : public IFunction
+class FunctionArray : public IFunction
 {
 public:
     static constexpr auto name = "array";
 
-    explicit FunctionArray(bool use_variant_as_common_type_ = false, bool allow_lossy_numeric_supertype_ = false)
-        : use_variant_as_common_type(use_variant_as_common_type_)
-        , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
-    {}
+    explicit FunctionArray(bool use_variant_as_common_type_ = false) : use_variant_as_common_type(use_variant_as_common_type_) {}
 
     static FunctionPtr create(ContextPtr context)
     {
-        const auto & settings = context->getSettingsRef();
-        return std::make_shared<FunctionArray>(
-            settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype]);
+        return std::make_shared<FunctionArray>(context->getSettingsRef()[Setting::use_variant_as_common_type]);
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -55,9 +46,9 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (use_variant_as_common_type)
-            return std::make_shared<DataTypeArray>(getLeastSupertypeOrVariant(arguments, allow_lossy_numeric_supertype));
+            return std::make_shared<DataTypeArray>(getLeastSupertypeOrVariant(arguments));
 
-        return std::make_shared<DataTypeArray>(getLeastSupertype(arguments, allow_lossy_numeric_supertype));
+        return std::make_shared<DataTypeArray>(getLeastSupertype(arguments));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -141,7 +132,7 @@ private:
     bool executeNumber(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
         using Container = ColumnVectorOrDecimal<T>::Container;
-        VectorWithMemoryTracking<const Container *> containers(columns.size(), nullptr);
+        std::vector<const Container *> containers(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnVectorOrDecimal<T> * concrete_column = checkAndGetColumn<ColumnVectorOrDecimal<T>>(columns[i]);
@@ -158,12 +149,6 @@ private:
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
             const size_t base = row_i * columns.size();
-            /// At x86-64-v3 the loop and SLP vectorizers widen the per-column scatter into AVX2 gathers / packed stores
-            /// for typical small `columns.size()` (1-4), which regresses array literal construction by 10-20% vs scalar
-            /// stores. Disabling unrolling and vectorization keeps the simple per-element copy.
-#if defined(__clang__) && defined(__AVX2__)
-#pragma clang loop unroll(disable) vectorize(disable)
-#endif
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
                 out_container[base + col_i] = (*containers[col_i])[row_i];
         }
@@ -173,7 +158,7 @@ private:
     bool executeString(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
         size_t total_bytes = 0;
-        VectorWithMemoryTracking<const ColumnString *> concrete_columns(columns.size(), nullptr);
+        std::vector<const ColumnString *> concrete_columns(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnString * concrete_column = checkAndGetColumn<ColumnString>(columns[i]);
@@ -207,7 +192,7 @@ private:
 
     bool executeFixedString(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
-        VectorWithMemoryTracking<const ColumnFixedString *> concrete_columns(columns.size(), nullptr);
+        std::vector<const ColumnFixedString *> concrete_columns(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnFixedString * concrete_column = checkAndGetColumn<ColumnFixedString>(columns[i]);
@@ -302,7 +287,6 @@ private:
     }
 
     bool use_variant_as_common_type = false;
-    bool allow_lossy_numeric_supertype = false;
 };
 
 

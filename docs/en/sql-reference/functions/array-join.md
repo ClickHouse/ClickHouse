@@ -6,6 +6,8 @@ title: 'arrayJoin function'
 doc_type: 'reference'
 ---
 
+# arrayJoin function
+
 This is a very unusual function.
 
 Normal functions do not change a set of rows, but just change the values in each row (map).
@@ -88,7 +90,7 @@ In those cases, consider modifying repeated array expressions with extra operati
 
 Example:
 
-```sql title="Query"
+```sql
 SELECT
     arrayJoin(dice) AS first_throw,
     /* arrayJoin(dice) as second_throw */ -- is technically correct, but will annihilate result set
@@ -103,7 +105,7 @@ Note the [`ARRAY JOIN`](../statements/select/array-join.md) syntax in the SELECT
 
 Example:
 
-```sql title="Query"
+```sql
 SELECT
     sum(1) AS impressions,
     city,
@@ -122,7 +124,7 @@ GROUP BY
     3
 ```
 
-```text title="Response"
+```text
 ┌─impressions─┬─city─────┬─browser─┐
 │           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │

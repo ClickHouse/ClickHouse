@@ -4,7 +4,6 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
-#include <Compression/registerCompressionCodecs.h>
 #include <DataTypes/IDataType.h>
 #include <base/unaligned.h>
 #include <Parsers/IAST_fwd.h>
@@ -152,7 +151,7 @@ constexpr UInt8 getBitLengthOfLength(UInt8 data_bytes_size)
     // 4-byte         32 bits        =>    6
     // 8-byte         64 bits        =>    7
     const UInt8 bit_lengths[] = {0, 4, 5, 0, 6, 0, 0, 0, 7};
-    chassert(data_bytes_size >= 1 && data_bytes_size < sizeof(bit_lengths) && bit_lengths[data_bytes_size] != 0);
+    assert(data_bytes_size >= 1 && data_bytes_size < sizeof(bit_lengths) && bit_lengths[data_bytes_size] != 0);
     return bit_lengths[data_bytes_size];
 }
 

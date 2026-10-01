@@ -1,5 +1,6 @@
 #pragma once
-/// BOOST_USE_ASAN, BOOST_USE_MSAN, BOOST_USE_TSAN and BOOST_USE_UCONTEXT are defined via CMake for sanitizer builds.
+/// defines.h should be included before fiber.hpp
+/// BOOST_USE_ASAN, BOOST_USE_TSAN and BOOST_USE_UCONTEXT should be correctly defined for sanitizers.
 #include <base/defines.h>
 #include <boost/context/fiber.hpp>
 #include <map>
@@ -45,9 +46,11 @@ public:
         current_fiber = parent_fiber;
     }
 
-    /// Defined in `Fiber.cpp`: a static local in a header-defined function gives every shared
-    /// object its own copy.
-    static FiberPtr & getCurrentFiber();
+    static FiberPtr & getCurrentFiber()
+    {
+        thread_local static FiberPtr current_fiber;
+        return current_fiber;
+    }
 
 private:
     template <typename Fn>

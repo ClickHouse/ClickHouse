@@ -7,6 +7,8 @@ title: 'Permissions for queries'
 doc_type: 'reference'
 ---
 
+# Permissions for queries
+
 Queries in ClickHouse can be divided into several types:
 
 1.  Read data queries: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.

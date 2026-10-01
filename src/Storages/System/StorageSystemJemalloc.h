@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 
 
 namespace DB
 {
 
-class StorageSystemJemallocBins final : public StorageWithCommonVirtualColumns
+class StorageSystemJemallocBins final : public IStorage
 {
 public:
     explicit StorageSystemJemallocBins(const StorageID & table_id_);
@@ -14,9 +14,6 @@ public:
     std::string getName() const override { return "SystemJemallocBins"; }
 
     static ColumnsDescription getColumnsDescription();
-    static VirtualColumnsDescription createVirtuals();
-
-    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,

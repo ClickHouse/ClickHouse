@@ -30,9 +30,6 @@ struct FormatSettings
     bool null_as_default = true;
     bool force_null_for_omitted_fields = false;
     bool decimal_trailing_zeros = false;
-    bool always_write_decimal_point_in_float_and_decimal = false;
-    UInt64 float_precision = 0;
-    bool precise_float_parsing = true;
     bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -41,9 +38,6 @@ struct FormatSettings
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 25000;
     UInt64 max_bytes_to_read_for_schema_inference = 32 * 1024 * 1024;
-    /// Internal flag used to surface expensive non-seekable fallbacks only when schema inference
-    /// runs for a known format, not while trying multiple candidate formats during detection.
-    bool log_full_buffer_fallback_during_schema_inference = false;
 
     String column_names_for_schema_inference{};
     String schema_inference_hints{};
@@ -55,9 +49,6 @@ struct FormatSettings
     bool try_infer_exponent_floats = false;
 
     bool allow_special_serialization_kinds = false;
-
-    /// tolerates leading zeros during parsing integers
-    bool allow_number_leading_zeros = false;
 
     inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
     inline static const String FORMAT_SCHEMA_SOURCE_STRING = "string";
@@ -74,9 +65,9 @@ struct FormatSettings
 
     enum class DateTimeInputFormat : uint8_t
     {
-        Basic, /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
-        BestEffort, /// Use sophisticated rules to parse whatever possible.
-        BestEffortUS /// Use sophisticated rules to parse American style: mm/dd/yyyy
+        Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
+        BestEffort,   /// Use sophisticated rules to parse whatever possible.
+        BestEffortUS  /// Use sophisticated rules to parse American style: mm/dd/yyyy
     };
 
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
@@ -105,12 +96,6 @@ struct FormatSettings
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
-    /// Read an unquoted number for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for
-    /// `DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
-    /// Restores the pre-26.8 behavior (see the `input_format_read_datetime_number_as_raw_value` setting). Also
-    /// set by the `YTsaurus` reader, whose `timestamp` types are stored as raw ticks, not seconds.
-    bool read_datetime_number_as_raw_value = false;
-
     enum class IntervalOutputFormat : uint8_t
     {
         Kusto,
@@ -136,15 +121,6 @@ struct FormatSettings
 
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
-
-    enum class InputFormatColumnMatchingCaseSensitivity : uint8_t
-    {
-        MATCH_CASE, /// Matches case-sensitively
-        IGNORE_CASE, /// Matches case-insensitively
-        AUTO, /// First tries to match case-sensitively, if fails, tries to match case-insensitively
-    };
-
-    InputFormatColumnMatchingCaseSensitivity input_format_column_matching_case_sensitivity = InputFormatColumnMatchingCaseSensitivity::AUTO;
 
     UInt64 client_protocol_version = 0;
 
@@ -175,11 +151,6 @@ struct FormatSettings
         bool write_json_as_string = false;
         bool read_bool_field_as_int = false;
         UInt64 max_object_size = 100000;
-        /// Max number of type nodes when decoding binary types. 0 == unlimited. The guard applies only to
-        /// untrusted input: FormatFactory populates this from input_format_binary_max_type_complexity for real
-        /// input formats. A default-constructed FormatSettings (internal decode of already-stored data) leaves
-        /// it at 0, so stored/background decode is never limited.
-        UInt64 max_binary_type_complexity = 0;
     } binary{};
 
     struct
@@ -195,37 +166,16 @@ struct FormatSettings
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
-        bool output_unsupported_types_as_binary = true;
     } arrow{};
-
-    struct AvroSchemaRegistryTimeouts
-    {
-        UInt64 connection_timeout = 1;
-        UInt64 send_timeout = 1;
-        UInt64 receive_timeout = 1;
-    };
-
-    /// Retry policy for the Confluent Schema Registry HTTP client. Applied to
-    /// transient transport-level failures (connection refused, DNS, socket
-    /// timeouts) and to retryable HTTP responses (5xx, 408, 429). Schema
-    /// validation errors (HTTP 409, malformed Avro JSON) are NOT retried.
-    struct AvroSchemaRegistryRetryConfig
-    {
-        UInt64 max_retries = 5;
-        UInt64 initial_backoff_ms = 100;
-    };
 
     struct
     {
         String schema_registry_url;
-        AvroSchemaRegistryTimeouts schema_registry_timeouts;
-        AvroSchemaRegistryRetryConfig schema_registry_retry;
         String output_codec;
         UInt64 output_sync_interval = 16 * 1024;
         bool allow_missing_fields = false;
         String string_column_pattern;
         UInt64 output_rows_in_file = 1;
-        String output_confluent_subject;
     } avro{};
 
     String bool_true_representation = "true";
@@ -239,10 +189,8 @@ struct FormatSettings
         bool allow_single_quotes = true;
         bool allow_double_quotes = true;
         bool serialize_tuple_into_separate_columns = true;
-        bool header_serialize_tuple_into_separate_columns = true;
         bool deserialize_separate_columns_into_tuple = true;
         bool empty_as_default = false;
-        bool missing_nullable_as_empty_string = false;
         bool crlf_end_of_line = false;
         bool allow_cr_end_of_line = false;
         bool enum_as_number = false;
@@ -361,10 +309,9 @@ struct FormatSettings
         bool case_insensitive_column_matching = false;
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
-        size_t dictionary_filter_push_down = 1024 * 1024;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
-
+        bool use_native_reader_v3 = false;
         bool enable_json_parsing = true;
         bool preserve_order = false;
         bool enable_row_group_prefetch = true;
@@ -385,11 +332,13 @@ struct FormatSettings
         bool output_datetime_as_uint32 = false;
         bool output_date_as_uint16 = false;
         bool output_enum_as_byte_array = false;
-
+        bool use_custom_encoder = true;
         bool parallel_encoding = true;
+        bool output_compliant_nested_types = true;
         bool write_page_index = false;
         bool write_bloom_filter = false;
         bool write_checksums = true;
+        ParquetVersion output_version = ParquetVersion::V2_LATEST;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;
@@ -431,8 +380,6 @@ struct FormatSettings
         UInt64 fallback_to_vertical_min_table_width = 250;
 
         bool named_tuples_as_json = true;
-
-        bool use_nbsp_for_padding = false;
 
         enum class Charset : uint8_t
         {
@@ -543,6 +490,7 @@ struct FormatSettings
         std::unordered_set<int> skip_stripes = {};
         bool output_string_as_string = false;
         ORCCompression output_compression_method = ORCCompression::NONE;
+        bool use_fast_decoder = true;
         bool filter_push_down = true;
         UInt64 output_row_index_stride = 10'000;
         String reader_time_zone_name = "GMT";
@@ -590,13 +538,6 @@ struct FormatSettings
 
     struct
     {
-        UInt64 width = 1024;
-        UInt64 height = 1024;
-        String terminal_mode;
-    } image{};
-
-    struct
-    {
         UInt64 max_batch_size = DEFAULT_BLOCK_SIZE;
         String table_name = "table";
         bool include_column_names = true;
@@ -628,14 +569,6 @@ struct FormatSettings
     {
         bool escape_special_characters = false;
     } markdown{};
-
-    enum class UnsupportedGeometryHandling { Throw, Null };
-
-    struct
-    {
-        UnsupportedGeometryHandling unsupported_geometry_handling = UnsupportedGeometryHandling::Throw;
-        bool validate_geometry = true;
-    } geojson{};
 
 };
 

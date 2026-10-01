@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/DataTypeString.h>
 #include <Common/PODArray.h>
 #include <base/memcmpSmall.h>
 #include <Common/typeid_cast.h>
@@ -139,7 +140,7 @@ public:
     void updateHashWithValue(size_t index, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override;
 
@@ -153,15 +154,6 @@ public:
         chassert(this->n == rhs.n);
         return memcmpSmallAllowOverflow15(chars.data() + p1 * n, rhs.chars.data() + p2 * n, n);
     }
-
-    [[nodiscard]] Int64 compareTrackAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const final;
-
-#if USE_EMBEDDED_COMPILER
-    bool isComparatorCompilable() const override;
-    llvm::Value * compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const override;
-#endif
-
-    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, Permutation & res) const override;
@@ -231,9 +223,6 @@ public:
     size_t sizeOfValueIfFixed() const override { return n; }
     std::string_view getRawData() const override { return {reinterpret_cast<const char *>(chars.data()), chars.size()}; }
     std::span<char> insertRawUninitialized(size_t count) override;
-
-    void serializeAsComparable(size_t row, String & out) const override;
-    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation, const UInt8 * null_map) const override;
 
     /// Specialized part of interface, not from IColumn.
     void insertString(const String & string) { insertData(string.c_str(), string.size()); }

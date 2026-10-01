@@ -53,7 +53,7 @@ namespace DB
  *             max - the maximum column of the column chunk
  * */
 
-class ParquetMetadataInputFormat final : public IInputFormat
+class ParquetMetadataInputFormat : public IInputFormat
 {
 public:
     ParquetMetadataInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_);
@@ -80,7 +80,7 @@ private:
     std::atomic<int> is_stopped{0};
 };
 
-class ParquetMetadataSchemaReader final : public ISchemaReader
+class ParquetMetadataSchemaReader : public ISchemaReader
 {
 public:
     explicit ParquetMetadataSchemaReader(ReadBuffer & in_);

@@ -41,7 +41,6 @@ public:
         size_t data_file_name_prefix_length = 3;
         std::shared_ptr<IBackupCoordination> backup_coordination;
         std::optional<UUID> backup_uuid;
-        String backup_id;
         bool deduplicate_files = true;
         bool allow_s3_native_copy = true;
         bool allow_azure_native_copy = true;
@@ -59,28 +58,13 @@ public:
     /// Creates a new backup or opens it.
     BackupMutablePtr createBackup(const CreateParams & params) const;
 
-    /// Returns a versioned, credential-free identity of the effective backup location.
-    /// Named collections must be frozen first so identity generation and backup creation
-    /// observe the same collection state.
-    String getDestinationIdentity(const BackupInfo & backup_info, ContextPtr context) const;
-
     using CreatorFn = std::function<BackupMutablePtr(const CreateParams & params)>;
-    using DestinationIdentityFn = std::function<Strings(const BackupInfo & backup_info, ContextPtr context)>;
-    void registerBackupEngine(
-        const String & engine_name,
-        const CreatorFn & creator_fn,
-        const DestinationIdentityFn & destination_identity_fn);
+    void registerBackupEngine(const String & engine_name, const CreatorFn & creator_fn);
 
 private:
-    struct RegisteredEngine
-    {
-        CreatorFn creator;
-        DestinationIdentityFn destination_identity;
-    };
-
     BackupFactory();
 
-    std::unordered_map<String, RegisteredEngine> engines;
+    std::unordered_map<String, CreatorFn> creators;
 };
 
 }

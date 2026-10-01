@@ -81,7 +81,7 @@ private:
     bool yield_strings;
 };
 
-class JSONCompactEachRowRowSchemaReader final : public FormatWithNamesAndTypesSchemaReader
+class JSONCompactEachRowRowSchemaReader : public FormatWithNamesAndTypesSchemaReader
 {
 public:
     JSONCompactEachRowRowSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_);

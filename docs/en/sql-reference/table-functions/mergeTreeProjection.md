@@ -8,6 +8,8 @@ title: 'mergeTreeProjection'
 doc_type: 'reference'
 ---
 
+# mergeTreeProjection Table Function
+
 Represents the contents of some projection in MergeTree tables. It can be used for introspection.
 
 ## Syntax {#syntax}
