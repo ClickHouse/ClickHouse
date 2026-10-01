@@ -5,7 +5,8 @@
 /// so without this check a request such as
 /// `XRAY_OPTIONS="patch_premain=true xray_mode=xray-fdr"` would patch every
 /// sled before `main` and then run with a null handler: all of the overhead
-/// and none of the output. Fail fast instead.
+/// and none of the output. Fail fast instead. Other mode names are left alone:
+/// an application may register its own mode with `__xray_log_register_mode`.
 ///
 /// Upstream registers each mode from a static initializer that reads the flags
 /// directly. That relies on `__xray_init` having already run from
@@ -37,7 +38,10 @@ __attribute__((constructor)) void rejectUnavailableXRayModes() XRAY_NEVER_INSTRU
         __sanitizer::Report("XRay: XRAY_OPTIONS requests xray_naive_log=true, %s", not_bundled);
     else if (f->xray_fdr_log)
         __sanitizer::Report("XRay: XRAY_OPTIONS requests xray_fdr_log=true, %s", not_bundled);
-    else if (f->xray_mode != nullptr && __sanitizer::internal_strlen(f->xray_mode) != 0)
+    else if (f->xray_mode != nullptr
+             && (__sanitizer::internal_strcmp(f->xray_mode, "xray-basic") == 0
+                 || __sanitizer::internal_strcmp(f->xray_mode, "xray-fdr") == 0
+                 || __sanitizer::internal_strcmp(f->xray_mode, "xray-profiling") == 0))
         __sanitizer::Report("XRay: XRAY_OPTIONS requests xray_mode=%s, %s", f->xray_mode, not_bundled);
     else
         return;
