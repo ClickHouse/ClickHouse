@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Core/Joins.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <algorithm>
@@ -302,8 +303,10 @@ std::optional<ConditionInputs> collectConditionInputs(const JoinStepLogical & jo
         /// The multiplicity argument requires the condition to be a pure function of the pushed
         /// side's group keys; a function non-deterministic in scope of the query (`rand`)
         /// evaluates per joined row, and the rewrite would collapse those per-row evaluations to
-        /// one per group. Same predicate as `dagContainsNonDeterministicFunction` in `Utils.cpp`.
-        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && !node->function_base->isDeterministicInScopeOfQuery())
+        /// one per group. Same predicate as `dagContainsNonDeterministicFunction` in `Utils.cpp`,
+        /// including the walk into a lambda that constant folding turned into a `COLUMN` node
+        /// holding a `ColumnFunction`.
+        if (!allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); }))
             return {};
 
         if (node->type == ActionsDAG::ActionType::INPUT)

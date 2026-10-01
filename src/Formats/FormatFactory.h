@@ -64,6 +64,13 @@ using BucketSplitter = std::shared_ptr<IBucketSplitter>;
 FormatSettings getFormatSettings(const ContextPtr & context);
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings);
 
+/// `output_format_arrow_unsupported_types` supersedes the older boolean
+/// `output_format_arrow_unsupported_types_as_binary` (`0` means `throw`, `1` means `binary`). The boolean is
+/// only consulted while the new setting is left at its default, so an explicit `throw`/`text`/`binary` wins
+/// no matter which of the two was set last. Shared with the Arrow Flight server, which builds its Arrow
+/// conversion settings without going through `getFormatSettings`.
+FormatSettings::ArrowUnsupportedTypes getArrowUnsupportedTypesMode(const Settings & settings);
+
 /** Allows to create an IInputFormat or IOutputFormat by the name of the format.
   * Note: format and compression are independent things.
   */
@@ -324,7 +331,7 @@ public:
     void registerAppendSupportChecker(const String & name, AppendSupportChecker append_support_checker);
 
     /// If format always doesn't support append, you can use this method instead of
-    /// registerAppendSupportChecker with append_support_checker that always returns true.
+    /// registerAppendSupportChecker with append_support_checker that always returns false.
     void markFormatHasNoAppendSupport(const String & name);
 
     bool checkIfFormatSupportAppend(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);

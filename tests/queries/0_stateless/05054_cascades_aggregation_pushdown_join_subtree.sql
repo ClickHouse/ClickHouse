@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- The pushed side of a `cascades_aggregation_pushdown` here is a JOIN SUBTREE, not a table scan
 -- (the header, statistics and condition columns all come from a join), plus the repeated
 -- pushdown through two joins. Every executed scenario runs twice - through the cascades
@@ -88,7 +85,8 @@ SELECT t1.k AS k, count() AS c, sum(t1.v) AS s
 FROM t_corr_left AS t1
 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k
 LEFT JOIN t_corr_right_uniq AS t3 ON t1.k = t3.k
-GROUP BY t1.k ORDER BY k;
+GROUP BY t1.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT t1.k AS k, count() AS c, sum(t1.v) AS s
 FROM t_corr_left AS t1
 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k
@@ -101,7 +99,8 @@ SELECT t1.k AS k, count() AS c, sum(t1.v) AS s
 FROM t_corr_left AS t1
 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k
 LEFT SEMI JOIN t_corr_right_uniq AS t3 ON t1.k = t3.k
-GROUP BY t1.k ORDER BY k;
+GROUP BY t1.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT t1.k AS k, count() AS c, sum(t1.v) AS s
 FROM t_corr_left AS t1
 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k
@@ -114,7 +113,8 @@ SELECT t1.k AS k, count() AS c
 FROM t_corr_left AS t1
 LEFT SEMI JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k
 LEFT SEMI JOIN t_corr_right_multi AS t3 ON t1.k = t3.k
-GROUP BY t1.k ORDER BY k;
+GROUP BY t1.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT t1.k AS k, count() AS c
 FROM t_corr_left AS t1
 LEFT SEMI JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k
