@@ -218,7 +218,7 @@ void PushingAsyncPipelineExecutor::cancel()
 {
     /// Cancel execution if it wasn't finished.
     if (data && !data->is_finished && data->executor)
-        data->executor->cancel();
+        data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
 
     finish();
 }
