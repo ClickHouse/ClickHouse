@@ -169,6 +169,11 @@ std::shared_ptr<InterpreterSelectQueryAnalyzer> interpretSubqueryWithAnalyzer(
     /// function in the subquery from it. `QueryAnalyzer` reads this setting from the scope context only, so the query
     /// context - shared with the rest of the `INSERT` - is left alone, as `evaluateScalarSubqueryIfNeeded` does.
     prepared.context->setSetting("use_structure_from_insertion_table_in_table_functions", Field(0));
+    /// A standalone expression - a `CHECK` constraint, a `TTL` expression, a row policy - may be analysed with
+    /// a context that never went through `makeQueryContext` and so carries a zero client version, which a read
+    /// from a `Distributed` table refuses to send. The plan keeps this context, so fill it here,
+    /// as `ExecuteScalarSubqueriesVisitor` does.
+    prepared.context->setInitiatorVersionIfUnset();
     /// The analyzer re-applies the subquery's own `SETTINGS` clause over this context, so strip the settings
     /// pinned above from it as well. The AST belongs to the analysed statement, whose text is persisted,
     /// so strip a clone.
