@@ -1121,7 +1121,8 @@ void MergeTreeData::checkProperties(
     bool allow_empty_sorting_key,
     bool allow_nullable_key_,
     ContextPtr local_context,
-    const MergeTreeSettings * alter_effective_settings) const
+    const MergeTreeSettings * alter_effective_settings,
+    bool validate_unavailable_as_new) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
@@ -1548,11 +1549,14 @@ void MergeTreeData::checkProperties(
             with_parent_part_offset &= !old_metadata.columns.has("_part_index") && !old_metadata.columns.has("_part_offset")
                 && !old_metadata.columns.has("_parent_part_offset");
 
-            const auto gate_turned_off = [&](const auto & setting) { return !effective_settings[setting] && live_settings[setting]; };
+            const auto gate_turned_off_or_newly_invalid = [&](const auto & setting)
+            {
+                return !effective_settings[setting] && (validate_unavailable_as_new || live_settings[setting]);
+            };
 
             if (with_parent_part_offset)
             {
-                if (gate_turned_off(MergeTreeSetting::allow_part_offset_column_in_projections))
+                if (gate_turned_off_or_newly_invalid(MergeTreeSetting::allow_part_offset_column_in_projections))
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Cannot disable allow_part_offset_column_in_projections while unavailable projection {} uses `_part_offset`",
@@ -1568,8 +1572,8 @@ void MergeTreeData::checkProperties(
 
             if (with_block_number)
             {
-                if (gate_turned_off(MergeTreeSetting::allow_commit_order_projection)
-                    || gate_turned_off(MergeTreeSetting::enable_block_number_column))
+                if (gate_turned_off_or_newly_invalid(MergeTreeSetting::allow_commit_order_projection)
+                    || gate_turned_off_or_newly_invalid(MergeTreeSetting::enable_block_number_column))
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Cannot disable allow_commit_order_projection or enable_block_number_column while unavailable projection {} "
@@ -1579,8 +1583,8 @@ void MergeTreeData::checkProperties(
 
             if (with_block_offset)
             {
-                if (gate_turned_off(MergeTreeSetting::allow_commit_order_projection)
-                    || gate_turned_off(MergeTreeSetting::enable_block_offset_column))
+                if (gate_turned_off_or_newly_invalid(MergeTreeSetting::allow_commit_order_projection)
+                    || gate_turned_off_or_newly_invalid(MergeTreeSetting::enable_block_offset_column))
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Cannot disable allow_commit_order_projection or enable_block_offset_column while unavailable projection {} "
@@ -1598,7 +1602,7 @@ void MergeTreeData::checkProperties(
                 return settings[MergeTreeSetting::index_granularity_bytes] != 0
                     && (settings[MergeTreeSetting::enable_mixed_granularity_parts] || !has_non_adaptive_index_granularity_parts);
             };
-            if (has_granularity_override && can_use_adaptive_granularity(live_settings)
+            if (has_granularity_override && (validate_unavailable_as_new || can_use_adaptive_granularity(live_settings))
                 && !can_use_adaptive_granularity(effective_settings))
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -1666,32 +1670,39 @@ void MergeTreeData::checkMetadataProperties(
 }
 
 void MergeTreeData::checkCopiedUnavailableProjections(
-    const StorageInMemoryMetadata & metadata, ContextPtr local_context) const
+    const StorageInMemoryMetadata & metadata, ContextPtr local_context, bool preserve_unanalyzable) const
 {
-    /// The copied declarations are kept unavailable in the published metadata, but CREATE must
-    /// still check the requirements they would have when their analysis setting is re-enabled.
-    /// Analyze them only in this temporary copy; the real table retains their original ASTs.
+    /// Analyze declarations in a temporary copy so the published table retains their original
+    /// ASTs. A copied declaration must be fully checked against its new destination. `RESTORE`
+    /// may lack an external dependency, but its raw declaration must still satisfy table gates.
     auto checked_metadata = metadata;
     auto analysis_context = Context::createCopy(local_context);
     analysis_context->setSetting("enable_positional_arguments_for_projections", 1);
     for (const auto & definition : metadata.projections.getUnavailableDefinitions())
     {
         const auto & declaration = definition->as<const ASTProjectionDeclaration &>();
+        std::optional<ProjectionDescription> projection;
         try
         {
-            auto projection = ProjectionDescription::getProjectionFromAST(
+            projection.emplace(ProjectionDescription::getProjectionFromAST(
                 definition,
                 metadata.columns,
                 &metadata.partition_key,
                 analysis_context,
-                LoadingStrictnessLevel::ATTACH);
-            checked_metadata.projections.remove(declaration.name, /*if_exists=*/false);
-            checked_metadata.projections.add(std::move(projection));
+                LoadingStrictnessLevel::ATTACH));
         }
         catch (Exception & e)
         {
-            e.addMessage("Cannot copy unavailable projection {} without validating its destination requirements", backQuote(declaration.name));
-            throw;
+            if (!preserve_unanalyzable)
+            {
+                e.addMessage("Cannot copy unavailable projection {} without validating its destination requirements", backQuote(declaration.name));
+                throw;
+            }
+        }
+        if (projection)
+        {
+            checked_metadata.projections.remove(declaration.name, /*if_exists=*/false);
+            checked_metadata.projections.add(std::move(*projection));
         }
     }
 
@@ -1701,7 +1712,9 @@ void MergeTreeData::checkCopiedUnavailableProjections(
         /*attach=*/false,
         /*allow_empty_sorting_key=*/false,
         allow_nullable_key,
-        local_context);
+        local_context,
+        /*alter_effective_settings=*/nullptr,
+        /*validate_unavailable_as_new=*/preserve_unanalyzable);
 }
 
 void MergeTreeData::setProperties(

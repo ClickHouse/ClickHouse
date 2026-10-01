@@ -235,7 +235,7 @@ struct ProjectionsDescription : public IHints<>
     /// Declarations that could not be analyzed when the table was loaded at server startup. They are kept
     /// verbatim so that a rewrite of the CREATE query still contains them, and are deliberately absent from the
     /// accessors above: a consumer that needs an analyzed `ProjectionDescription` cannot reach one.
-    void addUnavailable(ASTPtr definition_ast);
+    void addUnavailable(ASTPtr definition_ast, const String & after_projection = String(), bool first = false);
     const ASTs & getUnavailableDefinitions() const { return unavailable; }
     Names getUnavailableNames() const;
     bool hasUnavailable() const { return !unavailable.empty(); }
@@ -254,11 +254,15 @@ private:
     Map map;
     ASTs unavailable;
     Names declaration_order;
+
+    void insertDeclarationOrder(const String & name, const String & after_projection, bool first);
 };
 
 /// A declaration that cannot be analyzed may only be carried across a metadata transition
-/// when its body is the same. Projection settings may change independently.
+/// when its body is unchanged or an accepted secondary `ADD PROJECTION` introduced that exact body.
+/// Projection settings may change independently.
 bool hasSameUnavailableProjectionBody(const ASTProjectionDeclaration & old_declaration, const ASTProjectionDeclaration & new_declaration);
-void validatePreservedUnavailableProjections(const ProjectionsDescription & old_projections, const ProjectionsDescription & new_projections);
+void validatePreservedUnavailableProjections(
+    const ProjectionsDescription & old_projections, const ProjectionsDescription & new_projections, const ASTs & accepted_new_definitions);
 
 }

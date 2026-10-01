@@ -59,6 +59,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/StringUtils.h>
@@ -2035,9 +2036,23 @@ void AlterCommand::apply(
     {
         if (!metadata.projections.checkCanAdd(projection_name, if_not_exists))
             return;
-        auto projection = ProjectionDescription::getProjectionFromAST(
-            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
-        metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
+        std::optional<ProjectionDescription> projection;
+        try
+        {
+            projection.emplace(ProjectionDescription::getProjectionFromAST(
+                projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE));
+        }
+        catch (const Exception &)
+        {
+            if (!isSecondaryProjectionMetadataReplay(context))
+                throw;
+            /// The initiating node admitted this declaration. A follower may lack the setting or
+            /// dependency needed to analyze it, but must still persist its exact body and position.
+            metadata.projections.addUnavailable(projection_decl->clone(), after_projection_name, first);
+            tryLogCurrentException("AlterCommands", "Preserving an unavailable `ADD PROJECTION` during secondary replay");
+        }
+        if (projection)
+            metadata.projections.add(std::move(*projection), after_projection_name, first, if_not_exists);
     }
     else if (type == MODIFY_PROJECTION)
     {
@@ -2788,7 +2803,12 @@ void AlterCommands::apply(
 
     const bool columns_changed = metadata_copy.columns != metadata.columns;
 
-    validatePreservedUnavailableProjections(metadata.projections, metadata_copy.projections);
+    ASTs accepted_new_definitions;
+    if (isSecondaryProjectionMetadataReplay(context))
+        for (const AlterCommand & command : *this)
+            if (!command.ignore && command.type == AlterCommand::ADD_PROJECTION && command.projection_decl)
+                accepted_new_definitions.push_back(command.projection_decl);
+    validatePreservedUnavailableProjections(metadata.projections, metadata_copy.projections, accepted_new_definitions);
     validateUnavailableProjectionColumnTransition(metadata, metadata_copy);
 
     /// Changes in columns may lead to changes in keys expression.

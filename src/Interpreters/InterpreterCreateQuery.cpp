@@ -2530,11 +2530,14 @@ try
 
     validateVirtualColumns(*storage, context);
     checkForUnsupportedColumns(*storage, mode, context, is_temporary);
-    if (projection_source == ProjectionDefinitionSource::NewQuery && !projections_belong_to_inner_table)
+    if (projection_source != ProjectionDefinitionSource::PreviouslyAccepted && !projections_belong_to_inner_table
+        && !context->getClientInfo().is_replicated_database_internal
+        && !isSecondaryProjectionMetadataReplay(context))
         if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(projection_storage.get()))
         {
             if (metadata->projections.hasUnavailable())
-                merge_tree->checkCopiedUnavailableProjections(*metadata, context);
+                merge_tree->checkCopiedUnavailableProjections(
+                    *metadata, context, projection_source == ProjectionDefinitionSource::Backup);
         }
 }
 catch (...)

@@ -1100,17 +1100,19 @@ bool hasSameUnavailableProjectionBody(const ASTProjectionDeclaration & old_decla
         && same_ast(old_declaration.columns, new_declaration.columns);
 }
 
-void validatePreservedUnavailableProjections(const ProjectionsDescription & old_projections, const ProjectionsDescription & new_projections)
+void validatePreservedUnavailableProjections(
+    const ProjectionsDescription & old_projections, const ProjectionsDescription & new_projections, const ASTs & accepted_new_definitions)
 {
     const auto & old_unavailable = old_projections.getUnavailableDefinitions();
     for (const auto & definition : new_projections.getUnavailableDefinitions())
     {
         const auto & declaration = definition->as<const ASTProjectionDeclaration &>();
-        const bool preserved = std::ranges::any_of(old_unavailable, [&](const ASTPtr & old_definition)
+        const auto same_body = [&](const ASTPtr & accepted_definition)
         {
-            return hasSameUnavailableProjectionBody(old_definition->as<const ASTProjectionDeclaration &>(), declaration);
-        });
-        if (!preserved)
+            return hasSameUnavailableProjectionBody(accepted_definition->as<const ASTProjectionDeclaration &>(), declaration);
+        };
+        if (!std::ranges::any_of(old_unavailable, same_body)
+            && !std::ranges::any_of(accepted_new_definitions, same_body))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cannot preserve unavailable projection {} after changing its declaration without analysis",
@@ -1230,18 +1232,23 @@ void ProjectionsDescription::add(ProjectionDescription && projection, const Stri
     auto it = projections.insert(insert_it, std::move(projection));
     map[it->name] = it;
 
+    insertDeclarationOrder(it->name, after_projection, first);
+}
+
+void ProjectionsDescription::insertDeclarationOrder(const String & name, const String & after_projection, bool first)
+{
     if (first)
-        declaration_order.insert(declaration_order.begin(), it->name);
+        declaration_order.insert(declaration_order.begin(), name);
     else if (!after_projection.empty())
     {
         auto order_it = std::find(declaration_order.begin(), declaration_order.end(), after_projection);
         if (order_it != declaration_order.end())
-            declaration_order.insert(++order_it, it->name);
+            declaration_order.insert(++order_it, name);
         else
-            declaration_order.push_back(it->name);
+            declaration_order.push_back(name);
     }
     else
-        declaration_order.push_back(it->name);
+        declaration_order.push_back(name);
 }
 
 void ProjectionsDescription::remove(const String & projection_name, bool if_exists)
@@ -1273,9 +1280,9 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
     std::erase(declaration_order, projection_name);
 }
 
-void ProjectionsDescription::addUnavailable(ASTPtr definition_ast)
+void ProjectionsDescription::addUnavailable(ASTPtr definition_ast, const String & after_projection, bool first)
 {
-    declaration_order.push_back(definition_ast->as<const ASTProjectionDeclaration &>().name);
+    insertDeclarationOrder(definition_ast->as<const ASTProjectionDeclaration &>().name, after_projection, first);
     unavailable.push_back(std::move(definition_ast));
 }
 

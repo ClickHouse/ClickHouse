@@ -160,6 +160,74 @@ def test_replay_updates_settings_of_unavailable_projection(started_cluster):
     assert "index_granularity = 256" in node2.query("SHOW CREATE TABLE r_settings.t")
 
 
+def test_replay_adds_projection_unavailable_on_follower(started_cluster):
+    lookup_ddl = (
+        "CREATE DICTIONARY default.r_add_lookup "
+        "(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id "
+        "SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() "
+        "DB 'default' TABLE 'r_add_lookup_source')) LAYOUT(FLAT()) LIFETIME(0)"
+    )
+    for replica in (node1, node2):
+        replica.query("DROP DICTIONARY IF EXISTS default.r_add_lookup")
+        replica.query("DROP TABLE IF EXISTS default.r_add_lookup_source SYNC")
+
+    def create_local_lookup(replica):
+        replica.query(
+            "CREATE TABLE default.r_add_lookup_source "
+            "(id UInt64, value UInt64) ENGINE = Memory"
+        )
+        replica.query(lookup_ddl)
+
+    create_local_lookup(node1)
+    for replica in (node1, node2):
+        replica.query("DROP DATABASE IF EXISTS r_add SYNC")
+        replica.query(
+            "CREATE DATABASE r_add ENGINE = Replicated("
+            "'/test/projection_unavailable_add', 'shard1', '{replica}')"
+        )
+
+    node1.query(
+        "CREATE TABLE r_add.t "
+        "(a UInt64, b String, PROJECTION qq (SELECT a ORDER BY a)) "
+        "ENGINE = MergeTree ORDER BY a"
+    )
+    assert_eq_with_retry(
+        node2,
+        "SELECT count() FROM system.tables WHERE database = 'r_add' AND name = 't'",
+        "1",
+    )
+
+    try:
+        node1.query(
+            "ALTER TABLE r_add.t ADD PROJECTION pp "
+            "(SELECT a, dictGet('default.r_add_lookup', 'value', a) AS d ORDER BY a) FIRST",
+            settings={"distributed_ddl_task_timeout": 0},
+        )
+        node1.query(
+            "ALTER TABLE r_add.t MODIFY COMMENT 'add_replayed'",
+            settings={"distributed_ddl_task_timeout": 0},
+        )
+        assert_eq_with_retry(
+            node2,
+            "SELECT comment FROM system.tables WHERE database = 'r_add' AND name = 't'",
+            "add_replayed",
+        )
+        assert node2.query(
+            "SELECT count() FROM system.projections WHERE database = 'r_add' AND table = 't'"
+        ).strip() == "1"
+        restored_definition = node2.query("SHOW CREATE TABLE r_add.t")
+        assert restored_definition.index("PROJECTION pp") < restored_definition.index(
+            "PROJECTION qq"
+        )
+    finally:
+        create_local_lookup(node2)
+        node2.restart_clickhouse()
+
+    assert node2.query(
+        "SELECT count() FROM system.projections WHERE database = 'r_add' AND table = 't'"
+    ).strip() == "2"
+
+
 def test_replay_preserves_canonical_codec_body_of_unavailable_projection(started_cluster):
     for replica in (node1, node2):
         replica.copy_file_to_container(POSITIONAL_XML_SOURCE, POSITIONAL_XML)

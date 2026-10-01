@@ -17,7 +17,7 @@ import uuid
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.database_disk import read_metadata
+from helpers.database_disk import read_metadata, write_metadata
 from helpers.test_tools import assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -255,6 +255,67 @@ def test_restore_codec_projection_with_missing_dictionary(started_cluster):
     assert "CODEC(Gorilla(8))" in node.query(
         "SHOW CREATE TABLE codec_restore_missing_dict.typed_restored"
     )
+
+
+def test_restore_unavailable_projection_checks_destination_requirements(started_cluster):
+    node.query("DROP DATABASE IF EXISTS restore_unavailable_gate SYNC")
+    node.query("CREATE DATABASE restore_unavailable_gate")
+    node.query(
+        "CREATE TABLE restore_unavailable_gate.lookup_source "
+        "(id UInt64, value UInt64) ENGINE = Memory"
+    )
+    node.query(
+        "CREATE DICTIONARY restore_unavailable_gate.lookup "
+        "(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id "
+        "SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() "
+        "DB 'restore_unavailable_gate' TABLE 'lookup_source')) "
+        "LAYOUT(FLAT()) LIFETIME(0)"
+    )
+    node.query(
+        "CREATE TABLE restore_unavailable_gate.source "
+        "(a UInt64, PROJECTION pp (SELECT a, _part_offset, "
+        "dictGet('restore_unavailable_gate.lookup', 'value', a) AS d ORDER BY a)) "
+        "ENGINE = MergeTree ORDER BY a "
+        "SETTINGS allow_part_offset_column_in_projections = 1",
+    )
+
+    # Simulate a legacy backup whose table setting no longer permits the stored projection.
+    metadata_path = node.query(
+        "SELECT metadata_path FROM system.tables "
+        "WHERE database = 'restore_unavailable_gate' AND name = 'source'"
+    ).strip()
+    node.query("DETACH TABLE restore_unavailable_gate.source")
+    metadata = read_metadata(node, metadata_path)
+    assert "allow_part_offset_column_in_projections = 1" in metadata
+    write_metadata(
+        node,
+        metadata_path,
+        metadata.replace(
+            "allow_part_offset_column_in_projections = 1",
+            "allow_part_offset_column_in_projections = 0",
+        ),
+    )
+    node.query("ATTACH TABLE restore_unavailable_gate.source")
+    node.query(
+        "DROP DICTIONARY restore_unavailable_gate.lookup "
+        "SETTINGS check_table_dependencies = 0"
+    )
+    node.restart_clickhouse()
+    assert node.query(
+        "SELECT count() FROM system.projections "
+        "WHERE database = 'restore_unavailable_gate' AND table = 'source'"
+    ).strip() == "0"
+
+    backup = f"restore_unavailable_gate_{uuid.uuid4().hex}"
+    node.query(
+        f"BACKUP TABLE restore_unavailable_gate.source TO Disk('backups', '{backup}')"
+    )
+    error = node.query_and_get_error(
+        "RESTORE TABLE restore_unavailable_gate.source "
+        f"AS restore_unavailable_gate.restored FROM Disk('backups', '{backup}')",
+    )
+    assert "allow_part_offset_column_in_projections" in error, error
+    assert node.query("EXISTS TABLE restore_unavailable_gate.restored").strip() == "0"
 
 
 def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
