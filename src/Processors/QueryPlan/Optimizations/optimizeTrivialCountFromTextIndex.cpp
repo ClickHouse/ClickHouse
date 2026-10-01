@@ -79,9 +79,8 @@ std::optional<String> matchBareCount(const AggregatingStep & aggregating)
     return desc.column_name;
 }
 
-/// Collects the text-index virtual columns a predicate DAG reduces to. Fails if any branch is not index-answerable,
-/// unless `residual` is given: then a conjunct of the top-level `and` chain that is not index-answerable is collected
-/// there, and a part may be counted from the index only if every such conjunct holds for all of its rows.
+/// Collects the text-index virtual columns a predicate DAG reduces to. Fails if any branch is not index-answerable.
+/// If `residual` is given, the non-answerable conjuncts of the top-level `and` chain are collected there instead.
 bool collectTextIndexPredicateColumns(const ActionsDAG::Node * node, NameSet & out_columns, ActionsDAG::NodeRawConstPtrs * residual)
 {
     switch (node->type)
@@ -118,8 +117,7 @@ bool collectTextIndexPredicateColumns(const ActionsDAG::Node * node, NameSet & o
                 if (!residual)
                     return collectTextIndexPredicateColumns(node->children.front(), out_columns, nullptr);
 
-                /// Only a cast of a text predicate is index-answerable; any other cast can change which rows pass
-                /// (`CAST(256, 'UInt8')` is 0), so it stays in the residual whole.
+                /// Outside a text predicate a cast can change which rows pass (`CAST(256, 'UInt8')` is 0), so keep it whole.
                 NameSet text_columns;
                 if (collectTextIndexPredicateColumns(node->children.front(), text_columns, nullptr))
                 {
@@ -140,8 +138,6 @@ bool collectTextIndexPredicateColumns(const ActionsDAG::Node * node, NameSet & o
     if (!residual)
         return false;
 
-    /// A text-index virtual column below this node (e.g. under `or` or `not`) is unknown to the min-max condition
-    /// that must prove the conjunct, so such a conjunct keeps every part on the normal read path.
     residual->push_back(node);
     return true;
 }
@@ -152,8 +148,7 @@ struct MatchedSubtree
     QueryPlan::Node * read_node = nullptr;
     /// Text-index virtual columns gating the read (from FilterSteps and PREWHERE).
     NameSet predicate_columns;
-    /// The other conjuncts of PREWHERE, e.g. a time range. PREWHERE is evaluated on the columns of the table,
-    /// so they refer to table columns and can be checked against the partition min-max index.
+    /// The other conjuncts of PREWHERE. They are on table columns, so the partition min-max index can prove them.
     ActionsDAG::NodeRawConstPtrs residual;
 };
 
@@ -265,7 +260,6 @@ bool guardsHold(const ReadFromMergeTree & reading, bool has_residual)
     if (!analysis)
         return false;
 
-    /// With residual conjuncts only the parts they provably cover are counted from the index; see `ResidualCoverage`.
     if (!has_residual && analysis->total_marks_pk != analysis->selected_marks_pk)
         return false;
 
@@ -295,9 +289,7 @@ bool guardsHold(const ReadFromMergeTree & reading, bool has_residual)
     return true;
 }
 
-/// Decides whether the residual conjuncts (e.g. `ts >= '2026-01-01' AND ts < '2026-01-02'`) hold for every row of a part,
-/// so that the part's count is the text index cardinality alone. Proven by the partition min-max index. Relaxed conditions
-/// prove nothing.
+/// Proves by the partition min-max index that the residual conjuncts hold for all rows of a part. A relaxed condition proves nothing.
 class ResidualCoverage
 {
 public:
@@ -461,13 +453,11 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
         }
     }
 
-    /// Split the parts into those counted from the index (materialized, and covered by the residual conjuncts if any)
-    /// and those read as before (checksum lookups if materialized).
+    /// Split the parts into those counted from the index and those read as before (checksum lookups if materialized).
     const auto & text_index = *search_query->index.index;
     std::unordered_set<const IMergeTreeDataPart *> countable;
 
-    /// Without residual conjuncts the primary key selects every mark (see `guardsHold`). With them, partition pruning and
-    /// the primary key may drop parts, so only the analysed parts are candidates.
+    /// With residual conjuncts, partition pruning and the primary key may drop parts, so only the analysed parts are candidates.
     const auto original_analysis = matched->reading->getAnalyzedResult();
     const auto & candidate_parts = has_residual ? original_analysis->parts_with_ranges : matched->reading->getParts();
     for (const auto & part_with_ranges : candidate_parts)
@@ -501,8 +491,7 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
     }
     else
     {
-        /// Count the countable parts from the index and keep reading the rows of the others (unindexed, or not covered by
-        /// the residual conjuncts), the same way aggregate projections handle parent parts.
+        /// Count the countable parts from the index and read the others, the same way aggregate projections handle parent parts.
         /// Partition the cloned analysis in place, so the parts are copied once and split by moves.
         auto analysis = std::make_shared<ReadFromMergeTree::AnalysisResult>(*matched->reading->getAnalyzedResult());
         auto & analysis_parts = analysis->parts_with_ranges;
