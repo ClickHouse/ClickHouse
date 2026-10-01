@@ -31,6 +31,7 @@
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
 #include <Interpreters/SecretArgumentsRegistry.h>
+#include <Functions/FunctionFactory.h>
 #include <Parsers/parseQuery.h>
 
 #include <Access/Common/SQLSecurityDefs.h>
@@ -361,12 +362,11 @@ namespace
             hideLiteralsInSubtree(child);
     }
 
-    /// Keep in sync with the functions registered with a `SecretArgumentsSpec`. A name missing here only makes
-    /// the dump stricter: its span is hidden whole.
-    bool isEncryptionOrHMACFunction(const ASTFunction & function)
+    /// A function (not a table function or an engine) with a secret argument: `encrypt`, `HMAC`, ...
+    bool isFunctionWithSecretArguments(const ASTFunction & function)
     {
-        return function.name == "encrypt" || function.name == "decrypt" || function.name == "aes_encrypt_mysql"
-            || function.name == "aes_decrypt_mysql" || function.name == "tryDecrypt" || equalsCaseInsensitive(function.name, "HMAC");
+        return function.getKind() == ASTFunction::Kind::ORDINARY_FUNCTION
+            && FunctionFactory::instance().tryGetSecretArgumentsSpec(function.name);
     }
 
     bool isKeyValueArgument(const IAST & node)
@@ -484,7 +484,7 @@ namespace
                 /// Only the span of `encrypt` / `HMAC` keeps its structure. Any other unnamed span without a
                 /// replacement, such as an unreadable url in `mongodb(concat(...), 'c')`, is hidden whole. So is a
                 /// `key = value` in the span: it is a positional secret written as a comparison.
-                if (isEncryptionOrHMACFunction(*function) && !isKeyValueArgument(*arguments[i]))
+                if (isFunctionWithSecretArguments(*function) && !isKeyValueArgument(*arguments[i]))
                     hideLiteralsInSubtree(arguments[i]);
                 else
                     hideWholeNode(arguments[i]);
