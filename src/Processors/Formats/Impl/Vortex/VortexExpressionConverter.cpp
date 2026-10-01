@@ -10,6 +10,7 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 
@@ -210,7 +211,8 @@ bool VortexExpressionConverter::typesMatchForFilterPushdown(const DataTypePtr & 
         case arrow::Type::BOOL: return which.isUInt8();
         /// The day numbers are copied 1:1 into either header type - a `Date` header is the same
         /// day numbering, only narrower - except under `Saturate`, where out-of-range days are
-        /// clamped onto the bounds and an equality on a bound would match rows it should not.
+        /// clamped onto the bounds and an equality on a bound would match rows it should not. In
+        /// the other modes an out-of-range day throws, which `keepUndecodableRows` preserves.
         case arrow::Type::DATE32:
             return (which.isDate32() || which.isDate())
                 && format_settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Saturate;
@@ -367,6 +369,49 @@ VortexExpressionPtr VortexExpressionConverter::makeLiteral(
     }
 }
 
+VortexExpressionPtr
+VortexExpressionConverter::keepUndecodableRows(const ResolvedColumn & column, VortexExpressionPtr atom, bool allow_widening) const
+{
+    if (!atom || column.field->type()->id() != arrow::Type::DATE32
+        || format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+        return atom;
+
+    /// The same bounds as in `readColumnWithDate32Data`.
+    WhichDataType which(column.cmp_type);
+    Int64 min_day = 0;
+    Int64 max_day = 0;
+    if (which.isDate())
+        max_day = DATE_LUT_MAX_DAY_NUM;
+    else if (which.isDate32())
+    {
+        min_day = DATE_LUT_MIN_EXTEND_DAY_NUM;
+        max_day = DATE_LUT_MAX_EXTEND_DAY_NUM;
+    }
+    /// A number is read as the raw day number, which cannot be out of range.
+    else if (isNumber(column.cmp_type))
+        return atom;
+    /// `DateTime` and `DateTime64` headers have ranges of their own; only `IS NULL`, which does
+    /// not require the types to match, gets here with them.
+    else
+        return nullptr;
+
+    if (!allow_widening)
+        return nullptr;
+
+    VortexExpressionPtr min_literal(vortex_ffi_expr_literal_date(FFI_VortexTimeUnit::Days, min_day));
+    VortexExpressionPtr max_literal(vortex_ffi_expr_literal_date(FFI_VortexTimeUnit::Days, max_day));
+    if (!min_literal || !max_literal)
+        return nullptr;
+    VortexExpressionPtr below(vortex_ffi_expr_compare(FFI_VortexComparisonOperator::Lt, column.expr.get(), min_literal.get()));
+    VortexExpressionPtr above(vortex_ffi_expr_compare(FFI_VortexComparisonOperator::Gt, column.expr.get(), max_literal.get()));
+    if (!below || !above)
+        return nullptr;
+    VortexExpressionPtr undecodable(vortex_ffi_expr_or(below.get(), above.get()));
+    if (!undecodable)
+        return nullptr;
+    return VortexExpressionPtr(vortex_ffi_expr_or(atom.get(), undecodable.get()));
+}
+
 VortexExpressionPtr VortexExpressionConverter::convertAnd(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const
 {
     /// Dropping a conjunct only lets more rows through, so a partially translated AND is still
@@ -421,7 +466,7 @@ VortexExpressionPtr VortexExpressionConverter::convertNot(const RPNBuilderFuncti
     return VortexExpressionPtr(vortex_ffi_expr_not(child.get()));
 }
 
-VortexExpressionPtr VortexExpressionConverter::convertComparison(const RPNBuilderFunctionTreeNode & node, bool /* allow_widening */) const
+VortexExpressionPtr VortexExpressionConverter::convertComparison(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const
 {
     if (node.getArgumentsSize() != 2)
         return nullptr;
@@ -454,10 +499,10 @@ VortexExpressionPtr VortexExpressionConverter::convertComparison(const RPNBuilde
     if (!literal)
         return nullptr;
 
-    return VortexExpressionPtr(vortex_ffi_expr_compare(*op, column->expr.get(), literal.get()));
+    return keepUndecodableRows(*column, VortexExpressionPtr(vortex_ffi_expr_compare(*op, column->expr.get(), literal.get())), allow_widening);
 }
 
-VortexExpressionPtr VortexExpressionConverter::convertIsNull(const RPNBuilderFunctionTreeNode & node, bool /* allow_widening */) const
+VortexExpressionPtr VortexExpressionConverter::convertIsNull(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const
 {
     if (node.getArgumentsSize() != 1)
         return nullptr;
@@ -465,7 +510,7 @@ VortexExpressionPtr VortexExpressionConverter::convertIsNull(const RPNBuilderFun
     auto column = resolveColumn(node.getArgumentAt(0), TypeMatch::NotRequired);
     if (!column)
         return nullptr;
-    return VortexExpressionPtr(vortex_ffi_expr_is_null(column->expr.get()));
+    return keepUndecodableRows(*column, VortexExpressionPtr(vortex_ffi_expr_is_null(column->expr.get())), allow_widening);
 }
 
 VortexExpressionPtr VortexExpressionConverter::convertIsNotNull(const RPNBuilderFunctionTreeNode & node, bool /* allow_widening */) const
@@ -479,7 +524,7 @@ VortexExpressionPtr VortexExpressionConverter::convertIsNotNull(const RPNBuilder
     return VortexExpressionPtr(vortex_ffi_expr_not(null_check.get()));
 }
 
-VortexExpressionPtr VortexExpressionConverter::convertIn(const RPNBuilderFunctionTreeNode & node, bool /* allow_widening */) const
+VortexExpressionPtr VortexExpressionConverter::convertIn(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const
 {
     if (node.getArgumentsSize() != 2)
         return nullptr;
@@ -542,8 +587,8 @@ VortexExpressionPtr VortexExpressionConverter::convertIn(const RPNBuilderFunctio
     if (!result)
         return nullptr;
     if (negated)
-        return VortexExpressionPtr(vortex_ffi_expr_not(result.get()));
-    return result;
+        result = VortexExpressionPtr(vortex_ffi_expr_not(result.get()));
+    return keepUndecodableRows(*column, std::move(result), allow_widening);
 }
 
 VortexExpressionPtr

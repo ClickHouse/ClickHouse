@@ -95,6 +95,14 @@ private:
     /// prefix (then the left half alone is still exact).
     VortexExpressionPtr makePrefixRange(const ResolvedColumn & column, const String & prefix, bool allow_widening) const;
 
+    /// The decoder throws `VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE` for a `DATE32` day number that does not
+    /// fit the header type, and an atom on that column must not hide such a row by filtering it out
+    /// before it is decoded. So the atom is widened to also keep every day outside the decodable
+    /// range: those rows reach the decoder and throw as without the pushdown, while the zones that
+    /// hold only decodable days are pruned as before. Returns `atom` unchanged when the decoder
+    /// cannot throw, and null when the widening is not allowed or the range is not known.
+    VortexExpressionPtr keepUndecodableRows(const ResolvedColumn & column, VortexExpressionPtr atom, bool allow_widening) const;
+
     using Handler = VortexExpressionPtr (VortexExpressionConverter::*)(const RPNBuilderFunctionTreeNode &, bool allow_widening) const;
     static const std::unordered_map<std::string_view, Handler> & handlers();
 
