@@ -37,6 +37,10 @@ CREATE TABLE t_memory_prewhere_steps_stateful (k UInt64) ENGINE = Memory;
 INSERT INTO t_memory_prewhere_steps_stateful VALUES (0), (1), (2), (3), (4), (5), (6), (7);
 SELECT groupArray(k) FROM t_memory_prewhere_steps_stateful PREWHERE k % 2 = 1 AND rowNumberInBlock() < 4 SETTINGS enable_multiple_prewhere_read_steps = 1;
 SELECT groupArray(k) FROM t_memory_prewhere_steps_stateful PREWHERE k % 2 = 1 AND rowNumberInBlock() < 4 SETTINGS enable_multiple_prewhere_read_steps = 0;
+
+SELECT 'a function non-deterministic in scope of the query sees all rows, not only those that passed the other conditions';
+SELECT groupArray(k) FROM t_memory_prewhere_steps_stateful PREWHERE k % 2 = 1 AND blockSize() = 8 SETTINGS enable_multiple_prewhere_read_steps = 1;
+SELECT groupArray(k) FROM t_memory_prewhere_steps_stateful PREWHERE k % 2 = 1 AND blockSize() = 8 SETTINGS enable_multiple_prewhere_read_steps = 0;
 DROP TABLE t_memory_prewhere_steps_stateful;
 
 SELECT 'column added after the data was inserted';
