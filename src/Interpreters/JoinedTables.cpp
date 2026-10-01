@@ -287,7 +287,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
                 joined_table_id.getDatabaseName(), joined_table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
             if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
             {
-                if (typeid_cast<StorageJoin *>(storage.get()))
+                if (typeid_cast<StorageJoin *>(resolveStorageProxyLoading(storage).get()))
                     throw Exception(ErrorCodes::ACCESS_DENIED,
                         "Cannot join table {} with the Join engine because a row policy is applied on it", joined_table_id.getNameForLogs());
                 storage = nullptr;

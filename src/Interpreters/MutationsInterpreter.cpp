@@ -150,7 +150,7 @@ void checkNoRowPolicyForSetOperands(
                         DDLLogEntry::INITIATOR_USER_VERSION);
 
                 auto * table_node = resolved.resolved_identifier ? resolved.resolved_identifier->as<TableNode>() : nullptr;
-                if (auto * storage_set = table_node ? dynamic_cast<StorageSet *>(table_node->getStorage().get()) : nullptr)
+                if (auto * storage_set = table_node ? castStorage<StorageSet>(table_node->getStorage(), DeferredTable::Load).get() : nullptr)
                     storage_set->checkNoRowPolicy(context);
             }
         }
