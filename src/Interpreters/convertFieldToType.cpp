@@ -299,6 +299,60 @@ Field rescaleDecimal64Field(const Field & src, const ToDataType & to_type, bool 
     return DecimalField<T>(DecimalUtils::decimalFromComponentsWithMultiplier<T>(value, 0, 1), scale_to);
 }
 
+/// Splits a decimal integer literal into sign and magnitude; `magnitude_overflowed` leaves only the sign meaningful.
+bool parseDecimalIntegerLiteral(std::string_view literal, bool & negative, UInt256 & magnitude, bool & magnitude_overflowed)
+{
+    negative = false;
+    magnitude = 0;
+    magnitude_overflowed = false;
+
+    if (!literal.empty() && (literal.front() == '-' || literal.front() == '+'))
+    {
+        negative = literal.front() == '-';
+        literal.remove_prefix(1);
+    }
+
+    if (literal.empty() || literal.find_first_not_of("0123456789") != std::string_view::npos)
+        return false;
+
+    /// `common::mulOverflow` does not report overflow for the widest integers, so room is checked instead.
+    const UInt256 max_magnitude = std::numeric_limits<UInt256>::max();
+    for (char c : literal)
+    {
+        const UInt256 digit = static_cast<UInt256>(c - '0');
+        if (magnitude > (max_magnitude - digit) / 10)
+        {
+            magnitude_overflowed = true;
+            break;
+        }
+        magnitude = magnitude * 10 + digit;
+    }
+
+    return true;
+}
+
+template <typename T>
+IntegerLiteralRange classifyAgainstIntegerType(bool negative, const UInt256 & magnitude, bool magnitude_overflowed)
+{
+    if (negative)
+    {
+        if constexpr (is_unsigned_v<T>)
+            return IntegerLiteralRange::NotApplicable;
+        else
+        {
+            /// The minimum of an integer type fits no unsigned type, but its magnitude `max + 1` fits `UInt256`.
+            const UInt256 min_magnitude = static_cast<UInt256>(std::numeric_limits<T>::max()) + 1;
+            if (magnitude_overflowed || accurate::greaterOp(magnitude, min_magnitude))
+                return IntegerLiteralRange::BelowMin;
+            return IntegerLiteralRange::InRange;
+        }
+    }
+
+    if (magnitude_overflowed || accurate::greaterOp(magnitude, std::numeric_limits<T>::max()))
+        return IntegerLiteralRange::AboveMax;
+    return IntegerLiteralRange::InRange;
+}
+
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
     if (from_type_hint && from_type_hint->equals(type))
@@ -1080,6 +1134,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     /// Conversion from string by parsing.
     if (src.getType() == Field::Types::String)
     {
+        /// Integer text deserialization does not check for overflow: a literal too large wraps into an unrelated value.
+        const auto literal_range = classifyIntegerLiteralRange(src.safeGet<String>(), type);
+        if (literal_range == IntegerLiteralRange::BelowMin || literal_range == IntegerLiteralRange::AboveMax)
+            return {};
+
         /// Promote data type to avoid overflows. Note that overflows in the largest data type are still possible.
         /// But don't promote narrow floats (Float32, BFloat16): parsing the string into Float64 and narrowing back
         /// would fail the strict equality check inside `accurate::convertNumeric` for any decimal value that is not
@@ -1123,6 +1182,40 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         type.getName(), src.getType());
 }
 
+}
+
+IntegerLiteralRange classifyIntegerLiteralRange(std::string_view literal, const IDataType & to_type)
+{
+    /// A custom serialization reads its own text syntax: `Bool` reads `true` and `false`, not digits.
+    if (to_type.getCustomSerialization())
+        return IntegerLiteralRange::NotApplicable;
+
+    const WhichDataType which_to_type(to_type);
+    if (!which_to_type.isInt() && !which_to_type.isUInt())
+        return IntegerLiteralRange::NotApplicable;
+
+    bool negative = false;
+    UInt256 magnitude = 0;
+    bool magnitude_overflowed = false;
+    if (!parseDecimalIntegerLiteral(literal, negative, magnitude, magnitude_overflowed))
+        return IntegerLiteralRange::NotApplicable;
+
+    switch (to_type.getTypeId())
+    {
+        case TypeIndex::UInt8:   return classifyAgainstIntegerType<UInt8>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::UInt16:  return classifyAgainstIntegerType<UInt16>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::UInt32:  return classifyAgainstIntegerType<UInt32>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::UInt64:  return classifyAgainstIntegerType<UInt64>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::UInt128: return classifyAgainstIntegerType<UInt128>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::UInt256: return classifyAgainstIntegerType<UInt256>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::Int8:    return classifyAgainstIntegerType<Int8>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::Int16:   return classifyAgainstIntegerType<Int16>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::Int32:   return classifyAgainstIntegerType<Int32>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::Int64:   return classifyAgainstIntegerType<Int64>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::Int128:  return classifyAgainstIntegerType<Int128>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::Int256:  return classifyAgainstIntegerType<Int256>(negative, magnitude, magnitude_overflowed);
+        default:                 return IntegerLiteralRange::NotApplicable;
+    }
 }
 
 Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
