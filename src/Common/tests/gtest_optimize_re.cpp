@@ -40,6 +40,13 @@ TEST(OptimizeRE, analyze)
     test_f("(abc){2}", "abc", {}, false, true, true);
     test_f("xé{2}", "xé", {}, false, false, true);
     test_f("\\.{3}", "...", {}, false, false, true);
+    /// re2 reads a repetition it cannot parse as literal text.
+    test_f("foo{03}", "");
+    test_f("foo{2,03}", "");
+    test_f("foo{2,1000000000}", "");
+    test_f("(ab|cd)e{3}", "eee", {"abeee", "cdeee"}, false, true, false);
+    test_f("(?i:a|b)c", "");
+    test_f("fo{2,}?bar", "foo", {}, false, false, true);
     test_f("fo{2,}bar", "foo", {}, false, false, true);
     test_f("foo{1,3}bar", "foo", {}, false, false, true);
     test_f("foo{0,3}", "", {}, false, false, false);

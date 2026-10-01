@@ -1,13 +1,15 @@
-[1,3,5]
-Granules: 8/8
-Granules: 3/8
-Granules: 8/8
-Granules: 3/8
-[1,3,5]
-Granules: 8/8
-Granules: 3/8
+[1,3,5,9]
+Granules: 9/9
+Granules: 4/9
+Granules: 9/9
+Granules: 4/9
+[1,3,5,9]
+Granules: 9/9
+Granules: 4/9
 [3]
-Granules: 8/8
-Granules: 2/8
-[1,3,5,8]
-Granules: 8/8
+Granules: 9/9
+Granules: 2/9
+[9]
+Granules: 9/9
+[1,3,5,8,9]
+Granules: 9/9

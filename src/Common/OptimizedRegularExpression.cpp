@@ -159,24 +159,42 @@ const char * skipPosixNamedClass(const char * pos, const char * end)
     return pos + 1;
 }
 
+/// A repetition count as re2 parses it (`ParseInteger`): no leading zero, and no more digits once the value
+/// reaches 10^8. A body re2 rejects is read by it as literal text, so the caller must claim nothing for it.
+bool parseRepetitionCount(const char *& p, const char * end, size_t & n)
+{
+    if (p == end || !isNumericASCII(*p))
+        return false;
+    if (*p == '0' && p + 1 != end && isNumericASCII(p[1]))
+        return false;
+    n = 0;
+    for (; p != end && isNumericASCII(*p); ++p)
+    {
+        if (n >= 100000000)
+            return false;
+        n = n * 10 + (*p - '0');
+    }
+    return true;
+}
+
 /// The lower bound of the repetition at `pos` (`{n}`, `{n,}` or `{n,m}`): that many copies of the quantified
-/// character are mandatory. 0 for a malformed body, which re2 reads as literal text; that only drops a
-/// character from the prefilter.
+/// atom are mandatory. 0 for a body re2 does not read as a repetition.
 size_t repetitionLowerBound(const char * pos, const char * end)
 {
     const char * p = pos + 1;
     size_t min_count = 0;
-    for (; p != end && isNumericASCII(*p); ++p)
+    if (!parseRepetitionCount(p, end, min_count) || p == end)
+        return 0;
+    if (*p == ',')
     {
-        min_count = min_count * 10 + (*p - '0');
-        if (min_count > 1000)
+        ++p;
+        size_t max_count = 0;
+        if (p == end || (*p != '}' && !parseRepetitionCount(p, end, max_count)))
             return 0;
     }
-    if (p == pos + 1)
+    if (p == end || *p != '}' || min_count > 1000)
         return 0;
-    if (p != end && *p == ',')
-        for (++p; p != end && isNumericASCII(*p); ++p);
-    return p != end && *p == '}' ? min_count : 0;
+    return min_count;
 }
 
 /// re2 resolves `\<non-alphanumeric>` to that character itself, unlike a sequence such as `\d` or `\x41`.
