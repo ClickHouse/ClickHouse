@@ -3,6 +3,8 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnSparse.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -36,6 +38,10 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ProjectionsDescription.h>
 
+#include <algorithm>
+#include <cmath>
+#include <ranges>
+
 namespace DB
 {
 
@@ -65,19 +71,21 @@ namespace
 
 struct ProjectionPartData
 {
-    /// the projection key, one row per projection row, in read order
+    /// projection key columns, in read order
     Block key_block;
-    /// sorted order over key_block
+    /// sort permutation of key_block
     IColumn::Permutation order;
     size_t rows = 0;
-    /// uncompressed size of the projection part, drives the granularity
+    /// uncompressed bytes, used for granularity
     size_t bytes = 0;
-    /// per-row size in read order, empty unless the part needs the adaptive granule walk
+    /// per-row bytes, only filled for adaptive granularity
     PaddedPODArray<UInt32> row_bytes;
+    /// some stored column has values of different sizes
+    bool variable_width = false;
 };
 
-/// per-row counterpart of `getBlockSizeForGranularity`, a fixed-width column costs the same in every row
-void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, const Block & block)
+/// per-row version of `getBlockSizeForGranularity`
+void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, const Block & block)
 {
     const size_t rows = block.rows();
     const size_t offset = row_bytes.size();
@@ -91,14 +99,17 @@ void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, const Block & block)
         if (elem.column->valuesHaveFixedSize())
             fixed += static_cast<UInt32>(elem.column->sizeOfValueIfFixed());
         else
+        {
+            variable_width = true;
             for (size_t i = 0; i < rows; ++i)
                 row_bytes[offset + i] += static_cast<UInt32>(elem.column->byteSizeAt(i));
+        }
     }
     for (size_t i = 0; i < rows; ++i)
         row_bytes[offset + i] += fixed;
 }
 
-/// why the ORDER BY tie-break is or is not available
+/// whether the projection order helps an outer ORDER BY
 enum class SortOrderHelp
 {
     Helps,
@@ -136,9 +147,7 @@ bool findPath(QueryPlan::Node * node, const IQueryPlanStep * target, std::vector
     return false;
 }
 
-/// The slice `optimizeUseNormalProjections` would replace: the chain of filters and expressions above
-/// the read, taken as the node the chooser hands to `QueryDAG::build`, plus the full sort right above
-/// it when there is one.
+/// the filter/expression chain above the read that the optimizer would replace, and the sort above it
 struct ReadSlice
 {
     QueryPlan::Node * root = nullptr;
@@ -167,13 +176,43 @@ ReadSlice findReadSlice(QueryPlan::Node * root, const ReadFromMergeTree * read_s
     return slice;
 }
 
-/// reads the whole part, wired like the empirical index scan
-Pipe makeWholePartPipe(const DataPartPtr & part, const Names & columns_to_read, ReadFromMergeTree * read_step, const ContextPtr & context)
+/// the whole part, or one granule from every run of `sample_step` at a hashed position,
+/// so data that repeats with the step can't line up with the sample
+MarkRanges marksToScan(const DataPartPtr & part, size_t sample_step)
+{
+    const size_t marks = part->index_granularity->getMarksCountWithoutFinal();
+    if (sample_step <= 1)
+        return {{0, marks}};
+    const UInt64 seed = sipHash64(part->name);
+    MarkRanges ranges;
+    for (size_t first = 0; first < marks; first += sample_step)
+    {
+        const size_t mark = first + intHash64(seed ^ first) % std::min(sample_step, marks - first);
+        ranges.emplace_back(mark, mark + 1);
+    }
+    return ranges;
+}
+
+/// grow a [low, high] mark range by `spread` on both sides
+void widen(UInt64 & low, UInt64 & high, double spread)
+{
+    const auto by = static_cast<UInt64>(std::ceil(spread));
+    low = low > by ? low - by : 0;
+    high += by;
+}
+
+/// read the given granules of a part
+Pipe makePartPipe(
+    const DataPartPtr & part,
+    const MarkRanges & ranges,
+    const Names & columns_to_read,
+    ReadFromMergeTree * read_step,
+    const ContextPtr & context)
 {
     const auto & data = read_step->getMergeTreeData();
     const auto & mutations_snapshot = read_step->getMutationsSnapshot();
 
-    /// apply patch parts / on-the-fly mutations so the projection sees the up-to-date values
+    /// apply patch parts and on-the-fly mutations
     auto alter_conversions = mutations_snapshot
         ? MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
 #if CLICKHOUSE_CLOUD
@@ -190,13 +229,13 @@ Pipe makeWholePartPipe(const DataPartPtr & part, const Names & columns_to_read, 
         alter_conversions,
         nullptr,
         columns_to_read,
-        MarkRanges{{0, part->index_granularity->getMarksCountWithoutFinal()}},
+        ranges,
         std::make_shared<std::atomic<size_t>>(0),
         false,
         false,
         false);
 
-    /// speed limits apply here too, size is checked by the caller
+    /// keep speed limits, the caller checks sizes
     if (auto query_limits = read_step->getQueryInfo().storage_limits)
     {
         auto speed_limits = std::make_shared<StorageLimitsList>(*query_limits);
@@ -213,11 +252,12 @@ Pipe makeWholePartPipe(const DataPartPtr & part, const Names & columns_to_read, 
     return pipe;
 }
 
-/// keep only the key columns, so peak memory is one key copy plus the permutation, false when a read limit was hit
+/// read only the key columns, false if a read limit was hit
 bool buildProjectionPart(
     ProjectionPartData & out,
     const ProjectionDescription & projection,
     const DataPartPtr & part,
+    const MarkRanges & ranges,
     ReadFromMergeTree * read_step,
     const SizeLimits & read_limits,
     bool need_row_bytes,
@@ -227,12 +267,12 @@ bool buildProjectionPart(
 {
     const auto & proj_key = projection.metadata->getSortingKey();
 
-    Pipe pipe = makeWholePartPipe(part, projection.required_columns, read_step, context);
+    Pipe pipe = makePartPipe(part, ranges, projection.required_columns, read_step, context);
     QueryPipeline pipeline(std::move(pipe));
     pipeline.setProcessListElement(context->getProcessListElement());
     pipeline.setProgressCallback(context->getProgressCallback());
     pipeline.setQuota(context->getQuota());
-    /// account the scan to the query's own quota bucket
+    /// count against the query's quota
     pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
     PullingPipelineExecutor executor(pipeline);
 
@@ -245,22 +285,20 @@ bool buildProjectionPart(
 
         total_rows_read += block.rows();
         total_bytes_read += block.bytes();
-        /// softCheck, so `read_overflow_mode = 'throw'` degrades to `unsupported` like `break` does:
-        /// this scan reads whole parts, and a query the user can still run must stay explainable
-        if (!read_limits.softCheck(total_rows_read, total_bytes_read))
+        /// past a limit the estimate is unsupported instead of failing the query, reaching it is fine as for the query
+        if ((read_limits.max_rows && total_rows_read > read_limits.max_rows)
+            || (read_limits.max_bytes && total_bytes_read > read_limits.max_bytes))
             return false;
 
-        /// the key expression and the sort need full columns
+        /// key expression and sort need full columns
         for (auto & column : block)
             column.column = recursiveRemoveSparse(column.column);
 
-        /// the same measure the writer takes of the block it is about to store, before the key
-        /// expression adds columns a normal projection recomputes on read instead of storing
+        /// measured before the key expression, as the writer does
         out.bytes += getBlockSizeForGranularity(block);
         if (need_row_bytes)
-            appendRowSizes(out.row_bytes, block);
-        /// `required_columns` drops a subcolumn whose physical column is there, and the writer puts it
-        /// back before executing the key expression (`addSubcolumnsFromSortingKeyAndSkipIndicesExpression`)
+            appendRowSizes(out.row_bytes, out.variable_width, block);
+        /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
         for (const auto & required : proj_key.expression->getRequiredColumns())
             if (!block.has(required))
                 block.insert(block.getSubcolumnByName(required));
@@ -281,7 +319,7 @@ bool buildProjectionPart(
         return true;
 
     out.rows = key_columns[0]->size();
-    /// a projection index also stores the parent offset, which the writer sizes but `required_columns` omits
+    /// projection indexes also store the parent offset
     if (projection.with_parent_part_offset)
     {
         out.bytes += out.rows * sizeof(UInt64);
@@ -294,12 +332,64 @@ bool buildProjectionPart(
     return true;
 }
 
-/// The writer never sizes granules over a whole part: it asks `computeIndexGranularity` for one
-/// granule size per block it is handed, then fills the marks with `fillIndexGranularityImpl`. Both
-/// steps are reproduced here over a simulated block sequence, so the layout follows the writer's for
-/// any block size instead of only for one long block.
+/// the whole part seen through its sample, in projection order: part row `r` falls on sample row `r * sample rows / part rows`
+struct PartFromSample
+{
+    const ProjectionPartData & sample;
+    size_t rows;
+    /// bytes of the part rows before the first one each sample row stands for
+    std::vector<UInt64> bytes_before_sample_row;
+
+    PartFromSample(const ProjectionPartData & sample_, size_t rows_)
+        : sample(sample_), rows(rows_), bytes_before_sample_row(sample.rows + 1)
+    {
+        for (size_t sample_row = 0; sample_row < sample.rows; ++sample_row)
+        {
+            const size_t part_rows_covered = firstPartRow(sample_row + 1) - firstPartRow(sample_row);
+            bytes_before_sample_row[sample_row + 1] = bytes_before_sample_row[sample_row] + sampleRowBytes(sample_row) * part_rows_covered;
+        }
+    }
+
+    size_t sampleRow(size_t part_row) const { return static_cast<size_t>(UInt128(part_row) * sample.rows / rows); }
+    size_t firstPartRow(size_t sample_row) const
+    {
+        return static_cast<size_t>((UInt128(sample_row) * rows + sample.rows - 1) / sample.rows);
+    }
+    /// the first sample row whose part rows start at or after `part_row`
+    size_t firstSampleRowFrom(size_t part_row) const { return part_row == 0 ? 0 : sampleRow(part_row - 1) + 1; }
+
+    size_t sampleRowBytes(size_t sample_row) const
+    {
+        const bool per_row = sample.row_bytes.size() == sample.rows;
+        return per_row ? sample.row_bytes[sample.order[sample_row]] : std::max<size_t>(sample.bytes / sample.rows, 1);
+    }
+
+    UInt64 bytesBefore(size_t part_row) const
+    {
+        const size_t sample_row = sampleRow(part_row);
+        if (sample_row == sample.rows)
+            return bytes();
+        return bytes_before_sample_row[sample_row] + sampleRowBytes(sample_row) * (part_row - firstPartRow(sample_row));
+    }
+
+    UInt64 bytes() const { return bytes_before_sample_row.back(); }
+};
+
+/// end of the block a writer gets at `row`: at most `rows_limit` rows and `bytes_limit` bytes, but at least one row
+size_t blockEnd(const PartFromSample & part, size_t row, size_t rows_limit, size_t bytes_limit)
+{
+    const size_t end = std::min(part.rows, row + rows_limit);
+    if (bytes_limit == 0)
+        return end;
+    const UInt64 start_bytes = part.bytesBefore(row);
+    const auto longer_ends = std::views::iota(row + 2, end + 1);
+    const auto fits = [&](size_t block_end) { return part.bytesBefore(block_end) - start_bytes <= bytes_limit; };
+    return row + 1 + static_cast<size_t>(std::ranges::partition_point(longer_ends, fits) - longer_ends.begin());
+}
+
+/// reproduce how the writer splits a part into granules, block by block
 std::vector<size_t> simulateWriterMarks(
-    const ProjectionPartData & data,
+    const PartFromSample & part,
     MergeTreeDataPartType part_type,
     const MergeTreeSettings & mt_settings,
     bool adaptive_marks,
@@ -308,37 +398,27 @@ std::vector<size_t> simulateWriterMarks(
 {
     const size_t granularity_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
     const size_t fixed_granularity_rows = mt_settings[MergeTreeSetting::index_granularity];
-    const bool per_row_bytes = data.row_bytes.size() == data.rows;
-    const size_t average_row_bytes = data.rows != 0 ? std::max<size_t>(data.bytes / data.rows, 1) : 1;
-    auto row_bytes = [&](size_t row) -> size_t { return per_row_bytes ? data.row_bytes[data.order[row]] : average_row_bytes; };
 
     std::vector<size_t> mark_rows;
-    size_t recorded = 0; /// rows the marks claim
-    size_t written = 0; /// rows that reached them
+    size_t recorded = 0; /// rows covered by marks
+    size_t written = 0; /// rows written
 
-    for (size_t row = 0; row < data.rows;)
+    for (size_t row = 0; row < part.rows;)
     {
-        size_t block_rows = 0;
-        size_t block_bytes = 0;
-        while (row + block_rows < data.rows && block_rows < block_rows_limit)
-        {
-            const size_t bytes = row_bytes(row + block_rows);
-            if (block_bytes_limit != 0 && block_rows != 0 && block_bytes + bytes > block_bytes_limit)
-                break;
-            block_bytes += bytes;
-            ++block_rows;
-        }
-        row += block_rows;
+        const size_t end = blockEnd(part, row, block_rows_limit, block_bytes_limit);
+        const size_t block_rows = end - row;
+        const size_t block_bytes = part.bytesBefore(end) - part.bytesBefore(row);
+        row = end;
 
         const size_t granule_rows = computeIndexGranularity(
             block_rows, block_bytes, granularity_bytes, fixed_granularity_rows, /* blocks_are_granules */ false, adaptive_marks);
 
-        /// rows of this block that go into the mark the previous block left open
+        /// rows that still fit into the mark the previous block left open
         size_t offset = 0;
         if (recorded > written)
         {
             const size_t open_rows = written - (recorded - mark_rows.back());
-            /// a mark wider than this block's granule is shrunk first, as `MergeTreeDataPartWriterWide::write` does
+            /// shrink an oversized open mark first, as the wide writer does
             if (mark_rows.back() - open_rows > granule_rows)
             {
                 recorded -= mark_rows.back();
@@ -351,8 +431,7 @@ std::vector<size_t> simulateWriterMarks(
         for (size_t cur = offset; cur < block_rows; cur += granule_rows)
         {
             const size_t left = block_rows - cur;
-            /// the compact writer closes the block's tail, into a mark of its own or into the previous
-            /// mark when it holds under half a granule; the wide writer leaves the mark open
+            /// the compact writer closes the block's tail, the wide one keeps the mark open
             const bool close_tail = part_type == MergeTreeDataPartType::Compact && left < granule_rows
                 && (block_rows >= granule_rows || offset != 0) && !mark_rows.empty();
             if (close_tail)
@@ -372,7 +451,7 @@ std::vector<size_t> simulateWriterMarks(
         written += block_rows;
     }
 
-    /// closing the part shrinks the last mark to the rows that reached it (`adjustLastMark`)
+    /// trim the last mark, like `adjustLastMark`
     if (recorded > written)
     {
         recorded -= mark_rows.back();
@@ -383,12 +462,19 @@ std::vector<size_t> simulateWriterMarks(
     return mark_rows;
 }
 
-/// build the primary index in memory and prune it with the engine's own PK-range pruning, nothing is written
-/// `marks_low_out` and `marks_high_out` take the range the layouts of the other write paths span.
-/// With rows of one width the merge's own block size sets the granule size; once the widths vary it is
-/// where the merge cut its blocks that sets it, and a merge cuts at every source it drains, so the
-/// short runs follow the width - hence `uneven_rows` picks the layout to estimate with.
-MarkRanges pruneSyntheticProjectionPart(
+/// marks one part of the projection would read, and their possible range
+struct PartEstimate
+{
+    MarkRanges pruned;
+    MergeTreeIndexGranularityPtr granularity;
+    UInt64 marks_low = 0;
+    UInt64 marks_high = 0;
+    /// for a sample, the selected share of every granule read
+    std::vector<double> granule_shares;
+};
+
+/// build the projection's primary index in memory and prune it, nothing is written
+PartEstimate pruneSyntheticProjectionPart(
     ProjectionPartData & data,
     const ProjectionDescription & projection,
     const MergeTreeData & merge_tree,
@@ -399,9 +485,8 @@ MarkRanges pruneSyntheticProjectionPart(
     const MergeTreeSettings & mt_settings,
     const Settings & query_settings,
     bool uneven_rows,
-    MergeTreeIndexGranularityPtr & granularity_out,
-    UInt64 & marks_low_out,
-    UInt64 & marks_high_out,
+    size_t part_rows,
+    const MarkRanges & ranges_read,
     LoggerPtr log)
 {
     const auto & proj_key = projection.metadata->getSortingKey();
@@ -411,32 +496,28 @@ MarkRanges pruneSyntheticProjectionPart(
     for (const auto & name : proj_key.column_names)
         sort_description.emplace_back(name, 1, 1);
 
-    /// sorted order via one permutation
     stableGetPermutation(data.key_block, sort_description, data.order);
-    const auto part_type
-        = merge_tree.choosePartFormat(data.bytes, data.rows, parent_ranges.data_part->info.level, &projection).part_type;
+    const PartFromSample whole_part(data, part_rows);
+    const auto level = parent_ranges.data_part->info.level;
+    const auto part_type = merge_tree.choosePartFormat(whole_part.bytes(), whole_part.rows, level, &projection).part_type;
     const bool adaptive_marks = parent_ranges.data_part->index_granularity_info.mark_type.adaptive;
-    /// a constant granularity object pins one granule size for the whole part, an adaptive one lets
-    /// every block the writer stores size its own granules, so only then do the blocks matter
+    /// only adaptive granularity lets block sizes change the layout
     const bool granularity_per_block = part_type == MergeTreeDataPartType::Compact
         || (adaptive_marks && !mt_settings[MergeTreeSetting::use_const_adaptive_granularity]);
 
-    /// The granule sizes follow the blocks the writer was handed, and nothing in a part records them:
-    /// an insert or a materialization writes one squashed block, a merge writes runs of at most
-    /// `merge_max_block_size` and cuts them shorter at every source it drains. So estimate with the
-    /// chunking of the path that wrote the parent and take the others as the spread of the estimate.
+    /// the layout depends on blocks a part doesn't record, so try each and keep the range
     const size_t merge_rows = mt_settings[MergeTreeSetting::merge_max_block_size];
     const size_t merge_bytes = mt_settings[MergeTreeSetting::merge_max_block_size_bytes];
-    /// one granule worth of bytes is the shortest run whose width can still move the granule size
+    /// one granule of bytes is the finest block size that matters
     const size_t granule_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
     std::vector<std::pair<size_t, size_t>> chunkings;
     size_t primary = 0;
-    chunkings.emplace_back(data.rows, 0); /// one squashed block, as an insert or a materialization writes
+    chunkings.emplace_back(whole_part.rows, 0); /// insert or materialization
     if (granularity_per_block)
     {
-        chunkings.emplace_back(merge_rows, merge_bytes); /// the blocks a merge is bounded to
-        chunkings.emplace_back(merge_rows, granule_bytes); /// a merge that cuts a block short at every source
-        /// a level-zero part was written in one go, a merged one block by block
+        chunkings.emplace_back(merge_rows, merge_bytes); /// merge
+        chunkings.emplace_back(merge_rows, granule_bytes); /// merge cutting blocks at every source
+        /// merged parts were written block by block
         if (parent_ranges.data_part->info.level > 0)
             primary = uneven_rows ? chunkings.size() - 1 : chunkings.size() - 2;
     }
@@ -444,7 +525,7 @@ MarkRanges pruneSyntheticProjectionPart(
     std::vector<std::vector<size_t>> layouts;
     layouts.reserve(chunkings.size());
     for (const auto & [rows_limit, bytes_limit] : chunkings)
-        layouts.push_back(simulateWriterMarks(data, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit));
+        layouts.push_back(simulateWriterMarks(whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit));
 
     auto prune = [&](const std::vector<size_t> & rows_per_mark, MergeTreeIndexGranularityPtr & granularity)
     {
@@ -460,24 +541,23 @@ MarkRanges pruneSyntheticProjectionPart(
         if (!key_condition)
             return MarkRanges{{0, num_marks}};
 
-        /// primary index = the key at the first row of every granule
+        /// index value = key at the first row of each granule, taken from the sample row it falls on
         Columns index_columns;
         index_columns.reserve(data.key_block.columns());
         for (const auto & key_column : data.key_block)
         {
             auto index_column = key_column.column->cloneEmpty();
             for (size_t mark = 0; mark < num_marks; ++mark)
-                index_column->insertFrom(*key_column.column, data.order[mark != 0 ? partial_sums[mark - 1] : 0]);
+                index_column->insertFrom(*key_column.column, data.order[whole_part.sampleRow(mark != 0 ? partial_sums[mark - 1] : 0)]);
             index_columns.push_back(std::move(index_column));
         }
 
-        /// `Synthetic` keeps the part off its directory: `CreateFresh` would reclaim a `.tmp_proj` left
-        /// by an interrupted materialization, and an estimate must not write to storage at all
+        /// `Synthetic` never touches the part directory, `CreateFresh` could delete a leftover `.tmp_proj`
         auto synthetic_part = const_cast<IMergeTreeDataPart &>(*parent_ranges.data_part)
                                   .getProjectionPartBuilder(
                                       projection.name, &projection, PartDirIntent::Synthetic, /* is_temp_projection */ true)
                                   .withPartType(MergeTreeDataPartType::Compact)
-                                  .withBytesAndRows(0, data.rows, 0)
+                                  .withBytesAndRows(0, whole_part.rows, 0)
                                   .build();
         synthetic_part->index_granularity = granularity;
         synthetic_part->setIndex(index_columns);
@@ -498,20 +578,62 @@ MarkRanges pruneSyntheticProjectionPart(
             log);
     };
 
-    MarkRanges pruned = prune(layouts[primary], granularity_out);
-    marks_low_out = pruned.getNumberOfMarks();
-    marks_high_out = marks_low_out;
+    PartEstimate estimate;
+    estimate.pruned = prune(layouts[primary], estimate.granularity);
+    estimate.marks_low = estimate.pruned.getNumberOfMarks();
+    estimate.marks_high = estimate.marks_low;
     for (size_t i = 0; i < layouts.size(); ++i)
     {
-        /// the same layout prunes to the same marks, and a chunking often repeats one
+        /// same layout, same result
         if (i == primary || layouts[i] == layouts[primary])
             continue;
         MergeTreeIndexGranularityPtr other_granularity;
         const UInt64 other_marks = prune(layouts[i], other_granularity).getNumberOfMarks();
-        marks_low_out = std::min(marks_low_out, other_marks);
-        marks_high_out = std::max(marks_high_out, other_marks);
+        estimate.marks_low = std::min(estimate.marks_low, other_marks);
+        estimate.marks_high = std::max(estimate.marks_high, other_marks);
     }
-    return pruned;
+
+    if (whole_part.rows > data.rows)
+    {
+        /// the sampled granule each sample row came from, and the rows of each
+        const auto & parent_granularity = *parent_ranges.data_part->index_granularity;
+        std::vector<size_t> sampled_granule_rows;
+        std::vector<UInt32> granule_of_row;
+        granule_of_row.reserve(data.rows);
+        for (const auto & range : ranges_read)
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                sampled_granule_rows.push_back(parent_granularity.getMarkRows(mark));
+                granule_of_row.resize(
+                    granule_of_row.size() + sampled_granule_rows.back(), static_cast<UInt32>(sampled_granule_rows.size() - 1));
+            }
+        chassert(granule_of_row.size() == data.rows);
+
+        /// a range end is known up to the gap between neighbouring sample rows, a sampling step if the key follows the parent order
+        size_t same_granule_neighbours = 0;
+        for (size_t pos = 1; pos < data.rows; ++pos)
+            same_granule_neighbours += granule_of_row[data.order[pos]] == granule_of_row[data.order[pos - 1]];
+        const double follows_parent
+            = static_cast<double>(same_granule_neighbours) / static_cast<double>(std::max<size_t>(1, data.rows - 1));
+        const double sampling_step
+            = static_cast<double>(parent_granularity.getMarksCountWithoutFinal()) / static_cast<double>(sampled_granule_rows.size());
+        const double marks_per_sample_row = static_cast<double>(layouts[primary].size()) / static_cast<double>(data.rows);
+        const double granules_per_end = 1.0 + follows_parent * (sampling_step - 1.0) + (1.0 - follows_parent) * marks_per_sample_row;
+        const double range_ends = 2.0 * static_cast<double>(std::max<size_t>(1, estimate.pruned.size()));
+        widen(estimate.marks_low, estimate.marks_high, range_ends * granules_per_end);
+
+        std::vector<size_t> selected_rows(sampled_granule_rows.size());
+        for (const auto & range : estimate.pruned)
+        {
+            const size_t sample_begin = whole_part.firstSampleRowFrom(estimate.granularity->getMarkStartingRow(range.begin));
+            const size_t sample_end = whole_part.firstSampleRowFrom(estimate.granularity->getMarkStartingRow(range.end));
+            for (size_t sample_row = sample_begin; sample_row < sample_end; ++sample_row)
+                ++selected_rows[granule_of_row[data.order[sample_row]]];
+        }
+        for (size_t i = 0; i < sampled_granule_rows.size(); ++i)
+            estimate.granule_shares.push_back(static_cast<double>(selected_rows[i]) / static_cast<double>(sampled_granule_rows[i]));
+    }
+    return estimate;
 }
 
 bool tryEstimateProjection(
@@ -526,6 +648,7 @@ bool tryEstimateProjection(
     ReadFromMergeTree * read_step,
     const RangesInDataParts & baseline_parts,
     UInt64 baseline_marks,
+    UInt64 projection_scan_budget_rows,
     const ContextPtr & context)
 {
     const auto & data = read_step->getMergeTreeData();
@@ -533,11 +656,56 @@ bool tryEstimateProjection(
     const auto & mt_settings = *mt_settings_ptr;
     const auto & query_settings = context->getSettingsRef();
 
-    /// enforce the read limits by hand
+    /// check read limits by hand
     const SizeLimits read_limits(
         query_settings[Setting::max_rows_to_read], query_settings[Setting::max_bytes_to_read], query_settings[Setting::read_overflow_mode]);
     UInt64 total_rows_read = 0;
     UInt64 total_bytes_read = 0;
+
+    /// the scan reads whole parts, so past the budget sample granules instead
+    UInt64 rows_to_scan = 0;
+    UInt64 marks_to_scan = 0;
+    for (const auto & part_with_ranges : baseline_parts)
+    {
+        rows_to_scan += part_with_ranges.data_part->rows_count;
+        marks_to_scan += part_with_ranges.data_part->index_granularity->getMarksCountWithoutFinal();
+    }
+    UInt64 budget = projection_scan_budget_rows;
+    if (const UInt64 read_limit = query_settings[Setting::max_rows_to_read]; read_limit != 0)
+        budget = budget == 0 ? read_limit : std::min(budget, read_limit);
+    size_t sample_step = budget != 0 && rows_to_scan > budget ? (rows_to_scan + budget - 1) / budget : 1;
+    /// but keep at least 30 sampled granules, fewer can't give an error estimate: the largest step with ceil(marks / step) >= 30
+    if (sample_step > 1)
+        sample_step = std::min<size_t>(sample_step, std::max<size_t>(1, (marks_to_scan - 1) / 29));
+    std::vector<double> granule_shares;
+    UInt64 layout_marks = 0;
+
+    /// a sample's row offsets are not the part's, so an offset filter can't be applied to it
+    if (sample_step > 1 && (part_offset_condition || total_offset_condition))
+    {
+        result.empirical_unsupported_reason
+            = "The query filters on part offsets, which an estimate from a sample of granules cannot follow "
+              "(see projection_scan_budget_rows)";
+        return false;
+    }
+
+    /// the granule floor and one granule per part can outgrow the budget, so check the read limit before reading
+    std::vector<MarkRanges> ranges_to_scan;
+    ranges_to_scan.reserve(baseline_parts.size());
+    UInt64 rows_planned = 0;
+    for (const auto & part_with_ranges : baseline_parts)
+    {
+        ranges_to_scan.push_back(marksToScan(part_with_ranges.data_part, sample_step));
+        rows_planned += part_with_ranges.data_part->index_granularity->getRowsCountInRanges(ranges_to_scan.back());
+    }
+    if (const UInt64 read_limit = query_settings[Setting::max_rows_to_read]; read_limit != 0 && rows_planned > read_limit)
+    {
+        result.empirical_unsupported_reason = fmt::format(
+            "The estimate would read {} rows, over max_rows_to_read = {} (a sample keeps at least ~30 granules and one per part)",
+            rows_planned,
+            read_limit);
+        return false;
+    }
 
     Stopwatch watch;
     auto log = getLogger("WhatIfProjectionEstimator");
@@ -550,20 +718,22 @@ bool tryEstimateProjection(
     UInt64 marks_high = 0;
     UInt64 uneven_width_parts = 0;
 
-    for (const auto & part_with_ranges : baseline_parts)
+    for (size_t part_idx = 0; part_idx < baseline_parts.size(); ++part_idx)
     {
+        const auto & part_with_ranges = baseline_parts[part_idx];
         const auto & part = part_with_ranges.data_part;
         const size_t part_marks = part->index_granularity->getMarksCountWithoutFinal();
         if (part_marks == 0)
             continue;
 
-        /// the byte walk only differs from a fixed granule count when the writer would size by bytes
+        /// row bytes only matter when granules are sized by bytes
         const bool adaptive = part->index_granularity_info.mark_type.adaptive
             && mt_settings[MergeTreeSetting::index_granularity_bytes] != 0;
 
+        const MarkRanges & ranges = ranges_to_scan[part_idx];
         ProjectionPartData part_data;
         if (!buildProjectionPart(
-                part_data, projection, part, read_step, read_limits, adaptive, total_rows_read, total_bytes_read, context))
+                part_data, projection, part, ranges, read_step, read_limits, adaptive, total_rows_read, total_bytes_read, context))
         {
             result.empirical_unsupported_reason
                 = "The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)";
@@ -571,19 +741,18 @@ bool tryEstimateProjection(
         }
 
         ++scanned_parts;
-        scanned_marks += part_marks;
-        /// the writer sizes a granule from the average width of the block it stores, so once the rows
-        /// differ in width the layout follows the blocks it was fed, and that is not recorded anywhere
-        bool uneven_rows = false;
-        if (part_data.row_bytes.size() == part_data.rows && !part_data.row_bytes.empty())
+        scanned_marks += ranges.getNumberOfMarks();
+        /// with uneven row widths the layout depends on block boundaries we can't know
+        /// a sample can't show that rows it didn't read have the same width
+        bool uneven_rows = sample_step > 1 && part_data.variable_width;
+        if (!uneven_rows && part_data.row_bytes.size() == part_data.rows && !part_data.row_bytes.empty())
         {
             const auto [narrowest, widest] = std::minmax_element(part_data.row_bytes.begin(), part_data.row_bytes.end());
             uneven_rows = *narrowest != *widest;
         }
         if (uneven_rows)
             ++uneven_width_parts;
-        /// no key rows out of a part that has rows means the key needs something the scan cannot
-        /// provide, `_part_offset` for one, so do not pass a zero-mark estimate off as measured
+        /// no key rows from a non-empty part: the key needs a column we don't read, e.g. `_part_offset`
         if (part_data.rows == 0 && part->rows_count > 0)
         {
             result.empirical_unsupported_reason = "The projection key could not be built from the columns the projection stores";
@@ -592,10 +761,9 @@ bool tryEstimateProjection(
         if (part_data.rows == 0)
             continue;
 
-        MergeTreeIndexGranularityPtr granularity;
-        UInt64 part_marks_low = 0;
-        UInt64 part_marks_high = 0;
-        MarkRanges pruned = pruneSyntheticProjectionPart(
+        const size_t part_rows = sample_step > 1 ? part->rows_count : part_data.rows;
+
+        const auto estimate = pruneSyntheticProjectionPart(
             part_data,
             projection,
             data,
@@ -606,15 +774,27 @@ bool tryEstimateProjection(
             mt_settings,
             query_settings,
             uneven_rows,
-            granularity,
-            part_marks_low,
-            part_marks_high,
+            part_rows,
+            ranges,
             log);
 
-        projection_marks += pruned.getNumberOfMarks();
-        projection_rows += granularity->getRowsCountInRanges(pruned);
-        marks_low += part_marks_low;
-        marks_high += part_marks_high;
+        projection_marks += estimate.pruned.getNumberOfMarks();
+        projection_rows += estimate.granularity->getRowsCountInRanges(estimate.pruned);
+        marks_low += estimate.marks_low;
+        marks_high += estimate.marks_high;
+        layout_marks += estimate.granularity->getMarksCount();
+        granule_shares.insert(granule_shares.end(), estimate.granule_shares.begin(), estimate.granule_shares.end());
+    }
+
+    /// widen by two standard errors of the selected share (successive differences, fits a systematic sample)
+    if (granule_shares.size() > 1)
+    {
+        double sum_of_squares = 0;
+        for (size_t i = 1; i < granule_shares.size(); ++i)
+            sum_of_squares += (granule_shares[i] - granule_shares[i - 1]) * (granule_shares[i] - granule_shares[i - 1]);
+        const double count = static_cast<double>(granule_shares.size());
+        const double standard_error = std::sqrt(sum_of_squares / (2.0 * count * (count - 1.0)));
+        widen(marks_low, marks_high, 2.0 * standard_error * static_cast<double>(layout_marks));
     }
 
     result.estimated_marks = projection_marks;
@@ -622,15 +802,15 @@ bool tryEstimateProjection(
     result.estimated_marks_low = marks_low;
     result.estimated_marks_high = marks_high;
     auto marks_text = [](UInt64 marks) { return fmt::format("{} mark{}", marks, marks == 1 ? "" : "s"); };
-    /// fewer marks never loses, so the estimate decides only when both layouts agree
+    /// decide only if the whole range agrees
     auto would_win = [&](UInt64 marks)
     { return marks < baseline_marks || (marks == baseline_marks && sort_help == SortOrderHelp::Helps); };
     if (uneven_width_parts != 0)
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
-            "{} against {} from the base table, but the rows differ in width on {} of the {} parts read, so the granule "
-            "layout depends on the blocks the writer was fed and the mark count is a model, not a measurement",
+            "{} against {} from the base table, but the rows are not known to have the same width on {} of the {} parts read, "
+            "so the granule layout depends on the blocks the writer was fed and the mark count is a model, not a measurement",
             marks_text(projection_marks),
             baseline_marks,
             uneven_width_parts,
@@ -678,6 +858,8 @@ bool tryEstimateProjection(
     result.empirical_status = WhatIfCandidateResult::Ok;
     result.sampled_parts = scanned_parts;
     result.sampled_marks = scanned_marks;
+    /// out of what a full scan would read
+    result.total_marks = marks_to_scan;
     result.elapsed_us = watch.elapsedMicroseconds();
     return true;
 }
@@ -708,8 +890,7 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
         return std::nullopt;
     }
 
-    /// an ALTER can re-point an ALIAS the definition selects, so the columns the scan will really read
-    /// are not the ones stored at CREATE time, and a denial here must not read as drift
+    /// an ALTER may retarget an ALIAS, so check the columns actually read
     if (!fresh->required_columns.empty())
         context->checkAccess(AccessType::SELECT, data.getStorageID(), fresh->required_columns);
     return fresh;
@@ -734,8 +915,7 @@ WhatIfCandidateResult evaluateProjection(
     result.total_parts = data.getActivePartsCount();
     result.total_marks = data.getTotalMarksCount();
 
-    /// answer this before the refresh below: the read step of a baseline served by a projection
-    /// carries that projection's metadata, which a base-table definition would not validate against
+    /// before the refresh: a projection-served read carries that projection's metadata
     if (analysis.readFromProjection() && !baseline_parts.empty())
     {
         result.not_applicable_reason = "The query is already served from projection '" + baseline_parts.front().data_part->name
@@ -806,8 +986,7 @@ WhatIfCandidateResult evaluateProjection(
         return result;
     }
 
-    /// both `TYPE commit_order` and its query form order by these, so name the surface instead of the type,
-    /// and the scan reads what the projection stores, so a key over a virtual column has no source there
+    /// commit-order keys and keys over columns the projection doesn't store can't be rebuilt
     for (const auto & required : proj_key.expression->getRequiredColumns())
     {
         if (required == BlockNumberColumn::name || required == BlockOffsetColumn::name)
@@ -827,8 +1006,7 @@ WhatIfCandidateResult evaluateProjection(
         }
     }
 
-    /// the writer skips these on insert and only builds them on the first merge, so a fresh part has
-    /// no projection part to read and the optimizer charges the parent's marks instead
+    /// the writer builds these only on merge, so fresh parts have none
     if (projection->with_block_number)
     {
         result.not_applicable_reason = fmt::format(
@@ -839,8 +1017,7 @@ WhatIfCandidateResult evaluateProjection(
 
     const auto slice = findReadSlice(plan_root, read_step);
 
-    /// the chooser replays the slice on the projection, and `QueryDAG::build` refuses one it cannot
-    /// replay - an array join inside a filter or an expression, for one - so no projection is used there
+    /// the optimizer can't replay this slice on a projection, e.g. an ARRAY JOIN in it
     if (slice.root)
     {
         QueryPlanOptimizations::QueryDAG replay;
@@ -864,7 +1041,7 @@ WhatIfCandidateResult evaluateProjection(
             sort_help = SortOrderHelp::NotUseful;
     }
 
-    /// PK-range condition over the projection key, from the query predicate
+    /// key condition over the projection key
     const auto & filter_dag = read_step->getFilterActionsDAG();
     std::shared_ptr<ActionsDAGWithInversionPushDown> predicate_dag;
     std::optional<KeyCondition> key_condition;
@@ -877,10 +1054,7 @@ WhatIfCandidateResult evaluateProjection(
         key_condition.emplace(
             *predicate_dag, context, proj_key, /* single_point */ false, !context->getSettingsRef()[Setting::use_primary_key]);
 
-        /// an offset predicate prunes a real projection read too, so build the same conditions
-        /// `ReadFromMergeTree::buildIndexes` does, over the projection the read would go through.
-        /// a projection that stores parent offsets is the exception: `optimizeUseNormalProjections`
-        /// rewrites the predicate to `_parent_part_offset` first, which leaves nothing to prune by
+        /// offset conditions as `ReadFromMergeTree` builds them, except for projections storing parent offsets
         const bool skip_folding = !context->getSettingsRef()[Setting::use_constant_folding_in_index_analysis];
         const auto & proj_columns = projection->metadata->getColumns();
         const bool offsets_are_the_parent_s = projection->with_parent_part_offset;
@@ -900,9 +1074,7 @@ WhatIfCandidateResult evaluateProjection(
     const std::string_view relaxing_setting = read_settings[Setting::force_optimize_projection] ? "force_optimize_projection"
         : read_settings[Setting::prefer_optimize_projection] ? "prefer_optimize_projection" : "";
 
-    /// the same gate as `optimizeUseNormalProjections`: a filter has to exist or the order has to help,
-    /// but a filter the projection key cannot prune still leaves a full projection scan worth measuring,
-    /// which wins whenever the projection stores less per row than the table does
+    /// same gate as the optimizer: needs a filter or a useful sort order
     if (!filter_dag && sort_help != SortOrderHelp::Helps && relaxing_setting.empty())
     {
         result.not_applicable_reason = fmt::format("Query has no filter predicate, and {}", describe(sort_help));
@@ -915,7 +1087,8 @@ WhatIfCandidateResult evaluateProjection(
     {
         if (tryEstimateProjection(
                 result, *projection, key_condition ? &*key_condition : nullptr, part_offset_condition, total_offset_condition,
-                sort_help, filter_dag != nullptr, relaxing_setting, read_step, baseline_parts, analysis.selected_marks, context))
+                sort_help, filter_dag != nullptr, relaxing_setting, read_step, baseline_parts, analysis.selected_marks,
+                settings.projection_scan_budget_rows, context))
             return result;
         result.empirical_status = WhatIfCandidateResult::Unsupported;
     }
