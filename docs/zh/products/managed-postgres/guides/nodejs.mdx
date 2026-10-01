@@ -100,7 +100,7 @@ pool.on('error', (err) => {
 
   另请注意：
 
-  * 如果既未传入 `ssl` 对象，URL 中也没有 `sslmode`，`pg` 将**不使用 TLS** 进行连接。
+  * 如果既未传入 `ssl` 对象，URL 中也没有 `sslmode`，`pg` 将不使用 TLS，也不会验证服务器。
   * `pg` 会读取 `PGHOST`、`PGUSER`、`PGPASSWORD` 等变量，但不会读取 `PGSSLROOTCERT`。因此，仅靠 Connect 弹窗中 **env** 选项卡里的变量无法验证服务器。
   * 如果您希望将所有配置都放在 URL 中，也可以直接使用开启 **Use SSL** 后 Connect 弹窗所显示的 URL，它同样适用于 `pg`，例如 `...?sslmode=verify-full&sslrootcert=ca-certificate.pem`。此时请移除 `ssl` 选项，并注意 `sslrootcert` 是相对于启动 Node.js 时所在的目录解析的。
 </Warning>

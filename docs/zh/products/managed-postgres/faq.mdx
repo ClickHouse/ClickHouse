@@ -57,38 +57,88 @@ ClickHouse Managed Postgres 提供超过 90 个 PostgreSQL 扩展，包括 PostG
 
 ClickHouse Managed Postgres 以 **事务池化** (transaction pooling) 模式运行 PgBouncer。在此模式下，后端 Postgres 连接仅在单个事务期间分配给您的客户端，事务结束后即归还连接池——同一客户端的下一个事务可能会被分配到另一个后端连接上。
 
-PgBouncer 会跟踪 **协议级预处理语句**，大多数驱动程序通过扩展查询协议 (`Parse`、`Bind` 和 `Execute` 消息) 发送这类语句。当某条语句在尚未准备过它的后端上执行时，PgBouncer 会先在该后端上完成预处理。每个后端连接最多保留 `max_prepared_statements` 条此类语句，默认值为 `200`。因此，无论是命名还是未命名的预处理语句，都可以通过 PgBouncer 正常使用，无需修改驱动程序。
+PgBouncer 会跟踪 **协议级预处理语句**，大多数驱动程序通过扩展查询协议 (`Parse`、`Bind` 和 `Execute` 消息) 发送这类语句。当某条语句在尚未准备过它的后端上执行时，PgBouncer 会先在该后端上完成预处理。每个后端连接最多保留 `max_prepared_statements` 条此类语句，默认值为 `200`。因此，大多数驱动程序使用默认设置即可通过 PgBouncer 正常工作。
 
 以下情况无法通过 PgBouncer 正常工作：
 
 * **SQL 级预处理语句。** PgBouncer 不会跟踪以 SQL 形式发送的 `PREPARE` 和 `EXECUTE`，因此 `EXECUTE` 可能会被发送到从未执行过相应 `PREPARE` 的后端上。
 * **使用 SQL `DEALLOCATE` 释放语句。** PgBouncer 会在后端对语句进行重命名，因此按客户端语句名称执行的 `DEALLOCATE` 会失败。如果在事务内执行，该操作会导致事务中止，后续语句将报错 `current transaction is aborted`。基于 libpq 17 或更高版本构建的驱动程序改用协议级 `Close` 消息释放语句，PgBouncer 可以正确处理这种方式。
+* **分多次往返发送的未命名语句。** 某些驱动程序模式会在一次往返中发送未命名语句的 `Parse`，在下一次往返中再发送其 `Bind`。PgBouncer 可能会将第二次往返分配到另一个后端上执行，从而报错 `unnamed prepared statement does not exist`，甚至在无任何报错的情况下执行另一个客户端的语句并返回其结果。
 
-上述任一情况都会产生类似以下的错误：
+上述情况会产生类似以下的错误：
 
 ```text
 ERROR:  prepared statement "..." does not exist
 ERROR:  unnamed prepared statement does not exist
+ERROR:  prepared statement did not exist
 ```
 
 以下症状通常都源于同一根本原因：
 
 * 突发大量 `prepared statement does not exist` 错误，尤其是在回填数据或高并发写入期间
-* 插入操作看似“静默失败”——语句报错后驱动程序进行重试，最终某个批次可能只被部分写入，甚至被丢弃
+* 插入操作看似&quot;静默失败&quot;——语句报错后驱动程序进行重试，最终某个批次可能只被部分写入，甚至被丢弃
 * 某条语句被释放后，事务失败并报 `current transaction is aborted` 错误
+* 返回的行属于另一个查询
 
-**解决方法：升级驱动程序，或在驱动程序中禁用服务器端预处理语句。** 使用 SQL `DEALLOCATE` 释放语句的驱动程序包括：搭配 1.6 以下版本 `pg` gem 或 17 以下版本 libpq 的 Ruby on Rails，以及基于 17 以下版本 libpq 编译的 PHP `pdo_pgsql`。如果无法升级，具体的配置项取决于您使用的客户端库：
+**解决方法：使用下表中与您的驱动程序对应的设置。** 如果您的驱动程序未在列表中，请将其升级到基于 libpq 17 或更高版本的发行版本，或在驱动程序中禁用服务器端预处理语句。
 
-| 驱动程序                              | 设置                                                                                   |
-| --------------------------------- | ------------------------------------------------------------------------------------ |
-| **pgx** (Go)                      | `statement_cache_capacity=0` 和 `default_query_exec_mode=exec` (或 `simple_protocol`)  |
-| **psycopg3** (Python)             | `prepare_threshold=None`                                                             |
-| **asyncpg** (Python)              | `statement_cache_size=0`                                                             |
-| **JDBC** (Java)                   | `prepareThreshold=0`                                                                 |
-| **Active Record** (Ruby on Rails) | 在 `config/database.yml` 中设置 `prepared_statements: false`                             |
-| **PDO** (PHP, Laravel)            | `PDO::ATTR_EMULATE_PREPARES => true`                                                 |
+| 驱动程序                               | 通过 PgBouncer                                                                                                                                                                         |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **node-postgres / pg** (Node.js)   | 无需更改。                                                                                                                                                                                |
+| **Bun.sql** (Bun)                  | 无需更改。如果出现 `prepared statement does not exist`，请设置 `prepare: false`。                                                                                                                  |
+| **Prisma** 搭配 `@prisma/adapter-pg` | 无需更改。在 Prisma 7 中，`pgbouncer=true` URL 参数不起作用。                                                                                                                                       |
+| **psycopg 3** (Python, Django)     | 使用 `psycopg[binary]` 或 libpq 17 及更高版本时无需更改。如果 libpq 版本较旧，请设置 `prepare_threshold=None`。Django 默认使用客户端绑定，因此无需更改。                                                                       |
+| **asyncpg** (Python, SQLAlchemy)   | 无需更改。如果在 SQLAlchemy 中通过 `statement_cache_size=0` 禁用了语句缓存，还需在 URL 中设置 `prepared_statement_cache_size=0`。                                                                              |
+| **pgjdbc** (Java)                  | 无需更改。请使用 pgjdbc 42.7.5 或更高版本；更早的版本无法通过 PgBouncer 连接。参见 [`unsupported startup parameter`](#unsupported-startup-parameter)。                                                            |
+| **Npgsql** (.NET)                  | 无需更改：自动预处理默认关闭。通过 PgBouncer 连接时，请勿启用 `Max Auto Prepare` 或调用 `Prepare`；如确有必要，还需设置 `No Reset On Close=true`。                                                                           |
+| **pgx** (Go)                       | 设置 `default_query_exec_mode=cache_describe` (或 `exec`) 。切勿使用 `describe_exec`，它会将未命名语句拆分到多次往返中执行。                                                                                     |
+| **Postgrex / Ecto** (Elixir)       | 在 repo config 中设置 `prepare: :unnamed`。若使用命名语句，约 4 KB 大小的查询经由 PgBouncer 时可能会挂起。                                                                                                       |
+| **sqlx** (Rust)                    | 无需进行预处理语句相关设置。请勿使用 `.persistent(false)` 或 `statement_cache_capacity(0)`。必须设置 `extra_float_digits(None)` 才能建立连接；参见 [`unsupported startup parameter`](#unsupported-startup-parameter)。 |
+| **Active Record** (Ruby on Rails)  | 使用 1.6 或更高版本的 `pg` gem 且 libpq 为 17 或更高版本时无需更改。否则，请在 `config/database.yml` 中设置 `prepared_statements: false`。                                                                         |
+| **PDO** (PHP, Laravel)             | 如果 `pdo_pgsql` 基于 libpq 17 或更高版本编译，则无需更改。否则，请设置 `PDO::ATTR_EMULATE_PREPARES => true`。                                                                                                |
 
-如果您的工作负载依赖 SQL 级别的 `PREPARE`，请**直接连接 PostgreSQL** (端口 5432) ，而不要通过 PgBouncer 连接池器。关于如何在连接池端点与直连端点之间进行选择，请参阅[连接](/zh/products/managed-postgres/connection)。
+如果您的工作负载依赖 SQL 级别的 `PREPARE`，请**直接连接 PostgreSQL** (端口 5432) ，而不要经由 PgBouncer 连接池器。有关如何在池化端点与直连端点之间进行选择，请参见 [Connection](/zh/products/managed-postgres/connection)。
+
+### 为什么迁移后查询会因 `cached plan must not change result type` 而失败？ {#cached-plan-result-type}
+
+PgBouncer 会在其 Postgres 连接上保留预处理语句，并对相同的 SQL 文本复用这些语句。如果 schema 变更改变了某个查询所返回列的类型 (例如从 `integer` 改为 `bigint`) ，该查询通过 PgBouncer 执行时就会持续报错 `cached plan must not change result type`。即使从新的客户端连接发起，该查询依然会失败，直到 PgBouncer 替换其 Postgres 连接为止。某些驱动程序则会按过时的结果类型解码，在不报错的情况下返回错误的值。而如果通过直接连接，每个连接最多失败一次，随后便会恢复。
+
+要恢复正常，请关闭 PgBouncer 针对该数据库的 Postgres 连接，PgBouncer 随后会建立新的连接。由于 PgBouncer 在本地连接 Postgres，其连接没有 `client_addr`。请通过直接连接 (端口 `5432`) ，以应用程序连接时所用的同一用户身份运行以下语句。该语句仅终止 PgBouncer 为您的应用程序用户建立的连接，因此当时正通过 PgBouncer 运行的事务会失败，而直接连接不受影响：
+
+```sql
+SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+WHERE datname = '<your_database>' AND usename = current_user
+  AND client_addr IS NULL AND backend_type = 'client backend'
+  AND pid <> pg_backend_pid();
+```
+
+使用未命名语句的驱动程序不受此影响，例如使用默认配置的 Npgsql、配置了 `prepare: :unnamed` 的 Postgrex，以及启用了 `cache_describe` 的 pgx。
+
+### 为什么通过 PgBouncer 连接时会出现 `unsupported startup parameter` 错误？ {#unsupported-startup-parameter}
+
+对于无法在其连接池中各个 Postgres 连接上一致生效的连接时设置，PgBouncer 会直接拒绝，并报错 `FATAL: unsupported startup parameter: ...` 或 `unsupported startup parameter in options: ...`。常见情况如下：
+
+* **`extra_float_digits`**：pgjdbc 42.7.4 及更早版本 (例如搭配 Spring Boot 3 使用时) 以及 sqlx 会在每次建立连接时发送此参数。请将 pgjdbc 升级到 42.7.5 或更高版本；如使用 sqlx，请在 `PgConnectOptions` 上设置 `extra_float_digits(None)`。
+* **连接字符串中的 `search_path` 及其他设置**：例如 JDBC URL 中的 `currentSchema`、Npgsql 连接字符串中的 `Search Path`、`options=-c ...`，或 Django 的 `OPTIONS["options"]`。请改用 `ALTER ROLE ... SET` 或 `ALTER DATABASE ... SET` 设置默认值，或在事务内使用 `SET LOCAL`，也可以绕过 PgBouncer 直接连接数据库。
+
+`application_name` 和 `TimeZone` 均受支持。
+
+### 为什么通过 PgBouncer 执行的 `SET` 命令无法持续生效？ {#session-state}
+
+在事务池化模式下，会话级别的 `SET` 作用于执行它的 Postgres 连接，而不是你的客户端。你的客户端后续发起的事务可能会在没有该设置的其他连接上运行，而其他客户端则可能恰好使用带有该设置的连接。`SET ROLE` 也是如此，因此你切换到的角色可能会作用于其他客户端的查询。对于依赖会话状态的工作负载，请在事务内使用 `SET LOCAL`，或通过 `ALTER ROLE ... SET` 或 `ALTER DATABASE ... SET` 设置默认值，也可以直接连接数据库。
+
+### 为什么通过 PgBouncer 执行迁移时会挂起或无法释放咨询锁？ {#migration-advisory-locks}
+
+许多迁移工具会获取会话级咨询锁，确保同一时间只有一个迁移在运行，随后再用一条单独的语句释放该锁。经由 PgBouncer 时，释放语句可能在另一个 Postgres 连接上执行，导致锁残留在连接池中的某个连接上。此后的迁移便会一直等待，或因 `failed to release advisory lock` 等错误而失败，即使改用直接连接也是如此。使用会话咨询锁的工具包括 golang-migrate、sqlx、Kysely 的 `Migrator`、Rails、配置了 `transactional-lock=false` 的 Flyway，以及配置了 `migration_lock: :pg_advisory_lock` 的 Ecto。
+
+请通过直接连接 (端口 `5432`) 运行迁移。泄漏的锁由空闲会话持有，而仍在运行的迁移则由活跃会话持有其锁。要清除泄漏的锁，请同样通过直接连接，仅终止数据库中持有咨询锁的空闲会话：
+
+```sql
+SELECT pg_terminate_backend(l.pid) FROM pg_locks l
+JOIN pg_stat_activity a ON a.pid = l.pid
+WHERE l.locktype = 'advisory' AND a.state = 'idle'
+  AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database());
+```
 
 ### PgBouncer 中的 `max_client_conn` 设置是什么意思？它与 Postgres 中的 `max_connections` 有什么关系？ {#pgbouncer-vs-pg-connections}
 

@@ -84,7 +84,7 @@ DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud
 O `pg` lê `sslmode` e `sslrootcert` da string de conexão: `verify-full` faz com que ele verifique se o certificado do servidor foi assinado pela CA do seu serviço e se corresponde ao hostname. O `sslrootcert` é resolvido em relação ao diretório de trabalho, que é a raiz do projeto quando você usa `npm run`.
 
 <Warning>
-  Mantenha `sslmode=verify-full` na URL. Sem `sslmode`, o `pg` se conecta sem TLS algum. Não passe também um objeto `ssl` para `Pool`: quando a URL contém `sslmode`, as configurações da URL substituem o seu objeto `ssl`. Se você precisar carregar a CA de outro lugar que não seja um arquivo, remova `sslmode` e `sslrootcert` da URL e passe `ssl: { ca }` para `Pool`.
+  Mantenha `sslmode=verify-full` na URL. Sem `sslmode`, o `pg` não usa TLS nem verifica o servidor. Não passe também um objeto `ssl` para `Pool`: quando a URL contém `sslmode`, as configurações da URL substituem o seu objeto `ssl`. Se você precisar carregar a CA de outro lugar que não seja um arquivo, remova `sslmode` e `sslrootcert` da URL e passe `ssl: { ca }` para `Pool`.
 </Warning>
 
 Adicione um `tsconfig.json` para que o `tsc` verifique os tipos dos mesmos arquivos que o Node.js executa. Se a sua aplicação já tiver um `tsconfig.json`, mescle nele estas `compilerOptions` e a pasta `migrations`:

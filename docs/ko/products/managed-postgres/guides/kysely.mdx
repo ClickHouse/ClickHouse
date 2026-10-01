@@ -84,7 +84,7 @@ DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud
 `pg`는 연결 문자열에서 `sslmode`와 `sslrootcert`를 읽습니다. `verify-full`로 설정하면 서버 인증서가 서비스의 CA로 서명되었는지, 그리고 호스트명과 일치하는지 검사합니다. `sslrootcert`는 작업 디렉터리를 기준으로 해석되며, `npm run`을 사용하면 작업 디렉터리는 프로젝트 루트가 됩니다.
 
 <Warning>
-  URL에서 `sslmode=verify-full`을 제거하지 마십시오. `sslmode`가 없으면 `pg`는 TLS를 전혀 사용하지 않고 연결합니다. 또한 `Pool`에 `ssl` 객체를 함께 전달하지 마십시오. URL에 `sslmode`가 포함되어 있으면 URL의 설정이 `ssl` 객체를 대체합니다. 파일이 아닌 다른 곳에서 CA를 불러와야 한다면 URL에서 `sslmode`와 `sslrootcert`를 제거하고, 대신 `Pool`에 `ssl: { ca }`를 전달하십시오.
+  URL에서 `sslmode=verify-full`을 제거하지 마십시오. `sslmode`가 없으면 `pg`는 TLS를 사용하지 않으며 서버도 검증하지 않습니다. 또한 `Pool`에 `ssl` 객체를 함께 전달하지 마십시오. URL에 `sslmode`가 포함되어 있으면 URL의 설정이 `ssl` 객체를 대체합니다. 파일이 아닌 다른 곳에서 CA를 불러와야 한다면 URL에서 `sslmode`와 `sslrootcert`를 제거하고, 대신 `Pool`에 `ssl: { ca }`를 전달하십시오.
 </Warning>
 
 `tsc`가 Node.js가 실행하는 파일과 동일한 파일을 타입 검사하도록 `tsconfig.json`을 추가하십시오. 앱에 이미 `tsconfig.json`이 있다면 다음 `compilerOptions`와 `migrations` 폴더를 기존 파일에 머지하십시오.

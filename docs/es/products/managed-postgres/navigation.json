@@ -47,12 +47,19 @@
       "pages": [
         "es/products/managed-postgres/guides/bun",
         "es/products/managed-postgres/guides/cloudflare-workers",
+        "es/products/managed-postgres/guides/django",
+        "es/products/managed-postgres/guides/dotnet",
         "es/products/managed-postgres/guides/drizzle",
+        "es/products/managed-postgres/guides/fastapi",
+        "es/products/managed-postgres/guides/go",
         "es/products/managed-postgres/guides/kysely",
         "es/products/managed-postgres/guides/laravel",
         "es/products/managed-postgres/guides/nodejs",
+        "es/products/managed-postgres/guides/phoenix",
         "es/products/managed-postgres/guides/prisma",
-        "es/products/managed-postgres/guides/ruby-on-rails"
+        "es/products/managed-postgres/guides/ruby-on-rails",
+        "es/products/managed-postgres/guides/rust",
+        "es/products/managed-postgres/guides/spring-boot"
       ]
     },
     {

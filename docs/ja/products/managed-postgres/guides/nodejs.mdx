@@ -100,7 +100,7 @@ pool.on('error', (err) => {
 
   また、次の点にも注意してください。
 
-  * `ssl` オブジェクトも URL 内の `sslmode` も指定しない場合、`pg` は **TLS なし**で接続します。
+  * `ssl` オブジェクトも URL 内の `sslmode` も指定しない場合、`pg` は TLS を使用せず、サーバーの検証も行いません。
   * `pg` は `PGHOST`、`PGUSER`、`PGPASSWORD` などの変数を読み取りますが、`PGSSLROOTCERT` は読み取りません。そのため、Connect モーダルの **env** タブに表示される変数だけでは、サーバーを検証できません。
   * すべてを URL にまとめたい場合は、**Use SSL** をオンにした状態で Connect モーダルに表示される URL (例: `...?sslmode=verify-full&sslrootcert=ca-certificate.pem`) を `pg` でもそのまま使用できます。その場合は `ssl` オプションを削除してください。なお、`sslrootcert` は Node.js を起動したディレクトリを基準とした相対パスとして解決されます。
 </Warning>

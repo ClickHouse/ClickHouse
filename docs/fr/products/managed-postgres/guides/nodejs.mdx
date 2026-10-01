@@ -100,7 +100,7 @@ Passer `ssl: { ca }` équivaut à `sslmode=verify-full` : `pg` vérifie que le c
 
   Notez également que :
 
-  * En l&#39;absence d&#39;objet `ssl` et de `sslmode` dans l&#39;URL, `pg` se connecte **sans TLS**.
+  * En l&#39;absence d&#39;objet `ssl` et de `sslmode` dans l&#39;URL, `pg` n&#39;utilise pas TLS et ne vérifie pas le serveur.
   * `pg` lit `PGHOST`, `PGUSER`, `PGPASSWORD` et d&#39;autres variables similaires, mais pas `PGSSLROOTCERT`. Les variables de l&#39;onglet **env** de la fenêtre modale Connect ne suffisent donc pas, à elles seules, à vérifier le serveur.
   * Si vous préférez tout regrouper dans l&#39;URL, l&#39;URL affichée par la fenêtre modale Connect lorsque **Use SSL** est activé fonctionne également avec `pg`, par exemple `...?sslmode=verify-full&sslrootcert=ca-certificate.pem`. Dans ce cas, supprimez l&#39;option `ssl` et notez que `sslrootcert` est résolu par rapport au répertoire depuis lequel vous lancez Node.js.
 </Warning>
