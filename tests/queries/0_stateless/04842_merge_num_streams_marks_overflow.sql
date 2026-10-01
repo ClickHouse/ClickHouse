@@ -5,7 +5,8 @@
 -- `max_threads * max_streams_to_max_threads_ratio` to 2^60, so the product is exactly 2^64 and wraps to
 -- zero. The stream count is representable and passes the planner's bounds check. A direct
 -- `MergeTree` read reaches `ReadFromMergeTree` unchanged; a `Merge` read is rejected first.
--- The ratio is set per query: a session `SET` would stay in effect for every later query of an AST fuzzer run.
+-- The ratio is set per query, with the server-side AST fuzzer off: a session `SET` would stay in effect for every
+-- later query of an AST fuzzer run, and a fuzzed copy of a query keeps its `SETTINGS`.
 DROP TABLE IF EXISTS t_marks_overflow;
 CREATE TABLE t_marks_overflow (id Int32) ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
@@ -19,11 +20,11 @@ SET merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 131072;
 SET merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 0;
 
 -- The in-order path (`spreadMarkRangesAmongStreamsWithOrder`).
-SELECT id FROM merge(currentDatabase(), '^t_marks_overflow$') ORDER BY id DESC SETTINGS optimize_read_in_order = 1, max_streams_to_max_threads_ratio = 288230376151711744; -- { serverError PARAMETER_OUT_OF_BOUND }
-SELECT id FROM t_marks_overflow ORDER BY id DESC SETTINGS optimize_read_in_order = 1, max_streams_to_max_threads_ratio = 288230376151711744;
+SELECT id FROM merge(currentDatabase(), '^t_marks_overflow$') ORDER BY id DESC SETTINGS optimize_read_in_order = 1, max_streams_to_max_threads_ratio = 288230376151711744, ast_fuzzer_runs = 0; -- { serverError PARAMETER_OUT_OF_BOUND }
+SELECT id FROM t_marks_overflow ORDER BY id DESC SETTINGS optimize_read_in_order = 1, max_streams_to_max_threads_ratio = 288230376151711744, ast_fuzzer_runs = 0;
 
 -- The default path (`spreadMarkRangesAmongStreams`).
-SELECT count() FROM merge(currentDatabase(), '^t_marks_overflow$') SETTINGS optimize_read_in_order = 0, max_streams_to_max_threads_ratio = 288230376151711744; -- { serverError PARAMETER_OUT_OF_BOUND }
-SELECT count() FROM t_marks_overflow SETTINGS optimize_read_in_order = 0, max_streams_to_max_threads_ratio = 288230376151711744;
+SELECT count() FROM merge(currentDatabase(), '^t_marks_overflow$') SETTINGS optimize_read_in_order = 0, max_streams_to_max_threads_ratio = 288230376151711744, ast_fuzzer_runs = 0; -- { serverError PARAMETER_OUT_OF_BOUND }
+SELECT count() FROM t_marks_overflow SETTINGS optimize_read_in_order = 0, max_streams_to_max_threads_ratio = 288230376151711744, ast_fuzzer_runs = 0;
 
 DROP TABLE t_marks_overflow;
