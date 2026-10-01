@@ -12,6 +12,7 @@
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeArray.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -570,6 +571,77 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
     }
 
     return RPNBuilderTreeNode(dag_node->children[index], tree_context);
+}
+
+namespace
+{
+
+/// Whether converting a value of type `from` to type `to` never changes it and never throws.
+/// `Nullable` cannot be dropped, because it may throw on NULL.
+bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to)
+{
+    auto from_type = removeLowCardinality(from);
+    auto to_type = removeLowCardinality(to);
+
+    if (to_type->isNullable())
+    {
+        from_type = removeNullable(from_type);
+        to_type = removeNullable(to_type);
+    }
+    else if (from_type->isNullable())
+    {
+        return false;
+    }
+
+    if (from_type->equals(*to_type))
+        return true;
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to_type.get());
+    return from_array && to_array && isLosslessConversion(from_array->getNestedType(), to_array->getNestedType());
+}
+
+}
+
+bool isLosslessConversionFunction(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return false;
+
+    const auto function_name = node.function_base->getName();
+    const size_t arguments_size = node.children.size();
+
+    const bool is_cast = (function_name == "CAST" || function_name == "_CAST") && arguments_size == 2;
+    const bool is_wrapper = (function_name == "toNullable" || function_name == "toLowCardinality") && arguments_size == 1;
+
+    if (!is_cast && !is_wrapper)
+        return false;
+
+    return isLosslessConversion(node.children.front()->result_type, node.result_type);
+}
+
+RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node)
+{
+    if (!node.isFunction())
+        return node;
+
+    const auto function = node.toFunctionNode();
+    const auto * function_dag_node = function.getDAGNode();
+
+    if (!function_dag_node || !isLosslessConversionFunction(*function_dag_node))
+        return node;
+
+    return unwrapLosslessConversion(function.getArgumentAt(0));
+}
+
+const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node)
+{
+    const auto * node_without_alias = getNodeWithoutAlias(node);
+
+    if (!isLosslessConversionFunction(*node_without_alias))
+        return node;
+
+    return unwrapLosslessConversion(node_without_alias->children.front());
 }
 
 template <typename RPNElement>
