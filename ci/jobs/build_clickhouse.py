@@ -546,6 +546,7 @@ def main():
             # loader when it is installed.
             wine_prefix = f"{Utils.cwd()}/ci/tmp/wineprefix"
             wine_env = "WINEDEBUG=-all WINEPREFIX=" + wine_prefix
+            backup_dir = f"{Utils.cwd()}/ci/tmp/windows-backup-non-ascii"
             results.append(
                 Result.from_commands_run(
                     name="Run clickhouse.exe under Wine",
@@ -558,6 +559,12 @@ def main():
                         # object imposes, are on no path a `SELECT` takes. See
                         # `utils/windows-selftest`.
                         f"{wine_env} wine {build_dir}/utils/windows-selftest/clickhouse-windows-selftest.exe",
+                        # Backups to a destination named outside ASCII, checked by the name of
+                        # the directory on the host - the one thing a code-page conversion on the
+                        # way into `std::filesystem` changes without failing the round trip.
+                        f"{wine_env} ./utils/windows-selftest/backup-non-ascii-names.sh"
+                        f" {backup_dir} \"$({wine_env} winepath -w {backup_dir})\""
+                        f" wine {build_dir}/programs/clickhouse.exe",
                     ],
                     # Run all of them even after one fails. The step still fails if any command
                     # does, but while the port is being brought up every round of this job is the

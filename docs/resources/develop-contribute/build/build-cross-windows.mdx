@@ -134,6 +134,11 @@ cannot be checked there at all (see [CI](#ci)). Note for a development host that
 not `x86_64`: an `x86_64` PE needs an `x86_64` host, or an emulator such as FEX, which Wine on
 ARM does not ship.
 
+**The command line is not UTF-8.** The programs take `argv` from the C runtime's `main`, which
+decodes the command line through the active code page, so a non-ASCII `--query`, file name or
+setting value is mangled before ClickHouse sees it. Reading `GetCommandLineW` and converting
+it to UTF-8 at startup would fix that; until then, pass such text on stdin or in a file.
+
 **Debug info.** The build passes `-g0` on Windows. A PE image cannot exceed 4 GiB, the DWARF
 for this binary is several times that on its own, and PE has no `.gnu_debuglink` equivalent to
 carry it in a separate file. A crash therefore symbolizes to a module and an offset, not to a
@@ -211,6 +216,14 @@ and `common`, that the same step runs right after `clickhouse.exe`. It covers th
 `MSG_DONTWAIT`, which Winsock has no equivalent for, and the memory limit a job object imposes,
 which is what a Windows container caps a process with. Add a check there for anything the port
 implements that a query does not exercise.
+
+The step also runs `utils/windows-selftest/backup-non-ascii-names.sh`, which makes
+`clickhouse.exe local` back a table up to a `Disk` and to a `File` destination whose names are
+not ASCII, restores both, and then looks for the backups on the host under their UTF-8 names.
+The last part is the point: a name that enters `std::filesystem::path` through the active code
+page instead of `pathFromString` is still restored correctly, because both directions are
+mangled the same way, but the backup lands in a directory with a different name. The script
+passes its SQL on stdin, for the reason given in [Remaining work](#remaining-work).
 
 One limit of running on Wine rather than on Windows is worth knowing before writing such a
 check: Wine stubs whole interfaces while reporting success. `QueryInformationJobObject` for
