@@ -2765,12 +2765,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWith
         /*check_row_limits=*/true);
 }
 
-ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation(bool keep_index_analysis) const
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation() const
 {
-    /// An existing index analysis is reused even when `keep_index_analysis` is false. Only a fresh analysis
-    /// can be kept off the step.
-    std::optional<Indexes> discarded_indexes;
-
     return selectRangesToRead(
         getParts(),
         mutations_snapshot,
@@ -2785,7 +2781,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEst
         data_settings,
         all_column_names,
         log,
-        (keep_index_analysis || indexes) ? indexes : discarded_indexes,
+        indexes,
         /*find_exact_ranges=*/false,
         is_parallel_reading_from_replicas,
         allow_query_condition_cache,
@@ -3304,6 +3300,15 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
     if (query_info.isStream())
         return;
 
+    /// If `applyFilters` did not build `indexes`, they come from a range analysis that ran without the
+    /// filters pushed down to this step. Drop them and the result of that analysis. The code below rebuilds
+    /// `indexes` from those filters, and the read later analyzes its ranges again.
+    if (indexes && !indexes_built_by_apply_filters)
+    {
+        indexes.reset();
+        analyzed_result_ptr.reset();
+    }
+
     if (!indexes)
     {
         auto node_name_to_input = query_info.buildNodeNameToInputNodeColumn();
@@ -3392,6 +3397,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             query_info,
             storage_snapshot->metadata,
             skip_partition_pruning);
+        indexes_built_by_apply_filters = true;
 
         /// Build sets for PREWHERE and row_level_filter synchronously during applyFilters.
         /// PREWHERE is evaluated at the storage level during data reading, before the

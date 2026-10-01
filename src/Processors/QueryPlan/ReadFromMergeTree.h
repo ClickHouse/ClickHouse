@@ -373,12 +373,9 @@ public:
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
-    /// Analyze ranges only for an intermediate cardinality estimate. Row limits are not enforced and
-    /// `analyzed_result_ptr` is not set, so the executed read analyzes again after its final mode is
-    /// known. A fresh index analysis stays on the step, in `indexes`, for that read to reuse, unless
-    /// `keep_index_analysis` is false. Pass false when filters have not been pushed down to this step
-    /// yet. A `KeyCondition` without those filters would stay. The executed read would prune nothing.
-    AnalysisResultPtr selectRangesToReadForEstimation(bool keep_index_analysis) const;
+    /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits
+    /// or memoizing the result. The executed read analyzes again after its final mode is known.
+    AnalysisResultPtr selectRangesToReadForEstimation() const;
 
     /// Analyze the ranges to read for a throwaway pre-plan estimate, without consulting or populating
     /// the query condition cache and without caching the analysis on the step. Used for the automatic
@@ -459,6 +456,7 @@ public:
     void adoptFiltersFrom(const ReadFromMergeTree & other)
     {
         indexes = other.indexes;
+        indexes_built_by_apply_filters = other.indexes_built_by_apply_filters;
 
         filter_actions_dag = other.filter_actions_dag;
         query_info.filter_actions_dag = filter_actions_dag;
@@ -695,6 +693,9 @@ private:
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
+    /// True if `applyFilters` built `indexes`. When `adoptFiltersFrom` copies `indexes` from another read,
+    /// it copies this flag too.
+    bool indexes_built_by_apply_filters = false;
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
