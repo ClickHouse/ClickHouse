@@ -278,22 +278,39 @@ void MergeTreeLeaderElection::run()
             String etag = data_with_metadata.metadata.etag;
             auto parsed = parseLeaseContent(data_with_metadata.data);
 
-            time_t now = time(nullptr);
-            time_t session_timeout_seconds = static_cast<time_t>(session_timeout_ms / 1000);
+            /// Expiry never compares the wall clock of the writer with ours: the persisted
+            /// `timestamp` is diagnostic only. A foreign lease expires once its ETag stayed unchanged
+            /// for `session_timeout` of our own steady time, counted from when we first observed that
+            /// ETag. The first observation happens after the write completed, so after the writer
+            /// sampled its freshness anchor (`tryWriteLease`), hence we cannot expire a lease before
+            /// the writer's own `isLeader` check stops passing - whatever the clock offset between the
+            /// nodes, even during the takeover sync, which relaxes that check to the full
+            /// `session_timeout`. Only the clock rate is assumed equal. The sample is taken after the
+            /// read returned, never before it: a write completing during the read must not be
+            /// attributed an earlier observation time. The cost is that a node that has just started
+            /// waits a full `session_timeout` before it can claim an orphaned lease.
+            const auto steady_now = std::chrono::steady_clock::now();
+            if (etag != observed_etag)
+            {
+                observed_etag = etag;
+                observed_etag_since = steady_now;
+            }
 
-            /// The lease is stale if its timestamp is older than the session timeout, or
-            /// implausibly far in the future (leader clock skew — see the comments in the claim
-            /// branch). Computed up front so that an *expired* lease still carrying our own
-            /// `leader_id` (e.g. after a failed takeover sync cleared `is_leader`) reaches the
-            /// claim branch below instead of being trapped forever in the same-id "do not renew"
-            /// branch — which would otherwise leave a single-node deployment permanently read-only.
-            ///
-            /// Written as `parsed.timestamp < now - X` / `> now + X` (rather than
-            /// `now - parsed.timestamp > X`) to avoid signed overflow when a malformed lease parses
-            /// to an extreme timestamp; `now ± X` is safe because `now` is the current Unix time and
-            /// `X` is at most `leader_election_session_timeout`.
-            const bool lease_expired = parsed.timestamp < now - session_timeout_seconds
-                || parsed.timestamp > now + session_timeout_seconds;
+            const auto session_timeout = std::chrono::milliseconds(session_timeout_ms);
+            const bool serving_as_leader = leadership_state.load(std::memory_order_acquire) != LeadershipState::Follower;
+            const bool own_lease = parsed.status == LeaseParseStatus::Ok && parsed.leader_id == leader_id;
+
+            /// Our own lease, while we serve as leader, is judged by our own freshness anchor: no
+            /// other node can observe the ETag of our last write before that anchor, so it is the
+            /// earliest instant any of them could consider the lease expired. This catches a heartbeat
+            /// stalled past `session_timeout` - it then goes through `demoteBeforeTakeover` and a full
+            /// re-acquisition below. Every other lease, including one still carrying our `leader_id`
+            /// while we are a follower (e.g. after a failed takeover sync, or after a restart), is
+            /// judged by the observation time computed above, like a foreign lease, so that a node
+            /// which cannot complete takeover does not monopolize the lease.
+            const bool lease_expired = (own_lease && serving_as_leader)
+                ? steady_now - last_renewal_time.load(std::memory_order_acquire) >= session_timeout
+                : steady_now - observed_etag_since >= session_timeout;
 
             if (parsed.status == LeaseParseStatus::UnknownVersion)
             {
@@ -306,7 +323,7 @@ void MergeTreeLeaderElection::run()
                 ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionUnknownVersionRejections);
                 became_leader = false;
             }
-            else if (parsed.status == LeaseParseStatus::Ok && parsed.leader_id == leader_id && !lease_expired)
+            else if (own_lease && !lease_expired)
             {
                 /// The remote lease still carries our `leader_id`. Only renew it while we are
                 /// actually serving as the local leader. If a previous takeover-sync callback
@@ -316,7 +333,7 @@ void MergeTreeLeaderElection::run()
                 /// followers never observe it expire) while never enabling writes itself, livelocking
                 /// failover. By not renewing, the lease ages out and another node — or this one, via
                 /// the expiry branch below on a later heartbeat — can claim it and retry takeover.
-                if (leadership_state.load(std::memory_order_acquire) != LeadershipState::Follower)
+                if (serving_as_leader)
                 {
                     LOG_TRACE(log, "Renewing leader lease at '{}'", lease_path);
                     was_renewal_attempt = true;
@@ -334,20 +351,20 @@ void MergeTreeLeaderElection::run()
             }
             else if (parsed.status == LeaseParseStatus::ParseError || lease_expired)
             {
-                /// The lease has expired or its timestamp is far in the future (`lease_expired`,
-                /// see above), or the content was corrupted. This also covers an expired lease
-                /// that still carries our own `leader_id`, so this node can reclaim it after a
-                /// failed takeover. Try to claim leadership.
-                LOG_INFO(log, "Leader lease at '{}' expired, corrupted, or has future timestamp (leader_id: {}), trying to claim",
-                    lease_path, parsed.leader_id);
+                /// The lease has expired (`lease_expired`, see above), or the content was corrupted.
+                /// This also covers an expired lease that still carries our own `leader_id`, so this
+                /// node can reclaim it after a failed takeover. Try to claim leadership.
+                LOG_INFO(log, "Leader lease at '{}' expired or corrupted (leader_id: {}, timestamp: {}), trying to claim",
+                    lease_path, parsed.leader_id, parsed.timestamp);
                 demoteBeforeTakeover();
                 became_leader = tryWriteLease(/* if_match= */ etag, /* if_none_match= */ "");
             }
             else
             {
                 /// Another leader holds a valid lease.
-                LOG_TRACE(log, "Another leader holds the lease at '{}' (leader_id: {}, age: {} s)",
-                    lease_path, parsed.leader_id, now - parsed.timestamp);
+                LOG_TRACE(log, "Another leader holds the lease at '{}' (leader_id: {}, unchanged for {} ms)",
+                    lease_path, parsed.leader_id,
+                    std::chrono::duration_cast<std::chrono::milliseconds>(steady_now - observed_etag_since).count());
                 became_leader = false;
             }
         }
@@ -503,14 +520,13 @@ bool MergeTreeLeaderElection::tryWriteLease(const String & if_match, const Strin
 {
     try
     {
-        /// Anchor local lease freshness to the instant the persisted lease `timestamp` is sampled
-        /// (inside `buildLeaseContent`, before the write starts), NOT to the moment the write
-        /// finishes. Remote observers expire the lease based on that persisted timestamp, so if the
-        /// conditional write / `finalize` stalls, anchoring `last_renewal_time` to the end of the
-        /// write would let this node keep treating its lease as fresh after other nodes have already
-        /// considered the persisted lease expired — opening a dual-writer window. Capturing the
-        /// monotonic anchor here can only make us fail closed slightly sooner, which is the safe
-        /// direction.
+        /// Anchor local lease freshness to the instant before the write starts, NOT to the moment
+        /// the write finishes. Remote observers start counting `session_timeout` when they first see
+        /// the ETag of this write, which cannot happen before the write starts, so this anchor is
+        /// never later than the earliest instant at which another node may consider the lease
+        /// expired. If the conditional write / `finalize` stalls, anchoring `last_renewal_time` to
+        /// the end of the write would not have that property. Capturing the monotonic anchor here
+        /// can only make us fail closed slightly sooner, which is the safe direction.
         const auto renewal_anchor = std::chrono::steady_clock::now();
         String content = buildLeaseContent();
 
@@ -555,13 +571,17 @@ bool MergeTreeLeaderElection::tryWriteLease(const String & if_match, const Strin
     }
 }
 
-String MergeTreeLeaderElection::buildLeaseContent() const
+String MergeTreeLeaderElection::buildLeaseContent()
 {
+    /// `sequence` is not read back: it only makes the content, and thus the ETag, of every write
+    /// unique (see `lease_write_sequence`). Older binaries ignore unknown fields of version 1.
     WriteBufferFromOwnString out;
     writeString(R"({"version":1,"leader_id":")", out);
     writeString(leader_id, out);
     writeString(R"(","timestamp":)", out);
     writeIntText(time(nullptr), out);
+    writeString(R"(,"sequence":)", out);
+    writeIntText(++lease_write_sequence, out);
     writeChar('}', out);
     return out.str();
 }

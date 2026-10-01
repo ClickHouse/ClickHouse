@@ -4992,10 +4992,11 @@ def test_stalled_leader_reclaims_lease_as_new_epoch(started_cluster):
         assert new_leader is follower
         follower.query(f"INSERT INTO {table} VALUES (100)")
 
-        # Detaching the table on the follower stops its election; its lease is not renewed and expires
-        # after `leader_election_session_timeout` (5 s). Release the stalled heartbeat only once the lease
-        # has provably expired, so that its first observation is an EXPIRED foreign lease (the case that
-        # used to be mistaken for a renewal), not a valid one.
+        # Detaching the table on the follower stops its election; its lease is no longer renewed. Release
+        # the stalled heartbeat only once the lease has aged past `leader_election_session_timeout` (5 s),
+        # so that the resumed heartbeat finds a foreign lease nobody renews. It must give up leadership on
+        # it and, once it has observed the lease unchanged for the session timeout, take it over as a new
+        # leader.
         follower.query(f"DETACH TABLE {table}")
         lease = read_lease(SHARED_UUID_STALLED_LEADER)
         assert lease["leader_id"] != "", "The follower's lease was not found"
@@ -5267,3 +5268,61 @@ def test_global_leader_election_default_and_detached_tables_on_rename(started_cl
                 node.query(f"DROP DATABASE IF EXISTS {name} SYNC")
             except Exception:
                 pass
+
+
+SHARED_UUID_SKEWED_LEASE_TIMESTAMP = "12345678-abcd-abcd-abcd-12345678ab62"
+
+
+def test_lease_expiry_ignores_writer_wall_clock(started_cluster):
+    """
+    Lease expiry must not compare the wall clock of the node that wrote the lease with the wall
+    clock of the node reading it. It used to: a lease whose persisted `timestamp` was more than
+    `leader_election_session_timeout` in the past (or in the future) was claimed at the next
+    heartbeat, so a follower whose clock was ahead of the leader's could take over a lease that the
+    leader still considered valid - by up to a full session timeout during the takeover sync. A
+    follower now considers a lease expired only after it has observed the same version (ETag) of it
+    for `leader_election_session_timeout` on its own monotonic clock.
+
+    A foreign lease is written with a timestamp far in the past, then far in the future, as if by a
+    node with a badly skewed clock. node1, the only participant, must respect each of them for a
+    full session timeout (5 s) before reclaiming the lease.
+    """
+    ensure_node_up(node1)
+    table = "test_lease_skewed_timestamp"
+    try:
+        create_table_on_first_node(node1, table, SHARED_UUID_SKEWED_LEASE_TIMESTAMP)
+        wait_for_leader([node1], table_name=table)
+
+        lease_key = find_lease_object_key(SHARED_UUID_SKEWED_LEASE_TIMESTAMP)
+        assert lease_key is not None, "The lease file of the table was not found"
+
+        for row, skewed_timestamp in enumerate((1, int(time.time()) + 86400), start=1):
+            fake_leader_id = f"skewed-clock-leader-{skewed_timestamp}"
+            fake_lease = (
+                f'{{"version":1,"leader_id":"{fake_leader_id}","timestamp":{skewed_timestamp}}}'
+            ).encode()
+            put_time = time.monotonic()
+            cluster.minio_client.put_object(
+                cluster.minio_bucket, lease_key, io.BytesIO(fake_lease), len(fake_lease)
+            )
+
+            deadline = put_time + 60
+            while read_lease(SHARED_UUID_SKEWED_LEASE_TIMESTAMP)["leader_id"] == fake_leader_id:
+                assert time.monotonic() < deadline, "node1 never reclaimed the foreign lease"
+                time.sleep(0.25)
+            reclaim_delay = time.monotonic() - put_time
+
+            # The first observation is after the put, so the claim cannot come earlier than the
+            # session timeout after it; leave a second for scheduling and rounding.
+            assert reclaim_delay >= 4, (
+                f"node1 claimed a foreign lease with timestamp {skewed_timestamp} after "
+                f"{reclaim_delay:.1f} s, before observing it for the session timeout"
+            )
+
+            wait_for_leader([node1], table_name=table)
+            node1.query(f"INSERT INTO {table} VALUES ({row})")
+    finally:
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass

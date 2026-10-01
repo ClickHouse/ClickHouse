@@ -23,24 +23,23 @@ namespace DB
   * Protocol:
   * - A lease file is stored on the object storage at a well-known path.
   * - The leader periodically renews the lease using a conditional write (If-Match: current_etag).
-  * - Followers periodically read the lease. If it has expired (timestamp + session_timeout < now),
-  *   they try to claim leadership with a conditional write (If-Match: stale_etag).
+  * - Followers periodically read the lease. If its ETag stayed unchanged for `session_timeout`
+  *   of their own steady time, they try to claim leadership with a conditional write
+  *   (If-Match: stale_etag).
   * - If the lease file doesn't exist, any replica can create it with (If-None-Match: *).
   * - If a conditional write fails (PreconditionFailed), the writer lost the race and stays a follower.
   *
-  * Clock skew assumption:
-  * - The protocol relies on wall-clock timestamps embedded in the lease file. The maximum
-  *   clock skew tolerated without a dual-writer window is approximately
-  *   `session_timeout - 2 * heartbeat_interval`, which is at least `heartbeat_interval`
-  *   given the enforced `session_timeout >= 3 * heartbeat_interval` rule. Beyond that bound,
-  *   a follower with a fast clock can declare a healthy leader's lease expired and claim
-  *   leadership before the old leader notices via its next heartbeat, opening a brief
-  *   window (up to `heartbeat_interval`) where both nodes consider themselves leaders.
-  *   Outside this window, the conditional ETag protocol prevents both nodes from
-  *   committing successive lease renewals; only one observer wins each round. Use NTP
-  *   or an equivalent time-sync service to keep skew well under `heartbeat_interval`.
-  *   Future-dated timestamps beyond `session_timeout` are treated as stale to bound the
-  *   impact in the opposite direction.
+  * Clock assumption:
+  * - No wall clock of one node is ever compared with the wall clock of another (the Chubby /
+  *   Raft-lease approach). The leader anchors the freshness of its lease to its steady clock
+  *   right before the write; a follower counts `session_timeout` on its own steady clock from
+  *   the moment it first observed the ETag of that write, which is necessarily later. So a
+  *   follower cannot claim the lease before the leader's own `isLeader` check stops passing,
+  *   regardless of the clock offset between the nodes, including during the takeover sync,
+  *   when that check is relaxed to the full `session_timeout`. Only the rates of the steady
+  *   clocks are assumed to be equal. The wall-clock `timestamp` persisted in the lease is for
+  *   diagnostics; together with `sequence` it keeps the content of successive writes, and thus
+  *   their ETags (which are content hashes on S3), distinct.
   */
 class MergeTreeLeaderElection
 {
@@ -142,7 +141,7 @@ private:
     bool tryWriteLease(const String & if_match, const String & if_none_match);
 
     /// Build the lease file content as JSON.
-    String buildLeaseContent() const;
+    String buildLeaseContent();
 
     /// Result of parsing a lease file. The `status` field disambiguates how the caller
     /// should react to non-`Ok` outcomes — in particular, an unknown payload version
@@ -204,6 +203,17 @@ private:
     /// Monotonic time of the last successful lease renewal.
     /// Used to detect stalled heartbeat threads.
     std::atomic<std::chrono::steady_clock::time_point> last_renewal_time{std::chrono::steady_clock::time_point{}};
+
+    /// The ETag of the lease seen by the last successful read, and the steady time at which it was
+    /// first seen. Lease expiry is judged by these, not by the persisted wall-clock `timestamp`.
+    /// Only accessed by `run`.
+    String observed_etag;
+    std::chrono::steady_clock::time_point observed_etag_since;
+
+    /// Incremented on every lease write and persisted as `sequence`, so that two writes of this
+    /// instance never produce the same content, and thus the same ETag, even if the wall clock steps
+    /// back. Only accessed by `run`.
+    UInt64 lease_write_sequence = 0;
 
     String leader_id;
 
