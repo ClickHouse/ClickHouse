@@ -21,9 +21,11 @@
          decompressed for the blocks the condition eliminates. -->
     <query tag='selective, clustered'>SELECT s1, s2, s3 FROM mem_prewhere WHERE filt BETWEEN 1000000 AND 1000100 FORMAT Null</query>
     <query tag='selective, count'>SELECT count() FROM mem_prewhere WHERE filt = 1000000</query>
-    <!-- A condition on a wide column next to a selective one: it is evaluated in a later step,
-         so its column is decompressed only for the blocks where the selective condition has passing rows. -->
-    <query tag='selective, with a condition on a wide column'>SELECT s1, count() FROM mem_prewhere WHERE filt BETWEEN 1000000 AND 1000100 AND s3 != '' GROUP BY s1 FORMAT Null</query>
+    <!-- A condition on a wide column next to a selective one, like ClickBench Q37 (`URL <> ''` next to
+         `CounterID = 62`). The query also selects the wide column, so the condition reads the whole column,
+         not its `size` subcolumn. With a single PREWHERE step the column is decompressed for every block;
+         with multiple steps only for the blocks where the selective condition has passing rows. -->
+    <query tag='selective, with a condition on a wide selected column'>SELECT s2, count() FROM mem_prewhere WHERE filt BETWEEN 1000000 AND 1000100 AND s2 != '' GROUP BY s2 FORMAT Null</query>
     <query tag='explicit PREWHERE'>SELECT v FROM mem_prewhere PREWHERE filt BETWEEN 1000000 AND 1001000 FORMAT Null</query>
     <query tag='trivial count'>SELECT count() FROM mem_prewhere</query>
 
