@@ -2,7 +2,7 @@
 #include <ranges>
 #include <Planner/PlannerActionsVisitor.h>
 
-#include <AggregateFunctions/WindowFunction.h>
+#include <WindowFunctions/IWindowFunction.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -31,6 +31,7 @@
 #include <Functions/indexHint.h>
 
 #include <Interpreters/ExpressionActionsSettings.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
 
@@ -50,7 +51,6 @@ namespace Setting
     extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool transform_null_in;
     extern const SettingsInt64 optimize_const_name_size;
-    extern const SettingsBool format_display_secrets_in_show_and_select;
 }
 
 namespace ErrorCodes
@@ -92,6 +92,22 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
     }
 
     return buffer.str();
+}
+
+bool containsQueryOrUnionInSourceExpression(const QueryTreeNodePtr & node)
+{
+    if (node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
+        return true;
+
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression()
+        && containsQueryOrUnionInSourceExpression(constant->getSourceExpression()))
+        return true;
+
+    for (const auto & child : node->getChildren())
+        if (child && containsQueryOrUnionInSourceExpression(child))
+            return true;
+
+    return false;
 }
 
 class ActionNodeNameHelper
@@ -179,8 +195,7 @@ public:
                 {
                     // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
                     if (constant_node.hasSourceExpression()
-                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
-                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
+                        && !containsQueryOrUnionInSourceExpression(constant_node.getSourceExpression()))
                     {
                         if (constant_node.receivedFromInitiatorServer())
                             result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
@@ -250,29 +265,31 @@ public:
                     break;
                 }
 
-                if (planner_context.getQueryContext()->getSettingsRef()[Setting::enable_named_columns_in_function_tuple])
+                /// Function tuple with enable_named_columns_in_function_tuple generates a named tuple
+                /// with element names taken from the argument aliases. The element names must be part
+                /// of the action node name in addition to the argument names appended below: the same
+                /// arguments with different aliases produce different result types, and different
+                /// arguments can have the same aliases (e.g. SELECT tuple(1 AS x), tuple(2 AS x)),
+                /// so neither the element names alone nor the argument names alone identify the action,
+                /// and actions with equal names are collapsed into one.
+                String named_tuple_element_names;
+                if (function_node.getFunctionName() == "tuple"
+                    && planner_context.getQueryContext()->getSettingsRef()[Setting::enable_named_columns_in_function_tuple])
                 {
-                    /// Function "tuple" which generates named tuple should use argument aliases to construct its name.
-                    if (function_node.getFunctionName() == "tuple")
+                    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
                     {
-                        if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
+                        if (type_tuple->hasExplicitNames())
                         {
-                            if (type_tuple->hasExplicitNames())
+                            const auto & names = type_tuple->getElementNames();
+                            size_t size = names.size();
+                            WriteBufferFromOwnString s;
+                            for (size_t i = 0; i < size; ++i)
                             {
-                                const auto & names = type_tuple->getElementNames();
-                                size_t size = names.size();
-                                WriteBufferFromOwnString s;
-                                s << "tuple(";
-                                for (size_t i = 0; i < size; ++i)
-                                {
-                                    if (i != 0)
-                                        s << ", ";
-                                    s << backQuoteIfNeed(names[i]);
-                                }
-                                s << ")";
-                                result = s.str();
-                                break;
+                                if (i != 0)
+                                    s << ", ";
+                                s << backQuoteIfNeed(names[i]);
                             }
+                            named_tuple_element_names = s.str();
                         }
                     }
                 }
@@ -288,6 +305,11 @@ public:
 
                 WriteBufferFromOwnString buffer;
                 buffer << function_node.getFunctionName();
+
+                /// The names of the elements of a named tuple, written like function parameters:
+                /// tuple(`x`, `y`)(1_UInt8, 2_UInt8). Function tuple has no real parameters.
+                if (!named_tuple_element_names.empty())
+                    buffer << '(' << named_tuple_element_names << ')';
 
                 const auto & function_parameters_nodes = function_node.getParameters().getNodes();
 
@@ -866,7 +888,12 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             const auto & arg_names = lambda_node.getArguments().getNames();
             if (std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end())
             {
-                const auto & disambiguated = planner_context->getColumnNodeIdentifierOrThrow(node);
+                /// The synthetic column of an `INTERPOLATE` expression is not backed by a table expression,
+                /// so it has no column identifier. Derive a name that no lambda argument can have instead.
+                const auto * column_identifier = planner_context->getColumnNodeIdentifierOrNull(node);
+                String disambiguated = column_identifier
+                    ? *column_identifier
+                    : fmt::format("__{}.{}", column_source ? toString(column_source->getNodeType()) : "COLUMN", column_node_name);
 
                 actions_stack[i].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
 
@@ -981,8 +1008,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
         // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
         if (constant_node.hasSourceExpression()
-            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
-            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
+            && !containsQueryOrUnionInSourceExpression(constant_node.getSourceExpression()))
         {
             if (constant_node.receivedFromInitiatorServer())
                 return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
@@ -1251,9 +1277,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     if (actions_stack.size() == 1 && actions_stack.front().containsNode(function_node_name))
         return {function_node_name, Levels(0)};
 
+    const bool is_in_function = isNameOfInFunction(function_node.getFunctionName());
+
+    /// The `IgnoreSet` variants resolve types without a set: no set is registered for them, and they
+    /// take the left operand alone, which `FunctionIn`'s variadic arity accepts.
+    const bool ignore_set = is_in_function && function_node.getFunctionName().ends_with("IgnoreSet");
+
     std::optional<NodeNameAndNodeMinLevel> in_function_second_argument_node_name_with_level;
 
-    if (isNameOfInFunction(function_node.getFunctionName()))
+    if (is_in_function && !ignore_set)
         in_function_second_argument_node_name_with_level = makeSetForInFunction(node);
 
     /* Aggregate functions, window functions, and GROUP BY expressions were already analyzed in the previous steps.
@@ -1286,7 +1318,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
 
     const auto & function_arguments = function_node.getArguments().getNodes();
-    size_t function_arguments_size = function_arguments.size();
+    /// An in-function is resolved with exactly two arguments, so the left operand alone remains.
+    size_t function_arguments_size = ignore_set ? 1 : function_arguments.size();
 
     Names function_arguments_node_names;
     function_arguments_node_names.reserve(function_arguments_size);
@@ -1324,7 +1357,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     for (auto & function_argument_node_name : function_arguments_node_names)
         children.push_back(actions_stack[level].getNodeOrThrow(function_argument_node_name));
 
-    if (!planner_context->getQueryContext()->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+    if (!canDisplaySecrets(planner_context->getQueryContext()))
         markFoldedSecretConstants(function_node, children);
 
     if (function_node.getFunctionName() == "arrayJoin")
@@ -1343,8 +1376,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         /// non-Nullable arguments (because the function was resolved with pre-aggregation types).
         /// In this case, rebuild the function via FunctionFactory with the actual argument types
         /// so that the result type is correct.
-        bool argument_types_match = true;
-        if (auto function_base = function_node.getFunction())
+        /// An `IgnoreSet` node has one child against two expected types, so the loop below cannot see the mismatch.
+        bool argument_types_match = !ignore_set;
+        if (auto function_base = function_node.getFunction(); function_base && argument_types_match)
         {
             const auto & expected_types = function_base->getArgumentTypes();
             for (size_t i = 0; argument_types_match && i < children.size() && i < expected_types.size(); ++i)

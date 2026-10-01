@@ -1,7 +1,4 @@
--- Tags: no-old-analyzer
-
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET explain_query_plan_default = 'legacy';
 -- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so pin it to 0.
 SET max_rows_to_group_by = 0;
@@ -67,7 +64,8 @@ FROM
    (SELECT path, sum(hits) as hits FROM test WHERE lang = 'en' GROUP BY path) AS en,
    (SELECT path, sum(hits) as hits FROM test WHERE lang = 'de' GROUP BY path) AS de
 WHERE (en.path = de.path)
-ORDER BY ALL;
+ORDER BY ALL
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 
 SELECT '----------';
@@ -78,4 +76,5 @@ FROM
    (SELECT * FROM test WHERE lang = 'de') AS de
 WHERE (en.path = de.path)
 GROUP BY en.path
-ORDER BY ALL;
+ORDER BY ALL
+SETTINGS distributed_plan_fallback_to_local_execution = 0;

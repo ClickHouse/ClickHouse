@@ -1,0 +1,41 @@
+no statistics yet
+2020-01-01	2020-12-30	-500	499	100000
+0
+statistics are materialized by the merge
+2020-01-01	2020-12-30	-500	499	100000
+1
+a part without statistics is read and combined with the statistics of other parts
+2020-01-01	2021-05-05	-600	499	100001
+2
+statistics can also be materialized by the insert
+2019-05-05	2021-05-05	-600	600	100002
+2
+not applied: the setting is disabled
+0
+not applied: Nullable column
+1	99999
+0
+not applied: no statistics for String columns
+0	foo
+0
+not applied: there is a filter
+2020-01-01	2020-12-30
+0
+applied: monotonic arithmetic is rewritten to be applied over the aggregation
+2019-05-06	2021-05-06
+1
+not applied: aggregation over an expression
+0	6
+0
+not applied: unsupported aggregate function
+2019-05-05	-50000
+0
+not applied: lightweight delete
+2019-05-05	2020-12-30	100001
+0
+the merge applies the delete and rebuilds statistics
+2019-05-05	2020-12-30	100001
+1
+not applied: count over an expression must still evaluate the argument
+100001
+0

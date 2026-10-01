@@ -63,7 +63,14 @@ ReplicatedMergeTreeLocalMergePredicate::ReplicatedMergeTreeLocalMergePredicate(R
 
     {
         std::lock_guard lock(queue_.state_mutex);
-        patches_by_partition = getPatchPartsByPartition(virtual_parts_ptr->getPatchPartInfos(), {});
+        auto patch_infos = virtual_parts_ptr->getPatchPartInfos();
+
+        /// Virtual parts also contain the results of the entries that are still in the queue,
+        /// so a data version assigned by a mutation is seen before that mutation is executed.
+        if (!patch_infos.empty())
+            data_versions_by_partition = getDataVersionsByPartition(virtual_parts_ptr->getPartInfos());
+
+        patches_by_partition = getPatchPartsByPartition(patch_infos, {});
     }
 }
 
@@ -113,7 +120,14 @@ ReplicatedMergeTreeZooKeeperMergePredicate::ReplicatedMergeTreeZooKeeperMergePre
 
     {
         std::lock_guard lock(queue.state_mutex);
-        patches_by_partition = getPatchPartsByPartition(virtual_parts_ptr->getPatchPartInfos(), *committing_blocks_ptr);
+        auto patch_infos = virtual_parts_ptr->getPatchPartInfos();
+
+        /// Virtual parts also contain the results of the entries that are still in the queue,
+        /// so a data version assigned by a mutation is seen before that mutation is executed.
+        if (!patch_infos.empty())
+            data_versions_by_partition = getDataVersionsByPartition(virtual_parts_ptr->getPartInfos());
+
+        patches_by_partition = getPatchPartsByPartition(patch_infos, *committing_blocks_ptr);
     }
 
     /// Initialize ReplicatedMergeTree Merge preconditions

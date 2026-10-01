@@ -94,7 +94,7 @@ SELECT quantileExactInclusive(0.1)(number), quantileExactInclusive(0.9)(number) 
         )",
         R"(
 ┌─quantileExactInclusive(0.1)(number)─┬─quantileExactInclusive(0.9)(number)─┐
-│                                 0.9 │                                 8.1 │
+│                  0.8999999999999999 │                                 8.1 │
 └─────────────────────────────────────┴─────────────────────────────────────┘
         )"
     }

@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas, no-old-analyzer
+-- Tags: no-parallel-replicas
 
 SET enable_streaming_queries = 1;
 SET allow_experimental_full_text_index = 1;
@@ -26,6 +26,7 @@ SETTINGS log_comment = '04235_streaming_queries_text_index_direct_read';
 
 SYSTEM FLUSH LOGS query_log;
 
+-- The PREWHERE filter is pushed down into the streaming read, so the text index hint is used.
 SELECT ProfileEvents['TextIndexUseHint'] > 0
 FROM system.query_log
 WHERE event_date >= yesterday()

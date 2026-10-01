@@ -13,6 +13,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/HistogramMetrics.h>
+#include <Common/saturatedWaitDuration.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -225,6 +226,12 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
 void KeeperDispatcher::shutdown(bool closed_all_connections)
 {
+    shutdownBeforeConnectionsFinish();
+    shutdownAfterConnectionsFinish(closed_all_connections);
+}
+
+void KeeperDispatcher::shutdownBeforeConnectionsFinish()
+{
     /// Armed once the shutdown is committed to. setShutdownCalled is one-shot, so no later
     /// shutdown reaches the waiters and they must be completed even if a step below throws.
     scope_guard fail_session_id_waiters;
@@ -233,6 +240,7 @@ void KeeperDispatcher::shutdown(bool closed_all_connections)
     {
         {
             signalShutdown();
+            waitForFourLetterCommands();
 
             if (!keeper_context || !keeper_context->setShutdownCalled())
                 return;
@@ -272,19 +280,33 @@ void KeeperDispatcher::shutdown(bool closed_all_connections)
         if (server)
             server->shutdown();
 
-        /// Only now is nuraft's commit thread joined, so no thread can produce responses anymore
-        /// and the queues can be drained and checked.
-        if (dispatcher)
-            dispatcher->drainAndCheckQueues(closed_all_connections);
+        /// Only now is nuraft's commit thread joined, so no thread can produce responses anymore.
+        /// TCP handlers can still own responses until they finish.
+        ready_to_finish_shutdown.store(true, std::memory_order_release);
 
         /// On the normal path, run here rather than leaving it to the guard: until the commit
         /// thread is joined a late commit can still complete a waiter itself.
         fail_session_id_waiters.reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void KeeperDispatcher::shutdownAfterConnectionsFinish(bool closed_all_connections)
+{
+    if (shutdown_finished.exchange(true))
+        return;
+
+    try
+    {
+        if (ready_to_finish_shutdown.load(std::memory_order_acquire) && dispatcher)
+            dispatcher->drainAndCheckQueues(closed_all_connections);
 
         snapshot_s3.shutdown();
 
         CurrentMetrics::set(CurrentMetrics::KeeperAliveConnections, 0);
-
     }
     catch (...)
     {
@@ -426,18 +448,52 @@ void KeeperDispatcher::containerGarbageCollectorThread(size_t batch_size, UInt64
 void KeeperDispatcher::interruptibleSleep(std::chrono::milliseconds period)
 {
     std::unique_lock lock(early_shutdown_wait_mutex);
-    early_shutdown_wait_cv.wait_for(lock, period, [&] { return shutting_down.load(); });
+    early_shutdown_wait_cv.wait_for(lock, saturatedWaitMilliseconds(period.count()), [&] { return shutting_down.load(); });
 }
 
 void KeeperDispatcher::signalShutdown()
 {
-    if (shutting_down.exchange(true))
-        return; // already called
+    {
+        std::lock_guard lock(four_letter_command_mutex);
+        if (shutting_down.exchange(true))
+            return; // already called
+    }
 
     {
         std::lock_guard lock(early_shutdown_wait_mutex);
     }
     early_shutdown_wait_cv.notify_all();
+}
+
+void KeeperDispatcher::beginTCPConnectionDrain()
+{
+    tcp_connections_draining.store(true, std::memory_order_release);
+}
+
+bool KeeperDispatcher::tryBeginFourLetterCommand()
+{
+    std::lock_guard lock(four_letter_command_mutex);
+    if (isTCPConnectionDrainStarted() || shutting_down.load(std::memory_order_relaxed))
+        return false;
+
+    ++running_four_letter_commands;
+    return true;
+}
+
+void KeeperDispatcher::finishFourLetterCommand()
+{
+    {
+        std::lock_guard lock(four_letter_command_mutex);
+        chassert(running_four_letter_commands > 0);
+        --running_four_letter_commands;
+    }
+    four_letter_command_cv.notify_all();
+}
+
+void KeeperDispatcher::waitForFourLetterCommands()
+{
+    std::unique_lock lock(four_letter_command_mutex);
+    four_letter_command_cv.wait(lock, [this] { return running_four_letter_commands == 0; });
 }
 
 bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64)
@@ -590,9 +646,19 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
 
     {
         std::lock_guard lock(new_session_id_mutex);
+        if (isShuttingDown())
+            throw Exception(ErrorCodes::ABORTED, "Not issuing new session ID because of shutdown");
+
         auto [it, inserted] = new_session_id_requests.try_emplace(request->internal_id);
         chassert(inserted);
         future = it->second.get_future();
+    }
+
+    if (isShuttingDown())
+    {
+        std::lock_guard lock(new_session_id_mutex);
+        new_session_id_requests.erase(request->internal_id);
+        throw Exception(ErrorCodes::ABORTED, "Not issuing new session ID because of shutdown");
     }
 
     try
@@ -610,7 +676,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
         throw;
     }
 
-    if (future.wait_for(std::chrono::milliseconds(session_timeout_ms)) != std::future_status::ready)
+    if (future.wait_for(saturatedWaitMilliseconds(session_timeout_ms)) != std::future_status::ready)
     {
         {
             std::lock_guard lock(new_session_id_mutex);
@@ -645,9 +711,10 @@ void KeeperDispatcher::clusterUpdateWithReconfigDisabledThread()
                 continue;
             }
 
-            ClusterUpdateAction action;
-            if (!cluster_update_queue.pop(action))
+            QueuedClusterUpdate update;
+            if (!cluster_update_queue.pop(update))
                 break;
+            const auto & action = update.action;
 
             /// We must wait this update from leader or apply it ourself (if we are leader)
             bool done = false;
@@ -684,17 +751,22 @@ void KeeperDispatcher::clusterUpdateThread()
     const auto & shutdown_called = keeper_context->isShutdownCalled();
     while (!shutdown_called)
     {
-        ClusterUpdateAction action;
-        if (!cluster_update_queue.pop(action))
+        QueuedClusterUpdate update;
+        if (!cluster_update_queue.pop(update))
             return;
+        const auto & action = update.action;
 
         if (const auto res = server->applyConfigUpdate(action, last_command_was_leader_change); res == Accepted)
+        {
             LOG_DEBUG(log, "Processing config update {}: accepted", action);
+            if (update.accepted)
+                update.accepted->store(true);
+        }
         else
         {
             last_command_was_leader_change = res == WaitBeforeChangingLeader;
 
-            (void)cluster_update_queue.pushFront(action);
+            (void)cluster_update_queue.pushFront(update);
             LOG_DEBUG(log, "Processing config update {}: declined, backoff", action);
 
             std::this_thread::sleep_for(last_command_was_leader_change
@@ -704,12 +776,12 @@ void KeeperDispatcher::clusterUpdateThread()
     }
 }
 
-void KeeperDispatcher::pushClusterUpdates(ClusterUpdateActions && actions)
+void KeeperDispatcher::pushClusterUpdates(ClusterUpdateActions && actions, std::shared_ptr<std::atomic<bool>> accepted)
 {
     if (keeper_context->isShutdownCalled()) return;
     for (auto && action : actions)
     {
-        if (!cluster_update_queue.push(std::move(action)))
+        if (!cluster_update_queue.push({std::move(action), accepted}))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot push configuration update");
         LOG_DEBUG(log, "Processing config update {}: pushed", action);
     }
@@ -722,7 +794,7 @@ bool KeeperDispatcher::reconfigEnabled() const
 
 bool KeeperDispatcher::isServerActive() const
 {
-    return checkInit() && hasLeader() && !server->isRecovering();
+    return !isShuttingDown() && checkInit() && hasLeader() && !server->isRecovering();
 }
 
 void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros)
@@ -744,7 +816,7 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
 
     if (!reconfigEnabled())
         for (auto & change : diff)
-            if (!cluster_update_queue.push(change))
+            if (!cluster_update_queue.push({change, nullptr}))
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
 
     snapshot_s3.updateS3Configuration(config, macros);
@@ -756,9 +828,9 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
     keeper_context->updateSettings(new_settings);
 }
 
-void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests)
+void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)
 {
-    keeper_stats.updateLatency(process_time_ms, subrequests);
+    keeper_stats.updateLatency(process_time_ms);
 }
 
 static uint64_t getTotalSize(const DiskPtr & disk, const std::string & path = "")
@@ -805,9 +877,17 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 }
 
 
-void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, KeeperDispatcher::ConfigCheckCallback check_callback, size_t max_action_wait_time_ms, int64_t retry_count)
+void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(
+    const ClusterUpdateAction & action,
+    KeeperDispatcher::ConfigCheckCallback check_callback,
+    UInt64 max_action_wait_time_ms,
+    UInt64 retry_count,
+    const Stopwatch & total_watch,
+    UInt64 max_total_wait_time_ms)
 {
-    for (int64_t attempt = 0; attempt <= retry_count; ++attempt)
+    UInt64 attempt = 0;
+    auto copy_accepted = std::make_shared<std::atomic<bool>>(false);
+    for (; attempt <= retry_count; ++attempt)
     {
         if (check_callback(server.get()))
         {
@@ -815,13 +895,24 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const Clust
             return;
         }
 
-        pushClusterUpdates({action});
+        UInt64 time_spent = total_watch.elapsedMilliseconds();
+        UInt64 time_left_total = max_total_wait_time_ms > time_spent ? max_total_wait_time_ms - time_spent : 0;
+        UInt64 wait_time_ms = std::min(max_action_wait_time_ms, time_left_total);
+        if (attempt > 0 && wait_time_ms == 0)
+            break;
+
+        /// A copy that is still queued is retried by `clusterUpdateThread` until it is accepted,
+        /// so a retry pushes the action again only once its previous copy was accepted.
+        bool pushed = attempt == 0;
+        if (pushed)
+            pushClusterUpdates({action}, copy_accepted);
+
         Stopwatch watch;
-        LOG_DEBUG(log, "Waiting for configuration update {} to be applied, will wait for {} ms", action, max_action_wait_time_ms);
-        while (watch.elapsedMilliseconds() < max_action_wait_time_ms)
+        LOG_DEBUG(log, "Waiting for configuration update {} to be applied, will wait for {} ms", action, wait_time_ms);
+        while (watch.elapsedMilliseconds() < wait_time_ms)
         {
-            if (keeper_context->isShutdownCalled())
-                throw Exception(ErrorCodes::ABORTED, "Shutdown called, aborting configuration update");
+            if (isShuttingDown() || keeper_context->isShutdownCalled())
+                throw Exception(ErrorCodes::ABORTED, "Shutdown started, aborting configuration update");
 
             if (check_callback(server.get()))
             {
@@ -829,11 +920,24 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const Clust
                 return;
             }
 
-            std::this_thread::sleep_for(1000ms);
+            if (!pushed && copy_accepted->load())
+            {
+                copy_accepted = std::make_shared<std::atomic<bool>>(false);
+                pushClusterUpdates({action}, copy_accepted);
+                pushed = true;
+            }
+
+            UInt64 elapsed_ms = std::min(watch.elapsedMilliseconds(), wait_time_ms);
+            interruptibleSleep(std::chrono::milliseconds(std::min<UInt64>(1000, wait_time_ms - elapsed_ms)));
         }
         LOG_INFO(log, "Timeout exceeded waiting for configuration update {} to be applied, attempt {}/{}", action, attempt + 1, retry_count + 1);
     }
-    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded (with retries count {}) waiting for configuration update {} to happen", action, retry_count);
+    throw Exception(
+        ErrorCodes::TIMEOUT_EXCEEDED,
+        "Timeout exceeded (with retries count {}, attempts made {}) waiting for configuration update {} to happen",
+        retry_count,
+        attempt,
+        action);
 }
 
 void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command)
@@ -886,6 +990,18 @@ void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr
     }
 
 }
+
+static UInt64 getRetryCount(const Poco::JSON::Object::Ptr & action_obj)
+{
+    if (!action_obj->has("retry"))
+        return 1;
+
+    Int64 retry_count = action_obj->getValue<Int64>("retry");
+    if (retry_count < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Reconfigure command action 'retry' must be non-negative, got {}", retry_count);
+    return static_cast<UInt64>(retry_count);
+}
+
 void KeeperDispatcher::checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command)
 {
     if (!reconfig_command->has("actions"))
@@ -913,6 +1029,8 @@ void KeeperDispatcher::checkReconfigCommandActions(Poco::JSON::Object::Ptr recon
     for (const auto & action_json : *actions)
     {
         const auto & action_obj = action_json.extract<Poco::JSON::Object::Ptr>();
+        /// Only validates `retry`: an invalid value throws here, so the command is rejected before any of its actions is executed.
+        (void)getRetryCount(action_obj);
         if (action_obj->has("remove_members"))
         {
             auto remove_members = action_obj->getArray("remove_members");
@@ -1028,17 +1146,8 @@ try
     Stopwatch total_watch;
     for (const auto & action_json : *actions)
     {
-
-        UInt64 time_left_for_action = max_action_wait_time_ms;
-        UInt64 time_spent = total_watch.elapsedMilliseconds();
-        UInt64 time_left_total = max_total_wait_time_ms > time_spent ? max_total_wait_time_ms - time_spent : 0;
-        UInt64 time_left = std::min(time_left_for_action, time_left_total);
-
         const auto & action_obj = action_json.extract<Poco::JSON::Object::Ptr>();
-
-        int64_t retry_count = 1;
-        if (action_obj->has("retry"))
-            retry_count = std::min(retry_count, action_obj->getValue<int64_t>("retry"));
+        UInt64 retry_count = getRetryCount(action_obj);
 
         if (action_obj->has("remove_members"))
         {
@@ -1065,7 +1174,8 @@ try
                         return false;
                     }
                 };
-                executeClusterUpdateActionAndWaitConfigChange(remove_action, std::move(remove_callback), time_left, retry_count);
+                executeClusterUpdateActionAndWaitConfigChange(
+                    remove_action, std::move(remove_callback), max_action_wait_time_ms, retry_count, total_watch, max_total_wait_time_ms);
             }
         }
         else if (action_obj->has("add_members"))
@@ -1097,7 +1207,8 @@ try
                         return false;
                     }
                 };
-                executeClusterUpdateActionAndWaitConfigChange(add_action, std::move(add_callback), time_left, retry_count);
+                executeClusterUpdateActionAndWaitConfigChange(
+                    add_action, std::move(add_callback), max_action_wait_time_ms, retry_count, total_watch, max_total_wait_time_ms);
             }
         }
         else if (action_obj->has("transfer_leadership"))
@@ -1129,7 +1240,8 @@ try
                     return false;
                 }
             };
-            executeClusterUpdateActionAndWaitConfigChange(transfer_action, std::move(check_callback), time_left, retry_count);
+            executeClusterUpdateActionAndWaitConfigChange(
+                transfer_action, std::move(check_callback), max_action_wait_time_ms, retry_count, total_watch, max_total_wait_time_ms);
         }
         else if (action_obj->has("set_priority"))
         {
@@ -1165,7 +1277,13 @@ try
                         return false;
                     }
                 };
-                executeClusterUpdateActionAndWaitConfigChange(update_priority_action, std::move(priority_callback), time_left, retry_count);
+                executeClusterUpdateActionAndWaitConfigChange(
+                    update_priority_action,
+                    std::move(priority_callback),
+                    max_action_wait_time_ms,
+                    retry_count,
+                    total_watch,
+                    max_total_wait_time_ms);
             }
         }
         else

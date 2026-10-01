@@ -139,6 +139,21 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
         },
         {
             { "dashboard", "Filesystem cache" },
+            { "title", "Write-through covering segments shrunk (per second)" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+    avg(ProfileEvent_CachedWriteBufferCoveringSegmentShrunk) AS Shrunk,
+    avg(ProfileEvent_CachedWriteBufferCoveringSegmentShrinkFailed) AS ShrinkFailed
+FROM merge('system', '^metric_log')
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Filesystem cache" },
             { "title", "Cache size (bytes)" },
             { "query", trim(R"EOQ(
 WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
@@ -466,7 +481,6 @@ SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS 
     avg(ProfileEvent_FileSegmentWriteMicroseconds) / 1000000 AS Write,
     avg(ProfileEvent_FileSegmentCompleteMicroseconds) / 1000000 AS Complete,
     avg(ProfileEvent_FileSegmentHolderCompleteMicroseconds) / 1000000 AS HolderComplete,
-    avg(ProfileEvent_FileSegmentRemoveMicroseconds) / 1000000 AS Remove,
     avg(ProfileEvent_FileSegmentIncreasePriorityMicroseconds) / 1000000 AS IncreasePriority
 FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to

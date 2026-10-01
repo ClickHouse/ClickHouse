@@ -1,10 +1,10 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/Formats/PullingOutputFormat.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 #include <Interpreters/ProcessList.h>
 
 namespace DB
@@ -52,10 +52,14 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
     {
         executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
         executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+        executor->setStepProfiler(pipeline.getStepProfiler());
     }
 
-    if (!executor->checkTimeLimitSoft())
+    if (pipeline.process_list_element && !pipeline.process_list_element->checkTimeLimitSoft())
+    {
+        executor->cancel(PipelineExecutor::ExecutionStatus::CancelledByTimeout);
         return false;
+    }
 
     if (!executor->executeStep(&has_data_flag))
         return false;
@@ -131,38 +135,6 @@ Block PullingPipelineExecutor::getExtremesBlock()
 ProfileInfo & PullingPipelineExecutor::getProfileInfo()
 {
     return pulling_format->getProfileInfo();
-}
-
-PipelineExecutor::ExecutionStatus PullingPipelineExecutor::getExecutionStatus() const
-{
-    if (!executor)
-        return PipelineExecutor::ExecutionStatus::NotStarted;
-
-    auto status = executor->getExecutionStatus();
-
-    if (!pipeline.process_list_element)
-        return status;
-
-    /// `ExecutorHolder::cancel` forwards to the no-arg `PipelineExecutor::cancel`, which always reports
-    /// `CancelledByUser` regardless of the `CancelReason` recorded by `cancelQuery`. Likewise,
-    /// `PipelineExecutor::cancel(CancelledByTimeout)` only transitions `Executing` → `CancelledByTimeout`,
-    /// so a timeout that fires before the first `executeStep` leaves the executor at `NotStarted`.
-    /// Consult the `QueryStatus` to recover the actual reason in both cases.
-    if (pipeline.process_list_element->isKilled()
-        && (status == PipelineExecutor::ExecutionStatus::NotStarted
-            || status == PipelineExecutor::ExecutionStatus::CancelledByUser))
-    {
-        if (pipeline.process_list_element->getCancelReason() == CancelReason::TIMEOUT)
-            return PipelineExecutor::ExecutionStatus::CancelledByTimeout;
-        return PipelineExecutor::ExecutionStatus::CancelledByUser;
-    }
-
-    /// Soft timeout can also fire without going through `cancelQuery` (`overflow_mode='break'`).
-    if (status == PipelineExecutor::ExecutionStatus::NotStarted
-        && !pipeline.process_list_element->checkTimeLimitSoft())
-        return PipelineExecutor::ExecutionStatus::CancelledByTimeout;
-
-    return status;
 }
 
 }
