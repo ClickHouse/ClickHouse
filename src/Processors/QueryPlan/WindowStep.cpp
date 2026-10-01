@@ -197,13 +197,16 @@ static IntervalKind deserializeIntervalKind(ReadBuffer & in)
     return IntervalKind{static_cast<IntervalKind::Kind>(kind)};
 }
 
-static void serializeWindowFrame(const WindowFrame & frame, WriteBuffer & out, UInt64 version)
+static void serializeWindowFrame(const WindowFrame & frame, WriteBuffer & out, UInt64 step_version, UInt64 version)
 {
+    /// Step version 0 has no room for the `IntervalKind`, and a peer reading it would apply the count of
+    /// units as a plain offset, so fail closed instead of shipping a frame it would evaluate differently.
     bool has_interval_kind = frame.begin_offset_interval_kind || frame.end_offset_interval_kind;
-    if (has_interval_kind && version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FRAME_INTERVAL)
+    if (has_interval_kind && step_version < 1)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan: serializing an INTERVAL window frame offset requires query plan serialization "
-            "version >= {}; all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FRAME_INTERVAL);
+            "A Window step with an INTERVAL window frame offset requires query plan serialization version >= {} "
+            "(Window step version 1), but the peer only supports version {}; all nodes must be upgraded",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FRAME_INTERVAL, version);
 
     UInt8 flags = 0;
     if (frame.is_default)
@@ -231,7 +234,7 @@ static void serializeWindowFrame(const WindowFrame & frame, WriteBuffer & out, U
         serializeIntervalKind(*frame.end_offset_interval_kind, out);
 }
 
-static WindowFrame deserializeWindowFrame(ReadBuffer & in, UInt64 version)
+static WindowFrame deserializeWindowFrame(ReadBuffer & in, UInt64 step_version)
 {
     WindowFrame frame;
 
@@ -243,10 +246,9 @@ static WindowFrame deserializeWindowFrame(ReadBuffer & in, UInt64 version)
     bool has_begin_interval_kind = bool(flags & 8);
     bool has_end_interval_kind = bool(flags & 16);
 
-    if ((has_begin_interval_kind || has_end_interval_kind)
-        && version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FRAME_INTERVAL)
+    if ((has_begin_interval_kind || has_end_interval_kind) && step_version < 1)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "WindowStep: INTERVAL window frame offset is not expected in query plan serialization version {}", version);
+            "WindowStep: INTERVAL window frame offset is not expected in Window step version {}", step_version);
 
     /// The plan may be client-supplied (TCPHandler::receiveQueryPlan), so reject out-of-range enum
     /// values instead of casting an arbitrary byte into the enum (which downstream switches would not
@@ -383,7 +385,7 @@ void WindowStep::serialize(Serialization & ctx) const
     serializeSortDescription(window_description.partition_by, ctx.out, ctx.version);
     serializeSortDescription(window_description.order_by, ctx.out, ctx.version);
 
-    serializeWindowFrame(window_description.frame, ctx.out, ctx.version);
+    serializeWindowFrame(window_description.frame, ctx.out, ctx.step_version, ctx.version);
 
     serializeWindowFunctions(window_functions, ctx.out);
 }
@@ -410,7 +412,7 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
     deserializeSortDescription(window_description.partition_by, ctx.in, ctx.version, ctx.max_type_complexity);
     deserializeSortDescription(window_description.order_by, ctx.in, ctx.version, ctx.max_type_complexity);
 
-    window_description.frame = deserializeWindowFrame(ctx.in, ctx.version);
+    window_description.frame = deserializeWindowFrame(ctx.in, ctx.step_version);
 
     /// `full_sort_description` is not serialized: it is the concatenation of PARTITION BY and
     /// ORDER BY, reconstructed here exactly as the planner builds it (see PlannerWindowFunctions).
@@ -432,7 +434,8 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
 void registerWindowStep(QueryPlanStepRegistry & registry);
 void registerWindowStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Window", WindowStep::deserialize);
+    registry.registerStep("Window", WindowStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FRAME_INTERVAL}});
 }
 
 }

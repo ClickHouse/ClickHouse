@@ -188,8 +188,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DI
 /// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and
 /// rebuild the read with the cache enabled, so `ReadFromMergeTree::serialize` rejects it instead.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG = 19;
-/// First query-plan serialization version that carries the `IntervalKind` of INTERVAL window frame
-/// offsets. Gates writing them in `WindowStep::serialize`.
+/// First global query-plan version that writes version 1 of `Window`, which carries the `IntervalKind`
+/// of INTERVAL window frame offsets. A frame with an INTERVAL offset cannot be shipped to a peer below
+/// this version: the peer would read the count of units as a plain offset, so `WindowStep::serialize`
+/// rejects it instead.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FRAME_INTERVAL = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
