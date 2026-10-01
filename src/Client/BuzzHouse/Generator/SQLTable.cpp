@@ -3321,6 +3321,14 @@ DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator &
     {
         this->ids.emplace_back(DBackup);
     }
+    if (!fc.clusters.empty() && (fc.engine_mask & allow_cluster_database) != 0)
+    {
+        this->ids.emplace_back(DCluster);
+    }
+    if ((fc.engine_mask & allow_remote_database) != 0)
+    {
+        this->ids.emplace_back(rg.nextSmallNumber() < 4 ? DRemoteSecure : DRemote);
+    }
     const auto res = static_cast<DatabaseEngineValues>(rg.pickRandomly(this->ids));
     this->ids.clear();
     return res;
@@ -3373,6 +3381,45 @@ void StatementGenerator::generateDatabaseEngineDetails(RandomGenerator & rg, SQL
         de->add_params()->mutable_backup_out()->CopyFrom(backup.bout);
         d.backup_number = backup.bout.backup_number();
     }
+    else if (d.isProxyDatabase())
+    {
+        /// Proxy another database, sometimes another proxy one (a chain)
+        const uint32_t noption = rg.nextMediumNumber();
+
+        if (noption < 6)
+        {
+            /// A missing database, or the new database itself, which the server rejects as a cycle
+            d.proxy_target = rg.nextBool() ? d.getName() : "nonexistent";
+        }
+        else if (noption < 61 && collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases))
+        {
+            d.proxy_target = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)).get()->getName();
+        }
+        else
+        {
+            d.proxy_target = rg.nextSmallNumber() < 9 ? "default" : "system";
+        }
+        if (d.isClusterDatabase())
+        {
+            /// Cluster('cluster_name', 'database')
+            de->add_params()->set_svalue(rg.pickRandomly(fc.clusters));
+            de->add_params()->set_svalue(d.proxy_target);
+        }
+        else
+        {
+            /// Remote('addresses_expr', 'database'[, 'user'[, 'password']])
+            de->add_params()->set_svalue(getNextRandomServerAddresses(rg, d.deng == DatabaseEngineValues::DRemoteSecure));
+            de->add_params()->set_svalue(d.proxy_target);
+            if (rg.nextBool())
+            {
+                de->add_params()->set_svalue("default");
+                if (rg.nextBool())
+                {
+                    de->add_params()->set_svalue("");
+                }
+            }
+        }
+    }
     d.finishDatabaseSpecification(de);
 }
 
@@ -3409,12 +3456,13 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     {
         cd->set_comment(nextComment(rg));
     }
-    if (rg.nextSmallNumber() < 4)
+    /// The Cluster and Remote engines take no settings
+    if (!next.isProxyDatabase() && rg.nextSmallNumber() < 4)
     {
         /// Add general database settings
         generateSettingValues(rg, allDatabaseSettings, deng->mutable_setting_values());
     }
-    if (!next.isReplicatedOrSharedDatabase() && !next.isDataLakeCatalogDatabase() && rg.nextSmallNumber() < 4)
+    if (!next.isReplicatedOrSharedDatabase() && !next.isDataLakeCatalogDatabase() && !next.isProxyDatabase() && rg.nextSmallNumber() < 4)
     {
         /// Add server settings
         generateSettingValues(rg, formatSettings, deng->mutable_setting_values());

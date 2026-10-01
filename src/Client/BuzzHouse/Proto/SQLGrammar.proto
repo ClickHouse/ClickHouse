@@ -1232,6 +1232,9 @@ enum DatabaseEngineValues {
     DSQLite = 9;
     DBackup = 10;
     DMaterializedPostgreSQL = 11;
+    DCluster = 12;
+    DRemote = 13;
+    DRemoteSecure = 14;
 }
 
 message BackupParam {

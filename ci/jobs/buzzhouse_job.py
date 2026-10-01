@@ -115,6 +115,8 @@ def main():
             "alias",
             "kafka",
             "backup",
+            "clusterdatabase",
+            "remotedatabase",
         ]
         random.shuffle(disabled_engines)
         disabled_engines_str = ",".join(
