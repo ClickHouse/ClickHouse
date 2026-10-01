@@ -24,11 +24,11 @@ check()
 
 check "SELECT * FROM file('$BIGINT_ROOT', ORC, 'x Int64') FORMAT Null" 'INCORRECT_DATA'
 check "SELECT count() FROM file('$BIGINT_ROOT', ORC, 'x Int64')" 'INCORRECT_DATA'
-check "DESCRIBE file('$ARRAY_ROOT', ORC)" 'root type of an ORC file must be a struct'
+check "DESCRIBE file('$ARRAY_ROOT', ORC)" 'ORC files whose root type is not a struct are not supported'
 check "SELECT * FROM file('$ARRAY_ROOT', ORC, 'x Array(Int64)') FORMAT Null" 'INCORRECT_DATA'
 
 # The message names the root type of the file.
-check "SELECT * FROM file('$BIGINT_ROOT', ORC, 'x Int64') FORMAT Null" 'but it is bigint'
+check "SELECT * FROM file('$BIGINT_ROOT', ORC, 'x Int64') FORMAT Null" 'the file has root type bigint'
 
 # A regular ORC file, whose root type is a struct, is still read.
 STRUCT_ROOT="$CLICKHOUSE_TMP/05316_struct_root_${CLICKHOUSE_DATABASE}.orc"

@@ -1045,6 +1045,17 @@ std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
     return builder->build();
 }
 
+std::unique_ptr<orc::Reader> createORCReader(std::unique_ptr<orc::InputStream> stream, const orc::ReaderOptions & options)
+{
+    auto reader = orc::createReader(std::move(stream), options);
+    if (reader->getType().getKind() != orc::STRUCT)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "ORC files whose root type is not a struct are not supported, the file has root type {}",
+            reader->getType().toString());
+    return reader;
+}
+
 static void getFileReader(
     ReadBuffer & in,
     std::unique_ptr<orc::Reader> & file_reader,
@@ -1066,11 +1077,7 @@ static void getFileReader(
     options.setCacheOptions(orc::CacheOptions{.holeSizeLimit = hole_size_limit, .rangeSizeLimit = range_size_limit});
 
     auto input_stream = asORCInputStream(in, format_settings, use_prefetch, is_stopped);
-    auto reader = orc::createReader(std::move(input_stream), options);
-    if (reader->getType().getKind() != orc::STRUCT)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA, "The root type of an ORC file must be a struct, but it is {}", reader->getType().toString());
-    file_reader = std::move(reader);
+    file_reader = createORCReader(std::move(input_stream), options);
 }
 
 static const orc::Type *

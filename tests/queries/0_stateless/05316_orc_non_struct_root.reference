@@ -1,6 +1,6 @@
 INCORRECT_DATA
 INCORRECT_DATA
-root type of an ORC file must be a struct
+ORC files whose root type is not a struct are not supported
 INCORRECT_DATA
-but it is bigint
+the file has root type bigint
 10
