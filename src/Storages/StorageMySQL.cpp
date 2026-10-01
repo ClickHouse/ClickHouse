@@ -541,7 +541,8 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(
     const StorageID * table_id, const ASTSetQuery * settings)
 {
     StorageMySQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_, true, nullptr, table_id, settings))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            engine_args, context_, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr, table_id, settings))
     {
         configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings, context_);
     }

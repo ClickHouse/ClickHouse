@@ -1581,7 +1581,12 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         auto rabbitmq_settings = std::make_unique<RabbitMQSettings>();
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(
-            args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id, args.storage_def->settings))
+            args.engine_args,
+            args.getLocalContext(),
+            /*throw_unknown_collection=*/ true,
+            /*complex_args=*/ nullptr,
+            &args.table_id,
+            args.storage_def->settings))
             rabbitmq_settings->loadFromNamedCollection(named_collection);
         else if (!args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ engine must have settings");

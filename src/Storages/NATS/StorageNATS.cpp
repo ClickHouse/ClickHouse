@@ -1193,7 +1193,12 @@ void registerStorageNATS(StorageFactory & factory)
         /// Whether the named collection is defined in the server configuration file rather than created by SQL.
         bool collection_defined_in_config = false;
         auto named_collection = tryGetNamedCollectionWithOverrides(
-            args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id, args.storage_def->settings);
+            args.engine_args,
+            args.getLocalContext(),
+            /*throw_unknown_collection=*/ true,
+            /*complex_args=*/ nullptr,
+            &args.table_id,
+            args.storage_def->settings);
         if (named_collection)
         {
             nats_settings->loadFromNamedCollection(named_collection);

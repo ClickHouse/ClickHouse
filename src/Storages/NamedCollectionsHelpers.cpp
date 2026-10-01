@@ -108,8 +108,7 @@ namespace
             || NamedCollectionValidateKey<MongoDBEqualKeysSet>{key} == NamedCollectionValidateKey<MongoDBEqualKeysSet>{other})
             return true;
 
-        static constexpr std::pair<std::string_view, std::string_view> equal_keys[] =
-        {
+        static constexpr auto equal_keys = std::to_array<std::pair<std::string_view, std::string_view>>({
             {"ssl_ca_pem", "ssl_ca"},
             {"ssl_cert_pem", "ssl_cert"},
             {"ssl_key_pem", "ssl_key"},
@@ -124,7 +123,7 @@ namespace
             {"storage_account_url", "connection_string"},
             {"user", "credentials.user"},
             {"password", "credentials.password"},
-        };
+        });
 
         for (const auto & [first, second] : equal_keys)
         {
