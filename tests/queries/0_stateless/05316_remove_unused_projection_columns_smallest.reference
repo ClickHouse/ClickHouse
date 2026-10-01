@@ -13,6 +13,10 @@ k String
 union all, costly in the second branch
 k String
 toString(id) String
+subquery in a column
+k String
+all costly
+b UInt8
 1000
 1000
 400

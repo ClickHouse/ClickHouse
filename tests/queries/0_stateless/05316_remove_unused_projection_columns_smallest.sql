@@ -1,4 +1,4 @@
--- When the outer query uses no column of a subquery, the subquery keeps only its cheapest column: the smallest type among the columns without aggregate functions, window functions or subqueries.
+-- When the outer query uses no column of a subquery, the subquery keeps only its cheapest column: the smallest type among the columns without aggregate functions, window functions or subqueries, else the smallest type overall.
 
 DROP TABLE IF EXISTS t_smallest;
 CREATE TABLE t_smallest (s String, id UInt8) ENGINE = MergeTree ORDER BY tuple();
@@ -16,6 +16,10 @@ SELECT 'window';
 SELECT trim(explain) FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT toString(id) AS k, max(cityHash64(s)) OVER () AS m FROM t_smallest)) WHERE trim(explain) IN ('k String', 'm UInt64');
 SELECT 'union all, costly in the second branch';
 SELECT trim(explain) FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT toString(id) AS k, 1 AS u FROM t_smallest UNION ALL SELECT toString(id), uniqExact(s) FROM t_smallest GROUP BY toString(id))) WHERE trim(explain) IN ('k String', 'u UInt8', 'toString(id) String', 'uniqExact(s) UInt64');
+SELECT 'subquery in a column';
+SELECT trim(explain) FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT toString(id) AS k, id IN (SELECT id FROM t_smallest) AS x FROM t_smallest)) WHERE trim(explain) IN ('k String', 'x UInt8');
+SELECT 'all costly';
+SELECT trim(explain) FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT uniqExact(s) AS a, max(id) AS b FROM t_smallest GROUP BY id)) WHERE trim(explain) IN ('a UInt64', 'b UInt8');
 
 -- The 1 MB column s is not read, neither directly nor by an aggregate or window function.
 SELECT count() FROM (SELECT s, id FROM t_smallest LIMIT 100000) SETTINGS max_bytes_to_read = 100000;
