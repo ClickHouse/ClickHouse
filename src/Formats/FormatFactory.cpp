@@ -407,12 +407,15 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.sql_insert.table_name = settings[Setting::output_format_sql_insert_table_name];
     format_settings.sql_insert.use_replace = settings[Setting::output_format_sql_insert_use_replace];
     format_settings.sql_insert.quote_names = settings[Setting::output_format_sql_insert_quote_names];
+    format_settings.sqlite.input_table_name = settings[Setting::input_format_sqlite_table_name];
+    format_settings.sqlite.output_table_name = settings[Setting::output_format_sqlite_table_name];
     format_settings.precise_float_parsing = settings[Setting::precise_float_parsing];
     format_settings.try_infer_integers = settings[Setting::input_format_try_infer_integers];
     format_settings.try_infer_dates = settings[Setting::input_format_try_infer_dates];
     format_settings.try_infer_datetimes = settings[Setting::input_format_try_infer_datetimes];
     format_settings.try_infer_datetimes_only_datetime64 = settings[Setting::input_format_try_infer_datetimes_only_datetime64];
     format_settings.try_infer_exponent_floats = settings[Setting::input_format_try_infer_exponent_floats];
+    format_settings.freeform_max_search_steps = settings[Setting::input_format_freeform_max_search_steps];
     format_settings.markdown.escape_special_characters = settings[Setting::output_format_markdown_escape_special_characters];
     format_settings.bson.output_string_as_string = settings[Setting::output_format_bson_string_as_string];
     format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_bson_skip_fields_with_unsupported_types_in_schema_inference];
