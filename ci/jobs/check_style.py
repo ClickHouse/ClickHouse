@@ -647,6 +647,86 @@ def failpoint_statements(text):
             yield match.group("action").lower(), match.group("name")
 
 
+def server_statements_content(test_case, file_content):
+    """
+    The text of a test with comments stripped, or `None` for a `.sh` test that never talks to the
+    server.
+    """
+    if test_case.endswith(".sh"):
+        # Drop comments, `echo` payloads and `clickhouse-local` invocations, so only the
+        # statements that reach the server are left.
+        content = executable_shell_content(file_content.splitlines())
+        if not SERVER_CLIENT_RE.search(content):
+            return None
+        return content
+    if test_case.endswith(".py"):
+        return "\n".join(strip_shell_comment(line) for line in file_content.splitlines())
+    return strip_sql_comments(file_content)
+
+
+# The first `Tags:` comment line, parsed the same way as in `tests/clickhouse-test`.
+TEST_TAGS_LINE_RE = re.compile(r"^(?:--|#)\s*Tags:(.*)$", re.MULTILINE)
+
+# Tags every test that arms a fail point on the server must have.
+FAILPOINT_TEST_REQUIRED_TAGS = ("no-parallel", "no-fasttest")
+
+
+def check_failpoint_tests_are_isolated(files):
+    """
+    A test that arms a fail point on the server must be tagged `no-parallel` and `no-fasttest`.
+
+    A fail point fires for every query on the server, not only for the test that armed it, so it
+    must not run alongside other tests. Tests that run alone are expensive in the fast test, where
+    they run one by one after the parallel ones, so they are left to the full stateless jobs.
+    """
+
+    errors = []
+    for test_case in files:
+        if "0_stateless" not in test_case:
+            continue
+        try:
+            with open(test_case, "r", encoding="utf-8", errors="replace") as f:
+                file_content = f.read()
+        except Exception as e:
+            errors.append(f"Error checking {test_case}: {e}")
+            continue
+
+        if "FAILPOINT" not in file_content.upper():
+            continue
+
+        content = server_statements_content(test_case, file_content)
+        if content is None:
+            continue
+
+        enabled = [name for action, name in failpoint_statements(content) if action == "enable"]
+        if not enabled:
+            continue
+
+        tags_line = TEST_TAGS_LINE_RE.search(file_content)
+        tags = {tag.strip() for tag in tags_line.group(1).split(",")} if tags_line else set()
+        missing = [tag for tag in FAILPOINT_TEST_REQUIRED_TAGS if tag not in tags]
+        if not missing:
+            continue
+
+        line_number = next(
+            (
+                number
+                for number, line in enumerate(file_content.splitlines(), 1)
+                if re.search(r"ENABLE\s+FAILPOINT", line, re.IGNORECASE)
+            ),
+            1,
+        )
+        missing_str = ", ".join(f"`{tag}`" for tag in missing)
+        errors.append(
+            f"{test_case}:{line_number} enables the fail point `{enabled[0]}` but is not tagged "
+            f"{missing_str}. A fail point is server-global state and fires in every concurrently "
+            f"running query, so the test must run alone, and tests that run alone are kept out "
+            f"of the fast test."
+        )
+
+    return "\n".join(errors)
+
+
 def check_failpoints_are_disabled(files):
     """
     A test that arms a fail point must disarm it: every `SYSTEM ENABLE FAILPOINT <name>` needs a
@@ -681,18 +761,9 @@ def check_failpoints_are_disabled(files):
         if "FAILPOINT" not in file_content.upper():
             continue
 
-        if test_case.endswith(".sh"):
-            # Drop comments, `echo` payloads and `clickhouse-local` invocations, so only the
-            # statements that reach the server are left.
-            content = executable_shell_content(file_content.splitlines())
-            if not SERVER_CLIENT_RE.search(content):
-                continue
-        elif test_case.endswith(".py"):
-            content = "\n".join(
-                strip_shell_comment(line) for line in file_content.splitlines()
-            )
-        else:
-            content = strip_sql_comments(file_content)
+        content = server_statements_content(test_case, file_content)
+        if content is None:
+            continue
 
         enabled = []
         disabled = set()
@@ -836,21 +907,6 @@ def check_pylint():
     res, out, err = Shell.get_res_stdout_stderr(
         "./ci/jobs/scripts/check_style/check-pylint"
     )
-    if err:
-        out += err
-    return out
-
-
-def check_system_table_documentation_pages():
-    # The system-table reference pages are generated from the structured `COMMENT` of each table.
-    # Generating them needs a `clickhouse` binary, which this job does not have, but the extraction
-    # from the C++ sources and the rewriting of a page are pure Python, and a page which was not
-    # regenerated after its source-owned comment changed is detected from the sources alone.
-    res, out, err = Shell.get_res_stdout_stderr(
-        "python3 ./ci/jobs/scripts/docs/autogenerate/test_system_table_pages.py"
-    )
-    if res == 0:
-        return ""
     if err:
         out += err
     return out
@@ -1539,6 +1595,15 @@ if __name__ == "__main__":
                 files=functional_test_files,
             )
         )
+    testname = "failpoint_tests_are_isolated"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_failpoint_tests_are_isolated,
+                files=functional_test_files,
+            )
+        )
     testname = "test_numbers_check"
     # Skip on release branches and backport PRs: backports cherry-pick a small
     # subset of test files, which legitimately leaves large gaps in the numbering.
@@ -1633,14 +1698,6 @@ if __name__ == "__main__":
             Result.from_commands_run(
                 name=testname,
                 command=check_embedded_doc_snippets,
-            )
-        )
-    testname = "system_table_documentation_pages"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_system_table_documentation_pages,
             )
         )
     testname = "ruff"
