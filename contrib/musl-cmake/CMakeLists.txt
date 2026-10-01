@@ -1758,6 +1758,8 @@ target_compile_options(musl-crt1 PRIVATE
     -fno-stack-protector
     -fno-sanitize=all
     -fno-builtin
+    # The entry points are referenced only from inline asm, which LTO cannot see (see musl-rcrt1).
+    -fno-lto
 )
 add_dependencies(musl-crt1 musl-headers)
 
@@ -1778,6 +1780,10 @@ target_compile_options(musl-rcrt1 PRIVATE
     -fno-sanitize=all
     -fno-builtin
     -fPIC
+    # On x86_64, `_dlstart_c` takes the address of the hidden `__dls2` only inside inline asm
+    # (`GETFUNCSYM` in arch/x86_64/reloc.h). LTO does not see that reference, drops `__dls2`,
+    # and the link fails with "undefined hidden symbol: __dls2".
+    -fno-lto
 )
 add_dependencies(musl-rcrt1 musl-headers)
 
