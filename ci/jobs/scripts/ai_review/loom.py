@@ -417,6 +417,40 @@ def _render_similar(d, pr_number):
     return out
 
 
+_BOT_REVIEWERS = ("clickhouse-gh", "robot-", "github-actions", "copilot", "coderabbit")
+
+
+def _maintainer_remarks(histories, limit=8):
+    """Human review remarks from the history of the touched files, newest
+    first. Replies written by agents (marked 🕵) and bots are left out."""
+    remarks = []
+    for h in histories:
+        for pr in (h or {}).get("prs") or []:
+            for r in pr.get("reviews") or []:
+                who = r.get("reviewer") or ""
+                text = " ".join((r.get("excerpt") or "").split())
+                if not text or text.startswith("🕵") or any(b in who.lower() for b in _BOT_REVIEWERS):
+                    continue
+                remarks.append({"pr": pr.get("pr_number"), "reviewer": who, "path": r.get("path"),
+                                "line": r.get("line"), "text": text, "at": r.get("created_at") or ""})
+    remarks.sort(key=lambda r: r["at"], reverse=True)
+    per_pr, kept = {}, []
+    for r in remarks:  # at most two per PR, so one long discussion does not fill the list
+        if per_pr.get(r["pr"], 0) < 2:
+            per_pr[r["pr"]] = per_pr.get(r["pr"], 0) + 1
+            kept.append(r)
+    return kept[:limit]
+
+
+def _render_remarks(remarks):
+    if not remarks:
+        return []
+    out = ["- What maintainers asked for in recent reviews of these files (their norms, not findings):"]
+    for r in remarks:
+        out.append(f"  - {r['reviewer']} on #{r['pr']} at `{r['path']}:{r['line']}`: {r['text'][:220]}")
+    return out
+
+
 def write_brief(config, pr, files, out_dir):
     """Fetch the Loom brief for this PR into `out_dir` (brief.md + raw JSON).
     Returns the Markdown brief, or "" when Loom gave nothing."""
@@ -446,10 +480,16 @@ def write_brief(config, pr, files, out_dir):
         requests["review_brief"] = ("code.review_brief", {
             "pr_number": config.pr_number, "tier": "standard", "open": True,
             "sections": ["paths", "symbols", "tests", "history", "do_not_flag"]})
+    # What maintainers recently asked for on the files the PR touches: the
+    # codebase's actual review norms, on the code at hand.
+    for i, path in enumerate([p for p in paths if p.startswith(("src/", "base/", "programs/"))][:5]):
+        requests[f"history_{i}"] = ("code.history", {"path": path, "limit": 10, "reviews_per_pr": 10})
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(requests)) as pool:
         futures = {name: pool.submit(call, config, op, body) for name, (op, body) in requests.items()}
         answers = {name: f.result() for name, f in futures.items()}
 
+    histories = [answers.pop(k) for k in sorted(k for k in answers if k.startswith("history_"))]
+    answers["review_remarks"] = {"remarks": _maintainer_remarks(histories)} if any(histories) else None
     for name, data in answers.items():
         if data is not None:
             with open(os.path.join(out_dir, f"{name}.json"), "w", encoding="utf-8") as f:
@@ -468,6 +508,7 @@ def write_brief(config, pr, files, out_dir):
     lines += gate
     lines += _render_conventions(answers.get("conventions"))
     lines += _render_similar(answers.get("similar"), config.pr_number)
+    lines += _render_remarks((answers.get("review_remarks") or {}).get("remarks"))
     if not any(answers.values()):
         return ""
     brief = "\n".join(lines) + "\n"
@@ -506,6 +547,9 @@ def thread_record(repo, pr_number, thread, is_ours):
     for c in replies:
         lines += ["", f"Reply by {(c.get('author') or {}).get('login')}:", (c.get("body") or "").strip()]
     tags = [f"pr:{pr_number}", f"state:{state}", "kind:review_thread"]
+    rule = re.search(r"<!-- ai-review-rule: ([a-z_]+) -->", first.get("body") or "")
+    if rule:
+        tags += ["lens:simplicity", f"rule:{rule.group(1)}"]
     if others:
         tags.append("author_replied")
     if thread.get("path"):
@@ -619,7 +663,7 @@ def _cli_body(args, config):
             raise SystemExit("tests-for needs at least one facet, e.g. --setting max_block_size")
         return "code.tests_for", {"facets": facets, "closest": not args.all, "limit": args.limit}
     if args.command == "history":
-        body = {"limit": args.limit}
+        body = {"limit": args.limit, "reviews_per_pr": 10 if args.reviews else 0}
         if args.path:
             body["path"] = args.path
         if args.name:
@@ -691,6 +735,7 @@ def _parser():
     s = sub.add_parser("history", help="PRs and issues that touched a path or function")
     s.add_argument("--path", default="")
     s.add_argument("--name", default="")
+    s.add_argument("--reviews", action="store_true", help="include the review remarks of those PRs")
     s.add_argument("--limit", type=int, default=15)
     s = sub.add_parser("blame", help="which PRs last changed these lines, with their review discussion")
     s.add_argument("path")

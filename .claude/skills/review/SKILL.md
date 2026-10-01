@@ -110,7 +110,7 @@ WHAT TO REVIEW VS WHAT TO IGNORE
 
 **Explicitly ignore (do not comment on these unless they indicate a bug):**
 - Pure formatting (whitespace, brace style, minor naming preferences).
-- "Nice to have" refactors or micro-optimizations without clear benefit.
+- "Nice to have" refactors or micro-optimizations without clear benefit. (Code the PR adds that can simply be deleted or replaced by an existing helper is not a refactor request; see "Simplicity and comments".)
 - Python/Ruby/CI config nitpicks such as:
   - Reordering imports,
   - Ignoring more modules in tooling configs,
@@ -171,6 +171,8 @@ Use these as supporting checks for ClickHouse-specific invariants. They are not 
   A type check on a column that may still be wrapped in `Nullable`, `LowCardinality`, `Const`, `Sparse` or `Variant` takes the wrong branch; check the gate strips every wrapper, including inside `Tuple`, `Array` and `Map`. Wrapped columns must hash and compare exactly like their materialized form. `Variant` holds NULL through its discriminator, so prefer `canContainNull` to `isNullable`. `-0.0`/`+0.0` and NaN payloads can differ between hash keys and `=`.
 - **Exception class**
   An assertion (`chassert`, `LOGICAL_ERROR`) that untrusted bytes or valid but unusual SQL can reach should be a typed `DB::Exception` with a user-facing error code. A new external surface (HTTP handler, table function, format) over internal code often turns such an assertion into a server error for a user mistake.
+- **Simplicity and comments**
+  The style guide asks for as little code as possible, the simplest solution, and no comments that add no information. In code the PR adds, these are worth pointing out, each with the concrete deletion or replacement: a helper that already exists (name it); a new function, parameter, include or member nothing uses; an abstraction or special case with one user and little benefit; a check for a state the caller, callee or type already rules out (cite where); a `try`/`catch` that falls back or retries on an error that cannot be recovered from; commented-out code; and comments that restate the next statement or the identifier, narrate the change ("now", "previously", "the fix") instead of explaining why the code exists, run longer than the code they describe, or cite C++ internals and `file:line` in test comments. Maintainers want a short *why* where the code is not obvious, and nothing else. None of this is a Blocker; a comment that contradicts the code is a Major.
 - **Not defects in ClickHouse**
   These are intentional; before reporting one, show the specific way this case differs. An exception not caught locally (the server catches it; only a wrong exception type for user input is a bug). No lock on a path that is lock-free or atomic by design. Approximate `CurrentMetrics`/`ProfileEvents` values. No error-code check (errors are thrown). A new metric without its own test. A raw non-owning pointer, unless the pointee provably dies first. A member missing from a constructor that has a default initializer in the header. A missing virtual destructor on a class never deleted through its base. A repeated Keeper write (writes are idempotent by design; flag only a retry that produces a different result). A type missing from a dispatch that the function's registration never accepts. Missing tests for `enable_analyzer = 0` (deprecated; the old-versus-new planner comparison is still valid for parity regressions).
 - **Test coverage**
@@ -215,7 +217,7 @@ Severity comes from user/system impact and confidence, not from which prompt unc
 - Fragile code that is likely to break under realistic usage.
 - Hidden magic constants that should be settings.
 - Confusing or incomplete user-visible behavior/docs.
-- Missing or unclear comments in complex logic that future maintainers must understand.
+- A missing *why* on a non-obvious invariant or on a non-trivial function that future maintainers must understand, or a comment that contradicts the code. A comment that restates the code does not satisfy this; it is noise (see "Simplicity and comments").
 - Compilation time regressions: non-trivial code added to widely-included headers, heavy new transitive includes in high-fan-out headers, or unnecessary template instantiations that significantly increase build times.
 
 **Do not report** as nits:

@@ -118,8 +118,8 @@ def _reset_output_dir():
     """Remove the previous attempt's outputs so they cannot be mistaken for the
     result of a later failed attempt."""
     Shell.check(f"rm -rf {shlex.quote(OUTPUT_DIR)}", verbose=False)
-    os.makedirs(f"{OUTPUT_DIR}/comments", exist_ok=True)
-    os.makedirs(f"{OUTPUT_DIR}/replies", exist_ok=True)
+    for sub in ("comments", "replies", "simplicity"):
+        os.makedirs(f"{OUTPUT_DIR}/{sub}", exist_ok=True)
 
 
 def _agent_env(loom_config, extra=None):
@@ -183,7 +183,7 @@ def _run_codex_once(loom_config, _robot_name, model, effort):
     root = sandbox.agent_scratch_root()
     try:
         ws = sandbox.Workspace(root, CONTEXT_DIR, WORK_DIR)
-        for sub in ("out/comments", "out/replies", "scratch"):
+        for sub in ("out/comments", "out/replies", "out/simplicity", "scratch"):
             os.makedirs(os.path.join(ws.work_dir, sub), exist_ok=True)
         sandbox.codex_login(codex, ws.codex_home, _ssm(OPENAI_KEY_SECRET))
         agent_log = os.path.join(ws.work_dir, "loom_calls.jsonl")
@@ -364,8 +364,11 @@ def review(run_once, agent_name):
 
     with open(SUMMARY_FILE, "r", encoding="utf-8") as f:
         summary = f.read()
+    # A backport copies reviewed code; simplicity findings there are noise.
+    is_backport = (ctx.pr.get("title") or "").startswith("Backport") or any(
+        (label.get("name") or "") == "pr-backport" for label in ctx.pr.get("labels") or [])
     summary = publish.publish(GH, repo, info.pr_number, ctx.head_sha, ctx.files, threads, OUTPUT_DIR, summary, memory,
-                              ctx.units, ctx.previous_state)
+                              ctx.units, ctx.previous_state, simplicity=not is_backport)
     _post_summary(summary, ctx.head_sha, model)
 
     # Record every review thread of ours, with its current state and replies,

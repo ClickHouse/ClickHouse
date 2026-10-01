@@ -111,6 +111,8 @@ in, so work through the PR in this order:
    pattern.
 5. Coverage. Record a verdict for every unit in scope in `coverage.json`, with a note on what you
    checked.
+6. Simplicity and comments, as a separate pass once the correctness review is done, so that it
+   never displaces a bug. See the section of that name.
 
 Spend the effort where a defect would hurt most: code that affects query results, on-disk and wire
 formats, memory and resource lifetime, concurrency, and access checks first; tests, docs and tooling
@@ -152,7 +154,10 @@ Run `python3 -m ci.jobs.scripts.ai_review.loom <command>` (`--help` on any comma
 - `outline PATH`, `enclosing PATH:LINE [PATH:LINE ...]`: the functions in a file, the function around a line.
 - `tests-for --setting S --function F --engine E --format F --error-code E`: existing SQL tests that
   use these; the way to answer "is this already tested" for SQL-visible behavior.
-- `history --path PATH | --name NAME`, `blame PATH START END`: earlier PRs and issues, with their review discussion.
+- `history --path PATH | --name NAME [--reviews]`, `blame PATH START END`: earlier PRs and issues;
+  `--reviews` adds what reviewers asked for there.
+- For the simplicity rules: `search "what the new code does"` finds an existing helper, `callers NAME`
+  shows whether a new function has any user, `symbol NAME` shows how widely an existing one is used.
 - `similar "text"`, `issue N ...`: tracker search. Reference a matching existing issue in a finding.
 - `verify-citations FILE`: checks every `path:line` and name cited in a Markdown file against master.
 
@@ -237,6 +242,37 @@ def _evidence():
   Nit in the summary."""
 
 
+def _simplicity():
+    return """\
+# Simplicity and comments
+
+ClickHouse maintainers regularly ask authors to delete code and comments that add nothing:
+"avoid such AI generated comments, they are too bloated", "this comment is obvious", "why not use
+the existing helper", "this check is not needed, the callee already guarantees it". Point these out
+in the code the PR adds, but only with evidence that makes the finding a fact rather than a taste,
+and with the exact deletion or replacement. Each finding uses one of these rules:
+
+| rule | the finding | evidence it needs |
+|---|---|---|
+| `reuse_existing` | the new code reimplements an existing helper | the helper's `path:line` (from `loom search` or `symbol`) and why the contract is the same |
+| `unused_code` | a new function, parameter, include, member or setting nothing uses | `loom callers` with zero edges and `git grep` finding no use; not virtual, registered through a factory or macro, or test-only |
+| `single_use` | a new abstraction, option or special case with one user and little benefit | the single caller or implementation, and the inlined form |
+| `impossible_check` | a check for a state that cannot occur | the `path:line` of the caller, callee or type that already rules it out |
+| `unrecoverable_fallback` | a `try`/`catch` that falls back or retries on an error that cannot be recovered from (`bad_alloc`, a `LOGICAL_ERROR`) | the caught type and what the fallback does |
+| `duplicated_block` | the same five or more lines repeated in the PR | both line ranges |
+| `commented_out` | commented-out code | the quoted lines |
+| `comment_restates` | a comment the next statement or the identifier already says | the quoted comment and the quoted code |
+| `comment_narrates_change` | a comment about the change ("now", "previously", "the fix", "this PR") instead of why the code exists | the quoted comment; the history belongs in the commit message |
+| `comment_oversized` | a comment longer than the code it explains | the quoted comment and a replacement of one or two lines that keeps the *why* |
+| `test_comment_internals` | a test comment citing C++ internals or `file:line` instead of what is tested in user terms | the quoted comment and the replacement |
+| `scope_creep` | a hunk unrelated to the PR's purpose that makes the diff larger | the hunk and why it is independent of the purpose |
+| `simpler_equivalent` | a strictly smaller replacement with identical behavior | the replacement as a `suggestion` and why the behavior is the same |
+
+Without the evidence, there is no finding. Do not comment on naming, formatting or design taste,
+and never write "consider" or "could be cleaner". A comment that contradicts the code is not a
+simplicity finding: it is a Major in `comments.json`. These findings never change the verdict."""
+
+
 def _self_check():
     return """\
 # Before writing the output
@@ -269,6 +305,18 @@ Write `summary.md` last: the job treats it as the sign that you finished.
 
    `{output_dir}/contract.md`: the PR's intent and the invariants its code has to keep, in a few
    bullets. The next review of this PR starts from it.
+
+   `{output_dir}/simplicity.json`: the simplicity findings, as a JSON array (`[]` when none), in
+   the same shape as `comments.json` plus `rule` and `evidence`:
+
+   ```json
+   [{{"rule": "reuse_existing", "path": "src/Foo.cpp", "line": 88, "side": "RIGHT",
+     "evidence": "src/Columns/IColumn.h:186 recursiveRemoveSparse does the same", "body_file": "{output_dir}/simplicity/1.md"}}]
+   ```
+
+   Each body is at most three sentences, starts with 💡, and ends with a ```` ```suggestion ````
+   block when the fix is a deletion or a replacement on RIGHT lines. The job posts a few of them
+   inline and lists the rest in the summary; do not repeat them in `summary.md`.
 
 2. `{output_dir}/comments.json`: the new inline comments, as a JSON array (`[]` when there are none):
 
@@ -317,6 +365,7 @@ def build(pr_url, repo, context_index, incremental, brief, overlay, output_dir, 
         "# Review instructions\n\n" + skill_review_instructions(skill_path),
         _discussion(),
         _evidence(),
+        _simplicity(),
         _self_check(),
         _loom(bool(brief), overlay, output_dir),
         _output(output_dir),

@@ -491,3 +491,40 @@ def test_coverage_gaps_are_listed():
         _body(d, "coverage.json", json.dumps([{"unit": "U1", "verdict": "clean", "note": "checked callers"}]))
         gaps = publish.coverage_gaps(d, units)
         assert [u["id"] for u in gaps] == ["U2"] and "U2 `src/Foo.cpp` `void g()`" in publish.coverage_markdown(gaps)
+
+
+def test_simplicity_findings_need_evidence_and_get_their_own_budget():
+    files = [{"filename": "src/Foo.cpp", "patch": PATCH}]
+    units = units_mod.scope(units_mod.build(files), None)
+    with tempfile.TemporaryDirectory() as d:
+        def finding(i, line, rule="comment_restates", evidence="quoted", suggestion=True):
+            text = f"💡 {_TOPICS[i]}." + ("\n```suggestion\n```" if suggestion else "")
+            return {"rule": rule, "path": "src/Foo.cpp", "line": line, "side": "RIGHT", "evidence": evidence,
+                    "body_file": _body(d, f"s{i}.md", text)}
+        entries = [finding(0, 12), finding(1, 13), finding(2, 42), finding(3, 43),       # 4 eligible, budget 3
+                   finding(4, 11, suggestion=False),                                      # no suggestion: listed
+                   finding(5, 12, rule="naming"), finding(6, 12, evidence="")]            # dropped
+        inline, listed = publish.validate_simplicity(entries, files, [], d, units, set())
+        assert [c["line"] for c in inline] == [12, 13, 42]
+        assert [e["line"] for e, _, _ in listed] == [43, 11]
+        with open(inline[0]["body_file"]) as f:
+            assert publish.rule_of(f.read()) == "comment_restates"
+        md = publish.simplicity_markdown(listed)
+        assert "Simplification and comments (2)" in md and "`src/Foo.cpp:11` (comment restates)" in md
+
+
+def test_thread_record_tags_the_simplicity_rule():
+    t = _thread("T")
+    t["comments"]["nodes"][0]["body"] = "💡 Obvious comment.\n\n<!-- ai-review-rule: comment_restates -->"
+    rec = loom.thread_record("ClickHouse/ClickHouse", 5, t, context.thread_is_ours)
+    assert {"lens:simplicity", "rule:comment_restates"} <= set(rec["tags"])
+
+
+def test_maintainer_remarks_skip_agents_and_bots():
+    histories = [{"prs": [{"pr_number": 9, "reviews": [
+        {"reviewer": "Avogar", "excerpt": "Let's avoid such AI generated comments", "path": "src/A.cpp", "line": 3, "created_at": "2026-09-02"},
+        {"reviewer": "alexey-milovidov", "excerpt": "🕵 Done for the normalization part", "path": "src/A.cpp", "line": 4, "created_at": "2026-09-03"},
+        {"reviewer": "clickhouse-gh[bot]", "excerpt": "bot text", "path": "src/A.cpp", "line": 5, "created_at": "2026-09-04"}]}]}]
+    remarks = loom._maintainer_remarks(histories)
+    assert [r["reviewer"] for r in remarks] == ["Avogar"]
+    assert "Avogar on #9 at `src/A.cpp:3`" in loom._render_remarks(remarks)[1]

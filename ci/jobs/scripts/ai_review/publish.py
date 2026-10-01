@@ -212,6 +212,84 @@ def validate_comments(entries, files, threads, base_dir, dismissed=None, units=N
     return postable, moved
 
 
+SIMPLICITY_RULES = frozenset({
+    "reuse_existing", "unused_code", "single_use", "impossible_check", "unrecoverable_fallback",
+    "duplicated_block", "commented_out", "comment_restates", "comment_narrates_change",
+    "comment_oversized", "test_comment_internals", "scope_creep", "simpler_equivalent",
+})
+# Simplicity findings have their own, smaller inline budget, so they never
+# displace a bug; only the ones whose fix is a ready `suggestion` go inline.
+MAX_INLINE_SIMPLICITY = 3
+MAX_LISTED_SIMPLICITY = 10
+RULE_MARKER = "<!-- ai-review-rule: {rule} -->"
+_RULE_RE = re.compile(r"<!-- ai-review-rule: ([a-z_]+) -->")
+
+
+def rule_of(body):
+    m = _RULE_RE.search(body or "")
+    return m.group(1) if m else ""
+
+
+def validate_simplicity(entries, files, threads, base_dir, units=None, known_findings=None):
+    """Split simplicity findings into (inline, listed). A finding needs a
+    known rule, evidence, and a line of the diff in code this push changed;
+    inline additionally needs a `suggestion` block on a RIGHT line. Inline
+    entries are written to new body files carrying the rule marker, so the
+    review memory can later tell which rules authors act on."""
+    lines_by_path = {f["filename"]: commentable_lines(f.get("patch")) for f in files}
+    open_texts = {}
+    for t in threads or []:
+        if thread_is_ours(t) and not t.get("isResolved"):
+            first = ((t.get("comments") or {}).get("nodes") or [{}])[0]
+            open_texts.setdefault(t.get("path"), []).append(first.get("body") or "")
+    inline, listed = [], []
+    for e in entries:
+        rule = (e.get("rule") or "").strip()
+        body, _ = _read_body(e, base_dir)
+        if rule not in SIMPLICITY_RULES or not (e.get("evidence") or "").strip() or not body:
+            print(f"Dropping simplicity finding without a known rule, evidence or body: {e.get('path')}:{e.get('line')}")
+            continue
+        path, side = e.get("path") or "", (e.get("side") or "RIGHT").upper()
+        try:
+            line = int(e.get("line"))
+        except (TypeError, ValueError):
+            continue
+        if line not in lines_by_path.get(path, {}).get(side, {}):
+            listed.append((e, body, rule))
+            continue
+        unit = review_units.unit_for_line(units or [], path, line, side)
+        if unit and not review_units.in_scope(unit):
+            continue  # unchanged since the previous review: not this push's to raise
+        if any(_similar(body, other) for other in open_texts.get(path, [])):
+            continue
+        open_texts.setdefault(path, []).append(body)
+        if side == "RIGHT" and "```suggestion" in body and len(inline) < MAX_INLINE_SIMPLICITY:
+            posted = os.path.join(base_dir, "simplicity", f"posted_{len(inline) + 1}.md")
+            os.makedirs(os.path.dirname(posted), exist_ok=True)
+            with open(posted, "w", encoding="utf-8") as f:
+                f.write(body + "\n\n" + RULE_MARKER.format(rule=rule) + "\n")
+            inline.append({"path": path, "line": line, "side": side, "body_file": posted,
+                           "_fingerprint": review_units.finding_fingerprint(path, unit["key"] if unit else "", body)})
+        else:
+            listed.append((e, body, rule))
+    return inline, listed
+
+
+def simplicity_markdown(listed):
+    if not listed:
+        return ""
+    out = ["", f"<details><summary>Simplification and comments ({len(listed)})</summary>", ""]
+    for e, body, rule in listed[:MAX_LISTED_SIMPLICITY]:
+        first = " ".join(body.split("```", 1)[0].split()).lstrip("💡 ").strip()
+        if len(first) > 300:
+            first = first[:300] + " ..."
+        out.append(f"- `{e.get('path')}:{e.get('line')}` ({rule.replace('_', ' ')}): {first}")
+    if len(listed) > MAX_LISTED_SIMPLICITY:
+        out.append(f"- ... and {len(listed) - MAX_LISTED_SIMPLICITY} more of the same kinds")
+    out.append("</details>")
+    return "\n".join(out) + "\n"
+
+
 def coverage_gaps(output_dir, units):
     """In-scope units the agent gave no verdict for in `coverage.json`."""
     try:
@@ -326,7 +404,7 @@ def local_links_to_github(text, repo, sha):
 
 
 def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_text, memory=None,
-            units=None, previous_state=None):
+            units=None, previous_state=None, simplicity=True):
     """Post the inline review and the thread actions. `gh` is the praktika GH
     class (injected for tests). Returns the summary text to post, with the
     comments that could not be attached inline appended."""
@@ -334,6 +412,12 @@ def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_t
     comments, moved = validate_comments(
         _load_json_list(os.path.join(output_dir, "comments.json")), files, threads, output_dir,
         dismissed_findings(memory), units, known)
+    simplicity_inline, simplicity_listed = ([], [])
+    if simplicity:
+        simplicity_inline, simplicity_listed = validate_simplicity(
+            _load_json_list(os.path.join(output_dir, "simplicity.json")), files, threads, output_dir, units, known)
+        print(f"Simplicity findings: {len(simplicity_inline)} inline, {len(simplicity_listed)} in the summary")
+    comments = comments + simplicity_inline
     late = [m for m in moved if m[2] == "code unchanged since the previous review"]
     gaps = coverage_gaps(output_dir, units)
     print(f"Review units: {sum(1 for u in units or [] if review_units.in_scope(u))} in scope, "
@@ -375,8 +459,8 @@ def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_t
             failed.append((action, thread, body_file))
 
     summary = local_links_to_github(summary_text, repo, head_sha)
-    summary = (summary.rstrip() + "\n" + coverage_markdown(gaps) + moved_findings_markdown(moved)
-               + failed_actions_markdown(failed, repo, pr_number, output_dir))
+    summary = (summary.rstrip() + "\n" + simplicity_markdown(simplicity_listed) + coverage_markdown(gaps)
+               + moved_findings_markdown(moved) + failed_actions_markdown(failed, repo, pr_number, output_dir))
     if units is not None:
         findings = list((previous_state or {}).get("findings") or [])
         posted = {c["_fingerprint"] for c in comments if c.get("_fingerprint")}
