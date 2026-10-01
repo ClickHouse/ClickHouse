@@ -2,6 +2,8 @@
 
 #include <Functions/FunctionFactory.h>
 
+#include <Interpreters/ExpressionActions.h>
+
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -36,6 +38,19 @@ std::unordered_set<size_t> convertUsedColumnNamesToUsedProjectionIndexes(const Q
     }
 
     return result;
+}
+
+size_t getSmallestProjectionColumnIndex(const QueryTreeNodePtr & query_or_union_node)
+{
+    auto * union_node = query_or_union_node->as<UnionNode>();
+    auto * query_node = query_or_union_node->as<QueryNode>();
+    NamesAndTypes projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+    if (projection_columns.empty())
+        return 0;
+
+    NamesAndTypesList projection_columns_list(projection_columns.begin(), projection_columns.end());
+    auto smallest_column = ExpressionActions::getSmallestColumn(projection_columns_list, /*skip_subcolumns=*/ false);
+    return std::find(projection_columns.begin(), projection_columns.end(), smallest_column) - projection_columns.begin();
 }
 
 /// We cannot remove aggregate functions, if query does not contain GROUP BY or arrayJoin from subquery projection
@@ -177,9 +192,9 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
             auto used_projection_indexes = convertUsedColumnNamesToUsedProjectionIndexes(query_or_union_node, used_columns);
             updateUsedProjectionIndexes(query_or_union_node, used_projection_indexes);
 
-            /// Keep at least 1 column if used projection columns are empty
+            /// Keep at least 1 column if used projection columns are empty, the one with the smallest type
             if (used_projection_indexes.empty())
-                used_projection_indexes.insert(0);
+                used_projection_indexes.insert(getSmallestProjectionColumnIndex(query_or_union_node));
 
             if (auto * union_node = query_or_union_node->as<UnionNode>())
                 union_node->removeUnusedProjectionColumns(used_projection_indexes);

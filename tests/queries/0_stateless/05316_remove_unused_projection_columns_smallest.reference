@@ -1,0 +1,11 @@
+subquery
+id UInt8
+union all
+id UInt8
+id UInt8
+nested
+id UInt8
+id UInt8
+1000
+1000
+400
