@@ -166,8 +166,8 @@ static IProcessor::CancelReason toCancelReason(PipelineExecutor::ExecutionStatus
 
 void PipelineExecutor::cancel(ExecutionStatus reason)
 {
-    /// It is allowed to cancel not started query by user.
-    if (reason == ExecutionStatus::CancelledByUser)
+    /// A query can be killed, or run out of time, before its execution started.
+    if (reason == ExecutionStatus::CancelledByUser || reason == ExecutionStatus::CancelledByTimeout)
         tryUpdateExecutionStatus(ExecutionStatus::NotStarted, reason);
 
     tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
@@ -196,7 +196,9 @@ bool PipelineExecutor::tryUpdateExecutionStatus(ExecutionStatus expected, Execut
 
 void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
 {
-    checkTimeLimit();
+    if (process_list_element && !process_list_element->checkTimeLimit())
+        cancel(ExecutionStatus::CancelledByTimeout);
+
     num_threads = std::max<size_t>(num_threads, 1);
 
     OpenTelemetry::SpanHolder span("PipelineExecutor::execute()");
@@ -248,33 +250,6 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
     return false;
 }
 
-bool PipelineExecutor::checkTimeLimitSoft()
-{
-    if (process_list_element)
-    {
-        bool continuing = process_list_element->checkTimeLimitSoft();
-
-        // We call cancel here so that all processors are notified and tasks waken up
-        // so that the "break" is faster and doesn't wait for long events
-        if (!continuing)
-            cancel(ExecutionStatus::CancelledByTimeout);
-
-        return continuing;
-    }
-
-    return true;
-}
-
-bool PipelineExecutor::checkTimeLimit()
-{
-    bool continuing = checkTimeLimitSoft();
-
-    if (!continuing)
-        process_list_element->checkTimeLimit(); // Will throw if needed
-
-    return continuing;
-}
-
 void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
 {
     read_progress_callback = std::move(callback);
@@ -297,7 +272,8 @@ void PipelineExecutor::finalizeExecution()
     for (size_t thread_num = 0; thread_num < tasks.getNumThreads(); ++thread_num)
         tasks.getThreadContext(thread_num).flushWorkIntervals();
 
-    checkTimeLimit();
+    if (process_list_element)
+        process_list_element->checkTimeLimit();
 
     auto status = execution_status.load();
     if (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser)
@@ -367,8 +343,11 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
             if (tasks.isFinished())
                 break;
 
-            if (!checkTimeLimitSoft())
+            if (process_list_element && !process_list_element->checkTimeLimitSoft())
+            {
+                cancel(ExecutionStatus::CancelledByTimeout);
                 break;
+            }
 
 #ifndef NDEBUG
             Stopwatch processing_time_watch;

@@ -5036,6 +5036,12 @@ Formatter '%e' in function 'formatDateTime' prints single-digit days with a lead
 If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
 )", 0, \
         {"24.12", true, false, "New setting"}) \
+    DECLARE(Bool, array_count_legacy_uint32_result, false, R"(
+If enabled, function `arrayCount` returns `UInt32` as before version 26.10, instead of `UInt64`. The `UInt32` result silently wraps around for arrays with more than `4294967295` matching elements. The setting also restores the pre-26.10 constness of the result: a predicate folding to a constant false then produces a constant result column even for a non-constant array.
+
+During a rolling upgrade, enable it on the upgraded servers for the users under which distributed queries execute on them, to keep distributed queries initiated by not-yet-upgraded servers fully unchanged (an old initiator does not forward this setting, so type-sensitive expressions evaluated locally on upgraded shards would otherwise observe `UInt64`), and remove it after the upgrade is complete. Which user a shard-side query runs under depends on the cluster configuration: with an interserver `secret` configured, it is the initiator's current user; otherwise it is the user from the cluster definition or from the `remote` table function (`default` unless specified). The simplest robust approach is to enable the setting for all users of the upgraded servers.
+)", 0, \
+        {"26.10", true, false, "`arrayCount` now returns `UInt64` instead of `UInt32`, so that the result is exact for arrays with more than `4294967295` matching elements. Set this setting to `true` to return `UInt32` as before."}) \
     DECLARE(Bool, h3togeo_lon_lat_result_order, false, R"(
 Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
 )", 0, \
@@ -6864,6 +6870,10 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0, \
         {"26.4", false, true, "Enable arrayExists to has rewrite optimization by default, now that type compatibility is checked before rewriting."}) \
+    DECLARE(Bool, optimize_rewrite_array_filter_length_to_array_count, true, R"(
+Rewrite `length(arrayFilter(func, arr))` to `arrayCount(func, arr)`. `arrayFilter` builds an array of the matching elements only for `length` to throw it away, while `arrayCount` just counts them.
+)", 0, \
+        {"26.10", false, true, "New setting to rewrite `length(arrayFilter(func, arr))` into `arrayCount(func, arr)`, which does not build the filtered array."}) \
     DECLARE(Bool, optimize_rewrite_has_to_in, true, R"(
 Rewrite `has` functions to `IN` when the first argument is a constant array. For example, `has([1, 2, 3], x)` can be rewritten to `x IN [1, 2, 3]` for better performance with constant arrays
 )", 0, \
@@ -9314,7 +9324,7 @@ The analyzer is the query analysis and planning infrastructure that has been the
         {"24.8", 1, 1, "Added the alias `enable_analyzer`."}, \
         {"24.3", false, true, "Enable analyzer and planner by default."}) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
-Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`). Aliases defined on subexpressions inside the SELECT list are also considered (for example, in `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` the join is performed by `t1.a + 1 = t2.b`). When the matching alias is defined on a subexpression inside the SELECT list rather than as a top-level alias, parallel replicas are disabled for the query. For queries sent to remote servers (`Distributed` tables, the `remote` table function), such a query is rejected with an exception only when the identifier cannot be resolved on the remote server at all; if the alias shadows a real column of the left table, the remote server joins by that column instead, so the results may differ from local execution.
+Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`). Aliases defined elsewhere in the query are also considered: in the `WITH` clause, on subexpressions inside the SELECT list, or in other clauses (for example, in `WITH a + 1 AS b SELECT count() FROM t1 JOIN t2 USING (b)` and in `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` the join is performed by `t1.a + 1 = t2.b`). When the matching alias is not a top-level alias of the SELECT list, parallel replicas are disabled for the query. For queries sent to remote servers (`Distributed` tables, the `remote` table function), such a query is rejected with an exception only when the identifier cannot be resolved on the remote server at all; if the alias shadows a real column of the left table, the remote server joins by that column instead, so the results may differ from local execution.
 )", 0, \
         {"24.3", false, false, "Force to resolve identifier in JOIN USING from projection"}) \
     DECLARE(Bool, analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested, true, R"(
@@ -9897,7 +9907,8 @@ Enables lazy type hints for the [JSON](/reference/data-types/newjson) type.
 With this setting enabled, `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeName)` that only adds or changes
 type hints is a metadata-only operation: the type hints are applied at query time for existing parts and
 materialized during inserts and background merges instead of rewriting the historical data.
-)", BETA, allow_experimental_json_lazy_type_hints, \
+)", 0, allow_experimental_json_lazy_type_hints, \
+        {"26.10", false, false, "Lazy `JSON` type hints are now GA. This also applies to the alias `allow_experimental_json_lazy_type_hints`."}, \
         {"26.9", false, false, "Lazy JSON type hints are now Beta. An alias for setting 'allow_experimental_json_lazy_type_hints'."}, \
         {"26.3", false, false, "New experimental setting for lazy JSON type hints. At the time the setting was named `allow_experimental_json_lazy_type_hints`, which is now an alias of it."}) \
     DECLARE(Bool, enable_hash_join_row_store, true, R"(
