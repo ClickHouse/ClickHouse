@@ -1,6 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/api-reference
 title: 'API reference'
+sidebarTitle: 'API reference'
 description: 'ClickStack API reference for managing dashboards, alerts, and sources programmatically'
 doc_type: 'guide'
 keywords: ['ClickStack', 'observability', 'API', 'REST API', 'dashboards', 'alerts', 'HyperDX']
@@ -8,25 +9,9 @@ keywords: ['ClickStack', 'observability', 'API', 'REST API', 'dashboards', 'aler
 
 import { Image } from "/snippets/components/Image.jsx";
 
-ClickStack exposes a REST API for programmatically managing dashboards, alerts, and data sources. The API is available for both **Managed ClickStack** (ClickHouse Cloud) and **ClickStack Open Source** deployments, though the endpoints and authentication differ between the two.
+ClickStack exposes a REST API for programmatically managing dashboards, alerts, and data sources.
 
 ## API reference documentation {#api-docs}
-
-<Tabs>
-<Tab title="Managed ClickStack">
-
-For Managed ClickStack, the API is accessed through the **ClickHouse Cloud API**. The ClickStack endpoints are available in the [Cloud API reference](/products/cloud/api-reference/clickstack/click-stack-list-dashboards).
-
-The following endpoints are available:
-
-| Resource | Operations |
-|---|---|
-| **Dashboards** | Create, list, get, update, and delete dashboards |
-| **Alerts** | Create, list, get, update, and delete alerts |
-| **Sources** | List data sources |
-
-</Tab>
-<Tab title="Open Source ClickStack">
 
 For ClickStack Open Source, the full API specification is maintained in the [HyperDX repository](https://github.com/hyperdxio/hyperdx) and can be viewed interactively or downloaded as an OpenAPI spec:
 
@@ -43,28 +28,7 @@ The following endpoints are available:
 | **Sources** | List data sources |
 | **Webhooks** | List webhooks |
 
-</Tab>
-</Tabs>
-
 ## Authentication {#authentication}
-
-<Tabs>
-<Tab title="Managed ClickStack">
-
-Managed ClickStack uses the **ClickHouse Cloud API key** for authentication via [HTTP Basic Authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication). To create and manage API keys, see [Managing API keys](/products/cloud/features/admin-features/api/openapi).
-
-Include the key ID and secret using HTTP Basic Authentication:
-
-```bash
-export KEY_ID=<your_key_id>
-export KEY_SECRET=<your_key_secret>
-
-curl --user $KEY_ID:$KEY_SECRET \
-  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
-```
-
-</Tab>
-<Tab title="Open Source ClickStack">
 
 ClickStack Open Source uses a **Bearer token** for authentication via a **Personal API Access Key**.
 
@@ -94,53 +58,7 @@ curl -H "Authorization: Bearer <YOUR_API_KEY>" \
   http://localhost:8000/api/v2/dashboards
 ```
 
-</Tab>
-</Tabs>
-
 ## Base URL and request format {#base-url}
-
-<Tabs>
-<Tab title="Managed ClickStack">
-
-All Managed ClickStack API requests are sent to the ClickHouse Cloud API:
-
-```bash
-https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/<resource>
-```
-
-You can find your **Organization ID** in the ClickHouse Cloud console under **Organization → Organization details**. Your **Service ID** is visible in the service URL or on the service details page.
-
-### Example: List dashboards {#list-dashboards-managed}
-
-```bash
-curl --user $KEY_ID:$KEY_SECRET \
-  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
-```
-
-### Example: Create an alert {#create-alert-managed}
-
-```bash
-curl -X POST --user $KEY_ID:$KEY_SECRET \
-  -H "Content-Type: application/json" \
-  -d '{
-    "dashboardId": "<DASHBOARD_ID>",
-    "tileId": "<TILE_ID>",
-    "threshold": 100,
-    "interval": "1h",
-    "source": "tile",
-    "thresholdType": "above",
-    "channel": {
-      "type": "webhook",
-      "webhookId": "<WEBHOOK_ID>"
-    },
-    "name": "Error Spike Alert",
-    "message": "Error rate exceeded 100 in the last hour"
-  }' \
-  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/alerts
-```
-
-</Tab>
-<Tab title="Open Source ClickStack">
 
 All Open Source ClickStack API requests are sent to the HyperDX API server on port `8000`:
 
@@ -205,6 +123,3 @@ curl -X POST \
   }' \
   http://localhost:8000/api/v2/charts/series
 ```
-
-</Tab>
-</Tabs>
