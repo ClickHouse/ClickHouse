@@ -1,0 +1,7 @@
+strict read
+ICEBERG_SPECIFICATION_VIOLATION
+tolerant compaction
+3
+DateTime64(6, \'UTC\')	2024-01-01 00:00:00.000000	1
+DateTime64(6, \'UTC\')	2024-01-02 00:00:00.000000	2
+DateTime64(6, \'UTC\')	2024-01-03 00:00:00.000000	3

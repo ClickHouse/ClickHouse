@@ -29,9 +29,9 @@ Where:
 
 The function assumes that the input data set represents a sample from a larger population. If you want to calculate the variance of the entire population (when you have the complete data set), you should use [`varPop`](/reference/functions/aggregate-functions/varPop) instead.
 
-:::note
+<Note>
 This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`varSampStable`](/reference/functions/aggregate-functions/varSampStable) function. It works slower but provides a lower computational error.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_varSamp = R"(
 varSamp(x)
@@ -85,9 +85,9 @@ Where:
 - $\bar{x}$ is the population mean
 - $n$ is the population size
 
-:::note
+<Note>
 This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`varPopStable`](/reference/functions/aggregate-functions/varPopStable) function. It works slower but provides a lower computational error.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_varPop = R"(
 varPop(x)
@@ -129,10 +129,10 @@ FROM test_data;
 Returns the sample standard deviation of a numeric data sequence.
 The result is equal to the square root of [`varSamp`](/reference/functions/aggregate-functions/varSamp).
 
-:::note
+<Note>
 This function uses a numerically unstable algorithm.
 If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`stddevSampStable`](/reference/functions/aggregate-functions/stddevSampStable) function. It works slower but provides a lower computational error.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_stddevSamp = R"(
 stddevSamp(x)
@@ -174,9 +174,9 @@ FROM test_data;
 Returns the population standard deviation of a numeric data sequence.
 The result is equal to the square root of [`varPop`](/reference/functions/aggregate-functions/varPop).
 
-:::note
+<Note>
 This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`stddevPopStable`](/reference/functions/aggregate-functions/stddevPopStable) function. It works slower but provides a lower computational error.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_stddevPop = R"(
 stddevPop(x)
