@@ -329,6 +329,9 @@ TableZnodeInfo TableZnodeInfo::resolve(
         /// recovered by matching the path against `default_replica_path` again. The recovery cannot be
         /// limited to tables with a Nil UUID: after `RENAME TABLE` from `Ordinary` into `Atomic` the table
         /// gets a fresh UUID of its own while the literal path keeps the minted one.
+        /// If `default_replica_path` changes later, the match fails and the table owns only its own znode
+        /// again: the minted parent is left behind, but a changed template never makes `DROP TABLE` remove
+        /// anything the table may not own, and the table keeps loading.
         res.path_prefix_for_drop = std::move(*recovered);
     }
 

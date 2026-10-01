@@ -173,6 +173,45 @@ def test_uuid_shaped_shard_accepted_for_ordinary(started_cluster):
     check_conversion_owns_parent_znode(ch_shard, SHARD_UUID)
 
 
+def test_changed_template_keeps_parent_znode_for_ordinary(started_cluster):
+    """Ownership of the minted znode is recovered through the current `default_replica_path`. Once that template
+    changes, the literal path no longer matches it: the table still loads and `DROP TABLE` removes only the
+    table's own znode, never anything above it, so the minted parent is left behind instead of guessed at."""
+    config_path = "/etc/clickhouse-server/config.d/convert_shard_uuid.xml"
+    old_template = "/clickhouse/tables/{uuid}/{shard}"
+    new_template = "/clickhouse/tables_other/{uuid}/{shard}"
+
+    create_database(ch_shard, "Ordinary")
+    create_mergetree_table(ch_shard, "mt")
+    q(ch_shard, "DETACH TABLE mt")
+    q(ch_shard, "ATTACH TABLE mt AS REPLICATED")
+    q(ch_shard, "SYSTEM RESTORE REPLICA mt")
+    parent_path = get_zookeeper_path(ch_shard, "mt").rpartition("/")[0]
+    parent_name = parent_path.rpartition("/")[2]
+
+    ch_shard.replace_in_config(config_path, old_template, new_template)
+    try:
+        ch_shard.restart_clickhouse()
+        assert get_engine(ch_shard, "mt") == "ReplicatedMergeTree"
+        assert get_zookeeper_path(ch_shard, "mt") == f"{parent_path}/{SHARD_UUID}"
+        assert q(ch_shard, "SELECT count() FROM mt").strip() == "1"
+
+        q(ch_shard, "DROP TABLE mt SYNC")
+        assert not znode_exists(ch_shard, parent_path, SHARD_UUID)
+        assert znode_exists(ch_shard, "/clickhouse/tables", parent_name)
+        ch_shard.query(f"DROP DATABASE {database_name} SYNC")
+    finally:
+        ch_shard.replace_in_config(config_path, new_template, old_template)
+        ch_shard.restart_clickhouse()
+
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        zk.delete(parent_path, recursive=True)
+    finally:
+        zk.stop()
+        zk.close()
+
+
 def test_uuid_inside_component_accepted_for_ordinary(started_cluster):
     parent_name = check_conversion_owns_parent_znode(ch_inside_component, "01")
     assert parent_name.startswith("pika") and parent_name.endswith("chu")
