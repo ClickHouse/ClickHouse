@@ -1,0 +1,246 @@
+---
+slug: /cloud/managed-postgres/guides/phoenix
+sidebarTitle: 'Phoenix (Ecto)'
+title: 'Use Phoenix with ClickHouse Managed Postgres'
+description: 'Connect a Phoenix app to ClickHouse Managed Postgres with Ecto and Postgrex over verified TLS, run migrations, and serve a JSON resource'
+keywords: ['managed postgres', 'phoenix', 'elixir', 'ecto', 'postgrex', 'mix', 'pgbouncer', 'tls', 'migrations']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-phoenix-beta" />
+
+[Phoenix](https://www.phoenixframework.org/) is an Elixir web framework that uses [Ecto](https://ecto.hexdocs.pm/) and the [Postgrex](https://postgrex.hexdocs.pm/) driver to talk to PostgreSQL. In this guide, you create a Phoenix app, connect it to ClickHouse Managed Postgres over verified TLS, run an Ecto migration, and serve a JSON `todos` resource.
+
+## Prerequisites {#prerequisites}
+
+- Elixir 1.15 or later and Erlang/OTP. This guide was tested with Elixir 1.20.4, Erlang/OTP 29, Phoenix 1.8.15, `ecto_sql` 3.14.0, and Postgrex 0.22.4.
+- A ClickHouse Cloud account
+
+## Create a ClickHouse Managed Postgres service {#create-service}
+
+In the ClickHouse Cloud console, click **New service** and select **Postgres**. The instance is ready in a few minutes. See the [quickstart](/products/managed-postgres/quickstart) for a walkthrough.
+
+## Get your connection details {#connection-details}
+
+Open your service and click **Connect** in the left sidebar. The modal shows your username, password, server, and port, and it has a **Directly** / **via PgBouncer** toggle. Keep **Directly** selected and turn on **Use SSL**. Copy the password and the server hostname, then click **Download CA certificate**.
+
+The CA certificate is unique to your service. You can also download it later from **Settings → CA Certificate**.
+
+**Direct or PgBouncer?** A Phoenix app is a long-running process, and Ecto keeps its own pool of connections (`pool_size`, ten by default). This guide connects directly to Postgres on port `5432`. If many app instances together approach the Postgres connection limit, see [Using PgBouncer](#pgbouncer).
+
+## Create a Phoenix app {#create-app}
+
+Install the Phoenix project generator and create an app. Postgres is the default database:
+
+```bash
+mix archive.install hex phx_new
+mix phx.new hello --install
+cd hello
+```
+
+<Tip>
+**Adding to an existing app?**
+
+Skip `mix phx.new`. If your app uses SQLite, the default for `mix phx.new --database sqlite3`, switch it to Postgres first:
+
+- In `mix.exs`, replace `{:ecto_sqlite3, ">= 0.0.0"}` with `{:postgrex, ">= 0.0.0"}`, then run `mix deps.get`.
+- In `lib/<your_app>/repo.ex`, change `adapter: Ecto.Adapters.SQLite3` to `adapter: Ecto.Adapters.Postgres`.
+
+Then continue with [Configure the database connection](#configure-connection). `mix ecto.migrate` creates your existing tables in Postgres, but it doesn't copy data from SQLite. Update `config/test.exs` before you run `mix test`.
+</Tip>
+
+## Configure the database connection {#configure-connection}
+
+Move the CA certificate you downloaded into the app's `priv` directory and rename it to `ca-certificate.pem`. The downloaded file is named after your service, for example `your-service-ca-certificate.pem`:
+
+```bash
+mv ~/Downloads/your-service-ca-certificate.pem priv/ca-certificate.pem
+```
+
+The CA certificate isn't a secret, so you can commit it with your app. Files in `priv` are also included in releases.
+
+In `config/dev.exs`, replace the `username`, `password`, `hostname`, and `database` lines of the `Hello.Repo` configuration with `url` and `ssl`:
+
+```elixir title="config/dev.exs"
+config :hello, Hello.Repo,
+  url: System.get_env("DATABASE_URL"),
+  ssl: [cacertfile: Path.expand("../priv/ca-certificate.pem", __DIR__)],
+  stacktrace: true,
+  show_sensitive_data_on_connection_error: true,
+  pool_size: 10
+```
+
+When `ssl` is a keyword list, Postgrex turns on certificate verification (`verify: :verify_peer`) and hostname checking, and it sends the hostname from the URL as the TLS server name. You only need to pass the CA certificate. `ssl: true` doesn't work, because it checks the server certificate against your operating system's CA store, which doesn't contain your service's CA.
+
+Set `DATABASE_URL` to your service, using a new database name. This guide uses `guide_phoenix`:
+
+```bash
+export DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_phoenix"
+```
+
+<Warning>
+Leave the query string off `DATABASE_URL`. Ecto ignores the `sslmode` and `sslrootcert` parameters from the URL in the **Connect** modal. Without the `ssl` setting, Postgrex connects to port `5432` without TLS.
+</Warning>
+
+Create the database:
+
+```bash
+mix ecto.create
+```
+
+```text
+The database for Hello.Repo has been created
+```
+
+`mix ecto.create` connects to the default `postgres` database with the same TLS settings to run `CREATE DATABASE`.
+
+## Generate a JSON resource and run the migration {#migrations}
+
+Generate a context, schema, migration, and JSON controller for todos:
+
+```bash
+mix phx.gen.json Todos Todo todos title:string done:boolean
+```
+
+In `lib/hello_web/router.ex`, uncomment the `/api` scope and add the resource to it:
+
+```elixir title="lib/hello_web/router.ex"
+  scope "/api", HelloWeb do
+    pipe_through :api
+
+    resources "/todos", TodoController, except: [:new, :edit]
+  end
+```
+
+Apply the migration. In an existing app, this also creates your app's other tables in the new database:
+
+```bash
+mix ecto.migrate
+```
+
+```text
+14:54:14.507 [info] == Running 20261001145404 Hello.Repo.Migrations.CreateTodos.change/0 forward
+14:54:14.507 [info] create table todos
+14:54:14.601 [info] == Migrated 20261001145404 in 0.0s
+```
+
+Ecto records applied migrations in the `schema_migrations` table and only runs new ones on later calls.
+
+## Run and verify {#verify}
+
+Check that the connection is encrypted. The query reads `pg_stat_ssl` for the current connection:
+
+```bash
+mix run -e 'IO.inspect(Hello.Repo.query!("SELECT ssl, version, cipher FROM pg_stat_ssl WHERE pid = pg_backend_pid()").rows)'
+```
+
+```text
+[debug] QUERY OK db=43.9ms decode=2.0ms queue=646.0ms idle=0.0ms
+SELECT ssl, version, cipher FROM pg_stat_ssl WHERE pid = pg_backend_pid() []
+[[true, "TLSv1.3", "TLS_AES_256_GCM_SHA384"]]
+```
+
+Start the server on port `3116`:
+
+```bash
+PORT=3116 mix phx.server
+```
+
+```text
+[info] Access HelloWeb.Endpoint at http://localhost:3116
+```
+
+In a second terminal, create two todos, mark the first one done, and delete the second:
+
+```bash
+curl -X POST http://localhost:3116/api/todos -H "Content-Type: application/json" -d '{"todo": {"title": "Try Phoenix"}}'
+curl -X POST http://localhost:3116/api/todos -H "Content-Type: application/json" -d '{"todo": {"title": "Write a migration"}}'
+curl -X PATCH http://localhost:3116/api/todos/1 -H "Content-Type: application/json" -d '{"todo": {"done": true}}'
+curl -X DELETE http://localhost:3116/api/todos/2
+```
+
+The `PATCH` request returns the updated todo:
+
+```json
+{"data":{"id":1,"done":true,"title":"Try Phoenix"}}
+```
+
+Open `http://localhost:3116/api/todos` in your browser to list the remaining todos:
+
+```json
+{"data":[{"id":1,"done":true,"title":"Try Phoenix"}]}
+```
+
+To see the data in the console, open **SQL console** in the left sidebar of your service, expand `guide_phoenix` and then `public`, and click the `todos` table. The `public` schema also contains `schema_migrations`:
+
+| id | title | done | inserted_at | updated_at |
+|----|-------|------|-------------|------------|
+| 1 | Try Phoenix | true | 2026-10-01 14:54:33 | 2026-10-01 14:54:34 |
+
+## Configure production {#production}
+
+In production, Phoenix reads the database settings from `config/runtime.exs`. In the `Hello.Repo` configuration inside `if config_env() == :prod do`, replace the `# ssl: true,` line with the CA certificate path:
+
+```elixir title="config/runtime.exs"
+  config :hello, Hello.Repo,
+    ssl: [cacertfile: Application.app_dir(:hello, "priv/ca-certificate.pem")],
+    url: database_url,
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+    # For machines with several cores, consider starting multiple pools of `pool_size`
+    # pool_count: 4,
+    socket_options: maybe_ipv6
+```
+
+`Application.app_dir` resolves the path inside your build or release, so the setting works no matter which directory the app starts in. Set `DATABASE_URL` in your deployment environment, again without a query string.
+
+If your app started on SQLite, `config/runtime.exs` reads `DATABASE_PATH` instead. Replace the `database_path` variable and its `config :hello, Hello.Repo` call with:
+
+```elixir title="config/runtime.exs"
+  config :hello, Hello.Repo,
+    url: System.fetch_env!("DATABASE_URL"),
+    ssl: [cacertfile: Application.app_dir(:hello, "priv/ca-certificate.pem")],
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
+```
+
+Apps created with `--database sqlite3` also run pending migrations when a release starts, through the `Ecto.Migrator` child in `lib/<your_app>/application.ex`. That keeps working with Postgres.
+
+## Using PgBouncer {#pgbouncer}
+
+If your app instances together open too many direct connections, connect through the bundled [PgBouncer](/products/managed-postgres/connection#pgbouncer) instead. Select **via PgBouncer** in the **Connect** modal, use port `6432` in `DATABASE_URL`, and add `prepare: :unnamed` to the repo configuration, both in `config/dev.exs` and in `config/runtime.exs`:
+
+```elixir title="config/dev.exs"
+config :hello, Hello.Repo,
+  url: System.get_env("DATABASE_URL"),
+  ssl: [cacertfile: Path.expand("../priv/ca-certificate.pem", __DIR__)],
+  prepare: :unnamed,
+  stacktrace: true,
+  show_sensitive_data_on_connection_error: true,
+  pool_size: 10
+```
+
+PgBouncer runs in transaction pooling mode:
+
+- **Prepared statements**: by default, Ecto runs every query as a named prepared statement, and the bundled PgBouncer supports named statements. Postgrex frees statements with a protocol-level `Close` message, never with SQL `DEALLOCATE`. Still, with the default `prepare: :named`, two problems show up through PgBouncer:
+  - A query whose SQL text is about 4 KB long can hang until it times out. The caller gets `DBConnection.ConnectionError` after about a minute.
+  - After a migration changes a column's type, queries that read the column keep failing with `cached plan must not change result type`, even after you restart the app, because PgBouncer reuses its prepared statement on the server.
+
+  With `prepare: :unnamed`, Postgrex prepares each query again on every run, and both problems go away. Each query takes one extra network round trip.
+- **Migrations**: `mix ecto.migrate` works through PgBouncer with Ecto's default migration lock, which locks the `schema_migrations` table inside a transaction. Don't set `migration_lock: :pg_advisory_lock` for a PgBouncer connection. The session-level advisory lock can be released on a different Postgres connection, which fails with `failed to release advisory lock` and leaves the lock held, so later runs, including runs on port `5432`, wait for it. To run migrations over the direct connection, set a `5432` `DATABASE_URL` for the `mix ecto.migrate` command.
+- **Session state**: `SET` statements, such as a `SET search_path` in an `after_connect` callback, only apply to the current transaction's Postgres connection. A `search_path` in the Postgrex `parameters` option fails with `unsupported startup parameter: search_path`. `LISTEN` and `NOTIFY`, which `Postgrex.Notifications` uses, need a direct connection.
+
+See the [FAQ](/products/managed-postgres/faq#prepared-statement-errors) for more about prepared statements and PgBouncer.
+
+## Troubleshooting {#troubleshooting}
+
+- **`CLIENT ALERT: Fatal - Unknown CA`**: `cacertfile` doesn't point to your service's CA certificate, or you set `ssl: true`. Download the certificate again from **Settings → CA Certificate**. Each service has its own CA.
+- **`CLIENT ALERT: Fatal - Bad Certificate` with `hostname_check_failed`**: the host in `DATABASE_URL` doesn't match the server certificate, for example because you used an IP address. Use the hostname from the **Connect** modal.
+- **`Invalid CA certificate file ... no such file or directory`**: the `cacertfile` path is wrong. Check that `priv/ca-certificate.pem` exists.
+
+## Next steps {#next-steps}
+
+- [Connection](/products/managed-postgres/connection): connection strings, PgBouncer, and TLS
+- [Settings](/products/managed-postgres/settings): Postgres and PgBouncer parameters, such as `max_connections`
+- [Read replicas](/products/managed-postgres/read-replicas): send reads to a replica with Ecto [replica repositories](https://ecto.hexdocs.pm/replicas-and-dynamic-repositories.html)
+- [Sync to ClickHouse](/products/managed-postgres/sync-to-clickhouse/clickpipes): replicate your Phoenix tables to ClickHouse for analytics
