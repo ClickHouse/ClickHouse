@@ -196,9 +196,8 @@ bool ConstantJoin::addBlockToJoin(const Block & source_block, size_t num_rows, J
 {
     const bool select_right_row_mode = plan.right_rows_to_join == OutputPlan::RightRowsToJoin::SelectedRowOnly;
 
-    size_t rows = source_block.rows();
-    if (rows == 0 && num_rows != 0 && !source_block.columns())
-        rows = num_rows;
+    chassert(!source_block.columns() || num_rows == source_block.rows());
+    const size_t rows = num_rows;
 
     total_rows_to_join += rows;
 
