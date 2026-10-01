@@ -21,7 +21,7 @@ FROM (
     INNER JOIN prop_nopk_dst AS d ON s.k = d.k
 );
 
--- Without `use_primary_key` the copy would be a full scan filter, so the pass stays off
+-- `use_primary_key = 0` only removes the pruning; a cheap copy still shrinks the target's input
 SELECT 'primary key analysis off',
        countIf(explain LIKE '%ilter column:%k = 12345%')
 FROM (
