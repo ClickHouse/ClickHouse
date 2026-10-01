@@ -63,6 +63,34 @@ public:
     bool expanded = false;
 };
 
+/// The same, except that it throws after connecting its output, as an allocation still inside
+/// `updatePipeline` would under the memory limit. It keeps owning the sink, like the production
+/// implementations do: this processor's output port points at the sink, so the sink has to outlive
+/// the throw.
+class ThrowingExpander final : public IProcessor
+{
+public:
+    explicit ThrowingExpander(SharedHeader header) : IProcessor({}, OutputPorts(1, header)) {}
+
+    String getName() const override { return "ThrowingExpander"; }
+
+    Status prepare() override
+    {
+        return attempted ? Status::Finished : Status::UpdatePipeline;
+    }
+
+    PipelineUpdate updatePipeline() override
+    {
+        attempted = true;
+        sink = std::make_shared<NullSink>(outputs.front().getSharedHeader());
+        connect(outputs.front(), sink->getPort());
+        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected failure after connecting the new processor");
+    }
+
+    bool attempted = false;
+    std::shared_ptr<NullSink> sink;
+};
+
 }
 
 TEST(ExecutingGraphFailedExpansion, LaterExpansionBailsOutInsteadOfLogicalError)
@@ -100,5 +128,43 @@ TEST(ExecutingGraphFailedExpansion, LaterExpansionBailsOutInsteadOfLogicalError)
 
     /// The other expansion must not walk the inconsistent graph; the query is being cancelled anyway.
     EXPECT_EQ(graph.updateNode(not_expanded, queue, async_queue), ExecutingGraph::UpdateNodeStatus::Cancelled);
+    EXPECT_TRUE(queue.empty());
+}
+
+/// The same, for a failure that happens while the processor is still connecting its ports, before the
+/// graph receives anything. No failpoint: the processor throws by itself, so the window is exact.
+TEST(ExecutingGraphFailedExpansion, ThrowWhileConnectingAlsoBailsOutInsteadOfLogicalError)
+{
+    auto header = makeHeader();
+    auto other = std::make_shared<Expander>(header);
+    auto throwing = std::make_shared<ThrowingExpander>(header);
+
+    auto processors = std::make_shared<Processors>();
+    /// The initialization collects the childless processors in this order and pops them, so the last one
+    /// is expanded first: the throwing expander runs, the other one never gets its turn.
+    processors->push_back(other);
+    processors->push_back(throwing);
+
+    ExecutingGraph graph(processors, /* profile_processors_ = */ false);
+    ExecutingGraph::Queue queue;
+    ExecutingGraph::Queue async_queue;
+
+    try
+    {
+        graph.initializeExecution(queue, async_queue);
+        FAIL() << "the injected failure did not propagate";
+    }
+    catch (const Exception & e)
+    {
+        /// The original error is what reaches the user, not an internal one.
+        EXPECT_EQ(e.code(), ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+    }
+
+    ASSERT_TRUE(throwing->attempted);
+    ASSERT_FALSE(other->expanded);
+
+    /// The other expansion must not walk the graph: the throwing expander's output is connected to a sink
+    /// that never became a node.
+    EXPECT_EQ(graph.updateNode(*other, queue, async_queue), ExecutingGraph::UpdateNodeStatus::Cancelled);
     EXPECT_TRUE(queue.empty());
 }
