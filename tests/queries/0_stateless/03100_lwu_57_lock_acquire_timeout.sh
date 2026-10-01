@@ -2,8 +2,8 @@
 # Tags: long, no-replicated-database, no-parallel
 # long: the lock holds put this at about a minute.
 # no-replicated-database - path in zookeeper differs with replicated database
-# no-parallel: the `infinite_sleep` and `patch_parts_lock_pause_before_cas` failpoints are
-#   server-global, so a concurrent test would park at them or clear them while this one waits.
+# no-parallel: the `completed_pipeline_pause_before_teardown` and `patch_parts_lock_pause_before_cas`
+#   failpoints are server-global, so a concurrent test would clear them while this one waits.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,9 +15,14 @@ set -e
 # database for every test, so tagging by database alone would let one run match another's rows.
 run_id="lwu57-$CLICKHOUSE_DATABASE-$RANDOM$RANDOM"
 
+FP=completed_pipeline_pause_before_teardown
+# Only a query whose id starts with this can park at the failpoint, so unrelated pipelines cannot
+# consume the one-shot arm.
+QID_PREFIX=completed_pipeline_pause_failpoint_
+
 function cleanup()
 {
-    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT infinite_sleep" 2>/dev/null || true
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP" 2>/dev/null || true
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT patch_parts_lock_pause_before_cas" 2>/dev/null || true
     wait || true
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_lwu_timeout_sync SYNC; DROP TABLE IF EXISTS t_lwu_timeout_auto SYNC; DROP TABLE IF EXISTS t_lwu_cas SYNC; DROP TABLE IF EXISTS t_lwu_cancel SYNC; DROP TABLE IF EXISTS t_lwu_plain_sync SYNC; DROP TABLE IF EXISTS t_lwu_plain_auto SYNC" 2>/dev/null || true
@@ -57,10 +62,10 @@ function wait_for_lock_held()
     exit 2
 }
 
-# Starts an update that takes the lock and then parks inside `sleep` at the `infinite_sleep`
-# failpoint, holding the lock until release_holder is called. The hold does not begin expiring before
-# the waiter starts, so how long a waiter blocks is chosen by this test rather than raced against a
-# fixed sleep.
+# Starts an update that takes the lightweight update lock, then parks on the query thread with its
+# pipeline finished but not yet torn down, holding the lock until release_holder is called. The hold
+# does not begin expiring before the waiter starts, so how long a waiter blocks is chosen by this
+# test rather than raced against a fixed sleep.
 function start_parked_holder()
 {
     local table_name=$1
@@ -68,21 +73,39 @@ function start_parked_holder()
     # A plain MergeTree keeps the lock in process memory, so there is no node to count.
     local in_keeper=${3:-1}
 
-    $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT infinite_sleep"
+    holder_qid="${QID_PREFIX}${CLICKHOUSE_DATABASE}_${RANDOM}${RANDOM}"
 
-    $CLICKHOUSE_CLIENT --query "
+    $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP"
+
+    # Everything below reads the armed state as evidence, so an unarmed run would be vacuous.
+    if [[ "$($CLICKHOUSE_CLIENT --query "SELECT enabled FROM system.fail_points WHERE name = '$FP'")" != 1 ]]
+    then
+        echo "Failed to arm the pause for a $mode holder on $table_name" >&2
+        exit 2
+    fi
+
+    $CLICKHOUSE_CLIENT --query_id "$holder_qid" --query "
         SET enable_lightweight_update = 1;
-        UPDATE $table_name SET s = 'xx' WHERE id = 2 AND sleep(0.001) = 0
+        UPDATE $table_name SET s = 'xx' WHERE id = 2
         SETTINGS update_parallel_mode = '$mode';
     " &
 
-    if ! $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT infinite_sleep PAUSE"
+    if ! $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP PAUSE"
     then
         echo "Failed to park a $mode holder of the lightweight update lock on $table_name" >&2
         exit 2
     fi
 
-    # The pause is reached after the lock is taken, so this must already hold.
+    # The wait returns at once when nothing is parked. The failpoint is one-shot and only a query
+    # whose id carries the prefix can consume it, so a zero here is this holder having parked.
+    if [[ "$($CLICKHOUSE_CLIENT --query "SELECT enabled FROM system.fail_points WHERE name = '$FP'")" != 0 ]]
+    then
+        echo "No prefixed query parked for a $mode holder on $table_name" >&2
+        exit 2
+    fi
+
+    # The lock is taken before the pipeline runs and released only when the pipeline is torn down, so
+    # it must be held at the pause.
     if [[ "$in_keeper" == "1" ]]
     then
         wait_for_lock_held "$table_name" "$mode"
@@ -93,7 +116,7 @@ function start_parked_holder()
 # started themselves, so that a waiter can be waited for separately from the holder.
 function release_holder()
 {
-    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT infinite_sleep"
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP"
 }
 
 # Blocks until the query tagged $1 is inside the wait for the lock rather than about to enter it.
