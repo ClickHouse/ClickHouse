@@ -442,34 +442,20 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         new_settings[Setting::additional_table_filters].value.push_back(std::move(tuple));
     }
 
-    /// disable parallel replicas if cluster contains only shards with 1 replica
-    if (context->canUseTaskBasedParallelReplicas())
+    if (context->canUseTaskBasedParallelReplicas() && is_remote_function)
     {
-        bool disable_parallel_replicas = false;
-        if (is_remote_function)
-        {
-            if (cluster.getName().empty()) // disable parallel replicas with remote() table functions w/o configured cluster
-                disable_parallel_replicas = true;
-            else
-                new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
-        }
-
-        if (!disable_parallel_replicas)
-        {
-            disable_parallel_replicas = true;
-            for (const auto & shard : cluster.getShardsInfo())
-            {
-                if (shard.getAllNodeCount() > 1)
-                {
-                    disable_parallel_replicas = false;
-                    break;
-                }
-            }
-        }
-
-        if (disable_parallel_replicas)
+        /// `remote()` without a configured cluster has no cluster to scope parallel replicas to.
+        if (cluster.getName().empty())
             new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+        else
+            new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
     }
+    /// Whether this hop can read with parallel replicas is decided per shard below, from the shard's
+    /// replica count, and not here by turning the setting off: `new_settings` is what the shard
+    /// receives. A cluster whose every shard has one replica cannot use parallel replicas for this hop,
+    /// but the shard's own table may be a `Distributed` table over a cluster that can, and shipping the
+    /// disable there took parallel replicas away from that read too. A shard that cannot use them
+    /// declines on its own, see `canUseParallelReplicasOnInitiator`.
 
     if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
     {
