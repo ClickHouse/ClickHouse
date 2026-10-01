@@ -1405,6 +1405,13 @@ void RefreshTask::executeRefresh()
         znode.attempt_number = 0;
         znode.randomness_obsolete = drawRandomness();
     }
+    else if (retriesExhausted(znode))
+    {
+        /// `determineNextRefreshTime` will skip to the next scheduled refresh as if this one succeeded.
+        /// Consume the dependency refreshes this attempt ran after, as a success would. Otherwise they
+        /// still look new, and a view without REFRESH EVERY starts another refresh right away, forever.
+        znode.last_success_dependencies = std::move(execution.dependencies);
+    }
     execution.znode = znode;
 
     chassert(execution.state == ExecutionState::State::Running);
@@ -1721,6 +1728,12 @@ void RefreshTask::syncDependenciesForRefresh(const std::vector<StorageID> & deps
     }
 }
 
+bool RefreshTask::retriesExhausted(const CoordinationZnode & znode) const
+{
+    Int64 retries = refresh_settings[RefreshSetting::refresh_retries];
+    return retries >= 0 && znode.attempt_number > retries;
+}
+
 static std::chrono::milliseconds backoff(Int64 retry_idx, const RefreshSettings & refresh_settings)
 {
     UInt64 delay_ms = 0;
@@ -1738,7 +1751,7 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
 {
     chassert(lock.owns_lock());
     auto znode = coordination.root_znode;
-    if (refresh_settings[RefreshSetting::refresh_retries] >= 0 && znode.attempt_number > refresh_settings[RefreshSetting::refresh_retries])
+    if (retriesExhausted(znode))
     {
         /// Skip to the next scheduled refresh, as if a refresh succeeded.
         znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, znode.last_attempt_time, znode.last_attempt_time, false);
