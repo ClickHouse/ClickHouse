@@ -67,11 +67,8 @@ class SegmentedPostingListCodec
             readVarUInt(v, in);
             payload_bytes = static_cast<uint64_t>(v);
 
-            readVarUInt(v, in);
-            cardinality = static_cast<uint32_t>(v);
-
-            readVarUInt(v, in);
-            first_row_id = static_cast<uint32_t>(v);
+            readVarUInt(cardinality, in);
+            readVarUInt(first_row_id, in);
         }
 
         /// Block codec used for this segment's payload. Filled by read.

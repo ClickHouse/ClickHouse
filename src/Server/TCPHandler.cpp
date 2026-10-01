@@ -2889,6 +2889,11 @@ void TCPHandler::processUnexpectedQuery()
     readVarUInt(skip_uint_64, *in);
 
     readVarUInt(skip_uint_64, *in);
+    if (skip_uint_64 > 1)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Unknown compression state: {}",
+            skip_uint_64);
     last_block_in.compression = static_cast<Protocol::Compression>(skip_uint_64);
 
     readStringBinary(skip_string, *in);
