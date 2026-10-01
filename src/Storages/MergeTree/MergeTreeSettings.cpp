@@ -2554,11 +2554,18 @@ Requires `enable_block_number_column` and `enable_block_offset_column` to be ena
     DECLARE(Bool, enable_adaptive_codec_selection, false, R"(
 When enabled, merges and mutations choose a codec per block for columns that use the default codec (no `CODEC` clause, or `CODEC(Default)`).
 The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it.
-The smallest output wins. Compression is therefore never worse than the default, and incompressible blocks are stored raw.
+The smallest output wins and incompressible blocks are stored raw. The choice is made on one block in every `adaptive_codec_selection_period` blocks and reused for the blocks in between.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
 Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions) table function.
 )", EXPERIMENTAL, \
         {"26.8", false, false, "New setting."}) \
+    DECLARE(NonZeroUInt64, adaptive_codec_selection_period, 8, R"(
+Pricing a block means compressing it with every candidate codec and keeping the smallest output. With `enable_adaptive_codec_selection`, a column stream is split into windows of this many blocks, one sampled block per window is priced and the other blocks reuse its winner.
+A block reusing the winner is priced too when the winner writes more per source byte than the runner-up did on the priced block. When nothing shrank the priced block there is no winner, so the next block is priced.
+A priced block is never larger than the default codec would make it, a block reusing the winner may be.
+`1` prices every block. Compact parts always price every block.
+)", EXPERIMENTAL, \
+        {"26.10", 8, 8, "New setting"}) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL, \

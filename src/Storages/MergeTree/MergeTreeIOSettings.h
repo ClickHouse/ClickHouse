@@ -172,6 +172,7 @@ struct MergeTreeWriterSettings
     size_t adaptive_write_buffer_initial_size{};
     bool compress_per_column_in_compact_parts{};
     bool apply_adaptive_codec = false;
+    UInt64 adaptive_codec_selection_period = 1;
 };
 
 }
