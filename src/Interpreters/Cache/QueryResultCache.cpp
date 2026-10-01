@@ -1053,6 +1053,14 @@ void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_
     cache.setMaxCount(max_entries);
     max_entry_size_in_bytes = max_entry_size_in_bytes_;
     max_entry_size_in_rows = max_entry_size_in_rows_;
+
+    /// A cache with a zero limit can not store entries, so no writer will ever insert into it again (see `canStoreEntries`).
+    /// The eviction is lazy and happens only upon insert, hence drop the existing entries now, otherwise they would linger.
+    if (max_size_in_bytes == 0 || max_entries == 0 || max_entry_size_in_bytes_ == 0)
+    {
+        cache.clear();
+        times_executed.clear();
+    }
 }
 
 QueryResultCacheReader QueryResultCache::createReader(const Key & key)
