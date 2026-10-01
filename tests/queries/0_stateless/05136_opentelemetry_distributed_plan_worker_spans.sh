@@ -27,6 +27,8 @@ ${CLICKHOUSE_CLIENT} -q "drop table if exists t_dp_otel"
 ${CLICKHOUSE_CLIENT} -q "create table t_dp_otel (x UInt64) engine = MergeTree order by tuple()"
 ${CLICKHOUSE_CLIENT} -q "insert into t_dp_otel select number % 10 from numbers(10000)"
 
+# The test profile sets a global max_rows_to_group_by; distributed aggregation cannot enforce
+# it once the aggregation is split per bucket and refuses the plan, so pin it to 0.
 function run_query
 {
     local _execute_locally="$1"
@@ -41,7 +43,8 @@ function run_query
                 distributed_plan_fallback_to_local_execution = 0,
                 distributed_plan_default_shuffle_join_bucket_count = 2,
                 distributed_plan_default_reader_bucket_count = 2,
-                distributed_plan_max_rows_to_broadcast = 0"
+                distributed_plan_max_rows_to_broadcast = 0,
+                max_rows_to_group_by = 0"
 }
 
 # Counts of the spans of one trace, in the order asserted below:
