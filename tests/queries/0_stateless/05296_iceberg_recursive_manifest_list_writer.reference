@@ -1,10 +1,10 @@
 --- repeated named record type that is not recursive ---
 missing required field
 --- recursive record ---
-nested deeper than 256 levels
+ICEBERG_SPECIFICATION_VIOLATION: nested deeper than 256 levels
 --- recursive record behind a nullable union ---
 missing required field
 --- recursive record behind a nullable union, nested 1000000 levels deep ---
-nested deeper than 256 levels
+ICEBERG_SPECIFICATION_VIOLATION: nested deeper than 256 levels
 --- stateless server is still alive ---
 1

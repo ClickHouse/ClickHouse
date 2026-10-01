@@ -1812,6 +1812,7 @@ void forEachAvroEntry(
     ContextPtr context,
     const String & logger_name,
     std::function<void(const avro::GenericDatum &)> callback)
+try
 {
     RelativePathWithMetadata relative_path_with_metadata(filename);
     auto manifest_list_buf = createReadBuffer(relative_path_with_metadata, object_storage, context, getLogger(logger_name));
@@ -1830,6 +1831,10 @@ void forEachAvroEntry(
     avro::GenericDatum datum(reader.readerSchema());
     while (reader.read(datum))
         callback(datum);
+}
+catch (const avro::Exception & e)
+{
+    throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Cannot read Avro file {}: {}", filename, e.what());
 }
 
 PartitionColumnValues getIdentityPartitionColumnValues(
