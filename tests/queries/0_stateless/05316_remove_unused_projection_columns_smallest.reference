@@ -6,6 +6,15 @@ id UInt8
 nested
 id UInt8
 id UInt8
+group by
+k String
+window
+k String
+union all, costly in the second branch
+k String
+toString(id) String
 1000
 1000
 400
+256
+1000

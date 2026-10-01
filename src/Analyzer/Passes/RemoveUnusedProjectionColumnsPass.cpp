@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionActions.h>
 
 #include <Analyzer/AggregationUtils.h>
+#include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -40,7 +41,27 @@ std::unordered_set<size_t> convertUsedColumnNamesToUsedProjectionIndexes(const Q
     return result;
 }
 
-size_t getSmallestProjectionColumnIndex(const QueryTreeNodePtr & query_or_union_node)
+/// Keeping a column with an aggregate function, a window function or a subquery forces a computation the query plan cannot drop
+bool isCostlyProjectionColumn(const QueryTreeNodePtr & query_or_union_node, size_t index)
+{
+    if (auto * union_node = query_or_union_node->as<UnionNode>())
+    {
+        const auto & queries = union_node->getQueries().getNodes();
+        return std::any_of(queries.begin(), queries.end(), [index](const auto & query) { return isCostlyProjectionColumn(query, index); });
+    }
+
+    const auto & projection_node = query_or_union_node->as<const QueryNode &>().getProjection().getNodes().at(index);
+    if (hasAggregateFunctionNodes(projection_node) || hasWindowFunctionNodes(projection_node))
+        return true;
+
+    bool has_subquery = false;
+    traverseQueryTree(projection_node,
+        [&has_subquery](const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return !has_subquery; },
+        [&has_subquery](const QueryTreeNodePtr & node) { has_subquery = has_subquery || isQueryOrUnionNode(node); });
+    return has_subquery;
+}
+
+size_t getCheapestProjectionColumnIndex(const QueryTreeNodePtr & query_or_union_node)
 {
     auto * union_node = query_or_union_node->as<UnionNode>();
     auto * query_node = query_or_union_node->as<QueryNode>();
@@ -48,9 +69,21 @@ size_t getSmallestProjectionColumnIndex(const QueryTreeNodePtr & query_or_union_
     if (projection_columns.empty())
         return 0;
 
-    NamesAndTypesList projection_columns_list(projection_columns.begin(), projection_columns.end());
-    auto smallest_column = ExpressionActions::getSmallestColumn(projection_columns_list, /*skip_subcolumns=*/ false);
-    return std::find(projection_columns.begin(), projection_columns.end(), smallest_column) - projection_columns.begin();
+    std::vector<size_t> candidates;
+    for (size_t i = 0; i < projection_columns.size(); ++i)
+        if (!isCostlyProjectionColumn(query_or_union_node, i))
+            candidates.push_back(i);
+
+    if (candidates.empty())
+        for (size_t i = 0; i < projection_columns.size(); ++i)
+            candidates.push_back(i);
+
+    NamesAndTypesList candidate_columns;
+    for (size_t i : candidates)
+        candidate_columns.push_back(projection_columns[i]);
+
+    auto smallest_column = ExpressionActions::getSmallestColumn(candidate_columns, /*skip_subcolumns=*/ false);
+    return *std::find_if(candidates.begin(), candidates.end(), [&](size_t i) { return projection_columns[i] == smallest_column; });
 }
 
 /// We cannot remove aggregate functions, if query does not contain GROUP BY or arrayJoin from subquery projection
@@ -192,9 +225,9 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
             auto used_projection_indexes = convertUsedColumnNamesToUsedProjectionIndexes(query_or_union_node, used_columns);
             updateUsedProjectionIndexes(query_or_union_node, used_projection_indexes);
 
-            /// Keep at least 1 column if used projection columns are empty, the one with the smallest type
+            /// Keep at least 1 column if used projection columns are empty, the cheapest one
             if (used_projection_indexes.empty())
-                used_projection_indexes.insert(getSmallestProjectionColumnIndex(query_or_union_node));
+                used_projection_indexes.insert(getCheapestProjectionColumnIndex(query_or_union_node));
 
             if (auto * union_node = query_or_union_node->as<UnionNode>())
                 union_node->removeUnusedProjectionColumns(used_projection_indexes);
