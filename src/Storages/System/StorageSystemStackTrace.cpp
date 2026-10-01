@@ -146,18 +146,23 @@ void signalHandler(int, siginfo_t * info, void * context)
         return;
 
 #ifdef OS_DARWIN
-    /// Re-verify after acquiring the latch. This closes the race window where
-    /// expected_responding_thread or sequence_num could change between the
-    /// pre-check above and latch acquisition (e.g. if this handler was delayed
-    /// past the wait timeout and the main thread moved on to another thread).
-    if (reinterpret_cast<uintptr_t>(pthread_self()) != expected_responding_thread.load(std::memory_order_acquire))
+    /// Load before the check below: a number loaded after it could already belong to the next thread.
+    int notification_num = sequence_num.load(std::memory_order_acquire);
+#endif
+
+    /// Check again under the latch: a handler delayed between the check above and the latch may run after the reader
+    /// has timed out and moved on to another thread, whose data it must not overwrite.
+#ifdef OS_LINUX
+    const bool still_expected = notification_num == sequence_num.load(std::memory_order_acquire);
+#else
+    const bool still_expected = reinterpret_cast<uintptr_t>(pthread_self()) == expected_responding_thread.load(std::memory_order_acquire);
+#endif
+    if (!still_expected)
     {
         signal_latch.store(false, std::memory_order_release);
         errno = saved_errno;
         return;
     }
-    int notification_num = sequence_num.load(std::memory_order_acquire);
-#endif
 
     /// All these methods are signal-safe.
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
