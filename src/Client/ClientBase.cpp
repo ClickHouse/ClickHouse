@@ -2172,13 +2172,17 @@ void ClientBase::onProfileEvents(Block & block)
             /// (workload resource requests), summed up into a single "waited" figure.
             else if (event_name == throttler_sleep_name || event_name == scheduler_io_read_wait_name || event_name == scheduler_io_write_wait_name)
                 thread_times[host_name].waited_us += value;
+            /// The gauges below can also come in several rows for one host, e.g. from several
+            /// shards on one server. Sum the current usage like the CPU time above, so that the
+            /// `RAM` and `disk` figures stay comparable with it. The peak is not additive over
+            /// time, so take the maximum: it remains the peak of the largest single source.
             else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
-                thread_times[host_name].memory_usage = value;
+                thread_times[host_name].memory_usage += value;
             else if (event_name == MemoryTracker::PEAK_USAGE_EVENT_NAME)
-                thread_times[host_name].peak_memory_usage = value;
+                thread_times[host_name].peak_memory_usage = std::max(thread_times[host_name].peak_memory_usage, value);
             /// Keep the literal in sync with TemporaryDataOnDiskScope::USAGE_EVENT_NAME.
             else if (event_name == "TemporaryDataOnDiskUsage")
-                thread_times[host_name].temp_data_on_disk_usage = value;
+                thread_times[host_name].temp_data_on_disk_usage += value;
         }
         progress_indication.updateThreadEventData(thread_times);
         progress_table.updateTable(block);
