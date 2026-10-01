@@ -131,7 +131,8 @@ void validateWriteFormat(const StorageObjectStorageConfiguration & configuration
             "DeltaLake tables can only contain Parquet data files, got format `{}`",
             configuration.format);
 
-    /// The spellings `chooseCompressionMethod` maps to `CompressionMethod::None` for a `.parquet` path.
+    /// Outer object compression would hide the Parquet magic from Delta readers; Parquet's own codec is set via
+    /// `output_format_parquet_compression_method`. Allow only spellings that `chooseCompressionMethod` maps to `None`.
     const auto compression_method = Poco::toLower(configuration.compression_method);
     if (!compression_method.empty() && compression_method != "auto" && compression_method != "none")
         throw Exception(
