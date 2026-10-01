@@ -486,7 +486,7 @@ IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object,
 
 bool IcebergMetadata::optimize(
     [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
-    [[maybe_unused]] ContextPtr context,
+    ContextPtr context,
     [[maybe_unused]] const std::optional<FormatSettings> & format_settings)
 {
     checkTableRootIsQueriedPath("OPTIMIZE");
@@ -495,7 +495,37 @@ bool IcebergMetadata::optimize(
     if (!compaction_enabled)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Enable `allow_experimental_iceberg_compaction` setting to call OPTIMIZE for Iceberg tables.");
+#else
+    if (!context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables.");
+#endif
 
+    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+        object_storage,
+        persistent_components.table_path,
+        getMetadataLookupSettings(),
+        persistent_components.metadata_cache,
+        context,
+        log.get(),
+        persistent_components.table_uuid,
+        persistent_components.metadata_compression_method);
+    auto metadata_object = getMetadataJSONObject(
+        metadata_file_path, object_storage, persistent_components.metadata_cache, context, log, compression_method, persistent_components.table_uuid);
+    const Int64 current_snapshot_id = !metadata_object->has(f_current_snapshot_id) || metadata_object->isNull(f_current_snapshot_id)
+        ? -1
+        : metadata_object->getValue<Int64>(f_current_snapshot_id);
+    /// A rewrite republishes a snapshot chain built from append history, so on a table without a
+    /// current snapshot it would resurrect the rows that `SELECT` reads as gone.
+    if (current_snapshot_id < 0)
+    {
+        LOG_INFO(log, "No current snapshot found, skipping compaction");
+        return true;
+    }
+    if (!traverseMetadataAndFindNecessarySnapshotObject(metadata_object, current_snapshot_id, persistent_components.schema_processor))
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot found for id `{}`", current_snapshot_id);
+
+#if CLICKHOUSE_CLOUD
     if (!iceberg_compaction_metadata_generator)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Background compaction is not initialized. This is a bug.");
@@ -503,26 +533,18 @@ bool IcebergMetadata::optimize(
     iceberg_compaction_metadata_generator->waitUntilUpdated();
     return true;
 #else
-    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
-    {
-        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        auto snapshots_info = getHistory(context);
-        compactIcebergTable(
-            snapshots_info,
-            persistent_components,
-            object_storage,
-            getMetadataLookupSettings(),
-            format_settings,
-            sample_block,
-            context,
-            write_format);
-        return true;
-    }
-    else
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables.");
-    }
+    const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+    auto snapshots_info = getHistory(context);
+    compactIcebergTable(
+        snapshots_info,
+        persistent_components,
+        object_storage,
+        getMetadataLookupSettings(),
+        format_settings,
+        sample_block,
+        context,
+        write_format);
+    return true;
 #endif
 }
 
