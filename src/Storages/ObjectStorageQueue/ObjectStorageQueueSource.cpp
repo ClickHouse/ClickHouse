@@ -1369,6 +1369,26 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 }
             }
 
+            /// Check the precondition of `makeDeduplicationToken` before the first pull. A file
+            /// that still has no strong tag can never be read with deduplication, so this is a
+            /// read-path failure of this file like the fetches around it, which burns its retry
+            /// budget, not an insert failure, which would send the whole batch down the
+            /// reset-for-retry path again and again.
+            if (add_deduplication_info && !hasStrongETag(reader.getObjectInfo()->getObjectMetadata()))
+            {
+                try
+                {
+                    makeDeduplicationToken(reader.getObjectInfo()->getObjectMetadata(), file_metadata->getPath(), /*row_offset=*/ 0);
+                }
+                catch (...)
+                {
+                    processed_files.back().state = FileState::ErrorOnRead;
+                    processed_files.back().exception_during_read = getCurrentExceptionMessage(true);
+                    processed_files.back().exception_during_read_code = getCurrentExceptionCode();
+                    throw;
+                }
+            }
+
             /// Tags are not fetched during listing (it lists with with_tags = false), so populate
             /// them on demand here, once per file, only when _tags is requested. Must run after
             /// emplace_back so a fetch failure fails the already-claimed file through the normal
