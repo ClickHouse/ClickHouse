@@ -13,7 +13,9 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTableFunction.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -221,7 +223,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= static_cast<double>(settings[Setting::ignore_drop_queries_probability]))
         {
             ast_drop_query.sync = false;
-            if (table->storesDataOnDisk())
+            /// TRUNCATE is kept only for rows the table itself holds in the server: these tables keep
+            /// their data elsewhere or hold none, and a real DROP leaves that data alone.
+            if (table->storesDataOnDisk() || table->isObjectStorage()
+                || typeid_cast<const StorageAlias *>(table.get()) || typeid_cast<const StorageTableFunctionProxy *>(table.get()))
             {
                 LOG_TEST(getLogger("InterpreterDropQuery"), "Ignore DROP TABLE query for table {}.{}", table_id.database_name, table_id.table_name);
                 return {};
