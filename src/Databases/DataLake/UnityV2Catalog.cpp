@@ -447,6 +447,20 @@ bool UnityV2Catalog::updateSchema(
     });
 }
 
+Poco::JSON::Object::Ptr UnityV2Catalog::removeSnapshots(
+    const String & namespace_name,
+    const String & table_name,
+    Poco::JSON::Object::Ptr base_metadata,
+    const std::vector<Int64> & snapshot_ids,
+    const std::vector<String> & ref_names) const
+{
+    /// `nullptr` means a commit conflict (HTTP 409) and the caller retries, so the result is passed through unchanged.
+    return requestWithRetry([&](bool force_refresh)
+    {
+        return getIcebergRestCatalog(force_refresh)->removeSnapshots(namespace_name, table_name, base_metadata, snapshot_ids, ref_names);
+    });
+}
+
 void UnityV2Catalog::getTableMetadata(
     const std::string & namespace_name,
     const std::string & table_name,
