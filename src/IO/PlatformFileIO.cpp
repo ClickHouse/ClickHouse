@@ -11,7 +11,6 @@
 
 #if defined(OS_WINDOWS)
 #include <io.h>
-#include <sys/utime.h>
 #include <Poco/UnWindows.h>
 #else
 #include <sys/file.h>
@@ -210,10 +209,46 @@ int platformRmdir(const std::string & path)
 
 int platformSetFileTimes(const std::string & path, time_t access_time, time_t modification_time)
 {
-    struct _utimbuf times{};
-    times.actime = access_time;
-    times.modtime = modification_time;
-    return ::_wutime(pathFromString(path).c_str(), &times);
+    /// Not `_wutime`: it opens the file without `FILE_FLAG_BACKUP_SEMANTICS`, so it cannot open
+    /// a directory and fails with `EACCES` - and the directories of new data parts get their
+    /// modification time set on every `INSERT` into a `MergeTree` table.
+    auto * handle = CreateFileW(
+        pathFromString(path).c_str(),
+        FILE_WRITE_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS,
+        nullptr);
+
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        errno = GetLastError() == ERROR_FILE_NOT_FOUND || GetLastError() == ERROR_PATH_NOT_FOUND ? ENOENT : EACCES;
+        return -1;
+    }
+
+    /// `FILETIME` counts 100-nanosecond ticks since 1601-01-01.
+    auto to_file_time = [](time_t time)
+    {
+        constexpr Int64 ticks_per_second = 10'000'000;
+        constexpr Int64 seconds_between_epochs = 11'644'473'600;
+        const auto ticks = static_cast<UInt64>((static_cast<Int64>(time) + seconds_between_epochs) * ticks_per_second);
+        FILETIME file_time;
+        file_time.dwLowDateTime = static_cast<DWORD>(ticks & 0xFFFFFFFFull);
+        file_time.dwHighDateTime = static_cast<DWORD>(ticks >> 32);
+        return file_time;
+    };
+
+    const FILETIME access = to_file_time(access_time);
+    const FILETIME modification = to_file_time(modification_time);
+    const bool ok = SetFileTime(handle, nullptr, &access, &modification);
+    CloseHandle(handle);
+    if (!ok)
+    {
+        errno = EACCES;
+        return -1;
+    }
+    return 0;
 }
 
 int platformChmod(const std::string & path, mode_t mode)
