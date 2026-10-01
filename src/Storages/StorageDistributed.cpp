@@ -32,6 +32,7 @@
 #include <Columns/ColumnConst.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
@@ -1955,6 +1956,9 @@ void StorageDistributed::flushAndPrepareForShutdown()
     }
     catch (...)
     {
+        /// Swallowing a kill would let shutdown() and then drop() delete a spool that was never
+        /// sent, so a killed DDL has to fail. Every other flush failure stays non-fatal.
+        CurrentThread::checkIfNotCancelled();
         tryLogCurrentException(log, "Cannot flush");
     }
 }
@@ -1997,6 +2001,11 @@ void StorageDistributed::flushClusterNodesAllDataImpl(ContextPtr local_context, 
         }
 
         runner.waitForAllToFinishAndRethrowFirstError();
+
+        /// Every drain loop polls before its work, so a kill landing during the last send has no
+        /// successor iteration to notice it. Reporting success to a killed DROP here would let it
+        /// proceed to delete a spool that was never sent.
+        CurrentThread::checkIfNotCancelled();
 
         LOG_INFO(log, "Pending INSERT blocks flushed, took {} ms.", watch.elapsedMilliseconds());
     }

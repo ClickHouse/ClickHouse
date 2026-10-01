@@ -1,0 +1,14 @@
+pending dist_t: 5
+pending dist_batched: 2
+S1 killed: 1
+S1 pending dist_t: 4
+S2 drop left processlist: cancelled
+S2 dist_t exists: 1
+S2 pending dist_t kept: 4
+S2 killed: 1
+S3 killed: 1
+S3 pending dist_batched: 2
+S4 killed: 1
+S4 dist_batched exists: 1
+S4 pending dist_batched: 0
+S5 rows delivered: 8
