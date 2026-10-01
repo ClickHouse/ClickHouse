@@ -18,26 +18,19 @@ namespace DB::CoreSettings
 /// Rewrites the value in place and returns whether anything was masked.
 using ValueMaskingFunc = std::function<bool(String &)>;
 
-/// A URL carries its credential either as `user:password@` userinfo or, when it is presigned, in the
-/// query parameters, and either form can appear in the same setting.
-///
-/// Scanning for a presigned parameter is only sound on a value that is one whole URL: such a value
-/// ends at `&`, at `#` or at the end of the text, so on a URL embedded in a longer string it would
-/// run past the end of the URL. Every setting masked with this holds one whole URL, so the
-/// precondition holds by construction and needs no check.
+/// A setting value that is one whole URL, masked with the shared `maskURICredentials` (userinfo plus
+/// presigned parameters). One settings-only twist: a statement is masked for logging before its
+/// settings are validated, so a value that no URI parser can read still reaches a log; if it has no
+/// authority but does carry an '@', hide it whole (fail closed). This is safe here because every
+/// setting below holds one whole URL - it is not applied to non-URL sources such as file paths.
 inline bool maskURLCredentials(String & value)
 {
-    /// A statement is masked for logging before its settings are validated, so a value that no URI
-    /// parser can read still reaches a log.
     if (findURIAuthority(value) == String::npos && value.contains('@'))
     {
         value = "[HIDDEN]";
         return true;
     }
-
-    bool masked = maskURIUserinfo(value);
-    masked |= maskPresignedURLParameters(value);
-    return masked;
+    return maskURICredentials(value);
 }
 
 /// The settings of the query-level `Settings` collection whose value can carry a credential, and how
