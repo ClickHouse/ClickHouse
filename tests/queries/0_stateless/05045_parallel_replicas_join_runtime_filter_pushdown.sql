@@ -24,7 +24,6 @@ SET enable_join_runtime_filters = 1;
 -- The runtime filter has to be built whatever the probe side is estimated to be: under parallel
 -- replicas that estimate is unknown, and the join order randomizer replaces it with a random one.
 SET join_runtime_filter_min_probe_rows = 0;
-SET parallel_replicas_filter_pushdown = 1;
 -- Keep the small table on the build side so the plan shape below is stable.
 SET query_plan_join_swap_table = false;
 -- The plan below asserts that the filter reaches the read step as a `PREWHERE`, so pin the two

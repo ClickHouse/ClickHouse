@@ -1,0 +1,8 @@
+the read orders itself off the condition
+Read type: InOrder
+and answers correctly
+5	5
+5	105
+5	205
+the replicas were sent that same condition
+1	1
