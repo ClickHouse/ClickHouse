@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
 
+#include <Disks/IDisk.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 
 #include <IO/ReadSettings.h>
@@ -60,17 +61,19 @@ namespace
 
 /// Both writers land the bytes the same way; only what produces them differs. The file goes
 /// straight to its final name: it is written into a part nothing can see before `publish`, and
-/// each name at most once, so a crash leaves a torn file only in a temporary part.
+/// each name at most once, so a crash leaves a torn file only in a temporary part. The file and
+/// then the directory are fsynced: a published bitmap lost on power failure resurrects its rows.
 template <typename WriteBody>
 MergeTreeDataPartChecksum writeBitmapFile(IDataPartStorage & storage, const String & file_name, WriteBody && write_body)
 {
+    /// Syncs the directory on scope exit, after the file is written and synced.
+    auto sync_guard = storage.getDirectorySyncGuard();
     WriteSettings write_settings;
     auto buf = storage.writeFile(file_name, /*buf_size=*/4096, WriteMode::Rewrite, write_settings);
     HashingWriteBuffer hashing(*buf);
     write_body(hashing);
     hashing.finalize();
     const MergeTreeDataPartChecksum checksum{hashing.count(), hashing.getHash()};
-    /// A published bitmap that is lost on power failure resurrects the rows it deleted.
     buf->sync();
     buf->finalize();
 
