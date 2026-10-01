@@ -4135,16 +4135,16 @@ class QueryResultElement extends HTMLElement
                    selectors override them without touching the rendered SVG. Only the default
                    colors Graphviz emits for an EXPLAIN graph are matched, so a graph that asks
                    for a color of its own still gets it. */
-                #graph svg [fill="black"] { fill: var(--text-color); }
-                #graph svg [stroke="black"] { stroke: var(--text-color); }
-                #graph svg [fill="white"] { fill: var(--graph-node-color); }
-                #graph svg [stroke="white"] { stroke: var(--graph-node-color); }
-                #graph svg [fill="lightgrey"] { fill: var(--graph-cluster-color); }
-                #graph svg [stroke="lightgrey"] { stroke: var(--graph-cluster-color); }
+                #graph svg [fill="black"], #plan-graph svg [fill="black"] { fill: var(--text-color); }
+                #graph svg [stroke="black"], #plan-graph svg [stroke="black"] { stroke: var(--text-color); }
+                #graph svg [fill="white"], #plan-graph svg [fill="white"] { fill: var(--graph-node-color); }
+                #graph svg [stroke="white"], #plan-graph svg [stroke="white"] { stroke: var(--graph-node-color); }
+                #graph svg [fill="lightgrey"], #plan-graph svg [fill="lightgrey"] { fill: var(--graph-cluster-color); }
+                #graph svg [stroke="lightgrey"], #plan-graph svg [stroke="lightgrey"] { stroke: var(--graph-cluster-color); }
 
                 /* Labels carry no fill attribute unless the graph sets fontcolor: they default
                    to black. */
-                #graph svg text:not([fill]) { fill: var(--text-color); }
+                #graph svg text:not([fill]), #plan-graph svg text:not([fill]) { fill: var(--text-color); }
 
                 /* The Plan view: the EXPLAIN PLAN json = 1 tree. A top-level view like the Logs and
                    Metrics ones, so its visibility is owned by showView, not by the renderer. */
@@ -4195,16 +4195,29 @@ class QueryResultElement extends HTMLElement
                     margin-left: 0.8rem;
                 }
 
-                /* Graphviz output is drawn for a light background, exactly as the pipeline graph is. */
+                /* The rendering on the left, the details pane (when open) on the right. */
+                #plan-body
+                {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 1rem;
+                }
+
+                #plan-tree
+                {
+                    flex: 1 1 auto;
+                    min-width: 0;
+                    font-size: 90%;
+                }
+
+                /* Themed by the Graphviz rules above, like the pipeline graph. */
                 #plan-graph
                 {
                     display: none;
-                    margin: auto;
+                    flex: 1 1 auto;
+                    min-width: 0;
                     overflow: auto;
-                    background: white;
-                    color: black;
                     padding: 0.5rem;
-                    border-radius: 3px;
                 }
 
                 #plan-graph svg
@@ -4218,7 +4231,6 @@ class QueryResultElement extends HTMLElement
                     list-style: none;
                     margin: 0;
                     padding: 0;
-                    font-size: 90%;
                 }
 
                 /* Every level but the outermost is indented, with a guide line so the parentage of a
@@ -4255,9 +4267,19 @@ class QueryResultElement extends HTMLElement
                     color: var(--syntax-keyword);
                 }
 
-                .plan-desc, .plan-id
+                .plan-desc
                 {
                     color: var(--misc-text-color);
+                }
+
+                /* Which input of a join a node is. */
+                .plan-role
+                {
+                    color: var(--misc-text-color);
+                    border: 1px solid var(--border-color);
+                    border-radius: 3px;
+                    padding: 0 0.3rem;
+                    font-size: 85%;
                 }
 
                 .plan-props
@@ -4302,14 +4324,27 @@ class QueryResultElement extends HTMLElement
                     color: var(--selection-color);
                 }
 
-                /* The details pane, under whichever rendering is up. */
+                /* Sticky, so it stays in view while a tall plan scrolls past it. */
                 #plan-details
                 {
                     display: none;
-                    margin-top: 0.75rem;
-                    padding-top: 0.5rem;
-                    border-top: 1px solid var(--border-color);
+                    flex: 0 1 36rem;
+                    min-width: 18rem;
+                    max-height: calc(100vh - 2rem);
+                    overflow: auto;
+                    position: sticky;
+                    top: 1rem;
+                    padding-left: 1rem;
+                    border-left: 1px solid var(--border-color);
                     font-size: 90%;
+                }
+
+                /* Too narrow for two columns: the pane goes under the plan. */
+                @media (max-width: 60rem)
+                {
+                    #plan-body { flex-direction: column; align-items: stretch; }
+                    #plan-details { flex: none; position: static; max-height: none; padding: 0.5rem 0 0;
+                                    border-left: none; border-top: 1px solid var(--border-color); }
                 }
 
                 .plan-details-heading
@@ -4564,9 +4599,11 @@ class QueryResultElement extends HTMLElement
                     </span>
                     <span class="plan-button" id="plan-details-button"></span>
                 </div>
-                <div id="plan-tree" class="monospace"></div>
-                <div id="plan-graph"></div>
-                <div id="plan-details" class="monospace"></div>
+                <div id="plan-body">
+                    <div id="plan-tree" class="monospace"></div>
+                    <div id="plan-graph"></div>
+                    <div id="plan-details" class="monospace"></div>
+                </div>
             </div>
         `;
 
@@ -7954,14 +7991,15 @@ class QueryResultElement extends HTMLElement
     /// DOT is written here from the same parsed tree the Tree rendering walks, and drawn with the very
     /// Viz.js that already renders those pipeline graphs.
     ///
-    /// A node's label carries what its tree row carries: the node type, its description, its scalar
-    /// properties, and each structured property as a name and a count (the contents of those stay in
-    /// the Tree rendering, where they can be unfolded - inlining them here would draw a wall of text).
+    /// A node's label is its type, description and scalar properties; the structured ones (an
+    /// `Expression` on almost every node under `actions = 1`) stay in the tree and the details pane.
     _planDot()
     {
         /// A Graphviz string literal escapes `\` and `"`. Label lines end with `\l`, which breaks the
         /// line AND left-aligns it; a plain `\n` centres them, which makes properties hard to scan.
         const quote = (s) => String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        /// Long values (filter columns, join clauses) are clipped here; the details pane has them whole.
+        const clip = (s) => (s.length > 60 ? s.slice(0, 59) + '…' : s);
         /// Edges run CHILD -> PARENT, the direction the data actually moves: a plan node consumes the
         /// output of the nodes below it, so the arrows point from the sources up to the final output.
         /// `rankdir="BT"` then keeps the picture the same way up as the tree rendering and as the
@@ -7971,8 +8009,11 @@ class QueryResultElement extends HTMLElement
             'digraph plan',
             '{',
             '  rankdir="BT";',
-            '  node [shape=rect, style=rounded, fontname="monospace", fontsize=10];',
-            '  edge [arrowsize=0.7];',
+            /// Helvetica and a transparent canvas as in `renderGraph`, so labels fit and the theme applies;
+            /// a filled box (white, recolored by the theme rules) takes a click anywhere inside it.
+            '  graph [fontname="Helvetica", bgcolor="transparent"];',
+            '  node [shape=rect, style="rounded,filled", fillcolor="white", fontname="Helvetica", fontsize=10];',
+            '  edge [arrowsize=0.7, fontname="Helvetica", fontsize=9];',
         ];
         let next_id = 0;
         /// Which plan node each DOT id stands for, so a click on a rendered box finds its way back to
@@ -7986,13 +8027,14 @@ class QueryResultElement extends HTMLElement
             const label = [node.type]
                 .concat(node.description ? [node.description] : [])
                 .concat(node.scalars.map(([key, value]) => key + ': ' + value))
-                .concat(node.structured.map(([key, value]) =>
-                    key + ' ' + (Array.isArray(value) ? '[' + value.length + ']' : '{' + Object.keys(value).length + '}')))
-                .map((line) => quote(line) + '\\l')
+                .map((line) => quote(clip(line)) + '\\l')
                 .join('');
             lines.push('  ' + id + ' [label="' + label + '"];');
             for (const child of node.children)
-                lines.push('  ' + emit(child) + ' -> ' + id + ';');
+            {
+                const edge_label = child.role ? ' [label=" ' + quote(child.role) + '"]' : '';
+                lines.push('  ' + emit(child) + ' -> ' + id + edge_label + ';');
+            }
             return id;
         };
         emit(this._explain_plan);
@@ -8069,6 +8111,10 @@ class QueryResultElement extends HTMLElement
         this._btnPlanDetails.classList.toggle('active', this._plan_details_open);
         if (this._plan_details_open) this._renderPlanDetails();
         this._planDetails.style.display = this._plan_details_open ? 'block' : 'none';
+        /// The pane narrows the graph, which may push the selected box out of its horizontal scroll.
+        const box = this._plan_boxes.find(({ node }) => node === this._plan_selected);
+        if (this._plan_details_open && box && this._plan_mode === 'graph')
+            box.shape.scrollIntoView({ block: 'nearest', inline: 'center' });
     }
 
     /// Mark the selected node in whichever rendering is on screen: the tree row gets a class, the graph
@@ -8267,10 +8313,11 @@ class QueryResultElement extends HTMLElement
         return prop;
     }
 
-    /// One plan node: its line (caret, node type, description, node id), its scalar properties inline
-    /// beneath that line, and a nested list holding its structured properties followed by its child
-    /// plans. The plan levels are expanded on creation - a plan is shallow, and its shape is the
-    /// point of the view - while the structured properties come collapsed (see `_planValueElement`).
+    /// One plan node: its line (caret, join input role, node type, description), its scalar
+    /// properties inline beneath that line, and a nested list holding its structured properties
+    /// followed by its child plans. The plan levels are expanded on creation - a plan is shallow, and
+    /// its shape is the point of the view - while the structured properties come collapsed (see
+    /// `_planValueElement`).
     _planNodeElement(node)
     {
         const li = document.createElement('li');
@@ -8294,11 +8341,8 @@ class QueryResultElement extends HTMLElement
             props.appendChild(this._planPropElement(key, value));
 
         row.appendChild(this._planCaret(li, node.scalars.length + nested > 0));
-        const type = document.createElement('span');
-        type.className = 'plan-type';
-        type.textContent = node.type;
-        row.appendChild(type);
-        for (const [text, cls] of [[node.description, 'plan-desc'], [node.id, 'plan-id']])
+        const labels = [[node.role, 'plan-role'], [node.type, 'plan-type'], [node.description, 'plan-desc']];
+        for (const [text, cls] of labels)
         {
             if (!text) continue;
             const span = document.createElement('span');
@@ -8306,6 +8350,8 @@ class QueryResultElement extends HTMLElement
             span.textContent = text;
             row.appendChild(span);
         }
+        /// The node id is on every node, so it is a tooltip here and spelled out in the details pane.
+        if (node.id) row.title = node.id;
 
         /// The row is the node's click target: selecting it offers its details. Registered here (not
         /// found by a selector later) so the mapping from element back to plan node is exact.
@@ -11857,16 +11903,6 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// the URL parameters, so a query that intentionally chooses a framing still overrides this.
     url += '&framing_output_format=None&default_format=' + (user_framing ? framed_default_format : default_format);
 
-    /// An `EXPLAIN` whose plan the Plan view can render is SENT with `json = 1` added, so the response
-    /// is the tree of objects `parseExplainPlan` reads instead of the indented text. The decision is
-    /// made from the lexer's tokens (`explainPlanRequest`), not a text match, so an `EXPLAIN` inside a
-    /// string literal or a comment is not mistaken for one, and a kind that rejects the setting
-    /// (`PIPELINE`, `AST`, ...) is left alone.
-    ///
-    /// Only the bytes on the wire change: `queryText` below, the tab's history and
-    /// `last_query_for_download` all keep the query as the user wrote it, so re-running from history
-    /// re-derives the same request and the Download button re-runs what the editor shows.
-    ///
     targetResultEl.queryText = query;
 
     let is_table = false;
@@ -18184,14 +18220,14 @@ const EXPLAIN_NON_PLAN_KIND_WORDS = new Set([
 ///   indexes - the `Indexes` section on every `ReadFromMergeTree`: the index type and keys, the
 ///             condition, the search algorithm, and the initial/selected parts AND granules, which is
 ///             where the node details' pruning numbers come from;
-///   header  - the `Header` section on every node: the columns it outputs, with their types.
+///   header  - the `Header` section on every node: the columns it outputs, with their types;
+///   actions - the per-step details: a join's kind, strictness, algorithm and clauses, the sort and
+///             aggregation keys, and an `Expression` DAG per node (two to three times the payload).
 ///
-/// `indexes` and `header` are safe to add because they are purely ADDITIVE - they attach sections to
-/// the plan's nodes without changing its shape. `extremes` is the cautionary counter-example: it puts
-/// an `Extremes` NODE in the plan, which is why `postImpl` withholds it from a plan request. `actions`
-/// is deliberately NOT here: it triples the payload with a full expression DAG per node, which the
-/// details pane can show whenever the user asks for it themselves.
-const EXPLAIN_PLAN_SETTINGS = ['json', 'indexes', 'header'];
+/// All four are ADDITIVE - they attach sections to the plan's nodes without changing its shape.
+/// `extremes` is the counter-example: it puts an `Extremes` NODE in the plan, which is why `postImpl`
+/// withholds it from a plan request.
+const EXPLAIN_PLAN_SETTINGS = ['json', 'indexes', 'header', 'actions'];
 
 /// The setting name a token spells. `ParserSetQuery` parses a settings-list name with a full
 /// identifier parser, so it may also arrive as a quoted identifier; both spellings name the same
@@ -18312,11 +18348,12 @@ function applyExplainPlanInsertion(query, insertion)
 const EXPLAIN_PLAN_IDENTITY_KEYS = new Set(['Node Type', 'Node Id', 'Description', 'Plans']);
 
 /// Normalize one `EXPLAIN PLAN json = 1` payload into the tree the Plan view renders. Each node
-/// becomes `{type, id, description, scalars, structured, children}`, where the node's own properties
-/// are split by how the view shows them: a scalar (`Limit`, `Reads All Data`, `Sort Description`, ...)
-/// renders inline beside the node, while an array- or object-valued property (`Header`, `Expression`,
-/// `Indexes`, `Actions`, ...) becomes a collapsible sub-node, because those run to hundreds of lines
-/// once `actions = 1` is on.
+/// becomes `{type, id, description, scalars, structured, children, role}`, where the node's own
+/// properties are split by how the view shows them: a scalar (`Limit`, `Reads All Data`, `Clauses`,
+/// ...) renders inline beside the node, while an array- or object-valued property (`Header`,
+/// `Expression`, `Indexes`, `Sort Description`, ...) becomes a collapsible sub-node, because those run
+/// to hundreds of lines once `actions = 1` is on. `role` names the input of a two-input `Join` a node
+/// is (`left`, `right · build`), and is empty everywhere else.
 ///
 /// Returns null when the payload is not a plan at all - the top level must be the `[{"Plan": ...}]`
 /// that `EXPLAIN PLAN json = 1` produces. The JSON itself is parsed by the CALLER, which only reaches
@@ -18338,13 +18375,25 @@ function parseExplainPlan(parsed)
             if (value !== null && typeof value === 'object') structured.push([key, value]);
             else scalars.push([key, String(value)]);
         }
+        const children = Array.isArray(raw.Plans)
+            ? raw.Plans.filter((c) => c && typeof c === 'object').map(node) : [];
+        if (raw['Node Type'] === 'Join' && children.length === 2)
+        {
+            children[0].role = 'left';
+            children[1].role = 'right';
+            /// `FillRightFirst` builds from the right input first; `Swapped` exchanges the two pipelines
+            /// at execution without reordering the plan's inputs (`JoinStep::updatePipeline`).
+            if (raw.Description === 'JOIN FillRightFirst')
+                children[raw.Swapped === true ? 0 : 1].role += ' · build';
+        }
         return {
             type: typeof raw['Node Type'] === 'string' ? raw['Node Type'] : '(unknown)',
             id: typeof raw['Node Id'] === 'string' ? raw['Node Id'] : '',
             description: typeof raw.Description === 'string' ? raw.Description : '',
             scalars,
             structured,
-            children: Array.isArray(raw.Plans) ? raw.Plans.filter((c) => c && typeof c === 'object').map(node) : [],
+            children,
+            role: '',
         };
     };
     return node(root.Plan);

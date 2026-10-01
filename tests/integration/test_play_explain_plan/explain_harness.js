@@ -15,10 +15,10 @@
 ///  - the insertion goes at the FRONT of the settings list, carrying the separating comma only when a
 ///    list is already there, so both `EXPLAIN PLAN json = 1, ... SELECT ...` and
 ///    `EXPLAIN PLAN json = 1, ..., indexes=1 SELECT ...` are valid SQL;
-///  - `indexes` and `header` are turned on alongside `json`, because they are what the node-details
-///    pane shows (the table and output columns, and the per-index parts/granules pruning), and they
-///    are purely additive - they attach sections to the nodes without changing the plan's shape. An
-///    entry the statement already spells is never added again, so an explicit `indexes = 0` stands;
+///  - `indexes`, `header` and `actions` are turned on alongside `json`, because they are what the
+///    node details show (the output columns, the per-index pruning, a join's kind and clauses), and
+///    they are purely additive - they attach sections to the nodes without changing the plan's shape.
+///    An entry the statement already spells is never added again, so an explicit `indexes = 0` stands;
 ///  - a `json` setting the user wrote is never overwritten, in either direction: `json = 1` already
 ///    yields a tree, and `json = 0` is how the classic indented text is asked for back;
 ///  - the SVG path is untouched. A `digraph` response comes from `graph = 1`, a setting of
@@ -29,7 +29,8 @@
 ///    token lengths before it - a sum that would be wrong if the insignificant tokens were dropped);
 ///  - `parseExplainPlan` normalizes the payload into the tree the view renders, splitting each node's
 ///    properties into the scalars shown inline and the array/object ones shown as collapsible
-///    sub-nodes, and returning null for anything that is not an `EXPLAIN PLAN json = 1` payload.
+///    sub-nodes, naming the inputs of a join (`left`, `right · build`), and returning null for
+///    anything that is not an `EXPLAIN PLAN json = 1` payload.
 ///
 /// Driven by `test.py` inside the `clickhouse/mysql-js-client` container (node:22-alpine), against
 /// the `/play` page served by a real ClickHouse server. Can also be run standalone against a
@@ -123,19 +124,19 @@ function run(html) {
 
     /// The two spellings of the kind, and the two shapes of the settings list.
     check('rewrite', 'bare EXPLAIN gets the setting', wire('EXPLAIN SELECT 1'),
-        { plan: true, sent: 'EXPLAIN json = 1, indexes = 1, header = 1 SELECT 1' });
+        { plan: true, sent: 'EXPLAIN json = 1, indexes = 1, header = 1, actions = 1 SELECT 1' });
     check('rewrite', 'the setting lands after a spelled-out PLAN', wire('EXPLAIN PLAN SELECT 1'),
-        { plan: true, sent: 'EXPLAIN PLAN json = 1, indexes = 1, header = 1 SELECT 1' });
+        { plan: true, sent: 'EXPLAIN PLAN json = 1, indexes = 1, header = 1, actions = 1 SELECT 1' });
     check('rewrite', 'an existing settings list keeps its entries behind a comma',
         wire('EXPLAIN PLAN indexes=1, actions=1 SELECT 1'),
         { plan: true, sent: 'EXPLAIN PLAN json = 1, header = 1, indexes=1, actions=1 SELECT 1' });
     check('rewrite', 'a one-entry list is still a list', wire('EXPLAIN header=1 SELECT 1'),
-        { plan: true, sent: 'EXPLAIN json = 1, indexes = 1, header=1 SELECT 1' });
+        { plan: true, sent: 'EXPLAIN json = 1, indexes = 1, actions = 1, header=1 SELECT 1' });
     check('rewrite', 'case is irrelevant', wire('explain plan select 1'),
-        { plan: true, sent: 'explain plan json = 1, indexes = 1, header = 1 select 1' });
+        { plan: true, sent: 'explain plan json = 1, indexes = 1, header = 1, actions = 1 select 1' });
     check('rewrite', 'a CTE after the setting is still parsed by the server',
         wire('EXPLAIN WITH cte AS (SELECT 1) SELECT * FROM cte'),
-        { plan: true, sent: 'EXPLAIN json = 1, indexes = 1, header = 1 WITH cte AS (SELECT 1) SELECT * FROM cte' });
+        { plan: true, sent: 'EXPLAIN json = 1, indexes = 1, header = 1, actions = 1 WITH cte AS (SELECT 1) SELECT * FROM cte' });
 
     /// The user's own `json` choice wins, in both directions.
     check('user json', 'json = 1 already asks for the tree', wire('EXPLAIN PLAN json=1 SELECT 1'),
@@ -156,13 +157,16 @@ function run(html) {
     /// explicit choice: the pane showing less is far better than silently changing what was asked for.
     check('detail settings', 'an explicit indexes = 0 is preserved, not overridden',
         wire('EXPLAIN PLAN indexes=0 SELECT 1'),
-        { plan: true, sent: 'EXPLAIN PLAN json = 1, header = 1, indexes=0 SELECT 1' });
+        { plan: true, sent: 'EXPLAIN PLAN json = 1, header = 1, actions = 1, indexes=0 SELECT 1' });
     check('detail settings', 'an explicit header = 0 is preserved, not overridden',
         wire('EXPLAIN PLAN header=0 SELECT 1'),
-        { plan: true, sent: 'EXPLAIN PLAN json = 1, indexes = 1, header=0 SELECT 1' });
-    check('detail settings', 'a statement that already sets both gets only json',
-        wire('EXPLAIN PLAN indexes=1, header=1 SELECT 1'),
-        { plan: true, sent: 'EXPLAIN PLAN json = 1, indexes=1, header=1 SELECT 1' });
+        { plan: true, sent: 'EXPLAIN PLAN json = 1, indexes = 1, actions = 1, header=0 SELECT 1' });
+    check('detail settings', 'an explicit actions = 0 is preserved, not overridden',
+        wire('EXPLAIN PLAN actions=0 SELECT 1'),
+        { plan: true, sent: 'EXPLAIN PLAN json = 1, indexes = 1, header = 1, actions=0 SELECT 1' });
+    check('detail settings', 'a statement that already sets all three gets only json',
+        wire('EXPLAIN PLAN indexes=1, header=1, actions=1 SELECT 1'),
+        { plan: true, sent: 'EXPLAIN PLAN json = 1, indexes=1, header=1, actions=1 SELECT 1' });
     check('detail settings', 'a user json = 1 is respected entirely, detail settings and all',
         wire('EXPLAIN PLAN json=1 SELECT 1'),
         { plan: true, sent: 'EXPLAIN PLAN json=1 SELECT 1' });
@@ -192,17 +196,17 @@ function run(html) {
 
     /// The insertion offset is a sum over the tokens, including the insignificant ones.
     check('offsets', 'a leading block comment shifts the insertion', wire('/* c */ EXPLAIN SELECT 1'),
-        { plan: true, sent: '/* c */ EXPLAIN json = 1, indexes = 1, header = 1 SELECT 1' });
+        { plan: true, sent: '/* c */ EXPLAIN json = 1, indexes = 1, header = 1, actions = 1 SELECT 1' });
     check('offsets', 'a leading line comment shifts the insertion', wire('-- c\nEXPLAIN SELECT 1'),
-        { plan: true, sent: '-- c\nEXPLAIN json = 1, indexes = 1, header = 1 SELECT 1' });
+        { plan: true, sent: '-- c\nEXPLAIN json = 1, indexes = 1, header = 1, actions = 1 SELECT 1' });
     check('offsets', 'newlines and tabs are counted', wire('\n\tEXPLAIN\n\tPLAN\n\tSELECT 1'),
-        { plan: true, sent: '\n\tEXPLAIN\n\tPLAN json = 1, indexes = 1, header = 1\n\tSELECT 1' });
+        { plan: true, sent: '\n\tEXPLAIN\n\tPLAN json = 1, indexes = 1, header = 1, actions = 1\n\tSELECT 1' });
     check('offsets', 'a multi-byte character before the insertion does not skew it',
         wire('/* ✓éü */ EXPLAIN SELECT 1'),
-        { plan: true, sent: '/* ✓éü */ EXPLAIN json = 1, indexes = 1, header = 1 SELECT 1' });
+        { plan: true, sent: '/* ✓éü */ EXPLAIN json = 1, indexes = 1, header = 1, actions = 1 SELECT 1' });
     check('offsets', 'degenerate input is inert', wire(''), { plan: false, sent: '' });
     check('offsets', 'a lone EXPLAIN still gets the setting', wire('EXPLAIN'),
-        { plan: true, sent: 'EXPLAIN json = 1, indexes = 1, header = 1' });
+        { plan: true, sent: 'EXPLAIN json = 1, indexes = 1, header = 1, actions = 1' });
 
     /// parseExplainPlan, on the shape `EXPLAIN PLAN json = 1, indexes = 1, header = 1` really returns.
     const payload = [{ Plan: {
@@ -236,6 +240,18 @@ function run(html) {
         ['Indexes', 'Expression']);
     check('parse', 'a node with only identity keys has no properties',
         [tree.children[0].scalars.length, tree.children[0].children.length], [0, 0]);
+
+    /// The two inputs of a join, as `JoinStepLogical` describes it: `JOIN <pipeline type>`.
+    const join = (description, extra = {}) => H.parseExplainPlan([{ Plan: { 'Node Type': 'Join', Description: description,
+        ...extra, Plans: [{ 'Node Type': 'Expression' }, { 'Node Type': 'Expression' }] } }]).children.map(c => c.role);
+    check('parse', 'a hash join names its inputs and the build side', join('JOIN FillRightFirst'), ['left', 'right · build']);
+    check('parse', 'a swapped join builds from its first input', join('JOIN FillRightFirst', { Swapped: true }),
+        ['left · build', 'right']);
+    check('parse', 'a merge join has no build side', join('JOIN YShaped'), ['left', 'right']);
+    check('parse', 'only Join inputs get a role',
+        H.parseExplainPlan([{ Plan: { 'Node Type': 'Union', Plans: [{ 'Node Type': 'A' }, { 'Node Type': 'B' }] } }])
+            .children.map(c => c.role), ['', '']);
+    check('parse', 'the root has no role', tree.role, '');
 
     /// A plan node whose type is missing still renders rather than throwing.
     const nameless = H.parseExplainPlan([{ Plan: { Description: 'x' } }]);
