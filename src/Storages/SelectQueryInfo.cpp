@@ -27,7 +27,7 @@ bool SelectQueryInfo::isStream() const
     return table_expression_modifiers && table_expression_modifiers->hasStream();
 }
 
-std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
+std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn(bool for_index_hint) const
 {
     std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
     if (planner_context)
@@ -39,9 +39,17 @@ std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNod
             /// so they should not be added to the input nodes.
             if (table_expression_data.hasAliasColumn(column_name))
                 continue;
-            /// Filters can already use column names, and then this identifier means the column with this name.
-            if (column_identifier != column_name && table_expression_data.hasColumn(column_identifier))
-                continue;
+            /// A name can be both an identifier and a column name. It means the column in filters, and in `indexHint`
+            /// arguments only for a column that is referenced only there, which is not read and keeps its name.
+            if (column_identifier != column_name)
+            {
+                bool is_column_name = for_index_hint
+                    ? !table_expression_data.hasColumn(column_identifier)
+                        && std::ranges::contains(table_expression_data.getAccessCheckedColumnsNames(), column_identifier)
+                    : table_expression_data.hasColumn(column_identifier);
+                if (is_column_name)
+                    continue;
+            }
             const auto & column = table_expression_data.getColumnOrThrow(column_name);
             node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(nullptr, column.type, column_name));
         }

@@ -1,7 +1,7 @@
 -- Tags: no-fasttest, no-parallel, use-rocksdb, no-parallel-replicas
 -- Tag no-parallel: another test's SYSTEM CLEAR QUERY CONDITION CACHE would remove the entry the repeated JOIN must hit.
 -- A filter on a column named like another column's qualified name (`__table1.k` next to `k`) must use that column in
--- primary key, partition, skip index, PREWHERE, row policy, query condition cache and storage key analysis.
+-- primary key, partition, skip index, `indexHint`, PREWHERE, row policy, query condition cache and storage key analysis.
 
 DROP TABLE IF EXISTS t_dotted;
 CREATE TABLE t_dotted (k UInt64, `__table1.k` UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 128;
@@ -44,6 +44,14 @@ CREATE TABLE t_tuple (k UInt64, `__table1` Tuple(k UInt64)) ENGINE = MergeTree O
 INSERT INTO t_tuple SELECT number, tuple(2000 - number) FROM numbers(2000);
 SELECT count(), sum(k) FROM t_tuple WHERE `__table1`.k IN (1, 2);
 
+DROP TABLE IF EXISTS t_hint;
+CREATE TABLE t_hint (k UInt64, `__table1.k` UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_hint SELECT number, 2000 - number FROM numbers(2000);
+-- `indexHint` keeps the granules its argument selects: by `k` for `k`, all of them for `__table1.k`.
+SELECT sum(k), sum(`__table1.k`) FROM t_hint WHERE indexHint(k IN (1, 2));
+SELECT sum(k) FROM t_hint WHERE indexHint(`__table1.k` IN (1, 2));
+SELECT sum(k) FROM t_hint WHERE indexHint(k IN (1, 2));
+
 DROP TABLE IF EXISTS t_rocksdb;
 CREATE TABLE t_rocksdb (k UInt64, `__table1.k` UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY k;
 INSERT INTO t_rocksdb SELECT number, 2000 - number FROM numbers(2000);
@@ -71,6 +79,7 @@ DROP TABLE t_part;
 DROP TABLE t_skip;
 DROP TABLE t_final;
 DROP TABLE t_tuple;
+DROP TABLE t_hint;
 DROP TABLE t_rocksdb;
 DROP TABLE t_qcc;
 DROP TABLE t_qcc_build;
