@@ -264,7 +264,7 @@ Field convertIntervalOffset(const Field & offset, IntervalKind kind, const DataT
 
     is_calendar = false;
     UInt64 units_per_interval = 0;
-    switch (kind.kind)
+    switch (kind.getKind())
     {
         case IntervalKind::Kind::Month:
         case IntervalKind::Kind::Quarter:
@@ -274,7 +274,7 @@ Field convertIntervalOffset(const Field & offset, IntervalKind kind, const DataT
                     "Interval window frame offset INTERVAL {} {} is not supported for a DateTime ORDER BY column, use a Date key instead",
                     count, kind.toKeyword());
             is_calendar = true;
-            units_per_interval = kind.kind == IntervalKind::Kind::Month ? 1 : kind.kind == IntervalKind::Kind::Quarter ? 3 : 12;
+            units_per_interval = kind.getKind() == IntervalKind::Kind::Month ? 1 : kind.getKind() == IntervalKind::Kind::Quarter ? 3 : 12;
             break;
         case IntervalKind::Kind::Day:
         case IntervalKind::Kind::Week:
@@ -283,7 +283,7 @@ Field convertIntervalOffset(const Field & offset, IntervalKind kind, const DataT
             else
             {
                 is_calendar = which.isDateTime();
-                units_per_interval = kind.kind == IntervalKind::Kind::Day ? 1 : 7;
+                units_per_interval = kind.getKind() == IntervalKind::Kind::Day ? 1 : 7;
             }
             break;
         default:
@@ -291,7 +291,7 @@ Field convertIntervalOffset(const Field & offset, IntervalKind kind, const DataT
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Interval window frame offset INTERVAL {} {} is finer than the resolution of the {} ORDER BY column",
                     count, kind.toKeyword(), key_type->getName());
-            if (kind.kind < IntervalKind::Kind::Second)
+            if (kind.getKind() < IntervalKind::Kind::Second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Interval window frame offset INTERVAL {} {} is finer than the resolution of the DateTime ORDER BY column",
                     count, kind.toKeyword());
