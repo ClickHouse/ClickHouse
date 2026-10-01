@@ -4704,7 +4704,7 @@ SELECT data_paths FROM system.tables WHERE table = 'table_name' AND database = '
 ```
 
 Note that ReplicatedMergeTree table will be created with values of `default_replica_path` and `default_replica_name` settings.
-For an `Ordinary` database, the conversion generates a UUID and expands `default_replica_path` once with it. The stored path keeps no `{uuid}` macro, so the znode such a table owns is found by matching the path against `default_replica_path` again on every load; the conversion is refused when that template cannot be matched back (for example, when it expands `{uuid}` more than once). `{uuid}` in `default_replica_name` is not supported for any conversion.
+For an `Ordinary` database, the conversion generates a UUID and expands `default_replica_path` once with it. The stored path keeps no `{uuid}` macro, so the znode such a table owns is found by matching the path against `default_replica_path` again on every load; the conversion is refused when that template cannot be matched back (for example, when it expands `{uuid}` more than once). `{database}` and `{table}` in `default_replica_name` are unfolded into the stored replica name, the same way `CREATE TABLE` unfolds them, so the table can still be renamed. `{uuid}` in `default_replica_name` is not supported for any conversion.
 To create a converted table on other replicas, you will need to explicitly specify its path in the first argument of the `ReplicatedMergeTree` engine. The following query can be used to get its path.
 
 ```sql

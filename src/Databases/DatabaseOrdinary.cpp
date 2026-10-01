@@ -180,7 +180,7 @@ TableZnodeInfo DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & c
     return znode_info;
 }
 
-void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated, bool ordinary_database)
+void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated, const TableZnodeInfo * ordinary_znode_info)
 {
     auto * storage = create_query.storage;
     auto args = make_intrusive<ASTExpressionList>();
@@ -191,15 +191,15 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     {
         const auto & server_settings = local_context->getServerSettings();
         String replica_path = server_settings[ServerSetting::default_replica_path];
-        if (ordinary_database)
+        String replica_name = server_settings[ServerSetting::default_replica_name];
+        if (ordinary_znode_info)
         {
             Macros::MacroExpansionInfo info;
             info.table_id = StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid);
             info.expand_special_macros_only = false;
             replica_path = local_context->getMacros()->expand(replica_path, info);
+            replica_name = ordinary_znode_info->replica_name_for_metadata;
         }
-
-        String replica_name = server_settings[ServerSetting::default_replica_name];
 
         args->children.push_back(make_intrusive<ASTLiteral>(replica_path));
         args->children.push_back(make_intrusive<ASTLiteral>(replica_name));
@@ -301,7 +301,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     }
     const auto znode_info = checkReplicaPathIsSafe(create_query, getContext(), /*stores_path_literally=*/ordinary_database);
     checkReplicaPathExists(znode_info, StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid), getContext());
-    setMergeTreeEngine(create_query, getContext(), /*replicated*/ true, ordinary_database);
+    setMergeTreeEngine(create_query, getContext(), /*replicated*/ true, ordinary_database ? &znode_info : nullptr);
     if (ordinary_database)
     {
         create_query.uuid = UUIDHelpers::Nil;

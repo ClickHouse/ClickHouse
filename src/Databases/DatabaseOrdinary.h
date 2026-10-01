@@ -98,7 +98,11 @@ public:
 
     DiskPtr getDisk() const override { return metadata_disk_ptr; }
 
-    static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated, bool ordinary_database);
+    /// `ordinary_znode_info` is the result of `checkReplicaPathIsSafe` for a conversion to a replicated engine
+    /// of a table of an `Ordinary` database, and null otherwise. Such a table stores the path as a literal and
+    /// the replica name with {database} and {table} unfolded, the way a `CREATE` stores them, so that a later
+    /// `RENAME TABLE` neither moves the table to another znode nor is refused because of those macros.
+    static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated, const TableZnodeInfo * ordinary_znode_info);
 
     /// Rejects a conversion to a replicated engine whose Keeper path would not be a safe one.
     /// Contacts nothing and mutates nothing, so a caller can run it before its own side effects.

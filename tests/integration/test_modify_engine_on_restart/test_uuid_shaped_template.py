@@ -35,8 +35,9 @@ ch_two_uuids = cluster.add_instance(
     macros={"shard": "01", "replica": "node3"},
     stay_alive=True,
 )
-# `default_replica_name` is stored as a template even for Ordinary databases, so a {uuid} in it must be refused
-# before the metadata is rewritten; otherwise the converted table could never be attached again.
+# `default_replica_name` is stored as a template even for Ordinary databases (only {database} and {table} are
+# unfolded into it), so a {uuid} in it must be refused before the metadata is rewritten; otherwise the converted
+# table could never be attached again.
 ch_replica_name = cluster.add_instance(
     "ch_replica_name",
     main_configs=["configs/config.d/convert_replica_name_uuid.xml"],
@@ -52,6 +53,16 @@ ch_name_in_path = cluster.add_instance(
     main_configs=["configs/config.d/convert_name_in_path.xml"],
     with_zookeeper=True,
     macros={"shard": "01", "replica": "node5"},
+    stay_alive=True,
+)
+
+# {database} and {table} in `default_replica_name` must be unfolded into the stored replica name, the way a CREATE
+# unfolds them: left as macros, they would make every later load refuse `RENAME TABLE`.
+ch_name_in_replica_name = cluster.add_instance(
+    "ch_name_in_replica_name",
+    main_configs=["configs/config.d/convert_name_in_replica_name.xml"],
+    with_zookeeper=True,
+    macros={"shard": "01", "replica": "node6"},
     stay_alive=True,
 )
 
@@ -288,3 +299,56 @@ def test_name_in_path_accepted_for_atomic(started_cluster):
     )
     assert znode_exists(ch_name_in_path, f"/clickhouse/tables/{database_name}", "mt")
     ch_name_in_path.query(f"DROP DATABASE {database_name} SYNC")
+
+
+def get_replica_name(node, table):
+    return q(
+        node,
+        f"SELECT replica_name FROM system.replicas WHERE database = '{database_name}' AND table = '{table}'",
+    ).strip()
+
+
+def check_converted_table_can_be_renamed(node, table):
+    """The replica name was unfolded with the old table name, so it survives the rename and later loads."""
+    expected_replica_name = f"{database_name}_{table}_node6"
+    assert get_replica_name(node, table) == expected_replica_name
+    # Only {database} and {table} are unfolded into the metadata; {replica} stays a macro, as after a CREATE.
+    assert f"'{database_name}_{table}_{{replica}}'" in q(
+        node, f"SHOW CREATE TABLE {table}"
+    )
+
+    q(node, f"RENAME TABLE {table} TO renamed")
+    assert get_replica_name(node, "renamed") == expected_replica_name
+    q(node, "INSERT INTO renamed VALUES (2, '2024-01-01', 'b')")
+
+    # A plain re-attach reloads the stored metadata, which is what a restart does.
+    q(node, "DETACH TABLE renamed")
+    q(node, "ATTACH TABLE renamed")
+    assert get_replica_name(node, "renamed") == expected_replica_name
+    assert q(node, "SELECT count() FROM renamed").strip() == "2"
+    q(node, "RENAME TABLE renamed TO renamed_again")
+    assert q(node, "SELECT count() FROM renamed_again").strip() == "2"
+    node.query(f"DROP DATABASE {database_name} SYNC")
+
+
+def test_name_in_replica_name_unfolded_for_ordinary(started_cluster):
+    node = ch_name_in_replica_name
+    create_database(node, "Ordinary")
+    create_mergetree_table(node, "mt")
+    q(node, "DETACH TABLE mt")
+    q(node, "ATTACH TABLE mt AS REPLICATED")
+    assert get_engine(node, "mt") == "ReplicatedMergeTree"
+    # The conversion only rewrites the metadata; the znodes appear once the replica is restored.
+    q(node, "SYSTEM RESTORE REPLICA mt")
+    check_converted_table_can_be_renamed(node, "mt")
+
+
+def test_name_in_replica_name_unfolded_on_restart_for_ordinary(started_cluster):
+    node = ch_name_in_replica_name
+    create_database(node, "Ordinary")
+    create_mergetree_table(node, "flagged")
+    set_convert_flags(node, database_name, ["flagged"])
+    # The conversion on restart also creates the replica in ZooKeeper.
+    node.restart_clickhouse()
+    assert get_engine(node, "flagged") == "ReplicatedMergeTree"
+    check_converted_table_can_be_renamed(node, "flagged")
