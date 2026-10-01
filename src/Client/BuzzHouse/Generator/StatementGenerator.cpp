@@ -942,6 +942,18 @@ void StatementGenerator::generateNextTablePartition(
             }
         }
     }
+    else if (t.isAnyIcebergEngine() && t.iceberg_partition_key.has_value() && !detached && rg.nextMediumNumber() < 81)
+    {
+        /// An existing partition of an Iceberg table, or a made-up one, which DROP PARTITION skips
+        const String pval = rg.nextMediumNumber() < 86
+            ? fc.tableGetRandomKeyValue(t.getDatabaseName(), t.getBaseName(), t.iceberg_partition_key.value())
+            : FuzzConfig::getRandomFuzzedPartitionValue(rg.nextInFullRange());
+
+        if ((table_has_partitions = !pval.empty()))
+        {
+            pexpr->set_partition(pval);
+        }
+    }
     if (!table_has_partitions && supports_all && rg.nextBool())
     {
         pexpr->set_all(true);
@@ -2176,7 +2188,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
              {
                  generateNextTablePartition(rg, 1, rg.nextSmallNumber() < 3, true, t, ati->mutable_detach_partition()->mutable_partition());
              }},
-            {5 * static_cast<uint32_t>(no_oracle && is_mt),
+            {5 * static_cast<uint32_t>(no_oracle && (is_mt || t.isAnyIcebergEngine())),
              [&]
              { generateNextTablePartition(rg, 1, rg.nextSmallNumber() < 3, true, t, ati->mutable_drop_partition()->mutable_partition()); }},
             {5 * static_cast<uint32_t>(is_mt),

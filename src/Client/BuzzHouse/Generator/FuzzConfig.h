@@ -477,6 +477,8 @@ public:
 
     String tableGetRandomPartitionValue(uint64_t rand_val, const String & database, const String & table);
 
+    String tableGetRandomKeyValue(const String & database, const String & table, const String & key);
+
     uint32_t tableCountIndexes(const String & database, const String & table);
 
     String tableGetRandomIndex(uint64_t rand_val, const String & database, const String & table);

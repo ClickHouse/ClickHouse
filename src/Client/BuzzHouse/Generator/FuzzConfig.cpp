@@ -6,6 +6,7 @@
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -1192,6 +1193,30 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
                 fuzzer_out_file.generic_string())))
     {
         std::ifstream infile(fuzzer_out_file, std::ios::in);
+        std::getline(infile, res);
+        if (!res.empty() && res.back() == '\r')
+            res.pop_back();
+    }
+    return res;
+}
+
+/// The value of `key` in a random row of the table, as a literal for `PARTITION <expr>`
+String FuzzConfig::tableGetRandomKeyValue(const String & database, const String & table, const String & key)
+{
+    String res;
+
+    /// The Values format writes the row as a parenthesized tuple of SQL literals
+    if (processServerQuery(
+            true,
+            fmt::format(
+                "SELECT {} FROM {}.{} ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT Values;",
+                key,
+                DB::backQuote(database),
+                DB::backQuote(table),
+                fuzzer_out_file.generic_string())))
+    {
+        std::ifstream infile(fuzzer_out_file, std::ios::in);
+
         std::getline(infile, res);
         if (!res.empty() && res.back() == '\r')
             res.pop_back();

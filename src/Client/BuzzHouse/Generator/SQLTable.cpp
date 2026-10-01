@@ -1518,6 +1518,18 @@ void StatementGenerator::generateEngineDetails(
     {
         /// Optional PARTITION BY
         generateTableKey(rg, rel, b, false, te->mutable_partition_by());
+        if (b.isAnyIcebergEngine() && te->partition_by().exprs_size() > 0)
+        {
+            /// Keep it to find the values of existing partitions for DROP PARTITION
+            String key = "(";
+
+            for (int i = 0; i < te->partition_by().exprs_size(); i++)
+            {
+                key += i == 0 ? "" : ", ";
+                SQLExprToString(key, te->partition_by().exprs(i).expr());
+            }
+            b.iceberg_partition_key = key + ")";
+        }
     }
     if (te->has_engine())
     {
