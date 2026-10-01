@@ -276,6 +276,19 @@ def _is_runnable_test(path):
     return "gtest_" in path and path.endswith(".cpp")
 
 
+def _render_overlay(d, pr):
+    """Loom's view of the PR's own code is an overlay of the PR head it last
+    fetched. Right after a push it can still be the previous head."""
+    if not d or not d.get("overlay"):
+        return []
+    overlay_sha = d.get("overlay_head_sha") or ""
+    head_sha = (pr.get("head") or {}).get("sha") or ""
+    if overlay_sha and head_sha and not head_sha.startswith(overlay_sha[:12]):
+        return [f"- Loom's view of this PR is at `{overlay_sha[:12]}`, not the head `{head_sha[:12]}`: answers about "
+                f"code the PR adds or changes may describe an earlier push; read that code in the checkout."]
+    return []
+
+
 def _render_review_brief(d):
     if not d or d.get("_not_found") or d.get("source") == "missing":
         return []
@@ -497,6 +510,7 @@ def write_brief(config, pr, files, out_dir):
 
     lines = []
     lines += _render_index_status(answers.get("index_status"), base_sha)
+    lines += _render_overlay(answers.get("review_brief"), pr)
     lines += _render_review_brief(answers.get("review_brief"))
     lines += _render_impact(answers.get("impact"), pr_paths)
     # review_brief lists tests per changed function; test_gate is the fallback

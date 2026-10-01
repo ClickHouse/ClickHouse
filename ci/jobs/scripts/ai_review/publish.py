@@ -40,6 +40,9 @@ from ci.jobs.scripts.ai_review.context import thread_is_ours, is_bot
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 MAX_INLINE_COMMENTS = 6
+# How far from a changed line a comment about unchanged code in the same file
+# may be anchored on it.
+_REANCHOR_DISTANCE = 40
 
 # The output directory relative to the tree, as the agent sees it.
 _OUTPUT_SUFFIX = "/ci/tmp/ai_review/out/"
@@ -132,6 +135,14 @@ def dismissed_findings(records):
     return out
 
 
+def _write_reanchored(base_dir, path, line, body):
+    target = os.path.join(base_dir, "comments", f"reanchored_{abs(hash((path, line)))}.md")
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(body + "\n")
+    return target
+
+
 def validate_comments(entries, files, threads, base_dir, dismissed=None, units=None, known_findings=None):
     """Split the agent's inline comments into (postable, moved) where `moved`
     are (entry, body, reason) to be listed in the summary instead. `dismissed`
@@ -171,8 +182,19 @@ def validate_comments(entries, files, threads, base_dir, dismissed=None, units=N
             continue
         side_lines = lines.get(side, {})
         if line not in side_lines:
-            moved.append((e, body, f"line {line} ({side}) is not in the PR diff"))
-            continue
+            # A finding about related code next to the change (a caller in the
+            # same file, the other half of a pair) is anchored on the nearest
+            # changed line, naming the line it is about, instead of disappearing
+            # into the summary.
+            nearest = min(lines.get("RIGHT", {}), key=lambda n: abs(n - line), default=None)
+            if nearest is None or abs(nearest - line) > _REANCHOR_DISTANCE:
+                moved.append((e, body, f"line {line} ({side}) is not in the PR diff"))
+                continue
+            if f"{path}:{line}" not in body and f":{line}`" not in body:
+                body = f"`{path}:{line}`: " + body
+                body_file = _write_reanchored(base_dir, path, line, body)
+            line, side, start = nearest, "RIGHT", None
+            side_lines = lines["RIGHT"]
         if start is not None:
             start_side = (e.get("start_side") or side).upper()
             if start >= line or start_side != side or side_lines.get(start) != side_lines[line]:

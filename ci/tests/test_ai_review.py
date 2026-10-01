@@ -73,7 +73,7 @@ def test_validate_comments():
             {"path": "src/Foo.cpp", "line": 11, "side": "LEFT", "severity": "major", "body_file": b[1]},
             {"path": "src/Foo.cpp", "start_line": 10, "line": 13, "severity": "major", "body_file": b[2]},
             {"path": "src/Foo.cpp", "start_line": 12, "line": 42, "severity": "major", "body_file": b[3]},  # crosses hunks
-            {"path": "src/Foo.cpp", "line": 30, "severity": "major", "body_file": b[4]},  # outside the hunks
+            {"path": "src/Foo.cpp", "line": 90, "severity": "major", "body_file": b[4]},  # far outside the hunks
             {"path": "src/Other.cpp", "line": 1, "severity": "major", "body_file": b[5]},  # not in the PR
             {"path": "big.bin", "line": 1, "severity": "major", "body_file": b[6]},  # no patch
             {"path": "src/Foo.cpp", "line": 42, "severity": "nit", "body_file": b[7]},
@@ -86,7 +86,7 @@ def test_validate_comments():
             (12, "RIGHT", None), (11, "LEFT", None), (13, "RIGHT", 10), (42, "RIGHT", None)]
         reasons = [r for _, _, r in moved]
         assert len(moved) == 5
-        assert "line 30 (RIGHT) is not in the PR diff" in reasons
+        assert "line 90 (RIGHT) is not in the PR diff" in reasons
         assert "file is not part of the PR diff" in reasons
         assert "nits are listed in the summary only" in reasons
         assert "no valid line number" in reasons
@@ -528,3 +528,45 @@ def test_maintainer_remarks_skip_agents_and_bots():
     remarks = loom._maintainer_remarks(histories)
     assert [r["reviewer"] for r in remarks] == ["Avogar"]
     assert "Avogar on #9 at `src/A.cpp:3`" in loom._render_remarks(remarks)[1]
+
+
+def test_token_is_minted_again_when_the_agent_fails():
+    from ci.jobs import copilot_review_job as job
+
+    calls = []
+    with mock.patch.object(job.sandbox, "prepare", side_effect=lambda: calls.append("prepare")), \
+            mock.patch.object(job.sandbox, "reauthenticate", side_effect=lambda: calls.append("reauth")), \
+            mock.patch.object(job, "_run_agent", side_effect=RuntimeError("agent failed")), \
+            mock.patch.object(job, "Info") as info, mock.patch.object(job.review_context, "fetch") as fetch, \
+            mock.patch.object(job.loom.Config, "for_repo", return_value=loom.Config()), \
+            mock.patch.object(job.loom, "write_brief", return_value=""), \
+            mock.patch.object(job.loom, "recall_outcomes", return_value=("", [])), \
+            mock.patch.object(job.Shell, "check", return_value=True), \
+            tempfile.TemporaryDirectory() as d, mock.patch.object(job, "WORK_DIR", d), \
+            mock.patch.object(job, "CONTEXT_DIR", d), mock.patch.object(job, "PROMPT_FILE", os.path.join(d, "p.md")):
+        info.return_value.pr_number = 1
+        info.return_value.pr_url = "https://github.com/ClickHouse/ClickHouse/pull/1"
+        fetch.return_value = mock.MagicMock(files=[], pr={}, units=[], previous_state=None)
+        try:
+            job.review(job._run_codex_once, "Codex")
+        except RuntimeError:
+            pass
+    assert calls == ["prepare", "reauth"]
+
+
+def test_comment_on_nearby_unchanged_line_is_anchored_on_the_nearest_change():
+    with tempfile.TemporaryDirectory() as d:
+        b = _body(d, "b.md", "⚠️ The caller still passes the old size.")
+        postable, moved = publish.validate_comments(
+            [{"path": "src/Foo.cpp", "line": 30, "severity": "major", "body_file": b}], FILES, [], d)
+        assert not moved and postable[0]["line"] == 41 and postable[0]["side"] == "RIGHT"
+        body, _ = publish._read_body(postable[0], d)
+        assert body.startswith("`src/Foo.cpp:30`: ⚠️ The caller")
+
+
+def test_brief_warns_when_the_pr_overlay_is_behind_the_head():
+    pr = {"head": {"sha": "b" * 40}, "base": {}}
+    out = loom._render_overlay({"overlay": True, "overlay_head_sha": "a" * 40}, pr)
+    assert out and "aaaaaaaaaaaa" in out[0] and "bbbbbbbbbbbb" in out[0]
+    assert loom._render_overlay({"overlay": True, "overlay_head_sha": "b" * 40}, pr) == []
+    assert loom._render_overlay(None, pr) == []

@@ -28,6 +28,7 @@ import subprocess
 import tempfile
 
 from ci.jobs.revert_ci_regressions import (
+    AGENT_SCRATCH_PARENT,
     AGENT_USER,
     agent_scratch_root,
     chown,
@@ -40,14 +41,26 @@ from ci.praktika.utils import Shell
 
 
 def prepare():
-    """Remove the job's GitHub credential and make sure the agent's user is
-    confined. Raises when the confinement cannot be established."""
+    """Remove the job's GitHub credential, clear what an earlier job on this
+    runner may have left, and make sure the agent's user is confined. Raises
+    when the confinement cannot be established.
+
+    Runners are reused across jobs but run one job at a time, so any agent
+    process or scratch directory present now belongs to an earlier job that
+    was killed before its own cleanup (a timeout, a cancelled workflow)."""
     scrub_gh_credentials()
     confine_agent_user()
+    kill_agent_processes()
+    Shell.check(
+        f"sudo -n find {shlex.quote(AGENT_SCRATCH_PARENT)} -maxdepth 1 -name 'praktika-agent-*' -exec rm -rf {{}} +",
+        verbose=True,
+    )
 
 
 def reauthenticate():
-    """Mint the token the job publishes with, after the agent has run."""
+    """Mint the token the job publishes with, after the agent has run. Also
+    needed when the review fails: the runner posts the commit status and the
+    CI report with `gh` after the job command, from the same token store."""
     if not GHAuth.auth(force=True, no_strict=True):
         raise RuntimeError("could not mint a GitHub token to publish the review")
 

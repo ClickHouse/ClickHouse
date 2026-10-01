@@ -342,11 +342,16 @@ def review(run_once, agent_name):
 
     if run_once is _run_codex_once:
         Shell.check("codex --version", verbose=True)
-        # From here until the agent is done, the job holds no GitHub token.
-        sandbox.prepare()
-    model = _run_agent(run_once, agent_name, loom_config)
-    if run_once is _run_codex_once:
-        sandbox.reauthenticate()
+        # From here until the agent is done, the job holds no GitHub token. It
+        # is minted again whatever happens: publishing needs it, and so does
+        # the runner, which posts the commit status after the job command.
+        try:
+            sandbox.prepare()
+            model = _run_agent(run_once, agent_name, loom_config)
+        finally:
+            sandbox.reauthenticate()
+    else:
+        model = _run_agent(run_once, agent_name, loom_config)
 
     # Re-read the threads: the author may have replied or resolved while the
     # agent ran, and thread actions are checked against the current state.
