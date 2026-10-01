@@ -95,11 +95,12 @@ public:
     }
 
 private:
-    /// Compiled code cannot raise, so a `Decimal` or `DateTime64` branch whose lift to the result scale can leave
+    /// Compiled code cannot raise, so a `Decimal`, `DateTime64` or `Time64` branch whose lift to the result scale can leave
     /// 32- or 64-bit storage, where the interpreted cast raises `DECIMAL_OVERFLOW`, is not compilable.
     static bool scaleLiftCanOverflow(const IDataType & branch, const IDataType & result)
     {
-        const bool same_family = (isDecimal(branch) && isDecimal(result)) || (isDateTime64(branch) && isDateTime64(result));
+        const bool same_family = (isDecimal(branch) && isDecimal(result))
+            || ((isDateTime64(branch) || isTime64(branch)) && (isDateTime64(result) || isTime64(result)));
         if (!same_family || result.getSizeOfValueInMemory() > sizeof(Int64))
             return false;
         if (branch.getSizeOfValueInMemory() > result.getSizeOfValueInMemory())
