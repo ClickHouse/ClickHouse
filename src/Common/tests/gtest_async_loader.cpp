@@ -73,7 +73,7 @@ struct AsyncLoaderTest
     pcg64 rng{randomSeed()};
 
     explicit AsyncLoaderTest(std::vector<Initializer> initializers)
-        : loader(getPoolInitializers(initializers), /* log_failures = */ false, /* log_progress = */ false, /* log_events = */ false)
+        : loader(getPoolInitializers(std::move(initializers)), /* log_failures = */ false, /* log_progress = */ false, /* log_events = */ false)
     {
         loader.pause(); // All tests call `unpause()` manually to better control ordering
     }

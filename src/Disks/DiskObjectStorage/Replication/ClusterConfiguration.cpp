@@ -82,7 +82,7 @@ Locations ClusterConfiguration::findComplement(Locations redacted, bool use_only
     return findComplement(redacted | std::ranges::to<LocationSet>(), use_only_enabled);
 }
 
-Locations ClusterConfiguration::findComplement(LocationSet redacted, bool use_only_enabled) const
+Locations ClusterConfiguration::findComplement(const LocationSet & redacted, bool use_only_enabled) const
 {
     SharedLockGuard guard(mutex);
 

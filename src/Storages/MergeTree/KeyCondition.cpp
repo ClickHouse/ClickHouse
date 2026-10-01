@@ -536,7 +536,7 @@ static bool isLogicalOperator(const String & func_name)
 ///   - An "atom" (relational operator, constant, expression)
 ///   - A logical constant expression
 ///   - Any other function
-static ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversion = false)
+static ASTPtr cloneASTWithInversionPushDown(const ASTPtr & node, const bool need_inversion = false)
 {
     const ASTFunction * func = node->as<ASTFunction>();
 
@@ -1794,7 +1794,7 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
 
 bool KeyCondition::hasOnlyConjunctions() const
 {
-    return std::ranges::none_of(rpn, [](RPNElement element) { return element.function == RPNElement::FUNCTION_OR; });
+    return std::ranges::none_of(rpn, [](const RPNElement & element) { return element.function == RPNElement::FUNCTION_OR; });
 }
 
 

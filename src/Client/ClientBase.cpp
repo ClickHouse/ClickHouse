@@ -2822,7 +2822,7 @@ bool ClientBase::receiveEndOfQueryForInsert()
     }
 }
 
-bool ClientBase::sendCancel(std::exception_ptr exception_ptr)
+bool ClientBase::sendCancel(const std::exception_ptr & exception_ptr)
 {
     if (!connection->isConnected())
     {

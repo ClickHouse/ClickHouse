@@ -186,7 +186,7 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
     }
 }
 
-void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked frame) const
+void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, const FormatStateStacked & frame) const
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 

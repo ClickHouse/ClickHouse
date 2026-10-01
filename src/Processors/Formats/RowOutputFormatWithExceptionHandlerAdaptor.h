@@ -15,7 +15,7 @@ class RowOutputFormatWithExceptionHandlerAdaptor : public Base
 {
 public:
     RowOutputFormatWithExceptionHandlerAdaptor(SharedHeader header, WriteBuffer & out_, bool handle_exceptions, Args... args)
-        : Base(header, out_, std::forward<Args>(args)...)
+        : Base(std::move(header), out_, std::forward<Args>(args)...)
     {
         if (handle_exceptions)
         {

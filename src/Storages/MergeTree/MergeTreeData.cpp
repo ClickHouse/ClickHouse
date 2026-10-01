@@ -2876,7 +2876,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     size_t max_backoff_ms,
     size_t max_tries)
 {
-    auto handle_exception = [&, this](std::exception_ptr exception_ptr, size_t try_no)
+    auto handle_exception = [&, this](const std::exception_ptr & exception_ptr, size_t try_no)
     {
         if (try_no + 1 == max_tries)
             throw;
@@ -5400,7 +5400,7 @@ String backQuotedList(const std::vector<String> & identifiers)
 }
 
 /// Special check for alters of VersionedCollapsingMergeTree version column
-void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataType * new_type, const String column_name)
+void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataType * new_type, const String & column_name)
 {
     /// Check new type can be used as version
     if (!new_type->canBeUsedAsVersion())
@@ -10086,7 +10086,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     };
 
     /// Broken parts can appear in a backup sometimes.
-    auto mark_broken = [&](const std::exception_ptr error)
+    auto mark_broken = [&](const std::exception_ptr & error)
     {
         tryLogException(error, log,
                         fmt::format("Part {} will be restored as detached because it's broken. You need to resolve this manually", part_name));
@@ -13224,7 +13224,7 @@ PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn
 
     auto disks = getStoragePolicy()->getDisks();
 
-    return Unfreezer(local_context).unfreezePartitionsFromTableDirectory(matcher, backup_name, disks, backup_path);
+    return Unfreezer(local_context).unfreezePartitionsFromTableDirectory(std::move(matcher), backup_name, disks, backup_path);
 }
 
 bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const

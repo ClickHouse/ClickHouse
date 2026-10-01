@@ -1514,7 +1514,7 @@ String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
 }
 
 void DatabaseCatalog::enqueueDroppedTableCleanup(
-    StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay)
+    const StorageID & table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay)
 {
     chassert(table_id.hasUUID());
     chassert(!table || table->getStorageID().uuid == table_id.uuid);
@@ -1596,7 +1596,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
         (*drop_task)->schedule();
 }
 
-void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> throw_if_cancelled)
+void DatabaseCatalog::undropTable(const StorageID & table_id, std::function<void()> throw_if_cancelled)
 {
     auto database = getDatabase(table_id.database_name);
     auto db_disk = database->getDisk();

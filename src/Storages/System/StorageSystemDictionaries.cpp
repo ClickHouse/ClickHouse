@@ -53,7 +53,7 @@ catch (const DB::Exception &)
 
 }
 
-StorageSystemDictionaries::StorageSystemDictionaries(const StorageID & storage_id_, ColumnsDescription columns_description_)
+StorageSystemDictionaries::StorageSystemDictionaries(const StorageID & storage_id_, const ColumnsDescription & columns_description_)
     : IStorageSystemOneBlock(storage_id_, columns_description_)
 {
     StorageInMemoryMetadata storage_metadata;

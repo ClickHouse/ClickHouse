@@ -17,12 +17,12 @@ void checkImpl(std::string_view regexp, bool requires_perfect_prefix, DB::Regexp
 
 void check(std::string_view regexp, DB::RegexpFixedPrefix expected)
 {
-    checkImpl(regexp, /* requires_perfect_prefix = */ false, expected);
+    checkImpl(regexp, /* requires_perfect_prefix = */ false, std::move(expected));
 }
 
 void checkPerfectPrefix(std::string_view regexp, DB::RegexpFixedPrefix expected)
 {
-    checkImpl(regexp, /* requires_perfect_prefix = */ true, expected);
+    checkImpl(regexp, /* requires_perfect_prefix = */ true, std::move(expected));
 }
 
 }

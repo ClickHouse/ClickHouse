@@ -418,9 +418,9 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
         {
             NameToNameSetMap expressions;
 
-            auto interpolate_visitor = [](const ASTPtr ast, NameSet & columns) -> void
+            auto interpolate_visitor = [](const ASTPtr & ast, NameSet & columns) -> void
             {
-                auto interpolate_visitor_impl = [](const ASTPtr node, NameSet & cols, auto self) -> void
+                auto interpolate_visitor_impl = [](const ASTPtr & node, NameSet & cols, auto self) -> void
                 {
                     if (const auto * ident = node->as<ASTIdentifier>())
                         cols.insert(ident->name());
@@ -755,7 +755,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
             chassert(analyzed_join.getClauses().size() == 1);
         }
 
-        auto check_keys_empty = [] (auto e) { return e.key_names_left.empty(); };
+        auto check_keys_empty = [] (const auto & e) { return e.key_names_left.empty(); };
         bool any_keys_empty = std::any_of(analyzed_join.getClauses().begin(), analyzed_join.getClauses().end(), check_keys_empty);
 
         if (any_keys_empty)

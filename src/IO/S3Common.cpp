@@ -72,7 +72,7 @@ namespace ErrorCodes
 namespace S3
 {
 
-HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config, const std::string header_key)
+HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config, const std::string & header_key)
 {
     HTTPHeaderEntries headers;
     Poco::Util::AbstractConfiguration::Keys subconfig_keys;

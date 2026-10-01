@@ -424,7 +424,7 @@ IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, TAr
 }
 
 template <typename HasLimit, typename ... TArgs>
-inline AggregateFunctionPtr createAggregateFunctionGroupUniqArrayImpl(const std::string & name, const DataTypePtr & argument_type, TArgs ... args)
+inline AggregateFunctionPtr createAggregateFunctionGroupUniqArrayImpl(const std::string & name, const DataTypePtr & argument_type, const TArgs &... args)
 {
     /// Must precede createWithNumericType, which also matches these types.
     WhichDataType which(argument_type);

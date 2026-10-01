@@ -89,7 +89,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<FuseFunctionsVisitor>;
     using Base::Base;
 
-    explicit FuseFunctionsVisitor(const std::unordered_set<String> names_to_collect_, ContextPtr context)
+    explicit FuseFunctionsVisitor(const std::unordered_set<String> & names_to_collect_, ContextPtr context)
         : Base(std::move(context))
         , names_to_collect(names_to_collect_)
     {}

@@ -23,7 +23,7 @@ namespace Setting
 namespace
 {
 
-bool matchFnUniq(String name)
+bool matchFnUniq(const String & name)
 {
     return name == "uniq" || name == "uniqHLL12" || name == "uniqExact" || name == "uniqTheta" || name == "uniqCombined"
         || name == "uniqCombined64";

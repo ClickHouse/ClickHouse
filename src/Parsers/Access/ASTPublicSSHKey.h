@@ -14,8 +14,8 @@ public:
 
     ASTPublicSSHKey() = default;
     ASTPublicSSHKey(String key_base64_, String type_)
-        : key_base64(key_base64_)
-        , type(type_)
+        : key_base64(std::move(key_base64_))
+        , type(std::move(type_))
     {}
     String getID(char) const override { return "PublicSSHKey"; }
     ASTPtr clone() const override { return make_intrusive<ASTPublicSSHKey>(*this); }

@@ -175,7 +175,7 @@ ClusterDiscovery::ClusterDiscovery(
     : context(Context::createCopy(context_))
     , current_node_name(toString(ServerUUID::get()))
     , log(getLogger("ClusterDiscovery"))
-    , macros(macros_)
+    , macros(std::move(macros_))
 {
     LOG_DEBUG(log, "Cluster discovery is enabled");
 
@@ -262,7 +262,7 @@ ClusterDiscovery::ClusterDiscovery(
     /// Init get_nodes_callbacks after init clusters_to_update.
     for (const auto & e : clusters_info)
         get_nodes_callbacks[e.first] = std::make_shared<Coordination::WatchCallback>(
-            [cluster_name = e.first, my_clusters_to_update = clusters_to_update](auto)
+            [cluster_name = e.first, my_clusters_to_update = clusters_to_update](const auto &)
             {
                 my_clusters_to_update->set(cluster_name);
             });
@@ -270,7 +270,7 @@ ClusterDiscovery::ClusterDiscovery(
     for (auto & path : multicluster_discovery_paths)
     {
         path.watch_callback = std::make_shared<Coordination::WatchCallback>(
-            [my_need_update = path.need_update, my_flag = clusters_to_update](auto)
+            [my_need_update = path.need_update, my_flag = clusters_to_update](const auto &)
             {
                 my_need_update->store(true);
                 my_flag->set();
@@ -299,7 +299,7 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
                 cluster_name,
                 my_clusters_to_update = clusters_to_update,
                 my_discovery_paths_need_update = multicluster_discovery_paths[zk_root_index - 1].need_update
-                ](auto)
+                ](const auto &)
                 {
                     my_discovery_paths_need_update->store(true);
                     my_clusters_to_update->set(cluster_name);
@@ -346,7 +346,7 @@ ClusterDiscovery::NodesInfo ClusterDiscovery::getNodes(zkutil::ZooKeeperPtr & zk
 bool ClusterDiscovery::needUpdate(const Strings & node_uuids, const NodesInfo & nodes)
 {
     bool has_difference = node_uuids.size() != nodes.size() ||
-                          std::any_of(node_uuids.begin(), node_uuids.end(), [&nodes] (auto u) { return !nodes.contains(u); });
+                          std::any_of(node_uuids.begin(), node_uuids.end(), [&nodes] (const auto & u) { return !nodes.contains(u); });
     {
         /// Just to log updated nodes, suboptimal, but should be ok for expected update sizes
         std::set<String> new_names(node_uuids.begin(), node_uuids.end());

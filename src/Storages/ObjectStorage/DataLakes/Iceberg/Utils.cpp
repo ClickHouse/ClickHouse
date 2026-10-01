@@ -1073,7 +1073,7 @@ static std::vector<std::pair<String, String>> parseTransformAndColumnPairs(ASTPt
 }
 
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
-    String path_location,
+    const String & path_location,
     const ColumnsDescription & columns,
     ASTPtr partition_by,
     ASTPtr order_by,

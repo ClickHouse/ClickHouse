@@ -750,7 +750,7 @@ std::unique_ptr<KeeperSnapshotReader> KeeperSnapshotManager::makeSnapshotReader(
 
 SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, KeeperStorage & storage) const
 {
-    auto reader = makeSnapshotReader(buffer);
+    auto reader = makeSnapshotReader(std::move(buffer));
     storage.loadFromSnapshot(*reader);
 
     SnapshotDeserializationResult result;
@@ -761,7 +761,7 @@ SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuff
 
 SnapshotMetadataPtr KeeperSnapshotManager::deserializeSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
 {
-    auto reader = makeSnapshotReader(buffer);
+    auto reader = makeSnapshotReader(std::move(buffer));
     reader->readMetadata();
     return reader->snapshot_meta;
 }

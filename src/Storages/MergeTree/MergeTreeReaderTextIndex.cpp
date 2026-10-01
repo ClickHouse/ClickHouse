@@ -54,7 +54,7 @@ namespace ErrorCodes
 MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader_,
     MergeTreeIndexWithCondition index_,
-    NamesAndTypesList columns_,
+    const NamesAndTypesList & columns_,
     MergeTreeIndexGranulePtr index_granule_)
     : IMergeTreeReader(
         main_reader_->data_part_info_for_read,

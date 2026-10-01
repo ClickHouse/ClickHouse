@@ -112,7 +112,7 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
     size_t input_rows_count,
-    const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert,
+    const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &)> & nested_convert,
     bool throw_on_null)
 {
     /// When casting Dynamic to regular column we should cast all variants from current Dynamic column
@@ -256,7 +256,7 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
     size_t input_rows_count,
-    const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert,
+    const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &)> & nested_convert,
     bool throw_on_null)
 {
     const auto & variant_column = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
@@ -595,7 +595,7 @@ FunctionCast::WrapperType FunctionCast::createBoolWrapper(const DataTypePtr & fr
     return createWrapper<ToDataType>(from_type, to_type, requested_result_is_nullable);
 }
 
-FunctionCast::WrapperType FunctionCast::createUInt8ToBoolWrapper(const DataTypePtr from_type, const DataTypePtr to_type) const
+FunctionCast::WrapperType FunctionCast::createUInt8ToBoolWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type) const
 {
     return [from_type, to_type] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/) -> ColumnPtr
     {
@@ -3358,7 +3358,7 @@ FunctionBasePtr createFunctionBaseCast(
     const char * name,
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
-    std::optional<CastDiagnostic> diagnostic,
+    const std::optional<CastDiagnostic> & diagnostic,
     CastType cast_type)
 {
     DataTypes data_types(arguments.size());

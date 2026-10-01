@@ -79,7 +79,7 @@ namespace
         explicit StringPiece(int ref_) : ref_num(ref_) {}
     };
 
-    Field parseStringToField(const String & raw, const DataTypePtr data_type)
+    Field parseStringToField(const String & raw, const DataTypePtr & data_type)
     try
     {
         ReadBufferFromString buffer(raw);

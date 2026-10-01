@@ -26,7 +26,7 @@ void markRangesInfoDroppedRows(Chunk & chunk)
 }
 
 FilterSortedStreamByRange::FilterSortedStreamByRange(
-    SharedHeader header_, ExpressionActionsPtr expression_, String filter_column_name_, bool remove_filter_column_, bool on_totals_)
+    SharedHeader header_, ExpressionActionsPtr expression_, const String & filter_column_name_, bool remove_filter_column_, bool on_totals_)
     : ISimpleTransform(
           header_,
           std::make_shared<const Block>(

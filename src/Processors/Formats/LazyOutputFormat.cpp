@@ -10,7 +10,7 @@ namespace DB
 NullWriteBuffer LazyOutputFormat::out;
 
 LazyOutputFormat::LazyOutputFormat(SharedHeader header)
-    : IOutputFormat(header, out), queue(2)
+    : IOutputFormat(std::move(header), out), queue(2)
 {
 }
 

@@ -1077,7 +1077,7 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
         const Strings & attribute_names,
         const DataTypes & result_types,
         const Columns & key_columns_,
-        const DataTypes,
+        const DataTypes &,
         const Columns &)
     {
         auto range_dictionary_ptr = std::static_pointer_cast<const RangeHashedDictionary<dictionary_key_type>>(dictionary_copy);

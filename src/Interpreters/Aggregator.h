@@ -502,7 +502,7 @@ public:
         AggregateFunctionInstruction * aggregate_instructions) const;
 
     /// Used for aggregate projection.
-    bool mergeOnBlock(Columns columns, size_t rows, bool is_overflows,
+    bool mergeOnBlock(const Columns & columns, size_t rows, bool is_overflows,
         AggregatedDataVariants & result,
         bool & no_more_keys,
         std::atomic<bool> & is_cancelled) const;

@@ -544,7 +544,7 @@ bool CacheMetadata::Iterator::next(OnFileSegmentFunc func)
         impl = std::make_shared<IteratorImpl>(metadata_buckets, user_id);
 
     if (auto * iterator = std::get_if<CacheMetadata::IteratorImplPtr>(&impl.value()); iterator)
-        return (*iterator)->next(func);
+        return (*iterator)->next(std::move(func));
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected IteratorImplPtr");
 }
@@ -555,7 +555,7 @@ bool CacheMetadata::Iterator::nextBatch(OnFileSegmentFunc func)
         impl = std::make_shared<BatchedIteratorImpl>(metadata_buckets, user_id);
 
     if (auto * iterator = std::get_if<CacheMetadata::BatchedIteratorImplPtr>(&impl.value()); iterator)
-        return (*iterator)->next(func);
+        return (*iterator)->next(std::move(func));
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected BatchedIteratorImplPtr");
 }

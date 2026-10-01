@@ -177,7 +177,7 @@ JoinStepLogical::JoinStepLogical(
         optimized = true;
     }
     addToNullableIfNeeded(expression_actions, join_operator.kind, use_nulls_, required_output_columns_, actions_after_join, changed_types);
-    updateInputHeaders({left_header_, right_header_});
+    updateInputHeaders({std::move(left_header_), std::move(right_header_)});
 }
 
 JoinStepLogical::JoinStepLogical(
@@ -1505,7 +1505,7 @@ static void constructPhysicalStep(
     ActionsDAG left_pre_join_actions,
     ActionsDAG right_after_join_actions,
     ActionsDAG post_join_actions,
-    std::pair<String, bool> residual_filter_condition,
+    const std::pair<String, bool> & residual_filter_condition,
     JoinPtr join_ptr,
     const JoinSettings & join_settings,
     QueryPlan::Nodes & nodes)
@@ -1536,7 +1536,7 @@ static void constructPhysicalStep(
     ActionsDAG left_pre_join_actions,
     ActionsDAG right_pre_join_actions,
     ActionsDAG post_join_actions,
-    std::pair<String, bool> residual_filter_condition,
+    const std::pair<String, bool> & residual_filter_condition,
     JoinPtr join_ptr,
     const QueryPlanOptimizationSettings & optimization_settings,
     const JoinSettings & join_settings,
@@ -1592,7 +1592,7 @@ static void constructIEJoinStep(
     ActionsDAG left_pre_join_actions,
     ActionsDAG right_pre_join_actions,
     ActionsDAG post_join_actions,
-    std::pair<String, bool> residual_filter_condition,
+    const std::pair<String, bool> & residual_filter_condition,
     IEJoinPlanDescription description,
     ExpressionActionsPtr residual_condition,
     JoinKind kind,
@@ -1666,9 +1666,9 @@ static QueryPlanNode buildPhysicalJoinImpl(
     std::vector<QueryPlanNode *> children,
     JoinOperator join_operator,
     JoinExpressionActions expression_actions,
-    JoinSettings join_settings,
-    JoinAlgorithmParams join_algorithm_params,
-    SortingStep::Settings sorting_settings,
+    const JoinSettings & join_settings,
+    const JoinAlgorithmParams & join_algorithm_params,
+    const SortingStep::Settings & sorting_settings,
     const ActionsDAG::NodeRawConstPtrs & actions_after_join,
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan::Nodes & nodes,

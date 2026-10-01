@@ -143,9 +143,9 @@ UInt128 IDisk::getEncryptedFileIV(const String &) const
 
 static void asyncCopy(
     IDisk & from_disk,
-    String from_path,
+    const String & from_path,
     IDisk & to_disk,
-    String to_path,
+    const String & to_path,
     ThreadPoolCallbackRunnerLocal<void> & runner,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
@@ -165,7 +165,7 @@ static void asyncCopy(
         to_disk.createDirectories(dest);
 
         /// Calling asyncCopy recursively is fine here. Each call will capture by reference what were already references
-        /// dest is an exception, but it's passed as value, not reference
+        /// dest is an exception, but the lambda above captures `from_path` and `to_path` by value
         for (auto it = from_disk.iterateDirectory(from_path); it->isValid(); it->next())
             asyncCopy(from_disk, it->path(), to_disk, dest / it->name(), runner, read_settings, write_settings, cancellation_hook);
     }

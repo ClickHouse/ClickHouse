@@ -20,7 +20,7 @@ ProtobufRowInputFormat::ProtobufRowInputFormat(
     bool flatten_google_wrappers_,
     bool oneof_presence_,
     const String & google_protos_path)
-    : IRowInputFormat(header_, in_, params_)
+    : IRowInputFormat(std::move(header_), in_, params_)
     , descriptor(ProtobufSchemas::instance().getMessageTypeForFormatSchema(
           schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::No, google_protos_path))
     , with_length_delimiter(with_length_delimiter_)

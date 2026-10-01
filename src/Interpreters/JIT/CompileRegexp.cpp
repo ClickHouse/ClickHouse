@@ -89,7 +89,7 @@ namespace
 class CompiledRegexpHolder : public CompiledExpressionCacheEntry
 {
 public:
-    CompiledRegexpHolder(CHJIT::CompiledModule module_, std::shared_ptr<CHJIT> jit_, JITRegexpMatcherFunc func_, int num_captures_)
+    CompiledRegexpHolder(const CHJIT::CompiledModule & module_, std::shared_ptr<CHJIT> jit_, JITRegexpMatcherFunc func_, int num_captures_)
         : CompiledExpressionCacheEntry(module_.size)
         , module(module_)
         , jit(std::move(jit_))

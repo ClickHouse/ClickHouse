@@ -127,7 +127,7 @@ struct KeeperDelta
 
     KeeperDelta(int64_t zxid_, Coordination::Error error) : KeeperDelta("", zxid_, ErrorDelta{error}) { }
 
-    KeeperDelta(int64_t zxid_, Operation subdelta) : KeeperDelta("", zxid_, subdelta) { }
+    KeeperDelta(int64_t zxid_, Operation subdelta) : KeeperDelta("", zxid_, std::move(subdelta)) { }
 
     String path;
     int64_t zxid;

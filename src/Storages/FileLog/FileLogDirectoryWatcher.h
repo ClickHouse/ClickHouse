@@ -49,13 +49,12 @@ public:
 
 private:
     friend class DirectoryWatcherBase;
-    /// Here must pass by value, otherwise will lead to stack-use-of-scope.
-    void onItemAdded(DirectoryWatcherBase::DirectoryEvent ev);
-    void onItemRemoved(DirectoryWatcherBase::DirectoryEvent ev);
-    void onItemModified(DirectoryWatcherBase::DirectoryEvent ev);
-    void onItemMovedFrom(DirectoryWatcherBase::DirectoryEvent ev);
-    void onItemMovedTo(DirectoryWatcherBase::DirectoryEvent ev);
-    void onError(Exception);
+    void onItemAdded(const DirectoryWatcherBase::DirectoryEvent & ev);
+    void onItemRemoved(const DirectoryWatcherBase::DirectoryEvent & ev);
+    void onItemModified(const DirectoryWatcherBase::DirectoryEvent & ev);
+    void onItemMovedFrom(const DirectoryWatcherBase::DirectoryEvent & ev);
+    void onItemMovedTo(const DirectoryWatcherBase::DirectoryEvent & ev);
+    void onError(const Exception &);
 
     const std::string path;
 

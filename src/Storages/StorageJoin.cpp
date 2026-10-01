@@ -243,7 +243,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     }
 }
 
-HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, String query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const
+HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, const String & query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
@@ -811,7 +811,7 @@ public:
     JoinSource(HashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, SharedHeader sample_block_)
         : ISource(sample_block_)
         , join(join_)
-        , lock_holder(lock_holder_)
+        , lock_holder(std::move(lock_holder_))
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
     {

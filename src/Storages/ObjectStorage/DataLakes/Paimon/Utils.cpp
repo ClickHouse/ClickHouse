@@ -375,7 +375,7 @@ String concatPath(std::initializer_list<String> paths)
 {
     if (paths.size() == 1)
         return *paths.begin();
-    auto join_paths = paths | std::views::filter([](String x) { return !x.empty(); });
+    auto join_paths = paths | std::views::filter([](const String & x) { return !x.empty(); });
     return fmt::to_string(fmt::join(join_paths, "."));
 }
 

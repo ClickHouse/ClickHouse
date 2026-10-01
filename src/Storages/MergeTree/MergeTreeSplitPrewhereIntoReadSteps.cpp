@@ -224,7 +224,7 @@ const ActionsDAG::Node & addFunction(
         const FunctionOverloadResolverPtr & function,
         ActionsDAG::NodeRawConstPtrs children)
 {
-    const auto & new_node = new_dag->addFunction(function, children, "");
+    const auto & new_node = new_dag->addFunction(function, std::move(children), "");
     return new_node;
 }
 

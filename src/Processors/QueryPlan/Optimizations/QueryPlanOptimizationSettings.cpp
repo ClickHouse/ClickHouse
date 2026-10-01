@@ -172,7 +172,7 @@ namespace ErrorCodes
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     const Settings & from,
     UInt64 max_entries_for_hash_table_stats_,
-    String initial_query_id_,
+    const String & initial_query_id_,
     ExpressionActionsSettings actions_settings_,
     PreparedSetsCachePtr prepared_sets_cache_,
     bool is_parallel_replicas_initiator_with_projection_support_)

@@ -64,7 +64,7 @@ ClientEmbeddedRunner::~ClientEmbeddedRunner()
     LOG_DEBUG(log, "Embedded client has finished");
 }
 
-void ClientEmbeddedRunner::clientRoutine(NameToNameMap envs, String starting_query)
+void ClientEmbeddedRunner::clientRoutine(const NameToNameMap & envs, const String & starting_query)
 {
     try
     {

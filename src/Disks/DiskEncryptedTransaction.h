@@ -33,7 +33,7 @@ struct DiskEncryptedSettings
 class DiskEncryptedTransaction : public IDiskTransaction
 {
 public:
-    static String wrappedPath(const String disk_path, const String & path)
+    static String wrappedPath(const String & disk_path, const String & path)
     {
         // if path starts_with disk_path -> got already wrapped path
         if (!disk_path.empty() && path.starts_with(disk_path))
@@ -44,7 +44,7 @@ public:
     DiskEncryptedTransaction(DiskTransactionPtr delegate_transaction_, const std::string & disk_path_, DiskEncryptedSettings current_settings_, IDisk * delegate_disk_)
         : delegate_transaction(delegate_transaction_)
         , disk_path(disk_path_)
-        , current_settings(current_settings_)
+        , current_settings(std::move(current_settings_))
         , delegate_disk(delegate_disk_)
     {
         LOG_DEBUG(getLogger("DiskEncryptedTransaction"),

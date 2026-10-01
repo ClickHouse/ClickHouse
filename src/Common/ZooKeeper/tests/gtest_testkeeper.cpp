@@ -18,7 +18,7 @@ Coordination::TestKeeper makeKeeper(int32_t operation_timeout_ms = DEFAULT_OPERA
 {
     zkutil::ZooKeeperArgs args;
     args.operation_timeout_ms = operation_timeout_ms;
-    args.chroot = chroot;
+    args.chroot = std::move(chroot);
 
     return Coordination::TestKeeper(args);
 }

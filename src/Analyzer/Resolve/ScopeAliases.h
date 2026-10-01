@@ -51,7 +51,7 @@ struct ScopeAliases
         }
     }
 
-    QueryTreeNodePtr * find(IdentifierLookup lookup, FindOption find_option)
+    QueryTreeNodePtr * find(const IdentifierLookup & lookup, FindOption find_option)
     {
         auto & alias_map = getAliasMap(lookup.lookup_context);
         const std::string * key = &getKey(lookup.identifier, find_option);
@@ -64,7 +64,7 @@ struct ScopeAliases
         return &it->second;
     }
 
-    const QueryTreeNodePtr * find(IdentifierLookup lookup, FindOption find_option) const
+    const QueryTreeNodePtr * find(const IdentifierLookup & lookup, FindOption find_option) const
     {
         return const_cast<ScopeAliases *>(this)->find(lookup, find_option);
     }

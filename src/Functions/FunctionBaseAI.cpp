@@ -318,7 +318,7 @@ bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr exception)
 {
     try
     {
-        std::rethrow_exception(exception);
+        std::rethrow_exception(std::move(exception));
     }
     catch (const AIProviderHTTPException & exception)
     {

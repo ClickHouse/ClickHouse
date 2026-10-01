@@ -143,7 +143,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     StorageMetadataPtr metadata,
     StoragePtr storage_ptr,
     ObjectStoragePtr object_storage,
-    String write_format,
+    const String & write_format,
     FileNamesGenerator & generator,
     const Iceberg::IcebergPathResolver & path_resolver,
     const std::optional<FormatSettings> & format_settings,
@@ -372,7 +372,7 @@ static bool writeMetadataFiles(
     const DataLakeStorageSettings & data_lake_settings,
     String write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    StorageID table_id,
+    const StorageID & table_id,
     Poco::JSON::Object::Ptr metadata,
     Poco::JSON::Object::Ptr partititon_spec,
     Int32 partition_spec_id,
@@ -519,7 +519,7 @@ static bool writeMetadataFiles(
     try
     {
         write_manifest_entries(delete_files, Iceberg::FileContentType::POSITION_DELETE, delete_sample_block);
-        write_manifest_entries(data_files, Iceberg::FileContentType::DATA, data_sample_block);
+        write_manifest_entries(data_files, Iceberg::FileContentType::DATA, std::move(data_sample_block));
 
         {
             auto buffer_manifest_list = object_storage->writeObject(
@@ -682,7 +682,7 @@ void mutate(
     ContextPtr context,
     StoragePtr storage_ptr,
     StorageMetadataPtr storage_metadata,
-    StorageID storage_id,
+    const StorageID & storage_id,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
@@ -815,7 +815,7 @@ void mutate(
 void alter(
     const AlterCommands & params,
     ContextPtr context,
-    StorageID storage_id,
+    const StorageID & storage_id,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,

@@ -200,7 +200,7 @@ private:
     /// The ProfileEvent incremented when this watch is triggered, identifying the subsystem that owns the callback.
     ProfileEvents::Event triggered_event = ProfileEvents::ZooKeeperWatchTriggeredOther;
 
-    void operator()(WatchResponse response) const
+    void operator()(const WatchResponse & response) const
     {
         if (callback)
             (*callback)(response);
@@ -221,7 +221,7 @@ public:
     ProfileEvents::Event getTriggeredEvent() const { return triggered_event; }
     void setTriggeredEvent(ProfileEvents::Event triggered_event_) { triggered_event = triggered_event_; }
 
-    void invoke(WatchResponse response) const { (*this)(std::move(response)); }
+    void invoke(const WatchResponse & response) const { (*this)(response); }
 
     WatchCallbackPtrOrEventPtr(WatchCallbackPtrOrEventPtr &&) = default;
     WatchCallbackPtrOrEventPtr(const WatchCallbackPtrOrEventPtr &) = default;

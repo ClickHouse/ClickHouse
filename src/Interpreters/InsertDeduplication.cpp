@@ -121,7 +121,7 @@ std::vector<std::string> getDeduplicationBlockIds(const std::vector<Deduplicatio
 }
 
 
-std::vector<std::string> getDeduplicationPaths(std::string storage_path, const std::vector<DeduplicationHash> & deduplication_hashes)
+std::vector<std::string> getDeduplicationPaths(const std::string & storage_path, const std::vector<DeduplicationHash> & deduplication_hashes)
 {
     std::vector<std::string> result;
     result.reserve(deduplication_hashes.size());

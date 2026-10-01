@@ -842,7 +842,7 @@ protected:
     /// the object.  The creator is invoked at most once and only on miss.
     static SerializationPtr pooled(UInt128 hash, absl::FunctionRef<ISerialization *()> creator);
 
-    void addSubstreamAndCallCallback(SubstreamPath & path, const StreamCallback & callback, Substream substream) const;
+    void addSubstreamAndCallCallback(SubstreamPath & path, const StreamCallback & callback, const Substream & substream) const;
 
     template <typename State, typename StatePtr>
     State * checkAndGetState(const StatePtr & state) const;

@@ -1092,8 +1092,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , stage(std::move(stage_))
     , context(context_)
     , throttler(throttler_)
-    , scalars(scalars_)
-    , external_tables{external_tables_}
+    , scalars(std::move(scalars_))
+    , external_tables{std::move(external_tables_)}
     , storage_limits(std::move(storage_limits_))
     , log(log_)
     , pools_to_use(std::move(pools_to_use_))

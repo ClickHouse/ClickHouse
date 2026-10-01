@@ -674,7 +674,7 @@ public:
         if (it != node_name_to_node.end())
             return it->second;
 
-        const auto * node = &actions_dag.addFunction(function, children, node_name);
+        const auto * node = &actions_dag.addFunction(function, std::move(children), node_name);
         node_name_to_node[node->result_name] = node;
 
         return node;

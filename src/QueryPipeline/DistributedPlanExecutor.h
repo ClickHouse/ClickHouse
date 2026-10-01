@@ -114,7 +114,7 @@ public:
 
     /// Record the exception as the query's failure and cancel. Returns true while the driving source
     /// still runs and reports the failure; false once it is done and the caller has to report it.
-    bool recordException(std::exception_ptr exception);
+    bool recordException(const std::exception_ptr & exception);
     bool recordCurrentException() { return recordException(std::current_exception()); }
 
     bool isCancelled() const { return cancelled; }

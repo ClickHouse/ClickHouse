@@ -100,7 +100,7 @@ using CountedSessionPtr = std::shared_ptr<CountedSession>;
 class StringHTTPBasicStreamBuf : public Poco::Net::HTTPBasicStreamBuf
 {
 public:
-    explicit StringHTTPBasicStreamBuf(std::string body) : BasicBufferedStreamBuf(body.size(), IOS::in), bodyStream(std::stringstream(body))
+    explicit StringHTTPBasicStreamBuf(const std::string & body) : BasicBufferedStreamBuf(body.size(), IOS::in), bodyStream(std::stringstream(body))
     {
     }
 

@@ -41,7 +41,7 @@ public:
       *
       * Throws exception if value cannot be converted to value data type.
       */
-    explicit ConstantNode(Field value_, DataTypePtr value_data_type_);
+    explicit ConstantNode(const Field & value_, DataTypePtr value_data_type_);
 
     /// Construct constant query tree node from field, data type will be derived from field value
     explicit ConstantNode(Field value_);

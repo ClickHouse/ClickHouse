@@ -72,7 +72,7 @@ struct ZkNodeCache
     bool changed;
 
     ZkNodeCache() : exists(true), changed(false) { }
-    ZkNodeCache(String path_, bool exists_) : path(path_), exists(exists_), changed(false) { }
+    ZkNodeCache(String path_, bool exists_) : path(std::move(path_)), exists(exists_), changed(false) { }
 
     void insert(const std::vector<String> & nodes, zkutil::ZooKeeperPtr zookeeper, const String & value_to_set, size_t index)
     {
@@ -135,7 +135,7 @@ class ZooKeeperSink final : public SinkToStorage
 
 public:
     ZooKeeperSink(SharedHeader header, ContextPtr context_)
-        : SinkToStorage(header), context(context_)
+        : SinkToStorage(std::move(header)), context(context_)
     {}
 
     String getName() const override { return "ZooKeeperSink"; }
@@ -261,7 +261,7 @@ public:
         SharedHeader header_,
         UInt64 max_block_size_,
         ContextPtr context_)
-        : ISource(header_)
+        : ISource(std::move(header_))
         , max_block_size(max_block_size_)
         , name(std::move(zookeeper_name_))
         , paths(std::move(paths_))

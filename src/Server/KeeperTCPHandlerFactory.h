@@ -35,7 +35,7 @@ public:
         uint64_t receive_timeout_seconds,
         uint64_t send_timeout_seconds,
         bool secure)
-        : config_getter(config_getter_)
+        : config_getter(std::move(config_getter_))
         , keeper_dispatcher(keeper_dispatcher_)
         , log(getLogger(std::string{"KeeperTCP"} + (secure ? "S" : "") + "HandlerFactory"))
         , receive_timeout(/* seconds = */ receive_timeout_seconds, /* microseconds = */ 0)

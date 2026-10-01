@@ -421,7 +421,7 @@ public:
 
     void ALWAYS_INLINE pushException(std::exception_ptr exception)
     {
-        pushData({.chunk = {}, .exception = exception});
+        pushData({.chunk = {}, .exception = std::move(exception)});
     }
 
     void ALWAYS_INLINE pushData(Data data_)

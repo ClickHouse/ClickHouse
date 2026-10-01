@@ -27,7 +27,7 @@ class StorageObjectStorageQueue : public IStreamingStorage, WithContext
 public:
     StorageObjectStorageQueue(
         std::unique_ptr<ObjectStorageQueueSettings> queue_settings_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        const StorageObjectStorageConfigurationPtr & configuration_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,

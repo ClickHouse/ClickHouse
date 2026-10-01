@@ -328,7 +328,7 @@ void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr excep
         return;
 
     resetChunk();
-    promise.set_exception(exception_);
+    promise.set_exception(std::move(exception_));
     ProfileEvents::increment(ProfileEvents::FailedAsyncInsertQuery, 1);
 }
 

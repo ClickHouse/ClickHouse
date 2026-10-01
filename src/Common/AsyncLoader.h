@@ -395,7 +395,7 @@ private:
     };
 
 public:
-    AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool log_failures_, bool log_progress_, bool log_events_);
+    AsyncLoader(const std::vector<PoolInitializer> & pool_initializers, bool log_failures_, bool log_progress_, bool log_events_);
 
     // WARNING: all tasks instances should be destructed before associated AsyncLoader.
     ~AsyncLoader();
@@ -472,7 +472,7 @@ public:
 private:
     void checkCycle(const LoadJobSet & jobs, std::unique_lock<std::mutex> & lock);
     String checkCycle(const LoadJobPtr & job, LoadJobSet & left, LoadJobSet & visited, std::unique_lock<std::mutex> & lock);
-    void finish(const LoadJobPtr & job, LoadStatus status, std::exception_ptr reason, std::unique_lock<std::mutex> & lock);
+    void finish(const LoadJobPtr & job, LoadStatus status, const std::exception_ptr & reason, std::unique_lock<std::mutex> & lock);
     void gatherNotScheduled(const LoadJobPtr & job, LoadJobSet & jobs, std::unique_lock<std::mutex> & lock);
     void prioritize(const LoadJobPtr & job, size_t new_pool_id, std::unique_lock<std::mutex> & lock);
     void enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<std::mutex> & lock);

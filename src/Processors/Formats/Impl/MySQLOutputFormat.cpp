@@ -33,7 +33,7 @@ extern const char mysql_output_format_cancel_mid_loop[];
 }
 
 MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
-    : IOutputFormat(header_, out_)
+    : IOutputFormat(std::move(header_), out_)
     , client_capabilities(settings_.mysql_wire.client_capabilities)
 {
     /// MySQlWire is a special format that is usually used as output format for MySQL protocol connections.

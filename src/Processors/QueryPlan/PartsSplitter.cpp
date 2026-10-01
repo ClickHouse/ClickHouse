@@ -177,7 +177,7 @@ public:
     }
 
     std::optional<size_t> findRightmostMarkLessThanValueInRange(
-        size_t part_index, Values value, size_t range_begin, size_t range_end, bool in_reverse_order) const
+        size_t part_index, const Values & value, size_t range_begin, size_t range_end, bool in_reverse_order) const
     {
         size_t left = range_begin;
         size_t right = range_end;
@@ -199,13 +199,13 @@ public:
     }
 
     std::optional<size_t>
-    findRightmostMarkLessThanValueInRange(size_t part_index, Values value, MarkRange mark_range, bool in_reverse_order) const
+    findRightmostMarkLessThanValueInRange(size_t part_index, const Values & value, MarkRange mark_range, bool in_reverse_order) const
     {
         return findRightmostMarkLessThanValueInRange(part_index, value, mark_range.begin, mark_range.end, in_reverse_order);
     }
 
     std::optional<size_t> findLeftmostMarkGreaterThanValueInRange(
-        size_t part_index, Values value, size_t range_begin, size_t range_end, bool in_reverse_order) const
+        size_t part_index, const Values & value, size_t range_begin, size_t range_end, bool in_reverse_order) const
     {
         size_t left = range_begin;
         size_t right = range_end;
@@ -227,7 +227,7 @@ public:
     }
 
     std::optional<size_t>
-    findLeftmostMarkGreaterThanValueInRange(size_t part_index, Values value, MarkRange mark_range, bool in_reverse_order) const
+    findLeftmostMarkGreaterThanValueInRange(size_t part_index, const Values & value, MarkRange mark_range, bool in_reverse_order) const
     {
         return findLeftmostMarkGreaterThanValueInRange(part_index, value, mark_range.begin, mark_range.end, in_reverse_order);
     }

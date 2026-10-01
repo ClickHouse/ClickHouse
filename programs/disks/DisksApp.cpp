@@ -65,7 +65,7 @@ CommandPtr DisksApp::getCommandByName(const String & command) const
     }
 }
 
-std::vector<String> DisksApp::getEmptyCompletion(String command_name) const
+std::vector<String> DisksApp::getEmptyCompletion(const String & command_name) const
 {
     auto command_ptr = command_descriptions.at(command_name);
     std::vector<String> answer{};
@@ -400,7 +400,7 @@ void DisksApp::printCommandHelpMessage(CommandPtr command) const
     std::cout << command->options_description;
 }
 
-void DisksApp::printCommandHelpMessage(String command_name) const
+void DisksApp::printCommandHelpMessage(const String & command_name) const
 {
     printCommandHelpMessage(getCommandByName(command_name));
 }

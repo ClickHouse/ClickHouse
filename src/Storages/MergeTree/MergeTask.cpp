@@ -2870,7 +2870,7 @@ public:
     MergePartsStep(
         const SharedHeader & input_header_,
         const SortDescription & sort_description_,
-        const Names partition_and_sorting_required_columns_,
+        const Names & partition_and_sorting_required_columns_,
         const MergeTreeData::MergingParams & merging_params_,
         const String & rows_sources_temporary_file_name_,
         const std::optional<String> & filter_column_name_,
@@ -3170,7 +3170,7 @@ class BuildTextIndexStep : public ITransformingStep, private WithContext
 {
 public:
     BuildTextIndexStep(SharedHeader input_header_, SharedHeader output_header_, std::shared_ptr<BuildTextIndexTransform> transform_, ContextPtr context_)
-        : ITransformingStep(input_header_, output_header_, getTraits())
+        : ITransformingStep(std::move(input_header_), output_header_, getTraits())
         , WithContext(context_)
         , transform(std::move(transform_))
         , original_output_header(output_header_)

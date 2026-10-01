@@ -690,7 +690,7 @@ public:
         bool synchronous_,
         std::shared_ptr<const QueryRunnerJobOrigin> origin_,
         QueryStatusPtr query_status_)
-        : SinkToStorage(header)
+        : SinkToStorage(std::move(header))
         , dispatcher(dispatcher_)
         , synchronous(synchronous_)
         , origin(std::move(origin_))

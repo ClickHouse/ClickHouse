@@ -425,7 +425,7 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
 }
 
 static void
-addPrivilegesInfoToQueryLogElement(QueryLogElement & element, const ContextPtr context_ptr)
+addPrivilegesInfoToQueryLogElement(QueryLogElement & element, const ContextPtr & context_ptr)
 {
     const auto & privileges_info = context_ptr->getQueryPrivilegesInfo();
     {
@@ -436,7 +436,7 @@ addPrivilegesInfoToQueryLogElement(QueryLogElement & element, const ContextPtr c
 }
 
 static void
-addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr, std::chrono::system_clock::time_point time)
+addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr & query_ast, const ContextPtr & context_ptr, std::chrono::system_clock::time_point time)
 {
     UInt64 elapsed_microseconds = info.elapsed_microseconds;
     element.event_time = timeInSeconds(time);
@@ -667,7 +667,7 @@ QueryLogElement logQueryStart(
     return elem;
 }
 
-static void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, std::chrono::system_clock::time_point finish_time, QueryStatusInfoPtr info)
+static void logQueryMetricLogFinish(ContextPtr context, bool internal, const String & query_id, std::chrono::system_clock::time_point finish_time, QueryStatusInfoPtr info)
 {
     if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
     {

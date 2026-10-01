@@ -339,7 +339,7 @@ class BuilderRWBufferFromHTTP
     bool delay_initialization = true;
 
 public:
-    explicit BuilderRWBufferFromHTTP(Poco::URI uri_)
+    explicit BuilderRWBufferFromHTTP(const Poco::URI & uri_)
         : uri(uri_)
     {}
 

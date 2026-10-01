@@ -24,7 +24,7 @@ using namespace DB;
 namespace
 {
 
-ColumnArray::MutablePtr createArray(std::vector<UInt64> data_values, std::vector<ColumnArray::Offset> offset_values)
+ColumnArray::MutablePtr createArray(const std::vector<UInt64> & data_values, const std::vector<ColumnArray::Offset> & offset_values)
 {
     auto data = ColumnUInt64::create();
     for (UInt64 value : data_values)

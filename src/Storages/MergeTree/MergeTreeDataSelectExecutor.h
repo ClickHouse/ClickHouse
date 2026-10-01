@@ -308,7 +308,7 @@ public:
     /// Also, update key condition with selected sampling range.
     static MergeTreeDataSelectSamplingData getSampling(
         const SelectQueryInfo & select_query_info,
-        NamesAndTypesList available_real_columns,
+        const NamesAndTypesList & available_real_columns,
         const RangesInDataParts & parts,
         ConditionTemplate<KeyCondition>::Ptr & key_condition,
         const MergeTreeData & data,
@@ -331,7 +331,7 @@ public:
         const MarkRanges & ranges,
         const KeyCondition & rpn_template_for_eval_result,
         const PartialDisjunctionResult & partial_eval_results,
-        MergeTreeReaderSettings reader_settings,
+        const MergeTreeReaderSettings & reader_settings,
         LoggerPtr log);
 
     /// Check if a skip index can be used when there are lightweight updates.

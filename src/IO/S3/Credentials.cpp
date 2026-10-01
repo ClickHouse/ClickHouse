@@ -715,7 +715,7 @@ bool AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::isWebIdentityConfigured
 }
 
 std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::create(
-    DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_, String role_arn_)
+    DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_, const String & role_arn_)
 {
     auto logger = getLogger("AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider");
 
@@ -1158,7 +1158,7 @@ void AssumeRoleRequest::AddQueryStringParameters(Aws::Http::URI & uri) const
         uri.AddQueryStringParameter("ExternalId", external_id);
 }
 
-AssumeRoleResult::AssumeRoleResult(Aws::AmazonWebServiceResult<Aws::Utils::Xml::XmlDocument> result)
+AssumeRoleResult::AssumeRoleResult(const Aws::AmazonWebServiceResult<Aws::Utils::Xml::XmlDocument> & result)
 {
     using namespace Aws::Utils::Xml;
     const auto & xml_document = result.GetPayload();

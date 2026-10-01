@@ -1894,7 +1894,7 @@ try
             assertEqual(holder, { Range(offset, offset + size - 1) }, { State::DOWNLOADED });
         };
 
-        auto check_covering_range = [&](size_t offset, size_t size, Ranges covering_ranges)
+        auto check_covering_range = [&](size_t offset, size_t size, const Ranges & covering_ranges)
         {
             auto holder = cache.getOrSet(key, offset, size, file_size, {}, 0, user);
             std::vector<State> states(covering_ranges.size(), State::DOWNLOADED);
@@ -3287,14 +3287,14 @@ namespace
     /// Creators for SplitFileCachePriority inner queues used by the split-cache tests below.
     std::unique_ptr<IFileCachePriority> makeLRUInner(
         IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements,
-        double /* size_ratio */, size_t /* overcommit_step */, String desc)
+        double /* size_ratio */, size_t /* overcommit_step */, const String & desc)
     {
         return std::make_unique<LRUFileCachePriority>(queue_type, max_size, max_elements, desc);
     }
 
     std::unique_ptr<IFileCachePriority> makeSLRUInner(
         IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements,
-        double size_ratio, size_t /* overcommit_step */, String desc)
+        double size_ratio, size_t /* overcommit_step */, const String & desc)
     {
         return std::make_unique<SLRUFileCachePriority>(queue_type, max_size, max_elements, size_ratio, desc);
     }

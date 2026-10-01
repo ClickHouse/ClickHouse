@@ -592,7 +592,7 @@ bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList
 
 String transformQueryForExternalDatabaseImpl(
     ASTPtr clone_query,
-    Names used_columns,
+    const Names & used_columns,
     const NamesAndTypesList & available_columns,
     IdentifierQuotingStyle identifier_quoting_style,
     LiteralEscapingStyle literal_escaping_style,

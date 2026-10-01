@@ -341,7 +341,7 @@ Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
 
 Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, MultiVersion<Macros>::Version macros, const String & config_prefix)
 {
-    this->macros_ = macros;
+    this->macros_ = std::move(macros);
     updateClusters(config, settings, config_prefix);
 }
 

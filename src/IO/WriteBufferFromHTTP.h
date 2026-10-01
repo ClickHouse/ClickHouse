@@ -28,7 +28,7 @@ class WriteBufferFromHTTP : public WriteBufferFromOStream
                                  const HTTPHeaderEntries & additional_headers = {},
                                  const ConnectionTimeouts & timeouts = {},
                                  size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-                                 ProxyConfiguration proxy_configuration = {});
+                                 const ProxyConfiguration & proxy_configuration = {});
 
     // Counts the counter WriteBufferFromHTTPBytes
     void nextImpl() override;

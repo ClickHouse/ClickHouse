@@ -517,7 +517,7 @@ void DatabaseWithOwnTablesBase::ensurePopulated() const TSA_NO_THREAD_SAFETY_ANA
     populating_thread = std::this_thread::get_id();
     lock.unlock();
 
-    auto finish = [this](std::exception_ptr error)
+    auto finish = [this](const std::exception_ptr & error)
     {
         {
             std::lock_guard finish_lock(populate_mutex);
@@ -764,7 +764,7 @@ void DatabaseWithOwnTablesBase::shutdown()
             {
                 std::lock_guard lock(mutex);
                 if (!error)
-                    error = e;
+                    error = std::move(e);
             }
         };
         auto recorder = std::make_shared<ErrorRecorder>();

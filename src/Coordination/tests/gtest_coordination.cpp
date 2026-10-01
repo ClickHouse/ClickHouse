@@ -1456,7 +1456,7 @@ TEST(KeeperOverDispatcherMulti, CallbackPromotesFailedMultiAggregateError)
     /// shape KeeperStorage builds for a failed multi, and check what the user callback
     /// receives as the aggregate error. Fails if multi() stops promoting the failing
     /// subresponse error.
-    auto aggregate_seen_by_callback = [&](std::vector<Error> sub_errors, Error aggregate)
+    auto aggregate_seen_by_callback = [&](const std::vector<Error> & sub_errors, Error aggregate)
     {
         auto response = std::make_shared<ZooKeeperMultiWriteResponse>();
         response->error = aggregate;
@@ -1891,7 +1891,7 @@ TEST(KeeperDispatcher, ReadWaitForWriteIsObserved)
         /// exactly the window `dispatchThread` would add into.
         auto mid_drain_read = makeReadRequest(/*session_id=*/ 5, /*xid=*/ 3, "/");
         bool added_mid_drain = false;
-        fixture.on_response = [&](DB::KeeperResponseForSession)
+        fixture.on_response = [&](const DB::KeeperResponseForSession &)
         {
             if (added_mid_drain)
                 return;

@@ -29,7 +29,7 @@ class FunctionCompareSubstrings final : public IFunction
 {
 public:
     static constexpr auto name = "compareSubstrings";
-    static FunctionPtr create(const ContextPtr /*context*/) { return std::make_shared<FunctionCompareSubstrings>(); }
+    static FunctionPtr create(ContextPtr /*context*/) { return std::make_shared<FunctionCompareSubstrings>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }

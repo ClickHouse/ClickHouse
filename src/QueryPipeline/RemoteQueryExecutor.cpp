@@ -115,17 +115,17 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     std::shared_ptr<const QueryPlan> query_plan_,
     std::optional<Extension> extension_,
     GetPriorityForLoadBalancing::Func priority_func_)
-    : header(header_)
+    : header(std::move(header_))
     , query(query_)
     , query_plan(std::move(query_plan_))
     , context(context_)
     , scalars(scalars_)
     , external_tables(external_tables_)
     , stage(stage_)
-    , extension(extension_)
+    , extension(std::move(extension_))
     , skip_unavailable_shards(context->getSettingsRef()[Setting::skip_unavailable_shards])
     , skip_unavailable_shards_mode(context->getSettingsRef()[Setting::skip_unavailable_shards_mode])
-    , priority_func(priority_func_)
+    , priority_func(std::move(priority_func_))
     , read_packet_type_separately(context->canUseParallelReplicasOnInitiator() && !context->getSettingsRef()[Setting::use_hedged_requests])
 {
     if (stage == QueryProcessingStage::QueryPlan && !query_plan)
@@ -141,10 +141,10 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Scalars & scalars_,
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
-    std::optional<Extension> extension_,
+    const std::optional<Extension> & extension_,
     ConnectionPoolWithFailoverPtr connection_pool_with_failover_,
     std::shared_ptr<const QueryPlan> query_plan_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, query_plan_, extension_)
+    : RemoteQueryExecutor(query_, std::move(header_), context_, scalars_, external_tables_, stage_, query_plan_, extension_)
 {
     create_connections = [this, pool, throttler, extension_, connection_pool_with_failover_](AsyncCallback)
     {
@@ -241,8 +241,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Scalars & scalars_,
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
-    std::optional<Extension> extension_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, nullptr, extension_)
+    const std::optional<Extension> & extension_)
+    : RemoteQueryExecutor(query_, std::move(header_), context_, scalars_, external_tables_, stage_, nullptr, extension_)
 {
     create_connections = [this, &connection, throttler, extension_](AsyncCallback)
     {
@@ -265,7 +265,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     std::shared_ptr<const QueryPlan> query_plan_,
     std::optional<Extension> extension_,
     ConnectionPoolWithFailoverPtr pool)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_)
+    : RemoteQueryExecutor(query_, std::move(header_), context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_)
 {
     /// Capture `pool` in the lambda to prevent the connection pool from being destroyed
     /// while entries are still in use. The Entry objects hold raw references (via PoolEntryHelper)
@@ -292,7 +292,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     std::shared_ptr<const QueryPlan> query_plan_,
     std::optional<Extension> extension_,
     GetPriorityForLoadBalancing::Func priority_func_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_, priority_func_)
+    : RemoteQueryExecutor(query_, std::move(header_), context_, scalars_, external_tables_, stage_, std::move(query_plan_), std::move(extension_), std::move(priority_func_))
 {
     create_connections = [this, pool, throttler](AsyncCallback async_callback)->std::unique_ptr<IConnections>
     {

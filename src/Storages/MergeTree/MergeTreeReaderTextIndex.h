@@ -36,7 +36,7 @@ public:
     MergeTreeReaderTextIndex(
         const IMergeTreeReader * main_reader_,
         MergeTreeIndexWithCondition index_,
-        NamesAndTypesList columns_,
+        const NamesAndTypesList & columns_,
         MergeTreeIndexGranulePtr index_granule_);
 
     size_t readRows(

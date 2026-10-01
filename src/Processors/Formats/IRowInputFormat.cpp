@@ -32,7 +32,7 @@ static bool isConnectionError(int code)
 IRowInputFormat::IRowInputFormat(SharedHeader header, ReadBuffer & in_, Params params_)
     : IInputFormat(std::move(header), &in_)
     , serializations(getPort().getHeader().getSerializations())
-    , params(params_)
+    , params(std::move(params_))
     , block_missing_values(getPort().getHeader().columns())
 {}
 

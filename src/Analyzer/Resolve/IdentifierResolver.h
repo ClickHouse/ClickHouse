@@ -94,7 +94,7 @@ public:
         const Identifier & expression_identifier,
         size_t identifier_bind_size,
         const QueryTreeNodePtr & compound_expression,
-        String compound_expression_source,
+        const String & compound_expression_source,
         IdentifierResolveScope & scope,
         bool can_be_not_found = false);
 

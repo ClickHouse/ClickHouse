@@ -196,7 +196,7 @@ void ColumnConst::compareColumn(
     std::fill(compare_results.begin(), compare_results.end(), res);
 }
 
-ColumnConst::Ptr createColumnConst(const ColumnPtr & column, Field value)
+ColumnConst::Ptr createColumnConst(const ColumnPtr & column, const Field & value)
 {
     auto data = column->cloneEmpty();
     data->insert(value);

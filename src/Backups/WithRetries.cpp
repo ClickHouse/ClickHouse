@@ -9,7 +9,7 @@ namespace DB
 WithRetries::WithRetries(
     LoggerPtr log_, zkutil::GetZooKeeper get_zookeeper_, const BackupKeeperSettings & settings_, QueryStatusPtr process_list_element_, RenewerCallback callback_)
     : log(log_)
-    , get_zookeeper(get_zookeeper_)
+    , get_zookeeper(std::move(get_zookeeper_))
     , settings(settings_)
     , process_list_element(process_list_element_)
     , callback(callback_)

@@ -47,7 +47,7 @@ private:
     /// 0 while the worker is not parked on a deadline. Lets tests synchronize with the wait state.
     UInt64 armed_deadline = 0;
 
-    static void cancelTask(CancellationChecker::QueryToTrack task);
+    static void cancelTask(const CancellationChecker::QueryToTrack & task);
 
     const LoggerPtr log;
 

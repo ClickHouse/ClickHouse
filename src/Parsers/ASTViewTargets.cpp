@@ -259,7 +259,7 @@ void ASTViewTargets::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         formatTarget(target, ostr, s, state, frame);
 }
 
-void ASTViewTargets::formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame, std::optional<UInt64> time_series_version) const
+void ASTViewTargets::formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, const FormatStateStacked & frame, std::optional<UInt64> time_series_version) const
 {
     for (const auto & target : targets)
     {
@@ -268,7 +268,7 @@ void ASTViewTargets::formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, con
     }
 }
 
-void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame, std::optional<UInt64> time_series_version)
+void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, const FormatStateStacked & frame, std::optional<UInt64> time_series_version)
 {
     if (target.table_id)
     {

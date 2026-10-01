@@ -59,7 +59,7 @@ SelectStreamFactory::SelectStreamFactory(
     SharedHeader header_,
     const StorageSnapshotPtr & storage_snapshot_,
     QueryProcessingStage::Enum processed_stage_)
-    : header(header_),
+    : header(std::move(header_)),
     storage_snapshot(storage_snapshot_),
     processed_stage(processed_stage_)
 {

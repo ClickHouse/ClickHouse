@@ -63,7 +63,7 @@ String NpyOutputFormat::shapeStr() const
     return shape.str();
 }
 
-NpyOutputFormat::NpyOutputFormat(WriteBuffer & out_, SharedHeader header_) : IOutputFormat(header_, out_)
+NpyOutputFormat::NpyOutputFormat(WriteBuffer & out_, SharedHeader header_) : IOutputFormat(std::move(header_), out_)
 {
     const auto & header = getPort(PortKind::Main).getHeader();
     auto data_types = header.getDataTypes();

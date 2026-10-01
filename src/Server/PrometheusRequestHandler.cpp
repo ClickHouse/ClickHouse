@@ -777,7 +777,7 @@ PrometheusRequestHandler::PrometheusRequestHandler(
     , metrics_writer(metrics_writer_)
     , log(getLogger("PrometheusRequestHandler"))
 {
-    response_headers = response_headers_;
+    response_headers = std::move(response_headers_);
     createImpl();
 }
 

@@ -91,7 +91,7 @@ struct ASTTableJoin : public IAST
     void writeJSON(WriteBuffer & out) const override;
     void readJSON(const Poco::JSON::Object & json) override;
 
-    void formatImplBeforeTable(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
+    void formatImplBeforeTable(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, const FormatStateStacked & frame) const;
     void formatImplAfterTable(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 

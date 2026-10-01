@@ -343,7 +343,7 @@ IcebergIterator::IcebergIterator(
     , local_context(local_context_)
     , table_state_snapshot(table_snapshot_)
     , data_snapshot(data_snapshot_)
-    , persistent_components(persistent_components_)
+    , persistent_components(std::move(persistent_components_))
     , manifest_filter_dag(makeManifestFilterDag(filter_dag_, local_context_))
     , callback(std::move(callback_))
 {

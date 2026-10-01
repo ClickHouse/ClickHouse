@@ -14,7 +14,7 @@ public:
     constexpr static std::string METADATA_DIRECTORY_TOKEN = "__meta";
     constexpr static std::string ROOT_DIRECTORY_TOKEN = "__root";
 
-    explicit PlainRewritableLayout(std::string object_storage_common_key_prefix_);
+    explicit PlainRewritableLayout(const std::string & object_storage_common_key_prefix_);
 
     std::string constructMetadataDirectoryKey() const;
     std::string constructRootFilesDirectoryKey() const;

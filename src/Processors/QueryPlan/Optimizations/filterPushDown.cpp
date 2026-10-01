@@ -312,8 +312,8 @@ public:
 
     JoinActionRef unite(JoinActionRef a, JoinActionRef b)
     {
-        JoinActionRef root_a = findOrAdd(a);
-        JoinActionRef root_b = findOrAdd(b);
+        JoinActionRef root_a = findOrAdd(std::move(a));
+        JoinActionRef root_b = findOrAdd(std::move(b));
 
         if (root_a == root_b)
             return root_a;
@@ -334,7 +334,7 @@ public:
 
     bool connected(JoinActionRef a, JoinActionRef b)
     {
-        return findOrAdd(a) == findOrAdd(b);
+        return findOrAdd(std::move(a)) == findOrAdd(std::move(b));
     }
 
     std::unordered_map<JoinActionRef, std::vector<JoinActionRef>> getClasses()
@@ -348,7 +348,7 @@ public:
     std::vector<JoinActionRef> getClass(JoinActionRef ref)
     {
         std::vector<JoinActionRef> res;
-        JoinActionRef root = findOrAdd(ref);
+        JoinActionRef root = findOrAdd(std::move(ref));
         for (auto & [other_ref, _] : parent)
         {
             if (findOrAdd(other_ref) == root)

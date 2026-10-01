@@ -2413,7 +2413,7 @@ private:
                   QueryTreeNodePtr current,
                   const ConstantNode * constant,
                   CompareType type,
-                  ComparisonOrderDomain domain)
+                  const ComparisonOrderDomain & domain)
         {
             if (auto it = pairs.find(current); it != pairs.end())
             {

@@ -185,8 +185,8 @@ void writeColumnSingleGranule(
 {
     ISerialization::SerializeBinaryBulkStatePtr state;
 
-    serialize_settings.getter = stream_getter;
-    serialize_settings.stream_mark_getter = stream_mark_getter;
+    serialize_settings.getter = std::move(stream_getter);
+    serialize_settings.stream_mark_getter = std::move(stream_mark_getter);
     /// Write object and dynamic statistics only in first granule, it is used
     /// only during merges and we always get it from the first granule.
     if (!is_first_granule)

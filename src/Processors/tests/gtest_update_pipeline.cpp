@@ -150,7 +150,7 @@ class FinishingSource final : public IProcessor
 {
 public:
     FinishingSource(SharedHeader header_, size_t fan_out)
-        : IProcessor({}, OutputPorts(fan_out, header_))
+        : IProcessor({}, OutputPorts(fan_out, std::move(header_)))
     {
     }
 

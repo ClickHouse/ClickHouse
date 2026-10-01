@@ -612,7 +612,7 @@ void Connection::performHandshakeForSSHAuth()
 
     writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
 
-    auto pack_string_for_ssh_sign = [&](String challenge_)
+    auto pack_string_for_ssh_sign = [&](const String & challenge_)
     {
         String message;
         message.append(std::to_string(DBMS_TCP_PROTOCOL_VERSION));

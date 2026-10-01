@@ -39,7 +39,7 @@ struct MergeTreeSource::AsyncReadingState
         void setException(std::exception_ptr exception_)
         {
             chassert(stage == Stage::InProgress);
-            exception = exception_;
+            exception = std::move(exception_);
             finish();
         }
 

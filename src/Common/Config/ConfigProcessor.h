@@ -89,7 +89,7 @@ public:
     static XMLDocumentPtr parseConfig(const std::string & config_path, Poco::XML::DOMParser & dom_parser);
 
     /// These configurations will be used if there is no configuration file.
-    static void registerEmbeddedConfig(std::string name, std::string_view content);
+    static void registerEmbeddedConfig(const std::string & name, std::string_view content);
 
 
     /// loadConfig* functions apply processConfig and create Poco::Util::XMLConfiguration.

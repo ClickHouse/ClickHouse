@@ -1161,7 +1161,7 @@ public:
     size_t size() const { return nodes_num; }
 
     template<typename... Args>
-    static UInt128 hash(Args... args)
+    static UInt128 hash(const Args &... args)
     {
         auto hash = SipHash();
         (hash.update(args), ...);

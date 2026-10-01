@@ -28,7 +28,7 @@ Configuration::Configuration(
 Configuration ConfigurationFactory::createWithoutEscaping(
     char key_value_delimiter,
     char quoting_character,
-    VectorWithMemoryTracking<char> pair_delimiters,
+    const VectorWithMemoryTracking<char> & pair_delimiters,
     Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy)
 {
     validate(key_value_delimiter, quoting_character, pair_delimiters);

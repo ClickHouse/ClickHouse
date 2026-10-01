@@ -951,7 +951,7 @@ std::vector<WorkloadEntityStorageBase::Event> WorkloadEntityStorageBase::orderEn
 String WorkloadEntityStorageBase::serializeLocalEntities(std::optional<Event> change)
 {
     std::unique_lock<std::recursive_mutex> lock;
-    auto ordered_entities = orderEntities(local_entities, change);
+    auto ordered_entities = orderEntities(local_entities, std::move(change));
     WriteBufferFromOwnString buf;
     IAST::FormatSettings settings(/*one_line=*/true);
     for (const auto & event : ordered_entities)

@@ -815,7 +815,7 @@ void KeeperMemNodesStorage::prepareRemoveNodeWithoutUpdatingParent(
 }
 
 bool KeeperMemNodesStorage::createNode(
-    const std::string & path, String data, const KeeperNodeStats & stat, uint64_t * digest) TSA_NO_THREAD_SAFETY_ANALYSIS
+    const std::string & path, const String & data, const KeeperNodeStats & stat, uint64_t * digest) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     auto parent_path = Coordination::parentNodePath(path);
     auto node_it = container.find(parent_path);

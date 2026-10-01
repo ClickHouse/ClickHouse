@@ -93,7 +93,7 @@ PrometheusTextOutputFormat::PrometheusTextOutputFormat(
     WriteBuffer & out_,
     SharedHeader header_,
     const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_)
+    : IRowOutputFormat(std::move(header_), out_)
     , string_serialization(DataTypeString().getDefaultSerialization())
     , format_settings(format_settings_)
 {

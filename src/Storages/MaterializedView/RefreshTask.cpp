@@ -479,7 +479,7 @@ void RefreshTask::drop(ContextPtr context, bool is_shared_db)
         zkutil::KeeperMultiException::check(code, ops, responses);
 }
 
-void RefreshTask::rename(StorageID new_id, StorageID new_inner_table_id)
+void RefreshTask::rename(const StorageID & new_id, StorageID new_inner_table_id)
 {
     ContextPtr context;
     StorageID old_id = StorageID::createEmpty();
@@ -1413,7 +1413,7 @@ void RefreshTask::executeRefresh()
     scheduling_task->schedule();
 }
 
-std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, CursorTreeNodePtr & out_cursor)
+std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, const std::vector<StorageID> & deps, const String & log_comment, String & out_error_message, CursorTreeNodePtr & out_cursor)
 {
     StorageID view_storage_id = view->getStorageID();
     LOG_DEBUG(getLogger(), "Refreshing view");

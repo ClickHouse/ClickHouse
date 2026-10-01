@@ -54,7 +54,7 @@ struct DeduplicationHash
 
 
 std::vector<std::string> getDeduplicationBlockIds(const std::vector<DeduplicationHash> & deduplication_hashes);
-std::vector<std::string> getDeduplicationPaths(std::string storage_path, const std::vector<DeduplicationHash> & deduplication_hashes);
+std::vector<std::string> getDeduplicationPaths(const std::string & storage_path, const std::vector<DeduplicationHash> & deduplication_hashes);
 
 
 class DeduplicationInfo : public ChunkInfo
@@ -63,12 +63,12 @@ protected:
     // InsertDependenciesBuilder::createChainForDeduplicationRetry needs access to private members
     friend class InsertDependenciesBuilder;
     /// src/Storages/MergeTree/tests/gtest_async_inserts.cpp
-    friend std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size_t> offsets, std::vector<String> hashes);
+    friend std::vector<Int64> testSelfDeduplicate(const std::vector<Int64> & data, std::vector<size_t> offsets, std::vector<String> hashes);
     friend std::vector<String> testSelfDeduplicateStrings(std::vector<String> data, std::vector<size_t> offsets, std::vector<String> hashes);
     friend std::vector<String> testPrewarmDataHashes(std::vector<String> data, std::vector<size_t> offsets);
-    friend std::vector<String> testPrewarmFilterToPartition(std::vector<String> data, std::vector<size_t> token_offsets, std::vector<UInt64> row_to_partition, size_t num_partitions, bool prewarm);
-    friend bool testPrewarmPopulatesCache(std::vector<String> data, std::vector<size_t> token_offsets, std::vector<UInt64> row_to_partition, size_t num_partitions);
-    friend bool testPrewarmDisabledIsNoop(std::vector<String> data, std::vector<size_t> token_offsets);
+    friend std::vector<String> testPrewarmFilterToPartition(const std::vector<String> & data, std::vector<size_t> token_offsets, const std::vector<UInt64> & row_to_partition, size_t num_partitions, bool prewarm);
+    friend bool testPrewarmPopulatesCache(std::vector<String> data, std::vector<size_t> token_offsets, const std::vector<UInt64> & row_to_partition, size_t num_partitions);
+    friend bool testPrewarmDisabledIsNoop(const std::vector<String> & data, std::vector<size_t> token_offsets);
 
 public:
     using Ptr = std::shared_ptr<DeduplicationInfo>;

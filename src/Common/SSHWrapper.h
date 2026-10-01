@@ -74,12 +74,12 @@ public:
     /// to be done outside of this functions.
     /// If the key is encrypted and `passphrase` is not set, `ask_passphrase` is called to obtain it.
     static SSHKey makePrivateKeyFromFile(const String & filename, const std::optional<String> & passphrase, PassphraseCallback ask_passphrase = {});
-    static SSHKey makePublicKeyFromFile(String filename);
+    static SSHKey makePublicKeyFromFile(const String & filename);
     /// Reads a private key file that is not protected by a passphrase, without ever asking for one.
     /// Returns `nullopt` if the file cannot be read this way. Only the public part of the result is
     /// meaningful: it is used to check that a `.pub` file really belongs to the key file next to it.
     static std::optional<SSHKey> tryMakePrivateKeyFromFileWithoutPassphrase(const String & filename);
-    static SSHKey makePublicKeyFromBase64(String base64_key, String type_name);
+    static SSHKey makePublicKeyFromBase64(const String & base64_key, const String & type_name);
 
     /// A key that is held by the ssh-agent: only the public key `key_blob` (in the SSH wire format) is known here,
     /// and every signature is made by the agent.

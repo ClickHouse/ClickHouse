@@ -33,7 +33,7 @@ private:
 namespace DB
 {
 
-ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorByPrefix(String key_prefix)
+ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorByPrefix(const String & key_prefix)
 {
     return std::make_shared<GeneratorWithTemplate>(std::filesystem::path(RE2::QuoteMeta(key_prefix)) / "[a-z]{3}/[a-z]{29}");
 }

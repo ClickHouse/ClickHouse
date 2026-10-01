@@ -154,7 +154,7 @@ SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
 
 
 FutureSetFromTuple::FutureSetFromTuple(
-    Hash hash_, ASTPtr ast_, ColumnsWithTypeAndName block,
+    Hash hash_, ASTPtr ast_, const ColumnsWithTypeAndName & block,
     bool transform_null_in, SizeLimits size_limits)
     : hash(hash_), ast(std::move(ast_))
 {

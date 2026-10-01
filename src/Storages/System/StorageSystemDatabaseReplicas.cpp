@@ -51,7 +51,7 @@ public:
         ColumnPtr col_database_,
         ContextPtr context_,
         std::vector<TFuture> && futures_)
-        : ISource(header_)
+        : ISource(std::move(header_))
         , max_databases(col_database_->size())
         , max_block_size(max_block_size_)
         , col_database(std::move(col_database_))

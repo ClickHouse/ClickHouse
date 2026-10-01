@@ -167,7 +167,7 @@ struct ChangelogFileOperation
     ChangelogFileOperationVariant operation;
     std::atomic<bool> done = false;
 
-    void setError(std::exception_ptr e)
+    void setError(const std::exception_ptr & e)
     {
         if (!e)
             return;

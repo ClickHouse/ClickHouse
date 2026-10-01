@@ -567,7 +567,7 @@ static const ActionsDAG::Node & addCastImpl(
     ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
     auto func_base_cast = createInternalCast(ColumnWithTypeAndName{node_to_cast.result_type, node_to_cast.result_name}, cast_type, cast_kind, {}, context);
 
-    return dag.addFunction(func_base_cast, std::move(children), result_name);
+    return dag.addFunction(func_base_cast, std::move(children), std::move(result_name));
 }
 
 const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context)
@@ -2967,7 +2967,7 @@ void ActionsDAG::unite(ActionsDAG && second)
     outputs.append_range(second.outputs);
 }
 
-ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping, bool avoid_duplicate_inputs) const
+ActionsDAG::SplitResult ActionsDAG::split(const std::unordered_set<const Node *> & split_nodes, bool create_split_nodes_mapping, bool avoid_duplicate_inputs) const
 {
     /// Split DAG into two parts.
     /// (first_nodes, first_outputs) is a part which will have split_nodes in result.

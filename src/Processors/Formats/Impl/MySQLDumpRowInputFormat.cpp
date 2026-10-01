@@ -47,7 +47,7 @@ namespace
 }
 
 MySQLDumpRowInputFormat::MySQLDumpRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(header_, in_, params_)
+    : IRowInputFormat(header_, in_, std::move(params_))
     , table_name(format_settings_.mysql_dump.table_name)
     , types(header_->getDataTypes())
     , format_settings(format_settings_)

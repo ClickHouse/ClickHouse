@@ -256,7 +256,7 @@ public:
         std::lock_guard lock(mutex);
         cancelled = true;
         if (!reason)
-            reason = reason_;
+            reason = std::move(reason_);
         has_data.notify_all();
     }
 
@@ -423,7 +423,7 @@ private:
     {
     public:
         SinkFromInMemoryExchange(SharedHeader header_, InMemoryExchangePtr exchange_)
-            : ISink(header_)
+            : ISink(std::move(header_))
             , exchange(std::move(exchange_))
         {
         }
@@ -466,7 +466,7 @@ private:
     {
     public:
         SourceFromInMemoryExchange(SharedHeader header_, InMemoryExchangePtr exchange_)
-            : ISource(header_)
+            : ISource(std::move(header_))
             , exchange(std::move(exchange_))
         {
         }
@@ -1550,7 +1550,7 @@ protected:
         /// Log the exception, record it as the query's failure, and request cancellation. The status
         /// check threads call it from their catch blocks, so a failure there surfaces through
         /// `checkCancelled` instead of escaping the thread and terminating the server.
-        void recordFailure(std::exception_ptr exception)
+        void recordFailure(const std::exception_ptr & exception)
         {
             /// A consequence is expected while the query stops; only a root cause is worth an error entry.
             const bool is_consequence = DistributedQueryCancellation::isConsequence(getExceptionErrorCode(exception));
@@ -1897,7 +1897,7 @@ void DistributedQueryCancellation::cancel()
     notifyStageWakeup(wakeup);
 }
 
-bool DistributedQueryCancellation::recordException(std::exception_ptr exception)
+bool DistributedQueryCancellation::recordException(const std::exception_ptr & exception)
 {
     const FailureRank rank = rankOf(getExceptionErrorCode(exception));
     bool driving_source_reports = false;
@@ -2114,7 +2114,7 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
 
 void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id, std::exception_ptr failure)
 {
-    InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id), failure);
+    InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id), std::move(failure));
 }
 
 }

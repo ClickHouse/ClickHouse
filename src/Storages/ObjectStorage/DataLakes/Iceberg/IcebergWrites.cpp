@@ -644,7 +644,7 @@ void generateManifestFile(
             for (size_t i = 0; i < field_ids.size(); ++i)
                 field_id_to_column_index[field_ids[i]] = i;
 
-            auto dump_fields = [&](size_t field_id, Field value)
+            auto dump_fields = [&](size_t field_id, const Field & value)
             { return dumpFieldToBytes(value, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]); };
 
             auto lower_statistics

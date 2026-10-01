@@ -50,7 +50,7 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
     const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// For read-only snapshot type functionality, it's acceptable even though 'getZooKeeper' may cause data inconsistency.
-    auto fill_data = [&](const std::string_view name, const zkutil::ZooKeeperPtr zookeeper, MutableColumns & columns)
+    auto fill_data = [&](const std::string_view name, const zkutil::ZooKeeperPtr & zookeeper, MutableColumns & columns)
     {
         auto index = zookeeper->getConnectedHostIdx();
         String host_port = zookeeper->getConnectedHostPort();

@@ -1200,7 +1200,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     }
 }
 
-AvroDeserializer::AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_)
+AvroDeserializer::AvroDeserializer(DataTypePtr data_type, const std::string & column_name, const avro::ValidSchema & schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_)
     : null_as_default(null_as_default_), settings(settings_)
 {
     const auto & schema_root = schema.root();
@@ -1224,7 +1224,7 @@ AvroDeserializer::AvroDeserializer(DataTypePtr data_type, const std::string & co
 
 }
 
-AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_)
+AvroDeserializer::AvroDeserializer(const Block & header, const avro::ValidSchema & schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_)
     : null_as_default(null_as_default_), settings(settings_)
 {
     const auto & schema_root = schema.root();
@@ -1262,7 +1262,7 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
 }
 
 AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(header_, in_, params_), format_settings(format_settings_)
+    : IRowInputFormat(std::move(header_), in_, std::move(params_)), format_settings(format_settings_)
 {
 }
 
@@ -1317,7 +1317,7 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
 
 AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
     SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(header_, in_, params_)
+    : IRowInputFormat(std::move(header_), in_, std::move(params_))
     , schema_registry(getConfluentSchemaRegistry(format_settings_))
     , format_settings(format_settings_)
 

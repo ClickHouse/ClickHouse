@@ -88,14 +88,14 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            const LoggerPtr log_,
+            const LoggerPtr & log_,
             bool use_upload_checksum_algorithm_)
             : client_ptr(client_ptr_)
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
             , request_settings(request_settings_)
             , object_metadata(object_metadata_)
-            , schedule(schedule_)
+            , schedule(std::move(schedule_))
             , blob_storage_log(blob_storage_log_)
             , log(log_)
             /// `GCS` does not accept the AWS flexible checksum headers (`x-amz-checksum-*`, `x-amz-sdk-checksum-algorithm`)
@@ -485,7 +485,7 @@ namespace
                 dest_key_,
                 request_settings_,
                 object_metadata_,
-                schedule_,
+                std::move(schedule_),
                 blob_storage_log_,
                 getLogger("copyDataToS3File"),
                 /* use_upload_checksum_algorithm =*/ true)
@@ -692,7 +692,7 @@ namespace
                 dest_key_,
                 request_settings_,
                 object_metadata_,
-                schedule_,
+                std::move(schedule_),
                 blob_storage_log_,
                 getLogger("copyS3File"),
                 /* use_upload_checksum_algorithm =*/ false)
@@ -951,7 +951,7 @@ void copyDataToS3File(
         dest_key,
         settings,
         object_metadata,
-        schedule,
+        std::move(schedule),
         blob_storage_log};
     helper.performCopy();
 }

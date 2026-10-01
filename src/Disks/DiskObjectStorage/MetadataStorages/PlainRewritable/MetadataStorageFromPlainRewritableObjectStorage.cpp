@@ -265,7 +265,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             directories.clear();
             std::mutex directories_mutex;
 
-            auto list_shard = [&](const std::string & prefix, std::optional<std::string> start_after, bool stop_at_alphabet)
+            auto list_shard = [&](const std::string & prefix, const std::optional<std::string> & start_after, bool stop_at_alphabet)
             {
                 std::vector<DirectoryObject> shard;
                 for (auto iterator = object_storage->iterate(prefix, 0, /*with_tags=*/ false, start_after); iterator->isValid(); iterator->next())

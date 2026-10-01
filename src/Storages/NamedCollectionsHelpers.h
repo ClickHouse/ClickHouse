@@ -51,7 +51,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 std::pair<std::string, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context);
 
 /// Parses asts as key value pairs and returns a map of them.
-std::map<String, Field> getParamsMapFromAST(ASTs asts, ContextPtr context);
+std::map<String, Field> getParamsMapFromAST(const ASTs & asts, ContextPtr context);
 
 HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collection);
 

@@ -42,11 +42,11 @@ StorageXDBC::StorageXDBC(
     const StorageID & table_id_,
     const std::string & remote_database_name_,
     const std::string & remote_table_name_,
-    ColumnsDescription columns_,
-    ConstraintsDescription constraints_,
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     const String & comment,
     ContextPtr context_,
-    const BridgeHelperPtr bridge_helper_)
+    const BridgeHelperPtr & bridge_helper_)
     : IStorageURLBase(
         "",
         context_,

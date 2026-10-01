@@ -43,7 +43,7 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
     bool with_types_,
     bool is_raw_,
     const FormatSettings & format_settings_)
-    : TabSeparatedRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, with_names_, with_types_, is_raw_, format_settings_)
+    : TabSeparatedRowInputFormat(std::move(header_), std::make_unique<PeekableReadBuffer>(in_), params_, with_names_, with_types_, is_raw_, format_settings_)
 {
 }
 
@@ -56,7 +56,7 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
     bool is_raw,
     const FormatSettings & format_settings_)
     : RowInputFormatWithNamesAndTypes(
-        header_,
+        std::move(header_),
         *in_,
         params_,
         false,

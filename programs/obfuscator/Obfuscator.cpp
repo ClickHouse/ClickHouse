@@ -144,7 +144,7 @@ using ModelPtr = std::unique_ptr<IModel>;
 
 
 template <typename... Ts>
-static UInt64 hash(Ts... xs)
+static UInt64 hash(const Ts &... xs)
 {
     SipHash hash;
     (hash.update(xs), ...);

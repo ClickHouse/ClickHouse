@@ -52,7 +52,7 @@ public:
             bool perform_ttl_move_on_insert_ = true,
             VolumeLoadBalancing load_balancing_ = VolumeLoadBalancing::ROUND_ROBIN)
         : disks(std::move(disks_))
-        , name(name_)
+        , name(std::move(name_))
         , max_data_part_size(max_data_part_size_)
         , perform_ttl_move_on_insert(perform_ttl_move_on_insert_)
         , load_balancing(load_balancing_)

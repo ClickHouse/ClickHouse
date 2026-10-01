@@ -49,7 +49,7 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
     size_t min_bytes_for_seek,
     ParquetMetadataCachePtr metadata_cache_,
     const std::optional<RelativePathWithMetadata> & object_with_metadata_)
-    : IInputFormat(header_, &buf)
+    : IInputFormat(std::move(header_), &buf)
     , format_settings(format_settings_)
     , read_options(convertReadOptions(format_settings))
     , parser_shared_resources(parser_shared_resources_)

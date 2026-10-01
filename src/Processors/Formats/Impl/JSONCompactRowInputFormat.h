@@ -9,7 +9,7 @@ class JSONCompactFormatReader;
 class JSONCompactRowInputFormat final : public RowInputFormatWithNamesAndTypes<JSONCompactFormatReader>
 {
 public:
-    JSONCompactRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    JSONCompactRowInputFormat(SharedHeader header_, ReadBuffer & in_, const Params & params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "JSONCompactRowInputFormat"; }
 

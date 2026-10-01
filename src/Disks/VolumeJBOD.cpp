@@ -18,7 +18,7 @@ VolumeJBOD::VolumeJBOD(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     DiskSelectorPtr disk_selector)
-    : IVolume(name_, config, config_prefix, disk_selector)
+    : IVolume(std::move(name_), config, config_prefix, disk_selector)
     , disks_by_size(disks.begin(), disks.end())
 {
     LoggerPtr logger = getLogger("StorageConfiguration");

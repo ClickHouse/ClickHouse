@@ -207,9 +207,9 @@ TEST(Statistics, Estimator)
 
 TEST(Statistics, MinMaxEstimateLess)
 {
-    auto test_minmax = [](Field min_val, Field max_val, UInt64 row_count, Field val, Float64 expected)
+    auto test_minmax = [](Field min_val, Field max_val, UInt64 row_count, const Field & val, Float64 expected)
     {
-        StatisticsMinMax stats(min_val, max_val, row_count);
+        StatisticsMinMax stats(std::move(min_val), std::move(max_val), row_count);
         auto result = stats.estimateLess(val);
         ASSERT_TRUE(result.has_value()) << "estimateLess returned nullopt";
         EXPECT_DOUBLE_EQ(*result, expected);

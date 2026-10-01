@@ -116,7 +116,7 @@ public:
         const DataTypes & arguments, const Array & params, std::optional<String> codec_, std::optional<UInt64> block_size_bytes_)
         : IAggregateFunctionDataHelper(arguments, params, createResultType())
         , serialization(this->result_type->getDefaultSerialization())
-        , codec(codec_)
+        , codec(std::move(codec_))
         , block_size_bytes(block_size_bytes_)
     {
     }
@@ -172,7 +172,7 @@ public:
 
         ISerialization::SerializeBinaryBulkSettings settings;
 
-        settings.getter = [place](ISerialization::SubstreamPath) -> WriteBuffer * { return data(place).calculator.get(); };
+        settings.getter = [place](const ISerialization::SubstreamPath &) -> WriteBuffer * { return data(place).calculator.get(); };
 
         ISerialization::SerializeBinaryBulkStatePtr state;
         type_serialization_ptr->serializeBinaryBulkStatePrefix(*column, settings, state);

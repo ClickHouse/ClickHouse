@@ -211,7 +211,7 @@ public:
         return ActionsDAG::cloneSubDAG(nodes, /* remove_aliases= */ false);
     }
 
-    static ActionsDAG getSubDAG(JoinActionRef action);
+    static ActionsDAG getSubDAG(const JoinActionRef & action);
 
     JoinExpressionActions(const JoinExpressionActions &) = delete;
     JoinExpressionActions & operator=(const JoinExpressionActions &) = delete;

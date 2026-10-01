@@ -678,7 +678,7 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
     }
 }
 
-void DatabaseReplicated::fillClusterAuthInfo(String collection_name)
+void DatabaseReplicated::fillClusterAuthInfo(const String & collection_name)
 {
     auto collection = NamedCollectionFactory::instance().get(collection_name);
 
@@ -1846,7 +1846,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     /// 1) RENAME TABLE. There could be multiple pairs of tables (e.g. RENAME b TO c, a TO b, c TO d)
     /// But it is equal to multiple subsequent RENAMEs each of which operates only with two tables
     /// 2) EXCHANGE TABLE. This query swaps two names atomically and could not be represented with two separate RENAMEs
-    auto rename_table = [&](String from, String to)
+    auto rename_table = [&](const String & from, const String & to)
     {
         LOG_DEBUG(log, "Will RENAME TABLE {} TO {}", backQuoteIfNeed(from), backQuoteIfNeed(to));
         DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::min(from, to), this);

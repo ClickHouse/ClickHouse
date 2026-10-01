@@ -64,8 +64,8 @@ private:
     static DatabaseAndTableWithAlias createDBAndTable(String table_name, String database_name = "test")
     {
         DatabaseAndTableWithAlias res;
-        res.database = database_name;
-        res.table = table_name;
+        res.database = std::move(database_name);
+        res.table = std::move(table_name);
         return res;
     }
 

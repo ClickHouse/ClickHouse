@@ -150,7 +150,7 @@ void applyColumnsExceptTransformer(const ASTColumnsExceptTransformer & transform
     {
         String expected_columns_str;
         std::for_each(expected_columns.begin(), expected_columns.end(),
-            [&](String x) { expected_columns_str += (" " + x) ; });
+            [&](const String & x) { expected_columns_str += (" " + x) ; });
 
         throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Columns transformer EXCEPT expects following column(s) :{}",
             expected_columns_str);

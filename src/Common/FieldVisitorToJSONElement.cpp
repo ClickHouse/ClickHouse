@@ -17,7 +17,7 @@ static inline String formatString(const String & x)
 }
 
 template <typename T>
-static inline String formatAsString(T x)
+static inline String formatAsString(const T & x)
 {
     WriteBufferFromOwnString wb;
     wb << "\"";

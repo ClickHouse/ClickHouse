@@ -237,7 +237,7 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
             columns,
             sample_path,
             inferred_schema,
-            format_settings,
+            std::move(format_settings),
             context);
         sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns, /* check_contained_in_schema */false);
     }
@@ -283,7 +283,7 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForFileURLLikeStora
             columns,
             sample_path,
             inferred_schema,
-            format_settings,
+            std::move(format_settings),
             context);
     }
 

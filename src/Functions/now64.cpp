@@ -30,7 +30,7 @@ namespace
 class ExecutableFunctionNow64 final : public IExecutableFunction
 {
 public:
-    explicit ExecutableFunctionNow64(Field time_) : time_value(time_) {}
+    explicit ExecutableFunctionNow64(Field time_) : time_value(std::move(time_)) {}
 
     String getName() const override { return "now64"; }
 
@@ -47,7 +47,7 @@ class FunctionBaseNow64 final : public IFunctionBase
 {
 public:
     explicit FunctionBaseNow64(Field time_, DataTypes argument_types_, DataTypePtr return_type_)
-        : time_value(time_), argument_types(std::move(argument_types_)), return_type(std::move(return_type_)) {}
+        : time_value(std::move(time_)), argument_types(std::move(argument_types_)), return_type(std::move(return_type_)) {}
 
     String getName() const override { return "now64"; }
 

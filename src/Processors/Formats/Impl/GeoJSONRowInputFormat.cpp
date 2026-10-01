@@ -570,7 +570,7 @@ GeoJSONRowInputFormat::GeoJSONRowInputFormat(
     SharedHeader header_,
     Params params_,
     const FormatSettings & format_settings_)
-    : IRowInputFormat(header_, in_, std::move(params_))
+    : IRowInputFormat(std::move(header_), in_, std::move(params_))
     , format_settings(format_settings_)
 {
     const auto & header = getPort().getHeader();

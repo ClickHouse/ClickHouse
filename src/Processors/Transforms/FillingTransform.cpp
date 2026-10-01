@@ -588,10 +588,10 @@ bool FillingTransform::generateSuffixIfNeeded(const Columns & input_columns, Mut
 
 bool FillingTransform::generateSuffixIfNeeded(
     const MutableColumns & result_columns,
-    MutableColumnRawPtrs res_fill_columns,
-    MutableColumnRawPtrs res_interpolate_columns,
-    MutableColumnRawPtrs res_sort_prefix_columns,
-    MutableColumnRawPtrs res_other_columns)
+    const MutableColumnRawPtrs & res_fill_columns,
+    const MutableColumnRawPtrs & res_interpolate_columns,
+    const MutableColumnRawPtrs & res_sort_prefix_columns,
+    const MutableColumnRawPtrs & res_other_columns)
 {
     logDebug("generateSuffixIfNeeded filling_row", filling_row);
     logDebug("generateSuffixIfNeeded next_row", next_row);

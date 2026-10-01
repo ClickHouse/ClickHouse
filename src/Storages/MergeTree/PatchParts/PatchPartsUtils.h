@@ -22,12 +22,12 @@ PatchParts getPatchesForPart(const MergeTreePartInfo & source_part, const DataPa
 
 /// Returns metadata snapshot of a legacy (v1) patch part.
 /// Sort key is `(_part, _part_offset)`.
-StorageMetadataPtr getPatchPartMetadataV1(Block sample_block, ContextPtr local_context);
+StorageMetadataPtr getPatchPartMetadataV1(const Block & sample_block, ContextPtr local_context);
 StorageMetadataPtr getPatchPartMetadataV1(ColumnsDescription patch_part_desc, ContextPtr local_context);
 
 /// Returns metadata snapshot of a v2 patch part.
 /// Sort key is `(<sorting_key>..., _block_number, _block_offset)`.
-StorageMetadataPtr getPatchPartMetadataV2(Block sample_block, const KeyDescription & sorting_key, ContextPtr local_context);
+StorageMetadataPtr getPatchPartMetadataV2(const Block & sample_block, const KeyDescription & sorting_key, ContextPtr local_context);
 StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, const KeyDescription & sorting_key, ContextPtr local_context);
 StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, const String & sorting_key_str, ContextPtr local_context);
 

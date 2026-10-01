@@ -171,8 +171,8 @@ public:
         : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , logger(getLogger("ReadFromPostgreSQL"))
         , max_block_size(max_block_size_)
-        , remote_table_schema(remote_table_schema_)
-        , remote_table_or_query(remote_table_or_query_)
+        , remote_table_schema(std::move(remote_table_schema_))
+        , remote_table_or_query(std::move(remote_table_or_query_))
         , pool(std::move(pool_))
     {
     }

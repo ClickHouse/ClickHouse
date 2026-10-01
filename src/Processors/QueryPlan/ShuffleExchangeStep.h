@@ -14,7 +14,7 @@ public:
     /// `hash_cast_types` (one entry per key, optional) selects a type to cast each key to
     /// before hashing, used to align buckets across both sides of a shuffle join.
     ShuffleExchangeStep(SharedHeader input_header_, Names key_names_, size_t source_bucket_count_, size_t result_bucket_count_, DataTypes hash_cast_types_ = {})
-        : LogicalExchangeStep(input_header_)
+        : LogicalExchangeStep(std::move(input_header_))
         , key_names(std::move(key_names_))
         , hash_cast_types(std::move(hash_cast_types_))
         , source_bucket_count(source_bucket_count_)

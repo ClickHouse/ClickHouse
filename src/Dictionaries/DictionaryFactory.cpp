@@ -23,7 +23,7 @@ void DictionaryFactory::registerLayout(const std::string & layout_type, LayoutCr
     if (it != registered_layouts.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DictionaryFactory: the layout name '{}' is not unique", layout_type);
 
-    RegisteredLayout layout { .layout_create_function = create_layout, .is_layout_complex = is_layout_complex, .has_layout_complex = has_layout_complex, .documentation = std::move(documentation) };
+    RegisteredLayout layout { .layout_create_function = std::move(create_layout), .is_layout_complex = is_layout_complex, .has_layout_complex = has_layout_complex, .documentation = std::move(documentation) };
     registered_layouts.emplace(layout_type, std::move(layout));
 }
 

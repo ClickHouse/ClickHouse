@@ -21,7 +21,7 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     const MarkRanges & all_mark_ranges,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
-    MergeTreeReaderSettings settings,
+    const MergeTreeReaderSettings & settings,
     bool interruptible_marks_read)
 {
     auto context = data_part_info->getContext();
@@ -66,7 +66,7 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
         extension,
         marks_count,
         all_mark_ranges,
-        std::move(settings),
+        settings,
         uncompressed_cache,
         data_file_size,
         std::move(marks_loader),

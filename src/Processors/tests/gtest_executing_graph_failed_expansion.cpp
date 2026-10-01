@@ -41,7 +41,7 @@ SharedHeader makeHeader()
 class Expander final : public IProcessor
 {
 public:
-    explicit Expander(SharedHeader header) : IProcessor({}, OutputPorts(1, header)) {}
+    explicit Expander(SharedHeader header) : IProcessor({}, OutputPorts(1, std::move(header))) {}
 
     String getName() const override { return "Expander"; }
 

@@ -86,7 +86,7 @@ public:
     virtual void toJSON(Poco::JSON::Object & object) const;
     virtual void fromJSON(const Poco::JSON::Object & object);
 
-    void setKindStack(ISerialization::KindStack kind_stack_) { kind_stack = kind_stack_; }
+    void setKindStack(ISerialization::KindStack kind_stack_) { kind_stack = std::move(kind_stack_); }
     void appendToKindStack(ISerialization::Kind kind) { kind_stack.push_back(kind); }
     const SerializationInfoSettings & getSettings() const { return settings; }
     const Data & getData() const { return data; }

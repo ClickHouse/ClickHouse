@@ -35,7 +35,7 @@ MultipleFileWriter::MultipleFileWriter(
     , context(context_)
     , format_settings(format_settings_)
     , write_format(std::move(write_format_))
-    , sample_block(sample_block_)
+    , sample_block(std::move(sample_block_))
 {
 }
 

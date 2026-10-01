@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 StorageFromMergeTreeProjection::StorageFromMergeTreeProjection(
     StorageID storage_id_, StoragePtr parent_storage_, StorageMetadataPtr parent_metadata_, ProjectionDescriptionRawPtr projection_)
-    : IStorage(storage_id_)
+    : IStorage(std::move(storage_id_))
     , parent_storage(std::move(parent_storage_))
     , merge_tree(dynamic_cast<const MergeTreeData &>(*parent_storage))
     , parent_metadata(std::move(parent_metadata_))

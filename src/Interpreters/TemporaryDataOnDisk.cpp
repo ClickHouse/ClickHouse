@@ -367,7 +367,7 @@ TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag)
 }
 #endif
 
-TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_, String compression_codec_)
+TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_, const String & compression_codec_)
 {
     TemporaryDataOnDiskSettings child_settings = settings;
     child_settings.metrics = metrics_;

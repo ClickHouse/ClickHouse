@@ -1766,7 +1766,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
     return {};
 }
 
-IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
+IColumn::Selector StorageDistributed::createSelector(const ClusterPtr & cluster, const ColumnWithTypeAndName & result)
 {
     const auto & slot_to_shard = cluster->getSlotToShard();
     const IColumn * column = result.column.get();

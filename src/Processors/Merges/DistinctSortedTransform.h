@@ -16,7 +16,7 @@ class DistinctSortedTransform final : public IMergingTransform<DistinctSortedAlg
 {
 public:
     DistinctSortedTransform(
-        SharedHeaders input_headers, SharedHeader output_header, SortDescription description,
+        const SharedHeaders & input_headers, SharedHeader output_header, SortDescription description,
         size_t max_block_size_rows, bool have_all_inputs = true)
         : IMergingTransform(
             input_headers, output_header, have_all_inputs, /*limit_hint_=*/ 0,

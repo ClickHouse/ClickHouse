@@ -567,7 +567,7 @@ public:
     /// Hash table cannot be modified during HashJoin lifetime and must be protected with lock.
     void setLock(TableLockHolder rwlock_holder)
     {
-        storage_join_lock = rwlock_holder;
+        storage_join_lock = std::move(rwlock_holder);
     }
 
     void reuseJoinedData(const HashJoin & join);

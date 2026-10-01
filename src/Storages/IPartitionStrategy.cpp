@@ -212,7 +212,7 @@ namespace
     }
 }
 
-IPartitionStrategy::IPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_)
+IPartitionStrategy::IPartitionStrategy(const KeyDescription & partition_key_description_, const Block & sample_block_, ContextPtr context_)
 : partition_key_description(partition_key_description_), sample_block(sample_block_), context(context_)
 {
 }
@@ -288,7 +288,7 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
     }
 }
 
-WildcardPartitionStrategy::WildcardPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_)
+WildcardPartitionStrategy::WildcardPartitionStrategy(const KeyDescription & partition_key_description_, const Block & sample_block_, ContextPtr context_)
     : IPartitionStrategy(partition_key_description_, sample_block_, context_)
 {
     auto actions_with_column = getCachedOrBuildActions(
@@ -326,7 +326,7 @@ std::string WildcardPartitionStrategy::getPathForWrite(
 }
 
 HiveStylePartitionStrategy::HiveStylePartitionStrategy(
-    KeyDescription partition_key_description_,
+    const KeyDescription & partition_key_description_,
     const Block & sample_block_,
     ContextPtr context_,
     const std::string & file_format_,

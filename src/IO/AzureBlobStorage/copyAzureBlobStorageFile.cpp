@@ -67,7 +67,7 @@ namespace
             , dest_container_for_logging(dest_container_for_logging_)
             , dest_blob(dest_blob_)
             , settings(settings_)
-            , schedule(schedule_)
+            , schedule(std::move(schedule_))
             , blob_storage_log(std::move(blob_storage_log_))
             , log(log_)
             , max_single_part_upload_size(settings_->max_single_part_upload_size)
@@ -370,7 +370,7 @@ void copyDataToAzureBlobStorageFile(
     BlobStorageLogWriterPtr blob_storage_log)
 {
     auto log = getLogger("copyDataToAzureBlobStorageFile");
-    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, std::move(blob_storage_log), log};
+    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, std::move(schedule), std::move(blob_storage_log), log};
     helper.performCopy();
 }
 
@@ -490,7 +490,7 @@ void copyAzureBlobStorageFile(
                 src_client, src_blob, read_settings, settings->max_single_read_retries, settings->max_single_download_retries);
         };
 
-        UploadHelper helper{create_read_buffer, dest_client, /* offset= */ 0, size, dest_container_for_logging, dest_blob, settings, schedule, blob_storage_log, log};
+        UploadHelper helper{create_read_buffer, dest_client, /* offset= */ 0, size, dest_container_for_logging, dest_blob, settings, std::move(schedule), blob_storage_log, log};
         helper.performCopy();
     }
 }

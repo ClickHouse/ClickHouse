@@ -259,7 +259,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         evaluateEngineArgs(engine_args, local_context);
     }
 
-    auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name, String zookeeper_path, String replica_name) -> TableZnodeInfo
+    auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name, const String & zookeeper_path, const String & replica_name) -> TableZnodeInfo
     {
         TableZnodeInfo res = TableZnodeInfo::resolve(zookeeper_path, replica_name, table_id, query, mode, local_context, validate_substitutions);
         ast_zk_path->value = res.full_path_for_metadata;

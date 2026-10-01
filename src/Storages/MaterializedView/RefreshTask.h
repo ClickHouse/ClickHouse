@@ -165,7 +165,7 @@ public:
     /// Call when dropping the table, after shutdown(). Removes coordination znodes if needed.
     void drop(ContextPtr context, bool is_shared_db);
     /// Call when renaming the materialized view.
-    void rename(StorageID new_id, StorageID new_inner_table_id);
+    void rename(const StorageID & new_id, StorageID new_inner_table_id);
     /// Call when changing refresh params (ALTER MODIFY REFRESH).
     void checkAlterIsPossible(const DB::ASTRefreshStrategy & new_strategy);
     void alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy);
@@ -421,7 +421,7 @@ private:
 
     /// Perform an actual refresh: create new table, run INSERT SELECT, exchange tables, drop old table.
     /// Mutex must be unlocked.
-    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, CursorTreeNodePtr & out_cursor);
+    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, const std::vector<StorageID> & deps, const String & log_comment, String & out_error_message, CursorTreeNodePtr & out_cursor);
 
     DependencyRefreshInfo getInfoForDependentViewsLocked(const std::unique_lock<std::mutex> &) const;
 

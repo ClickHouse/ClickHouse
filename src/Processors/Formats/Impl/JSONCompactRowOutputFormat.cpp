@@ -12,7 +12,7 @@ JSONCompactRowOutputFormat::JSONCompactRowOutputFormat(
     SharedHeader header,
     const FormatSettings & settings_,
     bool yield_strings_)
-    : JSONRowOutputFormat(out_, header, settings_, yield_strings_)
+    : JSONRowOutputFormat(out_, std::move(header), settings_, yield_strings_)
 {
 }
 

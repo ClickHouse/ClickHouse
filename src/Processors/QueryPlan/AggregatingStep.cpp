@@ -79,7 +79,7 @@ namespace ErrorCodes
 static bool memoryBoundMergingWillBeUsed(
     bool should_produce_results_in_order_of_bucket_number,
     bool memory_bound_merging_of_aggregation_results_enabled,
-    SortDescription sort_description_for_merging)
+    const SortDescription & sort_description_for_merging)
 {
     return should_produce_results_in_order_of_bucket_number && memory_bound_merging_of_aggregation_results_enabled && !sort_description_for_merging.empty();
 }
