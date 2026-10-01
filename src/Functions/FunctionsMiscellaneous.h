@@ -169,6 +169,11 @@ inline bool isLambdaBodyStateful(const ExpressionActions & expression_actions)
     return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.isStateful(); });
 }
 
+inline bool isLambdaBodyExpensive(const ExpressionActions & expression_actions)
+{
+    return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.isExpensive(); });
+}
+
 /// Whether the body of a lambda can be evaluated once and its value reused for every row of the query.
 /// Every function in the body has to allow constant folding, and it also has to keep the same value for the
 /// whole query: a folded lambda becomes a constant `ColumnFunction`, which makes the higher-order function
@@ -256,6 +261,7 @@ public:
     bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
     bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
     bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
+    bool isExpensive() const override { return isLambdaBodyExpensive(*expression_actions); }
     bool isSuitableForConstantFolding() const override { return isLambdaBodySuitableForConstantFolding(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
@@ -388,15 +394,7 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
     bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
 
-    bool isExpensive() const override
-    {
-        for (const auto & inner_node : expression_actions->getActionsDAG().getNodes())
-        {
-            if (inner_node.type == ActionsDAG::ActionType::FUNCTION && inner_node.function_base->isExpensive())
-                return true;
-        }
-        return false;
-    }
+    bool isExpensive() const override { return isLambdaBodyExpensive(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
