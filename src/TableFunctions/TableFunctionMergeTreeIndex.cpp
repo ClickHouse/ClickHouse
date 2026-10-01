@@ -1,6 +1,9 @@
 #include <Storages/StorageMergeTreeIndex.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <TableFunctions/ITableFunction.h>
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessType.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -153,6 +156,8 @@ static NameSet getAllPossibleStreamNames(
 
 ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
+    /// Otherwise `DESCRIBE` and the errors below would reveal the existence, the engine and the key of a table the user cannot see.
+    context->checkAccess(AccessType::SHOW_TABLES, source_table_id);
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
 
@@ -207,8 +212,8 @@ StoragePtr TableFunctionMergeTreeIndex::executeImpl(
     ColumnsDescription /*cached_columns*/,
     bool is_insert_query) const
 {
-    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
     auto columns = getActualTableStructure(context, is_insert_query);
+    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
 
     StorageID storage_id(getDatabaseName(), table_name);
     auto res = std::make_shared<StorageMergeTreeIndex>(

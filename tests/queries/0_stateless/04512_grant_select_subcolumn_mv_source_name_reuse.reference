@@ -1,0 +1,8 @@
+=== select a.b (subcolumn, derived from x) ===
+42
+=== select a (parent column) ===
+(42)
+=== select a after revoke SELECT(a) (denied) ===
+ACCESS_DENIED
+=== select a.b after revoke SELECT(a) (denied) ===
+ACCESS_DENIED

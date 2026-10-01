@@ -447,10 +447,12 @@ const ColumnWithTypeAndName StorageMergeTreeTextIndex::part_name_column{std::mak
 StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
     const StorageID & table_id_,
     const StoragePtr & source_table_,
+    StorageMetadataPtr source_metadata_,
     MergeTreeIndexPtr text_index_,
     const ColumnsDescription & columns)
     : StorageWithCommonVirtualColumns(table_id_)
     , source_table(source_table_)
+    , source_metadata(std::move(source_metadata_))
     , text_index(std::move(text_index_))
 {
     if (!dynamic_cast<const MergeTreeData *>(source_table.get()))
@@ -470,7 +472,8 @@ VirtualColumnsDescription StorageMergeTreeTextIndex::createVirtuals()
     return desc;
 }
 
-void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const IStorage & source_table, const IMergeTreeIndex & index)
+void StorageMergeTreeTextIndex::checkAccess(
+    const ContextPtr & context, const IStorage & source_table, const StorageInMemoryMetadata & source_metadata, const IMergeTreeIndex & index)
 {
     const auto source_storage_id = source_table.getStorageID();
     /// The checks below are for the user who runs the query, so a shard of a distributed query may run it only as the
@@ -485,7 +488,13 @@ void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const IS
             "distributed query can execute it only as the initiating user: through a cluster with an interserver secret, "
             "or through `remote` with the credentials of that user");
 
-    context->checkAccess(AccessType::SELECT, source_storage_id, index.getColumnsRequiredForIndexCalc());
+    /// Column-level grants are tracked against top-level storage columns only, so map any subcolumns
+    /// required for the index (e.g. `json.a.b`) to their parent storage column (e.g. `json`). Resolve them against the
+    /// metadata the index was built from, not the current one, which a concurrent `ALTER` may have changed since.
+    context->checkAccess(
+        AccessType::SELECT,
+        source_storage_id,
+        source_metadata.getColumns().getColumnNamesForSelectAccessCheck(index.getColumnsRequiredForIndexCalc(), context, source_storage_id));
 
     /// The index is built over all rows of a part, so it contains tokens of the rows a row policy hides,
     /// regardless of which columns the policy filters on. The policy cannot be applied to the dictionary.
@@ -506,7 +515,7 @@ void StorageMergeTreeTextIndex::readImpl(
     size_t max_block_size,
     size_t num_streams)
 {
-    checkAccess(context, *source_table, *text_index);
+    checkAccess(context, *source_table, *source_metadata, *text_index);
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
     auto this_ptr = std::static_pointer_cast<StorageMergeTreeTextIndex>(shared_from_this());

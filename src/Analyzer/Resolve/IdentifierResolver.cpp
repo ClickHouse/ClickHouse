@@ -392,7 +392,8 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 /// `EXPLAIN SYNTAX` dump the resolved tree without building a query plan, so the `SELECT` access
 /// check the planner performs for the tables the query reads is never reached
 /// (https://github.com/ClickHouse/ClickHouse/issues/78938). Check access at the moment the
-/// metadata is obtained: the user must be allowed to see at least one column of the table.
+/// metadata is obtained: the user must be allowed to see at least one column of the table, or a
+/// subcolumn granted by its exact name.
 /// Any grant on a column implies `SHOW_COLUMNS` on it, so this is weaker than every `SELECT`
 /// check the planner performs later for the columns the query actually reads, and a query that
 /// can be executed can always be analyzed. Table expressions constructed programmatically
@@ -415,6 +416,14 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
     {
         if (access_rights->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
             || access_rights->isGranted(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name, column.name))
+            return;
+
+        /// A grant on the exact name of a subcolumn (e.g. ``GRANT SELECT(`json.a`)``) takes precedence over its column
+        /// in the `SELECT` check (see `ColumnsDescription::getColumnNamesForSelectAccessCheck`), so it makes the table
+        /// visible too.
+        const String subcolumn_prefix = column.name + '.';
+        if (access_rights->hasExplicitGrantOnColumnsWithPrefix(AccessType::SELECT, storage_id.database_name, storage_id.table_name, subcolumn_prefix)
+            || access_rights->hasExplicitGrantOnColumnsWithPrefix(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name, subcolumn_prefix))
             return;
     }
 

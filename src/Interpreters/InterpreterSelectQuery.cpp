@@ -468,7 +468,21 @@ void checkAccessRightsForSelect(
     }
 
     /// General check.
-    context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
+    /// Map subcolumn names (e.g. `t.a` for a `Tuple` column `t`) back to their parent storage
+    /// column names before the access check. Column-level grants are stored against top-level
+    /// column names only, so `GRANT SELECT(t)` must implicitly cover `t.a`, `t.b`, etc.
+    if (table_metadata)
+    {
+        context->checkAccess(
+            AccessType::SELECT,
+            table_id,
+            table_metadata->getColumns().getColumnNamesForSelectAccessCheck(
+                syntax_analyzer_result.requiredSourceColumnsForAccessCheck(), context, table_id));
+    }
+    else
+    {
+        context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
+    }
 }
 
 /// Settings-provided filters are user-controlled expressions over table columns and need the same check as the query.

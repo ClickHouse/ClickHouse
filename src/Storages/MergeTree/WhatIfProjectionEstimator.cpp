@@ -853,7 +853,8 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     String & reason)
 {
     if (!stored.required_columns.empty())
-        context->checkAccess(AccessType::SELECT, data.getStorageID(), stored.required_columns);
+        context->checkAccess(
+            AccessType::SELECT, data.getStorageID(), metadata->getColumns().getColumnNamesForSelectAccessCheck(stored.required_columns, context, data.getStorageID()));
     context->checkAccess(AccessType::ALTER_ADD_PROJECTION, data.getStorageID());
 
     std::optional<ProjectionDescription> fresh;
@@ -871,7 +872,8 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
 
     /// an ALTER may retarget an ALIAS, so check the columns actually read
     if (!fresh->required_columns.empty())
-        context->checkAccess(AccessType::SELECT, data.getStorageID(), fresh->required_columns);
+        context->checkAccess(
+            AccessType::SELECT, data.getStorageID(), metadata->getColumns().getColumnNamesForSelectAccessCheck(fresh->required_columns, context, data.getStorageID()));
     return fresh;
 }
 

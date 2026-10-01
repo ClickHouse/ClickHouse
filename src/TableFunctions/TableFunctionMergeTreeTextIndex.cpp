@@ -49,8 +49,16 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
+    struct ResolvedIndex
+    {
+        StoragePtr source_table;
+        /// The source metadata the index was built from.
+        StorageMetadataPtr source_metadata;
+        MergeTreeIndexPtr index;
+    };
+
     /// Resolves the index of the source table and checks that the user may read it.
-    std::pair<StoragePtr, MergeTreeIndexPtr> resolveIndex(ContextPtr context) const;
+    ResolvedIndex resolveIndex(ContextPtr context) const;
 
     /// The result structure for the given resolved index.
     static ColumnsDescription getColumns(const MergeTreeIndexPtr & index);
@@ -94,7 +102,7 @@ static std::shared_ptr<DataTypeEnum8> getDictionaryCompressionType()
     return std::make_shared<DataTypeEnum8>(std::move(values));
 }
 
-std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolveIndex(ContextPtr context) const
+TableFunctionMergeTreeTextIndex::ResolvedIndex TableFunctionMergeTreeTextIndex::resolveIndex(ContextPtr context) const
 {
     /// A table persisted before that was forbidden resolves the function under the load context, which has no user.
     if (!context->getUserID())
@@ -108,7 +116,8 @@ std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolv
     context->checkAccess(AccessType::SHOW_TABLES, source_database, source_table);
 
     auto source_table_ptr = DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context);
-    auto metadata_snapshot = source_table_ptr->getInMemoryMetadataPtr(context, false);
+    const auto metadata_handle = source_table_ptr->getInMemoryMetadataPtr(context, false);
+    StorageMetadataPtr metadata_snapshot = metadata_handle;
     const auto & index_desc = metadata_snapshot->getSecondaryIndices().getByName(source_index_name);
 
     if (index_desc.type != "text")
@@ -122,8 +131,8 @@ std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolv
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table_ptr->getName());
 
     auto text_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_desc, *merge_tree->getSettings());
-    StorageMergeTreeTextIndex::checkAccess(context, *source_table_ptr, *text_index);
-    return {std::move(source_table_ptr), std::move(text_index)};
+    StorageMergeTreeTextIndex::checkAccess(context, *source_table_ptr, *metadata_snapshot, *text_index);
+    return {std::move(source_table_ptr), std::move(metadata_snapshot), std::move(text_index)};
 }
 
 ColumnsDescription TableFunctionMergeTreeTextIndex::getColumns(const MergeTreeIndexPtr & index)
@@ -159,7 +168,7 @@ ColumnsDescription TableFunctionMergeTreeTextIndex::getColumns(const MergeTreeIn
 ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     /// Resolving is also where e.g. `remote` over a local shard checks the access of the user.
-    return getColumns(resolveIndex(context).second);
+    return getColumns(resolveIndex(context).index);
 }
 
 StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
@@ -170,13 +179,14 @@ StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
     bool /*is_insert_query*/) const
 {
     /// The structure comes from the same index object the storage reads with, so the two cannot diverge.
-    auto [source_table_ptr, text_index] = resolveIndex(context);
+    auto [source_table_ptr, source_metadata, text_index] = resolveIndex(context);
     auto columns = getColumns(text_index);
     StorageID storage_id(getDatabaseName(), table_name);
 
     auto res = std::make_shared<StorageMergeTreeTextIndex>(
         std::move(storage_id),
         std::move(source_table_ptr),
+        std::move(source_metadata),
         std::move(text_index),
         std::move(columns));
 
