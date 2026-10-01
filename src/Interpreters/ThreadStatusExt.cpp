@@ -19,7 +19,6 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
 #include <Common/QueryProfiler.h>
@@ -420,6 +419,20 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
     thread_group = thread_group_;
     try
     {
+        /// Lives as long as the thread, not the query that happened to attach first, so it is created before the
+        /// tracker is reparented. A blocker here would flush the bytes allocated since the reparent into the group.
+        if (boundToOSThread() && !taskstats)
+        {
+            try
+            {
+                taskstats = TasksStatsCounters::create(thread_id);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log);
+            }
+        }
+
         /// Reparenting the memory tracker flushes the untracked balance the thread carried in, so the
         /// counters must be reparented after it, or those bytes are reported as this group's.
         memory_tracker.setParent(&thread_group->memory_tracker);
@@ -605,19 +618,6 @@ void ThreadStatus::initPerformanceCounters()
         }
     }
 
-    if (!taskstats)
-    {
-        /// Lives as long as the thread, not the query that happened to attach first.
-        MemoryTrackerBlockerInThread not_charged_to_the_query;
-        try
-        {
-            taskstats = TasksStatsCounters::create(thread_id);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
-    }
     if (taskstats)
     {
         try
