@@ -2,8 +2,14 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
 #include <Common/PODArray.h>
+#include <Common/ProfileEvents.h>
 
 #include <roaring/roaring.hh>
+
+namespace ProfileEvents
+{
+    extern const Event TextIndexDensePackedBlocks;
+}
 
 namespace DB
 {
@@ -112,6 +118,18 @@ SegmentedPostingListCodec::SegmentData SegmentedPostingListCodec::readSegmentDat
     return segment_data;
 }
 
+/// Row ids within a block strictly increase, so `count` of them spanning `count` values are consecutive.
+static void addBlockToPostings(PostingList & postings, const UInt32 * row_ids, size_t count, size_t & consecutive_blocks)
+{
+    if (static_cast<UInt64>(row_ids[0]) + count - 1 == row_ids[count - 1])
+    {
+        postings.addRangeClosed(row_ids[0], row_ids[count - 1]);
+        ++consecutive_blocks;
+    }
+    else
+        postings.addMany(count, row_ids);
+}
+
 void SegmentedPostingListCodec::decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer)
 {
     auto segment_data = readSegmentData(in, max_cardinality, buffer);
@@ -120,17 +138,21 @@ void SegmentedPostingListCodec::decode(ReadBuffer & in, UInt64 max_cardinality, 
     const size_t tail_size = segment_data.header.cardinality % BLOCK_SIZE;
 
     block_values.resize(BLOCK_SIZE);
+    size_t consecutive_blocks = 0;
 
     for (size_t i = 0; i < num_blocks; i++)
     {
         decodeBlock(segment_data.payload, std::span(block_values.data(), BLOCK_SIZE));
-        postings.addMany(BLOCK_SIZE, block_values.data());
+        addBlockToPostings(postings, block_values.data(), BLOCK_SIZE, consecutive_blocks);
     }
     if (tail_size)
     {
         decodeBlock(segment_data.payload, std::span(block_values.data(), tail_size));
-        postings.addMany(tail_size, block_values.data());
+        addBlockToPostings(postings, block_values.data(), tail_size, consecutive_blocks);
     }
+
+    if (consecutive_blocks)
+        ProfileEvents::increment(ProfileEvents::TextIndexDensePackedBlocks, consecutive_blocks);
 }
 
 void SegmentedPostingListCodec::decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer)

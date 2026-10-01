@@ -1,0 +1,61 @@
+parts	tab_bitpacking	1
+parts	tab_none	1
+parts	tab_pfor	1
+Ground truth
+aall	10000	49995000
+bgap	9999	49990000
+cedge	9999	49994872
+dseg	9999	49993976
+erun	4000	19998000
+fhalf	5000	24995000
+gsmall	900	2204550
+hone	1025	524800
+Materialize
+none	aall	10000	49995000
+bitpacking	aall	10000	49995000
+bitpacking	bgap	9999	49990000
+bitpacking	cedge	9999	49994872
+bitpacking	dseg	9999	49993976
+bitpacking	erun	4000	19998000
+bitpacking	fhalf	5000	24995000
+bitpacking	gsmall	900	2204550
+bitpacking	hone	1025	524800
+bitpacking	all	4999	24994872
+bitpacking	any	4900	22202550
+pfor	aall	10000	49995000
+pfor	bgap	9999	49990000
+pfor	cedge	9999	49994872
+pfor	dseg	9999	49993976
+pfor	erun	4000	19998000
+pfor	fhalf	5000	24995000
+pfor	gsmall	900	2204550
+pfor	hone	1025	524800
+pfor	all	4999	24994872
+pfor	any	4900	22202550
+Lazy
+lazy	pfor	gsmall	900	2204550
+Count
+bitpacking	9999
+bitpacking	4999
+bitpacking	4900
+pfor	9999
+pfor	4999
+pfor	4900
+05320_bitpacking_aall	79
+05320_bitpacking_bgap	78
+05320_bitpacking_cedge	79
+05320_bitpacking_dseg	79
+05320_bitpacking_erun	32
+05320_bitpacking_fhalf	0
+05320_bitpacking_gsmall	8
+05320_bitpacking_hone	9
+05320_lazy_pfor_gsmall	8
+05320_none_aall	0
+05320_pfor_aall	79
+05320_pfor_bgap	78
+05320_pfor_cedge	79
+05320_pfor_dseg	79
+05320_pfor_erun	32
+05320_pfor_fhalf	0
+05320_pfor_gsmall	8
+05320_pfor_hone	9

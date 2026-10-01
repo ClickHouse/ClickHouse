@@ -161,6 +161,7 @@
     M(TextIndexPhraseSearches, "Number of phrase searches executed over a text index. Repeated searches of the same phrase in the same part are served from the cache and are not counted.", ValueType::Number) \
     M(TextIndexPhraseFallbacks, "Number of times a phrase query skipped the text index because the phrase was estimated to match more rows than 'text_index_hint_max_selectivity', and was evaluated on the column instead.", ValueType::Number) \
     M(TextIndexReadPostings, "Number of times a posting list has been read from the text index.", ValueType::Number) \
+    M(TextIndexDensePackedBlocks, "Number of blocks of compressed text index posting lists that hold consecutive row ids and were added to a posting list bitmap as one range.", ValueType::Number) \
     M(TextIndexUsedEmbeddedPostings, "Number of times a posting list embedded in the dictionary has been used.", ValueType::Number) \
     M(TextIndexUseHint, "Number of index granules where a direct reading from the text index was added as hint and was used.", ValueType::Number) \
     M(TextIndexDiscardHint, "Number of index granules where a direct reading from the text index was added as hint and was discarded due to low selectivity.", ValueType::Number) \
