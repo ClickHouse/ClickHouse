@@ -57,7 +57,7 @@ Upcoming meetups
 * [AI Builders and Databases Stockholm](https://luma.com/clickh-ku2p) - October 8th, 2026
 * [Mountain View Meetup](https://luma.com/clickh-5ms6) - October 8th, 2026
 * [AI Builders and Databases Tel Aviv](https://luma.com/clickh-satv) - October 12th, 2026
-* [AI Builders and Databases London](https://luma.com/clickh-ykgp) - October 21th, 2026
+* [AI Builders and Databases London](https://luma.com/clickh-ykgp) - October 21st, 2026
 * [AI Builders and Databases Dubai](https://luma.com/clickh-vtzf)- October 23rd, 2026
 
 
