@@ -59,7 +59,7 @@ public:
     std::string getAlgorithm() const override { return toString(JoinAlgorithm::PARALLEL_HASH); }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
-    bool addBlockToJoin(const Block & right_block_, size_t num_rows, size_t worker_id, bool check_limits) override;
+    bool addBlockToJoin(const Block & right_block_, size_t num_rows, JoinBuildContext context) override;
     /// Computes the probe side zero copy decision.
     void initialize(const Block & left_sample_block) override;
     void checkTypesOfKeys(const Block & block) const override;

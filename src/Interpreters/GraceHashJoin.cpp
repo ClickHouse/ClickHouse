@@ -360,7 +360,7 @@ bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 
 GraceHashJoin::~GraceHashJoin() = default;
 
-bool GraceHashJoin::addBlockToJoin(const Block & block, size_t /*num_rows*/, size_t worker_id, bool check_limits)
+bool GraceHashJoin::addBlockToJoin(const Block & block, size_t /*num_rows*/, JoinBuildContext context)
 {
     if (current_bucket == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GraceHashJoin is not initialized");
@@ -370,10 +370,10 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, size_t /*num_rows*/, siz
     if (stop_after_current_bucket)
         return false;
 
-    addBlockToJoinImpl(materializeBlock(block), worker_id);
+    addBlockToJoinImpl(materializeBlock(block), context);
 
     /// In legacy mode these limits make us spill instead (see `hasMemoryOverflow`), so don't fail on them.
-    if (!check_limits || table_join->legacyJoinSizeLimitsTriggerSpilling())
+    if (!context.joinChecksLimits() || table_join->legacyJoinSizeLimitsTriggerSpilling())
         return true;
 
     /// Spilling does not earn a query the right to go over the limits.
@@ -862,7 +862,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         for (Block block = right_reader.read(); !block.empty(); block = right_reader.read())
         {
             num_rows += block.rows();
-            addBlockToJoinImpl(std::move(block), /* worker_id = */ 0);
+            addBlockToJoinImpl(std::move(block), JoinBuildContext::serial());
         }
         hash_join->onBuildPhaseFinish();
 
@@ -909,7 +909,7 @@ bool GraceHashJoin::canForceRepartition() const
 
 /// Split the bucket held in memory: `rehashBuckets` doubles the bucket count, so about half of its rows
 /// move to the new bucket on disk. Caller holds `hash_join_mutex`; `leftover` is not in the table yet.
-void GraceHashJoin::repartitionCurrentBucket(size_t prev_keys_num, Block leftover)
+void GraceHashJoin::repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context)
 {
     const size_t bucket_index = current_bucket->idx;
     // Must use the latest buckets snapshot in case that it has been rehashed by other threads.
@@ -952,10 +952,10 @@ void GraceHashJoin::repartitionCurrentBucket(size_t prev_keys_num, Block leftove
     hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num / 2);
 
     if (leftover.rows() > 0)
-        hash_join->addBlockToJoin(leftover, leftover.rows(), /*worker_id=*/0, /* check_limits = */ false);
+        hash_join->addBlockToJoin(leftover, leftover.rows(), context.callerChecksLimits());
 }
 
-void GraceHashJoin::addBlockToJoinImpl(Block block, size_t worker_id)
+void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
 {
     block = prepareRightBlock(block);
     Buckets buckets_snapshot = getCurrentBuckets();
@@ -974,7 +974,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, size_t worker_id)
         /// otherwise the request is dropped and it frees nothing.
         std::lock_guard lock(hash_join_mutex);
         if (forcedSpillPending())
-            repartitionCurrentBucket(hash_join->getTotalRowCount(), {});
+            repartitionCurrentBucket(hash_join->getTotalRowCount(), {}, context);
         return;
     }
 
@@ -1015,7 +1015,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, size_t worker_id)
         bool block_added = false;
         if (!pre_threshold_overflow)
         {
-            hash_join->addBlockToJoin(current_block, current_block.rows(), worker_id, /* check_limits = */ false);
+            hash_join->addBlockToJoin(current_block, current_block.rows(), context.callerChecksLimits());
             block_added = true;
             size_t hash_join_total_keys = hash_join->getAndSetRightTableKeys();
             size_t hash_join_total_bytes = hash_join->getTotalByteCount();
@@ -1027,7 +1027,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, size_t worker_id)
             current_block = {};
         /// else: we did not add the block, so we must include it when re-scattering after rehash.
 
-        repartitionCurrentBucket(prev_keys_num, std::move(current_block));
+        repartitionCurrentBucket(prev_keys_num, std::move(current_block), context);
 
         /// One split per block, so a bucket can end the build phase above the threshold - a single huge block,
         /// or one whose rows nearly all belong here. The threshold says when to start spilling, it is not a
@@ -1055,7 +1055,7 @@ void GraceHashJoin::onBuildPhaseFinish()
 
     /// The last spill the scheduler asked for may have arrived after the final block for this bucket.
     if (current_bucket && forcedSpillPending())
-        repartitionCurrentBucket(hash_join->getTotalRowCount(), {});
+        repartitionCurrentBucket(hash_join->getTotalRowCount(), {}, JoinBuildContext::serial());
 
     hash_join->onBuildPhaseFinish();
 }

@@ -28,21 +28,22 @@ JoinSwitcher::JoinSwitcher(
         limits.max_bytes = table_join->defaultMaxBytes();
 }
 
-bool JoinSwitcher::addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool)
+bool JoinSwitcher::addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context)
 {
     std::lock_guard lock(switch_mutex);
 
+    /// `MergeJoin` checks no limits of its own, so it does not matter whether `context` asks for them.
     if (switched)
-        return join->addBlockToJoin(block, num_rows, worker_id, true);
+        return join->addBlockToJoin(block, num_rows, context);
 
     /// HashJoin with external limits check
 
-    join->addBlockToJoin(block, num_rows, worker_id, false);
+    join->addBlockToJoin(block, num_rows, context.callerChecksLimits());
     size_t rows = join->getTotalRowCount();
     size_t bytes = join->getTotalByteCount();
 
     if (!limits.softCheck(rows, bytes))
-        return switchJoin();
+        return switchJoin(context);
 
     return true;
 }
@@ -59,7 +60,7 @@ void JoinSwitcher::onBuildPhaseFinish()
         assert_cast<HashJoin *>(join.get())->dropRightBlocksKeptForAnotherAlgorithm();
 }
 
-bool JoinSwitcher::switchJoin()
+bool JoinSwitcher::switchJoin(JoinBuildContext context)
 {
     HashJoin * hash_join = assert_cast<HashJoin *>(join.get());
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(true);
@@ -69,7 +70,7 @@ bool JoinSwitcher::switchJoin()
 
     bool success = true;
     for (const Block & saved_block : right_blocks)
-        success = success && join->addBlockToJoin(saved_block, saved_block.rows(), /* worker_id = */ 0, true);
+        success = success && join->addBlockToJoin(saved_block, saved_block.rows(), context);
 
     switched = true;
 
