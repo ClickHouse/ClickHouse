@@ -538,6 +538,10 @@ void ColumnExponentialTimeDecaying::rollback(const ColumnCheckpoint & checkpoint
 
 void ColumnExponentialTimeDecaying::forEachMutableSubcolumn(MutableColumnCallback callback)
 {
+    /// ordering_key is derived state, not a logical subcolumn, but it still follows
+    /// copy-on-write ownership. Detach it together with storage before this column
+    /// can be mutated, while keeping it hidden from generic subcolumn traversal.
+    ordering_key = IColumn::mutate(std::move(ordering_key).detach());
     callback(storage);
 }
 
