@@ -10186,8 +10186,7 @@ On server startup, prevent scheduling of refreshable materialized views, as if w
     \
     DECLARE_WITH_ALIAS(Bool, enable_database_materialized_postgresql, false, R"(
 Allow to create databases with `Engine = MaterializedPostgreSQL(...)`.
-)", EXPERIMENTAL, allow_experimental_database_materialized_postgresql, \
-        {"26.10", false, false, "Added an alias for setting `allow_experimental_database_materialized_postgresql`."}) \
+)", EXPERIMENTAL, allow_experimental_database_materialized_postgresql) \
     \
     DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, true, R"(
 Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Nullable(Tuple(...))`.
@@ -10208,22 +10207,18 @@ To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracte
     DECLARE_WITH_ALIAS(Bool, enable_database_hms_catalog, false, R"(
 Allow database engine `DataLakeCatalog` with `catalog_type = 'hms'`
 )", EXPERIMENTAL, allow_experimental_database_hms_catalog, \
-        {"26.10", false, false, "Added an alias for setting `allow_experimental_database_hms_catalog`."}, \
         {"25.5", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"}) \
     DECLARE_WITH_ALIAS(Bool, enable_kusto_dialect, false, R"(
 Enable the Kusto Query Language (KQL) dialect - an alternative to SQL.
 )", EXPERIMENTAL, allow_experimental_kusto_dialect, \
-        {"26.10", false, false, "Added an alias for setting `allow_experimental_kusto_dialect`."}, \
         {"25.1", true, false, "A new setting"}) \
     DECLARE_WITH_ALIAS(Bool, enable_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
 )", EXPERIMENTAL, allow_experimental_prql_dialect, \
-        {"26.10", false, false, "Added an alias for setting `allow_experimental_prql_dialect`."}, \
         {"25.1", true, false, "A new setting"}) \
     DECLARE_WITH_ALIAS(Bool, enable_polyglot_dialect, false, R"(
 Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) into ClickHouse SQL.
 )", EXPERIMENTAL, allow_experimental_polyglot_dialect, \
-        {"26.10", false, false, "Added an alias for setting `allow_experimental_polyglot_dialect`."}, \
         {"26.3", false, false, "New setting to enable the polyglot SQL transpiler dialect."}) \
     DECLARE(Bool, enable_json_ast_dialect, false, R"(
 Enable the `clickhouse_json` value of the `dialect` setting.
@@ -10282,7 +10277,6 @@ Allow to execute `insert` queries into iceberg.
     DECLARE_WITH_ALIAS(Bool, enable_cleanup_old_data_files_compaction, false, R"(
 Allow to clean up old data files during Iceberg compaction.
 )", EXPERIMENTAL, allow_experimental_cleanup_old_data_files_compaction, \
-        {"26.10", false, false, "Added an alias for setting `allow_experimental_cleanup_old_data_files_compaction`."}, \
         {"26.5", false, false, "New setting"}) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
@@ -10309,7 +10303,6 @@ Default age threshold in seconds for orphan file removal in Iceberg tables. File
     DECLARE_WITH_ALIAS(Bool, allow_expire_snapshots, false, R"(
 Allow to execute the Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
 )", EXPERIMENTAL, allow_experimental_expire_snapshots, \
-        {"26.10", false, false, "Added an alias for setting `allow_experimental_expire_snapshots`."}, \
         {"26.3", false, false, "New setting."}) \
     DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
 Write full paths (including s3://) into iceberg metadata files.
@@ -10392,17 +10385,14 @@ Serialize the distributed query plan for execution at replicas.
     DECLARE_WITH_ALIAS(Bool, enable_ytsaurus_table_engine, false, R"(
 Enable the `YTsaurus` table engine for integration with YTsaurus.
 )", EXPERIMENTAL, allow_experimental_ytsaurus_table_engine, \
-        {"26.10", false, false, "Added an alias for setting `allow_experimental_ytsaurus_table_engine`."}, \
         {"25.8", false, false, "New setting."}) \
     DECLARE_WITH_ALIAS(Bool, enable_ytsaurus_table_function, false, R"(
 Enable the `ytsaurus` table function for integration with YTsaurus.
 )", EXPERIMENTAL, allow_experimental_ytsaurus_table_function, \
-        {"26.10", false, false, "Added an alias for setting `allow_experimental_ytsaurus_table_function`."}, \
         {"25.8", false, false, "New setting."}) \
     DECLARE_WITH_ALIAS(Bool, enable_ytsaurus_dictionary_source, false, R"(
 Enable the `ytsaurus` dictionary source for integration with YTsaurus.
 )", EXPERIMENTAL, allow_experimental_ytsaurus_dictionary_source, \
-        {"26.10", false, false, "Added an alias for setting `allow_experimental_ytsaurus_dictionary_source`."}, \
         {"25.8", false, false, "New setting."}) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
@@ -10512,7 +10502,6 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
     DECLARE_WITH_ALIAS(Bool, enable_paimon_storage_engine, false, R"(
 Allow to create tables with `Paimon*` table engines.
 )", EXPERIMENTAL, allow_experimental_paimon_storage_engine, \
-        {"26.10", false, false, "Added an alias for setting `allow_experimental_paimon_storage_engine`."}, \
         {"26.5", false, false, "New setting."}) \
     DECLARE(Int64, paimon_target_snapshot_id, -1, R"(
 Query-level targeted snapshot read for Paimon incremental mode. When >0, the reader will only fetch the delta
@@ -10531,7 +10520,6 @@ Use Paimon partition pruning for Paimon table functions
     DECLARE_WITH_ALIAS(Bool, enable_object_storage_queue_hive_partitioning, false, R"(
 Allow to use hive partitioning with `S3Queue`/`AzureQueue` engines
 )", EXPERIMENTAL, allow_experimental_object_storage_queue_hive_partitioning, \
-        {"26.10", false, false, "Added an alias for setting `allow_experimental_object_storage_queue_hive_partitioning`."}, \
         {"26.1", false, false, "New setting."}) \
 DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "greedy", R"(
 Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
@@ -10554,7 +10542,6 @@ decide which join reorderings are valid. The following values are available:
     DECLARE_WITH_ALIAS(Bool, enable_database_paimon_rest_catalog, false, R"(
 Allow database engine `DataLakeCatalog` with `catalog_type = 'paimon_rest'`
 )", EXPERIMENTAL, allow_experimental_database_paimon_rest_catalog, \
-        {"26.10", false, false, "Added an alias for setting `allow_experimental_database_paimon_rest_catalog`."}, \
         {"26.1", false, false, "New setting"}) \
     DECLARE(UInt64, webassembly_udf_max_fuel, 100'000, R"(
 Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel. The value is scaled by 1024 before being passed to the runtime, so `webassembly_udf_max_fuel = 1` corresponds to approximately 1024 fuel units. Set to 0 for no finite limit. Applies only to functions whose per-function setting `webassembly_udf_enable_fuel` is true, which is the default.
@@ -10589,7 +10576,6 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
     DECLARE_WITH_ALIAS(Bool, enable_eval_table_function, false, R"(
 Enable table function `eval`.
 )", EXPERIMENTAL, allow_experimental_eval_table_function, \
-        {"26.10", false, false, "Added an alias for setting `allow_experimental_eval_table_function`."}, \
         {"26.7", false, false, "New setting to enable the experimental table function `eval`."}) \
     \
     /* ####################################################### */ \
