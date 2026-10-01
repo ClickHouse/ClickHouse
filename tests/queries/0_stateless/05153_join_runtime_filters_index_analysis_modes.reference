@@ -1,12 +1,16 @@
 local	64	2016
 distributed_plan	64	2016
 parallel_replicas	64	2016
+parallel_replicas_followers	64	2016
+parallel_replicas_followers_analysing_themselves	64	2016
 parallel_replicas_serialized_plan	64	2016
 parallel_replicas_plan_based	64	2016
 parallel_replicas_plan_based_local_plan	64	2016
-05153_distributed_plan	0	0	1
-05153_local	1	1	1
+05153_distributed_plan	0	0	0
+05153_local	1	1	0
 05153_parallel_replicas	1	1	1
+05153_parallel_replicas_followers	1	1	1
+05153_parallel_replicas_followers_analysing_themselves	1	1	1
 05153_parallel_replicas_plan_based	1	1	1
 05153_parallel_replicas_plan_based_local_plan	1	1	1
 05153_parallel_replicas_serialized_plan	1	1	1
