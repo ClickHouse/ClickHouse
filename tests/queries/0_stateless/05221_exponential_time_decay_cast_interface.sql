@@ -35,9 +35,13 @@ SELECT
 -- A negative raw value proves that the first two fields are value/timestamp,
 -- not sign/signed-unit-time. Under the old logical tuple interpretation this
 -- tuple would anchor the curve at +123 rather than -123.
-WITH (-1., -123., 3.)::ExponentialTimeDecaying(3) AS value
+WITH
+    toFloat64(-1) AS raw_value,
+    toFloat64(-123) AS timestamp,
+    toFloat64(3) AS decay_length,
+    (raw_value, timestamp, decay_length)::ExponentialTimeDecaying(3) AS value
 SELECT
-    abs(exponentialTimeDecayingValueAt(value, toFloat64(-123)) + 1) < 1e-12,
+    abs(exponentialTimeDecayingValueAt(value, timestamp) + 1) < 1e-12,
     abs(exponentialTimeDecayingValueAt(value, toFloat64(123)) + 1) > 0.5;
 
 -- The two-field CAST and scalar constructor are equivalent public constructors.
@@ -56,18 +60,39 @@ SELECT
 
 -- Zero remains the canonical empty curve regardless of the supplied observation
 -- timestamp, while retaining the target decay length.
-WITH (0., 123.5)::ExponentialTimeDecaying(3) AS value
+WITH
+    toFloat64(0) AS raw_value,
+    toFloat64(123.5) AS timestamp,
+    (raw_value, timestamp)::ExponentialTimeDecaying(3) AS value
 SELECT
     exponentialTimeDecayingDecayLength(value) = 3,
-    exponentialTimeDecayingValueAt(value, toFloat64(123.5)) = 0;
+    exponentialTimeDecayingValueAt(value, timestamp) = 0;
 
 -- When both tuple and target specify a decay length, they must match.
-SELECT (8., 5., 4.)::ExponentialTimeDecaying(3); -- { serverError BAD_ARGUMENTS }
+WITH
+    toFloat64(8) AS raw_value,
+    toFloat64(5) AS timestamp,
+    toFloat64(4) AS decay_length
+SELECT (raw_value, timestamp, decay_length)::ExponentialTimeDecaying(3); -- { serverError BAD_ARGUMENTS }
 
 -- The inferred decay length must be finite and positive.
-SELECT (8., 5., 0.)::ExponentialTimeDecaying; -- { serverError BAD_ARGUMENTS }
-SELECT (8., 5., -1.)::ExponentialTimeDecaying; -- { serverError BAD_ARGUMENTS }
-SELECT (8., 5., toFloat64('nan'))::ExponentialTimeDecaying; -- { serverError BAD_ARGUMENTS }
+WITH
+    toFloat64(8) AS raw_value,
+    toFloat64(5) AS timestamp,
+    toFloat64(0) AS decay_length
+SELECT (raw_value, timestamp, decay_length)::ExponentialTimeDecaying; -- { serverError BAD_ARGUMENTS }
+
+WITH
+    toFloat64(8) AS raw_value,
+    toFloat64(5) AS timestamp,
+    toFloat64(-1) AS decay_length
+SELECT (raw_value, timestamp, decay_length)::ExponentialTimeDecaying; -- { serverError BAD_ARGUMENTS }
+
+WITH
+    toFloat64(8) AS raw_value,
+    toFloat64(5) AS timestamp,
+    toFloat64('nan') AS decay_length
+SELECT (raw_value, timestamp, decay_length)::ExponentialTimeDecaying; -- { serverError BAD_ARGUMENTS }
 
 -- A tuple carrying the derived sign/unit-time field names is not a value
 -- representation at all. Reject it instead of routing it through any
