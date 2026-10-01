@@ -2141,8 +2141,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
-            /// Replace storage with values storage of insertion block
-            if (StoragePtr storage = scope.context->getViewSource())
+            /// Replace storage with values storage of insertion block.
+            /// The inner query of an ordinary view referenced by the view query reads the table itself.
+            if (StoragePtr storage = scope.context->getViewSource(); storage && !scope.context->isViewInnerQuery())
             {
                 QueryTreeNodePtr table_expression = in_second_argument;
 
