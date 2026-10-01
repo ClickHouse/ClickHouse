@@ -103,11 +103,13 @@ If your workload depends on SQL-level `PREPARE`, connect **directly to PostgreSQ
 
 PgBouncer keeps prepared statements on its Postgres connections and reuses them for the same SQL text. After a schema change that changes the type of a column a query returns, for example `integer` to `bigint`, that query keeps failing through PgBouncer with `cached plan must not change result type`. It fails even from new client connections, until PgBouncer replaces its Postgres connections. Some drivers decode the stale result types instead and return wrong values without an error. Over the direct connection, each connection fails at most once and then recovers.
 
-To recover, close the database's Postgres connections over the direct connection (port `5432`). PgBouncer opens new ones:
+To recover, close PgBouncer's Postgres connections for that database, and PgBouncer opens new ones. PgBouncer connects to Postgres locally, so its connections have no `client_addr`. Run this over the direct connection (port `5432`), as the same user your app connects as. It ends only PgBouncer's connections for your app's user, so transactions that are running through PgBouncer at that moment fail, while direct connections aren't affected:
 
 ```sql
 SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-WHERE datname = '<your_database>' AND pid <> pg_backend_pid();
+WHERE datname = '<your_database>' AND usename = current_user
+  AND client_addr IS NULL AND backend_type = 'client backend'
+  AND pid <> pg_backend_pid();
 ```
 
 Drivers that use unnamed statements, such as Npgsql with its defaults, Postgrex with `prepare: :unnamed`, and pgx with `cache_describe`, aren't affected.
@@ -129,11 +131,13 @@ In transaction pooling mode, a session-level `SET` applies to the Postgres conne
 
 Many migration tools take a session-level advisory lock so that only one migration runs at a time, and release it with a separate statement. Through PgBouncer, the release can run on a different Postgres connection, and the lock stays on a pooled connection. Later migrations then wait or fail with errors such as `failed to release advisory lock`, even over the direct connection. Tools that use session advisory locks include golang-migrate, sqlx, Kysely's `Migrator`, Rails, Flyway with `transactional-lock=false`, and Ecto with `migration_lock: :pg_advisory_lock`.
 
-Run migrations over the direct connection (port `5432`). To clear a leaked lock, terminate the session that holds it, also over the direct connection:
+Run migrations over the direct connection (port `5432`). A leaked lock is held by a session that's idle, while a migration that's still running holds its lock from an active session. To clear leaked locks, terminate only the idle sessions that hold advisory locks in your database, also over the direct connection:
 
 ```sql
-SELECT pg_terminate_backend(pid) FROM pg_locks
-WHERE locktype = 'advisory' AND database = (SELECT oid FROM pg_database WHERE datname = current_database());
+SELECT pg_terminate_backend(l.pid) FROM pg_locks l
+JOIN pg_stat_activity a ON a.pid = l.pid
+WHERE l.locktype = 'advisory' AND a.state = 'idle'
+  AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database());
 ```
 
 ### What does the `max_client_conn` setting in PgBouncer mean, and how does it relate to `max_connections` in Postgres? {#pgbouncer-vs-pg-connections}
