@@ -1556,9 +1556,11 @@ void StatementGenerator::generateEngineDetails(
             /// The mode setting is mandatory
             SettingValues * svs = te->mutable_setting_values();
             SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+            /// `exclusive` tracks processed files in this server's memory instead of Keeper
+            static const DB::Strings queue_modes = {"'ordered'", "'unordered'", "'exclusive'"};
 
             sv->set_property("mode");
-            sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
+            sv->set_value(rg.pickRandomly(queue_modes));
 
             if (rg.nextSmallNumber() < 3)
             {
@@ -2130,9 +2132,13 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     }
 }
 
-void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, ProjectionDef * pdef)
+void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, const ProjectionUsage usage, ProjectionDef * pdef)
 {
-    pdef->mutable_proj()->set_value(rg.nextIdentifier("p", t.proj_counter++, fc.allow_nasty_identifiers));
+    const bool hypothetical = usage == ProjectionUsage::HypotheticalProjection;
+    const String prefix = hypothetical ? "hp" : "p";
+    uint32_t & counter = hypothetical ? t.hproj_counter : t.proj_counter;
+
+    pdef->mutable_proj()->set_value(rg.nextIdentifier(prefix, counter++, fc.allow_nasty_identifiers));
     this->inside_projection = true;
     if (rg.nextBool())
     {
@@ -2588,7 +2594,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                  {add_proj,
                   [&]
                   {
-                      addTableProjection(rg, next, ndef->mutable_proj_def());
+                      addTableProjection(rg, next, ProjectionUsage::TableProjection, ndef->mutable_proj_def());
                       added_projs++;
                   }},
                  {add_const,
