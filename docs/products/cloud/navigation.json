@@ -256,13 +256,6 @@
               "group": "Agents",
               "pages": [
                 "products/cloud/features/ai-ml/agents/index",
-                {
-                  "group": "ClickHouse Assistant",
-                  "pages": [
-                    "products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
-                    "products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer"
-                  ]
-                },
                 "products/cloud/features/ai-ml/agents/quickstart",
                 "products/cloud/features/ai-ml/agents/chat",
                 {
@@ -282,7 +275,14 @@
                 "products/cloud/features/ai-ml/agents/prompts",
                 "products/cloud/features/ai-ml/agents/memory",
                 "products/cloud/features/ai-ml/agents/marketplace",
-                "products/cloud/features/ai-ml/agents/sharing-and-access"
+                "products/cloud/features/ai-ml/agents/sharing-and-access",
+                {
+                  "group": "ClickHouse Assistant",
+                  "pages": [
+                    "products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+                    "products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer"
+                  ]
+                }
               ]
             },
             "products/cloud/features/ai-ml/langfuse",
