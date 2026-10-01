@@ -56,19 +56,8 @@ SUMMARY_FILE = f"{OUTPUT_DIR}/summary.md"
 PROMPT_FILE = f"{WORK_DIR}/prompt.md"
 LOOM_CALL_LOG = f"{WORK_DIR}/loom_calls.jsonl"
 
-# Primary model, and the known-good model the job falls back to. GPT-6.1 Sol
-# needs Codex CLI 0.159.1 or newer, and OpenAI's cyber classifiers can block a
-# run on memory-safety reviews; either failure makes the next attempt use the
-# fallback instead of repeating the same failure. OpenAI's guidance for this
-# model family is to start one effort level below the previous baseline and
-# move up only when evaluations show a gain.
 MODEL = "gpt-6.1-sol"
 REASONING_EFFORT = "high"
-FALLBACK_MODEL = "gpt-5.4"
-FALLBACK_REASONING_EFFORT = "xhigh"
-# An attempt that fails this fast without output is a configuration or
-# model-availability failure, not a transient one: switch to the fallback.
-_FAST_FAILURE_SECONDS = 180
 
 # Number of attempts at a full agent run. The agents make model-provider API
 # calls during execution, which can hit transient 5xx errors that no single
@@ -251,18 +240,14 @@ def _run_agent(run_once, agent_name, loom_config):
     last_error = None
     robots = ROBOT_NAMES.copy()
     random.shuffle(robots)
-    model, effort = MODEL, REASONING_EFFORT
     for attempt in range(1, MAX_ATTEMPTS + 1):
         if attempt > 1 and time.time() - started > NO_NEW_ATTEMPT_AFTER_SECONDS:
             print(f"Not starting attempt {attempt}: {int(time.time() - started)}s already spent")
             break
-        if attempt == MAX_ATTEMPTS and model != FALLBACK_MODEL:
-            model, effort = FALLBACK_MODEL, FALLBACK_REASONING_EFFORT
         _reset_output_dir()
-        attempt_started = time.time()
-        print(f"{agent_name} attempt {attempt}/{MAX_ATTEMPTS} with {model} ({effort})")
+        print(f"{agent_name} attempt {attempt}/{MAX_ATTEMPTS} with {MODEL} ({REASONING_EFFORT})")
         try:
-            exit_code = run_once(loom_config, robots[(attempt - 1) % len(robots)], model, effort)
+            exit_code = run_once(loom_config, robots[(attempt - 1) % len(robots)], MODEL, REASONING_EFFORT)
             problem = _outputs_problem()
             if exit_code != 0 and problem:
                 last_error = f"{agent_name} exited with code {exit_code}: {problem}"
@@ -274,14 +259,11 @@ def _run_agent(run_once, agent_name, loom_config):
                     # so the run finished; a non-zero exit after that is a CLI
                     # shutdown issue.
                     print(f"WARNING: {agent_name} exited with code {exit_code} after writing complete output")
-                return model
+                return MODEL
         except Exception as e:  # noqa: BLE001 — broad catch: any exception is retryable here
             last_error = f"{type(e).__name__}: {e}"
             traceback.print_exc()
         print(f"WARNING: {agent_name} attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
-        if model != FALLBACK_MODEL and time.time() - attempt_started < _FAST_FAILURE_SECONDS:
-            print(f"Attempt failed within {_FAST_FAILURE_SECONDS}s: switching to {FALLBACK_MODEL}")
-            model, effort = FALLBACK_MODEL, FALLBACK_REASONING_EFFORT
         if attempt < MAX_ATTEMPTS:
             delay = min(2 ** attempt, 60)
             print(f"Retrying {agent_name} in {delay}s ...")
