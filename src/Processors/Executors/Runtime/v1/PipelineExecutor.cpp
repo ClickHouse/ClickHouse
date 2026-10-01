@@ -110,7 +110,7 @@ struct WorkloadResources
 };
 
 
-PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem)
+PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors, QueryStatusPtr elem)
     : process_list_element(std::move(elem))
 {
 

@@ -1,5 +1,5 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Executors/Runtime/v1/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/createExecutor.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -96,7 +96,7 @@ void PushingPipelineExecutor::start()
         return;
 
     started = true;
-    executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+    executor = createExecutor(pipeline.processors, pipeline.process_list_element);
     executor->setReadProgressCallback(pipeline.getReadProgressCallback());
     executor->setStepProfiler(pipeline.getStepProfiler());
 
