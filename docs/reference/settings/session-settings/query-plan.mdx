@@ -205,9 +205,9 @@ Possible values:
 
 ## query_plan_lower_array_join_function {#query_plan_lower_array_join_function}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Enable query_plan_lower_array_join_function by default."}]}]}/>
 
 Toggles a query-plan-level optimization which lowers an `arrayJoin` function inside an expression into a real `ARRAY JOIN` step, so it goes through the same execution machinery as the `ARRAY JOIN` clause (lazy replication and filter fusion).
 Only takes effect if setting [query_plan_enable_optimizations](/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) is 1.
@@ -581,7 +581,7 @@ Possible values:
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Disable this logic by default."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Disable this logic by default. This also applies to the alias `optimize_read_in_window_order`."}]}]}/>
 
 Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
 Only takes effect if setting [`query_plan_enable_optimizations`](/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) is 1.

@@ -393,6 +393,7 @@ struct FormatSettings
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
         size_t dictionary_filter_push_down = 1024 * 1024;
+        size_t footer_read_size = 0;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
 
@@ -464,6 +465,7 @@ struct FormatSettings
         UInt64 fallback_to_vertical_min_table_width = 250;
 
         bool named_tuples_as_json = true;
+        bool named_tuples_as_subcolumns = true;
 
         bool use_nbsp_for_padding = false;
 

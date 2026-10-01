@@ -223,13 +223,26 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     };
 }
 
+void IcebergMetadata::setExplicitMetadataFilePath(const String & path)
+{
+    explicit_metadata_file_path.set(std::make_unique<const String>(path));
+}
+
+DataLakeStorageSettings IcebergMetadata::getMetadataLookupSettings() const
+{
+    DataLakeStorageSettings result = data_lake_settings;
+    if (auto path = explicit_metadata_file_path.get())
+        result[DataLakeStorageSetting::iceberg_metadata_file_path] = *path;
+    return result;
+}
+
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
     const ContextPtr & context, bool force_fetch_latest_metadata) const
 {
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
-        data_lake_settings,
+        getMetadataLookupSettings(),
         persistent_components.metadata_cache,
         context,
         log.get(),
@@ -498,7 +511,7 @@ bool IcebergMetadata::optimize(
             snapshots_info,
             persistent_components,
             object_storage,
-            data_lake_settings,
+            getMetadataLookupSettings(),
             format_settings,
             sample_block,
             context,
@@ -1036,7 +1049,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
-        data_lake_settings,
+        getMetadataLookupSettings(),
         persistent_components.metadata_cache,
         local_context,
         log.get(),
