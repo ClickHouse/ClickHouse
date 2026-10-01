@@ -2571,7 +2571,7 @@ void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
     filterTablesAndCreateChildrenPlans();
 }
 
-QueryPlanRawPtrs ReadFromMerge::getChildPlans()
+QueryPlanRawPtrs ReadFromMerge::getChildPlans(bool /*for_explain*/)
 {
     filterTablesAndCreateChildrenPlans();
 
