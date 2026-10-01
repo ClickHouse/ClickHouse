@@ -609,6 +609,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         bool has_password_for_default_user = false;
         bool is_default_user_removed = false;
+        /// True if no XML users config preceding `shadowing_access_storage` defines the default user,
+        /// so the effective default user is not known.
+        bool is_default_user_maybe_shadowed = false;
         /// False if the main config has `user_directories` without `users_xml` and no `users_config`,
         /// so the server does not read users from any XML file, or if the first XML users config cannot be located.
         bool has_users_xml_config = true;
@@ -616,6 +619,11 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         std::vector<fs::path> users_config_files;
         /// Set if the first XML users config is a relative path that does not exist in the config directory.
         fs::path unresolved_users_config_file;
+        /// The first access storage that is not an XML users config and may store the default user (e.g. `local_directory`),
+        /// and the number of XML users configs preceding it. The server looks up users in all storages in order,
+        /// so if no preceding XML users config defines the default user, the installer cannot know the effective one.
+        std::string shadowing_access_storage;
+        size_t num_users_configs_before_shadowing_access_storage = 0;
 
         if (!fs::exists(config_d))
         {
@@ -749,6 +757,19 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     users_config_files.push_back(users_config_path);
             };
 
+            auto add_shadowing_access_storage = [&](const std::string & description)
+            {
+                if (shadowing_access_storage.empty())
+                {
+                    shadowing_access_storage = description;
+                    num_users_configs_before_shadowing_access_storage = users_config_files.size();
+                }
+            };
+
+            /// `AccessControl::addStoragesFromMainConfig` adds the storage from `access_control_path` before all others.
+            if (!configuration->getString("access_control_path", "").empty())
+                add_shadowing_access_storage("access_control_path");
+
             bool has_user_directories = configuration->has("user_directories");
             std::string configured_users_config = configuration->getString("users_config", "");
             if (!configured_users_config.empty())
@@ -769,6 +790,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     if (type == "users_xml" || type == "users.xml" || type == "users_config")
                         add_users_config(resolve_users_config_path(
                             configuration->getString("user_directories." + key_in_user_directories + ".path")));
+                    else if (type != "memory")
+                        /// `local_directory`, `replicated` or `ldap`: the default user may be stored or authenticated there.
+                        /// A `memory` storage is empty when the server starts.
+                        add_shadowing_access_storage("user_directories." + key_in_user_directories);
                 }
             }
 
@@ -776,6 +801,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             {
                 has_users_xml_config = false;
                 fmt::print("{} does not use an XML users config.\n", main_config_file.string());
+            }
+            else if (!shadowing_access_storage.empty() && num_users_configs_before_shadowing_access_storage == 0)
+            {
+                /// Don't create or modify a file that does not define the effective default user.
+                has_users_xml_config = false;
+                is_default_user_maybe_shadowed = true;
+                fmt::print("{} has {} before any XML users config.\n", main_config_file.string(), shadowing_access_storage);
             }
             else if (users_config_files.front().is_relative())
             {
@@ -829,8 +861,17 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             /// The server looks up the default user in the XML users configs in order and uses the first one that defines it,
             /// so check whether it is defined anywhere and whether its first definition has a password.
             is_default_user_removed = true;
-            for (const auto & users_config_path : users_config_files)
+            for (size_t i = 0; i < users_config_files.size(); ++i)
             {
+                if (!shadowing_access_storage.empty() && i == num_users_configs_before_shadowing_access_storage)
+                {
+                    /// The default user may be defined in a storage that is not an XML users config.
+                    is_default_user_removed = false;
+                    is_default_user_maybe_shadowed = true;
+                    break;
+                }
+
+                const auto & users_config_path = users_config_files[i];
                 /// A relative path here is resolved against the working directory of the server, which is not known.
                 if (users_config_path.is_relative() || !fs::exists(users_config_path))
                     continue;
@@ -939,6 +980,11 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         {
             fmt::print("{}The users config {} is relative to the working directory of the server. Not setting up a password for the default user.{}\n",
                 start_hilite, unresolved_users_config_file.string(), end_hilite);
+        }
+        else if (is_default_user_maybe_shadowed)
+        {
+            fmt::print("{}The default user may be defined in {} from {}, which is not an XML users config. Not setting up a password for it.{}\n",
+                start_hilite, shadowing_access_storage, main_config_file.string(), end_hilite);
         }
         else if (!has_users_xml_config)
         {
