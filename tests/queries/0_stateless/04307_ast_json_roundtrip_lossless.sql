@@ -6,6 +6,7 @@
 -- Lossy fields that are now preserved:
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (`id` UInt64) ENGINE = MergeTree ORDER BY id UNIQUE KEY id'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TEMPORARY TABLE t (`x` UInt8) ENGINE = Memory'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t CLONE AS SELECT 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('DELETE FROM t ON CLUSTER c WHERE id = 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('OPTIMIZE TABLE t ON CLUSTER c FINAL'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SHOW TABLES FORMAT JSON'));

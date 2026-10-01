@@ -55,21 +55,21 @@ namespace ErrorCodes
 
 namespace DataLakeStorageSetting
 {
-    extern DataLakeStorageSettingsDatabaseDataLakeCatalogType storage_catalog_type;
-    extern DataLakeStorageSettingsString object_storage_endpoint;
-    extern DataLakeStorageSettingsString storage_aws_access_key_id;
-    extern DataLakeStorageSettingsString storage_aws_secret_access_key;
-    extern DataLakeStorageSettingsString storage_region;
-    extern DataLakeStorageSettingsString storage_aws_role_arn;
-    extern DataLakeStorageSettingsString storage_aws_role_session_name;
-    extern DataLakeStorageSettingsString storage_catalog_url;
-    extern DataLakeStorageSettingsString storage_warehouse;
-    extern DataLakeStorageSettingsString storage_catalog_credential;
+    extern const DataLakeStorageSettingsDatabaseDataLakeCatalogType storage_catalog_type;
+    extern const DataLakeStorageSettingsString object_storage_endpoint;
+    extern const DataLakeStorageSettingsString storage_aws_access_key_id;
+    extern const DataLakeStorageSettingsString storage_aws_secret_access_key;
+    extern const DataLakeStorageSettingsString storage_region;
+    extern const DataLakeStorageSettingsString storage_aws_role_arn;
+    extern const DataLakeStorageSettingsString storage_aws_role_session_name;
+    extern const DataLakeStorageSettingsString storage_catalog_url;
+    extern const DataLakeStorageSettingsString storage_warehouse;
+    extern const DataLakeStorageSettingsString storage_catalog_credential;
 
-    extern DataLakeStorageSettingsString storage_auth_scope;
-    extern DataLakeStorageSettingsString storage_auth_header;
-    extern DataLakeStorageSettingsString storage_oauth_server_uri;
-    extern DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
+    extern const DataLakeStorageSettingsString storage_auth_scope;
+    extern const DataLakeStorageSettingsString storage_auth_header;
+    extern const DataLakeStorageSettingsString storage_oauth_server_uri;
+    extern const DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
 }
 
 struct FormatParserSharedResources;
@@ -95,7 +95,24 @@ public:
 #endif
     }
 
+    /// Only DeltaLake can onboard an existing table from a columnless CREATE (schema read from the
+    /// `_delta_log`); Iceberg's create path still requires an explicit schema, so it keeps the default.
+    bool supportsCreateFromExistingTableInCatalog() const override
+    {
+#if USE_PARQUET
+        return std::is_same_v<DataLakeMetadata, DeltaLakeMetadata>;
+#else
+        return false;
+#endif
+    }
+
     const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
+
+    void setExplicitMetadataFilePath(const String & path) override
+    {
+        if (auto metadata = tryGetMetadata())
+            metadata->setExplicitMetadataFilePath(path);
+    }
 
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
 
@@ -195,6 +212,21 @@ public:
         getMetadata()->checkAlterIsPossible(commands);
     }
 
+    void checkAlterPartitionIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const PartitionCommands & commands) override
+    {
+        lazyInitializeIfNeeded(object_storage, context);
+        getMetadata()->checkAlterPartitionIsPossible(commands);
+    }
+
+    Pipe alterPartition(
+        const PartitionCommands & commands,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        StorageID storage_id) override
+    {
+        return getMetadata()->alterPartition(commands, context, std::move(catalog), std::move(storage_id));
+    }
+
     void alter(
         ObjectStoragePtr object_storage,
         const AlterCommands & params,
@@ -211,6 +243,14 @@ public:
         if (ready_object_storage)
             return ready_object_storage;
         return BaseStorageConfiguration::createObjectStorage(context, is_readonly, refresh_credentials_callback);
+    }
+
+    void check(ContextPtr context) override
+    {
+        if (ready_object_storage && ready_object_storage->getType() == ObjectStorageType::S3)
+            this->checkFormat();
+        else
+            BaseStorageConfiguration::check(context);
     }
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
@@ -401,8 +441,13 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not allowed for usage in storage engines. The list of allowed disks is defined by server setting `allowed_disks_for_table_engines`", disk_name);
 
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
+        this->source_disk_name = disk_name;
         auto disk = context->getDisk(disk_name);
-        ready_object_storage = disk->getObjectStorage();
+        /// The table works through a private copy of the disk's object storage: the decorators
+        /// (e.g. `CachedObjectStorage`), connection settings and the disk's IO scheduling resources
+        /// stay in effect for the table, while per-table setting updates (see `update`) cannot
+        /// corrupt the disk's own storage.
+        ready_object_storage = disk->getObjectStorage()->clone();
     }
 
     bool supportsPrewhere() const override

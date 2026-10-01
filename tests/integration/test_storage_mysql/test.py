@@ -1,4 +1,5 @@
 import os
+import shlex
 import time
 from contextlib import contextmanager
 
@@ -1899,6 +1900,74 @@ def test_query_passing_engine(started_cluster):
     conn.close()
 
 
+def clickhouse_local_error(query, stdin=None):
+    # `clickhouse local` prints the error to stderr, while `exec_in_container` returns
+    # only stdout, so redirect stderr to stdout to capture the error message.
+    # `stdin`, when given, is fed to the query as the data of an `INSERT ... FORMAT`.
+    command = (
+        f"clickhouse local --send_logs_level=fatal --query {shlex.quote(query)} 2>&1"
+    )
+    if stdin is not None:
+        command = f"printf %s {shlex.quote(stdin)} | {command}"
+    return node1.exec_in_container(["bash", "-c", command], nothrow=True)
+
+
+def test_clickhouse_local_preserves_mysql_error_messages(started_cluster):
+    table_name = "local_mysql_error_message"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"CREATE TABLE clickhouse.{table_name} (id INT PRIMARY KEY) ENGINE=InnoDB"
+            )
+            cursor.execute(f"INSERT INTO clickhouse.{table_name} VALUES (1)")
+            conn.commit()
+
+        schema_error = clickhouse_local_error(
+            f"""
+            SELECT *
+            FROM mysql(
+                'mysql80:3306',
+                'clickhouse',
+                query($sql$
+                    SELECT count(*)
+                    FROM {table_name}
+                    WHERE (id = 1, id = 2)
+                $sql$),
+                'root',
+                '{mysql_pass}'
+            )
+            """
+        )
+
+        assert "Operand should contain 1 column(s)" in schema_error
+        assert "POCO_EXCEPTION" in schema_error
+
+        write_error = clickhouse_local_error(
+            f"INSERT INTO FUNCTION mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}') SELECT 1"
+        )
+
+        assert "Duplicate entry '1'" in write_error
+        assert "POCO_EXCEPTION" in write_error
+
+        # Data fed by the client (stdin, `INSERT ... FORMAT`) goes through `LocalConnection::sendData`,
+        # a different path than `INSERT ... SELECT`; the sink error must be reported the same way.
+        stdin_write_error = clickhouse_local_error(
+            f"INSERT INTO FUNCTION mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}') FORMAT TSV",
+            stdin="1\n",
+        )
+
+        assert "Duplicate entry '1'" in stdin_write_error
+        assert "POCO_EXCEPTION" in stdin_write_error
+        # The error must come through the local protocol path exactly once, not be re-wrapped by the client.
+        assert stdin_write_error.count("DB::Exception") == 1
+    finally:
+        drop_mysql_table(conn, table_name)
+        conn.close()
+
+
 def test_query_passing_type_mismatch(started_cluster):
     # A declared structure whose types disagree with the passed query must surface as a query error, never
     # abort the server.
@@ -1924,6 +1993,53 @@ def test_query_passing_type_mismatch(started_cluster):
     assert node1.query_and_get_error("SELECT * FROM mysql_type_mismatch") != ""
     node1.query("DROP TABLE mysql_type_mismatch")
 
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
+def test_strict_query_local_only_column(started_cluster):
+    # A `MATERIALIZED` column of the table-backed engine is a physical column of the remote table: its
+    # value is read from MySQL, and a filter over it is pushed down like one over an ordinary column,
+    # so `external_table_strict_query` accepts it. An `ALIAS` column belongs to this source too, but exists
+    # only locally: its filter is applied locally and must be rejected under `external_table_strict_query`
+    # instead of being silently dropped as if it belonged to another table.
+    table_name = "strict_local_only_column"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TABLE clickhouse.{table_name} (a INT NOT NULL, m INT NOT NULL, PRIMARY KEY (a)) ENGINE=InnoDB;"
+        )
+        cursor.execute(f"INSERT INTO clickhouse.{table_name} VALUES (1, 2), (2, 3)")
+        conn.commit()
+
+    node1.query("DROP TABLE IF EXISTS mysql_strict_local_only")
+    node1.query(
+        f"CREATE TABLE mysql_strict_local_only (a Int32, m Int32 MATERIALIZED a + 1, l Int32 ALIAS a * 10) "
+        f"ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+
+    assert node1.query("SELECT count() FROM mysql_strict_local_only WHERE m = 2").rstrip() == "1"
+    assert node1.query("SELECT count() FROM mysql_strict_local_only WHERE l = 10").rstrip() == "1"
+    assert (
+        node1.query(
+            "SELECT count() FROM mysql_strict_local_only WHERE a = 1 SETTINGS external_table_strict_query = 1"
+        ).rstrip()
+        == "1"
+    )
+    # The `MATERIALIZED` column is read from the remote table, not computed from its expression.
+    assert node1.query("SELECT a, m FROM mysql_strict_local_only ORDER BY a").splitlines() == ["1\t2", "2\t3"]
+    assert (
+        node1.query(
+            "SELECT count() FROM mysql_strict_local_only WHERE m = 2 SETTINGS external_table_strict_query = 1"
+        ).rstrip()
+        == "1"
+    )
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        "SELECT count() FROM mysql_strict_local_only WHERE l = 10 SETTINGS external_table_strict_query = 1"
+    )
+
+    node1.query("DROP TABLE mysql_strict_local_only")
     drop_mysql_table(conn, table_name)
     conn.close()
 

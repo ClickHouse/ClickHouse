@@ -71,11 +71,11 @@ private:
 
     bool useConflictDetector() const
     {
-        return query_graph.use_cd_a_conflict_detector || query_graph.use_cd_c_conflict_detector;
+        return query_graph.conflict_detector != JoinOrderConflictDetector::NONE;
     }
     ConflictDetector conflictDetectorKind() const
     {
-        return query_graph.use_cd_c_conflict_detector ? ConflictDetector::CDC : ConflictDetector::CDA;
+        return query_graph.conflict_detector == JoinOrderConflictDetector::CD_C ? ConflictDetector::CDC : ConflictDetector::CDA;
     }
 
     const std::vector<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
@@ -114,6 +114,11 @@ private:
         std::vector<UInt64> class_visited;        /// generation stamp per equivalence class
         UInt64 equiv_generation = 0;              /// bumped on each computeSelectivityMask call
         std::vector<JoinActionRef *> applicable_scratch; /// reused output of collectJoinEdgesMask
+
+        /// Whether the relations fall apart once cross products are set aside, computed in
+        /// `initDPsubScratch` from the masks below. DPsub builds the full set out of connected
+        /// pieces, so such a graph is one it cannot plan.
+        bool disconnected_graph = false;
 
         /// Per-operator conflict descriptors (CD-A or CD-C), populated in `initDPsubScratch` only
         /// when a conflict detector is enabled. When non-empty, `isValidJoinOrderMaskConflict` uses
@@ -176,7 +181,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
 
         dpsub_data.conflict_operators = computeConflictOperators(ops, conflictDetectorKind(), log);
         LOG_TRACE(log, "DPsub: using {} conflict detector over {} captured join operators",
-                  query_graph.use_cd_c_conflict_detector ? "CD-C" : "CD-A", dpsub_data.conflict_operators.size());
+                  toString(query_graph.conflict_detector), dpsub_data.conflict_operators.size());
     }
     else
     {
@@ -211,6 +216,63 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     }
     dpsub_data.class_visited.assign(dpsub_data.equiv_classes.size(), 0);
     dpsub_data.equiv_generation = 0;
+
+    /// Connectivity, over the links `initDPTable` seeds: every two-relation predicate, plus, with a
+    /// conflict detector, one per operator whose predicate does not span its two sides.
+    /// Cross products are left out - they join on nothing, so a graph they alone hold together is
+    /// disconnected. A query whose other predicates tie the same relations together still counts as
+    /// connected, which is what lets DPsub plan a cross product feeding an inner join.
+    std::vector<size_t> component(num_relations);
+    for (size_t i = 0; i < num_relations; ++i)
+        component[i] = i;
+
+    auto find = [&component](size_t x)
+    {
+        while (component[x] != x)
+        {
+            component[x] = component[component[x]];
+            x = component[x];
+        }
+        return x;
+    };
+    auto unite = [&](UInt32 a_mask, UInt32 b_mask)
+    {
+        if (!a_mask || !b_mask)
+            return;
+        const size_t ra = find(static_cast<size_t>(std::countr_zero(a_mask)));
+        const size_t rb = find(static_cast<size_t>(std::countr_zero(b_mask)));
+        if (ra != rb)
+            component[rb] = ra;
+    };
+
+    for (const UInt32 sources : dpsub_data.edge_source_mask)
+    {
+        if (std::popcount(sources) != 2)
+            continue;
+        const UInt32 lowest = sources & (~sources + 1);
+        unite(lowest, sources & ~lowest);
+    }
+
+    /// `initDPTable` seeds an operator link only for a degenerate operator - one whose predicate does
+    /// not span its two sides. A spanning predicate is already linked by its binary edge above, and
+    /// uniting the operator's whole subtrees instead would attach a relation that only a nested cross
+    /// product holds on (`t1` in `t1 CROSS JOIN t2 JOIN t3 ON t2.k = t3.k`).
+    for (const auto & op : dpsub_data.conflict_operators)
+    {
+        if (isCrossOrComma(op.kind) || !op.degenerate)
+            continue;
+        unite(op.left_relations, op.relations & ~op.left_relations);
+    }
+
+    dpsub_data.disconnected_graph = false;
+    for (size_t i = 1; i < num_relations; ++i)
+    {
+        if (find(i) != find(0))
+        {
+            dpsub_data.disconnected_graph = true;
+            break;
+        }
+    }
 }
 
 std::optional<JoinKind> DPSubJoinOrderOptimizer::isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const
@@ -259,37 +321,35 @@ std::optional<JoinKind> DPSubJoinOrderOptimizer::isValidJoinOrderMask(UInt32 lef
 std::optional<std::pair<JoinKind, JoinStrictness>>
 DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 right_mask) const
 {
-    /// Unified `applicable` for CD-A (Section 5.2) and CD-C (Section 5.4). The enumerator proposes
-    /// each connected, non-overlapping (left_mask, right_mask) split once. We look at every operator
-    /// whose ON predicate is applied across this split and require it to be `applicable`:
-    ///   required_left(op) subseteq S1  AND  required_right(op) subseteq S2  (forward, or mirrored),
-    ///   AND every conflict rule T1 -> T2 obeyed: T1 met by S implies T2 subseteq S.
-    /// For CD-A the required set is the widened TES and there are no rules; for CD-C it is the SES
-    /// plus conflict rules. Every crossing operator -- inner joins included -- must pass, because a
-    /// conflict between a nested operator and its parent is recorded in the *parent's* descriptor,
-    /// and that parent may itself be an inner join. The single non-inner operator that crosses (if
-    /// any) fixes the resulting join kind/strictness; two of them cannot share one binary node, so
-    /// the split is rejected. If none crosses, the step is a plain inner join.
+    /// Decide whether this (left_mask, right_mask) split is a legal join and what kind/strictness it
+    /// produces. Every operator applied across the split must pass: its required-left relations must
+    /// sit in S1 and required-right in S2 (or mirrored), and each conflict rule T1 -> T2 must hold
+    /// (if any table of T1 is joined, all of T2 must be too). Inner operators are checked too, since
+    /// a nested operator's conflict with its parent is recorded on the parent, which may be inner.
+    /// The single non-inner operator that crosses fixes the kind; two cannot share one node.
     const UInt32 combined = left_mask | right_mask;
     auto subset_of = [](const UInt32 a, const UInt32 b) { return (a & ~b) == 0; };
 
     JoinKind kind = JoinKind::Inner;
     JoinStrictness strictness = JoinStrictness::All;
     bool have_non_inner = false;
+    bool any_involved = false;
 
     for (const auto & op : dpsub_data.conflict_operators)
     {
-        /// The operator is applied at this boundary when its ON predicate (NEL) spans the split.
-        /// Using the operator's *relation set* to detect straddling is wrong: an ancestor's
-        /// relation set is a superset of this subset, and an operator already applied inside a
-        /// child no longer has a crossing predicate. The relation-set straddle is a fallback only
-        /// for degenerate predicate-less operators (empty NEL, e.g. an ON-TRUE join).
+        /// The operator is applied here when its ON-clause relations (nel) span the split and are all
+        /// present: a predicate that still references a not-yet-joined relation belongs to a higher
+        /// node. A predicate-less operator falls back to its relation set straddling the split.
         const bool within = subset_of(op.relations, combined);
+        const bool nel_within = subset_of(op.nel, combined);
         const bool nel_crosses = (op.nel & left_mask) && (op.nel & right_mask);
-        const bool rel_straddles = (op.relations & left_mask) && (op.relations & right_mask);
-        const bool involved = nel_crosses || (op.nel == 0 && rel_straddles && within);
+        const bool rel_crosses = (op.relations & left_mask) && (op.relations & right_mask);
+        /// A degenerate operator (one-sided or absent predicate) has no crossing predicate, so it is
+        /// located by its relation set crossing the split with all of its relations present.
+        const bool involved = (nel_within && nel_crosses) || (op.degenerate && rel_crosses && within);
         if (!involved)
             continue;
+        any_involved = true;
 
         /// Conflict rules (CD-C; empty for CD-A). A rule T1 -> T2 is disobeyed when some table of T1
         /// is already in the joined set S but not all of T2 is -- that ordering would apply this
@@ -305,6 +365,18 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
         /// predicate, both non-empty, so at most one orientation can hold.
         bool forward = subset_of(op.required_left, left_mask) && subset_of(op.required_right, right_mask);
         bool mirrored = subset_of(op.required_left, right_mask) && subset_of(op.required_right, left_mask);
+
+        /// A one-sided/cross-product operator has an empty required side, so the containment above
+        /// cannot orient it. Require each whole input subtree on its own side instead: this orients
+        /// it and rejects a fragmented split that pulls part of a subtree across the outer-join
+        /// boundary (an invalid plan). Rare -- gated by the flag.
+        if (op.degenerate)
+        {
+            const UInt32 right_relations = op.relations & ~op.left_relations;
+            forward = forward && subset_of(op.left_relations, left_mask) && subset_of(right_relations, right_mask);
+            mirrored = mirrored && subset_of(op.left_relations, right_mask) && subset_of(right_relations, left_mask);
+        }
+
         if (!forward && !mirrored)
             return std::nullopt;
 
@@ -317,25 +389,22 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
             return std::nullopt;
         have_non_inner = true;
 
-        /// For a non-degenerate predicate the two required sides are non-empty and disjoint, so
-        /// exactly one orientation holds. A degenerate (predicate-less, e.g. ON TRUE) operator has
-        /// empty required sets, so both orientations pass and the required-set test cannot tell which
-        /// side is preserved. Break the tie by the operator's original subtree placement: its
-        /// (left-canonical) preserved subtree `left_relations` must land on the preserving side.
-        /// Fail closed if it is split across both sides: do not guess and risk flipping the
-        /// preserved side (see `reverseJoinKind`, which flips Left<->Right / the semi/anti preserved
-        /// side while `buildPhysicalPlan` keeps the child order).
+        /// A non-inner operator whose orientation is still ambiguous (both sides admissible) would
+        /// have its preserved side guessed; fail closed instead (see `reverseJoinKind`, which flips
+        /// Left<->Right / the semi/anti preserved side while `buildPhysicalPlan` keeps the child order).
         if (forward && mirrored)
-        {
-            if (subset_of(op.left_relations, right_mask))
-                forward = false;
-            else if (!subset_of(op.left_relations, left_mask))
-                return std::nullopt;
-        }
+            return std::nullopt;
 
         kind = forward ? op.kind : reverseJoinKind(op.kind);
         strictness = op.strictness;
     }
+
+    /// No operator is applied across this split. A real predicate always maps to an operator, so the
+    /// only legitimate no-operator split is a transitive inner join (two sides tied by a column
+    /// equivalence, no direct predicate). Anything else reaching here is the synthetic cross-product
+    /// connectivity with no operator spanning it -- reject rather than invent an inner join.
+    if (!any_involved && !query_graph.areTransitivelyConnected(BitSet::fromUInt(left_mask), BitSet::fromUInt(right_mask)))
+        return std::nullopt;
 
     return std::make_pair(kind, strictness);
 }
@@ -372,9 +441,8 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
         if (dpsub_data.edge_pinned[i] && (dpsub_data.edge_pin_mask[i] & ~joined))
             continue;
 
-        /// Works much like Extended Eligibility List (EEL) in case of outerjoins:
-        /// encoding relations that must be present for the predicate to be applicable (in `pin` mask)
-        /// For innerjoins its just the sources of the predicate, i.e., NEL, here pin is empty.
+        /// For an outer join the `pin` mask encodes relations that must be present for the predicate
+        /// to be applicable; for an inner join it is just the predicate's source relations (pin empty).
         /// For a single-table conjunct of an outer join's ON
         /// clause (e.g. `t2.value = 'x'` in `... LEFT JOIN t3 ON t2.id = t3.id AND t2.value = 'x'`),
         /// `sources` is only `{t2}` but the pin is `{t3}`: the predicate belongs to the ON condition of
@@ -479,7 +547,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
 
     auto left = buildPhysicalPlan(dptable, entry.left);
     auto right = buildPhysicalPlan(dptable, entry.right);
-    return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.estimated_rows, std::move(join_operator));
+    return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.sel, entry.estimated_rows, std::move(join_operator));
 }
 
 /** Implements the `Dpsub` bottom-up dynamic programming algorithm for optimal bushy join tree generation.
@@ -536,6 +604,14 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
     /// That is, we don't have to convert Bitvector -> BitSet -> Bitvector for every subset S
     /// and its subcomponents S1, S2
     initDPsubScratch();
+
+    /// Turn down a graph that only cross products hold together, before enumerating anything: DPsub
+    /// cannot stitch its components, so the next algorithm in the chain plans the query instead.
+    if (dpsub_data.disconnected_graph)
+    {
+        LOG_TRACE(log, "Join graph is disconnected apart from cross products, leaving it to the next algorithm");
+        return nullptr;
+    }
 
     Checker checker(n, *this);
     Enumerator enumerator(n, max_nr_ccps, log);
