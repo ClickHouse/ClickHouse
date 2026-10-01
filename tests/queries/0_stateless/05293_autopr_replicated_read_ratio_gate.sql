@@ -22,6 +22,9 @@ SET serialize_query_plan = 0;
 -- A small task size leaves the coordinated read splittable enough that distributing wins the time
 -- comparison, so that the ratio alone decides the outcome.
 SET merge_tree_min_bytes_per_task_for_remote_reading = 4096;
+-- The coordinated read is a couple of MB once compressed, under the default per-replica minimum, which
+-- would decline both candidates below for a reason that has nothing to do with the ratio.
+SET automatic_parallel_replicas_min_bytes_per_replica = 0;
 -- Keep the build side on the right and unfiltered: the join order optimizer would otherwise swap the
 -- sides, and a runtime filter would prune the probe side - either changes which read is coordinated.
 SET query_plan_join_swap_table = 0, enable_join_runtime_filters = 0,
