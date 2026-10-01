@@ -1519,9 +1519,11 @@ def test_drop_table_delete_data_retry_after_failure(started_cluster):
         node.query("SYSTEM DISABLE FAILPOINT iceberg_drop_catalog_remove_fail")
     assert "FAULT_INJECTED" in error
     assert len(catalog.list_tables(namespace)) == 1
+    # The data files are already deleted, only the metadata files are left.
     files = table_files(started_cluster, table_name)
-    assert any(f.endswith(".metadata.json") for f in files)
+    assert all(f.endswith(".metadata.json") or f.endswith("metadata/version-hint.text") for f in files)
     assert any(f.endswith("metadata/version-hint.text") for f in files)
+    assert any(f.endswith(".metadata.json") for f in files)
 
     drop_table_delete_data(node, namespace, table_name)
     assert len(catalog.list_tables(namespace)) == 0
@@ -1543,6 +1545,9 @@ def test_drop_table_delete_data_metadata_delete_failure(started_cluster):
     finally:
         node.query("SYSTEM DISABLE FAILPOINT iceberg_drop_metadata_anchor_fail")
     assert len(catalog.list_tables(namespace)) == 0
+    files = table_files(started_cluster, table_name)
+    assert len(files) > 0 and all(f.endswith(".metadata.json") for f in files)
+    assert node.contains_in_log("Best-effort Iceberg drop: ignoring failure to delete metadata file")
 
 
 def test_table_with_slash(started_cluster):
