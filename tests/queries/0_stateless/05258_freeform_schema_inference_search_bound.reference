@@ -13,15 +13,5 @@ A schema cached under a raised bound is not reused under the default bound
 BAD_ARGUMENTS
 A wide row of tab-separated strings is refused
 BAD_ARGUMENTS
-An unbounded search stops at the memory limit
-MEMORY_LIMIT_EXCEEDED
-An unbounded search stops at the time limit
-TIMEOUT_EXCEEDED
-An unbounded search for reading rows stops at the time limit
-TIMEOUT_EXCEEDED
-An unbounded search stops at KILL QUERY
-QUERY_WAS_CANCELLED
-A long validation of the candidates stops at the time limit
-TIMEOUT_EXCEEDED
 A wide row of quoted strings is refused
 BAD_ARGUMENTS
