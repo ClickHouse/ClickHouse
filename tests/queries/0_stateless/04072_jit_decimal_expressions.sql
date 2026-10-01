@@ -25,6 +25,8 @@ SELECT abs(d32), abs(d64), abs(d128) FROM test_jit_dec_expr ORDER BY d32;
 SELECT 'Test sign on Decimal types';
 SELECT sign(d32), sign(d64), sign(d128) FROM test_jit_dec_expr ORDER BY d32;
 
+-- Of the conversions below only `Decimal` to float and `Decimal` to a signed integer at least as wide
+-- as its storage are JIT-compiled; the rest are evaluated by the interpreter (#117442, #118958).
 SELECT 'Test Decimal to integer conversions';
 SELECT toInt32(d32), toInt64(d64), toInt64(d128) FROM test_jit_dec_expr ORDER BY d32;
 
@@ -34,7 +36,6 @@ SELECT toFloat32(d32), toFloat64(d64) FROM test_jit_dec_expr ORDER BY d32;
 SELECT 'Test integer to Decimal conversions';
 SELECT toDecimal32(i64, 2), toDecimal64(i64, 4) FROM test_jit_dec_expr ORDER BY i64;
 
--- The `Float ->` direction is evaluated by the interpreter: see #117442.
 SELECT 'Test float to Decimal conversions';
 SELECT toDecimal64(f64, 4) FROM test_jit_dec_expr ORDER BY f64;
 
