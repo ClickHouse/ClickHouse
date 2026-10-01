@@ -368,11 +368,18 @@ Write `summary.md` last: the job treats it as the sign that you finished.
      cannot be attached; the job then moves it into the summary.
    - An issue that does not map to one line (a missing change, a design problem) goes on the most
      relevant changed line.
-   - One issue per comment. The body starts with ❌ (Blocker) or ⚠️ (Major) and one sentence stating
-     the problem and its impact, then the trigger (the input or sequence that causes it), then the
-     fix. Keep it to what the author needs to act: comments that led to changes were short, and ones
-     with a concrete fix were resolved more often. For a small fix on RIGHT lines, use a
-     ```` ```suggestion ```` block.
+   - One issue per comment, written like a maintainer's review comment: the problem in one line,
+     then a few bullets of one sentence each (two at most), no paragraphs. For example:
+
+     ```markdown
+     ⚠️ `step_value * 7` overflows `Int64` for a large `INTERVAL n WEEK`.
+
+     - Trigger: `generate_date_array('2024-01-01', '2024-01-05', toIntervalWeek(7905747460161236407))` returns 5 days instead of 1.
+     - Fix: check the multiplication with `common::mulOverflow` and throw `ARGUMENT_OUT_OF_BOUND`.
+     ```
+
+     Start with ❌ (Blocker) or ⚠️ (Major). Add an "Impact" bullet only when the first line does not
+     already make it obvious. For a small fix on RIGHT lines, end with a ```` ```suggestion ```` block.
 
 3. `{output_dir}/thread_actions.json`: actions on existing threads, as a JSON array (`[]` when none):
 
@@ -385,9 +392,16 @@ Write `summary.md` last: the job treats it as the sign that you finished.
 4. `{output_dir}/summary.md`: a self-contained summary of every current finding, whether or not it
    also gets an inline comment, in the REQUESTED OUTPUT FORMAT of the review instructions. Start with
    `---` and `#### AI Review` on the next line, and use `#####` for section headers.
+   Each finding there is one bullet of one or two lines; the detail lives in the inline comment.
+   No paragraph in the summary runs longer than two sentences.
 
 In everything you write, cite code as `path:line` in backticks, with paths relative to the
 repository root. Do not write Markdown links to files: local paths are not reachable from GitHub.
+Write plainly, as a person would: no "I noticed", "it appears", "note that", "overall", no hedging
+on a finding you verified, no bold except where something must stand out, no tables in comments.
+Say each thing once. A bullet does not repeat the first line, a "Fix" bullet is left out when the
+`suggestion` block shows the fix, a comment does not quote the line it is attached to, and the
+summary does not retell the PR description or repeat what an inline comment already says.
 
 Do not call `gh` or post anything."""
 
