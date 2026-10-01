@@ -39,6 +39,7 @@ FAST_DEADLINE = 1
 
 MYSQL_PORT = 9001
 POSTGRESQL_PORT = 9005
+SECURE_NATIVE_PORT = 9440
 SHORT_RECEIVE_TIMEOUT = 1
 SHORT_NODE_HANDSHAKE_TIMEOUT = 9
 # `handshake_timeout_milliseconds` from the config, in seconds.
@@ -232,6 +233,31 @@ def test_trickled_tls_handshake_is_disconnected(started_cluster):
 
         elapsed = time.monotonic() - started
         assert elapsed < DISCONNECT_DEADLINE, f"TLS negotiation held for {elapsed} seconds"
+    finally:
+        sock.close()
+
+    node.wait_for_log_line(SOCKET_TIMEOUT_LINE, repetitions=seen + 1)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param(b"", id="silent"),
+        # A TLS record header claiming 512 bytes, then the first byte of a ClientHello.
+        pytest.param(bytes([0x16, 0x03, 0x01, 0x02, 0x00, 0x01]), id="partial_client_hello"),
+    ],
+)
+def test_timed_out_tls_handshake_on_native_port_gets_no_reply(started_cluster, payload):
+    """A stalled TLS handshake on the secure native port must be closed at the budget, not twice it.
+
+    Writing the exception to such a socket runs the handshake again, for another full window.
+    """
+    seen = int(node.count_in_log(SOCKET_TIMEOUT_LINE))
+    sock = socket.create_connection((node.ip_address, SECURE_NATIVE_PORT), timeout=DISCONNECT_DEADLINE)
+    try:
+        sock.sendall(payload)
+        elapsed = wait_for_disconnect(sock)
+        assert elapsed < 1.5 * HANDSHAKE_TIMEOUT, f"TLS handshake held for {elapsed} seconds"
     finally:
         sock.close()
 

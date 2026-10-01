@@ -65,7 +65,7 @@ SET ast_fuzzer_runs = 0;
 
 SELECT t2.g AS g, count() AS c, sum(t1.v) AS s FROM t_spill_facts AS t1 INNER JOIN t_spill_dims AS t2 ON t1.j = t2.j GROUP BY t2.g
 FORMAT Null
-SETTINGS log_comment = '05047_cascades_spill_probe';
+SETTINGS log_comment = '05047_cascades_spill_probe', distributed_plan_fallback_to_local_execution = 0;
 
 -- Spill evidence from `system.text_log` rather than `ProfileEvents` in `system.query_log`: the
 -- `Aggregator` log line records the write itself, independently of which entry a fragment's
@@ -105,7 +105,8 @@ SELECT '-- digest: pushed (with spill) vs hand-computed constants';
 SELECT count() AS groups, sum(c) AS total_rows, sum(s) AS total_sum FROM
 (
     SELECT t2.g AS g, count() AS c, sum(t1.v) AS s FROM t_spill_facts AS t1 INNER JOIN t_spill_dims AS t2 ON t1.j = t2.j GROUP BY t2.g
-);
+)
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_spill_facts;
 DROP TABLE t_spill_dims;
