@@ -45,6 +45,12 @@ Float32 MergeTreeCleanupThread::iterate()
 
     auto shared_lock
         = storage.lockForShare(RWLockImpl::NO_QUERY, (*storage_settings)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+
+    /// Served before the other cleanups: a request wakes this thread only once, so an exception
+    /// in any of them must not keep it from being served.
+    if (clear_empty_parts_requested.exchange(false, std::memory_order_relaxed))
+        cleaned_part_like += storage.clearEmptyParts();
+
     if (auto lock = time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
             static_cast<double>((*storage_settings)[MergeTreeSetting::merge_tree_clear_old_temporary_directories_interval_seconds])))
     {
