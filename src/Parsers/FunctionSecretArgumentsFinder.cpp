@@ -538,7 +538,9 @@ void FunctionSecretArgumentsFinder::findMongoDBConnectionStringSecretArguments()
                 result.replaced_arguments[i] = "'[HIDDEN]'";
                 continue;
             }
-            if (!equalsCaseInsensitive(key, "uri") && !equalsCaseInsensitive(key, "options"))
+            /// The table function binds a named `oid_columns` to the `options` slot when an argument before it is missing.
+            if (!equalsCaseInsensitive(key, "uri") && !equalsCaseInsensitive(key, "options")
+                && !equalsCaseInsensitive(key, "oid_columns"))
                 continue;
 
             String value;

@@ -35,12 +35,14 @@ probe "CREATE TABLE e06 (x String) ENGINE = MongoDB(${NC}, options = 'tls=true&t
 probe "CREATE TABLE e07 (x String) ENGINE = MongoDB(${NC}, concat('op', 'tions') = 'tlsCertificateKeyFilePassword=OPTSECRET13')"
 
 # Table function: the URI form, the positional and the named options of the host:port form, a URI written
-# after a named argument, and an upper-case OPTIONS key (both rejected after being logged).
+# after a named argument, an upper-case OPTIONS key (both rejected after being logged), and a named
+# oid_columns bound to the options slot.
 probe "CREATE VIEW f01 AS SELECT * FROM mongodb('mongodb://127.0.0.1:27017/db?authMechanismProperties=AWS_SESSION_TOKEN:OPTSECRET5', 'c', 'x String')"
 probe "CREATE VIEW f02 AS SELECT * FROM mongodb('127.0.0.1:27017', 'db', 'c', 'usr', 'pw', 'x String', 'tlsCertificateKeyFilePassword=OPTSECRET6')"
 probe "CREATE VIEW f03 AS SELECT * FROM mongodb('127.0.0.1:27017', 'db', 'c', 'usr', 'pw', 'x String', options = 'TLSCERTIFICATEKEYFILEPASSWORD=OPTSECRET7')"
 probe "CREATE VIEW f04 AS SELECT * FROM mongodb(structure = 'x String', 'mongodb://127.0.0.1:27017/db?tlsCertificateKeyFilePassword=OPTSECRET16', 'c')"
 probe "CREATE VIEW f05 AS SELECT * FROM mongodb('127.0.0.1:27017', 'db', 'c', 'usr', 'pw', 'x String', OPTIONS = 'tlsCertificateKeyFilePassword=OPTSECRET17')"
+probe "CREATE VIEW f06 AS SELECT * FROM mongodb(oid_columns = 'tlsCertificateKeyFilePassword=OPTSECRET22', '127.0.0.1:27017', 'db', 'c', '', 'x String')"
 
 # Dictionary source: an option given twice, a URI written as an identifier with '#' in the value, the
 # OPTIONS of the host form, and OPTIONS given as an expression.
