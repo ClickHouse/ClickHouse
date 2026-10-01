@@ -1,5 +1,6 @@
 #include <Parsers/SelectUnionMode.h>
 #include <Common/Exception.h>
+#include <base/defines.h>
 
 
 namespace DB
@@ -56,6 +57,29 @@ SelectUnionMode parseSelectUnionMode(const std::string & str)
     if (str == "INTERSECT_DISTINCT")
         return SelectUnionMode::INTERSECT_DISTINCT;
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SelectUnionMode: '{}'", str);
+}
+
+const char * toString(SetOperationColumnMatchMode mode)
+{
+    switch (mode)
+    {
+        case SetOperationColumnMatchMode::Position:
+            return "POSITION";
+        case SetOperationColumnMatchMode::Name:
+            return "NAME";
+    }
+
+    UNREACHABLE();
+}
+
+SetOperationColumnMatchMode parseSetOperationColumnMatchMode(const std::string & str)
+{
+    if (str == "POSITION")
+        return SetOperationColumnMatchMode::Position;
+    if (str == "NAME")
+        return SetOperationColumnMatchMode::Name;
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SetOperationColumnMatchMode: '{}'", str);
 }
 
 }

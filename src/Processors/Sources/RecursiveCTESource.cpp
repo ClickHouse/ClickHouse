@@ -100,7 +100,7 @@ public:
         if (recursive_cte_union_node_queries_size > 2)
         {
             auto working_union_query = std::make_shared<UnionNode>(recursive_cte_union_node_typed.getMutableContext(),
-                recursive_cte_union_node_typed.getUnionMode());
+                recursive_cte_union_node_typed.getUnionMode(), SetOperationColumnMatchMode::Position);
             auto & working_union_query_subqueries = working_union_query->getQueries().getNodes();
 
             for (size_t i = 1; i < recursive_cte_union_node_queries_size; ++i)
@@ -217,6 +217,8 @@ private:
         auto convert_to_temporary_tables_header_actions_dag = ActionsDAG::makeConvertingActions(
             pipeline_builder.getHeader().getColumnsWithTypeAndName(),
             header->getColumnsWithTypeAndName(),
+            /// The recursive CTE boundary is positional. A nested UNION ALL BY NAME
+            /// aligns its own operands before its result reaches this conversion.
             ActionsDAG::MatchColumnsMode::Position,
             interpreter->getContext());
         auto convert_to_temporary_tables_header_actions = std::make_shared<ExpressionActions>(std::move(convert_to_temporary_tables_header_actions_dag));

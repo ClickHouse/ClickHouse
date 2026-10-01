@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -44,6 +45,28 @@ NameToNameMap childQueryParameters(const ASTPtr & child)
     return analyzeReceiveQueryParamsWithType(child);
 }
 
+bool astHasByNameSetOperation(const IAST * ast)
+{
+    if (!ast)
+        return false;
+
+    if (const auto * union_ast = ast->as<ASTSelectWithUnionQuery>())
+    {
+        if (union_ast->column_match_mode == SetOperationColumnMatchMode::Name)
+            return true;
+
+        for (auto mode : union_ast->list_of_column_match_modes)
+            if (mode == SetOperationColumnMatchMode::Name)
+                return true;
+    }
+
+    for (const auto & child : ast->children)
+        if (astHasByNameSetOperation(child.get()))
+            return true;
+
+    return false;
+}
+
 }
 
 ASTPtr ASTSelectWithUnionQuery::clone() const
@@ -55,8 +78,10 @@ ASTPtr ASTSelectWithUnionQuery::clone() const
     res->children.push_back(res->list_of_selects);
 
     res->union_mode = union_mode;
+    res->column_match_mode = column_match_mode;
     res->is_normalized = is_normalized;
     res->list_of_modes = list_of_modes;
+    res->list_of_column_match_modes = list_of_column_match_modes;
     res->set_of_modes = set_of_modes;
 
     cloneOutputOptions(*res);
@@ -68,8 +93,13 @@ void ASTSelectWithUnionQuery::updateTreeHashImpl(SipHash & hash_state, bool igno
     /// The set operation joining the selects is not a child, so the default implementation does not
     /// see it: without hashing the modes, `a UNION ALL b` and `a UNION DISTINCT b` hash equally.
     hash_state.update(union_mode);
+    hash_state.update(column_match_mode);
+    hash_state.update(is_normalized);
     hash_state.update(list_of_modes.size());
     for (auto mode : list_of_modes)
+        hash_state.update(mode);
+    hash_state.update(list_of_column_match_modes.size());
+    for (auto mode : list_of_column_match_modes)
         hash_state.update(mode);
     ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
 }
@@ -119,14 +149,28 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
         return list_of_modes[index];
     };
 
+    auto get_column_match_mode = [&](ASTs::const_iterator it) -> SetOperationColumnMatchMode
+    {
+        if (is_normalized)
+            return column_match_mode;
+
+        auto index = static_cast<size_t>(it - list_of_selects->children.begin()) - 1;
+        if (index >= list_of_column_match_modes.size())
+            return SetOperationColumnMatchMode::Position;
+        return list_of_column_match_modes[index];
+    };
+
     for (ASTs::const_iterator it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it)
     {
         if (it != list_of_selects->children.begin())
         {
             ostr << settings.nl_or_ws << indent_str
-                << mode_to_str(get_mode(it))
+                << mode_to_str(get_mode(it));
 
-                << settings.nl_or_ws;
+            if (get_column_match_mode(it) == SetOperationColumnMatchMode::Name)
+                ostr << " BY NAME";
+
+            ostr << settings.nl_or_ws;
         }
 
         bool need_parens = false;
@@ -224,8 +268,12 @@ void ASTSelectWithUnionQuery::writeJSON(WriteBuffer & out) const
     JSONObjectWriter w(out, "SelectWithUnionQuery");
 
     w.writeString("union_mode", toString(union_mode));
+    w.writeString("column_match_mode", toString(column_match_mode));
+    w.writeBool("is_normalized", is_normalized);
 
-    if (!list_of_modes.empty())
+    /// Normalized nodes use only union_mode and column_match_mode. The positional
+    /// normalizer can retain parser-era lists in memory; do not serialize ignored metadata.
+    if (!is_normalized && !list_of_modes.empty())
     {
         w.writeKey("list_of_modes");
         auto & o = w.getOut();
@@ -234,6 +282,19 @@ void ASTSelectWithUnionQuery::writeJSON(WriteBuffer & out) const
         {
             if (i > 0) o << ',';
             writeJSONString(toString(list_of_modes[i]), o, w.getFormatSettings());
+        }
+        o << ']';
+    }
+
+    if (!is_normalized && !list_of_column_match_modes.empty())
+    {
+        w.writeKey("list_of_column_match_modes");
+        auto & o = w.getOut();
+        o << '[';
+        for (size_t i = 0; i < list_of_column_match_modes.size(); ++i)
+        {
+            if (i > 0) o << ',';
+            writeJSONString(toString(list_of_column_match_modes[i]), o, w.getFormatSettings());
         }
         o << ']';
     }
@@ -257,10 +318,34 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
 
     union_mode = parseSelectUnionMode(r.getString("union_mode", "UNION_DEFAULT"));
+    column_match_mode = parseSetOperationColumnMatchMode(r.getString("column_match_mode", "POSITION"));
+    is_normalized = r.getBool("is_normalized");
+
+    if (column_match_mode == SetOperationColumnMatchMode::Name && union_mode != SelectUnionMode::UNION_ALL)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`BY NAME` is supported only with `UNION ALL` during AST JSON deserialization");
 
     auto modes_arr = r.readStringArray("list_of_modes");
     for (const auto & mode_str : modes_arr)
         list_of_modes.push_back(parseSelectUnionMode(mode_str));
+
+    auto column_match_modes_arr = r.readStringArray("list_of_column_match_modes");
+    for (const auto & mode_str : column_match_modes_arr)
+        list_of_column_match_modes.push_back(parseSetOperationColumnMatchMode(mode_str));
+
+    if (is_normalized)
+    {
+        if (union_mode == SelectUnionMode::UNION_DEFAULT
+            || union_mode == SelectUnionMode::EXCEPT_DEFAULT
+            || union_mode == SelectUnionMode::INTERSECT_DEFAULT)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Normalized `SelectWithUnionQuery` AST requires an explicit ALL or DISTINCT mode "
+                "during AST JSON deserialization");
+
+        if (!list_of_modes.empty() || !list_of_column_match_modes.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Normalized `SelectWithUnionQuery` AST cannot contain parser-era set operation lists "
+                "during AST JSON deserialization");
+    }
 
     /// `list_of_selects` is a required invariant: `clone`, `formatQueryImpl`, and the interpreters
     /// dereference it unconditionally. Reject malformed JSON that omits it instead of producing an
@@ -299,19 +384,85 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
             "A single-element 'list_of_selects' cannot hold a nested `SelectWithUnionQuery` during AST JSON deserialization");
     children.push_back(list_of_selects);
 
-    /// `list_of_modes` describes the separators between adjacent selects, so its cardinality must be
-    /// exactly one less than the number of selects. `formatQueryImpl` indexes `list_of_modes` by
-    /// `(position - 1)`, so a mismatch would either read stale modes or leave gaps; reject it.
-    if (!list_of_modes.empty() && list_of_modes.size() != list_of_selects->children.size() - 1)
+    /// An unnormalized AST needs one mode per separator, even when both edge lists are empty.
+    /// Otherwise formatting silently falls back to the top-level defaults and loses ALL / BY NAME.
+    /// Normalized ASTs use the top-level modes and were checked above.
+    const size_t expected_modes = list_of_selects->children.size() - 1;
+    if (!is_normalized && list_of_modes.size() != expected_modes)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`SelectWithUnionQuery` AST has {} entries in 'list_of_modes' but expected {} for {} selects "
             "during AST JSON deserialization",
-            list_of_modes.size(), list_of_selects->children.size() - 1, list_of_selects->children.size());
+            list_of_modes.size(), expected_modes, list_of_selects->children.size());
+
+    /// The column-match list is optional for backwards-compatible positional ASTs.
+    if (!list_of_column_match_modes.empty() && list_of_column_match_modes.size() != expected_modes)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`SelectWithUnionQuery` AST has {} entries in 'list_of_column_match_modes' but expected {} for {} selects "
+            "during AST JSON deserialization",
+            list_of_column_match_modes.size(), expected_modes, list_of_selects->children.size());
+
+    for (size_t i = 0; i < list_of_column_match_modes.size(); ++i)
+    {
+        if (list_of_column_match_modes[i] == SetOperationColumnMatchMode::Name
+            && list_of_modes[i] != SelectUnionMode::UNION_ALL)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`BY NAME` is supported only with `UNION ALL` during AST JSON deserialization");
+    }
 
     /// Restore output options (`INTO OUTFILE` / `FORMAT` / `SETTINGS` / compression and flags)
     /// through the shared helper so the validation of their interdependencies stays in one place
     /// instead of diverging from `ASTQueryWithOutput::readOutputOptionsJSON`.
     readOutputOptionsJSON(r);
+}
+
+SetOperationDescriptors ASTSelectWithUnionQuery::getSetOperations() const
+{
+    SetOperationDescriptors operations;
+    if (is_normalized)
+        return operations;
+
+    if (!list_of_column_match_modes.empty() && list_of_column_match_modes.size() != list_of_modes.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Incorrect ASTSelectWithUnionQuery (modes: {}, column match modes: {})",
+            list_of_modes.size(), list_of_column_match_modes.size());
+
+    operations.reserve(list_of_modes.size());
+    for (size_t i = 0; i < list_of_modes.size(); ++i)
+    {
+        operations.push_back({
+            .mode = list_of_modes[i],
+            .column_match_mode = list_of_column_match_modes.empty()
+                ? SetOperationColumnMatchMode::Position
+                : list_of_column_match_modes[i]});
+    }
+
+    return operations;
+}
+
+void ASTSelectWithUnionQuery::setSetOperations(const SetOperationDescriptors & operations)
+{
+    list_of_modes.clear();
+    list_of_column_match_modes.clear();
+
+    list_of_modes.reserve(operations.size());
+    bool has_name_match = false;
+    for (const auto & operation : operations)
+    {
+        list_of_modes.push_back(operation.mode);
+        has_name_match = has_name_match || operation.column_match_mode == SetOperationColumnMatchMode::Name;
+    }
+
+    if (has_name_match)
+    {
+        list_of_column_match_modes.reserve(operations.size());
+        for (const auto & operation : operations)
+            list_of_column_match_modes.push_back(operation.column_match_mode);
+    }
+}
+
+bool ASTSelectWithUnionQuery::hasByNameSetOperation() const
+{
+    return astHasByNameSetOperation(this);
 }
 
 }

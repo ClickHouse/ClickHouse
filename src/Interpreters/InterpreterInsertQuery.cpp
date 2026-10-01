@@ -706,6 +706,8 @@ void InterpreterInsertQuery::applyTrivialInsertSelectOptimization(ASTInsertQuery
         const auto mode_is_all = [](const auto & mode) { return mode == SelectUnionMode::UNION_ALL; };
 
         is_trivial_insert_select =
+            !select_query.hasByNameSetOperation()
+            &&
             std::all_of(union_modes.begin(), union_modes.end(), std::move(mode_is_all))
             && std::all_of(selects.begin(), selects.end(), isTrivialSelect);
     }

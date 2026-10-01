@@ -6,6 +6,8 @@
 #include <Parsers/StatementFactory.h>
 #include <Parsers/registerStatements.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -36,6 +38,12 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         select_with_union_query->list_of_selects = list_node;
         select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
         select_with_union_query->list_of_modes = parser.getUnionModes();
+        select_with_union_query->list_of_column_match_modes = parser.getUnionColumnMatchModes();
+        if (std::all_of(
+                select_with_union_query->list_of_column_match_modes.begin(),
+                select_with_union_query->list_of_column_match_modes.end(),
+                [](auto mode) { return mode == SetOperationColumnMatchMode::Position; }))
+            select_with_union_query->list_of_column_match_modes.clear();
     }
 
     /// The query can be followed by a chain of pipe operators, e.g.: FROM t |> WHERE x |> LIMIT 1.
@@ -75,6 +83,21 @@ SELECT CounterID, 2 AS table, sum(Sign) AS c
 ```
 
 Result columns are matched by their index (order inside `SELECT`). If column names do not match, names for the final result are taken from the first query.
+
+`UNION ALL BY NAME` matches columns by their output names instead of their positions. The result columns keep the order of their first appearance from left to right. A column that is missing from an operand is filled with `NULL` when its type supports nullable values. Duplicate output names inside one operand are not allowed.
+
+```sql title="Query"
+SELECT 1 AS a, 'one' AS b
+UNION ALL BY NAME
+SELECT 'two' AS b, 3 AS c
+```
+
+```text title="Response"
+1    one    NULL
+NULL two    3
+```
+
+`BY NAME` is currently supported only with `UNION ALL`.
 
 Type casting is performed for unions. For example, if two queries being combined have the same field with non-`Nullable` and `Nullable` types from a compatible type, the resulting `UNION` has a `Nullable` type field.
 
@@ -127,7 +150,7 @@ Queries that are parts of `UNION/UNION ALL/UNION DISTINCT` can be run simultaneo
 - [union_default_mode](/reference/settings/session-settings/other#union_default_mode) setting.
 )DOCS_MD",
         .syntax = R"(
-SELECT ... UNION [ALL | DISTINCT] SELECT ... [UNION [ALL | DISTINCT] SELECT ...]
+SELECT ... UNION [DISTINCT | ALL [BY NAME]] SELECT ... [UNION [DISTINCT | ALL [BY NAME]] SELECT ...]
 )",
         .parent = "SELECT",
         .related = {"SELECT", "INTERSECT", "EXCEPT", "DISTINCT", "JOIN"},
