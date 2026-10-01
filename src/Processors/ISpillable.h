@@ -11,6 +11,7 @@ namespace DB
 {
 
 struct MemoryReservation;
+class TemporaryDataOnDiskScope;
 
 /// Memory spilling interface of a processor.
 /// Aggregation, join, sorting, and `DISTINCT` processors can be spillable.
@@ -38,6 +39,10 @@ public:
 
     /// Called once per processor on `Finished`; the last owner removes scheduler accounting.
     void unregisterProcessor();
+
+    /// The scope retains cumulative spill statistics after its temporary files are deleted.
+    /// Multiple processors can share a scope; count it once when reporting a plan step.
+    virtual const TemporaryDataOnDiskScope * getSpillScope() const { return nullptr; }
 
 private:
     friend struct MemoryReservation;

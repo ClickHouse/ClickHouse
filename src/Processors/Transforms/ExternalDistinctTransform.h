@@ -67,6 +67,7 @@ public:
     ISpillable * getSpillable() override { return this; }
     ProcessorMemoryStats getMemoryStats() const override;
     size_t spill(size_t at_least_bytes) override;
+    const TemporaryDataOnDiskScope * getSpillScope() const override { return tmp_data.get(); }
 
 private:
     Status prepareImpl();

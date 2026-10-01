@@ -647,6 +647,8 @@ public:
     const ColumnNumbers & getKeysPositions() const { return keys_positions; }
     const DataTypes & getKeyTypes() const { return key_types; }
 
+    const TemporaryDataOnDiskScope * getSpillScope() const { return tmp_data.get(); }
+
 
 private:
 

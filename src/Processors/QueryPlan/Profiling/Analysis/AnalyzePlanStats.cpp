@@ -2,8 +2,10 @@
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <Processors/Port.h>
+#include <Processors/ISpillable.h>
 #include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Profiling/Analysis/JoinBranchCosts.h>
@@ -13,6 +15,7 @@
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsAnalyzer.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
@@ -396,6 +399,10 @@ StepStatsContext AnalyzeStepsStats::makeContext(const IQueryPlanStep * step) con
 
 AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) const
 {
+    StepProcessors step_processors;
+    if (const auto processors_it = processors_by_step.find(step); processors_it != processors_by_step.end())
+        step_processors = processors_it->second;
+
     StepAnalysisReport raw_report;
     if (const auto report_it = join_raw_reports.find(step); report_it != join_raw_reports.end())
     {
@@ -403,11 +410,25 @@ AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) con
     }
     else
     {
-        StepProcessors step_processors;
-        if (const auto processors_it = processors_by_step.find(step); processors_it != processors_by_step.end())
-            step_processors = processors_it->second;
-
         raw_report = step->getAnalysisReport(step_processors);
+    }
+
+    std::unordered_set<const TemporaryDataOnDiskScope *> spill_scopes;
+    UInt64 spilled_bytes = 0;
+    for (auto * processor : step_processors)
+    {
+        if (const auto * spillable = processor->getSpillable())
+        {
+            if (const auto * scope = spillable->getSpillScope(); scope && spill_scopes.insert(scope).second)
+                spilled_bytes += scope->getSpilledBytes();
+        }
+    }
+    if (spilled_bytes)
+    {
+        auto * spill_group = findGroup(raw_report, MetricGroupKey::Spill);
+        if (!spill_group)
+            spill_group = &raw_report.emplace_back(MetricGroupKey::Spill, MetricList{});
+        spill_group->metrics.emplace_back(MetricKey::Spilled, spilled_bytes);
     }
 
     auto context_for_step = makeContext(step);
