@@ -4,7 +4,7 @@
 # alike, so a wide row of strings has exponentially many candidate structures. The search is bounded by
 # `input_format_freeform_max_search_steps`, and a row that exceeds the bound is refused with an error
 # instead of exhausting memory. An unbounded search (`input_format_freeform_max_search_steps = 0`) stops
-# at the memory limit, the time limit and `KILL QUERY`.
+# at the memory limit, the time limit and `KILL QUERY`, and so does a long validation of the candidates.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -79,6 +79,18 @@ for _ in $(seq 1 600); do
 done
 timeout 10 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$QUERY_ID' SYNC FORMAT Null"
 wait
+
+echo "A long validation of the candidates stops at the time limit"
+# A short first row keeps the search within the default bound, and long later rows make every candidate's validation
+# expensive. The last checked row fails every candidate, so only the time limit can stop the query early.
+word=$(head -c 16384 /dev/zero | tr '\0' a)
+long_row=$(yes "$word" | head -n 10 | paste -sd $'\t' -)
+{
+    printf 'a\tb\tc\td\te\tf\tg\th\ti\tj\n'
+    for _ in $(seq 1 98); do echo "$long_row"; done
+    printf '%s\tx,y\n' "$long_row"
+} > "$DATA_FILE"
+describe ", max_execution_time = 0.1" | grep -oE 'BAD_ARGUMENTS|MEMORY_LIMIT_EXCEEDED|TIMEOUT_EXCEEDED' | head -1
 
 echo "A wide row of quoted strings is refused"
 for _ in 1 2; do for i in $(seq 1 24); do printf "'s%d' " "$i"; done; echo; done > "$DATA_FILE"
