@@ -9,8 +9,8 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-# The endpoint only parses the PromQL expression, so no TimeSeries table is created:
-# the tests also verify that the endpoint works without one.
+# Formatting and feature discovery do not need a TimeSeries table. None is created,
+# so the tests also catch accidental table resolution.
 node = cluster.add_instance(
     "node",
     main_configs=["configs/prometheus.xml"],
@@ -134,15 +134,39 @@ def test_format_query_missing_query_parameter_is_rejected():
     assert response.json()["status"] == "error"
 
 
-def test_features_without_table():
-    response = requests.get(f"http://{node.ip_address}:9093/api/v1/features")
+@pytest.mark.parametrize("path", ["/api/v1/features", "/no_bounds/api/v1/features"])
+@pytest.mark.parametrize(
+    "params",
+    [
+        pytest.param({}, id="no-table-parameter"),
+        pytest.param(
+            {"database": "missing_database", "table": "missing_table"},
+            id="nonexistent-table",
+        ),
+        pytest.param({"database": "system", "table": "one"}, id="non-timeseries-table"),
+    ],
+)
+def test_features_without_table(path, params):
+    # /no_bounds has a fixed table in the config, but that table does not exist here.
+    # Neither configured nor request-supplied table names should be resolved.
+    response = requests.get(
+        f"http://{node.ip_address}:9093{path}", params=params, timeout=10
+    )
 
     assert response.status_code == 200, response.text
+    assert response.headers["Content-Type"].split(";")[0] == "application/json"
     response_json = response.json()
     assert response_json["status"] == "success"
 
     features = response_json["data"]
     assert set(features) == {"api", "promql", "promql_functions", "promql_operators"}
+
+    # Parser support alone is not sufficient for capability discovery.
+    # histogram_quantile requires a constant phi; quantile cannot use a scalar grid;
+    # quantile_over_time cannot combine a varying phi with a fixed @ modifier.
+    assert "histogram_quantile" not in features["promql_functions"]
+    assert "quantile_over_time" not in features["promql_functions"]
+    assert "quantile" not in features["promql_operators"]
 
     expected_api = {
         "label_values_match", "time_range_labels", "time_range_series",
@@ -158,11 +182,11 @@ def test_features_without_table():
         "ceil", "changes", "clamp", "clamp_max", "clamp_min",
         "cos", "cosh", "count_over_time", "day_of_month", "day_of_week",
         "day_of_year", "days_in_month", "deg", "delta", "deriv",
-        "exp", "floor", "histogram_quantile", "hour", "idelta",
+        "exp", "floor", "hour", "idelta",
         "increase", "irate", "label_join", "label_replace", "last_over_time",
         "ln", "log10", "log2", "max_over_time", "min_over_time",
         "minute", "month", "pi", "predict_linear", "present_over_time",
-        "quantile_over_time", "rad", "rate", "resets", "round",
+        "rad", "rate", "resets", "round",
         "scalar", "sgn", "sin", "sinh", "sqrt",
         "sum_over_time", "tan", "tanh", "time", "ts_of_max_over_time",
         "ts_of_min_over_time", "vector", "year",
@@ -173,7 +197,7 @@ def test_features_without_table():
         "=~", ">", ">=", "@", "^",
         "and", "atan2", "avg", "bottomk", "count",
         "count_values", "group", "limitk", "max", "min",
-        "or", "quantile", "stddev", "stdvar", "sum",
+        "or", "stddev", "stdvar", "sum",
         "topk", "unless",
     }
 

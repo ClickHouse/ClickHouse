@@ -646,9 +646,9 @@ private:
 
     static void writeFeatures(WriteBuffer & out)
     {
-        /// Prometheus treats omitted capability entries as unsupported. Function and operator entries
-        /// use the same availability semantics as Prometheus' feature registry: true means the construct
-        /// is exposed, even when some argument forms have documented implementation restrictions.
+        /// Prometheus treats omitted capability entries as unsupported. Do not advertise constructs
+        /// with known unsupported argument forms: histogram_quantile requires a constant phi,
+        /// quantile rejects a scalar grid, and quantile_over_time rejects a varying phi with a fixed @.
         writeString(
             R"({"status":"success","data":{)"
             R"("api":{"label_values_match":true,"time_range_labels":true,"time_range_series":true},)"
@@ -657,15 +657,15 @@ private:
             R"("promql_functions":{"abs":true,"absent":true,"absent_over_time":true,"acos":true,"acosh":true,"asin":true,"asinh":true,"atan":true,)"
             R"("atanh":true,"avg_over_time":true,"ceil":true,"changes":true,"clamp":true,"clamp_max":true,"clamp_min":true,"cos":true,)"
             R"("cosh":true,"count_over_time":true,"day_of_month":true,"day_of_week":true,"day_of_year":true,"days_in_month":true,"deg":true,"delta":true,)"
-            R"("deriv":true,"exp":true,"floor":true,"histogram_quantile":true,"hour":true,"idelta":true,"increase":true,"irate":true,)"
+            R"("deriv":true,"exp":true,"floor":true,"hour":true,"idelta":true,"increase":true,"irate":true,)"
             R"("label_join":true,"label_replace":true,"last_over_time":true,"ln":true,"log10":true,"log2":true,"max_over_time":true,"min_over_time":true,)"
-            R"("minute":true,"month":true,"pi":true,"predict_linear":true,"present_over_time":true,"quantile_over_time":true,"rad":true,"rate":true,)"
+            R"("minute":true,"month":true,"pi":true,"predict_linear":true,"present_over_time":true,"rad":true,"rate":true,)"
             R"("resets":true,"round":true,"scalar":true,"sgn":true,"sin":true,"sinh":true,"sqrt":true,"sum_over_time":true,)"
             R"("tan":true,"tanh":true,"time":true,"ts_of_max_over_time":true,"ts_of_min_over_time":true,"vector":true,"year":true},)"
             R"("promql_operators":{"!=":true,"!~":true,"%":true,"*":true,"+":true,"-":true,"/":true,"<":true,)"
             R"("<=":true,"==":true,"=~":true,">":true,">=":true,"@":true,"^":true,"and":true,)"
             R"("atan2":true,"avg":true,"bottomk":true,"count":true,"count_values":true,"group":true,"limitk":true,"max":true,)"
-            R"("min":true,"or":true,"quantile":true,"stddev":true,"stdvar":true,"sum":true,"topk":true,"unless":true})"
+            R"("min":true,"or":true,"stddev":true,"stdvar":true,"sum":true,"topk":true,"unless":true})"
             R"(}})",
             out);
     }
