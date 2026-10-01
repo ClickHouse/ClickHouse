@@ -178,27 +178,33 @@ size_t tryFoldFilterThroughMaterialize(QueryPlan::Node * node, QueryPlan::Nodes 
         return 0;
 
     auto & dag = filter->getExpression();
-    const auto & filter_column_name = filter->getFilterColumnName();
-    const bool folded = dag.foldFilterPredicateThroughMaterialize(filter_column_name);
-
-    /// an always-true `FilterStep` is never pushed over a join and splits the join graph (TPC-DS `query_11`)
-    const auto & filter_node = dag.findInOutputs(filter_column_name);
-    if (filter_node.type == ActionsDAG::ActionType::COLUMN && ConstantFilterDescription(*filter_node.column).always_true)
-    {
-        dag.removeUnusedResult(filter_column_name);
-        dag.removeUnusedActions(false, false);
-        auto expression = std::make_unique<ExpressionStep>(filter->getInputHeaders().front(), std::move(dag));
-        expression->setStepDescription(*filter);
-        if (filter->isInputRemovalPrevented())
-            expression->setPreventInputRemoval();
-        node->step = std::move(expression);
-        return 1;
-    }
-
-    if (!folded)
+    if (!dag.foldFilterPredicateThroughMaterialize(filter->getFilterColumnName()))
         return 0;
 
     dag.removeUnusedActions(false, false);
+    return 1;
+}
+
+/// an always-true `FilterStep` is never pushed over a join and splits the join graph (TPC-DS `query_11`)
+size_t tryReplaceAlwaysTrueFilter(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
+{
+    auto * filter = typeid_cast<FilterStep *>(node->step.get());
+    if (!filter || !filter->removesFilterColumn())
+        return 0;
+
+    auto & dag = filter->getExpression();
+    const auto & filter_column_name = filter->getFilterColumnName();
+    const auto & filter_node = dag.findInOutputs(filter_column_name);
+    if (filter_node.type != ActionsDAG::ActionType::COLUMN || !ConstantFilterDescription(*filter_node.column).always_true)
+        return 0;
+
+    dag.removeUnusedResult(filter_column_name);
+    dag.removeUnusedActions(false, false);
+    auto expression = std::make_unique<ExpressionStep>(filter->getInputHeaders().front(), std::move(dag));
+    expression->setStepDescription(*filter);
+    if (filter->isInputRemovalPrevented())
+        expression->setPreventInputRemoval();
+    node->step = std::move(expression);
     return 1;
 }
 

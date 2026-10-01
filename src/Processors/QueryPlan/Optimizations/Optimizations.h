@@ -126,8 +126,11 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
 /// Replace chain `FilterStep -> ExpressionStep` to single FilterStep
 size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
-/// fold a dropped constant filter through `materialize`, and replace an always-true filter with an expression
+/// fold a dropped constant filter through `materialize`
 size_t tryFoldFilterThroughMaterialize(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
+
+/// replace a dropped always-true filter with an expression
+size_t tryReplaceAlwaysTrueFilter(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
 /// Replace chain `FilterStep -> FilterStep` to single FilterStep
 /// Note: this breaks short-circuit logic, so it is disabled for now.
@@ -260,6 +263,7 @@ inline const auto & getOptimizations()
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::merge_expressions},
         {tryFoldFilterThroughMaterialize, "foldFilterThroughMaterialize", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryReplaceAlwaysTrueFilter, "replaceAlwaysTrueFilter", &QueryPlanOptimizationSettings::optimize_plan},
         {tryMergeFilters, "mergeFilters", &QueryPlanOptimizationSettings::merge_filters},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryFuseFilterIntoArrayJoin, "fuseFilterIntoArrayJoin", &QueryPlanOptimizationSettings::fuse_filter_into_array_join},
