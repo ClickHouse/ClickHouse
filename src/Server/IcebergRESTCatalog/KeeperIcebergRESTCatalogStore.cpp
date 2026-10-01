@@ -45,31 +45,6 @@ std::map<String, String> propertiesFromJSON(const String & data, const String & 
     return properties;
 }
 
-String tablePointerToJSON(const IcebergTablePointer & pointer)
-{
-    Poco::JSON::Object json;
-    json.set("uuid", pointer.uuid);
-    json.set("metadata_location", pointer.metadata_location);
-    return toJSONString(json);
-}
-
-IcebergTablePointer tablePointerFromJSON(const String & data, const String & path)
-{
-    const auto json = parseJSONObject(data, fmt::format("Table pointer at {}", path));
-
-    auto get_string = [&](const char * key)
-    {
-        if (!json->has(key) || !json->get(key).isString())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Table pointer at {} has no string key '{}'", path, key);
-        return json->getValue<String>(key);
-    };
-
-    IcebergTablePointer pointer;
-    pointer.uuid = get_string("uuid");
-    pointer.metadata_location = get_string("metadata_location");
-    return pointer;
-}
-
 }
 
 KeeperIcebergRESTCatalogStore::KeeperIcebergRESTCatalogStore(zkutil::GetZooKeeper get_zookeeper_, String root_path_)
@@ -137,6 +112,11 @@ String KeeperIcebergRESTCatalogStore::tablesPath(const IcebergNamespaceName & na
 String KeeperIcebergRESTCatalogStore::tablePath(const IcebergNamespaceName & name, const String & table) const
 {
     return tablesPath(name) + "/" + escapeForFileName(table);
+}
+
+String KeeperIcebergRESTCatalogStore::tableUuidPath(const IcebergNamespaceName & name, const String & table, const String & uuid) const
+{
+    return tablePath(name, table) + "/" + uuid;
 }
 
 bool KeeperIcebergRESTCatalogStore::createNamespace(const IcebergNamespaceName & name, const std::map<String, String> & properties)
@@ -215,26 +195,32 @@ KeeperIcebergRESTCatalogStore::CreateTableResult
 KeeperIcebergRESTCatalogStore::createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer)
 {
     auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::createTable");
-    const auto path = tablePath(ns, table);
-    const auto code = getZooKeeper()->tryCreate(path, tablePointerToJSON(pointer), zkutil::CreateMode::Persistent);
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeCreateRequest(tablePath(ns, table), pointer.uuid, zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(
+        tableUuidPath(ns, table, pointer.uuid), pointer.metadata_location, zkutil::CreateMode::Persistent));
+    Coordination::Responses responses;
+    const auto code = getZooKeeper()->tryMulti(ops, responses);
     if (code == Coordination::Error::ZNODEEXISTS)
         return CreateTableResult::TableExists;
     /// The `tables` node is created with the namespace, so a missing parent means a missing namespace.
     if (code == Coordination::Error::ZNONODE)
         return CreateTableResult::NamespaceMissing;
-    if (code != Coordination::Error::ZOK)
-        throw zkutil::KeeperException::fromPath(code, path);
+    zkutil::KeeperMultiException::check(code, ops, responses);
     return CreateTableResult::Created;
 }
 
 std::optional<IcebergTablePointer> KeeperIcebergRESTCatalogStore::getTable(const IcebergNamespaceName & ns, const String & table) const
 {
     auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::getTable");
-    const auto path = tablePath(ns, table);
-    String data;
-    if (!getZooKeeper()->tryGet(path, data))
+    auto zookeeper = getZooKeeper();
+    IcebergTablePointer pointer;
+    if (!zookeeper->tryGet(tablePath(ns, table), pointer.uuid))
         return std::nullopt;
-    return tablePointerFromJSON(data, path);
+    /// Missing here means the table was dropped between the two reads.
+    if (!zookeeper->tryGet(tableUuidPath(ns, table, pointer.uuid), pointer.metadata_location))
+        return std::nullopt;
+    return pointer;
 }
 
 bool KeeperIcebergRESTCatalogStore::tableExists(const IcebergNamespaceName & ns, const String & table) const
@@ -266,12 +252,21 @@ std::optional<Strings> KeeperIcebergRESTCatalogStore::listTables(const IcebergNa
 bool KeeperIcebergRESTCatalogStore::dropTable(const IcebergNamespaceName & ns, const String & table)
 {
     auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::dropTable");
+    auto zookeeper = getZooKeeper();
     const auto path = tablePath(ns, table);
-    const auto code = getZooKeeper()->tryRemove(path);
+    String uuid;
+    if (!zookeeper->tryGet(path, uuid))
+        return false;
+
+    /// Removing the uuid node first pins the table identity. A table re-created under the same name has another uuid.
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeRemoveRequest(tableUuidPath(ns, table, uuid), -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(path, -1));
+    Coordination::Responses responses;
+    const auto code = zookeeper->tryMulti(ops, responses);
     if (code == Coordination::Error::ZNONODE)
         return false;
-    if (code != Coordination::Error::ZOK)
-        throw zkutil::KeeperException::fromPath(code, path);
+    zkutil::KeeperMultiException::check(code, ops, responses);
     return true;
 }
 

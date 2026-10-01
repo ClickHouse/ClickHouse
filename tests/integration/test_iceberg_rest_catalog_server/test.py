@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import base64
-import json
 import time
 import uuid
 
@@ -530,12 +529,13 @@ def test_keeper_layout(started_cluster):
     assert zk.get(parent_path)[0] == b"{}"
     assert zk.get(child_path)[0] == b'{"owner":"asya"}'
 
+    # The uuid is in the path, so a commit cannot target a table re-created under the same name.
+    table_path = f"{child_path}/tables/my%2Etable"
+    table_uuid = result["metadata"]["table-uuid"]
     assert zk.get_children(f"{child_path}/tables") == ["my%2Etable"]
-    pointer = json.loads(zk.get(f"{child_path}/tables/my%2Etable")[0])
-    assert pointer == {
-        "uuid": result["metadata"]["table-uuid"],
-        "metadata_location": result["metadata-location"],
-    }
+    assert zk.get(table_path)[0] == table_uuid.encode()
+    assert zk.get_children(table_path) == [table_uuid]
+    assert zk.get(f"{table_path}/{table_uuid}")[0] == result["metadata-location"].encode()
 
     assert list_namespaces(parent=ns) == [[ns, "eu-west"]]
     assert list_tables(f"{ns}\x1feu-west") == ["my.table"]

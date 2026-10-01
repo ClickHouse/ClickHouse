@@ -29,7 +29,8 @@ struct IcebergTablePointer
 ///   <root>/namespaces/<level>              data: JSON object of namespace properties
 ///   <root>/namespaces/<level>/namespaces   child namespaces, same shape recursively
 ///   <root>/namespaces/<level>/tables       one child per table
-///   <root>/namespaces/<level>/tables/<t>   data: JSON `{"uuid": ..., "metadata_location": ...}`
+///   <root>/namespaces/<level>/tables/<t>        data: table uuid, written once at create
+///   <root>/namespaces/<level>/tables/<t>/<uuid> data: metadata location, the node a commit updates
 /// Namespace levels and table names are encoded with `escapeForFileName`.
 class KeeperIcebergRESTCatalogStore
 {
@@ -75,6 +76,7 @@ private:
     String childNamespacesPath(const IcebergNamespaceName & name) const;
     String tablesPath(const IcebergNamespaceName & name) const;
     String tablePath(const IcebergNamespaceName & name, const String & table) const;
+    String tableUuidPath(const IcebergNamespaceName & name, const String & table, const String & uuid) const;
 
     const String root_path;
     const zkutil::GetZooKeeper get_zookeeper;
