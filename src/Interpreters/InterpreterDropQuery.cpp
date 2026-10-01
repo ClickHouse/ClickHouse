@@ -13,7 +13,6 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTableFunction.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -223,9 +222,18 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= static_cast<double>(settings[Setting::ignore_drop_queries_probability]))
         {
             ast_drop_query.sync = false;
-            /// A real DROP of an object storage, alias or table function table does not delete its data, so do not TRUNCATE it.
-            if (table->storesDataOnDisk() || table->isObjectStorage()
-                || typeid_cast<const StorageAlias *>(table.get()) || typeid_cast<const StorageTableFunctionProxy *>(table.get()))
+            /// A real DROP of an object storage, table function or non-truncatable table does not delete its data, so do not TRUNCATE it.
+            /// The proxy is checked first: its `supportsTruncate` resolves the table function.
+            auto keeps_data_on_drop = [](const IStorage & storage)
+            {
+                return storage.isObjectStorage() || typeid_cast<const StorageTableFunctionProxy *>(&storage) || !storage.supportsTruncate();
+            };
+            /// The TRUNCATE of a materialized view truncates its inner table.
+            StoragePtr inner_table;
+            if (materialized_view && materialized_view->hasInnerTable())
+                inner_table = materialized_view->tryGetTargetTable();
+
+            if (table->storesDataOnDisk() || keeps_data_on_drop(*table) || (inner_table && keeps_data_on_drop(*inner_table)))
             {
                 LOG_TEST(getLogger("InterpreterDropQuery"), "Ignore DROP TABLE query for table {}.{}", table_id.database_name, table_id.table_name);
                 return {};

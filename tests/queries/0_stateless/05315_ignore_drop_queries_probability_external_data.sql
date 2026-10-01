@@ -19,6 +19,25 @@ CREATE TABLE t_proxy (x UInt64) AS s3(s3_conn, filename = currentDatabase() || '
 DROP TABLE t_proxy SETTINGS ignore_drop_queries_probability = 1;
 SELECT * FROM t_proxy;
 
+-- Tables that do not support TRUNCATE are skipped as well, instead of failing with NOT_IMPLEMENTED.
+CREATE TABLE t_url (x UInt64) ENGINE = URL('http://localhost:11/05315_skipped_drop_url.tsv', TSV);
+DROP TABLE t_url SETTINGS ignore_drop_queries_probability = 1;
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't_url';
+
+CREATE VIEW t_view AS SELECT 4 AS x;
+DROP VIEW t_view SETTINGS ignore_drop_queries_probability = 1;
+SELECT * FROM t_view;
+
+-- The TRUNCATE of a materialized view would act on its inner table.
+CREATE TABLE t_mv_src (x UInt64) ENGINE = Memory;
+CREATE MATERIALIZED VIEW t_mv ENGINE = Null AS SELECT x FROM t_mv_src;
+DROP TABLE t_mv SETTINGS ignore_drop_queries_probability = 1;
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't_mv';
+
+DROP TABLE t_mv;
+DROP TABLE t_mv_src;
+DROP VIEW t_view;
+DROP TABLE t_url;
 DROP TABLE t_proxy;
 DROP TABLE t_alias;
 DROP TABLE t_alias_target;
