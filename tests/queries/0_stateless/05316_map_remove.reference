@@ -1,7 +1,10 @@
 {'b':2}	{'a':1,'b':2}	{}	{}
 {'b':3}
 {2:'two'}
-{}
+{'a':1,'b':2}
+0	{'b':2}
+1	{'a':1,'b':2}
+{(5,1):'five'}
 {'a':NULL}
 0	{'b':1}
 1	{'b':2}
@@ -10,3 +13,4 @@
 0	{'b':1}
 1	{'a':1}
 Map(LowCardinality(String), LowCardinality(String))
+{'b':'y'}

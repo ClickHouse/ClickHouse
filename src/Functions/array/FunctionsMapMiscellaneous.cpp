@@ -423,8 +423,8 @@ private:
 class FunctionMapRemovePredicate final : public IFunction
 {
 public:
-    explicit FunctionMapRemovePredicate(FunctionOverloadResolverPtr not_equals_resolver_)
-        : not_equals_resolver(std::move(not_equals_resolver_))
+    explicit FunctionMapRemovePredicate(FunctionOverloadResolverPtr is_distinct_from_resolver_)
+        : is_distinct_from_resolver(std::move(is_distinct_from_resolver_))
     {
     }
 
@@ -436,7 +436,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return not_equals_resolver->getReturnType({
+        return is_distinct_from_resolver->getReturnType({
             {nullptr, arguments[1], "key"},
             {nullptr, arguments[0], "remove_key"}});
     }
@@ -444,12 +444,12 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnsWithTypeAndName comparison_arguments{arguments[1], arguments[0]};
-        auto comparison = not_equals_resolver->build(comparison_arguments);
+        auto comparison = is_distinct_from_resolver->build(comparison_arguments);
         return comparison->execute(comparison_arguments, result_type, input_rows_count, false);
     }
 
 private:
-    FunctionOverloadResolverPtr not_equals_resolver;
+    FunctionOverloadResolverPtr is_distinct_from_resolver;
 };
 
 /// Adapter for map*KeyLike functions.
@@ -713,7 +713,7 @@ public:
 
     explicit FunctionMapRemove(const ContextPtr & context)
         : map_filter_resolver(FunctionFactory::instance().get("mapFilter", context))
-        , not_equals_resolver(FunctionFactory::instance().get("notEquals", context))
+        , is_distinct_from_resolver(FunctionFactory::instance().get("isDistinctFrom", context))
         , enable_lazy_columns_replication(context->getSettingsRef()[Setting::enable_lazy_columns_replication])
     {
     }
@@ -742,12 +742,8 @@ public:
             recursiveRemoveLowCardinality(map_type->getKeyType()),
             recursiveRemoveLowCardinality(map_type->getValueType())};
         auto remove_key_type = recursiveRemoveLowCardinality(arguments[1]);
-        auto predicate_result_type = getPredicateResultType(lambda_argument_types[0], remove_key_type);
-        auto predicate_type = std::make_shared<DataTypeFunction>(lambda_argument_types, predicate_result_type);
-
-        return map_filter_resolver->getReturnType({
-            {nullptr, predicate_type, "func"},
-            {nullptr, arguments[0], "map"}});
+        getPredicateResultType(lambda_argument_types[0], remove_key_type);
+        return arguments[0];
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -762,7 +758,7 @@ public:
             recursiveRemoveLowCardinality(map_type.getValueType())};
         auto predicate_result_type = getPredicateResultType(lambda_argument_types[0], remove_key_argument.type);
 
-        auto predicate = std::make_shared<FunctionMapRemovePredicate>(not_equals_resolver);
+        auto predicate = std::make_shared<FunctionMapRemovePredicate>(is_distinct_from_resolver);
         DataTypes predicate_argument_types{remove_key_argument.type, lambda_argument_types[0], lambda_argument_types[1]};
         auto predicate_function = std::make_shared<FunctionToFunctionBaseAdaptor>(
             predicate, predicate_argument_types, predicate_result_type);
@@ -793,13 +789,13 @@ public:
 private:
     DataTypePtr getPredicateResultType(const DataTypePtr & key_type, const DataTypePtr & remove_key_type) const
     {
-        return not_equals_resolver->getReturnType({
+        return is_distinct_from_resolver->getReturnType({
             {nullptr, key_type, "key"},
             {nullptr, remove_key_type, "remove_key"}});
     }
 
     FunctionOverloadResolverPtr map_filter_resolver;
-    FunctionOverloadResolverPtr not_equals_resolver;
+    FunctionOverloadResolverPtr is_distinct_from_resolver;
     bool enable_lazy_columns_replication;
 };
 
@@ -945,13 +941,14 @@ Filters a map by applying a function to each map element.
 
     FunctionDocumentation::Description description_mapRemove = R"(
 Removes all entries from a map whose key equals the specified key. If several entries have the same key, all matching entries are removed.
+NULLs are compared as values: a NULL removal key does not match a non-NULL key, and NULL components in composite keys match other NULL components.
 )";
     FunctionDocumentation::Syntax syntax_mapRemove = "mapRemove(map, key)";
     FunctionDocumentation::Arguments arguments_mapRemove = {
-        {"map", "Map to remove an entry from.", {"Map(K, V)"}},
-        {"key", "Key to remove from the map.", {"K"}}
+        {"map", "Map to remove matching entries from.", {"Map(K, V)"}},
+        {"key", "Key whose matching entries are removed.", {"K"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_mapRemove = {"Returns the map with all entries whose key is not equal to the specified key.", {"Map(K, V)"}};
+    FunctionDocumentation::ReturnedValue returned_value_mapRemove = {"Returns the map with all entries whose key does not match the specified key.", {"Map(K, V)"}};
     FunctionDocumentation::Examples examples_mapRemove = {
         {
             "Usage example",
