@@ -10,13 +10,13 @@
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
 #include <Common/JSONBuilder.h>
-#include <Processors/QueryPlan/StepStatisticsCollector.h>
+#include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/QueryPlanToJSON.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/PreparedSets.h>
-#include <Processors/StepWallClockRegistry.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 namespace DB
@@ -135,14 +135,18 @@ bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, const ASTP
     return true;
 }
 
-void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline) const
+void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline)
 {
     if (!running.query_plan || !running.query_plan->isInitialized())
         return;
 
-    auto registry = std::make_unique<StepWallClockRegistry>();
-    registry->populateFromPlan(*running.query_plan, /*only_built_child_plans=*/ true);
-    pipeline.setStepWallClockRegistry(std::move(registry));
+    /// Work intervals are only for `EXPLAIN ANALYZE`; the plan column does not render them yet.
+    /// The clocks are attached from the plans the steps already hold, so instrumenting a pipeline
+    /// does not make a step build anything.
+    running.step_profiler = std::make_shared<StepProfiler>(
+        *running.query_plan, /*collect_work_intervals_=*/ false, /*only_built_child_plans=*/ true);
+    running.execution_start_ns = clock_gettime_ns();
+    pipeline.setStepProfiler(running.step_profiler);
 }
 
 void QueryPlanProfiler::captureStatistics(QueryPipeline & pipeline)
@@ -180,13 +184,12 @@ void QueryPlanProfiler::capture(QueryPipeline * pipeline)
 
     try
     {
-        std::optional<StepStatisticsCollector> stats;
-        if (pipeline)
+        std::optional<AnalyzeStepsStats> stats;
+        if (pipeline && running.step_profiler)
         {
-            UInt64 execution_time_ns = 0;
-            if (const auto * registry = pipeline->getStepClocks())
-                execution_time_ns = registry->getExecutionTimeNs();
-            stats.emplace(*pipeline, *running.query_plan, execution_time_ns);
+            const UInt64 execution_time_ns = clock_gettime_ns() - running.execution_start_ns;
+            stats.emplace(*pipeline, *running.query_plan, *running.step_profiler,
+                running.execution_start_ns, execution_time_ns);
         }
 
         auto result = capturePlan(

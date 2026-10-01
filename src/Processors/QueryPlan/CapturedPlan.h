@@ -2,7 +2,7 @@
 
 #include <Common/JSONBuilder.h>
 #include <Processors/QueryPlan/PlanIndexStats.h>
-#include <Processors/QueryPlan/StepStatisticsModel.h>
+#include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
 #include <base/types.h>
 
 #include <cstddef>
@@ -11,12 +11,11 @@
 #include <string_view>
 #include <vector>
 
-
 namespace DB
 {
 
 class QueryPlan;
-class StepStatisticsCollector;
+class AnalyzeStepsStats;
 struct ExplainPlanOptions;
 struct PrettyNamesPerPlan;
 
@@ -60,7 +59,7 @@ CapturedPlan capturePlan(
     const QueryPlan & plan,
     const ExplainPlanOptions & options,
     size_t max_description_length,
-    const StepStatisticsCollector * steps_to_stats,
+    const AnalyzeStepsStats * steps_to_stats,
     const PrettyNamesPerPlan * pretty_names);
 
 }

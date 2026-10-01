@@ -7,13 +7,12 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/StepStatisticsCollector.h>
+#include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/types.h>
 
 #include <memory>
 #include <vector>
-
 
 namespace DB
 {
@@ -87,7 +86,7 @@ PlanIndexStats stepIndexes(const IQueryPlanStep & step, const ExplainPlanOptions
 /// What the pipeline measured for this step. Absent when there was no pipeline to measure -- a
 /// query that failed before finishing is captured without statistics.
 std::optional<AnalyzedStepData> stepStatistics(
-    const IQueryPlanStep & step, const StepStatisticsCollector * steps_to_stats)
+    const IQueryPlanStep & step, const AnalyzeStepsStats * steps_to_stats)
 {
     if (!steps_to_stats)
         return {};
@@ -113,7 +112,7 @@ CapturedStep captureStep(
     const IQueryPlanStep & step,
     const ExplainPlanOptions & options,
     size_t max_description_length,
-    const StepStatisticsCollector * steps_to_stats,
+    const AnalyzeStepsStats * steps_to_stats,
     const PrettyNames * plan_pretty_names)
 {
     CapturedStep captured;
@@ -134,7 +133,7 @@ std::vector<CapturedStep> capturePlanSteps(
     const QueryPlan & plan,
     const ExplainPlanOptions & options,
     size_t max_description_length,
-    const StepStatisticsCollector * steps_to_stats,
+    const AnalyzeStepsStats * steps_to_stats,
     const PrettyNamesPerPlan * pretty_names)
 {
     struct Frame
@@ -194,7 +193,7 @@ CapturedPlan capturePlan(
     const QueryPlan & plan,
     const ExplainPlanOptions & options,
     size_t max_description_length,
-    const StepStatisticsCollector * steps_to_stats,
+    const AnalyzeStepsStats * steps_to_stats,
     const PrettyNamesPerPlan * pretty_names)
 {
     CapturedPlan result;

@@ -10,7 +10,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <Common/config_version.h>
 #include "config.h"
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
@@ -88,7 +87,6 @@
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/WasmModuleManager.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Core/SettingsQuirks.h>
@@ -4111,16 +4109,10 @@ void Context::makeQueryContext()
     /// server-initiated queries such as background flushes of `Buffer` tables, streaming consumers
     /// (`Kafka`, `NATS`, `RabbitMQ`, `FileLog`, `ObjectStorageQueue`), `MaterializedPostgreSQL`
     /// replication, dictionary reloads, or asynchronous insert flushes - inherits the empty (zero)
-    /// client version of the global context. This server is the real initiator of such queries, so
-    /// fill the version with this server's version. Otherwise remote shards of any distributed
-    /// sub-query would treat the initiator as an ancient server and apply legacy compatibility
-    /// downgrades, and `RemoteQueryExecutor` rejects a zero version outright.
+    /// client version of the global context.
     /// Contexts created for real client queries overwrite the client info afterwards
     /// (see `Session::makeQueryContextImpl`), so this does not mask a client-reported version.
-    if (client_info.client_version_major == 0
-        && client_info.client_version_minor == 0
-        && client_info.client_version_patch == 0)
-        setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
+    setInitiatorVersionIfUnset();
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
@@ -6950,6 +6942,43 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
 }
 
 
+std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, bool treat_local_port_as_remote) const
+{
+    if (!treat_local_port_as_remote)
+        return getCluster(cluster_name);
+
+    /// Follow the resolution order of `tryGetCluster`, so that every cluster name accepted by the
+    /// plain overload (which validates the name at `CREATE DATABASE` time for the `Remote` and
+    /// `Cluster` database engines) is also accepted here. Only the static `remote_servers` case is
+    /// rebuilt from the configuration: the pre-built object treats the replica that matches the
+    /// server's own address as a local shard, which is wrong in clickhouse-local. The clusters of
+    /// the other sources already account for `treat_local_port_as_remote` on construction (see
+    /// `DatabaseReplicated::getClusterImpl`) or describe genuinely remote discovered replicas.
+    {
+        std::lock_guard lock(shared->clusters_mutex);
+
+        const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
+        const String config_prefix = "remote_servers." + cluster_name;
+        if (config.has(config_prefix))
+            return std::make_shared<Cluster>(config, *settings, "remote_servers", cluster_name, treat_local_port_as_remote);
+
+        if (auto res = getClustersImpl(lock)->getCluster(cluster_name))
+            return res;
+
+        if (shared->cluster_discovery)
+        {
+            if (auto res = shared->cluster_discovery->getCluster(cluster_name))
+                return res;
+        }
+    }
+
+    if (auto res = tryGetReplicatedDatabaseCluster(cluster_name))
+        return res;
+
+    throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
+}
+
+
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
     std::shared_ptr<Cluster> res = nullptr;
@@ -6962,7 +6991,7 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
             res = shared->cluster_discovery->getCluster(cluster_name);
     }
 
-    if (res == nullptr && !cluster_name.empty())
+    if (res == nullptr)
         res = tryGetReplicatedDatabaseCluster(cluster_name);
 
     return res;
@@ -8288,10 +8317,12 @@ void Context::setClientInterface(ClientInfo::Interface interface)
 
 void Context::setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version)
 {
-    client_info.client_version_major = client_version_major;
-    client_info.client_version_minor = client_version_minor;
-    client_info.client_version_patch = client_version_patch;
-    client_info.client_tcp_protocol_version = client_tcp_protocol_version;
+    client_info.setClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
+}
+
+void Context::setInitiatorVersionIfUnset()
+{
+    client_info.setInitiatorVersionIfUnset();
 }
 
 void Context::setScriptQueryAndLineNumber(uint32_t query_number, uint32_t line_number)

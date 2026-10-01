@@ -1,13 +1,12 @@
 #include <Processors/QueryPlan/QueryPlanToJSON.h>
 
 #include <Processors/QueryPlan/PlanIndexStats.h>
-#include <Processors/QueryPlan/StepStatisticsJSONPrinter.h>
+#include <Processors/QueryPlan/Profiling/Analysis/StepStatisticsJSONPrinter.h>
 #include <base/types.h>
 
 #include <memory>
 #include <unordered_map>
 #include <vector>
-
 
 namespace DB
 {
@@ -44,7 +43,6 @@ JSONBuilder::ItemPtr capturedStepToJSON(const CapturedStep & step)
 
     return map;
 }
-
 
 }
 

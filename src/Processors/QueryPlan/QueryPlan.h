@@ -22,7 +22,7 @@
 namespace DB
 {
 
-class StepStatisticsCollector;
+class AnalyzeStepsStats;
 
 struct PrettyNames;
 struct PrettyNamesPerPlan;
@@ -191,7 +191,7 @@ public:
         const PrettyNamesPerPlan * precomputed_pretty_names = nullptr,
         const std::string & parent_tree_prefix = "",
         bool is_last_child_plan = true,
-        StepStatisticsCollector * steps_to_stats = nullptr) const;
+        AnalyzeStepsStats * steps_to_stats = nullptr) const;
 
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;

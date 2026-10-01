@@ -9,6 +9,8 @@ namespace DB
 {
 
 class QueryPipeline;
+class StepProfiler;
+using StepProfilerPtr = std::shared_ptr<StepProfiler>;
 
 class QueryPlanProfiler
 {
@@ -42,9 +44,9 @@ public:
 
     size_t getMaxDescriptionLength() const { return max_description_length; }
 
-    /// Attaches a StepWallClockRegistry in the processors, otherwise they would report
+    /// Attaches a StepProfiler to the pipeline, otherwise the processors would report
     /// 0.00 ns as executed time.
-    void instrumentPipeline(QueryPipeline & pipeline) const;
+    void instrumentPipeline(QueryPipeline & pipeline);
 
 private:
     /// The body shared by `captureStatistics` and `finish`: the pipeline is what the statistics
@@ -65,11 +67,17 @@ private:
     {
         /// QueryPlan has to be dropped as it holds `QueryPlanResourceHolder`.
         std::optional<QueryPlan> query_plan;
+
+        /// Attached to the pipeline so the processors can time their steps; kept so the statistics
+        /// can be read back off it once the query has run.
+        StepProfilerPtr step_profiler;
+        UInt64 execution_start_ns = 0;
         std::optional<PrettyNamesPerPlan> pretty_names;
 
         void release()
         {
             query_plan.reset();
+            step_profiler.reset();
             pretty_names.reset();
         }
     };
