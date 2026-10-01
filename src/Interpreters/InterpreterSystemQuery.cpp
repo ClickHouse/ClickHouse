@@ -75,6 +75,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageQueryRunner.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
 #include <Common/CoverageCollection.h>
@@ -353,7 +354,7 @@ static void reloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader,
 {
     if (query.database)
     {
-        loader.reloadDictionary({query.getDatabase(), query.getTable()});
+        loader.reloadDictionary({query.getDatabase(), query.getTable()}, context);
         return;
     }
 
@@ -364,7 +365,7 @@ static void unloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader,
 {
     if (query.database)
     {
-        loader.unloadDictionary({query.getDatabase(), query.getTable()});
+        loader.unloadDictionary({query.getDatabase(), query.getTable()}, context);
         return;
     }
 
@@ -483,6 +484,11 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {
             prewarmPrimaryIndexCache();
+            break;
+        }
+        case Type::CLEAR_TIME_SERIES_CACHES:
+        {
+            clearTimeSeriesCaches();
             break;
         }
         case Type::CLEAR_MARK_CACHE:
@@ -1201,7 +1207,7 @@ BlockIO InterpreterSystemQuery::execute()
             if (!holder)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
             holder->alloc(query.untracked_memory_size);
-            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
+            LOG_DEBUG(log, "Total tracked memory is {}", ReadableSize(total_memory_tracker.get()));
             break;
         }
         case Type::FREE_MEMORY:
@@ -1211,7 +1217,7 @@ BlockIO InterpreterSystemQuery::execute()
             if (!holder)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
             holder->free();
-            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
+            LOG_DEBUG(log, "Total tracked memory is {}", ReadableSize(total_memory_tracker.get()));
             break;
         }
         case Type::WAIT_FAILPOINT:
@@ -1259,6 +1265,10 @@ BlockIO InterpreterSystemQuery::execute()
             LOG_INFO(getLogger("InterpreterSystemQuery"),
                 "SYSTEM SET COVERAGE TEST '{}' received", query.coverage_test_name);
 #if WITH_COVERAGE_DEPTH
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+            /// The process writes its coverage to files, see `initCoverageFromEnvironment`.
+            if (!isCoverageFileSinkEnabled())
+#endif
             {
                 /// Register (or re-register) the flush callback so coverage data is
                 /// resolved and inserted into system.coverage_log when the previous
@@ -2730,6 +2740,17 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
     }
 }
 
+void InterpreterSystemQuery::clearTimeSeriesCaches()
+{
+    if (table_id.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for CLEAR TIME SERIES CACHES command");
+
+    getContext()->checkAccess(AccessType::SYSTEM_DROP_TIME_SERIES_CACHES, table_id);
+
+    auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    storagePtrToTimeSeries(table)->clearCaches();
+}
+
 void InterpreterSystemQuery::prewarmMarkCache()
 {
     if (table_id.empty())
@@ -3130,6 +3151,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::CLEAR_TIME_SERIES_CACHES:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_DROP_TIME_SERIES_CACHES, query.getDatabase(), query.getTable());
             break;
         }
         case Type::SYNC_DATABASE_REPLICA:
