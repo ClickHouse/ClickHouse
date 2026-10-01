@@ -478,7 +478,7 @@
     {
       "dropdown": "ClickStack",
       "pages": [
-        "clickstack/index",
+        "clickstack",
         {
           "expanded": true,
           "group": "Introduction",

@@ -1,5 +1,9 @@
 [
   {
+    "destination": "/clickstack",
+    "source": "/clickstack/index"
+  },
+  {
     "destination": "/clickstack/managing/overview",
     "source": "/clickstack/managing/admin"
   },
@@ -14,10 +18,6 @@
   {
     "destination": "/clickstack/deployment/oss",
     "source": "/clickstack/deployment/overview"
-  },
-  {
-    "destination": "/clickstack/index",
-    "source": "/clickstack"
   },
   {
     "destination": "/ar/integrations/language-clients/java/jdbc",
