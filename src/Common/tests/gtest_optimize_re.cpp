@@ -37,6 +37,9 @@ TEST(OptimizeRE, analyze)
     /// case flag leaves the literals outside its scope.
     test_f("foo{1}", "foo", {}, false, false, true);
     test_f("a{3}", "aaa", {}, false, false, true);
+    test_f("(abc){2}", "abc", {}, false, true, true);
+    test_f("xé{2}", "xé", {}, false, false, true);
+    test_f("\\.{3}", "...", {}, false, false, true);
     test_f("fo{2,}bar", "foo", {}, false, false, true);
     test_f("foo{1,3}bar", "foo", {}, false, false, true);
     test_f("foo{0,3}", "", {}, false, false, false);

@@ -377,12 +377,16 @@ const char * analyzeImpl(
 
     bool in_curly_braces = false;
     bool in_square_braces = false;
+    /// Whether the atom before `pos` is one literal byte, the only atom a repetition can multiply in the literal run.
+    bool last_atom_is_byte = false;
     /// The first position of the body of the open character class, so that a `]` written there can be
     /// recognized as a literal member of the class.
     const char * square_braces_body_begin = nullptr;
 
     while (pos != end)
     {
+        const bool prev_atom_is_byte = last_atom_is_byte;
+        last_atom_is_byte = false;
         switch (*pos)
         {
             case '\\':
@@ -571,7 +575,7 @@ const char * analyzeImpl(
                 in_curly_braces = true;
                 if (size_t min_count = in_square_braces ? 0 : repetitionLowerBound(pos, end); min_count >= 1)
                 {
-                    if (depth == 0 && !last_substring->first.empty())
+                    if (prev_atom_is_byte && depth == 0 && !last_substring->first.empty())
                         last_substring->first.append(min_count - 1, last_substring->first.back());
                     finish_non_trivial_char();
                     ++pos;
@@ -608,6 +612,7 @@ const char * analyzeImpl(
                     if (last_substring->first.empty())
                         last_substring->second = is_prefix;
                     last_substring->first.push_back(*pos);
+                    last_atom_is_byte = isASCII(*pos);
                 }
                 ++pos;
                 break;
