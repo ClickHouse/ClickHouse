@@ -53,12 +53,13 @@ FROM outer_t AS o
 INNER JOIN LATERAL (SELECT i.v, count() AS cnt FROM inner_t AS i WHERE i.k = o.k GROUP BY i.v) AS sub ON true
 ORDER BY o.id, sub.v
 SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'any'; -- { serverError NOT_IMPLEMENTED }
--- `throw` bounds the groups of all evaluations together:
+-- `throw` bounds the groups of all evaluations together.
+-- Aggregation in order of the sorting key never checks `max_rows_to_group_by`, even without `LATERAL`, so it is disabled:
 SELECT o.id, sub.v, sub.cnt
 FROM outer_t AS o
 INNER JOIN LATERAL (SELECT i.v, count() AS cnt FROM inner_t AS i WHERE i.k = o.k GROUP BY i.v) AS sub ON true
 ORDER BY o.id, sub.v
-SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'throw', max_threads = 1; -- { serverError TOO_MANY_ROWS }
+SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'throw', max_threads = 1, optimize_aggregation_in_order = 0; -- { serverError TOO_MANY_ROWS }
 SELECT o.id, sub.v, sub.cnt
 FROM outer_t AS o
 INNER JOIN LATERAL (SELECT i.v, count() AS cnt FROM inner_t AS i WHERE i.k = o.k GROUP BY i.v) AS sub ON true
