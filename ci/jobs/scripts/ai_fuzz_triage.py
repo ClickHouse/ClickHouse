@@ -675,9 +675,27 @@ def _apply_verdict(result, verdict, pr_mode, fingerprint="", uncovered=()):
             lines.append(f"AI triage: related tracking issue: {issue_url}{issue_note}")
     else:
         # Post-merge run: the verdict never changes the job status; it exists
-        # to file/track the issue and attribute the regression.
-        if issue_url:
+        # to file/track the issue and attribute the regression. The issue
+        # counts as tracking only under the same checks as a PR downgrade.
+        if issue_url and not fingerprint:
+            not_tracked = "this failure has no stable signature to match it on"
+        elif issue_url and not verified:
+            not_tracked = "it could not be checked for this failure's fingerprint"
+        elif issue_url and marker_problems:
+            not_tracked = "it is not tracked under this failure's fingerprint"
+        elif issue_url and uncovered:
+            names = ", ".join(f"`{name}`" for name in uncovered)
+            not_tracked = f"its fingerprint does not cover {names}"
+        else:
+            not_tracked = ""
+        if issue_url and not not_tracked:
             lines.append(f"AI triage (post-merge): tracked in {issue_url}{issue_note}")
+        elif issue_url:
+            lines.append(
+                f"AI triage (post-merge): {issue_url}{issue_note} is not confirmed "
+                f"as tracking this failure ({not_tracked}) - the failure is NOT "
+                f"fully tracked yet"
+            )
         elif not fingerprint:
             lines.append(
                 "AI triage (post-merge): no stable failure signature, so no issue "
