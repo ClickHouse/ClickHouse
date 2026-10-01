@@ -514,10 +514,14 @@ struct AggregateFunctionSumPrometheusData
             correction += rhs.correction;
     }
 
-    void write(WriteBuffer & buf) const
+    static constexpr size_t serialized_size_bound = sizeof(T) * 2;
+
+    /// `out` is either a WriteBuffer or a raw `char *` cursor; both are advanced past the state.
+    template <typename Out>
+    void write(Out & out) const
     {
-        writeBinary(sum, buf);
-        writeBinary(correction, buf);
+        writeBinary(sum, out);
+        writeBinary(correction, out);
     }
 
     void read(ReadBuffer & buf)
