@@ -12,26 +12,29 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_tested
 
-ALL_FUNCTIONAL_TESTS = [job.name for job in JobConfigs.functional_tests_jobs]
+# PR sanitizer jobs repeat tests related to the change to find intermittent failures.
+# Debug and plain binary jobs run the full suite. Master keeps the full suite in
+# every configuration; coverage-based targeting is specific to pull requests.
+FUNCTIONAL_TESTS_JOBS = JobConfigs.functional_tests_pr_jobs
+
+ALL_FUNCTIONAL_TESTS = [job.name for job in FUNCTIONAL_TESTS_JOBS]
 
 CORE_BLOCKING_JOB_NAMES = [
     job.name
-    for job in JobConfigs.functional_tests_jobs
+    for job in FUNCTIONAL_TESTS_JOBS
     if any(
         substr in job.name
         for substr in (
             "_debug, parallel",
             "_binary, parallel",
             "_binary, sequential",
-            "_asan_ubsan, distributed plan, parallel",
-            "_asan_ubsan, db disk, distributed plan, sequential",
-            "_tsan, parallel",
+            "_asan_ubsan, db disk, distributed plan, targeted",
         )
     )
 ] + [
     job.name
-    for job in JobConfigs.integration_test_jobs_required
-    if "_asan_ubsan, db disk, old analyzer" in job.name
+    for job in JobConfigs.integration_test_targeted_pr_jobs
+    if "_asan_ubsan, db disk, targeted" in job.name
 ] + [
     job.name
     for job in JobConfigs.unittest_jobs
@@ -54,6 +57,16 @@ PLAIN_FUNCTIONAL_TEST_JOB = [
     j for j in JobConfigs.functional_tests_jobs if "amd_debug, parallel" in j.name
 ][0]
 
+# Pull requests run the integration tests only in targeted jobs (the changed tests, the
+# tests covering the changed lines and the tests that failed in the PR before, each run
+# once), except for the full LLVM coverage run and the tests excluded from it.
+INTEGRATION_TARGETED_JOBS = JobConfigs.integration_test_targeted_pr_jobs
+
+PLAIN_INTEGRATION_TEST_JOB = [
+    j for j in INTEGRATION_TARGETED_JOBS if "(amd_tsan, targeted)" in j.name
+][0]
+
+
 # NOTE: temporarily trimmed down to just the arm_darwin build plus several parallel
 # copies of its fast test, to debug the intermittent
 # 04319_skip_unavailable_shards_mode_table_missing hang without paying for a full CI
@@ -73,6 +86,7 @@ workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *DARWIN_BUILD,
         *DARWIN_FAST_TESTS_PARALLEL,
@@ -80,8 +94,11 @@ workflow = Workflow.Config(
     artifacts=[
         *[
             a
-            for a in ArtifactConfigs.clickhouse_binaries
-            if a.name == ArtifactNames.CH_ARM_DARWIN_BIN
+            for a in [
+                *ArtifactConfigs.clickhouse_binaries,
+                *ArtifactConfigs.clickhouse_darwin_plain_binaries,
+            ]
+            if a.name in (ArtifactNames.CH_ARM_DARWIN_BIN, ArtifactNames.CH_ARM_DARWIN_PLAIN)
         ],
     ],
     dockers=DOCKERS,
@@ -98,6 +115,7 @@ workflow = Workflow.Config(
     enable_slack_feed=True,
     pre_hooks=[
         can_be_tested,
+        "python3 ./ci/jobs/scripts/workflow_hooks/ci_links.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
@@ -111,8 +129,20 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/can_be_merged.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/check_report_messages.py",
     ],
-    job_aliases={},
+    job_aliases={
+        # plain integration test job, no dist plan; runs `--test` as a regular job locally
+        "integration": PLAIN_INTEGRATION_TEST_JOB.name,
+        "fast": "Fast test",
+        "functional": PLAIN_FUNCTIONAL_TEST_JOB.name,
+        "build_debug": "Build (amd_debug)",
+        "build": "Build (amd_binary)",
+    },
     runs_on_label_prefix="pr-",
+    ai_orchestrator=Workflow.OrchestratorAI.Config(
+        enabled=False,
+        provider="bedrock",
+        model="global.anthropic.claude-sonnet-5",
+    ),
 )
 
 WORKFLOWS = [
