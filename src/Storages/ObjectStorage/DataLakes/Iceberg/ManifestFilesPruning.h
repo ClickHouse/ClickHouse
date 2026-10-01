@@ -44,6 +44,7 @@ private:
     std::optional<DB::KeyCondition> partition_key_condition;
 
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
+    std::unordered_map<Int32, DB::DataTypePtr> min_max_column_types;
     /// NOTE: tricky part to support RENAME column.
     /// Takes ActionDAG representation of user's WHERE expression and
     /// rename columns to the their origina numeric ID's in iceberg
@@ -59,6 +60,8 @@ public:
         DB::ContextPtr context);
 
     PruningReturnStatus canBePruned(const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const;
+
+    const std::unordered_map<Int32, DB::DataTypePtr> & getMinMaxColumnTypes() const { return min_max_column_types; }
 };
 
 }
