@@ -349,14 +349,12 @@ def test_restore_unavailable_projection_checks_destination_requirements(started_
     node.query("DETACH TABLE restore_unavailable_gate.source")
     metadata = read_metadata(node, metadata_path)
     assert "allow_part_offset_column_in_projections = 1" in metadata
-    write_metadata(
-        node,
-        metadata_path,
-        metadata.replace(
-            "allow_part_offset_column_in_projections = 1",
-            "allow_part_offset_column_in_projections = 0",
-        ),
+    updated_metadata = metadata.replace(
+        "allow_part_offset_column_in_projections = 1",
+        "allow_part_offset_column_in_projections = 0",
     )
+    write_metadata(node, metadata_path, updated_metadata)
+    assert read_metadata(node, metadata_path) == updated_metadata
     node.query("ATTACH TABLE restore_unavailable_gate.source")
     node.query(
         "DROP DICTIONARY restore_unavailable_gate.lookup "
