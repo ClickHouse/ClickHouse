@@ -14,6 +14,8 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
+#include <Interpreters/FileCache/FileCacheEfficiency.h>
+#include <optional>
 
 
 namespace Poco { class Logger; }
@@ -169,6 +171,12 @@ public:
 
     void increasePriority();
 
+    /// Records that a reader returned bytes `[offset, offset + size)` of this file segment to its
+    /// caller, and that these bytes are in the cache. `offset` uses the coordinates of `range`.
+    /// Feeds the efficiency window of the cache (see `FileCacheEfficiency`).
+    /// Do not call under the key lock or the file segment lock.
+    void markRead(size_t offset, size_t size);
+
     /**
      * ========== Methods used by `cache` ========================
      */
@@ -257,6 +265,11 @@ private:
     DownloadState & getOrCreateDownloadDataUnlocked(const FileSegmentGuard::Lock &);
     void resetDownloadDataUnlocked(const FileSegmentGuard::Lock &);
 
+    /// Bytes of the set granules in `active_granules`, in whole granules.
+    size_t getActiveBytes() const;
+    /// Windows since the latest window with a read; `nullopt` if never read or not tracked.
+    std::optional<UInt64> getWindowsSinceTouch() const;
+
     /// In release builds returns a single shared logger; in debug builds a per-segment one.
     const LoggerPtr & getLog() const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
@@ -339,6 +352,16 @@ private:
 #endif
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
+
+    /// Read coverage for the efficiency window of the cache (see `FileCacheEfficiency`).
+    /// `efficiency_window_id` is the latest window with a read, or `FileCacheEfficiency::NEVER_READ`.
+    /// It moves to a new window only under `segment_guard`, together with clearing `active_granules`.
+    /// Bits of `active_granules` are set without a lock.
+    static constexpr size_t EFFICIENCY_GRANULES = 128;
+    std::atomic<UInt64> efficiency_window_id = FileCacheEfficiency::NEVER_READ;
+    std::atomic<UInt64> active_granules[2] = {};
+    /// Fixed at creation, so that a shrink does not move the bits.
+    const size_t efficiency_granule_size;
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;

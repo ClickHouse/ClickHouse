@@ -1696,6 +1696,11 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             }
         }
 
+        /// The bytes are in the cache: read from it, or downloaded into it by this read.
+        if (info.cache_settings.track_cache_efficiency
+            && (state.read_type == ReadType::CACHED || (do_download && download_current_segment_succeeded)))
+            file_segment.markRead(offset, size);
+
         if (do_download && download_current_segment_succeeded)
             chassert(file_segment.getCurrentWriteOffset() >= offset + size);
 

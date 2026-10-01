@@ -1,4 +1,6 @@
 #pragma once
+
+#include <optional>
 #include <cctype>
 #include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
@@ -77,5 +79,9 @@ namespace DB
         bool is_unbound;
         IFileCachePriority::QueueEntryType queue_entry_type;
         FileCacheOriginInfo origin;
+        /// Bytes read in the latest efficiency window with a read, in whole granules.
+        uint64_t active_bytes = 0;
+        /// 0 = live window, 1 = last full window, more = older; `nullopt` = never read.
+        std::optional<uint64_t> windows_since_touch;
     };
 }

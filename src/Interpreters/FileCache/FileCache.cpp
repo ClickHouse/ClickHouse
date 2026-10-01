@@ -138,6 +138,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
     extern const FileCacheSettingsNonZeroUInt64 drop_cache_threads;
+    extern const FileCacheSettingsUInt64 efficiency_window_sec;
 }
 
 namespace
@@ -323,6 +324,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , skip_cache_on_disk_failure(settings[FileCacheSetting::skip_cache_on_disk_failure])
     , expose_eviction_metrics(settings[FileCacheSetting::expose_prometheus_eviction_metrics])
     , expose_eviction_metrics_per_user(settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user])
+    , efficiency(settings[FileCacheSetting::efficiency_window_sec], [this] { return getUsedCacheSize(); })
     , name(cache_name)
     , log(getLogger("FileCache(" + cache_name + ")"))
     , metadata(settings[FileCacheSetting::path],

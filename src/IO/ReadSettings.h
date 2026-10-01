@@ -130,6 +130,9 @@ struct FilesystemCacheSettings
     bool skip_download_if_exceeds_per_query_cache_write_limit = true;
     bool enable_log = false;
     bool verbose_logging = false;
+    /// Count the reads of this reader in the cache efficiency window. Readers that only fill
+    /// the cache (cache prewarm) set it to false.
+    bool track_cache_efficiency = true;
 };
 
 struct ReadSettings

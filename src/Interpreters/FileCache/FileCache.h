@@ -18,6 +18,7 @@
 #include <Interpreters/FileCache/QueryLimit.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
+#include <Interpreters/FileCache/FileCacheEfficiency.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Interpreters/FileCache/SplitFileCachePriority.h>
@@ -227,6 +228,9 @@ public:
 
     size_t getReserveGranularity() const { return reserve_granularity.load(std::memory_order_relaxed); }
 
+    /// Accounting of the efficiency window. Thread-safe.
+    FileCacheEfficiency & getEfficiency() { return efficiency; }
+
     bool tryReserve(
         FileSegment & file_segment,
         size_t size,
@@ -336,6 +340,7 @@ private:
     const bool skip_cache_on_disk_failure;
     std::atomic<bool> expose_eviction_metrics;
     std::atomic<bool> expose_eviction_metrics_per_user;
+    FileCacheEfficiency efficiency;
 
     String name;
     LoggerPtr log;

@@ -23,6 +23,7 @@
 #include <DistributedCache/DistributedCacheCommon.h>
 #endif
 #include <Interpreters/Context.h>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
@@ -76,6 +77,9 @@ protected:
         MutableColumnPtr col_user_id = ColumnString::create();
         MutableColumnPtr col_file_size = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
         MutableColumnPtr col_file_origin = ColumnString::create();
+        MutableColumnPtr col_active_bytes = ColumnUInt64::create();
+        MutableColumnPtr col_windows_since_touch = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
+        MutableColumnPtr col_queue_entry_type = ColumnString::create();
 
         auto get_total_size = [&] -> size_t
         {
@@ -94,7 +98,10 @@ protected:
                 col_kind->byteSize() +
                 col_unbound->byteSize() +
                 col_user_id->byteSize() +
-                col_file_origin->byteSize();
+                col_file_origin->byteSize() +
+                col_active_bytes->byteSize() +
+                col_windows_since_touch->byteSize() +
+                col_queue_entry_type->byteSize();
         };
 
         size_t num_rows = 0;
@@ -135,6 +142,13 @@ protected:
                 else
                     col_file_size->insertDefault();
 
+                col_active_bytes->insert(file_segment.active_bytes);
+                if (file_segment.windows_since_touch)
+                    col_windows_since_touch->insert(*file_segment.windows_since_touch);
+                else
+                    col_windows_since_touch->insertDefault();
+                col_queue_entry_type->insert(String(magic_enum::enum_name(file_segment.queue_entry_type)));
+
                 ++num_rows;
             }
         };
@@ -174,7 +188,8 @@ protected:
             std::move(col_key), std::move(col_range_begin), std::move(col_range_end), std::move(col_size),
             std::move(col_state), std::move(col_finished_download_time), std::move(col_hits),
             std::move(col_references), std::move(col_downloaded_size), std::move(col_kind), std::move(col_unbound),
-            std::move(col_user_id), std::move(col_file_origin), std::move(col_file_size)};
+            std::move(col_user_id), std::move(col_file_origin), std::move(col_file_size),
+            std::move(col_active_bytes), std::move(col_windows_since_touch), std::move(col_queue_entry_type)};
 
         return Chunk(std::move(columns), num_rows);
     }
@@ -254,6 +269,9 @@ StorageSystemFilesystemCache::StorageSystemFilesystemCache(const StorageID & tab
         {"user_id", std::make_shared<DataTypeString>(), "User id of the user which created the file segment"},
         {"segment_type", std::make_shared<DataTypeString>(), "Type of the segment. Used to separate data files(`.json`, `.txt` and etc) from data file(`.bin`, mark files)."},
         {"file_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "File size of the file to which current file segment belongs"},
+        {"active_bytes", std::make_shared<DataTypeUInt64>(), "Bytes of the file segment read in its latest efficiency window with a read (see `windows_since_touch`), rounded up to granules of 1/128 of the initial segment size"},
+        {"windows_since_touch", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Efficiency windows since the latest window with a read: 0 is the live window, 1 is the last full window. NULL if the file segment was never read"},
+        {"queue_entry_type", std::make_shared<DataTypeString>(), "Queue of the file segment in the cache policy, for example `SLRU_Protected` or `SLRU_Probationary`"},
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
