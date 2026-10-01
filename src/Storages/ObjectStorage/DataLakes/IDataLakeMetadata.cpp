@@ -1,8 +1,27 @@
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Core/Settings.h>
+#include <Databases/DataLake/Common.h>
+#include <Interpreters/Context.h>
+#include <Common/FailPoint.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+extern const char iceberg_drop_catalog_remove_fail[];
+}
+
+namespace Setting
+{
+extern const SettingsBool iceberg_delete_data_on_drop;
+}
 
 namespace
 {
@@ -75,6 +94,20 @@ ObjectIterator IDataLakeMetadata::createKeysIterator(
     UInt64 snapshot_version_) const
 {
     return std::make_shared<KeysIterator>(std::move(data_files_), object_storage_, callback_, snapshot_version_);
+}
+
+void IDataLakeMetadata::dropFromCatalog(
+    ContextPtr context, const std::shared_ptr<DataLake::ICatalog> & catalog, const StorageID & storage_id)
+{
+    fiu_do_on(FailPoints::iceberg_drop_catalog_remove_fail, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop catalog removal");
+    });
+
+    if (!catalog)
+        return;
+
+    const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+    catalog->dropTable(namespace_name, table_name, context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
 }
 
 ReadFromFormatInfo IDataLakeMetadata::prepareReadingFromFormat(

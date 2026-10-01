@@ -70,14 +70,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
-    extern const int FAULT_INJECTED;
     extern const int ACCESS_DENIED;
     extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace FailPoints
 {
-    extern const char iceberg_drop_catalog_remove_fail[];
     extern const char datalake_simulate_missing_table_state[];
 }
 
@@ -1015,23 +1013,10 @@ void StorageObjectStorage::dropImpl(
         drop_context->setSettings(*query_settings);
     const bool delete_data_on_drop = drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
 
-    auto commit = [&catalog, &storage_id, delete_data_on_drop]
-    {
-        fiu_do_on(FailPoints::iceberg_drop_catalog_remove_fail, {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop catalog removal");
-        });
-
-        if (catalog)
-        {
-            const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-            catalog->dropTable(namespace_name, table_name, delete_data_on_drop);
-        }
-    };
-
     /// A catalog that manages the table location purges the files itself.
     if (catalog && catalog->managesTableLocation())
     {
-        commit();
+        IDataLakeMetadata::dropFromCatalog(drop_context, catalog, storage_id);
         return;
     }
 
@@ -1047,7 +1032,7 @@ void StorageObjectStorage::dropImpl(
         policy = (database && database->getUUID() == UUIDHelpers::Nil) ? DropCleanupPolicy::Reattaching
                                                                        : DropCleanupPolicy::AsyncRetry;
     }
-    configuration->drop(drop_context, commit, policy);
+    configuration->drop(drop_context, catalog, storage_id, policy);
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(

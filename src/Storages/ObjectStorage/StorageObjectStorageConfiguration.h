@@ -346,7 +346,14 @@ public:
         return false;
     }
 
-    virtual void drop(ContextPtr, const std::function<void()> & commit, DropCleanupPolicy /*policy*/) { commit(); }
+    virtual void drop(
+        ContextPtr context,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageID & storage_id,
+        DropCleanupPolicy /*policy*/)
+    {
+        IDataLakeMetadata::dropFromCatalog(context, catalog, storage_id);
+    }
 
     virtual bool isBackgroundExecutable() const
     {

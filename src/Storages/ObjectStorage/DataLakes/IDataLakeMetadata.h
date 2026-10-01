@@ -206,8 +206,17 @@ public:
         throwNotImplemented(fmt::format("EXECUTE {}", command_name));
     }
 
-    /// Deletes the table files; must call `commit` (the catalog entry removal) exactly once.
-    virtual void drop(ContextPtr, const std::function<void()> & commit, DropCleanupPolicy /*policy*/) { commit(); }
+    /// Deletes the table files and removes the table from `catalog`, if any.
+    virtual void drop(
+        ContextPtr context,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageID & storage_id,
+        DropCleanupPolicy /*policy*/)
+    {
+        dropFromCatalog(context, catalog, storage_id);
+    }
+
+    static void dropFromCatalog(ContextPtr context, const std::shared_ptr<DataLake::ICatalog> & catalog, const StorageID & storage_id);
 
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
 

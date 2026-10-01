@@ -200,7 +200,11 @@ public:
         StorageMetadataPtr storage_metadata,
         ContextPtr local_context) const override;
 
-    void drop(ContextPtr context, const std::function<void()> & commit, DropCleanupPolicy policy) override;
+    void drop(
+        ContextPtr context,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageID & storage_id,
+        DropCleanupPolicy policy) override;
 
     static DataLakeMetadataPtr createWithDeserialization(
         const ObjectStoragePtr & object_storage,

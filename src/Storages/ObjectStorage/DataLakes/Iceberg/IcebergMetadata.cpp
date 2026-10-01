@@ -1665,11 +1665,12 @@ SinkToStoragePtr IcebergMetadata::write(
     }
 }
 
-void IcebergMetadata::drop(ContextPtr context, const std::function<void()> & commit, DropCleanupPolicy policy)
+void IcebergMetadata::drop(
+    ContextPtr context, const std::shared_ptr<DataLake::ICatalog> & catalog, const StorageID & storage_id, DropCleanupPolicy policy)
 {
     if (!context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
     {
-        commit();
+        dropFromCatalog(context, catalog, storage_id);
         return;
     }
 
@@ -1682,13 +1683,13 @@ void IcebergMetadata::drop(ContextPtr context, const std::function<void()> & com
             "other tables. Drop it while querying the table directory itself to delete the data.",
             persistent_components.path_resolver.getTableRoot(),
             persistent_components.table_path);
-        commit();
+        dropFromCatalog(context, catalog, storage_id);
         return;
     }
 
     bool any_object_deleted = false;
 
-    auto should_swallow = [&](bool post_commit_anchor) -> bool
+    auto should_swallow = [&](bool after_catalog_drop) -> bool
     {
         switch (policy)
         {
@@ -1697,7 +1698,7 @@ void IcebergMetadata::drop(ContextPtr context, const std::function<void()> & com
             case DropCleanupPolicy::AsyncRetry:
                 return false;
             case DropCleanupPolicy::CatalogRetry:
-                return post_commit_anchor;
+                return after_catalog_drop;
         }
         return false;
     };
@@ -1730,7 +1731,7 @@ void IcebergMetadata::drop(ContextPtr context, const std::function<void()> & com
     /// `listFiles` lists `path / prefix`, so an empty prefix lists the whole table.
     auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
 
-    /// Metadata files go last, after `commit`: a retried DROP reads the table from them.
+    /// Metadata files go last, after the catalog drop: a retried DROP reads the table from them.
     std::vector<String> metadata_files;
     for (const auto & file : files)
     {
@@ -1739,28 +1740,28 @@ void IcebergMetadata::drop(ContextPtr context, const std::function<void()> & com
             metadata_files.push_back(file);
             continue;
         }
-        remove_object(file, "data", should_swallow(/* post_commit_anchor */ false), FailPoints::iceberg_drop_first_data_delete_fail);
+        remove_object(file, "data", should_swallow(/* after_catalog_drop */ false), FailPoints::iceberg_drop_first_data_delete_fail);
     }
 
-    if (should_swallow(/* post_commit_anchor */ false))
+    if (should_swallow(/* after_catalog_drop */ false))
     {
         try
         {
-            commit();
+            dropFromCatalog(context, catalog, storage_id);
         }
         catch (...)
         {
             LOG_WARNING(
                 log,
-                "Best-effort Iceberg drop: ignoring failure at commit point: {}",
+                "Best-effort Iceberg drop: ignoring failure to remove the table from the catalog: {}",
                 getCurrentExceptionMessage(/* with_stacktrace */ false));
         }
     }
     else
-        commit();
+        dropFromCatalog(context, catalog, storage_id);
 
     for (const auto & file : metadata_files)
-        remove_object(file, "metadata", should_swallow(/* post_commit_anchor */ true), FailPoints::iceberg_drop_metadata_anchor_fail);
+        remove_object(file, "metadata", should_swallow(/* after_catalog_drop */ true), FailPoints::iceberg_drop_metadata_anchor_fail);
 }
 
 ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_info) const
