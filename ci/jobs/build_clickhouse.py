@@ -153,12 +153,19 @@ def build_tidy_shard(index, count):
     # The targets are passed as an argument list, not through a shell, so ninja gets
     # every target name verbatim.
     targets = get_tidy_shard_targets(index, count)
-    return (
-        subprocess.run(
-            ["time", "-v", "ninja", "-k0", *targets], cwd=build_dir
-        ).returncode
-        == 0
+    process = subprocess.Popen(
+        ["time", "-v", "ninja", "-k0", *targets],
+        cwd=build_dir,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
     )
+    # `Result.from_commands_run` captures only what a Python callable prints, so pass
+    # the output through `print` to keep the clang-tidy diagnostics in the result info.
+    for line in process.stdout:
+        print(line, end="", flush=True)
+    return process.wait() == 0
 
 
 def run_shell_with_output(name, command, **kwargs):
