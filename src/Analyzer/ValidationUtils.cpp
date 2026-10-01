@@ -93,6 +93,12 @@ void validateFilters(const QueryTreeNodePtr & query_node)
 
     if (query_node_typed.hasQualify())
         validateFilter(query_node_typed.getQualify(), "QUALIFY", query_node);
+
+    if (query_node_typed.hasLimitAfter())
+        validateFilter(query_node_typed.getLimitAfter(), "LIMIT AFTER", query_node);
+
+    if (query_node_typed.hasLimitUntil())
+        validateFilter(query_node_typed.getLimitUntil(), "LIMIT UNTIL", query_node);
 }
 
 static bool areColumnSourcesEqual(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
