@@ -43,8 +43,6 @@ SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_optimize_join_order_limit = 10;
--- Without statistics the cost model does not favour replicas for this data at all: the optimization is then
--- never applied and the test measures nothing.
 SET use_statistics = 1;
 SET use_statistics_cache = 1;
 SET max_threads = 1;
