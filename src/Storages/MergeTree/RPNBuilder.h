@@ -90,6 +90,13 @@ public:
     /// Get column name
     std::string getColumnName() const;
 
+    /** Get column name.
+      * Function `modulo` is replaced with `moduloLegacy`.
+      * Returns nothing if some `modulo` would return a value that `moduloLegacy` does not return for the same
+      * arguments, or if the argument types are not known (an AST node).
+      */
+    std::optional<std::string> getColumnNameWithModuloLegacy() const;
+
     /// Is node function
     bool isFunction() const;
 
