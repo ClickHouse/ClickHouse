@@ -1251,9 +1251,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
 
     if (header.version >= MergeTreeTextIndexSerializationVersion::V2_WithPositions)
     {
-        UInt64 has_positions = 0;
-        readVarUInt(has_positions, istr);
-        header.has_positions = has_positions != 0;
+        readVarUInt(header.has_positions, istr);
 
         if (header.has_positions)
         {

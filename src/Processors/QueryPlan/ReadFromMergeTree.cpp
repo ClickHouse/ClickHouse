@@ -7059,9 +7059,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     bool has_input_order_info = false;
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER)
     {
-        UInt64 flag = 0;
-        readVarUInt(flag, ctx.in);
-        has_input_order_info = flag != 0;
+        readVarUInt(has_input_order_info, ctx.in);
         if (has_input_order_info)
         {
             readVarUInt(input_order_prefix_size, ctx.in);
