@@ -186,10 +186,10 @@ public:
     {
         const auto * other = typeid_cast<const AggregateFunctionExponentialTimeDecayed *>(&rhs);
         return other
-            && getStateVariant() == other->getStateVariant()
+            && this->getStateVariant() == other->getStateVariant()
             && name == other->name
             && decay_length == other->decay_length
-            && haveEqualArgumentTypes(rhs);
+            && this->haveEqualArgumentTypes(rhs);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
