@@ -6954,6 +6954,30 @@ bool isTableAliasColumn(const QueryTreeNodePtr & node)
     return column_source_type == QueryTreeNodeType::TABLE || column_source_type == QueryTreeNodeType::TABLE_FUNCTION;
 }
 
+/// Whether the expression contains a function whose value differs between servers, like `hostName` or `shardNum`,
+/// including the ones that were folded into a constant on the initiator.
+bool hasServerConstantFunction(const QueryTreeNodePtr & node)
+{
+    if (const auto * constant_node = node->as<ConstantNode>())
+    {
+        const auto & source_expression = constant_node->getSourceExpression();
+        return source_expression && hasServerConstantFunction(source_expression);
+    }
+
+    if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->isOrdinaryFunction())
+    {
+        auto function_base = function_node->getFunction();
+        if (function_base && function_base->isServerConstant())
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child && hasServerConstantFunction(child))
+            return true;
+
+    return false;
+}
+
 /** Replaces references to ALIAS columns in the expressions computed after aggregation with the ALIAS expressions
   * if they can be computed from GROUP BY keys and aggregate functions.
   *
@@ -7017,9 +7041,14 @@ private:
         if (isGroupByKey(node))
             return true;
 
+        /// The value of a column is computed for every row, so it is determined by GROUP BY keys only if the expression is.
+        /// Computed after aggregation, `rand` would give a value per group, `rowNumberInAllBlocks` would count the groups
+        /// instead of the rows, and `shardNum` would give the value of the initiator instead of the value of each shard.
+        /// A folded constant (e.g. `now`) has one value in the query unless it comes from a server constant function.
         switch (node->getNodeType())
         {
             case QueryTreeNodeType::CONSTANT:
+                return !hasServerConstantFunction(node);
             case QueryTreeNodeType::QUERY:
             case QueryTreeNodeType::UNION:
                 return true;
@@ -7039,14 +7068,11 @@ private:
                 if (function_node.getFunctionName() == "grouping")
                     return false;
 
-                /// The value of a column is computed for every row, so it is determined by GROUP BY keys only
-                /// if the expression is. Computed after aggregation, `rand` would give a value per group,
-                /// and `rowNumberInAllBlocks` would count the groups instead of the rows.
-                /// A folded constant (e.g. `now`) has one value in the query, so it is not checked.
                 if (function_node.isOrdinaryFunction())
                 {
                     auto function_base = function_node.getFunction();
-                    if (!function_base || function_base->isStateful() || !function_base->isDeterministicInScopeOfQuery())
+                    if (!function_base || function_base->isStateful() || !function_base->isDeterministicInScopeOfQuery()
+                        || function_base->isServerConstant())
                         return false;
                 }
                 break;

@@ -36,7 +36,10 @@ CREATE TABLE t
     today_alias Date ALIAS today(),
     rand_alias UInt32 ALIAS rand(),
     k_rand_alias String ALIAS concat(k, toString(rand())),
-    row_number_alias UInt64 ALIAS rowNumberInAllBlocks()
+    row_number_alias UInt64 ALIAS rowNumberInAllBlocks(),
+    shard_alias UInt32 ALIAS shardNum(),
+    host_alias String ALIAS hostName(),
+    k_shard_alias String ALIAS concat(k, toString(shardNum()))
 ) ENGINE = MergeTree ORDER BY k;
 
 INSERT INTO t VALUES ('a', 1, 10), ('b', 2, 20), ('bb', 3, 30), ('a', 4, 40);
@@ -77,6 +80,8 @@ SELECT k, upper_k, n, sum(v) FROM t GROUP BY GROUPING SETS ((k), (n)) ORDER BY k
 
 SELECT '-- remote';
 SELECT k, upper_k, sum(v) FROM remote('127.0.0.{1,2}', currentDatabase(), t) GROUP BY k ORDER BY k;
+SELECT shard_alias, count() FROM remote('127.0.0.{1,2}', currentDatabase(), t) GROUP BY shard_alias ORDER BY shard_alias;
+SELECT k, max(shard_alias) FROM remote('127.0.0.{1,2}', currentDatabase(), t) GROUP BY k ORDER BY k;
 
 SELECT '-- errors';
 SELECT k, n_mod FROM t GROUP BY k; -- { serverError NOT_AN_AGGREGATE }
@@ -85,6 +90,10 @@ SELECT upper_k, count() FROM t; -- { serverError NOT_AN_AGGREGATE }
 SELECT k, rand_alias FROM t GROUP BY k; -- { serverError NOT_AN_AGGREGATE }
 SELECT k, k_rand_alias FROM t GROUP BY k; -- { serverError NOT_AN_AGGREGATE }
 SELECT k, row_number_alias FROM t GROUP BY k; -- { serverError NOT_AN_AGGREGATE }
+-- The value of a server constant function differs between the shards and the initiator.
+SELECT k, shard_alias FROM remote('127.0.0.{1,2}', currentDatabase(), t) GROUP BY k; -- { serverError NOT_AN_AGGREGATE }
+SELECT k, host_alias FROM remote('127.0.0.{1,2}', currentDatabase(), t) GROUP BY k; -- { serverError NOT_AN_AGGREGATE }
+SELECT k, k_shard_alias FROM remote('127.0.0.{1,2}', currentDatabase(), t) GROUP BY k; -- { serverError NOT_AN_AGGREGATE }
 SELECT k, upper_k, sum(v) FROM t GROUP BY k WITH ROLLUP SETTINGS group_by_use_nulls = 1; -- { serverError NOT_AN_AGGREGATE }
 
 DROP TABLE t;

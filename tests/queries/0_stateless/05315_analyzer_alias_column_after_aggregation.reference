@@ -69,4 +69,9 @@ bb	BB	0	30
 a	A	100
 b	B	40
 bb	BB	60
+1	4
+2	4
+a	2
+b	2
+bb	2
 -- errors
