@@ -125,6 +125,14 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// it would reject the name, and its own joins treat `max_rows_in_join` / `max_bytes_in_join` as a
 /// spill trigger, so a plan arriving without the name is read back as legacy mode, and a plan that
 /// needs the new contract is not serialized for such a peer at all.
+///
+/// Rules for this version:
+/// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
+///   in the same release reuse the value.
+/// - Do not bump it for a change to the bytes of one step. The step bumps its own serialization version
+///   instead, with the current value here as `since_plan_version` (see `QueryPlanStepRegistry::StepVersions`).
+///
+/// Last bumped for release 26.10.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
