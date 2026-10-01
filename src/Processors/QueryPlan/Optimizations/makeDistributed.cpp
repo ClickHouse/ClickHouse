@@ -421,7 +421,7 @@ std::optional<PreformattedMessage> getReasonChildPlanSetsCannotBeShipped(QueryPl
                 return reason;
         for (auto * child : node->children)
             stack.push_back(child);
-        for (auto * child_plan : node->step->getChildPlans())
+        for (auto * child_plan : node->step->getChildPlans(/*for_explain=*/ false))
             if (child_plan && child_plan->getRootNode())
                 stack.push_back(child_plan->getRootNode());
     }
@@ -453,7 +453,7 @@ getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimiza
         /// while it still carries the caller's `make_distributed_plan=1`. Hence, each child
         /// can run make optimization decision for itself whether or not to run the subplan in distributed way
         /// (i.e. 04367_distributed_plan_merge_scatter_multishard).
-        const auto child_plans = node->step->getChildPlans();
+        const auto child_plans = node->step->getChildPlans(/*for_explain=*/ false);
 
         if (auto reason = getReasonNodeCannotBeDistributed(*node, optimization_settings); reason.has_value())
             return reason;
