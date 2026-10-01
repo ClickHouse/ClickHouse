@@ -18,6 +18,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Databases/DataLake/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/transformTypesRecursively.h>
@@ -838,6 +839,9 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
                 "DeltaLake CREATE TABLE in a catalog database does not support columns with a DEFAULT "
                 "expression (it is not preserved in the catalog schema)");
     }
+
+    if (register_with_catalog)
+        catalog->createNamespaceIfNotExists(DataLake::parseTableName(table_id_.getTableName()).first, /*location=*/"");
 
     /// With explicit columns, `createTable` writes commit 0 (fresh) or attaches (existing). Without columns
     /// we can only attach, so a fresh location (no `_delta_log`) is rejected here.

@@ -431,7 +431,7 @@ void DatabasePostgreSQL::detachTablePermanently(ContextPtr local_context, const 
         cached_tables.erase(table_name);
 }
 
-void DatabasePostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool /* sync */)
+void DatabasePostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool /* sync */, bool /* if_exists */)
 {
     if (!persistent)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP TABLE is not supported for non-persistent MySQL database");

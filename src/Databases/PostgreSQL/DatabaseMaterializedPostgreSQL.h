@@ -68,7 +68,7 @@ public:
 
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
-    void dropTable(ContextPtr local_context, const String & name, bool sync) override;
+    void dropTable(ContextPtr local_context, const String & name, bool sync, bool if_exists) override;
 
     void drop(ContextPtr local_context) override;
 
