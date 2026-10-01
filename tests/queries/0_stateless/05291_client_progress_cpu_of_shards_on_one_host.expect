@@ -42,7 +42,9 @@ expect "bash) "
 # is not preferred), each one busy on a single thread: together they use about 4 cores, all of them
 # reported under the same host name. The query does not end by itself and is cancelled as soon as
 # the figure is seen. Parallel replicas are pinned off, so that each shard is read by one thread.
-send "\$CLICKHOUSE_CLIENT --progress --max_threads 1 --prefer_localhost_replica 0 --enable_parallel_replicas 0 --automatic_parallel_replicas_mode 0 --query \"SELECT count() FROM remote('127.0.0.1,127.0.0.1,127.0.0.1,127.0.0.1', numbers(1000000000000)) WHERE NOT ignore(sipHash64(number))\" >/dev/null 2>&1\r"
+# The limit on the rows to read (20 million in the test profile) is lifted, otherwise the query
+# fails at once on the estimated number of rows.
+send "\$CLICKHOUSE_CLIENT --progress --max_threads 1 --max_rows_to_read 0 --prefer_localhost_replica 0 --enable_parallel_replicas 0 --automatic_parallel_replicas_mode 0 --query \"SELECT count() FROM remote('127.0.0.1,127.0.0.1,127.0.0.1,127.0.0.1', numbers(1000000000000)) WHERE NOT ignore(sipHash64(number))\" >/dev/null 2>&1\r"
 
 # At least 3 cores. The shards use about 4 cores in total, and so does the figure when all the
 # rows are summed up, while keeping only the last row per host shows at most about 2.5 cores.
