@@ -159,8 +159,8 @@ def _loom(available, overlay, output_dir):
 The Loom code index is not available in this run. Use `git grep --no-index` and read files from the checkout
 to follow callers, sibling implementations and tests."""
     overlay_note = (
-        "\nFor this PR, `symbol` and `callers` also see the code the PR adds (an overlay of the PR\n"
-        "head), but read that code itself from the checkout."
+        "\nFor this PR, `symbol` and `callers` may also see code the PR adds (an overlay of the PR\n"
+        "head, when Loom has indexed it); either way, read the PR's code itself from the checkout."
         if overlay else ""
     )
     return f"""\

@@ -359,6 +359,29 @@ def _verified_memory(repo, records):
     return out
 
 
+def _print_loom_usage():
+    """One line per Loom operation used in this run (the job's and the
+    agent's): calls, failures and latency."""
+    stats = {}
+    try:
+        with open(LOOM_CALL_LOG, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                try:
+                    c = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(c, dict):
+                    continue
+                st = stats.setdefault(str(c.get("op")), {"n": 0, "failed": 0, "ms": 0})
+                st["n"] += 1
+                st["failed"] += c.get("status") != "ok"
+                st["ms"] += int(c.get("ms") or 0) if str(c.get("ms") or "0").isdigit() else 0
+    except OSError:
+        return
+    for op, st in sorted(stats.items(), key=lambda kv: -kv[1]["n"]):
+        print(f"Loom usage: {op}: {st['n']} call(s), {st['failed']} failed, {st['ms'] // max(st['n'], 1)} ms average")
+
+
 def _strip_markers(text):
     return _MARKER_RE.sub("", text or "").rstrip()
 
@@ -475,6 +498,7 @@ def review():
     finally:
         if not sandbox.reauthenticate():
             print("ERROR: no GitHub token after the review; publishing will fail")
+        _print_loom_usage()
 
     # A newer commit's review may have started or finished while this one ran
     # (the agent can finish between two watcher ticks). It reviews the newer

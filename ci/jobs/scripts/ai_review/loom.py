@@ -244,15 +244,59 @@ def _answer(config, op, body, namespace=None):
 # ── Brief written by the job before the agent starts ─────────────────────────
 
 
+_HUNK_RE = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+def _zero_context(patch):
+    """`patch` with its context lines dropped: one hunk per run of changed
+    lines, as `git diff -U0` writes it. Loom counts every function a hunk
+    spans as changed, so with GitHub's three lines of context the neighbours
+    of a change (and the function named in the hunk header) would be reported
+    as changed, with all their callers as impact."""
+    out, run, old, new = [], [], 0, 0
+
+    def flush():
+        if run:
+            removed = [l for l in run if l.startswith("-")]
+            added = [l for l in run if l.startswith("+")]
+            old_start = run_old if removed else run_old - 1
+            new_start = run_new if added else run_new - 1
+            out.append(f"@@ -{old_start},{len(removed)} +{new_start},{len(added)} @@")
+            out.extend(removed + added)
+            run.clear()
+
+    for line in patch.split("\n"):
+        m = _HUNK_RE.match(line)
+        if m:
+            flush()
+            old, new = int(m.group(1)), int(m.group(2))
+            continue
+        if line.startswith("\\"):
+            continue  # "\ No newline at end of file"
+        if line.startswith(("-", "+")):
+            if not run:
+                run_old, run_new = old, new
+            run.append(line)
+            if line.startswith("-"):
+                old += 1
+            else:
+                new += 1
+        else:
+            flush()
+            old, new = old + 1, new + 1
+    flush()
+    return "\n".join(out)
+
+
 def _diff_text(files):
-    """A unified diff assembled from the GitHub `pulls/<n>/files` rows."""
+    """A zero-context unified diff assembled from the GitHub `pulls/<n>/files` rows."""
     parts = []
     for f in files:
         patch = f.get("patch")
         if not patch:
             continue
         name = f["filename"]
-        parts.append(f"diff --git a/{name} b/{name}\n--- a/{name}\n+++ b/{name}\n{patch}\n")
+        parts.append(f"diff --git a/{name} b/{name}\n--- a/{name}\n+++ b/{name}\n{_zero_context(patch)}\n")
     return "".join(parts)[:_MAX_DIFF_BYTES]
 
 
@@ -312,16 +356,25 @@ def _render_overlay(d, pr):
     return []
 
 
-def _render_review_brief(d):
+def _render_review_brief(d, changed=None, detailed=()):
+    """`changed`: the functions the PR changes, from `impact` on the
+    zero-context diff. `review_brief` derives its own set from the PR with
+    context lines, which takes in the neighbours of a change; its rows are
+    kept only for functions in `changed` when that is known. `detailed`: the
+    functions whose earlier PRs are listed by `_render_function_history`."""
     if not d or d.get("_not_found") or d.get("source") == "missing":
         return []
     out = []
     secs = d.get("sections") or {}
     decisions = d.get("decisions") or {}
+
+    def keep(name):
+        return not changed or name in changed
+
     if decisions.get("test_only"):
         out.append("- Test-only change: no source function is touched.")
     symbols = [r for r in (secs.get("symbols") or {}).get("rows") or []
-               if isinstance(r, dict) and not _is_test_path(r.get("path"))]
+               if isinstance(r, dict) and not _is_test_path(r.get("path")) and keep(r.get("qualified_name"))]
     if symbols:
         out.append("- Functions the PR changes, with their number of call sites outside tests (fan-in):")
         for r in symbols[:15]:
@@ -333,7 +386,7 @@ def _render_review_brief(d):
             out.append(f"  - ... {len(symbols) - 15} more in `loom/review_brief.json`")
     tests = (secs.get("tests") or {}).get("rows") or []
     covered = [r for r in tests if isinstance(r, dict) and r.get("kind", "symbol") == "symbol"
-               and r.get("verdict") == "covered_by" and r.get("tests")]
+               and r.get("verdict") == "covered_by" and r.get("tests") and keep(r.get("subject"))]
     if covered:
         out.append("- Tests that exercise the changed functions:")
         for r in covered[:10]:
@@ -341,7 +394,9 @@ def _render_review_brief(d):
             out.append(f"  - `{_name(r.get('subject'))}`: " + ", ".join(f"`{t}`" for t in (r.get("tests") or [])[:3])
                        + (f" (+{more})" if more > 0 else ""))
     history = (secs.get("history") or {}).get("rows") or []
-    risky = [r for r in history if (r.get("caused_issues") or 0) or (r.get("reverts") or 0) or (r.get("open_issues_naming") or 0)]
+    risky = [r for r in history if isinstance(r, dict) and keep(r.get("qualified_name"))
+             and r.get("qualified_name") not in detailed
+             and ((r.get("caused_issues") or 0) or (r.get("reverts") or 0) or (r.get("open_issues_naming") or 0))]
     for r in risky[:8]:
         parts = []
         if r.get("caused_issues"):
@@ -350,13 +405,39 @@ def _render_review_brief(d):
             parts.append(f"{r['reverts']} revert(s)")
         if r.get("open_issues_naming"):
             parts.append(f"{r['open_issues_naming']} open issue(s) naming it")
-        out.append(f"- History of `{_name(r.get('qualified_name'))}`: {', '.join(parts)} (`loom history --name`).")
-    if decisions.get("randomized_setting"):
-        out.append("- A setting the PR touches is randomized in CI tests, so test runs see different values of it.")
+        out.append(f"- History of `{_name(r.get('qualified_name'))}`: {', '.join(parts)}.")
     do_not_flag = (secs.get("do_not_flag") or {}).get("rows") or []
     for r in do_not_flag[:6]:
         out.append(f"- Known false positive here, do not flag: {str(r.get('rule') or r.get('text') or r)[:200]}")
     return out
+
+
+def _risky_functions(brief, changed, limit=4):
+    """The changed functions whose history has regressions, riskiest first."""
+    rows = ((((brief or {}).get("sections") or {}).get("history") or {}).get("rows")) or []
+    rows = [r for r in rows if isinstance(r, dict) and r.get("qualified_name") and (not changed or r["qualified_name"] in changed)
+            and ((r.get("caused_issues") or 0) or (r.get("reverts") or 0))]
+    rows.sort(key=lambda r: -((r.get("caused_issues") or 0) + 2 * (r.get("reverts") or 0)))
+    return [r["qualified_name"] for r in rows[:limit]]
+
+
+def _render_function_history(histories):
+    """Per risky function, its latest fix and revert PRs, so the agent sees
+    what went wrong there before without a lookup of its own. Returns the
+    lines and the functions covered."""
+    out, covered = [], set()
+    for name, d in histories:
+        prs = [p for p in (d or {}).get("prs") or [] if isinstance(p, dict) and p.get("pr_number")
+               and not str(p.get("title") or "").startswith(("Backport #", "Cherry pick #"))]
+        notable = [p for p in prs if "pr-bugfix" in (p.get("labels") or []) or str(p.get("title") or "").startswith("Revert")]
+        if not notable:
+            continue
+        covered.add(name)
+        out.append(f"- Earlier fixes and reverts in `{_name(name)}` (`loom history --name` for more):")
+        for p in notable[:3]:
+            title = " ".join(str(p.get("title") or "").split())
+            out.append(f"  - #{p['pr_number']} ({str(p.get('merged_at') or '')[:10]}): {title[:150]}")
+    return out, covered
 
 
 def _render_impact(d, pr_paths):
@@ -468,16 +549,21 @@ def _render_similar(d, pr_number):
 _BOT_REVIEWERS = ("clickhouse-gh", "robot-", "github-actions", "copilot", "coderabbit")
 
 
+_STATUS_REPLY_RE = re.compile(r"(resolved|fixed|done|addressed|updated|thanks|thank you|ok|lgtm)\b", re.I)
+
+
 def _maintainer_remarks(histories, limit=8):
     """Human review remarks from the history of the touched files, newest
-    first. Replies written by agents (marked 🕵) and bots are left out."""
+    first. Left out: replies by agents (marked 🕵) and bots, the PR author's
+    own answers, and status replies ("Resolved in ...", "Done")."""
     remarks = []
     for h in histories:
         for pr in (h or {}).get("prs") or []:
             for r in pr.get("reviews") or []:
                 who = r.get("reviewer") or ""
                 text = " ".join((r.get("excerpt") or "").split())
-                if not text or text.startswith("🕵") or any(b in who.lower() for b in _BOT_REVIEWERS):
+                if (not text or text.startswith("🕵") or any(b in who.lower() for b in _BOT_REVIEWERS)
+                        or who == pr.get("author") or _STATUS_REPLY_RE.match(text) or len(text.split()) < 4):
                     continue
                 remarks.append({"pr": pr.get("pr_number"), "reviewer": who, "path": r.get("path"),
                                 "line": r.get("line"), "text": text, "at": r.get("created_at") or ""})
@@ -499,6 +585,7 @@ def _render_remarks(remarks):
     return out
 
 
+_CI_BLOCK_RE = re.compile(r"<!-- CI automatic block start.*?(<!-- CI automatic block end[^>]*-->|$)", re.S)
 _TEMPLATE_RE = re.compile(r"<!--.*?-->|^#+ .*$", re.S | re.M)
 
 
@@ -554,6 +641,22 @@ def write_brief(config, pr, files, out_dir):
         futures = {name: pool.submit(_answer, config, op, body) for name, (op, body) in requests.items()}
         answers = {name: f.result() for name, f in futures.items()}
 
+    changed = {t.get("qualified_name") for t in (answers.get("impact") or {}).get("touched_symbols") or []
+               if isinstance(t, dict) and t.get("qualified_name")}
+    risky = _risky_functions(answers.get("review_brief"), changed)
+    if risky:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(risky)) as pool:
+            function_history = list(zip(risky, pool.map(
+                lambda name: _answer(config, "code.history", {"name": name, "limit": 10}), risky)))
+    else:
+        function_history = []
+
+    try:
+        history_lines, detailed = _render_function_history(function_history)
+    except Exception as e:  # noqa: BLE001 - as for the other sections below
+        print(f"WARNING: Loom brief section skipped: {type(e).__name__}: {e}")
+        history_lines, detailed = [], set()
+
     histories = [answers.pop(k) for k in sorted(k for k in answers if k.startswith("history_"))]
     answers["review_remarks"] = {"remarks": _maintainer_remarks(histories)} if any(histories) else None
     for name, data in answers.items():
@@ -565,7 +668,8 @@ def write_brief(config, pr, files, out_dir):
     renderers = [
         lambda: _render_index_status(answers.get("index_status"), base_sha),
         lambda: _render_overlay(answers.get("review_brief"), pr),
-        lambda: _render_review_brief(answers.get("review_brief")),
+        lambda: _render_review_brief(answers.get("review_brief"), changed, detailed),
+        lambda: history_lines,
         lambda: _render_impact(answers.get("impact"), pr_paths),
         lambda: _render_test_gate_after_brief(answers, lines),
         lambda: _render_conventions(answers.get("conventions")),
@@ -669,22 +773,15 @@ def recall_outcomes(config, pr_number, paths):
     if not (config.available() and config.memory_namespace and paths):
         return []
 
-    def by_path(path):
-        # `tags` matches any of the given tags, so query by the path tag alone
-        # and check the rest here.
-        answer = _answer(config, "memory.list", {"tags": [f"path:{path}"], "limit": 30, "preview_chars": 1500},
-                         namespace=config.memory_namespace)
-        entries = (answer or {}).get("entries") or []
-        return [e for e in entries if isinstance(e, dict) and isinstance(e.get("tags"), list)
-                and f"path:{path}" in e["tags"] and "kind:review_thread" in e["tags"]
-                and (not config.repo or f"repo:{config.repo}" in e["tags"] or not any(t.startswith("repo:") for t in e["tags"]))]
-
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(paths))) as pool:
-            entries = [e for batch in pool.map(by_path, paths[:20]) for e in batch]
-    except Exception as e:  # noqa: BLE001 - memory is an aid; its failure must not fail the review
-        print(f"WARNING: Loom memory recall failed: {type(e).__name__}: {e}")
-        return []
+    # `tags` matches any of the given tags: one query for all the paths, the
+    # rest checked here.
+    wanted = {f"path:{p}" for p in paths[:20]}
+    answer = _answer(config, "memory.list", {"tags": sorted(wanted), "limit": 100, "preview_chars": 200},
+                     namespace=config.memory_namespace)
+    entries = [e for e in (answer or {}).get("entries") or []
+               if isinstance(e, dict) and isinstance(e.get("tags"), list) and wanted & set(e["tags"])
+               and "kind:review_thread" in e["tags"]
+               and (not config.repo or f"repo:{config.repo}" in e["tags"] or not any(t.startswith("repo:") for t in e["tags"]))]
     records, seen = [], set()
     for e in sorted(entries, key=lambda e: str(e.get("updated_at") or ""), reverse=True):
         tags = set(e.get("tags") or [])
@@ -870,6 +967,16 @@ def main(argv=None):
     if data.get("_error"):
         print(f"Loom rejected the request: {data['_error']}" + (f" {json.dumps(data.get('errors'))[:800]}" if data.get("errors") else ""))
         return 0
+    if op == "code.symbol" and not data.get("definitions") and not data.get("candidates"):
+        print(f"`{args.name}` is not in Loom's index of master or of this PR. If the PR adds it, read it from "
+              "the checkout; otherwise try the qualified name, or `grep -rn` in the checkout.")
+        return 0
+    if op == "code.history":
+        # PR descriptions there are mostly the PR template; their first lines
+        # are enough to tell what a PR was about.
+        for pr in data.get("prs") or []:
+            if isinstance(pr, dict) and isinstance(pr.get("body_excerpt"), str):
+                pr["body_excerpt"] = " ".join(_plain(_CI_BLOCK_RE.sub("", pr["body_excerpt"])).split())[:300]
     print(json.dumps(_compact(data), ensure_ascii=False, separators=(",", ":")))
     return 0
 
