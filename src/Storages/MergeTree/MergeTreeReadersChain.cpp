@@ -423,8 +423,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         MergeTreeRangeReader::filterColumns(read_columns, result.final_filter);
     }
 
-    /// A column read on this step may have been read and dropped by an earlier step: forget the copy and the patch version
-    /// that step left for it, so it is patched and evaluated like a column read for the first time.
+    /// An earlier step may have read and dropped this column: discard what it left so the column is patched as a first read.
     for (const auto & column : range_reader.getReadSampleBlock())
     {
         if (result.additional_columns.has(column.name))
