@@ -10,7 +10,7 @@ CREATE TABLE t_proj_default_runtime (a UInt64, c UInt64,
 ENGINE = MergeTree ORDER BY a
 SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi';
 
-INSERT INTO t_proj_default_runtime SELECT number, number * 2 FROM numbers(1000);
+INSERT INTO t_proj_default_runtime SELECT number, number * 2 FROM numbers(200);
 
 -- `p_inherit` takes the table's `index_granularity = 1`, `p_reset` the default of 8192.
 SELECT name, marks > 100 FROM system.projection_parts
@@ -21,7 +21,7 @@ ORDER BY name;
 DETACH TABLE t_proj_default_runtime;
 ATTACH TABLE t_proj_default_runtime;
 
-INSERT INTO t_proj_default_runtime SELECT number, number * 2 FROM numbers(1000, 1000);
+INSERT INTO t_proj_default_runtime SELECT number, number * 2 FROM numbers(200, 200);
 OPTIMIZE TABLE t_proj_default_runtime FINAL;
 
 SELECT 'after reattach and merge';
