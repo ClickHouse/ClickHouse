@@ -2303,6 +2303,8 @@ struct ReplayGateNeeds
     bool unique_key = false;
     bool data_lake_catalog_database = false;
     bool ytsaurus_table = false;
+    bool paimon_table = false;
+    bool delta_lake_table = false;
 };
 
 /// Kafka reads its Keeper-offsets gate only when `kafka_keeper_path` or `kafka_replica_name` is set,
@@ -2339,7 +2341,8 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
                     .materialized_postgresql_database = true, .materialized_mysql_database = true,
                     .materialized_postgresql_table = true, .time_series_table = true,
                     .kafka_keeper_offsets = true, .nullable_tuple_type = true, .unique_key = true,
-                    .data_lake_catalog_database = true, .ytsaurus_table = true};
+                    .data_lake_catalog_database = true, .ytsaurus_table = true, .paimon_table = true,
+                    .delta_lake_table = true};
         }
 
         const auto * create = create_ast->as<ASTCreateQuery>();
@@ -2407,6 +2410,10 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
                     needs.kafka_keeper_offsets = true;
                 if (equalsCaseInsensitive(engine->name, "YTsaurus"))
                     needs.ytsaurus_table = true;
+                if (startsWithCaseInsensitive(engine->name, "Paimon"))
+                    needs.paimon_table = true;
+                if (startsWithCaseInsensitive(engine->name, "DeltaLake"))
+                    needs.delta_lake_table = true;
             }
         }
 
@@ -2511,13 +2518,22 @@ String replaySettingsPrelude(const std::set<String> & settings_known_to_server, 
         "allow_iceberg_remove_orphan_files",
         "allow_experimental_expire_snapshots",
     };
+    /// Read only when a `DeltaLake*` table is created, also inside a `DataLakeCatalog` database.
+    static const std::set<std::string_view> delta_lake_settings = {
+        "allow_delta_lake_create_table",
+        "allow_delta_kernel_rs",
+        "allow_experimental_delta_lake_writes",
+    };
     for (const auto & name : allExperimentalSettingNames())
         if (settings_known_to_server.contains(name) && !dead_settings.contains(name)
             && !iceberg_write_settings.contains(name)
             && (!analyzer_settings.contains(name) || needs.analyzable_query_text)
             && (name != "allow_experimental_unique_key" || needs.unique_key)
             && (!data_lake_catalog_settings.contains(name) || needs.data_lake_catalog_database)
-            && (name != "allow_experimental_ytsaurus_table_engine" || needs.ytsaurus_table))
+            && (name != "allow_experimental_ytsaurus_table_engine" || needs.ytsaurus_table)
+            && (name != "allow_experimental_paimon_storage_engine" || needs.paimon_table)
+            && (name != "allow_experimental_nullable_tuple_type" || needs.nullable_tuple_type)
+            && (!delta_lake_settings.contains(name) || needs.delta_lake_table || needs.data_lake_catalog_database))
             res += "SET " + name + " = 1;\n";
     /// Emit dump-specific gates only when the dumped AST proves they are needed.
     for (const auto & [name, value] : dump_specific)
