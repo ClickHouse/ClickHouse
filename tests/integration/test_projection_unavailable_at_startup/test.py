@@ -257,14 +257,15 @@ def test_restore_codec_projection_with_missing_dictionary(started_cluster):
     )
 
 
-def test_restore_unavailable_projection_rejects_lossy_codec(started_cluster):
+@pytest.mark.parametrize("projection_column", ["x Float64", "x"])
+def test_restore_unavailable_projection_rejects_lossy_codec(started_cluster, projection_column):
     node.query("DROP DATABASE IF EXISTS codec_restore_lossy SYNC")
     node.query("CREATE DATABASE codec_restore_lossy")
     fresh_error = node.query_and_get_error(
         "CREATE TABLE codec_restore_lossy.fresh "
-        "(k UInt64, x Float64, PROJECTION pp (x Float64 CODEC(SZ3)) AS "
+        f"(k UInt64, x Float64, PROJECTION pp ({projection_column} CODEC(SZ3)) AS "
         "(SELECT k, x ORDER BY k)) ENGINE = MergeTree ORDER BY k",
-        settings={"enable_sz3_codec": 1},
+        settings={"enable_sz3_codec": 1, "allow_suspicious_codecs": 1},
     )
     assert "cannot use lossy codec" in fresh_error, fresh_error
     node.query(
@@ -280,7 +281,7 @@ def test_restore_unavailable_projection_rejects_lossy_codec(started_cluster):
     )
     node.query(
         "CREATE TABLE codec_restore_lossy.source "
-        "(k UInt64, x Float64, PROJECTION pp (x Float64 CODEC(LZ4)) AS "
+        f"(k UInt64, x Float64, PROJECTION pp ({projection_column} CODEC(LZ4)) AS "
         "(SELECT x, dictGet('codec_restore_lossy.lookup', 'value', k) AS d ORDER BY x)) "
         "ENGINE = MergeTree ORDER BY k"
     )
@@ -309,8 +310,11 @@ def test_restore_unavailable_projection_rejects_lossy_codec(started_cluster):
         "RESTORE TABLE codec_restore_lossy.source AS codec_restore_lossy.restored "
         f"FROM Disk('backups', '{backup}')"
     )
-    error = node.query_and_get_error(restore_query, settings={"enable_sz3_codec": 1})
-    assert "cannot use lossy codec" in error, error
+    error = node.query_and_get_error(
+        restore_query,
+        settings={"enable_sz3_codec": 1, "allow_suspicious_codecs": 1},
+    )
+    assert "lossy" in error.lower(), error
     assert node.query("EXISTS TABLE codec_restore_lossy.restored").strip() == "0"
 
 

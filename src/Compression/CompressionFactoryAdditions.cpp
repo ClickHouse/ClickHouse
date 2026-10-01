@@ -269,7 +269,9 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                 /// This is a sanity check, so it is not enforced when `allow_suspicious_codecs` is set, nor on the
                 /// metadata-load path (`ATTACH`), where `sanity_check` is disabled so that a table stored on an
                 /// earlier version does not become unloadable after an upgrade.
-                if (sanity_check && result_codec->isLossyCompression() && !column_type)
+                /// A projection admitted from an unavailable backup must reject lossy codecs even when
+                /// `allow_suspicious_codecs` disables the ordinary unknown-type sanity check.
+                if ((sanity_check || reject_type_sensitive_without_column_type) && result_codec->isLossyCompression() && !column_type)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Codec {} is lossy and can only be applied to Float32/Float64 columns (or arrays/tuples/"
                         "nullables of them); it cannot be used as a marks, primary key, default or TTL recompression "
