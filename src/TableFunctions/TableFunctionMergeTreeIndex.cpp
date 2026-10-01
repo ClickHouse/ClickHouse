@@ -1,6 +1,7 @@
 #include <Storages/StorageMergeTreeIndex.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <TableFunctions/ITableFunction.h>
+#include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
