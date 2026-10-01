@@ -1223,6 +1223,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (!schema_cache)
             return std::nullopt;
 
+        /// The cached row count is keyed without the compression method, and answering from it never opens
+        /// the object. Validate the codec here, as the actual read would, so that a misspelled
+        /// `compression_method` (e.g. on a table loaded by `ATTACH`, where it is not rejected) throws
+        /// `Unknown compression method` regardless of whether the cache is warm.
+        chooseCompressionMethod(/* path */ "", configuration->compression_method);
+
         const auto cache_key = getKeyForSchemaCache(
             getUniqueStoragePathIdentifier(*configuration, *object_info),
             object_info->getFileFormat().value_or(configuration->format),

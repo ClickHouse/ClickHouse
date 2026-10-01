@@ -232,9 +232,9 @@ PARTITION BY key;
 " 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
 
 # The check is for new definitions only: metadata that already exists (`ATTACH`, server startup)
-# must still load, and the misspelled codec surfaces when the table is read. Read real columns, not
-# `count()`: the earlier reads cached the per-file row counts, and `count()` is answered from that cache
-# without opening (and so without decompressing) the files.
+# must still load, and the misspelled codec surfaces when the table is read. `count()` too: the earlier
+# reads cached the per-file row counts, and `count()` is answered from that cache without opening (and so
+# without decompressing) the files, so the codec must be validated before the cache is consulted.
 echo 'invalid compression method on ATTACH:'
 attach_db="${CLICKHOUSE_DATABASE}_attach"
 attach_uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
@@ -245,4 +245,12 @@ ENGINE = S3('$path/gz_lake', 'test', 'testtest', format = 'JSONEachRow', compres
 PARTITION BY key;
 "
 $CLICKHOUSE_CLIENT -q "SELECT id, key FROM $attach_db.bad_codec" 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
+# A cached row count is only trusted for a file last modified before the second the count was cached
+# in, so let the lake age past that before warming the cache through a valid definition.
+while [ "$($CLICKHOUSE_CLIENT -q "SELECT now() > (SELECT max(_time) FROM s3('$path/gz_lake/**', 'test', 'testtest', 'One'))")" != 1 ]
+do
+    sleep 0.1
+done
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM s3('$path/gz_lake/**', 'test', 'testtest', format = 'JSONEachRow', compression_method = 'gzip')"
+$CLICKHOUSE_CLIENT --use_cache_for_count_from_files=1 -q "SELECT count() FROM $attach_db.bad_codec" 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE $attach_db"
