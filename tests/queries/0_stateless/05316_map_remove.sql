@@ -5,6 +5,8 @@ SELECT
     mapRemove(mapFromArrays(emptyArrayString(), emptyArrayUInt8()), 'a')
 FORMAT TabSeparatedRaw;
 
+SELECT mapRemove(map(), 'a'), toTypeName(mapRemove(map(), 'a')) FORMAT TabSeparatedRaw;
+
 SELECT mapRemove(map('a', 1, 'a', 2, 'b', 3), 'a') FORMAT TabSeparatedRaw;
 
 SELECT mapRemove(map(toUInt64(1), 'one', toUInt64(2), 'two'), toUInt8(1)) FORMAT TabSeparatedRaw;
