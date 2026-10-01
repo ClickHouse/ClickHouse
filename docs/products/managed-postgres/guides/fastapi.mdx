@@ -115,7 +115,7 @@ An `ssl.SSLContext` created with `PROTOCOL_TLS_CLIENT` requires a valid certific
 <Warning>
 **Pass the CA certificate in `connect_args`**
 
-- Without an `ssl` argument, asyncpg uses TLS if the server offers it, but it doesn't verify the certificate. The direct connection on port `5432` also accepts connections without TLS.
+- Without an `ssl` argument, asyncpg uses TLS if the server offers it, but it doesn't verify the certificate.
 - Don't copy `sslmode` or `sslrootcert` from the Connect modal into the URL. SQLAlchemy passes URL parameters to asyncpg as keyword arguments, and the connection fails with `TypeError: connect() got an unexpected keyword argument 'sslmode'`.
 - On Python 3.13 and later, a context from `ssl.create_default_context` fails with `certificate verify failed: Missing Authority Key Identifier`, because that function enables strict X.509 checks. Create the context with `ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)` as shown.
 - If the CA certificate is wrong, the connection fails with `certificate verify failed: unable to get local issuer certificate`. If the hostname doesn't match, for example when you connect by IP address, it fails with `certificate verify failed: IP address mismatch`.

@@ -81,7 +81,7 @@ export DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhous
 ```
 
 <Warning>
-Leave the query string off `DATABASE_URL`. Ecto ignores the `sslmode` and `sslrootcert` parameters from the URL in the **Connect** modal. Without the `ssl` setting, Postgrex connects to port `5432` without TLS.
+Leave the query string off `DATABASE_URL`. Ecto ignores the `sslmode` and `sslrootcert` parameters from the URL in the **Connect** modal. Without the `ssl` setting, Postgrex doesn't use TLS or verify the server.
 </Warning>
 
 Create the database:
