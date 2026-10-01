@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="short_circuit_function_evaluation">
-  ## short_circuit_function_evaluation
-</div>
+## short_circuit_function_evaluation {#short_circuit_function_evaluation}
 
 <SettingsInfoBlock type="ShortCircuitFunctionEvaluation" default_value="enable" />
 
@@ -27,9 +25,7 @@ Possible values:
 * `force_enable` — 对所有函数启用短路函数求值。
 * `disable` — 禁用短路函数求值。
 
-<div id="short_circuit_function_evaluation_for_nulls">
-  ## short_circuit_function_evaluation_for_nulls
-</div>
+## short_circuit_function_evaluation_for_nulls {#short_circuit_function_evaluation_for_nulls}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -37,9 +33,9 @@ Possible values:
 
 优化对以下函数的求值：只要任一参数为 NULL，就返回 NULL 的函数。当函数参数中的 NULL 值占比超过 short&#95;circuit&#95;function&#95;evaluation&#95;for&#95;nulls&#95;threshold 时，系统会跳过按行求值。相反，它会直接为所有行返回 NULL，从而避免不必要的计算。
 
-<div id="short_circuit_function_evaluation_for_nulls_threshold">
-  ## short_circuit_function_evaluation_for_nulls_threshold
-</div>
+此设置仅控制一项优化。对于无法在其参数默认值上执行的函数——例如 `parseDateTime`、`IPv4StringToNum` 或 `intDiv`——无论该设置如何，都会始终跳过包含 NULL 的行，因为 NULL 背后存储的值是该参数类型的默认值，在其上执行会对本来有效的数据抛出异常。
+
+## short_circuit_function_evaluation_for_nulls_threshold {#short_circuit_function_evaluation_for_nulls_threshold}
 
 <SettingsInfoBlock type="Double" default_value="1" />
 
