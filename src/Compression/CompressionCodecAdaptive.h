@@ -22,20 +22,23 @@ struct Entry
 
 using Pool = VectorWithMemoryTracking<Entry>;
 
-/// The pool for `type`, in priority order. [0] is the default codec, thus we get "no worse than the default" compression.
+/// The pool for `type`, in priority order. [0] is the default codec.
 /// Specialized candidates come from a per-type table. Beyond [0], they must be ordered by descending decompression speed
 /// as a draw in size should resolve to the fastest reads. `NONE` is not a candidate as the raw block is what every candidate must beat.
 Pool poolForType(const DataTypePtr & type, const CompressionCodecPtr & deployment_default);
 
 }
 
-/// Adaptive codec picks the smallest-output codec per block from a default codec + type-appropriate pool and delegates to it.
+/// Adaptive codec picks per block the smallest output among the pool candidates its selector runs.
 /// On disk, each block carries the winner's method byte and reader decodes it with no knowledge of "adaptive".
 /// The wrapper itself never appears on disk.
 class CompressionCodecAdaptive final : public ICompressionCodec
 {
 public:
-    CompressionCodecAdaptive(const DataTypePtr & type, const CompressionCodecPtr & deployment_default);
+    CompressionCodecAdaptive(
+        const DataTypePtr & type,
+        const CompressionCodecPtr & deployment_default,
+        std::unique_ptr<const AdaptiveCodec::ICodecSelector> selector_);
 
     uint8_t getMethodByte() const override;
     ASTPtr getCodecDescription() const override;

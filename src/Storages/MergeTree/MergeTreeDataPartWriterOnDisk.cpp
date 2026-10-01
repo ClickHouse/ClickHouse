@@ -19,6 +19,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
+#include <Compression/CodecSelectorSampled.h>
 #include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/HashingWriteBuffer.h>
@@ -760,7 +761,7 @@ CompressionCodecPtr MergeTreeDataPartWriterOnDisk::getSubstreamCodec(
 
     /// Adaptive could pick an unencrypted codec for some blocks and drop the encryption. Thus skip adaptivity for an encrypting codec.
     if (settings.apply_adaptive_codec && column_uses_default_codec && !codec->isEncryption())
-        return std::make_shared<CompressionCodecAdaptive>(substream_type, codec);
+        return std::make_shared<CompressionCodecAdaptive>(substream_type, codec, std::make_unique<AdaptiveCodec::CodecSelectorSampled>(1));
 
     return codec;
 }

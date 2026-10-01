@@ -5,7 +5,6 @@
 #include <cstring>
 #include <span>
 #include <string_view>
-#include <Compression/CodecSelectorSampled.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionCodecNone.h>
 #include <Compression/CompressionFactory.h>
@@ -161,9 +160,12 @@ AdaptiveCodec::Pool AdaptiveCodec::poolForType(const DataTypePtr & type, const C
     return pool;
 }
 
-CompressionCodecAdaptive::CompressionCodecAdaptive(const DataTypePtr & type, const CompressionCodecPtr & deployment_default)
+CompressionCodecAdaptive::CompressionCodecAdaptive(
+    const DataTypePtr & type,
+    const CompressionCodecPtr & deployment_default,
+    std::unique_ptr<const AdaptiveCodec::ICodecSelector> selector_)
     : pool(AdaptiveCodec::poolForType(type, deployment_default))
-    , selector(std::make_unique<AdaptiveCodec::CodecSelectorSampled>(candidatesOf(pool)))
+    , selector(std::move(selector_))
 {
     chassert(!pool.empty());
 }
@@ -175,7 +177,7 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
 {
     chassert(dest != nullptr);
     CompressionDestinationMultiplexer multiplexer(dest, getMaxCompressedDataSize(source_size));
-    AdaptiveCodec::Outcome outcome(source_size);
+    AdaptiveCodec::Outcome outcome(candidatesOf(pool), source_size);
 
     auto record = [&](size_t position, UInt32 size, char * block)
     {
@@ -199,8 +201,10 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
     AdaptiveCodec::Candidates plan = selector->select(state, outcome);
     while (plan.any())
     {
-        if ((plan & outcome.ran).any())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Adaptive codec selector asked for a candidate that already ran on this block");
+        if ((plan & (outcome.ran | ~outcome.all)).any())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Adaptive codec selector asked for a candidate that already ran on this block or is not in the pool");
 
         for (size_t entry = 0; entry < pool.size(); ++entry)
         {

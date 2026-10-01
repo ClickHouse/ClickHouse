@@ -2,6 +2,7 @@
 #include <cstring>
 #include <thread>
 #include <vector>
+#include <Compression/CodecSelectorSampled.h>
 #include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
@@ -36,6 +37,9 @@ CompressionCodecPtr defaultCodec()
 {
     return CompressionCodecFactory::instance().getDefaultCodec();
 }
+
+/// Period 1 prices every block, so the smallest output always wins.
+std::unique_ptr<const AdaptiveCodec::ICodecSelector> priceEveryBlock() { return std::make_unique<AdaptiveCodec::CodecSelectorSampled>(1); }
 
 /// Serialize values to a little-endian byte buffer, the way the codecs read them back.
 template <typename T>
@@ -78,7 +82,7 @@ void expectPool(const char * name, std::initializer_list<std::string_view> extra
 uint8_t adaptiveWinnerByte(const String & type_name, const std::vector<char> & bytes)
 {
     const UInt32 size = static_cast<UInt32>(bytes.size());
-    CompressionCodecAdaptive adaptive(type(type_name), defaultCodec());
+    CompressionCodecAdaptive adaptive(type(type_name), defaultCodec(), priceEveryBlock());
 
     PODArray<char> encoded(adaptive.getCompressedReserveSize(size));
     const UInt32 encoded_size = adaptive.compress(bytes.data(), size, encoded.data(), adaptive.createCompressionState().get());
@@ -208,17 +212,17 @@ TEST(CompressionCodecAdaptive, HashHasOwnNamespace)
 {
     /// getHash() identifies the codec when the Compact writer groups column streams. CompressionCodecAdaptive and CompressionCodecMultiple
     /// fold their children's hashes the same way, so the leading "Adaptive" descriptor is what keeps the two distinct.
-    CompressionCodecAdaptive adaptive(type("UInt32"), defaultCodec());
+    CompressionCodecAdaptive adaptive(type("UInt32"), defaultCodec(), priceEveryBlock());
     Codecs codecs;
     for (const auto & entry : AdaptiveCodec::poolForType(type("UInt32"), defaultCodec()))
         codecs.push_back(entry.codec);
     CompressionCodecMultiple multiple(codecs);
     EXPECT_NE(adaptive.getHash(), multiple.getHash());
 
-    CompressionCodecAdaptive adaptive_string(type("String"), defaultCodec());
+    CompressionCodecAdaptive adaptive_string(type("String"), defaultCodec(), priceEveryBlock());
     EXPECT_NE(adaptive_string.getHash(), defaultCodec()->getHash());
 
-    CompressionCodecAdaptive adaptive_int64(type("Int64"), defaultCodec());
+    CompressionCodecAdaptive adaptive_int64(type("Int64"), defaultCodec(), priceEveryBlock());
     EXPECT_NE(adaptive.getHash(), adaptive_int64.getHash());
 }
 
@@ -227,7 +231,7 @@ TEST(CompressionCodecAdaptive, DirectInvocationThrows)
 #ifdef DEBUG_OR_SANITIZER_BUILD
     GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
 #else
-    CompressionCodecAdaptive adaptive(type("UInt32"), defaultCodec());
+    CompressionCodecAdaptive adaptive(type("UInt32"), defaultCodec(), priceEveryBlock());
     /// Adaptive never appears on disk, so the public method byte accessor must reject direct use.
     EXPECT_ANY_THROW(adaptive.getMethodByte());
 #endif
@@ -235,7 +239,8 @@ TEST(CompressionCodecAdaptive, DirectInvocationThrows)
 
 TEST(CompressionCodecAdaptive, ConcurrentCompressIsThreadSafe)
 {
-    CompressionCodecAdaptive adaptive(type("UInt32"), defaultCodec());
+    /// Stream state lives in `CompressionState` objects the caller owns, so one codec instance serves any number of threads.
+    CompressionCodecAdaptive adaptive(type("UInt32"), defaultCodec(), priceEveryBlock());
 
     constexpr size_t num_threads = 8;
     std::vector<std::thread> threads;
