@@ -131,8 +131,12 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
 ///   in the same release reuse the value. Whoever bumps it also updates the "Last bumped for release" line below.
-/// - Do not bump it for a change to the bytes of one step. The step bumps its own serialization version
-///   instead, with the current value here as `since_plan_version` (see `QueryPlanStepRegistry::StepVersions`).
+/// - What needs it: a new step name, or a new plan setting name written by `serializeSettings`. An older
+///   peer cannot read either, so the writer sends them only to a peer at the value of the current release
+///   or above.
+/// - What does not need it: a change to the bytes a step writes in `IQueryPlanStep::serialize`. The step
+///   bumps its own serialization version instead, with the value of the current release as `since_plan_version`
+///   (see `QueryPlanStepRegistry::StepVersions`).
 ///
 /// Last bumped for release 26.10.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
