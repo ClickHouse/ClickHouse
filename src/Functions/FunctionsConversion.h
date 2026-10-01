@@ -760,32 +760,32 @@ struct ToDateTime64TransformSigned
   * whether the result lies within `[min_ticks, max_ticks]`. Comparing whole seconds is not enough: the fractional tail
   * of the last second (`9999-12-31 23:59:59.999` for `DateTime64(3)`, `999:59:59.999` for `Time64(3)`) is
   * representable, so the range check has to happen in the tick domain.
+  * If `is_exact` is not null, it is set to whether the truncation dropped nothing (the scaled value is integral).
   */
 template <typename FromType>
 requires is_floating_point<FromType>
-bool floatSecondsToTicks(FromType from, Int64 scale_multiplier, Int64 min_ticks, Int64 max_ticks, Int64 & ticks)
+bool floatSecondsToTicks(FromType from, Int64 scale_multiplier, Int64 min_ticks, Int64 max_ticks, Int64 & ticks, bool * is_exact = nullptr)
 {
-    /// First rule out magnitudes for which the tick product does not fit an integer at all (e.g. `1e300`), using the
-    /// whole-second envelope. `Float64` represents every narrower floating-point value and these bounds (far below
-    /// 2^53) exactly, while a copy of the bound in the source type is rounded — e.g. `static_cast<Float32>(253402300799)`
-    /// is `253402300416`.
-    const Int64 max_whole = max_ticks / scale_multiplier;
-    const Int64 min_whole = min_ticks / scale_multiplier;
-    const Float64 value = static_cast<Float64>(from);
-    if (value >= static_cast<Float64>(max_whole) + 1 || value <= static_cast<Float64>(min_whole) - 1)
-        return false;
-
     /// Scale in the source type for `Float32`, like `convertToDecimal` does, so that in-range values keep the result
     /// they always had; `BFloat16` has no `convertToDecimal` path and is scaled in `Float64`.
     using ScaledType = std::conditional_t<std::is_same_v<FromType, Float32>, Float32, Float64>;
-    const auto scaled = static_cast<ScaledType>(from) * static_cast<ScaledType>(scale_multiplier);
-    /// The envelope above bounds |scaled| by roughly 2.6 * 10^20, so the truncation into an `Int128` is well defined,
-    /// while a truncation straight into `Int64` would be undefined for the values that overflow it.
-    const Int128 truncated = static_cast<Int128>(static_cast<Float64>(scaled));
+    const Float64 scaled = static_cast<Float64>(static_cast<ScaledType>(from) * static_cast<ScaledType>(scale_multiplier));
+
+    /// 2^63 is exact in `Float64`, and the truncation into `Int64` is well defined exactly on [-2^63, 2^63). Every
+    /// value outside of it (including an overflow of the product to infinity) is out of the tick range anyway.
+    /// Do not truncate into a wide integer instead: that conversion goes through `long double`, which is emulated
+    /// in software on some platforms (e.g. AArch64) and is very slow.
+    static constexpr Float64 two_pow_63 = 9223372036854775808.0;
+    if (!(scaled >= -two_pow_63 && scaled < two_pow_63))
+        return false;
+
+    const Int64 truncated = static_cast<Int64>(scaled);
     if (truncated < min_ticks || truncated > max_ticks)
         return false;
 
-    ticks = static_cast<Int64>(truncated);
+    ticks = truncated;
+    if (is_exact)
+        *is_exact = static_cast<Float64>(truncated) == scaled;
     return true;
 }
 
@@ -3923,7 +3923,9 @@ private:
                         break;
                 }
             }
+            /// `Enum8`/`Enum16` are stored as `Int8`/`Int16` and take the same overflow-aware transforms.
             else if constexpr ((IsDataTypeNumber<LeftDataType>
+                                || IsDataTypeEnum<LeftDataType>
                                 || IsDataTypeDateOrDateTimeOrTime<LeftDataType>)&&IsDataTypeDateOrDateTimeOrTime<RightDataType>)
             {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE) \
