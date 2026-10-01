@@ -25,12 +25,10 @@ import os
 import shlex
 import shutil
 import subprocess
-import tempfile
 
 from ci.jobs.revert_ci_regressions import (
     AGENT_SCRATCH_PARENT,
     AGENT_USER,
-    agent_scratch_root,
     chown,
     confine_agent_user,
     kill_agent_processes,
@@ -38,6 +36,22 @@ from ci.jobs.revert_ci_regressions import (
 )
 from ci.praktika.gh_auth import GHAuth
 from ci.praktika.utils import Shell
+
+
+# The agent's working directory. A fixed path, unlike the revert job's random
+# ones: Codex puts the working directory into the context it sends ahead of
+# the prompt, so a random path would make every review's prompt uncacheable.
+# Runners run one job at a time and `prepare` removes what an earlier job left,
+# so the name can be fixed; it is created fresh by this job (mkdir fails if
+# anything already holds the name) and is execute-only for others.
+SCRATCH_ROOT = os.path.join(AGENT_SCRATCH_PARENT, "praktika-ai-review")
+
+
+def scratch_root():
+    Shell.check(f"sudo -n rm -rf {shlex.quote(SCRATCH_ROOT)}", verbose=False)
+    os.mkdir(SCRATCH_ROOT, 0o711)
+    os.chmod(SCRATCH_ROOT, 0o711)
+    return SCRATCH_ROOT
 
 
 def prepare():
@@ -52,7 +66,8 @@ def prepare():
     confine_agent_user()
     kill_agent_processes()
     Shell.check(
-        f"sudo -n find {shlex.quote(AGENT_SCRATCH_PARENT)} -maxdepth 1 -name 'praktika-agent-*' -exec rm -rf {{}} +",
+        f"sudo -n find {shlex.quote(AGENT_SCRATCH_PARENT)} -maxdepth 1 \\( -name 'praktika-agent-*' -o -name "
+        f"{shlex.quote(os.path.basename(SCRATCH_ROOT))} \\) -exec rm -rf {{}} +",
         verbose=True,
     )
 
@@ -77,7 +92,8 @@ class Workspace:
 
     def __init__(self, root, context_dir, work_dir):
         self.root = root
-        self.attempt_dir = tempfile.mkdtemp(prefix="attempt-", dir=root)
+        self.attempt_dir = os.path.join(root, "attempt")
+        os.mkdir(self.attempt_dir, 0o711)
         os.chmod(self.attempt_dir, 0o711)
         self.tree = os.path.join(self.attempt_dir, "tree")
         self.codex_home = os.path.join(self.attempt_dir, "codex")
@@ -146,4 +162,4 @@ def codex_login(codex, codex_home, openai_key):
     )
 
 
-__all__ = ["AGENT_USER", "Workspace", "agent_scratch_root", "codex_login", "prepare", "reauthenticate"]
+__all__ = ["AGENT_USER", "Workspace", "codex_login", "prepare", "reauthenticate", "scratch_root", "stop_agent"]

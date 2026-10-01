@@ -31,7 +31,10 @@ import zlib
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@ ?(.*)$")
 STATE_MARKER = "<!-- ai-review-state: {data} -->"
 _STATE_RE = re.compile(r"<!-- ai-review-state: ([A-Za-z0-9+/=]+) -->")
-STATE_VERSION = 1
+STATE_VERSION = 2
+# Markers the job writes; text the agent produces never carries them (see
+# `neutralize`), so a quoted or forged marker cannot be mistaken for the job's.
+_JOB_MARKER_RE = re.compile(r"<!--\s*(ai-review-[a-z-]+:|CI automatic comment)", re.I)
 
 # Directories where a defect costs most, first; anything else under src/ next;
 # tests, docs and tooling last.
@@ -104,19 +107,28 @@ def unit_for_line(units, path, line, side):
     return None
 
 
+def _digest(unit):
+    """4 bytes identifying a unit's key and content. The state stores these
+    instead of keys and fingerprints so that even a PR with thousands of
+    units fits in a GitHub comment; a collision would at worst take one unit
+    out of scope, with a probability of about units / 2^32."""
+    return hashlib.sha1(f"{unit['key']}|{unit['fp']}".encode()).digest()[:4]
+
+
+def _reviewed_digests(state):
+    try:
+        raw = base64.b64decode((state or {}).get("units") or "")
+    except ValueError:
+        return set()
+    return {raw[i:i + 4] for i in range(0, len(raw) - len(raw) % 4, 4)}
+
+
 def scope(units, previous_state):
-    """Mark each unit `new`, `changed` or `unchanged` against the previous
-    review's state. Without a usable previous state everything is in scope."""
-    previous = (previous_state or {}).get("units") or {}
+    """Mark each unit `new` (new or changed since the previous review) or
+    `unchanged`. Without a usable previous state everything is in scope."""
+    reviewed = _reviewed_digests(previous_state)
     for u in units:
-        if not previous:
-            u["status"] = "new"
-        elif u["key"] not in previous:
-            u["status"] = "new"
-        elif previous[u["key"]] != u["fp"]:
-            u["status"] = "changed"
-        else:
-            u["status"] = "unchanged"
+        u["status"] = "unchanged" if _digest(u) in reviewed else "new"
     return units
 
 
@@ -141,7 +153,7 @@ def render(units, incremental):
     rest = [u for u in units if not in_scope(u)]
     if incremental:
         out += ["## In scope: new or changed since the previous review", ""]
-    out += [row(u) + (f" ({u['status']})" if incremental else "") for u in active] or ["(none)"]
+    out += [row(u) for u in active] or ["(none)"]
     if incremental and rest:
         out += ["", "## Unchanged since the previous review", "",
                 "Out of scope for this push, except where an in-scope change affects them (a changed caller, "
@@ -161,18 +173,31 @@ def finding_fingerprint(path, unit_key, body):
 def encode_state(units, findings, contract, activity=""):
     """`activity` is the time of the latest comment by a person when the
     review started, so the next run can tell whether anyone wrote since."""
-    state = {"v": STATE_VERSION, "units": {u["key"]: u["fp"] for u in units}, "findings": findings,
-             "contract": (contract or "")[:6000], "activity": activity or ""}
+    state = {"v": STATE_VERSION, "units": base64.b64encode(b"".join(_digest(u) for u in units)).decode(),
+             "findings": [f for f in findings if isinstance(f, dict)][-200:],
+             "contract": neutralize(contract or "")[:4000], "activity": activity or ""}
     data = base64.b64encode(zlib.compress(json.dumps(state, separators=(",", ":")).encode(), 9)).decode()
     return STATE_MARKER.format(data=data)
 
 
 def decode_state(text):
-    m = _STATE_RE.search(text or "")
-    if not m:
+    """The state in the last state marker of `text` (the job appends its
+    marker at the end), or None when it is missing or malformed."""
+    matches = _STATE_RE.findall(text or "")
+    if not matches:
         return None
     try:
-        state = json.loads(zlib.decompress(base64.b64decode(m.group(1))).decode())
+        state = json.loads(zlib.decompress(base64.b64decode(matches[-1])).decode())
     except (ValueError, zlib.error):
         return None
-    return state if isinstance(state, dict) and state.get("v") == STATE_VERSION else None
+    if not (isinstance(state, dict) and state.get("v") == STATE_VERSION and isinstance(state.get("units"), str)
+            and isinstance(state.get("findings"), list) and isinstance(state.get("contract", ""), str)
+            and isinstance(state.get("activity", ""), str)):
+        return None
+    return state
+
+
+def neutralize(text):
+    """Text from the agent (or quoted from a previous review) with every job
+    marker defused, so it cannot pose as a state, commit or section marker."""
+    return _JOB_MARKER_RE.sub(lambda m: "&lt;!-- " + m.group(1), text or "")

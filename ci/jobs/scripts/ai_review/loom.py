@@ -53,10 +53,15 @@ CONSUMER = "ci-code-review"
 # to the public index. `pr_overlay` marks repositories whose open PRs the Loom
 # mirror follows (the PR-number based ops only work there).
 PUBLIC_NAMESPACE = "code-clickhouse"
+# Every namespace holding public content; a private repository may use none.
+PUBLIC_NAMESPACES = frozenset({PUBLIC_NAMESPACE, "clickhouse-gh"})
 REPO_CONFIG = {
     "ClickHouse/ClickHouse": {
         "base_url_secret": "/ci/loom/base_url",
         "token_secret": "/ci/loom/api_key",
+        # Read-only token for the agent, which reads untrusted PR text with
+        # network access; the job keeps the token that writes review memory.
+        "agent_token_secret": "/ci/loom/agent_api_key",
         "namespace": PUBLIC_NAMESPACE,
         # The review's own memory: one record per review thread and its outcome.
         "memory_namespace": "clickhouse-gh",
@@ -78,6 +83,9 @@ _TIMEOUTS = {
     "code.blame_range": 20,
     "code.symbol_history": 10,
     "tracker.similar": 10,
+    "tracker.test_signal": 15,
+    "code.setting_facts": 10,
+    "code.path_guards": 15,
 }
 _DEFAULT_TIMEOUT = 8
 
@@ -92,9 +100,10 @@ _MAX_FILES = 50
 
 class Config:
     def __init__(self, base_url="", token="", namespace="", repo="", pr_number=0, private=False, pr_overlay=False,
-                 memory_namespace=""):
+                 memory_namespace="", agent_token=""):
         self.base_url = (base_url or "").rstrip("/")
         self.token = token or ""
+        self.agent_token = agent_token or ""
         self.namespace = namespace or ""
         self.memory_namespace = memory_namespace or ""
         self.repo = repo or ""
@@ -106,10 +115,12 @@ class Config:
         return bool(self.base_url and self.token and self.namespace)
 
     def env(self):
-        """Environment for the agent process, so the CLI sees the same config."""
+        """Environment for the agent process, so the CLI sees the same config.
+        The agent gets the read-only token when one is configured, never the
+        memory namespace."""
         return {
             "LOOM_BASE_URL": self.base_url,
-            "LOOM_TOKEN": self.token,
+            "LOOM_TOKEN": self.agent_token or self.token,
             "LOOM_NAMESPACE": self.namespace,
             "LOOM_REPO": self.repo,
             "LOOM_PR_NUMBER": str(self.pr_number),
@@ -125,7 +136,7 @@ class Config:
             namespace=os.environ.get("LOOM_NAMESPACE", ""),
             repo=os.environ.get("LOOM_REPO", ""),
             pr_number=os.environ.get("LOOM_PR_NUMBER", "0") or 0,
-            private=os.environ.get("LOOM_PRIVATE", "0") == "1",
+            private=os.environ.get("LOOM_PRIVATE", "1") != "0",
             pr_overlay=os.environ.get("LOOM_PR_OVERLAY", "0") == "1",
         )
 
@@ -146,9 +157,16 @@ class Config:
             # The AWS error names the role and the parameter, never its value.
             print(f"Loom: configuration for [{repo}] is not readable ({type(e).__name__}: {str(e)[:500]}), reviewing without Loom")
             return cls(repo=repo, pr_number=pr_number)
+        agent_token = ""
+        if entry.get("agent_token_secret"):
+            try:
+                agent_token = get_secret(entry["agent_token_secret"])
+            except Exception as e:  # noqa: BLE001
+                print(f"Loom: no read-only agent token ({type(e).__name__}); the agent gets the job's token")
         return cls(
             base_url=(base_url or "").strip(),
             token=(token or "").strip(),
+            agent_token=(agent_token or "").strip(),
             namespace=(namespace or "").strip(),
             repo=repo,
             pr_number=pr_number,
@@ -158,8 +176,8 @@ class Config:
         )
 
 
-def _refuse_cross_boundary(config):
-    return config.private and config.namespace == PUBLIC_NAMESPACE
+def _refuse_cross_boundary(config, namespace):
+    return config.private and namespace in PUBLIC_NAMESPACES
 
 
 def _log_call(op, status, ms):
@@ -174,48 +192,63 @@ def _log_call(op, status, ms):
 
 
 def call(config, op, body, namespace=None):
-    """POST /v1/<op>. Returns the parsed answer, or None on any failure.
-    A 404 (name not found) returns the answer with `_not_found` set, because
-    "this symbol does not exist on master" is itself useful. `namespace`
-    overrides the code namespace (the memory ops use the memory namespace)."""
+    """POST /v1/<op>. Returns the answer (a dict), or None on any failure;
+    never raises. A 404 (name not found) returns the answer with `_not_found`
+    set, because "this symbol does not exist on master" is itself useful, and
+    any other 4xx carries Loom's validation message in `_error`, so callers
+    that show answers to the agent can say what was wrong with the request.
+    `namespace` overrides the code namespace (the memory ops use the memory
+    namespace)."""
     if not config.available():
         return None
-    if _refuse_cross_boundary(config):
-        print(f"Loom: REFUSED {op}: private repository configured with the public namespace")
+    namespace = namespace or config.namespace
+    if _refuse_cross_boundary(config, namespace):
+        print(f"Loom: REFUSED {op}: private repository and public namespace {namespace}")
         _log_call(op, "refused_cross_boundary", 0)
         return None
-    payload = {**body, "org": ORG, "namespace": namespace or config.namespace, "consumer": CONSUMER, "agent": CONSUMER}
-    request = urllib.request.Request(
-        f"{config.base_url}/v1/{op}",
-        data=json.dumps(payload).encode(),
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {config.token}",
-            "Content-Type": "application/json",
-            "X-Request-Id": uuid.uuid4().hex,
-        },
-    )
+    payload = {**body, "org": ORG, "namespace": namespace, "consumer": CONSUMER, "agent": CONSUMER}
     started = time.time()
     try:
+        request = urllib.request.Request(
+            f"{config.base_url}/v1/{op}",
+            data=json.dumps(payload).encode(),
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {config.token}",
+                "Content-Type": "application/json",
+                "X-Request-Id": uuid.uuid4().hex,
+            },
+        )
         with urllib.request.urlopen(request, timeout=_TIMEOUTS.get(op, _DEFAULT_TIMEOUT)) as response:
             data = json.loads(response.read().decode() or "{}")
         _log_call(op, "ok", int((time.time() - started) * 1000))
-        return data
+        return data if isinstance(data, dict) else None
     except urllib.error.HTTPError as e:
         ms = int((time.time() - started) * 1000)
+        _log_call(op, "not_found" if e.code == 404 else f"http{e.code}", ms)
+        if e.code >= 500:
+            return None
+        try:
+            data = json.loads(e.read().decode() or "{}")
+        except Exception:  # noqa: BLE001
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
         if e.code == 404:
-            _log_call(op, "not_found", ms)
-            try:
-                data = json.loads(e.read().decode() or "{}")
-            except ValueError:
-                data = {}
             data["_not_found"] = True
             return data
-        _log_call(op, f"http{e.code}", ms)
-        return None
+        detail = data.get("detail")
+        return {"_error": (detail.get("message") or json.dumps(detail)[:800]) if isinstance(detail, dict) else str(detail or e)[:800],
+                **({"errors": detail.get("errors")} if isinstance(detail, dict) and detail.get("errors") else {})}
     except Exception as e:  # noqa: BLE001 - timeouts, DNS, TLS, bad JSON: all mean "no answer"
         _log_call(op, f"error:{type(e).__name__}", int((time.time() - started) * 1000))
         return None
+
+
+def _answer(config, op, body, namespace=None):
+    """`call` for the job's own use: only a successful answer, else None."""
+    data = call(config, op, body, namespace=namespace)
+    return None if not data or data.get("_not_found") or data.get("_error") else data
 
 
 # ── Brief written by the job before the agent starts ─────────────────────────
@@ -297,7 +330,8 @@ def _render_review_brief(d):
     decisions = d.get("decisions") or {}
     if decisions.get("test_only"):
         out.append("- Test-only change: no source function is touched.")
-    symbols = (secs.get("symbols") or {}).get("rows") or []
+    symbols = [r for r in (secs.get("symbols") or {}).get("rows") or []
+               if isinstance(r, dict) and not _is_test_path(r.get("path"))]
     if symbols:
         out.append("- Functions the PR changes, with their number of call sites outside tests (fan-in):")
         for r in symbols[:15]:
@@ -308,7 +342,8 @@ def _render_review_brief(d):
         if len(symbols) > 15:
             out.append(f"  - ... {len(symbols) - 15} more in `loom/review_brief.json`")
     tests = (secs.get("tests") or {}).get("rows") or []
-    covered = [r for r in tests if r.get("verdict") == "covered_by" and r.get("tests")]
+    covered = [r for r in tests if isinstance(r, dict) and r.get("kind", "symbol") == "symbol"
+               and r.get("verdict") == "covered_by" and r.get("tests")]
     if covered:
         out.append("- Tests that exercise the changed functions:")
         for r in covered[:10]:
@@ -339,12 +374,19 @@ def _render_impact(d, pr_paths):
         return []
     out = []
     by_file = {}
+    touched = {(t.get("qualified_name") if isinstance(t, dict) else t) for t in d.get("touched_symbols") or []}
     for s in d.get("impacted_symbols") or []:
-        path = s.get("path")
-        if not path or path in pr_paths or _is_test_path(path):
+        if not isinstance(s, dict):
             continue
-        entry = by_file.setdefault(path, {"hop": s.get("hop") or 9, "names": []})
-        entry["hop"] = min(entry["hop"], s.get("hop") or 9)
+        path = s.get("path")
+        # The PR's own functions are not "unchanged code"; their unchanged
+        # callers are, even in a file the PR touches.
+        if (not path or _is_test_path(path) or s.get("tier") == "overlay"
+                or s.get("qualified_name") in touched):
+            continue
+        hop = s.get("hop") if isinstance(s.get("hop"), int) else 9
+        entry = by_file.setdefault(path, {"hop": hop, "names": []})
+        entry["hop"] = min(entry["hop"], hop)
         entry["names"].append(_name(s.get("qualified_name")))
     if by_file:
         files = sorted(by_file.items(), key=lambda kv: (kv[1]["hop"], -len(kv[1]["names"]), kv[0]))
@@ -418,10 +460,13 @@ _SIMILAR_MAX_DISTANCE = 0.42
 def _render_similar(d, pr_number):
     if not d:
         return []
+    def relevant(i):
+        distance = i.get("distance")
+        return ((i.get("relation") or "none") != "none" or "mentions" in (i.get("why") or [])
+                or (isinstance(distance, (int, float)) and distance <= _SIMILAR_MAX_DISTANCE))
+
     items = [i for i in d.get("items") or []
-             if not (i.get("kind") == "pr" and i.get("number") == pr_number)
-             and ((i.get("relation") or "none") != "none"
-                  or (i.get("distance") is not None and i["distance"] <= _SIMILAR_MAX_DISTANCE))]
+             if isinstance(i, dict) and not (i.get("kind") == "pr" and i.get("number") == pr_number) and relevant(i)]
     if not items:
         return []
     out = ["- Tracker items similar to this PR (reference one when a finding matches it):"]
@@ -464,6 +509,24 @@ def _render_remarks(remarks):
     return out
 
 
+_TEMPLATE_RE = re.compile(r"<!--.*?-->|^#+ .*$", re.S | re.M)
+
+
+def _plain(text):
+    """PR description without the template's comments and headings, which
+    otherwise dominate a similarity query."""
+    return _TEMPLATE_RE.sub("", text or "").strip()
+
+
+def _render_test_gate_after_brief(answers, lines):
+    # review_brief lists tests per changed function; test_gate is the fallback
+    # for repositories without the PR overlay. Its untested list is kept.
+    gate = _render_test_gate(answers.get("test_gate"))
+    if any("Tests that exercise the changed functions" in line for line in lines):
+        gate = [line for line in gate if line.startswith("- Changed functions no existing test")]
+    return gate
+
+
 def write_brief(config, pr, files, out_dir):
     """Fetch the Loom brief for this PR into `out_dir` (brief.md + raw JSON).
     Returns the Markdown brief, or "" when Loom gave nothing."""
@@ -479,7 +542,7 @@ def write_brief(config, pr, files, out_dir):
 
     requests = {
         "index_status": ("code.index_status", {"brief": True, **({"commit": base_sha} if base_sha else {})}),
-        "similar": ("tracker.similar", {"text": f"{pr.get('title') or ''}\n\n{(pr.get('body') or '')[:2000]}", "top_k": 8}),
+        "similar": ("tracker.similar", {"text": f"{pr.get('title') or ''}\n\n{_plain(pr.get('body'))[:2000]}", "top_k": 8}),
     }
     if paths:
         requests["impact"] = ("code.impact", {
@@ -498,7 +561,7 @@ def write_brief(config, pr, files, out_dir):
     for i, path in enumerate([p for p in paths if p.startswith(("src/", "base/", "programs/"))][:5]):
         requests[f"history_{i}"] = ("code.history", {"path": path, "limit": 10, "reviews_per_pr": 10})
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(requests)) as pool:
-        futures = {name: pool.submit(call, config, op, body) for name, (op, body) in requests.items()}
+        futures = {name: pool.submit(_answer, config, op, body) for name, (op, body) in requests.items()}
         answers = {name: f.result() for name, f in futures.items()}
 
     histories = [answers.pop(k) for k in sorted(k for k in answers if k.startswith("history_"))]
@@ -509,20 +572,21 @@ def write_brief(config, pr, files, out_dir):
                 json.dump(data, f, indent=1)
 
     lines = []
-    lines += _render_index_status(answers.get("index_status"), base_sha)
-    lines += _render_overlay(answers.get("review_brief"), pr)
-    lines += _render_review_brief(answers.get("review_brief"))
-    lines += _render_impact(answers.get("impact"), pr_paths)
-    # review_brief lists tests per changed function; test_gate is the fallback
-    # for repositories without the PR overlay. Its untested list is kept.
-    has_brief_tests = any("Tests that exercise the changed functions" in l for l in lines)
-    gate = _render_test_gate(answers.get("test_gate"))
-    if has_brief_tests:
-        gate = [l for l in gate if l.startswith("- Changed functions no existing test")]
-    lines += gate
-    lines += _render_conventions(answers.get("conventions"))
-    lines += _render_similar(answers.get("similar"), config.pr_number)
-    lines += _render_remarks((answers.get("review_remarks") or {}).get("remarks"))
+    renderers = [
+        lambda: _render_index_status(answers.get("index_status"), base_sha),
+        lambda: _render_overlay(answers.get("review_brief"), pr),
+        lambda: _render_review_brief(answers.get("review_brief")),
+        lambda: _render_impact(answers.get("impact"), pr_paths),
+        lambda: _render_test_gate_after_brief(answers, lines),
+        lambda: _render_conventions(answers.get("conventions")),
+        lambda: _render_similar(answers.get("similar"), config.pr_number),
+        lambda: _render_remarks((answers.get("review_remarks") or {}).get("remarks")),
+    ]
+    for render in renderers:
+        try:  # an answer of an unexpected shape loses its section, not the brief
+            lines += render()
+        except Exception as e:  # noqa: BLE001
+            print(f"WARNING: Loom brief section skipped: {type(e).__name__}: {e}")
     if not any(answers.values()):
         return ""
     brief = "\n".join(lines) + "\n"
@@ -541,6 +605,11 @@ def _thread_state(thread):
     return "resolved_by_review" if resolved_by.startswith("clickhouse-gh") else "resolved_by_author"
 
 
+def _is_bot_login(login):
+    login = (login or "").lower()
+    return login.endswith("[bot]") or any(b in login for b in _BOT_REVIEWERS)
+
+
 def thread_record(repo, pr_number, thread, is_ours):
     """The memory row for one review thread of ours, or None. Keyed by the
     thread's first comment, so each run upserts the same row as the thread's
@@ -550,7 +619,7 @@ def thread_record(repo, pr_number, thread, is_ours):
         return None
     first = comments[0]
     replies = [c for c in comments[1:] if (c.get("body") or "").strip()]
-    others = [c for c in replies if not (c.get("viewerDidAuthor") or ((c.get("author") or {}).get("login") or "").startswith("clickhouse-gh"))]
+    others = [c for c in replies if not (c.get("viewerDidAuthor") or _is_bot_login((c.get("author") or {}).get("login")))]
     state = _thread_state(thread)
     lines = [
         f"Review finding on {repo}#{pr_number} at {thread.get('path')}:{thread.get('line') or first.get('originalLine') or '?'} "
@@ -560,7 +629,7 @@ def thread_record(repo, pr_number, thread, is_ours):
     ]
     for c in replies:
         lines += ["", f"Reply by {(c.get('author') or {}).get('login')}:", (c.get("body") or "").strip()]
-    tags = [f"pr:{pr_number}", f"state:{state}", "kind:review_thread"]
+    tags = [f"repo:{repo}", f"pr:{pr_number}", f"state:{state}", "kind:review_thread"]
     rule = re.search(r"<!-- ai-review-rule: ([a-z_]+) -->", first.get("body") or "")
     if rule:
         tags += ["lens:simplicity", f"rule:{rule.group(1)}"]
@@ -580,16 +649,16 @@ def thread_record(repo, pr_number, thread, is_ours):
 def record_threads(config, repo, pr_number, threads, is_ours):
     """Upsert one memory row per review thread of ours: what was found, what
     the author answered, and how the thread ended. This is the record later
-    reviews can learn from (which findings authors fixed, which they
-    dismissed and why). Write-only for now; nothing reads it into the prompt
-    until that has been evaluated. Returns the number of rows written."""
+    reviews of the same files read back (`recall_outcomes`): which findings
+    authors fixed, which they dismissed and why. Returns the number of rows
+    written."""
     if not (config.available() and config.memory_namespace):
         return 0
     rows = [r for r in (thread_record(repo, pr_number, t, is_ours) for t in threads or []) if r]
     if not rows:
         return 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(rows))) as pool:
-        results = list(pool.map(lambda r: call(config, "memory.set", r, namespace=config.memory_namespace), rows))
+        results = list(pool.map(lambda r: _answer(config, "memory.set", r, namespace=config.memory_namespace), rows))
     return sum(1 for r in results if r is not None)
 
 
@@ -610,14 +679,23 @@ def recall_outcomes(config, pr_number, paths):
         return "", []
 
     def by_path(path):
-        answer = call(config, "memory.list", {"tags": [f"path:{path}", "kind:review_thread"], "limit": 10,
-                                              "preview_chars": 1500}, namespace=config.memory_namespace)
-        return (answer or {}).get("entries") or []
+        # `tags` matches any of the given tags, so query by the path tag alone
+        # and check the rest here.
+        answer = _answer(config, "memory.list", {"tags": [f"path:{path}"], "limit": 30, "preview_chars": 1500},
+                         namespace=config.memory_namespace)
+        entries = (answer or {}).get("entries") or []
+        return [e for e in entries if isinstance(e, dict) and isinstance(e.get("tags"), list)
+                and f"path:{path}" in e["tags"] and "kind:review_thread" in e["tags"]
+                and (not config.repo or f"repo:{config.repo}" in e["tags"] or not any(t.startswith("repo:") for t in e["tags"]))]
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(paths))) as pool:
-        entries = [e for batch in pool.map(by_path, paths[:20]) for e in batch]
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(paths))) as pool:
+            entries = [e for batch in pool.map(by_path, paths[:20]) for e in batch]
+    except Exception as e:  # noqa: BLE001 - memory is an aid; its failure must not fail the review
+        print(f"WARNING: Loom memory recall failed: {type(e).__name__}: {e}")
+        return "", []
     records, seen = [], set()
-    for e in sorted(entries, key=lambda e: e.get("updated_at") or "", reverse=True):
+    for e in sorted(entries, key=lambda e: str(e.get("updated_at") or ""), reverse=True):
         tags = set(e.get("tags") or [])
         if e.get("memory_key") in seen or f"pr:{pr_number}" in tags:
             continue  # this PR's own threads are in threads.md
@@ -625,7 +703,7 @@ def recall_outcomes(config, pr_number, paths):
         state = next((t.split(":", 1)[1] for t in tags if t.startswith("state:")), "")
         path = next((t.split(":", 1)[1] for t in tags if t.startswith("path:")), "")
         pr = next((t.split(":", 1)[1] for t in tags if t.startswith("pr:")), "?")
-        value = e.get("value") or ""
+        value = e.get("value") if isinstance(e.get("value"), str) else ""
         records.append({"path": path, "state": state, "author_replied": "author_replied" in tags, "pr": pr,
                         "finding": value.split("\n\n", 1)[1] if "\n\n" in value else value})
         if len(records) >= _MAX_RECALLED:
@@ -651,9 +729,10 @@ def _cli_body(args, config):
         return "code.symbol", {"name": args.name, "include_body": not args.no_body, "uses_brief": args.uses,
                                "include_examples": False, "include_lessons": False, **overlay}
     if args.command == "callers":
-        return "code.callers", {"name": args.name, "depth": max(1, min(args.depth, 3)), "max_nodes": args.limit, **overlay}
+        return "code.callers", {"name": args.name, "depth": max(1, min(args.depth, 3)),
+                                "max_nodes": max(1, min(args.limit, 500)), **overlay}
     if args.command == "grep":
-        body = {"pattern": args.pattern, "regex": args.regex, "mode": args.mode, "limit": args.limit}
+        body = {"pattern": args.pattern, "regex": args.regex, "mode": args.mode, "limit": max(1, min(args.limit, 500))}
         if args.path_prefix:
             body["path_prefix"] = args.path_prefix
         return "code.grep", body
@@ -677,7 +756,7 @@ def _cli_body(args, config):
             raise SystemExit("tests-for needs at least one facet, e.g. --setting max_block_size")
         return "code.tests_for", {"facets": facets, "closest": not args.all, "limit": args.limit}
     if args.command == "history":
-        body = {"limit": args.limit, "reviews_per_pr": 10 if args.reviews else 0}
+        body = {"limit": max(1, min(args.limit, 20)), "reviews_per_pr": 10 if args.reviews else 0}
         if args.path:
             body["path"] = args.path
         if args.name:
@@ -688,7 +767,7 @@ def _cli_body(args, config):
     if args.command == "similar":
         return "tracker.similar", {"text": args.text, "top_k": args.limit}
     if args.command == "issue":
-        return "tracker.item", {"numbers": [int(n) for n in args.numbers]}
+        return "tracker.item", {"numbers": [int(n.lstrip("#")) for n in args.numbers if n.lstrip("#").isdigit()]}
     if args.command == "setting":
         return "code.setting_facts", {"name": args.name, "history_limit": 10}
     if args.command == "guards":
@@ -790,7 +869,10 @@ def main(argv=None):
     if data is None:
         print(f"Loom did not answer {op} (timeout or error). Use `git grep` and read files from the checkout.")
         return 0
-    print(json.dumps(_compact(data), indent=1, ensure_ascii=False))
+    if data.get("_error"):
+        print(f"Loom rejected the request: {data['_error']}" + (f" {json.dumps(data.get('errors'))[:800]}" if data.get("errors") else ""))
+        return 0
+    print(json.dumps(_compact(data), ensure_ascii=False, separators=(",", ":")))
     return 0
 
 

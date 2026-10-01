@@ -48,7 +48,7 @@ _REVIEW_COMMENT_END = "<!-- CI automatic comment end :review: -->"
 _MAX_LINKED_ISSUES = 8
 
 
-_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+_HTML_COMMENT_RE = re.compile(r"<!--.*?(-->|$)", re.S)
 
 
 def untrusted(text):
@@ -56,8 +56,16 @@ def untrusted(text):
     invisible format characters (zero-width, bidirectional controls) removed.
     Both are invisible on GitHub, which makes them the usual carrier for
     instructions aimed at an AI reviewer rather than at people."""
-    text = _HTML_COMMENT_RE.sub("", text or "")
-    return "".join(c for c in text if unicodedata.category(c) != "Cf" or c in "\n\t")
+    text = _HTML_COMMENT_RE.sub("", text or "")  # an unclosed `<!--` hides the rest on GitHub too
+    return "".join(c for c in text if not _invisible(c))
+
+
+def _invisible(c):
+    if c in "\n\t":
+        return False
+    code = ord(c)
+    return (unicodedata.category(c) == "Cf"
+            or 0xFE00 <= code <= 0xFE0F or 0xE0100 <= code <= 0xE01EF)  # variation selectors
 
 
 def gh_json(endpoint, paginate=False, strict=False):
@@ -72,6 +80,12 @@ def gh_json(endpoint, paginate=False, strict=False):
 
 def is_bot(login):
     return (login or "") in BOT_LOGINS
+
+
+def is_automation(login):
+    """Any bot account, ours or another's (`[bot]` in REST, or a known name)."""
+    login = (login or "").lower()
+    return is_bot(login) or login.endswith("[bot]") or login in ("github-actions", "copilot", "coderabbitai", "robot-clickhouse")
 
 
 def thread_is_ours(thread):
@@ -221,8 +235,8 @@ def _previous_review(issue_comments):
         start = body.find(_REVIEW_COMMENT_START)
         if start < 0:
             continue
-        end = body.find(_REVIEW_COMMENT_END, start)
-        return body[start + len(_REVIEW_COMMENT_START):end if end >= 0 else len(body)].strip()
+        end = body.rfind(_REVIEW_COMMENT_END)
+        return body[start + len(_REVIEW_COMMENT_START):end if end > start else len(body)].strip()
     return ""
 
 
@@ -247,8 +261,10 @@ def _render_since_last_review(repo, pr_number, base_ref, last_sha, head_sha, fil
     position = next((i for i, sha in enumerate(shas) if sha.startswith(last_sha)), None)
     then = gh_json(f"/repos/{repo}/compare/{base_ref}...{last_sha}") if position is not None else None
     if position is None or not then:
-        return (f"The previous review saw `{last_sha[:12]}`, which is no longer part of this PR "
-                f"(the branch was force-pushed or rebased). Review the whole PR.\n")
+        reason = ("the PR has more commits than GitHub lists" if len(commits) >= 250
+                  else "the branch was force-pushed or rebased")
+        return (f"The previous review saw `{last_sha[:12]}`, which is not in the PR's commit list ({reason}). "
+                f"The units in scope are still exact; this list of commits is just not available.\n")
 
     new_commits = commits[position + 1:]
     own = [c for c in new_commits if len(c.get("parents") or []) < 2]
@@ -259,10 +275,13 @@ def _render_since_last_review(repo, pr_number, base_ref, last_sha, head_sha, fil
         for c in own:
             out.append(f"- `{c.get('sha', '')[:12]}` {(untrusted((c.get('commit') or {}).get('message')).splitlines() or [''])[0]}")
     if merges:
-        out += ["", f"{merges} merge(s) of the base branch since; changes that came with them are not part of the PR."]
+        out += ["", f"{merges} merge commit(s) since; what they brought in from other branches is not part of the PR's diff."]
 
-    then_patches = {f["filename"]: _patch_content(f.get("patch")) for f in then.get("files") or []}
-    now_patches = {f["filename"]: _patch_content(f.get("patch")) for f in files}
+    def content(f):  # a file without a patch (binary, too large) compares by its blob
+        return _patch_content(f.get("patch")) if f.get("patch") else f"blob:{f.get('sha')}"
+
+    then_patches = {f["filename"]: content(f) for f in then.get("files") or []}
+    now_patches = {f["filename"]: content(f) for f in files}
     changed = sorted(n for n in set(then_patches) | set(now_patches) if then_patches.get(n) != now_patches.get(n))
     if len(then.get("files") or []) >= 300:
         out += ["", "The PR had too many files at the previous review to compare them; review the whole PR."]
@@ -274,6 +293,17 @@ def _render_since_last_review(repo, pr_number, base_ref, last_sha, head_sha, fil
     else:
         out += ["", "The PR diff is the same as at the previous review."]
     return "\n".join(out) + "\n"
+
+
+def _sanitized_threads(threads):
+    out = []
+    for t in threads or []:
+        t = dict(t)
+        comments = dict(t.get("comments") or {})
+        comments["nodes"] = [{**c, "body": untrusted(c.get("body"))} for c in comments.get("nodes") or []]
+        t["comments"] = comments
+        out.append(t)
+    return out
 
 
 class Context:
@@ -329,7 +359,7 @@ def fetch(directory, repo, pr_number):
     _write(os.path.join(directory, "pr.md"), _render_pr(pr, files))
     _write(os.path.join(directory, "diff.patch"), _render_diff(files))
     _write(os.path.join(directory, "files.json"), json.dumps(files, indent=1))
-    _write(os.path.join(directory, "threads.json"), json.dumps(threads, indent=1))
+    _write(os.path.join(directory, "threads.json"), json.dumps(_sanitized_threads(threads), indent=1))
     _write(os.path.join(directory, "threads.md"), _render_threads(threads, repo, pr_number))
     _write(os.path.join(directory, "conversation.md"), _render_conversation(issue_comments, reviews))
     _write(os.path.join(directory, "linked_issues.md"), _render_linked(repo, _linked_numbers(pr, repo)))
@@ -342,15 +372,18 @@ def fetch(directory, repo, pr_number):
     if previous_state and previous_state.get("contract"):
         _write(os.path.join(directory, "previous_contract.md"), previous_state["contract"])
     if previous:
-        _write(os.path.join(directory, "previous_review.md"), previous)
+        _write(os.path.join(directory, "previous_review.md"),
+               re.sub(r"<!-- ai-review-[a-z-]+: [^>]*-->\n?", "", previous).rstrip() + "\n")
         since = _render_since_last_review(
             repo, pr_number, (pr.get("base") or {}).get("ref") or "master", reviewed_sha(previous), head_sha, files)
         if since:
             _write(os.path.join(directory, "since_last_review.md"), since)
     times = [c.get("createdAt") or "" for t in threads for c in (t.get("comments") or {}).get("nodes") or []
-             if not (c.get("viewerDidAuthor") or is_bot((c.get("author") or {}).get("login")))]
-    times += [c.get("created_at") or "" for c in issue_comments if not is_bot((c.get("user") or {}).get("login"))]
-    times += [r.get("submitted_at") or "" for r in reviews if not is_bot((r.get("user") or {}).get("login"))]
+             if not (c.get("viewerDidAuthor") or is_automation((c.get("author") or {}).get("login")))]
+    times += [c.get("created_at") or "" for c in issue_comments
+              if (c.get("user") or {}).get("type") != "Bot" and not is_automation((c.get("user") or {}).get("login"))]
+    times += [r.get("submitted_at") or "" for r in reviews
+              if (r.get("user") or {}).get("type") != "Bot" and not is_automation((r.get("user") or {}).get("login"))]
     return Context(directory, repo, pr, files, threads, previous, units, previous_state, max(times, default=""))
 
 

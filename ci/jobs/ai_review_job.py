@@ -127,7 +127,7 @@ def _run_codex_once(loom_config):
     codex = shutil.which("codex")
     if not codex:
         raise RuntimeError("the codex CLI is not installed on this runner")
-    root = sandbox.agent_scratch_root()
+    root = sandbox.scratch_root()
     try:
         ws = sandbox.Workspace(root, CONTEXT_DIR, WORK_DIR)
         for sub in ("out/comments", "out/replies", "out/simplicity", "scratch"):
@@ -152,6 +152,9 @@ def _run_codex_once(loom_config):
         #   but the approval policy still applies; "never" lets the
         #   agent execute without blocking on an approval request.
         # --color never: no ANSI codes in the job log.
+        # project_doc_max_bytes=0: do not load AGENTS.md, written for agents
+        #   that change code (build, test, commit); the prompt carries the
+        #   few wording rules from it that matter for a review.
         # --skip-git-repo-check: the tree is a `git archive` copy, deliberately
         #   without `.git`, and `codex exec` refuses to start outside a repository.
         # `-` reads the prompt from stdin (redirected by the job's shell),
@@ -159,7 +162,8 @@ def _run_codex_once(loom_config):
         command = [
             codex, "exec", "-m", MODEL, "-c", f"model_reasoning_effort={REASONING_EFFORT}",
             "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
-            "-c", "approval_policy=never", "--color", "never", "--skip-git-repo-check", "-",
+            "-c", "approval_policy=never", "-c", "project_doc_max_bytes=0",
+            "--color", "never", "--skip-git-repo-check", "-",
         ]
         exit_code = ws.run(command, env, ATTEMPT_TIMEOUT_SECONDS, stdin_file=os.path.abspath(PROMPT_FILE))
         ws.collect(os.path.join(WORK_DIR, "out"), OUTPUT_DIR)
@@ -334,21 +338,34 @@ def review():
         # PR's diff as it was, with nothing written since: the previous review
         # still stands. Only the markers move to this commit.
         print("Nothing changed since the previous review; keeping it")
-        _post_summary(_strip_markers(ctx.previous_review), ctx.head_sha, "",
+        previous_model = re.search(r"<!-- ai-review-model: ([\w.-]+) -->", ctx.previous_review or "")
+        _post_summary(_strip_markers(ctx.previous_review), ctx.head_sha, previous_model.group(1) if previous_model else "",
                       state=_state_marker(ctx.previous_state, ctx.units, ctx.activity))
         return []
 
     loom_config = loom.Config.for_repo(repo, info.pr_number, _ssm)
     os.environ["LOOM_CALL_LOG"] = os.path.abspath(LOOM_CALL_LOG)
-    brief = loom.write_brief(loom_config, ctx.pr, ctx.files, LOOM_DIR)
+    # Loom is an aid: whatever goes wrong there, the review runs without it.
+    try:
+        brief = loom.write_brief(loom_config, ctx.pr, ctx.files, LOOM_DIR)
+    except Exception as e:  # noqa: BLE001
+        print(f"WARNING: Loom brief failed: {type(e).__name__}: {e}")
+        brief = ""
     print(f"Loom brief: {'written' if brief else 'not available'}")
-    memory_md, memory = loom.recall_outcomes(
-        loom_config, info.pr_number, loom.source_first([f["filename"] for f in ctx.files]))
+    try:
+        memory_md, memory = loom.recall_outcomes(
+            loom_config, info.pr_number, loom.source_first([f["filename"] for f in ctx.files]))
+    except Exception as e:  # noqa: BLE001
+        print(f"WARNING: Loom memory recall failed: {type(e).__name__}: {e}")
+        memory_md, memory = "", []
     if memory_md:
         with open(f"{CONTEXT_DIR}/memory.md", "w", encoding="utf-8") as f:
             f.write("# Earlier review findings on the files this PR changes\n\n" + memory_md)
     print(f"Loom memory: {len(memory)} earlier finding(s) recalled")
 
+    # A backport copies reviewed code; simplicity findings there are noise.
+    is_backport = (ctx.pr.get("title") or "").startswith("Backport") or any(
+        (label.get("name") or "") == "pr-backport" for label in ctx.pr.get("labels") or [])
     text = prompt.build(
         pr_url=info.pr_url,
         repo=repo,
@@ -357,6 +374,8 @@ def review():
         brief=brief,
         overlay=loom_config.pr_overlay,
         output_dir=OUTPUT_DIR,
+        loom_available=loom_config.available(),
+        simplicity=not is_backport,
     )
     with open(PROMPT_FILE, "w", encoding="utf-8") as f:
         f.write(text)
@@ -376,6 +395,13 @@ def review():
     finally:
         sandbox.reauthenticate()
 
+    # A newer commit may have arrived while the agent finished: its run
+    # publishes, and this one must not overwrite that with an older review.
+    head = watch.head()
+    if head and head != info.sha:
+        print(f"Not publishing: the PR head moved to {head[:12]} while the review ran")
+        return []
+
     # Re-read the threads: the author may have replied or resolved while the
     # agent ran, and thread actions are checked against the current state.
     try:
@@ -391,9 +417,6 @@ def review():
             os.unlink(action_file)
 
     summary, _ = publish._read_body({"body_file": SUMMARY_FILE}, OUTPUT_DIR)
-    # A backport copies reviewed code; simplicity findings there are noise.
-    is_backport = (ctx.pr.get("title") or "").startswith("Backport") or any(
-        (label.get("name") or "") == "pr-backport" for label in ctx.pr.get("labels") or [])
     summary = publish.publish(GH, repo, info.pr_number, ctx.head_sha, ctx.files, threads, OUTPUT_DIR, summary, memory,
                               ctx.units, ctx.previous_state, simplicity=not is_backport, activity=ctx.activity)
     _post_summary(summary, ctx.head_sha, model)
