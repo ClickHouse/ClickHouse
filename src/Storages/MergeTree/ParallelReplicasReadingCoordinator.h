@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Common/SetWithMemoryTracking.h>
+#include <Common/OpenTelemetryTraceContext.h>
 
 #include <memory>
 #include <mutex>
@@ -71,6 +72,9 @@ private:
 
     /// Authoritative parts for each stream, captured from the snapshot replica's announcement.
     std::unordered_map<String, RangesInDataPartsDescription> stream_to_registered_parts;
+
+    /// Summarizes the whole coordination when the coordinator is destroyed
+    OpenTelemetry::ManualSpan summary_span{"ParallelReplicasReadingCoordinator"};
 };
 
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;

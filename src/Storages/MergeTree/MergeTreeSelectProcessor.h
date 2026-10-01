@@ -64,7 +64,14 @@ private:
     const String stream_id;
 };
 
-using RangesByIndex = UnorderedMapWithMemoryTracking<size_t, RangesInDataPart>;
+/// Per-part inputs for read-time skip-index filtering; the part itself comes from the read task.
+struct SkipIndexReadInput
+{
+    MarkRanges ranges;
+    RangesInDataPartReadHints read_hints;
+    size_t part_starting_offset_in_query = 0;
+};
+using RangesByIndex = std::unordered_map<size_t, SkipIndexReadInput>;
 using ProjectionRangesByIndex = UnorderedMapWithMemoryTracking<size_t, RangesInDataParts>;
 class MergeTreeIndexReadResultPool;
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;
@@ -151,6 +158,7 @@ public:
         const ExpressionActionsSettings & actions_settings,
         bool enable_multiple_prewhere_read_steps,
         bool force_short_circuit_execution,
+        bool read_ahead_prewhere_columns,
         const ColumnsDescription * columns = nullptr);
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }

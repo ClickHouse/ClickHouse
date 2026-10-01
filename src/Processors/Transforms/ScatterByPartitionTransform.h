@@ -1,6 +1,6 @@
 #pragma once
-#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/Chunk.h>
@@ -16,22 +16,31 @@ struct ScatterByPartitionTransform : IProcessor
     /// before hashing. Casting is internal to routing; output rows are unchanged.
     ScatterByPartitionTransform(SharedHeader header, size_t output_size_, ColumnNumbers key_columns_, DataTypes hash_cast_types_ = {});
 
+    /// Round-robin mode: each input chunk goes whole to the next output in turn, starting
+    /// at `start_bucket`. For distribution without a placement requirement.
+    static std::shared_ptr<ScatterByPartitionTransform> createRoundRobin(SharedHeader header, size_t output_size_, size_t start_bucket);
+
     String getName() const override { return "ScatterByPartitionTransform"; }
 
     Status prepare() override;
     void work() override;
 
+    bool requiresAllOutputsPushable() const override { return true; }
+
 private:
 
     void generateOutputChunks();
+    /// Hands the scattered chunks to the outputs. Returns true once all of them are handed over.
+    bool pushOutputChunks();
 
     size_t output_size;
     ColumnNumbers key_columns;
     DataTypes hash_input_types;
     DataTypes hash_cast_types;
+    /// When set, chunks are routed round-robin starting from this output instead of by key hash.
+    std::optional<size_t> round_robin_bucket;
 
-    bool has_data = false;
-    bool all_outputs_processed = true;
+    bool has_output_chunks = false;
     VectorWithMemoryTracking<char> was_output_processed;
     Chunk chunk;
 

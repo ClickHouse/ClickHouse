@@ -1,7 +1,7 @@
 #include <Processors/Merges/Algorithms/SummingSortedAlgorithm.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/MapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <memory>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -658,10 +658,15 @@ static void postprocessChunk(
     chunk.setColumns(std::move(res_columns), num_rows);
 }
 
-static void setRow(Row & row, Columns & row_columns, const ColumnRawPtrs & raw_columns, size_t row_num,
-                   const Names & column_names, const VectorWithMemoryTracking<bool> & columns_need_exact_copy)
+static void setRow(
+    Row & row,
+    Columns & row_columns,
+    const ColumnRawPtrs & raw_columns,
+    size_t row_num,
+    const Names & column_names,
+    const VectorWithMemoryTracking<bool> & columns_need_exact_copy,
+    const ColumnNumbers & column_numbers)
 {
-    size_t num_columns = row.size();
     const auto handle_exception = [&](const char * logger_name, const char * reason, const size_t column_index)
     {
         tryLogCurrentException(logger_name);
@@ -674,7 +679,7 @@ static void setRow(Row & row, Columns & row_columns, const ColumnRawPtrs & raw_c
                         row_num, column_index, column_name.empty() ? "" : fmt::format(" ({})", column_name), reason);
     };
 
-    for (size_t i = 0; i < num_columns; ++i)
+    for (size_t i : column_numbers)
     {
         try
         {
@@ -778,7 +783,14 @@ void SummingSortedAlgorithm::SummingMergedData::startGroup(ColumnRawPtrs & raw_c
 {
     is_group_started = true;
 
-    setRow(current_row, current_row_columns, raw_columns, row, def.column_names, def.columns_need_exact_copy);
+    setRow(
+        current_row,
+        current_row_columns,
+        raw_columns,
+        row,
+        def.column_names,
+        def.columns_need_exact_copy,
+        def.column_numbers_not_to_aggregate);
 
     /// Reset aggregation states for next row
     for (auto & desc : def.columns_to_aggregate)
@@ -1008,7 +1020,7 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
     {
         bool key_differs = false;
 
-        SortCursor current = queue.current();
+        SortCursor current = *queue.current().first;
 
         if (current->isLast() && skipLastRowFor(current->order))
         {
@@ -1049,7 +1061,7 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
 
         if (!current->isLast())
         {
-            queue.next();
+            queue.next(1);
         }
         else
         {

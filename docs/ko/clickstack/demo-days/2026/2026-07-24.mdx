@@ -1,0 +1,70 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-24
+title: '데모 데이 - 2026-07-24'
+sidebarTitle: '2026-07-24'
+description: '2026-07-24 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+<div id="metrics-experience-improvements">
+  ## 메트릭 사용 경험 개선 사항
+</div>
+
+*[@alex-fedotyev](https://github.com/alex-fedotyev)의 데모*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/rukel6KVmPY" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이번 업데이트에서는 Datadog에서 마이그레이션 중인 고객의 피드백을 바탕으로 메트릭과 대시보드 작성 기능을 개선했습니다. 해당 고객은 잘 정립된 메트릭 워크플로를 갖추고 있습니다. 아직 모든 피드백을 반영한 것은 아니지만, 대부분은 차트 작성과 화면에 수백 개의 시계열이 표시된 대시보드 조사에 관한 내용이었습니다.
+
+한 가지 변경 사항은 메트릭과 직접적인 관련은 없지만 같은 논의에서 비롯되었습니다. 이제 대시보드 타일을 편집할 때 표시되는 그리드에 맞춰 배치됩니다. 타일을 드래그하거나 크기를 조정하면 뒤에 그리드가 나타나고 현재 위치 주변의 셀이 강조 표시됩니다. 이전에는 타일이 어디에 배치될지, 이동할 때 다른 타일이 밀려날지 명확하지 않았습니다. 그리드를 통해 두 가지 모두 확인할 수 있습니다. 레이아웃 엔진과 동일한 기하 구조를 사용하므로 오른쪽과 아래쪽 가장자리를 포함해 안내선이 타일의 최종 위치와 일치합니다.
+
+메트릭 관련 변경 사항은 여러 차원으로 그룹화할 때 흔히 발생하는, 계열 수가 많은 차트에 중점을 둡니다. 이전에는 차트 위에 마우스를 올리면 해당 타임스탬프의 모든 계열이 표시되었습니다. 계열이 300개인 차트에서는 툴팁이 차트 자체보다 길어질 수 있었고, 커서 아래의 계열이 필요한 계열인 경우는 드물었습니다.
+
+이제 계열이 10개를 초과하는 차트에는 커서에 가장 가까운 계열만 표시됩니다. 해당 계열은 맨 위에 그려지고 다른 계열은 흐리게 표시됩니다. 계열이 10개 이하인 차트는 전체 정렬 툴팁을 유지하므로 동작이 변경되지 않았습니다. 범례는 더 간결해졌으며 완전히 숨길 수도 있습니다. 표시된 상태에서는 선택 및 빠른 검색 컨트롤로도 작동하므로 특정 계열로 쉽게 이동할 수 있습니다.
+
+가장 큰 변경 사항은 조사할 편차를 발견한 후 주로 사용하는 전체 화면에 적용되었습니다. 이제 전체 화면은 케밥 메뉴가 아닌 툴바 아이콘에서 한 번의 클릭으로 열 수 있습니다. 열면 범례가 요약 정보와 검색 상자를 포함한 더 유용한 레이아웃으로 전환됩니다. 계열 이름의 부분 문자열로 필터링하면 300개 계열을 관심 있는 몇 개로 줄여 마우스를 올려 비교할 수 있습니다.
+
+논의 후 한 가지 사항이 변경되었습니다. 단일 계열 및 다중 계열 툴팁 중 선택은 고정 임계값에 의존하지 않고 구성할 수 있게 됩니다. 계열 수가 많지 않을 때는 동일한 시점의 여러 계열 절대값을 비교하는 것이 유용하므로, 사용자가 차트에 적합한 동작을 선택할 수 있어야 합니다.
+
+**관련 PR:** [#2715](https://github.com/hyperdxio/hyperdx/pull/2715) feat(dashboard): 타일을 드래그하거나 크기를 조정할 때 스냅 그리드 표시, [#2722](https://github.com/hyperdxio/hyperdx/pull/2722) 밀집된 차트의 시간 차트 호버 개선, [#2720](https://github.com/hyperdxio/hyperdx/pull/2720) feat(dashboard): 타일 전체 화면을 최상위 툴바 아이콘으로 이동, [#2719](https://github.com/hyperdxio/hyperdx/pull/2719) fix(dashboard): 선 렌더링 제한을 넘어 분리된 시간 차트 계열 그리기, [#2776](https://github.com/hyperdxio/hyperdx/pull/2776) 구성 가능한 시간 차트 표시 설정(범례, 툴팁, 선 스타일)
+
+<div id="trace-viewer-improvements">
+  ## Trace 뷰어 개선 사항
+</div>
+
+*[@karl-power](https://github.com/karl-power)의 데모*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kmparH3U7Jc" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+새 레이아웃에 대한 피드백을 직접 반영하여 새롭게 디자인된 trace 뷰어를 두 가지 개선했습니다.
+
+최근 스팬 세부 정보 패널이 워터폴 오른쪽으로 이동했지만, 모든 사용자가 이 위치를 선호한 것은 아닙니다. 패널 닫기 버튼 옆의 새 컨트롤을 사용하면 기본 위치인 오른쪽과 하단 간에 패널 위치를 전환할 수 있습니다. 패널이 하단에 있을 때는 원하는 높이로 드래그할 수 있습니다.
+
+같은 피드백 과정에서 줄바꿈 버그도 발견되었습니다. 줄바꿈을 활성화해도 자연스러운 구분점이 없는 긴 속성 값은 여전히 잘렸습니다. 공백, 하이픈 또는 대시가 없는 `url.path`가 그 예입니다. 이제 속성 값은 어느 문자 경계에서나 줄바꿈할 수 있으므로 전체 값을 읽을 수 있습니다.
+
+**관련 PR:** [#2693](https://github.com/hyperdxio/hyperdx/pull/2693) feat(traces): break-word attribute wrapping + layout toggle
+
+<div id="mcp-server-and-eval-improvements">
+  ## MCP Server 및 평가 개선 사항
+</div>
+
+*[@brandon-pereira](https://github.com/brandon-pereira)의 데모*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/2NXRdBZcKMw" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이번 변경은 작지만 도입에 가장 큰 영향을 미칠 수 있습니다. ClickHouse Cloud에서 MCP Server를 활성화하는 방법은 찾기 어려웠습니다. 앱의 안내를 따른 후 올바른 컨트롤 플레인 설정을 찾아야 했습니다. 이제 버튼을 클릭하면 관련 모달이 바로 열리며, 여기서 Server를 활성화할 수 있습니다.
+
+Brandon은 [최근 작업](https://clickhouse.com/blog/benchmarking-the-clickstack-mcp-server-with-hdx-evals)을 바탕으로 MCP 평가 프레임워크를 계속 개선하고 있습니다. 이제 평가 프레임워크에서 평가 대상과 다른 provider 및 model을 사용할 수 있습니다. 이전에는 전체 평가에 Anthropic model을 사용해야 했기 때문에 model이 자체 출력을 평가할 수 있었습니다. 이제 OpenAI key와 provider 접두사가 포함된 judge model spec을 제공하여 OpenAI를 통해 채점할 수 있습니다.
+
+judge를 비교하면서 유용한 차이점도 확인했습니다. 일부 judge는 특정 key를 사용하지 않으면 실행을 실패 처리할 정도로 루브릭을 훨씬 엄격하게 적용하는 반면, 다른 judge는 충분히 근접한 답변을 허용합니다. 또한 이 작업 중 발견된 오래된 채점 결과 버그도 수정했습니다. 이제 다른 judge로 batch를 다시 채점하면 이전 결과를 반환하는 대신 새 judge를 실행합니다.
+
+Brandon은 서비스 상태 점검 시나리오에서 더 높은 점수를 얻기 위해 필요한 사항을 MCP Server에 문의한 후 새 `clickstack_emerging_signals` MCP tool도 추가했습니다. 이는 두 윈도우 간 패턴 신규성 탐지기입니다. 이 tool은 기준선 윈도우와 현재 윈도우에서 log 및 event 패턴을 추출한 다음 두 세트를 비교합니다. 새로 나타났거나, 빈도가 크게 증가했거나, 사라진 패턴을 보고합니다.
+
+이는 기존 tool과 다릅니다. event 패턴은 하나의 윈도우에서 일반적인 항목을 설명하고, event deltas는 변경된 속성을 보여 줍니다. 새 tool은 서비스 상태 점검 점수에 약 10점을 더합니다.
+
+스킬에서 수집 설정을 요청함에 따라 MCP에 source 및 webhook CRUD tool도 추가되었습니다. 이제 agents는 source와 webhook을 읽기만 하는 대신 생성, 업데이트, 삭제할 수 있습니다.
+
+모든 pull request에서 CI로 eval을 실행하여 현재 PR 설명에 점수를 수동으로 붙여넣는 프로세스를 대체하는 작업이 진행 중입니다. S3 시딩은 작동하고 있습니다. 남은 차단 요소는 GitHub Action에 버킷 접근 권한을 부여하는 것입니다. 이 문제가 해결되면 eval 결과를 훨씬 더 빠르게 확인할 수 있습니다.
+
+**관련 PR:** [#2710](https://github.com/hyperdxio/hyperdx/pull/2710) feat(evals): 독립적인 judge provider/model + judge 교체 시 오래된 채점 결과 건너뛰기 수정, [#2701](https://github.com/hyperdxio/hyperdx/pull/2701) feat(mcp): clickstack&#95;emerging&#95;signals tool 추가, [#2702](https://github.com/hyperdxio/hyperdx/pull/2702) feat(mcp): source 및 webhook CRUD tool, [#2628](https://github.com/hyperdxio/hyperdx/pull/2628) feat(evals): M1 CI 골격, GitHub Actions에서 MCP eval 종단 간 실행, [#2674](https://github.com/hyperdxio/hyperdx/pull/2674) feat(evals): M2 Parquet-snapshot 빠른 시드

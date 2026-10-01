@@ -127,7 +127,7 @@ VectorWithMemoryTracking<String> JSONCompactEachRowFormatReader::readHeaderRow()
     return fields;
 }
 
-bool JSONCompactEachRowFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & column_name)
+bool JSONCompactEachRowFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & column_name, size_t /*column_index*/)
 {
     skipWhitespaceIfAny(*in);
     return JSONUtils::readField(*in, column, type, serialization, column_name, format_settings, yield_strings);
@@ -424,11 +424,11 @@ The output will be in JSON format:
 
 ## Format settings {#format-settings}
 
-:::note
+<Note>
 If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to 1,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
-:::
+</Note>
 )DOCS_MD"});
 
     factory.setDocumentation("JSONCompactEachRowWithNamesAndTypes", Documentation{
@@ -511,13 +511,13 @@ The output will be in JSON format:
 
 ## Format settings {#format-settings}
 
-:::note
+<Note>
 If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to `1`,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
 If setting [`input_format_with_types_use_header`](/reference/settings/formats/input-format#input_format_with_types_use_header) is set to `1`,
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
-:::
+</Note>
 )DOCS_MD"});
 
     factory.setDocumentation("JSONCompactStringsEachRow", Documentation{
@@ -675,11 +675,11 @@ The output will be in JSON format:
 
 ## Format settings {#format-settings}
 
-:::note
+<Note>
 If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to `1`,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
 Otherwise, the first row will be skipped.
-:::
+</Note>
 )DOCS_MD"});
 
     factory.setDocumentation("JSONCompactStringsEachRowWithNamesAndTypes", Documentation{
@@ -690,7 +690,7 @@ Otherwise, the first row will be skipped.
 
 ## Description {#description}
 
-Differs from `JSONCompactEachRow` format in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedRawWithNamesAndTypes).
+Differs from `JSONCompactEachRow` format in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](/reference/formats/TabSeparated/TabSeparatedRawWithNamesAndTypes).
 
 ## Example usage {#example-usage}
 
@@ -762,16 +762,16 @@ The output will be in JSON format:
 
 ## Format settings {#format-settings}
 
-:::note
+<Note>
 If setting [input_format_with_names_use_header](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to 1,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
-:::
+</Note>
 
-:::note
+<Note>
 If setting [input_format_with_types_use_header](/reference/settings/formats/input-format#input_format_with_types_use_header) is set to 1,
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
-:::
+</Note>
 )DOCS_MD"});
 }
 
@@ -811,9 +811,12 @@ void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory)
         /// the minimum of rows for segmentation engine according to
         /// parameters with_names and with_types.
         size_t min_rows = 1 + int(with_names) + int(with_types);
-        factory.registerFileSegmentationEngine(format_name, [min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+        factory.registerFileSegmentationEngineCreator(format_name, [min_rows](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
         {
-            return JSONUtils::fileSegmentationEngineJSONCompactEachRow(in, memory, min_bytes, min_rows, max_rows);
+            return [min_rows, max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+            {
+                return JSONUtils::fileSegmentationEngineJSONCompactEachRow(in, memory, min_bytes, min_rows, max_rows, max_row_size);
+            };
         });
     };
 

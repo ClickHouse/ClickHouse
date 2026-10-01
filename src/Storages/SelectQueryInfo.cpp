@@ -1,4 +1,5 @@
 #include <Interpreters/Set.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Planner/PlannerContext.h>
 #include <Storages/SelectQueryInfo.h>
@@ -27,9 +28,9 @@ bool SelectQueryInfo::isStream() const
     return table_expression_modifiers && table_expression_modifiers->hasStream();
 }
 
-std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
+UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
 {
-    std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
     if (planner_context)
     {
         auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);

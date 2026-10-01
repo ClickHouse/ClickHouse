@@ -1,0 +1,49 @@
+---
+description: 'نظرة عامة على Model Context Protocol وخادم ClickHouse MCP'
+keywords: ['ClickHouse', 'MCP', 'Model Context Protocol', 'AI', 'واجهات']
+sidebarTitle: 'Model Context Protocol (MCP)'
+slug: /interfaces/mcp
+title: 'Model Context Protocol (MCP)'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+[Model Context Protocol](https://www.anthropic.com/news/model-context-protocol) ‏(MCP) معيار مفتوح يتيح للمساعدات المدعومة بالذكاء الاصطناعي الاتصال بالأنظمة الخارجية.
+ويوفر واجهة موحّدة تتيح للنماذج الوصول إلى مصادر البيانات وواجهات برمجة التطبيقات وقواعد البيانات والأدوات، دون الحاجة إلى تكامل مخصص لكل مجموعة من النماذج والخدمات.
+
+لا يحتاج تطبيق ذكاء اصطناعي إلا إلى تنفيذ MCP مرة واحدة للاتصال بأي خادم متوافق.
+وبالمثل، يمكن لخادم MCP إتاحة إمكاناته لأي عميل متوافق.
+
+<div id="architecture">
+  ## معمارية
+</div>
+
+يتبع MCP معمارية العميل والخادم:
+
+* تنشئ عملاء MCP، مثل Claude Desktop وCursor وVS Code، اتصالات بخوادم MCP.
+* تتيح خوادم MCP الأدوات والإمكانات عبر واجهة موحّدة.
+* تستخدم نماذج الذكاء الاصطناعي الأدوات المتاحة للوصول إلى البيانات والوظائف الخارجية عند الحاجة.
+
+<Image img="/images/use-cases/AI_ML/MCP/mcp_overview.webp" alt="معمارية العميل والخادم لـ MCP" size="lg" />
+
+يمكنك العثور على مجموعات يديرها المجتمع من [عملاء MCP](https://github.com/punkpeye/awesome-mcp-clients) و[خوادم MCP](https://github.com/punkpeye/awesome-mcp-servers) على GitHub.
+
+<div id="clickhouse-mcp-server">
+  ## ClickHouse MCP server
+</div>
+
+يتيح [ClickHouse MCP server](https://github.com/ClickHouse/mcp-clickhouse) لمساعد مدعوم بالذكاء الاصطناعي اكتشاف قواعد البيانات والجداول، وفحص المخططات، وتشغيل استعلامات SQL على مجموعة ClickHouse.
+قد تختلف الأدوات التي يوفّرها الخادم باختلاف الإصدار، لذا راجع دليل التكامل ذي الصلة لمعرفة أسماء الأدوات المستخدمة في أمثلته.
+
+يسمح الخادم، افتراضيًا، بتنفيذ استعلامات للقراءة فقط.
+استخدم مستخدم ClickHouse مخصصًا لا يملك إلا الأذونات التي يحتاج إليها المساعد.
+
+لتوصيل عميل MCP محلي، راجع [إعداد ClickHouse MCP server](/ar/guides/use-cases/ai-ml/MCP/claude-desktop).
+ولخادم بعيد مُدار، راجع [Remote MCP server في ClickHouse Cloud](/ar/products/cloud/features/ai-ml/remote-mcp).
+
+<Tip>
+  **مهارات وكيل الذكاء الاصطناعي**
+
+  يوفّر [مستودع ClickHouse Agent Skills](https://github.com/ClickHouse/agent-skills) تعليمات مُحزّمة توسّع قدرات وكلاء البرمجة المدعومين بالذكاء الاصطناعي بخبرة خاصة بـ ClickHouse، بما في ذلك تصميم المخططات وتحسين الاستعلامات وأنماط استيعاب البيانات.
+</Tip>

@@ -1,6 +1,6 @@
 ---
-title: Service AWS PrivateLink VPC endpoint pour cluster MSK
-description: Étapes de configuration pour exposer un cluster MSK à ClickPipes via des services AWS PrivateLink VPC endpoint.
+title: Service AWS PrivateLink VPC endpoint service pour cluster MSK
+description: Étapes de configuration pour exposer un cluster MSK à ClickPipes via des services AWS PrivateLink VPC endpoint service.
 date: 2026-07-09
 tags: ['Sécurité et authentification', 'Gestion du Cloud']
 keywords: ['AWS PrivateLink', 'VPC endpoint service', 'MSK', 'Kafka', 'ClickPipes']
@@ -10,13 +10,13 @@ keywords: ['AWS PrivateLink', 'VPC endpoint service', 'MSK', 'Kafka', 'ClickPipe
   ## Vue d’ensemble
 </div>
 
-Ce guide explique comment exposer un cluster Amazon MSK à ClickPipes à l’aide des [services de point de terminaison VPC AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html).
+Ce guide explique comment exposer un cluster Amazon MSK à ClickPipes à l’aide des [services VPC endpoint AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html).
 
-Utilisez cette approche lorsque la [MSK multi-VPC connectivity](/fr/integrations/clickpipes/aws-privatelink#msk-multi-vpc) n’est pas disponible ou ne suffit pas, par exemple dans les cas suivants :
+Utilisez cette approche lorsque la [MSK multi-VPC connectivity](/fr/integrations/clickpipes/networking/aws-privatelink#msk-multi-vpc) n’est pas disponible ou ne suffit pas, par exemple dans les cas suivants :
 
 * Connectivité inter-régions entre ClickPipes et MSK.
 * Clusters MSK Express.
-* Déploiements Kafka qui doivent préserver les hostnames des brokers via une connectivité privée.
+* Déploiements Kafka qui doivent préserver les noms d’hôte de brokers via une connectivité privée.
 
 Pour les clusters MSK standard dans la même Region, la MSK multi-VPC connectivity est généralement plus simple et constitue l’option recommandée.
 
@@ -146,7 +146,7 @@ Dans la console ClickHouse Cloud, créez un reverse private endpoint pour chaque
 Répétez l’opération jusqu’à ce que chaque nom d’hôte de broker ait un RPE correspondant.
 
 Pour le comportement du DNS privé personnalisé, les règles de nommage et les options API/Terraform, consultez
-[DNS privé personnalisé](/fr/integrations/clickpipes/aws-privatelink#custom-private-dns).
+[DNS privé personnalisé](/fr/integrations/clickpipes/networking/aws-privatelink#custom-private-dns).
 
 Vous pouvez également créer les reverse private endpoints avec [OpenAPI](/fr/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint) ou Terraform.
 
@@ -171,17 +171,17 @@ Pour Terraform, utilisez [`clickhouse_clickpipes_reverse_private_endpoint`](http
   ## Créer le Kafka ClickPipe
 </div>
 
-Suivez le [guide AWS PrivateLink de ClickPipes](/fr/integrations/clickpipes/aws-privatelink#creating-clickpipe)
-pour créer le ClickPipe avec des endpoints privés inversés.
+Suivez le [guide AWS PrivateLink de ClickPipes](/fr/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)
+pour créer le ClickPipe avec des Reverse Private Endpoints.
 
 Lors de la création du Kafka ClickPipe :
 
 * Utilisez les noms d’hôte des brokers MSK d’origine comme liste de brokers, en indiquant le port utilisé par votre listener MSK et la méthode d’authentification.
-* N’utilisez pas la chaîne du bootstrap broker MSK.
-* Sélectionnez ou associez tous les endpoints privés inversés propres à chaque broker.
+* N’utilisez pas la chaîne du broker bootstrap MSK.
+* Sélectionnez ou associez tous les Reverse Private Endpoints propres à chaque broker.
 * Configurez la méthode d’authentification requise par votre cluster MSK, par exemple l’authentification par rôle IAM.
 
-Le port dépend de votre listener MSK. Par exemple, l’authentification IAM utilise couramment `9098`, SASL/SCRAM utilise couramment `9096` et TLS utilise couramment `9094`. Vérifiez le port approprié dans la configuration de votre cluster MSK ou dans la sortie du bootstrap broker.
+Le port dépend de votre listener MSK. Par exemple, l’authentification IAM utilise couramment `9098`, SASL/SCRAM utilise couramment `9096` et TLS utilise couramment `9094`. Vérifiez le port approprié dans la configuration de votre cluster MSK ou dans la sortie du broker bootstrap.
 
 Exemple de liste de brokers :
 

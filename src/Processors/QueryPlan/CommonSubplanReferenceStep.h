@@ -7,7 +7,7 @@ namespace DB
 {
 
 using ColumnIdentifier = std::string;
-using ColumnIdentifiers = VectorWithMemoryTracking<ColumnIdentifier>;
+using ColumnIdentifiers = std::vector<ColumnIdentifier>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- a column name list, interchangeable with `Names`
 
 class CommonSubplanReferenceStep : public ISourceStep
 {

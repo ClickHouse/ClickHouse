@@ -1,0 +1,110 @@
+---
+sidebarTitle: 'Neon'
+title: 'Migrate from Neon to ClickHouse Managed Postgres'
+description: 'Learn how to migrate your PostgreSQL data from Neon to ClickHouse Managed Postgres'
+keywords: ['postgres', 'postgresql', 'neon', 'migration','managed postgres']
+doc_type: 'guide'
+---
+
+ClickHouse Managed Postgres includes ClickPipes, which provides a fully managed, online migration path from Neon.
+It automatically migrates the schema, performs an optimized initial load using parallel snapshotting, and uses change data capture (CDC) to keep both databases synchronized until cutover.
+With ClickPipes, customers can migrate multi-terabyte Postgres databases in just a few hours.
+
+<Steps>
+<Step title="Prepare Neon">
+
+Create a dedicated ClickPipes user with read and replication permissions:
+
+```sql
+CREATE USER clickpipes_user PASSWORD '<password>';
+
+GRANT USAGE ON SCHEMA public TO clickpipes_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO clickpipes_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT SELECT ON TABLES TO clickpipes_user;
+ALTER USER clickpipes_user WITH REPLICATION;
+
+```
+
+Run these steps on your production Neon branch, repeating the grants for every schema you want to migrate.
+Each replicated table must have a primary key or use `REPLICA IDENTITY FULL`.
+
+In the Neon console, go to **Settings → Logical Replication** and enable logical replication.
+If you use IP restrictions, allow the ClickPipes static IP addresses. See the [Neon source setup guide](/integrations/clickpipes/postgres/source/neon-postgres) for detailed instructions.
+</Step>
+
+<Step title="Migrate and cut over with ClickPipes">
+Follow the [ClickPipes migration guide](/products/managed-postgres/migrations/clickpipes) to configure and complete the migration.
+ClickPipes automates the end-to-end process:
+- Migrates the source schema to an empty target database.
+- Performs an optimized initial load using parallel snapshotting.
+- Uses CDC to keep the target synchronized with Neon.
+- Provides progress, replication-lag, and error monitoring.
+- Guides you through validation and cutover.
+
+Once the initial load is complete and replication lag is near zero, cut over using the guided **Post-migration steps** tab in the ClickPipe detail view. See [Cut over traffic](/products/managed-postgres/migrations/clickpipes#cutover) for the full walkthrough. The wizard steps you through, in order:
+
+1. Set Neon in read-only mode to stop writes.
+2. Validate row counts between source and target.
+3. Pause the pipe.
+4. Reset sequences on the target.
+5. Cut over traffic by updating the application connection string to point to ClickHouse Managed Postgres.
+6. Clean up by dropping the replication slot and deleting the ClickPipe.
+
+Keep Neon available in read-only mode for a short period, in case rollback is required.
+Once the new environment is stable, complete the clean-up step to remove the ClickPipe and its replication slot.
+</Step>
+</Steps>
+
+## Migration considerations {#migration-considerations}
+
+### Branches {#branches}
+
+Neon provides instant copy-on-write branching. ClickHouse Managed Postgres uses local NVMe storage to deliver fast, predictable, and reliable Postgres performance.
+The trade-off is that branches are not instantaneous; instead, they are created as independent deployments using [Point-in-Time Recovery (PITR)](/products/managed-postgres/backup-and-restore). They typically become available within a few minutes.
+
+For everyday development, we recommend maintaining a smaller ClickHouse Managed Postgres development database with representative, sanitized production data - for example, a few gigabytes and creating PITR branches from it as needed. Branch creation and cleanup can be automated through [clickhousectl](/concepts/features/interfaces/cli), our official CLI or [OpenAPI](/products/managed-postgres/openapi) or [Terraform](/products/managed-postgres/terraform)
+
+Some customers use this approach to manage hundreds of development environments. We are actively improving the forking and sandboxing experience. See the [branching documentation](/products/managed-postgres/branching).
+
+### Neon Serverless Driver {#neon-serverless}
+
+If your application does not use the Neon Serverless Driver, you can skip this section.
+
+Applications running on platforms such as [Vercel](https://vercel.com/docs) **may** use the [Neon Serverless Driver](https://neon.com/docs/serverless/serverless-driver), which is WebSocket-based and specific to Neon.
+It cannot simply be pointed to ClickHouse Managed Postgres.
+
+Before migrating:
+
+- Check for dependencies such as [@neondatabase/serverless](https://www.npmjs.com/package/@neondatabase/serverless). If present, replace them with a standard Postgres driver such as [node-postgres (pg)](https://node-postgres.com/).
+- For serverless workloads that create many short-lived connections, use the [bundled PgBouncer instance](/products/managed-postgres/connection#pgbouncer).
+- Prepared statements are supported. However, because PgBouncer uses transaction pooling, validate applications that rely on session-level behavior, which is uncommon in most applications:
+  1. Use `SET LOCAL` instead of session-level `SET` or `RESET`.
+  2. Use transaction-scoped temporary tables with `ON COMMIT DROP`.
+  3. `NOTIFY` is supported; `LISTEN` is not.
+  4. Use transaction-level, not session-level, advisory locks.
+  5. Transaction-scoped cursors are supported; `WITH HOLD` is not.
+- If your application depends on unsupported session-level behavior, connect directly to Postgres instead of through PgBouncer.
+
+For more details, see the [PgBouncer compatibility matrix](https://www.pgbouncer.org/features.html).
+
+### Connection limits {#connection-limits}
+
+ClickHouse Managed Postgres supports 500 direct Postgres connections by default. If your Neon workload exceeds this number, you can:
+
+- Use application-side connection pooling.
+- Use the bundled PgBouncer instance, which supports up to 5,000 client connections.
+- Increase `max_connections` if more direct connections are required.
+  - `max_connections` can be changed from **Settings → Edit parameters**. Some changes require a restart. See the [configuration documentation](/products/managed-postgres/settings#changing-configuration).
+
+### Schema changes during migration {#schema-changes}
+
+Keep the period between starting ClickPipes and cutover as short as possible — ideally no more than a few days — and avoid schema changes during this window.
+
+Some customers maintain parallel environments for several days while testing their applications against ClickHouse Managed Postgres. Once testing is complete, they start a fresh ClickPipe for the final migration, minimizing the time between the initial load and cutover.
+
+CDC replicates inserts, updates, deletes, and `ADD COLUMN`, but most other DDL changes are not propagated. This includes indexes, triggers, enum changes, constraints, functions, and most column modifications.
+
+Some changes, such as a missing enum value, cause replication to stop and appear in the ClickPipes logs. Apply the missing change to the target, and replication should resume. Other changes, such as a newly created index or trigger, may not interrupt CDC but must still be created manually before cutover.
+
+Before switching traffic, compare the source and target schemas, apply any missing objects, and reset sequences. The [migration FAQ](/products/managed-postgres/migrations/faq) covers common errors and remediation steps.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <vector>
 #include <Processors/Chunk.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
@@ -11,7 +12,7 @@ class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 
 using ColumnIdentifier = std::string;
-using ColumnIdentifiers = VectorWithMemoryTracking<ColumnIdentifier>;
+using ColumnIdentifiers = std::vector<ColumnIdentifier>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- a column name list, interchangeable with `Names`
 
 struct ChunkBuffer;
 using ChunkBufferPtr = std::shared_ptr<ChunkBuffer>;

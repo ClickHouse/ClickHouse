@@ -242,7 +242,31 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
 
     if (read_task_info.alter_conversions->hasMutations())
     {
-        auto columns_list = storage_snapshot->getColumnsByNames(options, column_names);
+        /// A direct read from a text index rewrites the search predicate into a column that the
+        /// index reader produces instead of reading the column data. Such a column is not a column of
+        /// the table, so it must not be handed to the mutation interpreter below:
+        /// `StorageSnapshot::getColumn` would throw `NO_SUCH_COLUMN_IN_TABLE` and no query using the
+        /// index could run while a mutation is pending. The on-fly mutation steps read the real
+        /// columns their own expressions need; the index column is produced afterwards, on top of
+        /// their output.
+        ///
+        /// The names come from the index read tasks, which is where they were synthesized, rather
+        /// than from a test of their `__text_index_` name prefix. That prefix is not reserved, so a
+        /// table may declare a column of its own with such a name, and dropping a declared column
+        /// here would hide it from `AlterConversions::filterMutationCommands`, which would then
+        /// discard a pending `ALTER UPDATE` of it and answer from the stale on-disk values.
+        NameSet columns_produced_by_index_reader;
+        for (const auto & [_, index_read_task] : index_read_tasks)
+            for (const auto & column : index_read_task.columns)
+                columns_produced_by_index_reader.insert(column.name);
+
+        Names mutation_column_names;
+        mutation_column_names.reserve(column_names.size());
+        for (const auto & column_name : column_names)
+            if (!columns_produced_by_index_reader.contains(column_name))
+                mutation_column_names.push_back(column_name);
+
+        auto columns_list = storage_snapshot->getColumnsByNames(options, mutation_column_names);
         auto mutation_steps
             = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list, storage_snapshot->metadata, getContext());
         read_task_info.has_on_fly_mutation_steps = !mutation_steps.empty();

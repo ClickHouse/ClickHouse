@@ -119,8 +119,8 @@ Calculates the average length of an [H3](https://h3geo.org/docs/core-library/h3I
             "Get edge angle for resolution 10",
             "SELECT h3EdgeAngle(10) AS edgeAngle",
             R"(
-┌───────h3EdgeAngle(10)─┐
-│ 0.0005927224846720883 │
+┌─────────────edgeAngle─┐
+│ 0.0006822586214258879 │
 └───────────────────────┘
             )"
         }

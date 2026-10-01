@@ -16,6 +16,7 @@ enum class JoinConditionOperator : UInt8
     And,
     Or,
     Equals,
+    NotEquals,
     NullSafeEquals,
     Less,
     LessOrEquals,
@@ -218,6 +219,8 @@ public:
 
     JoinExpressionActions(JoinExpressionActions &&) = default;
     JoinExpressionActions & operator=(JoinExpressionActions &&) = default;
+
+    void swapExpressionSources();
 
 private:
     friend class JoinActionRef;

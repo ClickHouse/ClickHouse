@@ -19,14 +19,23 @@
         "ko/products/managed-postgres/high-availability",
         "ko/products/managed-postgres/read-replicas",
         "ko/products/managed-postgres/backup-and-restore",
+        "ko/products/managed-postgres/branching",
         "ko/products/managed-postgres/extensions",
         {
           "group": "pg_clickhouse",
           "pages": [
+            "ko/products/managed-postgres/extensions/pg_clickhouse/introduction",
             "ko/products/managed-postgres/extensions/pg_clickhouse/reference",
             "ko/products/managed-postgres/extensions/pg_clickhouse/tutorial"
-          ],
-          "root": "ko/products/managed-postgres/extensions/pg_clickhouse/introduction"
+          ]
+        },
+        {
+          "group": "pg_chdb",
+          "pages": [
+            "ko/products/managed-postgres/extensions/chdb/introduction",
+            "ko/products/managed-postgres/extensions/chdb/chdb",
+            "ko/products/managed-postgres/extensions/chdb/chdb_hook"
+          ]
         },
         "ko/products/managed-postgres/upgrades",
         "ko/products/managed-postgres/openapi",
@@ -34,13 +43,7 @@
       ]
     },
     {
-      "group": "벤치마크",
-      "pages": [
-        "ko/products/managed-postgres/benchmarks"
-      ]
-    },
-    {
-      "group": "가격 책정",
+      "group": "요금",
       "pages": [
         "ko/products/managed-postgres/pricing"
       ]
@@ -48,19 +51,20 @@
     {
       "group": "ClickHouse 통합",
       "pages": [
-        "ko/products/managed-postgres/clickhouse-integration"
+        "ko/products/managed-postgres/sync-to-clickhouse/clickpipes",
+        "ko/products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {
       "group": "마이그레이션",
       "pages": [
         "ko/products/managed-postgres/migrations/overview",
-        "ko/products/managed-postgres/migrations/pg_dump-pg_restore",
-        "ko/products/managed-postgres/migrations/logical-replication",
-        "ko/products/managed-postgres/migrations/peerdb",
         "ko/products/managed-postgres/migrations/clickpipes",
         "ko/products/managed-postgres/migrations/data-validation",
-        "ko/products/managed-postgres/migrations/clickhouse-cloud",
+        "ko/products/managed-postgres/migrations/logical-replication",
+        "ko/products/managed-postgres/migrations/neon",
+        "ko/products/managed-postgres/migrations/pg_dump-pg_restore",
+        "ko/products/managed-postgres/migrations/peerdb",
         "ko/products/managed-postgres/migrations/faq"
       ]
     },
@@ -71,16 +75,17 @@
         "ko/products/managed-postgres/monitoring/dashboard",
         "ko/products/managed-postgres/monitoring/metrics",
         "ko/products/managed-postgres/monitoring/prometheus",
-        "ko/products/managed-postgres/monitoring/query-insights"
+        "ko/products/managed-postgres/monitoring/query-insights",
+        "ko/products/managed-postgres/monitoring/notifications"
       ]
     },
     {
-      "group": "FAQ",
+      "group": "자주 묻는 질문",
       "pages": [
         "ko/products/managed-postgres/faq"
       ]
     }
   ],
   "icon": "/images/icons/icon-postgres.svg",
-  "item": "Managed Postgres"
+  "item": "ClickHouse Managed Postgres"
 }

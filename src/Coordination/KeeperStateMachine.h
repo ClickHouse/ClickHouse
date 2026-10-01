@@ -23,6 +23,9 @@ using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 struct KeeperStorageStats;
 class KeeperLogStore;
 
+struct AsynchronousMetricValue;
+using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
+
 struct ISnapshotLoader;
 
 struct KeeperSnapshotStatus
@@ -142,6 +145,10 @@ public:
 
     KeeperStorageStats getStorageStats() const;
 
+    /// Like getStorageStats, but also populates `new_values` with node-storage-specific metrics
+    /// (see KeeperNodesStorage::fillAsynchronousMetrics).
+    KeeperStorageStats getStorageStatsAndAsynchronousMetrics(AsynchronousMetricValues & new_values) const;
+
     void dumpWatches(WriteBufferFromOwnString & buf) const;
     void dumpWatchesByPath(WriteBufferFromOwnString & buf) const;
     void dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const;
@@ -167,6 +174,39 @@ public:
     /// Call after loading `storage` from snapshot.
     /// Does preprocessRequest on log entries to populate storage's UncommittedState.
     void preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, bool lock_mutex);
+
+    /// Why a local log entry above the snapshot cannot be replayed after orphaned nodes were removed.
+    struct OrphanLogTailConflict
+    {
+        uint64_t log_idx = 0;
+        /// Empty when the entry could not be parsed at all.
+        std::string op_num;
+        /// Empty when the request's paths could not be determined.
+        std::string request_path;
+        /// Empty when the entry itself could not be verified rather than a specific path conflicting.
+        std::string subtree_root;
+        std::string reason;
+    };
+
+    /// Startup-only, called from `KeeperServer::startup` once the log store is available.
+    ///
+    /// After `init()` removed orphaned nodes from the snapshot, verify that no local log entry in
+    /// `[start_idx, end_idx)` references the damaged region of the tree. Those entries are
+    /// re-preprocessed and committed right after startup, and with digest checking disabled (which
+    /// orphan removal requires) a reference to a removed path would silently resolve differently --
+    /// e.g. `Create`/`Set` returning `ZNONODE` and parent `cversion`/`numChildren` bumps disappearing --
+    /// instead of being caught.
+    ///
+    /// Fails closed: anything that cannot be verified (missing log store, truncated log range,
+    /// unparseable entry, unrecognised request type) is reported as a conflict.
+    ///
+    /// Returns `nullopt` when nothing was removed or when the tail is provably clean; clears the
+    /// recorded roots in that case, so a second call is a no-op.
+    std::optional<OrphanLogTailConflict> findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end_idx);
+
+    /// Non-empty only between `init()` and `findOrphanConflictInLogTail()`. For tests/introspection.
+    const std::vector<std::string> & getRemovedOrphanSubtreeRoots() const { return removed_orphan_subtree_roots; }
+    const std::vector<int64_t> & getRemovedOrphanEphemeralSessions() const { return removed_orphan_ephemeral_sessions; }
 
 private:
     /// Advance the mark (no-op if older; LOGICAL_ERROR backstop on equal index with a
@@ -254,6 +294,13 @@ private:
     KeeperSnapshotManagerS3 * snapshot_manager_s3;
 
     KeeperLogStore * log_store = nullptr;
+
+    /// Written by `init()` when orphaned nodes were removed from the snapshot, consumed and cleared by
+    /// `findOrphanConflictInLogTail()`. Both run single-threaded from `KeeperServer::startup` before the
+    /// raft server is launched, so no synchronisation is needed.
+    std::vector<std::string> removed_orphan_subtree_roots;
+    /// Sessions that owned a removed ephemeral node; same lifecycle as `removed_orphan_subtree_roots`.
+    std::vector<int64_t> removed_orphan_ephemeral_sessions;
 
     struct DetachedSnapshotReceiveFiles
     {

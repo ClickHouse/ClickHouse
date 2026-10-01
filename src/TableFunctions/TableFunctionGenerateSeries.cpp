@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertColumnToType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/System/StorageSystemNumbers.h>
@@ -120,7 +121,9 @@ StoragePtr TableFunctionGenerateSeries<alias_num>::executeImpl(
 template <size_t alias_num>
 UInt64 TableFunctionGenerateSeries<alias_num>::evaluateArgument(ContextPtr context, ASTPtr & argument) const
 {
-    const auto [column, type] = evaluateConstantExpressionAsColumn(argument, context);
+    const auto constant = evaluateConstantExpressionAsColumn(argument, context);
+    const auto & column = constant.getColumn();
+    const auto & type = constant.getType();
 
     if (!isNativeNumber(type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} expression, must be numeric type", type->getName());
@@ -141,7 +144,9 @@ UInt64 TableFunctionGenerateSeries<alias_num>::evaluateArgument(ContextPtr conte
 template <size_t alias_num>
 StepWithSign TableFunctionGenerateSeries<alias_num>::parseStep(ContextPtr context, ASTPtr & argument) const
 {
-    const auto [column, type] = evaluateConstantExpressionAsColumn(argument, context);
+    const auto constant = evaluateConstantExpressionAsColumn(argument, context);
+    const auto & column = constant.getColumn();
+    const auto & type = constant.getType();
 
     if (!isNativeNumber(type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} expression, must be numeric type", type->getName());

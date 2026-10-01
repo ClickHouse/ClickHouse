@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Analyzer/TableExpressionModifiers.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
@@ -212,6 +213,8 @@ struct SelectQueryInfo
 
     // If not 0, that means it's a trivial limit query.
     UInt64 trivial_limit = 0;
+    /// A trivial limit query whose rows `arrayJoin` expands: the source must not stop at the limit, but should read small.
+    bool small_limit_above_array_join = false;
 
     /// For IStorageSystemOneBlock
     std::vector<UInt8> columns_mask;
@@ -225,6 +228,6 @@ struct SelectQueryInfo
     /// while key analysis still requires unqualified column names.
     /// This function generates a map that maps the unique names to table column names,
     /// for the current table (`table_expression`).
-    std::unordered_map<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
 };
 }

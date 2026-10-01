@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
-#include <Common/CollectionOfDerived.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/CollectionOfDerived.h>
+#include <Core/ColumnNumbers.h>
 #include <Core/Types_fwd.h>
 
 #include <memory>
@@ -172,6 +173,9 @@ void removeSpecialColumnRepresentations(Chunk & chunk);
 
 /// Analog of materializeBlock: converts const columns to full and removes sparse/replicated representations.
 void materializeChunk(Chunk & chunk);
+
+/// Materializes only the specified columns, preserving the representations of the remaining columns.
+void materializeChunk(Chunk & chunk, const ColumnNumbers & column_positions);
 
 /// Optimize ColumnReplicated columns memory layout.
 void compactReplicatedColumns(Chunk & chunk);
