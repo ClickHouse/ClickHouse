@@ -1200,6 +1200,9 @@ bool ParserTableOverrideDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     ASTPtr sample_by;
     ASTPtr ttl_table;
 
+    /// A key with a top-level alias would be formatted as `(expr) AS alias`, which cannot be parsed back.
+    auto parse_key = [&](ASTPtr & key) { return expression_p.parse(pos, key, expected) && !key->hasAlias(); };
+
     if (is_standalone)
     {
         if (!s_table_override.ignore(pos, expected))
@@ -1225,28 +1228,28 @@ bool ParserTableOverrideDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
 
         if (!partition_by && s_partition_by.ignore(pos, expected))
         {
-            if (expression_p.parse(pos, partition_by, expected))
+            if (parse_key(partition_by))
                 continue;
             return false;
         }
 
         if (!primary_key && s_primary_key.ignore(pos, expected))
         {
-            if (expression_p.parse(pos, primary_key, expected))
+            if (parse_key(primary_key))
                 continue;
             return false;
         }
 
         if (!order_by && s_order_by.ignore(pos, expected))
         {
-            if (expression_p.parse(pos, order_by, expected))
+            if (parse_key(order_by))
                 continue;
             return false;
         }
 
         if (!sample_by && s_sample_by.ignore(pos, expected))
         {
-            if (expression_p.parse(pos, sample_by, expected))
+            if (parse_key(sample_by))
                 continue;
             return false;
         }
