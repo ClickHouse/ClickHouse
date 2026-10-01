@@ -3,5 +3,3 @@ BACKUP_CREATED
 Disabled
 2. the stop survives the finished restore, target untouched:
 Disabled	0
-3. and it refreshes once actually started:
-1

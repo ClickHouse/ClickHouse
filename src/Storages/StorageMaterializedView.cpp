@@ -1163,7 +1163,7 @@ ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
 {
     if (type == ActionLocks::ViewRefresh && refresher)
         refresher->stop();
-    /// `SYSTEM PAUSE VIEW` prevents future refreshes but does not interrupt the currently running
+    /// `SYSTEM PAUSE VIEW` prevents future scheduled refreshes but does not interrupt the currently running
     /// refresh. `SYSTEM START VIEW` undoes it by clearing `stop_requested` via `onActionLockRemove`.
     else if (type == ActionLocks::ViewRefreshPause && refresher)
         refresher->pause();

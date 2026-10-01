@@ -172,12 +172,6 @@ std::vector<StorageID> parseRefreshDependencies(const ASTRefreshStrategy & strat
     return deps;
 }
 
-/// An older server wrote the replica name into a "requested-*" znode instead of a count: one statement.
-UInt64 parseRequestCount(const String & data)
-{
-    return data.starts_with("count: ") ? parse<UInt64>(data.substr(strlen("count: "))) : 1;
-}
-
 }
 
 RefreshTask::RefreshTask(
@@ -689,8 +683,8 @@ void RefreshTask::run()
             Coordination::Stat stat;
             bool existed = zookeeper->tryGet(path, data, &stat);
             Coordination::Requests ops {zkutil::makeCheckRequest(coordination.path, root_stat.version),
-                existed ? zkutil::makeSetRequest(path, "count: " + toString(parseRequestCount(data) + 1), stat.version)
-                        : zkutil::makeCreateRequest(path, "count: 1", zkutil::CreateMode::Persistent)};
+                existed ? zkutil::makeSetRequest(path, toString(parse<UInt64>(data) + 1), stat.version)
+                        : zkutil::makeCreateRequest(path, "1", zkutil::CreateMode::Persistent)};
             Coordination::Responses responses;
             code = zookeeper->tryMulti(ops, responses);
             if (code != Coordination::Error::ZOK && code != Coordination::Error::ZBADVERSION && code != Coordination::Error::ZNODEEXISTS)
@@ -792,7 +786,7 @@ void RefreshTask::wait(const ContextPtr & context)
 
     if (!view)
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "The table was dropped or detached");
-    /// Disabled or stopped here: report only a failed `SYSTEM REFRESH VIEW` (maybe run on another replica), never the attempt
+    /// `Disabled` or stopped here: report only a failed `SYSTEM REFRESH VIEW` (maybe run on another replica), never the attempt
     /// before a running one, whose kind is not recorded. An interrupted attempt (`STOP`, `CANCEL`) did not fail.
     if (state == RefreshState::Disabled && !coordination.root_znode.last_attempt_out_of_schedule)
         return;
@@ -1331,6 +1325,7 @@ void RefreshTask::doScheduling(bool is_shutdown)
         execution.znode = coordination.root_znode;
         execution.start_time = start_time;
         execution.dependencies = std::move(dependencies);
+        execution.out_of_schedule = out_of_schedule;
         execution.state = ExecutionState::State::Requested;
 
         execution_task->schedule();
@@ -1432,7 +1427,7 @@ void RefreshTask::executeRefresh()
     if (new_table_uuid.has_value())
     {
         znode.last_attempt_succeeded = true;
-        znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, start_time_seconds, end_time_seconds, znode.last_attempt_out_of_schedule);
+        znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, start_time_seconds, end_time_seconds, execution.out_of_schedule);
         znode.last_success_time = start_time_seconds;
         znode.last_success_duration = std::chrono::milliseconds(stopwatch.elapsedMilliseconds());
         znode.last_success_table_uuid = *new_table_uuid;
@@ -1971,7 +1966,7 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
         const auto & response = responses[3 + i];
         if (response.error != Coordination::Error::ZOK)
             continue;
-        CoordinationState::PendingRequest request {.czxid = response.stat.czxid, .count = parseRequestCount(response.data), .version = response.stat.version};
+        CoordinationState::PendingRequest request {.czxid = response.stat.czxid, .count = parse<UInt64>(response.data), .version = response.stat.version};
         auto it = coordination.pending_requests.find(request_znodes[i]);
         if (it != coordination.pending_requests.end() && it->second.czxid == request.czxid)
             request.pending_since = it->second.pending_since;
@@ -2008,7 +2003,7 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
                 ops.emplace_back(zkutil::makeRemoveRequest(coordination.path + "/" + request_znode, request.version));
                 if (request.count > 1)
                     ops.emplace_back(zkutil::makeCreateRequest(
-                        coordination.path + "/" + request_znode, "count: " + toString(request.count - 1), zkutil::CreateMode::Persistent));
+                        coordination.path + "/" + request_znode, toString(request.count - 1), zkutil::CreateMode::Persistent));
             }
         }
         else

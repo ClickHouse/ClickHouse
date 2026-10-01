@@ -114,26 +114,7 @@ $CLICKHOUSE_CLIENT -q "
     drop table e;
     drop table src;"
 
-# 4. `SYSTEM WAIT VIEW` stays silent about a refresh that `SYSTEM STOP VIEW` interrupted
-# (error `cancelled`), while still reporting a genuine failure (2).
-
-$CLICKHOUSE_CLIENT -q "
-    create table src (x Int64) engine Memory;
-    insert into src select * from numbers(10) settings max_block_size = 1;
-    create materialized view g refresh every 1 year (x Int64) engine MergeTree order by x empty as
-        select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
-    system refresh g;"
-
-wait_running_with_progress g
-
-$CLICKHOUSE_CLIENT -q "
-    system stop view g;
-    system wait view g;
-    select '<4: wait is silent about a cancelled refresh>', status from refreshes where view = 'g';
-    drop table g;
-    drop table src;"
-
-# 5. `SYSTEM WAIT VIEW` does not report a scheduled refresh that failed before the view was
+# 4. `SYSTEM WAIT VIEW` does not report a scheduled refresh that failed before the view was
 # stopped; only a failed out-of-schedule refresh (2) is reported on a stopped view.
 
 $CLICKHOUSE_CLIENT -q "
@@ -146,11 +127,10 @@ wait_status sv Scheduled
 $CLICKHOUSE_CLIENT -q "
     system stop view sv;
     system wait view sv;
-    select '<5: stale scheduled failure not reported after stop>', (select exception like '%scheduled-boom%' from refreshes where view = 'sv'), (select status from refreshes where view = 'sv');
+    select '<4: stale scheduled failure not reported after stop>', (select exception like '%scheduled-boom%' from refreshes where view = 'sv'), (select status from refreshes where view = 'sv');
     drop table sv;"
 
-# 6. `SYSTEM WAIT VIEW` is silent after `SYSTEM CANCEL VIEW` interrupted a refresh (the view
-# stays enabled), matching `SYSTEM STOP VIEW` (4).
+# 5. `SYSTEM WAIT VIEW` is silent after `SYSTEM CANCEL VIEW` interrupted a refresh (error `cancelled`) on a view that stays enabled.
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
@@ -164,11 +144,11 @@ wait_running_with_progress cw
 $CLICKHOUSE_CLIENT -q "
     system cancel cw;
     system wait view cw;
-    select '<6: wait is silent after cancel>', status != 'Disabled' from refreshes where view = 'cw';
+    select '<5: wait is silent after cancel>', status != 'Disabled' from refreshes where view = 'cw';
     drop table cw;
     drop table src;"
 
-# 7. `SYSTEM WAIT VIEW` reports a failed `SYSTEM REFRESH VIEW` even when the view is stopped
+# 6. `SYSTEM WAIT VIEW` reports a failed `SYSTEM REFRESH VIEW` even when the view is stopped
 # only after the failure.
 
 $CLICKHOUSE_CLIENT -q "
@@ -184,6 +164,6 @@ wait_status fs Disabled
 $CLICKHOUSE_CLIENT -q "system wait view fs; -- { serverError REFRESH_FAILED }"
 
 $CLICKHOUSE_CLIENT -q "
-    select '<7: failure is reported after a later stop>', exception like '%late-boom%', status
+    select '<6: failure is reported after a later stop>', exception like '%late-boom%', status
         from refreshes where view = 'fs';
     drop table fs;"

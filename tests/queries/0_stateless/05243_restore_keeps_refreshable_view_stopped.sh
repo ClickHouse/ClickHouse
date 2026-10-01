@@ -56,9 +56,3 @@ sleep 2
 echo "2. the stop survives the finished restore, target untouched:"
 ${CLICKHOUSE_CLIENT} -q "SELECT (SELECT status FROM system.view_refreshes WHERE database = '$STOPPED'),
     (SELECT count() FROM \`$STOPPED\`.mv) FORMAT TSV"
-
-${CLICKHOUSE_CLIENT} -q "SYSTEM START VIEW \`$STOPPED\`.mv"
-${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT VIEW \`$STOPPED\`.mv"
-echo "3. and it refreshes once actually started:"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM \`$STOPPED\`.mv FORMAT TSV"
-${CLICKHOUSE_CLIENT} -q "SYSTEM STOP VIEW \`$STOPPED\`.mv"

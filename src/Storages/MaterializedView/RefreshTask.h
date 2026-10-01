@@ -240,7 +240,7 @@ private:
         /// │   ├── name2
         /// │   └── name3
         /// ├── ["running"] (ephemeral)
-        /// ├── ["requested-<replica>"] (persistent; counts that replica's `SYSTEM REFRESH VIEW`s not started yet, see `run`)
+        /// ├── ["requested-<replica>"] (persistent; the number of pending `SYSTEM REFRESH VIEW`s made on that replica, see `run`)
         /// └── ["paused"]
 
         struct WatchState
@@ -329,6 +329,7 @@ private:
         /// State of dependencies that was used for triggering this refresh.
         /// Should be writtent to zookeeper only if the refresh succeeds.
         AllDependenciesInfo dependencies;
+        bool out_of_schedule = false;
     };
 
     struct SchedulingState

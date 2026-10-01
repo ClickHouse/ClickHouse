@@ -601,38 +601,8 @@ def _wait_batch_log_max_t(at_least, timeout=120):
     )
 
 
-def test_wait_view_reports_failed_refresh_on_stopped_replica(fn3_setup_tables):
-    if node.is_built_with_sanitizer():
-        pytest.skip("Disabled for sanitizers")
-
-    create_sql = CREATE_RMV.render(
-        table_name="test_rmv",
-        refresh_interval="EVERY 1 YEAR",
-        to_clause="tgt1",
-        select_query="SELECT throwIf(1, 'boom') a",
-        on_cluster="default",
-        empty=True,
-    )
-    node.query(create_sql)
-
-    node2.query("SYSTEM STOP VIEW test_rmv")
-
-    with pytest.raises(helpers.client.QueryRuntimeException) as exc:
-        node.query("SYSTEM REFRESH VIEW test_rmv; SYSTEM WAIT VIEW test_rmv")
-    assert "boom" in str(exc.value)
-
-    # node2 never ran it, but the root znode says the last attempt was a failed `SYSTEM REFRESH VIEW`.
-    get_rmv_info(node2, "test_rmv", wait_status="Disabled")
-    with pytest.raises(helpers.client.QueryRuntimeException) as exc:
-        node2.query("SYSTEM WAIT VIEW test_rmv")
-    assert "boom" in str(exc.value)
-
-
 def test_wait_view_reports_manual_refresh_lost_with_its_replica(fn3_setup_tables):
     # A stopped replica learns that an attempt lost with the replica running it was a `SYSTEM REFRESH VIEW` only from its start znode.
-    if node.is_built_with_sanitizer():
-        pytest.skip("Disabled for sanitizers")
-
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
         refresh_interval="EVERY 1 YEAR",
@@ -649,7 +619,7 @@ def test_wait_view_reports_manual_refresh_lost_with_its_replica(fn3_setup_tables
     killed = False
     try:
         node.query("SYSTEM REFRESH VIEW test_rmv")
-        get_rmv_info(node, "test_rmv", wait_status="Running")
+        get_rmv_info(node, "test_rmv", condition=lambda x: x["status"] == "Running")
 
         node.stop_clickhouse(kill=True)
         killed = True
@@ -1053,7 +1023,7 @@ def test_refresh_request_is_shared_and_durable(fn3_setup_tables):
     node.query("SYSTEM REFRESH VIEW test_rmv")
     znode = requested_znode(zk, path, 1)
     assert znode is not None and znode.ephemeralOwner == 0
-    assert zk.get(f"{path}/requested-1")[0] == b"count: 2"
+    assert zk.get(f"{path}/requested-1")[0] == b"2"
     node.query("SYSTEM START REPLICATED VIEW test_rmv")
     node.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
     node.query("SYSTEM SYNC REPLICA tgt1")

@@ -33,7 +33,7 @@ then
     exit 1
 fi
 
-# The mutex is free while the Keeper write is parked, so this stop lands inside the window.
+# The `mutex` is free while the Keeper write is parked, so this stop lands inside the window.
 $CLICKHOUSE_CLIENT -q "
     system stop view $db.k;
     system disable failpoint refresh_mv_pause_inside_coordination_write;"

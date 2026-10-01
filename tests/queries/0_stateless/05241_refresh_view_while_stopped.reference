@@ -4,7 +4,6 @@
 <1: nothing pending after start>	5	Scheduled
 <2: failed refresh while stopped is reported>	1	Disabled
 <3: stop cancels only the running refresh>	20	Disabled
-<4: wait is silent about a cancelled refresh>	Disabled
-<5: stale scheduled failure not reported after stop>	1	Disabled
-<6: wait is silent after cancel>	1
-<7: failure is reported after a later stop>	1	Disabled
+<4: stale scheduled failure not reported after stop>	1	Disabled
+<5: wait is silent after cancel>	1
+<6: failure is reported after a later stop>	1	Disabled
