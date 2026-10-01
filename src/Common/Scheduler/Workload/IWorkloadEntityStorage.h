@@ -115,12 +115,10 @@ public:
     /// Controls whether the resource-name getters above resolve a CPU / memory role to the implicit
     /// server-synthesized resource (`IMPLICIT_CPU_RESOURCE_NAME` / `IMPLICIT_MEMORY_RESOURCE_NAME`) that
     /// `WorkloadResourceManager` creates. The manager is the sole caller and sets each flag in lockstep
-    /// with creating / removing that implicit resource -- ordered so resolution turns on only after the
-    /// resource exists and off before it is removed -- so a query can never resolve the implicit name
-    /// while the manager has no such resource. The flag is true exactly in the fully-implicit case
-    /// (feature enabled, supported layout, no operator resource of that unit); it is deliberately NOT
-    /// inferred from "operator names are empty" in the storage, whose state flips inside `applyEvent`
-    /// before the manager is notified of a CREATE / DROP RESOURCE.
+    /// with creating / removing that implicit resource (true only in the fully-implicit case: feature
+    /// enabled, supported layout, no operator resource of that unit), so a role resolves to the implicit
+    /// resource only while the manager has it. Not inferred from the storage's own operator-name state,
+    /// which is updated independently of the manager.
     virtual void setResolveCPUToImplicit(bool /*resolve*/) {}
     virtual void setResolveMemoryToImplicit(bool /*resolve*/) {}
 

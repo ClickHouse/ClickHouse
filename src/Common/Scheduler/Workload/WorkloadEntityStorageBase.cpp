@@ -644,13 +644,10 @@ scope_guard WorkloadEntityStorageBase::getAllEntitiesAndSubscribe(const OnChange
 String WorkloadEntityStorageBase::getMasterThreadResourceName()
 {
     std::lock_guard lock{mutex};
-    // Resolve to the implicit combined CPU resource exactly when the resource manager has told this
-    // storage to. The manager sets this flag in lockstep with creating/removing `__server_cpu__` (feature
-    // enabled, supported layout, no operator CPU resource), so resolution never names a resource the
-    // manager lacks. This must NOT be inferred from operator-name emptiness here: those names change inside
-    // `applyEvent` before the manager is notified of a CREATE/DROP RESOURCE, which would open a race
-    // window. When resolution is off, each role returns its own operator name (empty if the role is
-    // undeclared, e.g. an unsupported partial layout), never the never-created implicit name.
+    // Resolve to the implicit combined CPU resource when the manager has enabled it (done in lockstep with
+    // creating `__server_cpu__`); otherwise return this role's operator resource name, empty if the role is
+    // undeclared. The flag is set by the manager, not inferred from the operator names below, which are
+    // updated independently of when the manager creates/removes the implicit resource.
     if (resolve_cpu_to_implicit)
         return String(IMPLICIT_CPU_RESOURCE_NAME);
     return master_thread_resource;

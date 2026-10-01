@@ -2871,12 +2871,9 @@ try
                     workload_limits.memory_bytes = (respect_memory_limit && max_server_memory_usage != 0)
                         ? static_cast<Int64>(max_server_memory_usage)
                         : WorkloadSettings::unlimited;
-                    /// `updateServerLimits` both creates/removes the implicit server-limit resources and
-                    /// flips the storage-side resource-name resolution for each role, ordered so the two
-                    /// stay consistent (resolution turned on only after the resource exists, and off
-                    /// before it is removed). The storage resolution must not be flipped separately here:
-                    /// two unordered steps leave a window where a query resolves the implicit name while
-                    /// the manager has not yet created (or has already removed) that resource.
+                    /// `updateServerLimits` owns both the implicit server-limit resources and the
+                    /// storage-side resource-name resolution, keeping them consistent; the resolution is
+                    /// not flipped separately here.
                     global_context->getResourceManager()->updateServerLimits(workload_limits);
                 }
             }

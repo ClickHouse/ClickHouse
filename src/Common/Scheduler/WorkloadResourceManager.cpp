@@ -510,13 +510,10 @@ void WorkloadResourceManager::applyResourceLimitLocked(
     // implicit resource is created.
     const bool supported = operator_resources.empty()
         || (operator_resources.size() == 1 && operator_resources.front()->coversAllModes(implicit_modes));
-    // A role resolves to the implicit resource IFF this manager currently has it, which is exactly the
-    // fully-implicit case: feature enabled, layout supported, and no operator resource of this unit. The
-    // manager drives the storage-side resolution from this condition, in lockstep with creating/removing
-    // the implicit resource. It must NOT be inferred from "operator names are empty" in the storage: those
-    // names flip inside `applyEvent` before this manager is notified of a CREATE/DROP RESOURCE, which would
-    // resolve the implicit name in a window where the manager has not (yet) created it (raising
-    // RESOURCE_ACCESS_DENIED under `throw_on_unknown_workload`, or silently falling back to unlimited).
+    // A role resolves to the implicit resource IFF this manager currently has it: the fully-implicit case
+    // (feature enabled, layout supported, no operator resource of this unit). The manager owns that
+    // resolution flag and sets it here, ordered against the resource create/remove below, rather than
+    // letting the storage infer it from its own independently-updated operator-name state.
     if (enabled && supported && operator_resources.empty())
     {
         // Fully implicit: create the implicit resource first, cap its root, then turn resolution ON — so a
