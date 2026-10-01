@@ -46,7 +46,7 @@ public:
             if (!canBeNativeType(type_removed_nullable))
                 return false;
 
-            if (decimalLiftCanOverflow(*type_removed_nullable, *result_nested))
+            if (scaleLiftCanOverflow(*type_removed_nullable, *result_nested))
                 return false;
         }
 
@@ -95,11 +95,12 @@ public:
     }
 
 private:
-    /// Compiled code cannot raise, so a `Decimal` branch whose lift to the result scale can leave 32- or 64-bit
-    /// storage, where the interpreted cast raises `DECIMAL_OVERFLOW`, is not compilable.
-    static bool decimalLiftCanOverflow(const IDataType & branch, const IDataType & result)
+    /// Compiled code cannot raise, so a `Decimal` or `DateTime64` branch whose lift to the result scale can leave
+    /// 32- or 64-bit storage, where the interpreted cast raises `DECIMAL_OVERFLOW`, is not compilable.
+    static bool scaleLiftCanOverflow(const IDataType & branch, const IDataType & result)
     {
-        if (!isDecimal(branch) || !isDecimal(result) || result.getSizeOfValueInMemory() > sizeof(Int64))
+        const bool same_family = (isDecimal(branch) && isDecimal(result)) || (isDateTime64(branch) && isDateTime64(result));
+        if (!same_family || result.getSizeOfValueInMemory() > sizeof(Int64))
             return false;
         if (branch.getSizeOfValueInMemory() > result.getSizeOfValueInMemory())
             return true;

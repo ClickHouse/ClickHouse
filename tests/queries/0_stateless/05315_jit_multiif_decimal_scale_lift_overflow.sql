@@ -1,4 +1,4 @@
--- A `multiIf` that lifts a `Decimal` branch to a larger result scale raises `DECIMAL_OVERFLOW` when the lifted
+-- An `if`/`multiIf` that lifts a `Decimal` or `DateTime64` branch to a larger result scale raises `DECIMAL_OVERFLOW` when the lifted
 -- value does not fit the result's 32- or 64-bit storage, whether or not the expression is compiled.
 SET compile_expressions = 1;
 SET min_count_to_compile_expression = 0;
@@ -16,6 +16,10 @@ CREATE TABLE t_jit_decimal_lift (k UInt8, d Decimal32(0), e Decimal32(3)) ENGINE
 INSERT INTO t_jit_decimal_lift VALUES (0, 999999999, 1.5), (1, 5, 2.5);
 SELECT CASE WHEN k = 0 THEN d WHEN k = 2 THEN d ELSE e END FROM t_jit_decimal_lift ORDER BY k; -- { serverError DECIMAL_OVERFLOW }
 DROP TABLE t_jit_decimal_lift;
+
+-- A `DateTime64` inside its documented range overflows the lift to scale 9.
+SELECT multiIf(number = 0, materialize(toDateTime64('2290-01-01 00:00:00', 0, 'UTC')), number = 1, toDateTime64('2000-01-01 00:00:00', 0, 'UTC'), toDateTime64('2000-01-01 00:00:00', 9, 'UTC')) FROM numbers(1); -- { serverError DECIMAL_OVERFLOW }
+SELECT if(number = 0, materialize(toDateTime64('2290-01-01 00:00:00', 0, 'UTC')), toDateTime64('2000-01-01 00:00:00', 9, 'UTC')) FROM numbers(1); -- { serverError DECIMAL_OVERFLOW }
 
 -- The widest lift that cannot overflow stays compiled and exact at the lowest value; one step wider is interpreted.
 SELECT multiIf(number = 0, materialize(toDecimal32(-2147483648, 0)), number = 1, toDecimal32(1, 0), toDecimal64(1, 9)) FROM numbers(1);

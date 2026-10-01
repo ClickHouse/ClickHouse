@@ -286,7 +286,7 @@ llvm::Value * nativeCastWithDecimalScale(
             {
                 /// `Decimal` → `Decimal` (possibly different scale and/or precision).
                 /// Widen/narrow the integer storage first, then adjust scale.
-                /// The scale lift is unchecked; `FunctionIfBase` compiles only destinations whose storage holds `value * 10^diff`.
+                /// The scale lift is unchecked; `FunctionIfBase` declines a lift that can overflow 32- or 64-bit storage.
                 auto * widened = (from_native_type == to_native_type)
                     ? value
                     : b.CreateIntCast(value, to_native_type, /*isSigned=*/true);
