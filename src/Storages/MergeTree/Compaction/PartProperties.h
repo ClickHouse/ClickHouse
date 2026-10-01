@@ -49,6 +49,8 @@ struct PartProperties
         /// The earliest due time among the unfinished column TTLs, as opposed to `part_min_ttl`,
         /// which is the minimum across the row TTLs as well.
         const time_t column_min_ttl;
+        /// The earliest time at which every value of some unfinished column TTL has expired.
+        const time_t column_min_max_ttl;
     };
     const std::optional<GeneralTTLInfo> general_ttl_info = std::nullopt;
 

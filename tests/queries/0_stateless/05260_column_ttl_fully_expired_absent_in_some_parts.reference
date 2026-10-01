@@ -1,0 +1,18 @@
+part without the added column
+1	
+2	
+1
+0
+part with the column dropped
+0
+1	
+2	
+1
+0
+column not fully expired in some part
+1	
+2	
+3	expired
+4	live
+1
+1
