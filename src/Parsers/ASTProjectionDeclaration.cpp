@@ -59,12 +59,7 @@ void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
 
     name = r.getString("name");
 
-    /// `query` is the parser-owned `ASTProjectionSelectQuery`; `ProjectionDescription::getProjectionFromAST`
-    /// does `query->as<ASTProjectionSelectQuery &>()`, so reject any other node type here. It is also an
-    /// expression slot: `fillProjectionDescriptionByQuery` always analyzes the restored query with the
-    /// legacy `InterpreterSelectQuery`, whose window-expression collector dereferences
-    /// `ASTFunction::arguments` unconditionally — so screen it the same way
-    /// `ASTConstraintDeclaration::readJSON` screens its `expr` slot.
+    /// `query` must be the parser-owned `ASTProjectionSelectQuery`.
     auto query_child = r.readExpressionChild("query");
     if (query_child && !query_child->as<ASTProjectionSelectQuery>())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -77,9 +72,12 @@ void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
     /// `ProjectionIndexCommitOrder::fillProjectionDescription` clones `index` straight into the
     /// projection SELECT slot, and `ASTProjectionSelectQuery::cloneToASTSelect` throws a logical
     /// error unless that slot is an `ASTExpressionList` — so reject any other shape at the boundary.
-    auto index_child = r.readChildOfType<ASTExpressionList>("index");
+    auto index_child = r.readExpressionChild("index");
     if (index_child)
     {
+        if (!index_child->as<ASTExpressionList>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected node type for key 'index' during AST JSON deserialization");
         if (index_child->children.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "`ProjectionDeclaration` INDEX must be a non-empty expression list during AST JSON deserialization");

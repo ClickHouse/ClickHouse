@@ -63,8 +63,6 @@ struct WindowExpressionsCollectorMatcher
                 return { .window_function_in_subtree = true };
 
             WindowExpressionsCollectorChildInfo result;
-            /// ASTFunction::arguments can be null for functions re-parsed or
-            /// restored from JSON without an argument list (e.g. `MergeTree`).
             if (func->arguments)
             {
                 for (auto & arg : func->arguments->children)
