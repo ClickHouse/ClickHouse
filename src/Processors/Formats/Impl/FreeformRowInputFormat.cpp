@@ -321,7 +321,8 @@ DataTypePtr RestOfLineFieldMatcher::getDataTypeFromField(const String &)
 }
 
 FreeformFieldMatcher::FreeformFieldMatcher(PeekableReadBuffer & in_, const FormatSettings & settings_)
-    : in(in_)
+    : max_search_steps(settings_.freeform_max_search_steps)
+    , in(in_)
 {
     setLimits(settings_.max_rows_to_read_for_schema_inference, settings_.max_bytes_to_read_for_schema_inference);
 
@@ -386,8 +387,21 @@ FreeformFieldMatcher::readNextFields(bool parse_till_newline_as_one_string, unsi
 }
 
 void FreeformFieldMatcher::buildSolutions(
-    Solution current_solution, std::vector<Solution> & solutions, bool parse_till_newline_as_one_string, size_t offset) const
+    Solution current_solution,
+    std::vector<Solution> & solutions,
+    bool parse_till_newline_as_one_string,
+    size_t offset,
+    size_t & search_steps) const
 {
+    /// Every candidate is kept in memory and then validated against the sample rows, so an unbounded
+    /// search over a wide row of strings exhausts memory and time long before it ends.
+    if (max_search_steps && ++search_steps > max_search_steps)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot infer the structure of the row: it can be split into fields in too many ways (the search exceeded {} steps). "
+            "Use a format with a fixed structure, such as `TSV` or `CSV`, or raise `input_format_freeform_max_search_steps`",
+            max_search_steps);
+
     seekInRow(offset);
     skipWhitespacesAndDelimiters(in);
 
@@ -414,7 +428,7 @@ void FreeformFieldMatcher::buildSolutions(
         next.score += fields.parse_result.score;
         next.size += fields.parse_result.names_and_types.size();
 
-        buildSolutions(next, solutions, fields.parse_result.parse_till_newline_as_one_string, fields.parse_result.offset);
+        buildSolutions(next, solutions, fields.parse_result.parse_till_newline_as_one_string, fields.parse_result.offset, search_steps);
     }
 }
 
@@ -586,7 +600,9 @@ bool FreeformFieldMatcher::buildSolutionsAndPickBest()
     in.setCheckpoint();
 
     std::vector<Solution> solutions;
-    buildSolutions(Solution{.columns = {}, .matchers_order = {}, .first_columns = {}, .score = 0, .size = 0}, solutions, false, 0);
+    size_t search_steps = 0;
+    buildSolutions(
+        Solution{.columns = {}, .matchers_order = {}, .first_columns = {}, .score = 0, .size = 0}, solutions, false, 0, search_steps);
     in.rollbackToCheckpoint();
     if (solutions.empty())
     {
@@ -946,11 +962,15 @@ void registerFreeformSchemaReader(FormatFactory & factory)
         [](ReadBuffer & buf, const FormatSettings & settings) { return std::make_shared<FreeformSchemaReader>(buf, settings); });
 
     /// Every escaping rule a matcher uses takes part in inference, so all of their settings affect the result.
+    /// The search bound decides whether inference succeeds at all, so it is part of the key too.
     factory.registerAdditionalInfoForSchemaCacheGetter(
         "Freeform",
         [](const FormatSettings & settings)
         {
-            String result = fmt::format("column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
+            String result = fmt::format(
+                "column_names_for_schema_inference={}, freeform_max_search_steps={}",
+                settings.column_names_for_schema_inference,
+                settings.freeform_max_search_steps);
             for (auto rule : {FormatSettings::EscapingRule::JSON, FormatSettings::EscapingRule::CSV, FormatSettings::EscapingRule::Raw,
                               FormatSettings::EscapingRule::Quoted, FormatSettings::EscapingRule::Escaped})
                 result += ", " + getAdditionalFormatInfoByEscapingRule(settings, rule);
