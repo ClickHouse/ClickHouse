@@ -6,7 +6,7 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=trace
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The password in `format_avro_schema_registry_url` must not appear in the schema registry trace log or
+# The password or presigned signature in `format_avro_schema_registry_url` must not appear in the schema registry trace log or
 # in the error for an unsupported scheme. Only the masked form scheme://[HIDDEN]@host may be shown.
 # The data is the magic byte 0 and schema id 1, so the registry is contacted; port 1 refuses at once.
 
@@ -47,3 +47,10 @@ OUT_B=$(${CLICKHOUSE_CLIENT} --query "$(query "ftp://leakuser:${SECRET_B}@127.0.
 echo "$OUT_B" | grep -F 'Unsupported scheme in URI' \
     | assert_shape "unsupported_scheme" "$SECRET_B" "Unsupported scheme in URI 'ftp://[HIDDEN]@127.0.0.1:1/schemas/ids/1'"
 echo "$OUT_B" | count_secret_in_server_output "$SECRET_B"
+
+# 3. The same error for a presigned signature: the AvroConfluent output sends the registry URL with its query.
+SECRET_C="canaryPresigned${CLICKHOUSE_TEST_UNIQUE_NAME}"
+OUT_C=$(${CLICKHOUSE_CLIENT} --query "SELECT 1 AS a FORMAT AvroConfluent SETTINGS format_avro_schema_registry_url = 'ftp://127.0.0.1:1/?X-Amz-Signature=${SECRET_C}', output_format_avro_confluent_subject = 's', format_avro_schema_registry_max_retries = 0" 2>&1)
+echo "$OUT_C" | grep -F 'Unsupported scheme in URI' \
+    | assert_shape "unsupported_scheme_presigned" "$SECRET_C" "Unsupported scheme in URI 'ftp://127.0.0.1:1/?X-Amz-Signature=[HIDDEN]'"
+echo "$OUT_C" | count_secret_in_server_output "$SECRET_C"
