@@ -304,6 +304,7 @@ void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
     else if (function->name() == "mongodb")
     {
         findMongoDBSecretArguments();
+        findMongoDBConnectionStringSecretArguments();
     }
     else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
              (function->name() == "deltaLake") || (function->name() == "deltaLakeS3") || (function->name() == "hudi") ||
@@ -487,9 +488,86 @@ void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
     }
 
     chassert(result.count == 0);
-    maskURIPassword(&uri);
+    maskMongoDBConnectionString(uri);
     result.count = 1;
     result.replacement = std::move(uri);
+}
+
+void FunctionSecretArgumentsFinder::findMongoDBConnectionStringSecretArguments()
+{
+    /// Hides through `replaced_arguments`: `markSecretArgument` requires an empty `result.replacement`, which
+    /// the named-collection `uri` override above sets. An argument masked by the above is left as it is.
+    auto is_masked = [&](size_t index)
+    {
+        return result.replaced_arguments.contains(index) || result.masked_arguments.contains(index)
+            || (result.start <= index && index < result.start + result.count);
+    };
+
+    /// A readable argument is replaced only if it carries a secret; an unreadable one is hidden whole.
+    auto mask_argument = [&](size_t index, bool hide_unreadable)
+    {
+        const auto argument = function->arguments->at(index);
+        String value;
+        if (!tryGetStringFromArgument(*argument, &value))
+        {
+            if (hide_unreadable)
+                result.replaced_arguments[index] = "'[HIDDEN]'";
+        }
+        else if (maskMongoDBConnectionString(value))
+        {
+            result.replaced_arguments[index] = argument->isIdentifier() ? backQuoteIfNeed(value) : quoteString(value);
+        }
+    };
+
+    const bool is_engine = function->name() == "MongoDB";
+    const size_t size = function->arguments->size();
+    bool seen_named = false;
+    for (size_t i = 0; i < size; ++i)
+    {
+        const auto equals = function->arguments->at(i)->getFunction();
+        if (equals && equals->name() == "equals" && equals->hasArguments() && equals->arguments->size() == 2)
+        {
+            seen_named = true;
+            if (is_masked(i))
+                continue;
+
+            String key;
+            if (!tryGetStringFromArgument(*equals->arguments->at(0), &key))
+            {
+                /// The key is evaluated as a constant expression, so it can name `options`.
+                result.replaced_arguments[i] = "'[HIDDEN]'";
+                continue;
+            }
+            if (!equalsCaseInsensitive(key, "uri") && !equalsCaseInsensitive(key, "options"))
+                continue;
+
+            String value;
+            if (!tryGetStringFromArgument(*equals->arguments->at(1), &value))
+                result.replaced_arguments[i] = key + " = '[HIDDEN]'";
+            else if (maskMongoDBConnectionString(value))
+                result.replaced_arguments[i] = key + " = " + quoteString(value);
+            continue;
+        }
+
+        if (is_masked(i))
+            continue;
+
+        if (seen_named)
+        {
+            /// A positional argument after a named one shifts the others, so its role is unknown.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+        else if (i == 0)
+        {
+            /// The URI. A computed `host:port` of the engine stays visible.
+            mask_argument(i, /* hide_unreadable= */ !is_engine || size <= 4);
+        }
+        else if (is_engine ? i == 5 : i >= 6)
+        {
+            /// The positional `options` of the `host:port` forms.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+    }
 }
 
 void FunctionSecretArgumentsFinder::findRedisTableEngineSecretArguments()
@@ -964,6 +1042,7 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     else if (engine_name == "MongoDB")
     {
         findMongoDBSecretArguments();
+        findMongoDBConnectionStringSecretArguments();
     }
     else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS") || (engine_name == "GCS")
              || (engine_name == "DeltaLake") || (engine_name == "DeltaLakeS3") || (engine_name == "Hudi")

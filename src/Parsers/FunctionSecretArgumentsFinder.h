@@ -174,6 +174,8 @@ protected:
     void findMySQLFunctionSecretArguments();
     void findTLSCredentialsSecretArguments(size_t start);
     void findMongoDBSecretArguments();
+    /// The secret options of a MongoDB connection string or option list, after `findMongoDBSecretArguments`.
+    void findMongoDBConnectionStringSecretArguments();
     void findRedisTableEngineSecretArguments();
     void findArrowFlightSecretArguments();
     void findXDBCSecretArguments();

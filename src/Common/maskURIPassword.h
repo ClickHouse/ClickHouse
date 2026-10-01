@@ -1,8 +1,11 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 
 namespace DB
@@ -30,8 +33,8 @@ inline bool maskConnectionStringKey(std::string & str, std::string_view key_with
     return true;
 }
 
-/** Replace the password in a URI of the form `scheme://user:password@host` with `[HIDDEN]`.
-  * Returns whether anything was masked. Only the first such occurrence is masked.
+/** The range `[begin, end)` of the password in a URI of the form `scheme://user:password@host`, or
+  * `{npos, npos}` if there is none. Only the first such occurrence is found.
   *
   * This used to be the regular expression `([^:]+://[^:]*):([^@]*)@(.*)` rewritten to
   * `\1:[HIDDEN]@\3` - a whole regex engine carried for one substitution. The scan below reproduces
@@ -42,35 +45,131 @@ inline bool maskConnectionStringKey(std::string & str, std::string_view key_with
   * the password; and `[^@]*` runs up to the '@' that closes it. If either is missing, the match
   * fails at this `://` and the next one is tried.
   */
-inline bool maskURIPassword(std::string * uri)
+inline std::pair<size_t, size_t> findURIPasswordRange(std::string_view uri)
 {
     static constexpr std::string_view SEPARATOR = "://";
 
-    for (size_t separator = uri->find(SEPARATOR); separator != std::string::npos;
-         separator = uri->find(SEPARATOR, separator + SEPARATOR.length()))
+    for (size_t separator = uri.find(SEPARATOR); separator != std::string_view::npos;
+         separator = uri.find(SEPARATOR, separator + SEPARATOR.length()))
     {
         /// `[^:]+` - at least one non-colon character in front of the separator.
-        size_t preceding_colon = separator ? uri->find_last_of(':', separator - 1) : std::string::npos;
-        size_t scheme_begin = (preceding_colon == std::string::npos) ? 0 : preceding_colon + 1;
+        size_t preceding_colon = separator ? uri.find_last_of(':', separator - 1) : std::string_view::npos;
+        size_t scheme_begin = (preceding_colon == std::string_view::npos) ? 0 : preceding_colon + 1;
         if (scheme_begin >= separator)
             continue;
 
         /// `[^:]*:` - the colon that opens the password.
-        size_t password_begin = uri->find(':', separator + SEPARATOR.length());
-        if (password_begin == std::string::npos)
+        size_t password_begin = uri.find(':', separator + SEPARATOR.length());
+        if (password_begin == std::string_view::npos)
             continue;
         ++password_begin;
 
         /// `[^@]*@` - the at sign that closes it.
-        size_t password_end = uri->find('@', password_begin);
-        if (password_end == std::string::npos)
+        size_t password_end = uri.find('@', password_begin);
+        if (password_end == std::string_view::npos)
             continue;
 
-        uri->replace(password_begin, password_end - password_begin, "[HIDDEN]");
-        return true;
+        return {password_begin, password_end};
     }
 
-    return false;
+    return {std::string_view::npos, std::string_view::npos};
+}
+
+/** Replace the password in a URI of the form `scheme://user:password@host` with `[HIDDEN]`.
+  * Returns whether anything was masked. Only the first such occurrence is masked.
+  */
+inline bool maskURIPassword(std::string * uri)
+{
+    auto [password_begin, password_end] = findURIPasswordRange(*uri);
+    if (password_begin == std::string::npos)
+        return false;
+
+    uri->replace(password_begin, password_end - password_begin, "[HIDDEN]");
+    return true;
+}
+
+/** Hide the values of the MongoDB connection options that carry a secret (`tlsCertificateKeyFilePassword`,
+  * its alias `sslClientCertificateKeyPassword`, `authMechanismProperties`) in a connection string or an
+  * option list, and the password `maskURIPassword` hides. As the driver reads them, an option name is
+  * case-insensitive and not percent-decoded, and a value runs to the next '&'. Both are located in the
+  * original string, so neither can consume the delimiters of the other. Returns whether anything was hidden.
+  */
+inline bool maskMongoDBConnectionString(std::string & str)
+{
+    static constexpr std::array<std::string_view, 3> secret_options
+        = {"tlscertificatekeyfilepassword", "sslclientcertificatekeypassword", "authmechanismproperties"};
+
+    auto is_secret_option = [](std::string_view name)
+    {
+        for (auto secret : secret_options)
+        {
+            if (name.length() != secret.length())
+                continue;
+            bool equal = true;
+            for (size_t i = 0; equal && i < name.length(); ++i)
+            {
+                char c = name[i];
+                if ('A' <= c && c <= 'Z')
+                    c = static_cast<char>(c - 'A' + 'a');
+                equal = (c == secret[i]);
+            }
+            if (equal)
+                return true;
+        }
+        return false;
+    };
+
+    std::vector<std::pair<size_t, size_t>> hidden;
+
+    /// An option starts at the beginning of the string or right after a '?' or a '&'.
+    for (size_t name_begin = 0; name_begin < str.length();)
+    {
+        size_t name_end = str.find_first_of("=?&", name_begin);
+        if (name_end == std::string::npos)
+            break;
+        if (str[name_end] != '=')
+        {
+            name_begin = name_end + 1;
+            continue;
+        }
+
+        size_t value_begin = name_end + 1;
+        bool is_secret = is_secret_option(std::string_view(str).substr(name_begin, name_end - name_begin));
+        /// Any other value also ends at a '?', so that one inside it, or inside the path, does not hide a later secret.
+        size_t value_end = is_secret ? str.find('&', value_begin) : str.find_first_of("?&", value_begin);
+        if (value_end == std::string::npos)
+            value_end = str.length();
+
+        if (is_secret)
+            hidden.emplace_back(value_begin, value_end);
+        name_begin = value_end + 1;
+    }
+
+    if (auto [password_begin, password_end] = findURIPasswordRange(str); password_begin != std::string::npos)
+        hidden.emplace_back(password_begin, password_end);
+
+    if (hidden.empty())
+        return false;
+
+    std::sort(hidden.begin(), hidden.end());
+
+    /// Built in one pass, merging the ranges that overlap.
+    std::string result;
+    size_t copied = 0;
+    for (size_t i = 0; i < hidden.size();)
+    {
+        auto [range_begin, range_end] = hidden[i];
+        for (++i; i < hidden.size() && hidden[i].first <= range_end; ++i)
+            range_end = std::max(range_end, hidden[i].second);
+
+        result.append(str, copied, range_begin - copied);
+        result.append("[HIDDEN]");
+        copied = range_end;
+    }
+
+    result.append(str, copied, std::string::npos);
+    str = std::move(result);
+    return true;
 }
 
 /** The offset just past the `://` of a value that starts with an RFC 3986 scheme, `npos` otherwise.
