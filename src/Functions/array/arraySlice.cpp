@@ -329,8 +329,7 @@ private:
         if (bounds.start == 0 && bounds.length == dimension)
             return arguments[0].column;
 
-        /// The bit-plane streams are read directly and QBit has no replicated source, so a replicated argument is materialized.
-        ColumnPtr column = arguments[0].column->convertToFullColumnIfReplicated();
+        ColumnPtr column = arguments[0].column;
 
         bool is_const = false;
         if (const auto * const_column = checkAndGetColumn<ColumnConst>(column.get()))

@@ -2,7 +2,7 @@
 #include <ranges>
 #include <Planner/PlannerActionsVisitor.h>
 
-#include <WindowFunctions/IWindowFunction.h>
+#include <AggregateFunctions/WindowFunction.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -888,12 +888,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             const auto & arg_names = lambda_node.getArguments().getNames();
             if (std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end())
             {
-                /// The synthetic column of an `INTERPOLATE` expression is not backed by a table expression,
-                /// so it has no column identifier. Derive a name that no lambda argument can have instead.
-                const auto * column_identifier = planner_context->getColumnNodeIdentifierOrNull(node);
-                String disambiguated = column_identifier
-                    ? *column_identifier
-                    : fmt::format("__{}.{}", column_source ? toString(column_source->getNodeType()) : "COLUMN", column_node_name);
+                const auto & disambiguated = planner_context->getColumnNodeIdentifierOrThrow(node);
 
                 actions_stack[i].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
 
@@ -1277,15 +1272,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     if (actions_stack.size() == 1 && actions_stack.front().containsNode(function_node_name))
         return {function_node_name, Levels(0)};
 
-    const bool is_in_function = isNameOfInFunction(function_node.getFunctionName());
-
-    /// The `IgnoreSet` variants resolve types without a set: no set is registered for them, and they
-    /// take the left operand alone, which `FunctionIn`'s variadic arity accepts.
-    const bool ignore_set = is_in_function && function_node.getFunctionName().ends_with("IgnoreSet");
-
     std::optional<NodeNameAndNodeMinLevel> in_function_second_argument_node_name_with_level;
 
-    if (is_in_function && !ignore_set)
+    if (isNameOfInFunction(function_node.getFunctionName()))
         in_function_second_argument_node_name_with_level = makeSetForInFunction(node);
 
     /* Aggregate functions, window functions, and GROUP BY expressions were already analyzed in the previous steps.
@@ -1318,8 +1307,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
 
     const auto & function_arguments = function_node.getArguments().getNodes();
-    /// An in-function is resolved with exactly two arguments, so the left operand alone remains.
-    size_t function_arguments_size = ignore_set ? 1 : function_arguments.size();
+    size_t function_arguments_size = function_arguments.size();
 
     Names function_arguments_node_names;
     function_arguments_node_names.reserve(function_arguments_size);
@@ -1376,9 +1364,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         /// non-Nullable arguments (because the function was resolved with pre-aggregation types).
         /// In this case, rebuild the function via FunctionFactory with the actual argument types
         /// so that the result type is correct.
-        /// An `IgnoreSet` node has one child against two expected types, so the loop below cannot see the mismatch.
-        bool argument_types_match = !ignore_set;
-        if (auto function_base = function_node.getFunction(); function_base && argument_types_match)
+        bool argument_types_match = true;
+        if (auto function_base = function_node.getFunction())
         {
             const auto & expected_types = function_base->getArgumentTypes();
             for (size_t i = 0; argument_types_match && i < children.size() && i < expected_types.size(); ++i)

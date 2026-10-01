@@ -1,3 +1,5 @@
+-- Tags: no-darwin
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- Regression test: in a distributed Cascades plan, `SortedRead` claims the ORDER BY
 -- ordering without a merge, so a multi-part table is read as several already-sorted

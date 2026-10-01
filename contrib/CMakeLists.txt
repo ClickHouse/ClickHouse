@@ -252,6 +252,7 @@ add_contrib (libssh-cmake libssh)
 add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
 add_contrib (substrait-cmake substrait) # requires: google-protobuf
 add_contrib (antlr4-cpp-runtime-cmake antlr4-cpp-runtime)
+add_contrib (antlr4-grammars-cmake antlr4-grammars)
 
 add_contrib(simdcomp-cmake simdcomp)
 
@@ -309,9 +310,6 @@ add_contrib (rmm-cmake rmm)
 add_contrib (nanoarrow-cmake nanoarrow)
 add_contrib (kvikio-cmake kvikio)
 add_contrib (librtcx-cmake librtcx)
-# No base folder: nvcomp is not vendored, see contrib/nvcomp-cmake/CMakeLists.txt.
-add_contrib (nvcomp-cmake)
-add_contrib (cudf-cmake cudf) # requires: everything above, plus flatbuffers, xxHash, zlib, zstd
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

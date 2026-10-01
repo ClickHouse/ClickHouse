@@ -20,7 +20,7 @@ void registerDistinctStep(QueryPlanStepRegistry & registry);
 
 namespace QueryPlanSerializationSetting
 {
-    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_distinct;
     extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_distinct;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
@@ -160,11 +160,11 @@ TEST(ExternalDistinctPlanSetting, TemporaryFilesBufferSizeIsClampedOnDeserializa
     EXPECT_EQ(DistinctStep::Settings(plan_settings).temporary_files_buffer_size, MAX_TEMPORARY_FILES_BUFFER_SIZE);
 }
 
-TEST(ExternalDistinctPlanSetting, MaxBlockSizeRoundTripsOnDeserialization)
+TEST(ExternalDistinctPlanSetting, MaxBlockSizeIsValidatedOnDeserialization)
 {
-    /// The plan-level `max_block_size` is a non-zero setting like its query-level counterpart, so restoring
-    /// the step only has to preserve the serialized value.
-    for (const UInt64 max_block_size : {UInt64{1}, UInt64{DEFAULT_BLOCK_SIZE}})
+    /// Plan settings store `max_block_size` as `UInt64`. Restoring the step must reject zero so
+    /// suppression-key extraction can advance, and preserve every valid block size.
+    for (const UInt64 max_block_size : {UInt64{0}, UInt64{1}, UInt64{DEFAULT_BLOCK_SIZE}})
     {
         SCOPED_TRACE(max_block_size);
         QueryPlanSerializationSettings plan_settings;
@@ -176,7 +176,10 @@ TEST(ExternalDistinctPlanSetting, MaxBlockSizeRoundTripsOnDeserialization)
         QueryPlanSerializationSettings restored_settings;
         restored_settings.readBinary(in);
 
-        EXPECT_EQ(DistinctStep::Settings(restored_settings).max_block_size, max_block_size);
+        if (max_block_size == 0)
+            EXPECT_THROW(static_cast<void>(DistinctStep::Settings(restored_settings)), Exception);
+        else
+            EXPECT_EQ(DistinctStep::Settings(restored_settings).max_block_size, max_block_size);
     }
 }
 

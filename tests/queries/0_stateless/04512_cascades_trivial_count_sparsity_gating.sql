@@ -1,3 +1,5 @@
+-- Tags: no-darwin
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- The sparsity-filter trivial count produces a `ReadFromPreparedSource` leaf that the
 -- Cascades optimizer cannot clone.  Like the plain trivial count, the rewrite must skip

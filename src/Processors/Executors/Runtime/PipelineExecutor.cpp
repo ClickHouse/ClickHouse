@@ -14,7 +14,6 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/logger_useful.h>
-#include <Processors/Executors/Runtime/ExecutionThreadContext.h>
 #include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/Executors/Runtime/ExecutingGraph.h>
 #include <QueryPipeline/printPipeline.h>
@@ -110,8 +109,9 @@ struct WorkloadResources
 };
 
 
-PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem)
-    : process_list_element(std::move(elem))
+PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, const StepWallClockRegistry * step_wall_clock_registry_)
+    : step_wall_clock_registry(step_wall_clock_registry_)
+    , process_list_element(std::move(elem))
 {
 
     if (process_list_element)
@@ -280,11 +280,6 @@ void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
     read_progress_callback = std::move(callback);
 }
 
-void PipelineExecutor::setStepProfiler(StepProfilerPtr step_profiler_)
-{
-    step_profiler = std::move(step_profiler_);
-}
-
 void PipelineExecutor::finalizeExecution()
 {
     single_thread_cpu_slot.reset();
@@ -293,9 +288,6 @@ void PipelineExecutor::finalizeExecution()
         std::lock_guard lock(spawn_mutex);
         cpu_slots.reset();
     }
-
-    for (size_t thread_num = 0; thread_num < tasks.getNumThreads(); ++thread_num)
-        tasks.getThreadContext(thread_num).flushWorkIntervals();
 
     checkTimeLimit();
 
@@ -626,8 +618,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// use_threads should reflect number of thread spawned and can grow with tasks.upscale(...).
     /// Starting from 1 instead of 0 is to tackle the single thread scenario, where no upscale() will
     /// be invoked but actually 1 thread used.
-
-    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, read_progress_callback.get(), step_profiler.get());
+    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, step_wall_clock_registry, read_progress_callback.get());
     const size_t initial_parallel = tasks.fill(queue, async_queue);
 
     /// Initial queued parallelism never routes through `pushTasks`, so size setMax here to

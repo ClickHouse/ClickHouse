@@ -1,9 +1,9 @@
 [
   {
-    "group": "Organización",
+    "group": "Organization",
     "pages": [
       {
-        "group": "Organización",
+        "group": "Organization",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -14,15 +14,12 @@
           "GET /v1/organizations/{organizationId}/activities/{activityId}",
           "products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
           "POST /v1/organizations/{organizationId}/byocInfrastructure",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-validate",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
-          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get"
+          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}"
         ]
       },
       {
-        "group": "Facturación",
+        "group": "Billing",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
           "products/cloud/api-reference/billing/active-balances-get",
@@ -30,7 +27,7 @@
         ]
       },
       {
-        "group": "Gestión de usuarios",
+        "group": "User management",
         "pages": [
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
@@ -43,7 +40,7 @@
         ]
       },
       {
-        "group": "Gestión de roles",
+        "group": "Role Management",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -72,10 +69,10 @@
     ]
   },
   {
-    "group": "Servicio",
+    "group": "Service",
     "pages": [
       {
-        "group": "Servicio",
+        "group": "Service",
         "pages": [
           "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
@@ -106,7 +103,7 @@
         ]
       },
       {
-        "group": "Copia de seguridad",
+        "group": "Backup",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
@@ -122,9 +119,7 @@
         "group": "Snapshot",
         "pages": [
           "products/cloud/api-reference/snapshot/snapshot-get-list",
-          "products/cloud/api-reference/snapshot/snapshot-get",
-          "products/cloud/api-reference/snapshot/snapshot-configuration-get",
-          "products/cloud/api-reference/snapshot/snapshot-configuration-update"
+          "products/cloud/api-reference/snapshot/snapshot-get"
         ]
       },
       {
@@ -136,21 +131,11 @@
           "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
           "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update"
         ]
-      },
-      {
-        "group": "Saved queries",
-        "pages": [
-          "products/cloud/api-reference/saved-queries/saved-query-create",
-          "products/cloud/api-reference/saved-queries/saved-query-list",
-          "products/cloud/api-reference/saved-queries/saved-query-delete",
-          "products/cloud/api-reference/saved-queries/saved-query-get",
-          "products/cloud/api-reference/saved-queries/saved-query-update"
-        ]
       }
     ]
   },
   {
-    "group": "Claves de API",
+    "group": "API keys",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",

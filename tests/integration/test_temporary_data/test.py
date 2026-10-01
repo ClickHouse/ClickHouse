@@ -44,8 +44,7 @@ def test_tmp_data_no_leftovers(start_cluster):
         "max_bytes_before_external_sort": "10K",
         "max_bytes_before_external_distinct": "10K",
         "join_algorithm": "grace_hash",
-        # Spilling is driven by the byte threshold; `max_bytes_in_join` is a hard cap.
-        "max_bytes_before_external_join": "20K",
+        "max_bytes_in_join": "10K",
         "grace_hash_join_initial_buckets": "16",
     }
 
@@ -183,10 +182,7 @@ def test_distinct_partial_cancellation_drains_suppression(start_cluster):
         rows = request.get_answer().splitlines()
     finally:
         node_distinct.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-        node_distinct.query(
-            f"KILL QUERY WHERE query_id = '{query_id}' SYNC "
-            "SETTINGS kill_throw_if_noop = false"
-        )
+        node_distinct.query(f"KILL QUERY WHERE query_id = '{query_id}' SYNC")
 
     assert 0 < len(rows) < 8192
     assert len(rows) == len(set(rows))

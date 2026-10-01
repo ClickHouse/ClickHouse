@@ -39,10 +39,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
-    /// fail on entirely valid data.
-    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -129,9 +125,8 @@ Returns the origin and destination hexagon indexes from the given unidirectional
             "SELECT h3GetIndexesFromUnidirectionalEdge(1248204388774707199) AS indexes",
             R"(
 ┌─indexes─────────────────────────────────┐
-├─────────────origin─┬────────destination─┤
-│ 599686042433355775 │ 599686043507097599 │
-└────────────────────┴────────────────────┘
+│ (599686042433355775,599686043507097599) │
+└─────────────────────────────────────────┘
             )"
         }
     };

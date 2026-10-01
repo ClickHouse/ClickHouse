@@ -1,3 +1,5 @@
+-- Tags: no-darwin
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- A sort built by the Cascades SortingEnforcer must keep the query's sort settings
 -- (size limits, spill thresholds). A sort built with default settings would silently

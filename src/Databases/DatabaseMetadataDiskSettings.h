@@ -30,8 +30,6 @@ struct DatabaseMetadataDiskSettings
 
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata);
 
-    static bool hasBuiltin(std::string_view name);
-
 private:
     std::unique_ptr<DatabaseMetadataDiskSettingsImpl> impl;
 };

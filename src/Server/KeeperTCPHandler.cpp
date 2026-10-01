@@ -47,11 +47,6 @@
 namespace ProfileEvents
 {
     extern const Event KeeperTotalElapsedMicroseconds;
-    extern const Event KeeperPacketsSent;
-    extern const Event KeeperPacketsReceived;
-    extern const Event KeeperRequestTotal;
-    extern const Event KeeperRequestTotalWithSubrequests;
-    extern const Event KeeperLatency;
 }
 
 namespace DB
@@ -904,14 +899,12 @@ void KeeperTCPHandler::packageSent()
 {
     conn_stats.incrementPacketsSent();
     keeper_dispatcher->incrementPacketsSent();
-    ProfileEvents::increment(ProfileEvents::KeeperPacketsSent);
 }
 
 void KeeperTCPHandler::packageReceived()
 {
     conn_stats.incrementPacketsReceived();
     keeper_dispatcher->incrementPacketsReceived();
-    ProfileEvents::increment(ProfileEvents::KeeperPacketsReceived);
 }
 
 void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response, const Coordination::ZooKeeperRequestPtr & request)
@@ -941,13 +934,10 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
                 subrequest_count = static_cast<const Coordination::ZooKeeperMultiRequest &>(*request).requests.size();
         }
 
-        conn_stats.updateLatency(elapsed_ms);
+        conn_stats.updateLatency(elapsed_ms, subrequest_count);
 
         operations.erase(response->xid);
-        keeper_dispatcher->updateKeeperStatLatency(elapsed_ms);
-        ProfileEvents::increment(ProfileEvents::KeeperLatency, elapsed_ms);
-        ProfileEvents::increment(ProfileEvents::KeeperRequestTotal);
-        ProfileEvents::increment(ProfileEvents::KeeperRequestTotalWithSubrequests, subrequest_count);
+        keeper_dispatcher->updateKeeperStatLatency(elapsed_ms, subrequest_count);
 
         last_op.set(std::make_unique<LastOp>(LastOp{
             .name = Coordination::toString(response->getOpNum()),

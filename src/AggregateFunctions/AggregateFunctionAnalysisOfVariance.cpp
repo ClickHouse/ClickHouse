@@ -139,9 +139,8 @@ SELECT analysisOfVariance(number, number % 2) FROM numbers(1048575);
         )",
         R"(
 ┌─analysisOfVariance(number, modulo(number, 2))─┐
-├─────────────f_statistic─┬─────────────p_value─┤
-│                       0 │                   1 │
-└─────────────────────────┴─────────────────────┘
+│ (0,1)                                         │
+└───────────────────────────────────────────────┘
         )"
     }
     };

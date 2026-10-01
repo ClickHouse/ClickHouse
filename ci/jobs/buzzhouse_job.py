@@ -239,8 +239,6 @@ def main():
         "enable_sync_settings": random.randint(1, 4) == 1,
         "enable_backups": random.randint(1, 4) == 1,
         "enable_renames": random.randint(1, 4) == 1,
-        # Some fail points abort or hang the server by design
-        "enable_failpoints": False,
         "allow_hardcoded_inserts": allow_hardcoded_inserts,
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",

@@ -66,6 +66,9 @@ struct TreeRewriterResult
     /// Note: not used further.
     NameToNameMap array_join_name_to_alias;
 
+    /// Predicate optimizer overrides the sub queries
+    bool rewrite_subqueries = false;
+
     /// Whether the query contains explicit columns like "SELECT column1 + column2 FROM table1".
     /// Queries like "SELECT count() FROM table1", "SELECT 1" don't contain explicit columns.
     bool has_explicit_columns = false;

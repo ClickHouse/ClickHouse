@@ -1,113 +1,5 @@
 [
   {
-    "destination": "/ar/integrations/language-clients/java/jdbc",
-    "source": "/ar/concepts/features/interfaces/jdbc"
-  },
-  {
-    "destination": "/es/integrations/language-clients/java/jdbc",
-    "source": "/es/concepts/features/interfaces/jdbc"
-  },
-  {
-    "destination": "/fr/integrations/language-clients/java/jdbc",
-    "source": "/fr/concepts/features/interfaces/jdbc"
-  },
-  {
-    "destination": "/ja/integrations/language-clients/java/jdbc",
-    "source": "/ja/concepts/features/interfaces/jdbc"
-  },
-  {
-    "destination": "/ko/integrations/language-clients/java/jdbc",
-    "source": "/ko/concepts/features/interfaces/jdbc"
-  },
-  {
-    "destination": "/pt-BR/integrations/language-clients/java/jdbc",
-    "source": "/pt-BR/concepts/features/interfaces/jdbc"
-  },
-  {
-    "destination": "/ru/integrations/language-clients/java/jdbc",
-    "source": "/ru/concepts/features/interfaces/jdbc"
-  },
-  {
-    "destination": "/zh/integrations/language-clients/java/jdbc",
-    "source": "/zh/concepts/features/interfaces/jdbc"
-  },
-  {
-    "destination": "/integrations/language-clients/java/jdbc",
-    "source": "/concepts/features/interfaces/jdbc"
-  },
-  {
-    "destination": "/ar/integrations/language-clients/cpp",
-    "source": "/ar/concepts/features/interfaces/cpp"
-  },
-  {
-    "destination": "/es/integrations/language-clients/cpp",
-    "source": "/es/concepts/features/interfaces/cpp"
-  },
-  {
-    "destination": "/fr/integrations/language-clients/cpp",
-    "source": "/fr/concepts/features/interfaces/cpp"
-  },
-  {
-    "destination": "/ja/integrations/language-clients/cpp",
-    "source": "/ja/concepts/features/interfaces/cpp"
-  },
-  {
-    "destination": "/ko/integrations/language-clients/cpp",
-    "source": "/ko/concepts/features/interfaces/cpp"
-  },
-  {
-    "destination": "/pt-BR/integrations/language-clients/cpp",
-    "source": "/pt-BR/concepts/features/interfaces/cpp"
-  },
-  {
-    "destination": "/ru/integrations/language-clients/cpp",
-    "source": "/ru/concepts/features/interfaces/cpp"
-  },
-  {
-    "destination": "/zh/integrations/language-clients/cpp",
-    "source": "/zh/concepts/features/interfaces/cpp"
-  },
-  {
-    "destination": "/integrations/language-clients/cpp",
-    "source": "/concepts/features/interfaces/cpp"
-  },
-  {
-    "destination": "/get-started/sample-datasets/nyc-taxi",
-    "source": "/get-started/quickstarts/tutorial"
-  },
-  {
-    "destination": "/ar/get-started/sample-datasets/nyc-taxi",
-    "source": "/ar/get-started/quickstarts/tutorial"
-  },
-  {
-    "destination": "/es/get-started/sample-datasets/nyc-taxi",
-    "source": "/es/get-started/quickstarts/tutorial"
-  },
-  {
-    "destination": "/fr/get-started/sample-datasets/nyc-taxi",
-    "source": "/fr/get-started/quickstarts/tutorial"
-  },
-  {
-    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
-    "source": "/ja/get-started/quickstarts/tutorial"
-  },
-  {
-    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
-    "source": "/ko/get-started/quickstarts/tutorial"
-  },
-  {
-    "destination": "/pt-BR/get-started/sample-datasets/nyc-taxi",
-    "source": "/pt-BR/get-started/quickstarts/tutorial"
-  },
-  {
-    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
-    "source": "/ru/get-started/quickstarts/tutorial"
-  },
-  {
-    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
-    "source": "/zh/get-started/quickstarts/tutorial"
-  },
-  {
     "destination": "/get-started/setup/cloud",
     "source": "/get-started/quickstarts/create-your-first-service-on-cloud"
   },
@@ -2884,10 +2776,6 @@
     "source": "/engines/database-engines/backup"
   },
   {
-    "destination": "/reference/engines/database-engines/cluster",
-    "source": "/engines/database-engines/cluster"
-  },
-  {
     "destination": "/reference/engines/database-engines/datalake",
     "source": "/engines/database-engines/datalakecatalog"
   },
@@ -3876,7 +3764,7 @@
     "source": "/getting-started/quick-start/oss"
   },
   {
-    "destination": "/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/getting-started/tutorial"
   },
   {
@@ -3924,7 +3812,7 @@
     "source": "/getting_started/playground"
   },
   {
-    "destination": "/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/getting_started/tutorial"
   },
   {
@@ -5892,7 +5780,7 @@
     "source": "/interfaces/javascript"
   },
   {
-    "destination": "/integrations/language-clients/java/jdbc",
+    "destination": "/concepts/features/interfaces/jdbc",
     "source": "/interfaces/jdbc"
   },
   {
@@ -8728,7 +8616,7 @@
     "source": "/jp/getting-started/quick-start/oss"
   },
   {
-    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/jp/getting-started/tutorial"
   },
   {
@@ -8776,7 +8664,7 @@
     "source": "/jp/getting_started/playground"
   },
   {
-    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/jp/getting_started/tutorial"
   },
   {
@@ -10740,7 +10628,7 @@
     "source": "/jp/interfaces/javascript"
   },
   {
-    "destination": "/ja/integrations/language-clients/java/jdbc",
+    "destination": "/ja/concepts/features/interfaces/jdbc",
     "source": "/jp/interfaces/jdbc"
   },
   {
@@ -15416,7 +15304,7 @@
     "source": "/jp/troubleshooting"
   },
   {
-    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/jp/tutorial"
   },
   {
@@ -19492,7 +19380,7 @@
     "source": "/ko/getting-started/quick-start/oss"
   },
   {
-    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/ko/getting-started/tutorial"
   },
   {
@@ -19540,7 +19428,7 @@
     "source": "/ko/getting_started/playground"
   },
   {
-    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/ko/getting_started/tutorial"
   },
   {
@@ -21500,7 +21388,7 @@
     "source": "/ko/interfaces/javascript"
   },
   {
-    "destination": "/ko/integrations/language-clients/java/jdbc",
+    "destination": "/ko/concepts/features/interfaces/jdbc",
     "source": "/ko/interfaces/jdbc"
   },
   {
@@ -26176,7 +26064,7 @@
     "source": "/ko/troubleshooting"
   },
   {
-    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/ko/tutorial"
   },
   {
@@ -31608,7 +31496,7 @@
     "source": "/ru/getting-started/quick-start/oss"
   },
   {
-    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/ru/getting-started/tutorial"
   },
   {
@@ -31656,7 +31544,7 @@
     "source": "/ru/getting_started/playground"
   },
   {
-    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/ru/getting_started/tutorial"
   },
   {
@@ -33616,7 +33504,7 @@
     "source": "/ru/interfaces/javascript"
   },
   {
-    "destination": "/ru/integrations/language-clients/java/jdbc",
+    "destination": "/ru/concepts/features/interfaces/jdbc",
     "source": "/ru/interfaces/jdbc"
   },
   {
@@ -38292,7 +38180,7 @@
     "source": "/ru/troubleshooting"
   },
   {
-    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/ru/tutorial"
   },
   {
@@ -40296,24 +40184,16 @@
     "source": "/sql-reference/operators/"
   },
   {
-    "destination": "/reference/statements/exists",
+    "destination": "/reference/operators/exists",
     "source": "/sql-reference/operators/exists"
-  },
-  {
-    "destination": "/reference/statements/exists",
-    "source": "/reference/operators/exists"
   },
   {
     "destination": "/reference/statements/in",
     "source": "/sql-reference/operators/in"
   },
   {
-    "destination": "/reference/statements/distributed-ddl",
+    "destination": "/reference/operators/distributed-ddl",
     "source": "/sql-reference/other/distributed-ddl"
-  },
-  {
-    "destination": "/reference/statements/distributed-ddl",
-    "source": "/reference/operators/distributed-ddl"
   },
   {
     "destination": "/reference/statements",
@@ -41600,7 +41480,7 @@
     "source": "/troubleshooting"
   },
   {
-    "destination": "/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/tutorial"
   },
   {
@@ -45188,7 +45068,7 @@
     "source": "/zh/getting-started/quick-start/oss"
   },
   {
-    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/zh/getting-started/tutorial"
   },
   {
@@ -45236,7 +45116,7 @@
     "source": "/zh/getting_started/playground"
   },
   {
-    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/zh/getting_started/tutorial"
   },
   {
@@ -47196,7 +47076,7 @@
     "source": "/zh/interfaces/javascript"
   },
   {
-    "destination": "/zh/integrations/language-clients/java/jdbc",
+    "destination": "/zh/concepts/features/interfaces/jdbc",
     "source": "/zh/interfaces/jdbc"
   },
   {
@@ -51872,7 +51752,7 @@
     "source": "/zh/troubleshooting"
   },
   {
-    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/zh/tutorial"
   },
   {
@@ -52802,10 +52682,6 @@
   {
     "destination": "/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
     "source": "/integrations/airflow"
-  },
-  {
-    "destination": "/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin",
-    "source": "/integrations/airflow/migrating-from-airflow-clickhouse-plugin"
   },
   {
     "destination": "/concepts/features/interfaces/documentation-search",
@@ -55206,241 +55082,5 @@
   {
     "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
-  },
-  {
-    "destination": "/ar/products/managed-postgres/sync-to-clickhouse/clickpipes",
-    "source": "/ar/products/managed-postgres/clickpipes"
-  },
-  {
-    "destination": "/ar/products/managed-postgres/sync-to-clickhouse/walshadow",
-    "source": "/ar/products/managed-postgres/walshadow"
-  },
-  {
-    "destination": "/es/products/managed-postgres/sync-to-clickhouse/clickpipes",
-    "source": "/es/products/managed-postgres/clickpipes"
-  },
-  {
-    "destination": "/es/products/managed-postgres/sync-to-clickhouse/walshadow",
-    "source": "/es/products/managed-postgres/walshadow"
-  },
-  {
-    "destination": "/fr/products/managed-postgres/sync-to-clickhouse/clickpipes",
-    "source": "/fr/products/managed-postgres/clickpipes"
-  },
-  {
-    "destination": "/fr/products/managed-postgres/sync-to-clickhouse/walshadow",
-    "source": "/fr/products/managed-postgres/walshadow"
-  },
-  {
-    "destination": "/ja/products/managed-postgres/sync-to-clickhouse/clickpipes",
-    "source": "/ja/products/managed-postgres/clickpipes"
-  },
-  {
-    "destination": "/ja/products/managed-postgres/sync-to-clickhouse/walshadow",
-    "source": "/ja/products/managed-postgres/walshadow"
-  },
-  {
-    "destination": "/ko/products/managed-postgres/sync-to-clickhouse/clickpipes",
-    "source": "/ko/products/managed-postgres/clickpipes"
-  },
-  {
-    "destination": "/ko/products/managed-postgres/sync-to-clickhouse/walshadow",
-    "source": "/ko/products/managed-postgres/walshadow"
-  },
-  {
-    "destination": "/pt-BR/products/managed-postgres/sync-to-clickhouse/clickpipes",
-    "source": "/pt-BR/products/managed-postgres/clickpipes"
-  },
-  {
-    "destination": "/pt-BR/products/managed-postgres/sync-to-clickhouse/walshadow",
-    "source": "/pt-BR/products/managed-postgres/walshadow"
-  },
-  {
-    "destination": "/ru/products/managed-postgres/sync-to-clickhouse/clickpipes",
-    "source": "/ru/products/managed-postgres/clickpipes"
-  },
-  {
-    "destination": "/ru/products/managed-postgres/sync-to-clickhouse/walshadow",
-    "source": "/ru/products/managed-postgres/walshadow"
-  },
-  {
-    "destination": "/zh/products/managed-postgres/sync-to-clickhouse/clickpipes",
-    "source": "/zh/products/managed-postgres/clickpipes"
-  },
-  {
-    "destination": "/zh/products/managed-postgres/sync-to-clickhouse/walshadow",
-    "source": "/zh/products/managed-postgres/walshadow"
-  },
-  {
-    "destination": "/ar/products/managed-postgres/sync-to-clickhouse/clickpipes",
-    "source": "/ar/cloud/managed-postgres/clickpipes"
-  },
-  {
-    "destination": "/es/products/managed-postgres/sync-to-clickhouse/clickpipes",
-    "source": "/es/cloud/managed-postgres/clickpipes"
-  },
-  {
-    "destination": "/fr/products/managed-postgres/sync-to-clickhouse/clickpipes",
-    "source": "/fr/cloud/managed-postgres/clickpipes"
-  },
-  {
-    "destination": "/ja/products/managed-postgres/sync-to-clickhouse/clickpipes",
-    "source": "/ja/cloud/managed-postgres/clickpipes"
-  },
-  {
-    "destination": "/ko/products/managed-postgres/sync-to-clickhouse/clickpipes",
-    "source": "/ko/cloud/managed-postgres/clickpipes"
-  },
-  {
-    "destination": "/pt-BR/products/managed-postgres/sync-to-clickhouse/clickpipes",
-    "source": "/pt-BR/cloud/managed-postgres/clickpipes"
-  },
-  {
-    "destination": "/ru/products/managed-postgres/sync-to-clickhouse/clickpipes",
-    "source": "/ru/cloud/managed-postgres/clickpipes"
-  },
-  {
-    "destination": "/zh/products/managed-postgres/sync-to-clickhouse/clickpipes",
-    "source": "/zh/cloud/managed-postgres/clickpipes"
-  },
-  {
-    "destination": "/ar/products/cloud/guides/best-practices/usagelimits",
-    "source": "/ar/cloud/bestpractices/usage-limits"
-  },
-  {
-    "destination": "/ar/concepts/features/interfaces/tcp",
-    "source": "/ar/interfaces/tcp"
-  },
-  {
-    "destination": "/ar/concepts/features/interfaces/web-sql",
-    "source": "/ar/interfaces/web-sql"
-  },
-  {
-    "destination": "/ar/products/cloud/reference/supported-regions",
-    "source": "/ar/cloud/reference/supported-regions"
-  },
-  {
-    "destination": "/ar/products/cloud/features/infrastructure/shared-catalog",
-    "source": "/ar/cloud/reference/shared-catalog"
-  },
-  {
-    "destination": "/ar/products/managed-postgres/overview",
-    "source": "/ar/cloud/managed-postgres"
-  },
-  {
-    "destination": "/ar/get-started/setup/cloud",
-    "source": "/ar/getting-started/quick-start/cloud"
-  },
-  {
-    "destination": "/es/products/cloud/guides/best-practices/usagelimits",
-    "source": "/es/cloud/bestpractices/usage-limits"
-  },
-  {
-    "destination": "/es/concepts/features/interfaces/tcp",
-    "source": "/es/interfaces/tcp"
-  },
-  {
-    "destination": "/es/concepts/features/interfaces/web-sql",
-    "source": "/es/interfaces/web-sql"
-  },
-  {
-    "destination": "/es/products/cloud/reference/supported-regions",
-    "source": "/es/cloud/reference/supported-regions"
-  },
-  {
-    "destination": "/es/products/cloud/features/infrastructure/shared-catalog",
-    "source": "/es/cloud/reference/shared-catalog"
-  },
-  {
-    "destination": "/es/products/managed-postgres/overview",
-    "source": "/es/cloud/managed-postgres"
-  },
-  {
-    "destination": "/es/get-started/setup/cloud",
-    "source": "/es/getting-started/quick-start/cloud"
-  },
-  {
-    "destination": "/fr/products/cloud/guides/best-practices/usagelimits",
-    "source": "/fr/cloud/bestpractices/usage-limits"
-  },
-  {
-    "destination": "/fr/concepts/features/interfaces/tcp",
-    "source": "/fr/interfaces/tcp"
-  },
-  {
-    "destination": "/fr/concepts/features/interfaces/web-sql",
-    "source": "/fr/interfaces/web-sql"
-  },
-  {
-    "destination": "/fr/products/cloud/reference/supported-regions",
-    "source": "/fr/cloud/reference/supported-regions"
-  },
-  {
-    "destination": "/fr/products/cloud/features/infrastructure/shared-catalog",
-    "source": "/fr/cloud/reference/shared-catalog"
-  },
-  {
-    "destination": "/fr/products/managed-postgres/overview",
-    "source": "/fr/cloud/managed-postgres"
-  },
-  {
-    "destination": "/fr/get-started/setup/cloud",
-    "source": "/fr/getting-started/quick-start/cloud"
-  },
-  {
-    "destination": "/ja/products/cloud/guides/best-practices/usagelimits",
-    "source": "/ja/cloud/bestpractices/usage-limits"
-  },
-  {
-    "destination": "/ja/concepts/features/interfaces/tcp",
-    "source": "/ja/interfaces/tcp"
-  },
-  {
-    "destination": "/ja/concepts/features/interfaces/web-sql",
-    "source": "/ja/interfaces/web-sql"
-  },
-  {
-    "destination": "/ja/products/cloud/reference/supported-regions",
-    "source": "/ja/cloud/reference/supported-regions"
-  },
-  {
-    "destination": "/ja/products/cloud/features/infrastructure/shared-catalog",
-    "source": "/ja/cloud/reference/shared-catalog"
-  },
-  {
-    "destination": "/ja/products/managed-postgres/overview",
-    "source": "/ja/cloud/managed-postgres"
-  },
-  {
-    "destination": "/ja/get-started/setup/cloud",
-    "source": "/ja/getting-started/quick-start/cloud"
-  },
-  {
-    "destination": "/pt-BR/products/cloud/guides/best-practices/usagelimits",
-    "source": "/pt-BR/cloud/bestpractices/usage-limits"
-  },
-  {
-    "destination": "/pt-BR/concepts/features/interfaces/tcp",
-    "source": "/pt-BR/interfaces/tcp"
-  },
-  {
-    "destination": "/pt-BR/concepts/features/interfaces/web-sql",
-    "source": "/pt-BR/interfaces/web-sql"
-  },
-  {
-    "destination": "/pt-BR/products/cloud/reference/supported-regions",
-    "source": "/pt-BR/cloud/reference/supported-regions"
-  },
-  {
-    "destination": "/pt-BR/products/cloud/features/infrastructure/shared-catalog",
-    "source": "/pt-BR/cloud/reference/shared-catalog"
-  },
-  {
-    "destination": "/pt-BR/products/managed-postgres/overview",
-    "source": "/pt-BR/cloud/managed-postgres"
-  },
-  {
-    "destination": "/pt-BR/get-started/setup/cloud",
-    "source": "/pt-BR/getting-started/quick-start/cloud"
   }
 ]

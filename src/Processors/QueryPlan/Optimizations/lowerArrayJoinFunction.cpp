@@ -26,11 +26,21 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     if (!dag.hasArrayJoin())
         return 0;
 
-    /// The step emits the expansion in windows, a stateful function above it would see other block boundaries.
+    /// Extraction changes block boundaries, so bail if a stateful function is above (as mergeExpressions does).
     if (dag.hasStatefulFunctions())
         return 0;
 
-    auto extracted = dag.extractFirstArrayJoin(settings.legacy_array_join_function_nondeterministic_evaluation);
+    /// A query-scope non-deterministic function (rand, ...) is computed once and replicated before the join;
+    /// lowering would move it into the post-join filter/expression and evaluate it per expanded row.
+    if (dag.hasNonDeterministic())
+        return 0;
+
+    /// `split` hands the before/after halves off by column name, so a computed node reusing an input name
+    /// (`CAST(x, ...) AS x`) could swap the two carriers across the step. Leave such DAGs alone.
+    if (dag.hasInputNameShadowedByComputedNode())
+        return 0;
+
+    auto extracted = dag.extractFirstArrayJoin();
     if (!extracted)
         return 0;
 

@@ -25,9 +25,7 @@ using ExecutingGraphPtr = std::unique_ptr<ExecutingGraph>;
 class ReadProgressCallback;
 using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
 
-class StepProfiler;
-using StepProfilerPtr = std::shared_ptr<StepProfiler>;
-
+class StepWallClockRegistry;
 struct WorkloadResources;
 
 /// Executes query pipeline.
@@ -43,7 +41,7 @@ public:
     /// PipelineExecutor must be destroyed before the corresponding QueryPipeline, because
     /// QueryPlanResourceHolder may hold some resources referenced by processors and used in
     /// processor destructors.
-    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem);
+    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, const StepWallClockRegistry * step_wall_clock_registry = nullptr);
     ~PipelineExecutor();
 
     /// Execute pipeline in multiple threads. Must be called once.
@@ -71,9 +69,6 @@ public:
     /// Set callback for read progress.
     /// It would be called every time when processor reports read progress.
     void setReadProgressCallback(ReadProgressCallbackPtr callback);
-
-    /// Set the profiler of EXPLAIN ANALYZE.
-    void setStepProfiler(StepProfilerPtr step_profiler_);
 
 private:
     ExecutingGraphPtr graph;
@@ -108,6 +103,8 @@ private:
     /// system.opentelemetry_span_log
     bool trace_processors = false;
     bool trace_cpu_scheduling = false;
+    /// EXPLAIN ANALYZE
+    const StepWallClockRegistry * step_wall_clock_registry = nullptr;
 
     std::atomic<ExecutionStatus> execution_status = ExecutionStatus::NotStarted;
     std::atomic_bool cancelled_reading = false;
@@ -117,7 +114,6 @@ private:
     QueryStatusPtr process_list_element;
 
     ReadProgressCallbackPtr read_progress_callback;
-    StepProfilerPtr step_profiler;
 
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new

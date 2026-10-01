@@ -58,16 +58,12 @@ static std::array<const EngineSettingsToHide *, 6> engineSettingsToHide()
 /// disagree on what is secret.
 static std::optional<String> renderSecretChangeValue(const SettingChange & change)
 {
-    /// The queue engines also take every setting, a format setting included, with the legacy `s3queue_` prefix.
-    static constexpr std::string_view s3queue_prefix = "s3queue_";
-    const String setting_name = change.name.starts_with(s3queue_prefix) ? change.name.substr(s3queue_prefix.size()) : change.name;
-
-    if (auto masked = CoreSettings::renderSecretSettingValue(setting_name, change.value))
+    if (auto masked = CoreSettings::renderSecretSettingValue(change.name, change.value))
         return masked;
 
     for (const auto * settings_to_hide : engineSettingsToHide())
     {
-        auto it = settings_to_hide->find(setting_name);
+        auto it = settings_to_hide->find(change.name);
         if (it != settings_to_hide->end())
             return it->second(change.value);
     }

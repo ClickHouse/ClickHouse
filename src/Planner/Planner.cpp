@@ -77,7 +77,6 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/TrivialGroupByLimit.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/AggregationUtils.h>
@@ -446,7 +445,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const PlannerContextPtr & planner_context)
 {
     query_plan.addInterpreterContext(planner_context->getQueryContext());
-    query_plan.addDistributedPlanDecisionContext(planner_context->getMutableQueryContext());
+
     for (const auto & [table_expression, _] : planner_context->getTableExpressionNodeToData())
     {
         if (auto * table_node = table_expression->as<TableNode>())
@@ -730,11 +729,10 @@ ALWAYS_INLINE void addFilterStep(
 Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
-    const Settings & settings,
-    bool aggregate_descriptions_remove_arguments = false,
-    std::optional<UInt64> trivial_group_by_limit = {})
+    bool aggregate_descriptions_remove_arguments = false)
 {
     const auto & query_context = planner_context->getQueryContext();
+    const Settings & settings = query_context->getSettingsRef();
 
     /// The cache key is computed later from the query plan in setAggregationHashTableCacheKeys
     /// (key == 0 keeps preallocation disabled until the optimization pass stamps the real key).
@@ -755,19 +753,12 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     auto tmp_data_scope = query_context->getTempDataOnDisk();
     if (tmp_data_scope)
         tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
-    /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET` keys
-    /// and enable the shared kept-keys cutoff, which keeps the aggregate values of the kept keys
-    /// exact under parallel aggregation (see `Aggregator::Params::shared_kept_keys_for_overflow_any`).
-    /// External aggregation stays configured as usual: before the kept keys are frozen a spill
-    /// abandons the cutoff, and after the freeze a table already rebuilt to the kept keys still
-    /// spills and is re-seeded with them (see `Aggregator::Params::SharedKeptKeysControl`), so a
-    /// query that needs to spill keeps spilling exactly as without the optimization.
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
-        trivial_group_by_limit.value_or(settings[Setting::max_rows_to_group_by]),
-        trivial_group_by_limit ? OverflowMode::ANY : settings[Setting::group_by_overflow_mode].value,
+        settings[Setting::max_rows_to_group_by],
+        settings[Setting::group_by_overflow_mode],
         settings[Setting::group_by_two_level_threshold],
         settings[Setting::group_by_two_level_threshold_bytes],
         Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
@@ -793,7 +784,6 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
         settings[Setting::adaptive_aggregator_freeze_threshold_bytes]);
-    aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value();
 
     return aggregator_params;
 }
@@ -930,56 +920,15 @@ void applyTopKPushdownToPartialAggregation(
         });
 }
 
-/// The `GROUP BY` top-K heap (`enable_group_by_top_k_optimization`) and the shared kept-keys
-/// cutoff target the same `GROUP BY ... LIMIT n` shape and exclude each other: both top-K entry
-/// points (`applyTopKPushdownToPartialAggregation` and `tryOptimizeGroupByTopK`) bail out on
-/// `max_rows_to_group_by > 0`, so arming the cutoff takes the heap away from the query. Measured
-/// head to head on the same build, the heap is as fast or faster on every key type: 1.4-1.6x on
-/// `GROUP BY number % 100000000 LIMIT 10` (CI performance comparison), up to 1.3x on `String`
-/// and `LowCardinality(Nullable(UInt64))` keys. So the cutoff only serves the queries the heap
-/// does not apply to.
-/// Returns true when the heap would apply to this query and should be left in charge.
-bool preferGroupByTopKOverKeptKeysCutoff(const Settings & settings, UInt64 limit)
-{
-    if (!settings[Setting::enable_group_by_top_k_optimization])
-        return false;
-
-    /// The heap is not applied to a serialized plan; see `applyTopKPushdownToPartialAggregation`.
-    if (settings[Setting::serialize_query_plan])
-        return false;
-
-    /// A user-set `max_rows_to_group_by` (already known to be looser than the cutoff here) makes
-    /// both top-K entry points bail out, so the heap would not apply and must not take the
-    /// cutoff away from the query.
-    if (settings[Setting::max_rows_to_group_by] != 0)
-        return false;
-
-    if (settings[Setting::query_plan_max_limit_for_top_k_optimization] != 0
-        && limit > settings[Setting::query_plan_max_limit_for_top_k_optimization])
-        return false;
-
-    if (limit > Aggregator::Params::TopKParams::max_k)
-        return false;
-
-    return true;
-}
-
 void addAggregationStep(QueryPlan & query_plan,
     const QueryNode & query_node,
     PlannerExpressionsAnalysisResult & expression_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
-    const PlannerContextPtr & planner_context,
-    const Settings & settings,
-    std::optional<UInt64> trivial_group_by_limit)
+    const PlannerContextPtr & planner_context)
 {
     auto aggregation_analysis_result = expression_analysis_result.getAggregation();
-    auto aggregator_params = getAggregatorParams(
-        planner_context,
-        aggregation_analysis_result,
-        query_analysis_result,
-        settings,
-        /*aggregate_descriptions_remove_arguments=*/false,
-        trivial_group_by_limit);
+    const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
+    auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result);
 
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
@@ -1257,7 +1206,6 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     PlannerExpressionsAnalysisResult & expression_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
-    const SelectQueryOptions & select_query_options,
     const QueryNode & query_node,
     UsefulSets & useful_sets)
 {
@@ -1267,11 +1215,6 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
     auto & having_analysis_result = expression_analysis_result.getHaving();
     bool need_finalize = !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
-
-    /// `TotalsHavingStep` evaluates `HAVING` itself, so a correlated subquery in `HAVING` has to be
-    /// decorrelated into the plan before the step, the same way `addFilterStep` does it.
-    for (const auto & correlated_subquery : having_analysis_result.correlated_subtrees.subqueries)
-        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
 
     std::optional<ActionsDAG> actions;
     if (having_analysis_result.filter_actions)
@@ -1313,7 +1256,6 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     auto aggregator_params = getAggregatorParams(planner_context,
         aggregation_analysis_result,
         query_analysis_result,
-        settings,
         true /*aggregate_descriptions_remove_arguments*/);
 
     if (query_node.isGroupByWithRollup())
@@ -2235,9 +2177,9 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         /// Contexts should be copied into the root query plan, because some functions may
         /// be created using them while this subquery plan will be destroyed after
         /// FutureSetFromSubquery::buildSetInplace(). Otherwise, function execution may fail
-        /// with a "Context has expired" exception. The set source is not united into this plan,
-        /// so its decision contexts are copied the same way.
-        query_plan.takeContextsFrom(subquery_plan);
+        /// with a "Context has expired" exception.
+        for (const auto & context : subquery_plan.getInterpretersContexts())
+            query_plan.addInterpreterContext(context);
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
     }
 
@@ -2320,37 +2262,6 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
         filter_info.do_remove_column);
     filter_step->setStepDescription("additional result filter");
     query_plan.addStep(std::move(filter_step));
-}
-
-/// Replace a header that holds nothing but row-count-only columns (or no column at all) with one
-/// canonical materialized marker, so that the row count has a column to live in.
-void addRowCountMarkerStepIfNeeded(QueryPlan & query_plan, const PlannerContextPtr & planner_context)
-{
-    ColumnIdentifierSet row_count_only_identifiers;
-    for (const auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
-    {
-        if (const auto & column_identifier = table_expression_data.getRowCountOnlyColumnIdentifier())
-            row_count_only_identifiers.insert(*column_identifier);
-    }
-
-    if (row_count_only_identifiers.empty())
-        return;
-
-    const auto & header = query_plan.getCurrentHeader();
-    for (const auto & column : *header)
-    {
-        if (!row_count_only_identifiers.contains(column.name))
-            return;
-    }
-
-    ActionsDAG marker_dag(header->getNamesAndTypesList());
-    auto marker_type = std::make_shared<DataTypeUInt8>();
-    marker_dag.getOutputs()
-        = {&marker_dag.materializeNode(marker_dag.addColumn(marker_type->createColumnConst(0, 0u), marker_type, "__row_count_marker"))};
-
-    auto marker_step = std::make_unique<ExpressionStep>(header, std::move(marker_dag));
-    marker_step->setStepDescription("Row count marker for zero-column mergeable state");
-    query_plan.addStep(std::move(marker_step));
 }
 
 void addReadFromQueryResultCacheStep(
@@ -2731,12 +2642,6 @@ void Planner::buildPlanForQueryNode()
     collectSets(query_tree, *planner_context);
     auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);
 
-    /// The kill switch for a query joining multiple tables runs first: the checks below throw when
-    /// `enable_parallel_replicas = 2`, and a query for which parallel replicas are already disabled
-    /// must be executed without them instead of failing with a parallel-replicas-only exception.
-    /// It runs after `collectSets` so that the prepared sets it has to reach are already collected.
-    disableParallelReplicasForMultipleTablesQueryIfNeeded(query_tree, planner_context);
-
     if (query_context->canUseTaskBasedParallelReplicas())
     {
         if (!settings[Setting::parallel_replicas_allow_in_with_subquery] && planner_context->getPreparedSets().hasSubqueries())
@@ -2931,44 +2836,7 @@ void Planner::buildPlanForQueryNode()
                     "Before GROUP BY",
                     useful_sets);
 
-            /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET`
-            /// keys. Unlike the settings-based rewrite of `OptimizeTrivialGroupByLimitPass`
-            /// (which is restricted to aggregate-free projections), the shared kept-keys cutoff
-            /// keeps the aggregate values of the kept keys exact, so it also fires with aggregate
-            /// functions in the projection. It is only sound when this node performs the complete
-            /// aggregation itself (both stages): partial states sent to a remote initiator would
-            /// be merged with other nodes' states, whose kept keys differ, and the values of the
-            /// kept keys would be undercounted again — one level up, across nodes instead of
-            /// across threads. On the shards of distributed queries and on the replicas of
-            /// parallel-replicas reading, `isSecondStage` is false, so the cutoff stays off there.
-            /// Start with query settings and apply the changes attached to this query node.
-            /// A top-level `SETTINGS make_distributed_plan = 1` is held by the query context,
-            /// while nested query settings are attached to their respective query nodes.
-            Settings query_settings = settings;
-            query_settings.applyChanges(query_node.getSettingsChanges());
-
-            std::optional<UInt64> trivial_group_by_limit;
-            if (!query_settings[Setting::make_distributed_plan]
-                && query_processing_info.isFirstStage() && query_processing_info.isSecondStage()
-                && hasAggregateFunctionNodes(query_node.getProjectionNode()))
-            {
-                trivial_group_by_limit = getTrivialGroupByLimit(query_node, query_settings);
-
-                /// Respect a user-set tighter `max_rows_to_group_by`. Equality is safe only with
-                /// the approximate ANY-mode semantics; otherwise forcing ANY below would replace
-                /// the user's `throw` or `break` contract.
-                const UInt64 user_max_rows = query_settings[Setting::max_rows_to_group_by];
-                if (trivial_group_by_limit && user_max_rows != 0
-                    && (user_max_rows < *trivial_group_by_limit
-                        || (user_max_rows == *trivial_group_by_limit && query_settings[Setting::group_by_overflow_mode] != OverflowMode::ANY)))
-                    trivial_group_by_limit.reset();
-
-                /// Leave the `GROUP BY` top-K heap in charge wherever it applies: it is faster.
-                if (trivial_group_by_limit && preferGroupByTopKOverKeptKeysCutoff(query_settings, *trivial_group_by_limit))
-                    trivial_group_by_limit.reset();
-            }
-
-            addAggregationStep(query_plan, query_node, expression_analysis_result, query_analysis_result, planner_context, query_settings, trivial_group_by_limit);
+            addAggregationStep(query_plan, query_node, expression_analysis_result, query_analysis_result, planner_context);
         }
 
         /** If we have aggregation, we can't execute any later-stage
@@ -3066,7 +2934,7 @@ void Planner::buildPlanForQueryNode()
 
             if (query_node.isGroupByWithTotals())
             {
-                addTotalsHavingStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, select_query_options, query_node, useful_sets);
+                addTotalsHavingStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, query_node, useful_sets);
                 having_executed = true;
             }
 
@@ -3271,11 +3139,6 @@ void Planner::buildPlanForQueryNode()
         // For additional_result_filter setting
         addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
-
-    /// A header carrying nothing but row-count-only columns cannot express "N rows" across a
-    /// mergeable-stage boundary, and both sides must derive the same header.
-    if (!query_processing_info.isFinalizingStage() && query_plan.isInitialized())
-        addRowCountMarkerStepIfNeeded(query_plan, planner_context);
 
     const auto & client_info = query_context->getClientInfo();
 
