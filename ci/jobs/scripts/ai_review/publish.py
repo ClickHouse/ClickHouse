@@ -34,6 +34,7 @@ import json
 import os
 import re
 
+from ci.jobs.scripts.ai_review import units as review_units
 from ci.jobs.scripts.ai_review.context import thread_is_ours, is_bot
 
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -131,7 +132,7 @@ def dismissed_findings(records):
     return out
 
 
-def validate_comments(entries, files, threads, base_dir, dismissed=None):
+def validate_comments(entries, files, threads, base_dir, dismissed=None, units=None, known_findings=None):
     """Split the agent's inline comments into (postable, moved) where `moved`
     are (entry, body, reason) to be listed in the summary instead. `dismissed`
     maps a path to findings authors pushed back on in earlier PRs; a new
@@ -183,10 +184,19 @@ def validate_comments(entries, files, threads, base_dir, dismissed=None):
         if any(_similar(body, other) for other in (dismissed or {}).get(path, [])):
             moved.append((e, body, "an author pushed back on the same finding in an earlier PR"))
             continue
+        unit = review_units.unit_for_line(units or [], path, line, side)
+        fingerprint = review_units.finding_fingerprint(path, unit["key"] if unit else "", body)
+        e["_fingerprint"] = fingerprint
+        if (unit and not review_units.in_scope(unit) and fingerprint not in (known_findings or set())
+                and (e.get("severity") or "").lower() != "blocker"):
+            # A late finding: code unchanged since the previous review, so not
+            # caused by this push. Kept, but not as a new inline comment.
+            moved.append((e, body, "code unchanged since the previous review"))
+            continue
         seen.add((path, line, side))
         open_texts.setdefault(path, []).append(body)
         comment = {"path": path, "line": line, "side": side, "body_file": body_file,
-                   "_blocker": (e.get("severity") or "").lower() == "blocker"}
+                   "_blocker": (e.get("severity") or "").lower() == "blocker", "_fingerprint": fingerprint}
         if start is not None:
             comment["start_line"] = start
             comment["start_side"] = side
@@ -200,6 +210,25 @@ def validate_comments(entries, files, threads, base_dir, dismissed=None):
     for c in postable:
         del c["_blocker"]
     return postable, moved
+
+
+def coverage_gaps(output_dir, units):
+    """In-scope units the agent gave no verdict for in `coverage.json`."""
+    try:
+        entries = _load_json_list(os.path.join(output_dir, "coverage.json"))
+    except (ValueError, OSError):
+        entries = []
+    covered = {str(e.get("unit")) for e in entries if isinstance(e, dict) and e.get("verdict")}
+    return [u for u in units or [] if review_units.in_scope(u) and u["id"] not in covered]
+
+
+def coverage_markdown(gaps):
+    if not gaps:
+        return ""
+    names = ", ".join(f"{u['id']} `{u['path']}`" + (f" `{u['heading']}`" if u["heading"] else "") for u in gaps[:30])
+    more = f" and {len(gaps) - 30} more" if len(gaps) > 30 else ""
+    return (f"\n<details><summary>Review units without a verdict in this run ({len(gaps)})</summary>\n\n"
+            f"{names}{more}\n\n</details>\n")
 
 
 def validate_thread_actions(entries, threads, base_dir):
@@ -296,19 +325,26 @@ def local_links_to_github(text, repo, sha):
     return _LOCAL_LINK_RE.sub(repl, text or "")
 
 
-def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_text, memory=None):
+def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_text, memory=None,
+            units=None, previous_state=None):
     """Post the inline review and the thread actions. `gh` is the praktika GH
     class (injected for tests). Returns the summary text to post, with the
     comments that could not be attached inline appended."""
+    known = {f.get("fp") for f in (previous_state or {}).get("findings") or []}
     comments, moved = validate_comments(
         _load_json_list(os.path.join(output_dir, "comments.json")), files, threads, output_dir,
-        dismissed_findings(memory))
+        dismissed_findings(memory), units, known)
+    late = [m for m in moved if m[2] == "code unchanged since the previous review"]
+    gaps = coverage_gaps(output_dir, units)
+    print(f"Review units: {sum(1 for u in units or [] if review_units.in_scope(u))} in scope, "
+          f"{len(gaps)} without a verdict; late findings kept out of inline comments: {len(late)}")
     actions = validate_thread_actions(
         _load_json_list(os.path.join(output_dir, "thread_actions.json")), threads, output_dir)
 
     if comments:
         print(f"Posting a review with {len(comments)} inline comment(s)")
-        if not gh.post_pr_review(commit_id=head_sha, comments=comments, pr=pr_number, repo=repo):
+        payload = [{k: v for k, v in c.items() if not k.startswith("_")} for c in comments]
+        if not gh.post_pr_review(commit_id=head_sha, comments=payload, pr=pr_number, repo=repo):
             print("WARNING: posting the batched review failed; listing its findings in the summary instead")
             for c in comments:
                 body, _ = _read_body(c, output_dir)
@@ -339,5 +375,13 @@ def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_t
             failed.append((action, thread, body_file))
 
     summary = local_links_to_github(summary_text, repo, head_sha)
-    summary = summary.rstrip() + "\n" + moved_findings_markdown(moved) + failed_actions_markdown(failed, repo, pr_number, output_dir)
+    summary = (summary.rstrip() + "\n" + coverage_markdown(gaps) + moved_findings_markdown(moved)
+               + failed_actions_markdown(failed, repo, pr_number, output_dir))
+    if units is not None:
+        findings = list((previous_state or {}).get("findings") or [])
+        posted = {c["_fingerprint"] for c in comments if c.get("_fingerprint")}
+        findings += [{"fp": fp} for fp in sorted(posted - known)]
+        contract, _ = _read_body({"body_file": os.path.join(output_dir, "contract.md")}, output_dir)
+        summary += "\n" + review_units.encode_state(
+            units, findings[-200:], contract or (previous_state or {}).get("contract", "")) + "\n"
     return summary

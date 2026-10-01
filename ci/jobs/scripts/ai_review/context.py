@@ -28,6 +28,7 @@ import re
 import shlex
 import unicodedata
 
+from ci.jobs.scripts.ai_review import units as review_units
 from ci.praktika.gh import GH
 
 # The app the job posts as. Its identity appears as `clickhouse-gh` in
@@ -276,13 +277,15 @@ def _render_since_last_review(repo, pr_number, base_ref, last_sha, head_sha, fil
 class Context:
     """The fetched context. Holds what the job needs again after the run."""
 
-    def __init__(self, directory, repo, pr, files, threads, previous_review):
+    def __init__(self, directory, repo, pr, files, threads, previous_review, units=None, previous_state=None):
         self.directory = directory
         self.repo = repo
         self.pr = pr
         self.files = files
         self.threads = threads
         self.previous_review = previous_review
+        self.units = units or []
+        self.previous_state = previous_state
 
     @property
     def head_sha(self):
@@ -319,20 +322,28 @@ def fetch(directory, repo, pr_number):
     _write(os.path.join(directory, "linked_issues.md"), _render_linked(repo, _linked_numbers(pr, repo)))
     if head_sha:
         _write(os.path.join(directory, "ci_status.md"), _render_ci_status(repo, head_sha))
+    previous_state = review_units.decode_state(previous)
+    units = review_units.scope(review_units.build(files), previous_state)
+    incremental = previous_state is not None
+    _write(os.path.join(directory, "units.md"), review_units.render(units, incremental))
+    if previous_state and previous_state.get("contract"):
+        _write(os.path.join(directory, "previous_contract.md"), previous_state["contract"])
     if previous:
         _write(os.path.join(directory, "previous_review.md"), previous)
         since = _render_since_last_review(
             repo, pr_number, (pr.get("base") or {}).get("ref") or "master", reviewed_sha(previous), head_sha, files)
         if since:
             _write(os.path.join(directory, "since_last_review.md"), since)
-    return Context(directory, repo, pr, files, threads, previous)
+    return Context(directory, repo, pr, files, threads, previous, units, previous_state)
 
 
 def index_markdown(directory):
     """The list of context files for the prompt, with what each holds."""
     descriptions = [
         ("pr.md", "title, author, base and head, labels, description, changed files"),
+        ("units.md", "the diff split into review units, riskiest first, with what is in scope for this push"),
         ("diff.patch", "the PR diff as GitHub serves it; inline comments can only target lines in it"),
+        ("previous_contract.md", "the PR's intent and invariants as your previous review recorded them"),
         ("threads.md", "inline review threads: who wrote them, open/resolved, every reply"),
         ("conversation.md", "top-level comments and review bodies"),
         ("linked_issues.md", "issues and PRs the description references"),

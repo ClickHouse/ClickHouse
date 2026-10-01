@@ -16,6 +16,7 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.scripts.ai_review import context, loom, prompt, publish
+from ci.jobs.scripts.ai_review import units as units_mod
 
 PATCH = (
     "@@ -10,4 +10,5 @@ void f()\n"
@@ -299,6 +300,8 @@ def test_outputs_require_every_file():
     with tempfile.TemporaryDirectory() as d:
         with mock.patch.object(job, "OUTPUT_DIR", d), mock.patch.object(job, "SUMMARY_FILE", os.path.join(d, "summary.md")):
             _body(d, "summary.md", "---\n#### AI Review\n")
+            assert "coverage.json" in job._outputs_problem()
+            _body(d, "coverage.json", "[]")
             assert "comments.json" in job._outputs_problem()
             _body(d, "comments.json", "[]")
             assert "thread_actions.json" in job._outputs_problem()
@@ -317,7 +320,7 @@ def test_agent_falls_back_after_a_fast_failure():
         calls.append((model, effort))
         if model == job.MODEL:
             return 1  # e.g. the CLI does not know the model yet
-        for name in ("comments.json", "thread_actions.json"):
+        for name in ("coverage.json", "comments.json", "thread_actions.json"):
             _body(job.OUTPUT_DIR, name, "[]")
         _body(job.OUTPUT_DIR, "summary.md", "---\n#### AI Review\n")
         return 0
@@ -424,3 +427,67 @@ def test_recall_outcomes_and_dismissed_filter():
             [{"path": "src/Foo.cpp", "line": 12, "severity": "major", "body_file": b}], FILES, [], d,
             publish.dismissed_findings(records))
         assert postable == [] and "pushed back" in moved[0][2]
+
+
+PATCH_B = "@@ -100,3 +100,4 @@ void MergeTreeData::loadParts()\n a();\n+b();\n c();"
+
+
+def test_units_are_split_by_function_ordered_by_risk_and_fingerprinted():
+    files = [{"filename": "tests/queries/0_stateless/1.sql", "patch": "@@ -1 +1,2 @@\n x\n+y"},
+             {"filename": "src/Storages/MergeTree/MergeTreeData.cpp", "patch": PATCH_B},
+             {"filename": "src/Foo.cpp", "patch": PATCH}]
+    units = units_mod.build(files)
+    assert [u["path"] for u in units][:1] == ["src/Storages/MergeTree/MergeTreeData.cpp"]
+    assert [u["id"] for u in units] == ["U1", "U2", "U3", "U4"]
+    foo = [u for u in units if u["path"] == "src/Foo.cpp"]
+    assert {u["heading"] for u in foo} == {"void f()", "void g()"}
+    assert units_mod.unit_for_line(units, "src/Foo.cpp", 42, "RIGHT")["heading"] == "void g()"
+    assert units_mod.unit_for_line(units, "src/Foo.cpp", 30, "RIGHT") is None
+    # The fingerprint ignores line numbers: the same change elsewhere in the file is unchanged.
+    moved = [{"filename": "src/Storages/MergeTree/MergeTreeData.cpp", "patch": PATCH_B.replace("-100,3 +100,4", "-140,3 +150,4")}]
+    assert units_mod.build(moved)[0]["fp"] == units[0]["fp"]
+
+
+def test_scope_and_state_round_trip():
+    files = [{"filename": "src/Foo.cpp", "patch": PATCH}]
+    first = units_mod.scope(units_mod.build(files), None)
+    assert all(units_mod.in_scope(u) for u in first)
+    marker = units_mod.encode_state(first, [{"fp": "abc"}], "Intent: x")
+    state = units_mod.decode_state("summary\n" + marker)
+    assert state["contract"] == "Intent: x" and state["findings"] == [{"fp": "abc"}]
+    changed = [{"filename": "src/Foo.cpp", "patch": PATCH.replace("+y();", "+y(1);")}]
+    second = units_mod.scope(units_mod.build(changed), state)
+    status = {u["heading"]: u["status"] for u in second}
+    assert status == {"void f()": "unchanged", "void g()": "changed"}
+    md = units_mod.render(second, True)
+    assert "In scope" in md and "Unchanged since the previous review" in md and "clean" not in md.lower()
+    assert units_mod.decode_state("no marker") is None
+
+
+def test_late_findings_stay_out_of_inline_comments_unless_blocker():
+    files = [{"filename": "src/Foo.cpp", "patch": PATCH}]
+    units = units_mod.build(files)
+    for u in units:
+        u["status"] = "unchanged" if u["heading"] == "void f()" else "changed"
+    with tempfile.TemporaryDirectory() as d:
+        entries = [
+            {"path": "src/Foo.cpp", "line": 12, "severity": "major", "body_file": _body(d, "a.md", _TOPICS[0])},
+            {"path": "src/Foo.cpp", "line": 11, "severity": "blocker", "body_file": _body(d, "b.md", _TOPICS[1])},
+            {"path": "src/Foo.cpp", "line": 42, "severity": "major", "body_file": _body(d, "c.md", _TOPICS[2])},
+        ]
+        postable, moved = publish.validate_comments(entries, files, [], d, None, units, set())
+        assert sorted(c["line"] for c in postable) == [11, 42]
+        assert [r for _, _, r in moved] == ["code unchanged since the previous review"]
+        # A finding the previous review already posted is not "late".
+        fp = units_mod.finding_fingerprint("src/Foo.cpp", "src/Foo.cpp::void f()", _TOPICS[0])
+        postable, moved = publish.validate_comments(entries[:1], files, [], d, None, units, {fp})
+        assert [c["line"] for c in postable] == [12]
+
+
+def test_coverage_gaps_are_listed():
+    files = [{"filename": "src/Foo.cpp", "patch": PATCH}]
+    units = units_mod.scope(units_mod.build(files), None)
+    with tempfile.TemporaryDirectory() as d:
+        _body(d, "coverage.json", json.dumps([{"unit": "U1", "verdict": "clean", "note": "checked callers"}]))
+        gaps = publish.coverage_gaps(d, units)
+        assert [u["id"] for u in gaps] == ["U2"] and "U2 `src/Foo.cpp` `void g()`" in publish.coverage_markdown(gaps)

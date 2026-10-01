@@ -227,7 +227,7 @@ def _outputs_problem():
     """Why the agent's output cannot be published, or "" when it can. All three
     files are required (the JSON ones as `[]` when empty): the prompt has the
     agent write the summary last, so a complete set means the run finished."""
-    for name in ("comments.json", "thread_actions.json"):
+    for name in ("coverage.json", "comments.json", "thread_actions.json"):
         path = f"{OUTPUT_DIR}/{name}"
         if not os.path.exists(path):
             return f"agent did not write {path}"
@@ -364,7 +364,8 @@ def review(run_once, agent_name):
 
     with open(SUMMARY_FILE, "r", encoding="utf-8") as f:
         summary = f.read()
-    summary = publish.publish(GH, repo, info.pr_number, ctx.head_sha, ctx.files, threads, OUTPUT_DIR, summary, memory)
+    summary = publish.publish(GH, repo, info.pr_number, ctx.head_sha, ctx.files, threads, OUTPUT_DIR, summary, memory,
+                              ctx.units, ctx.previous_state)
     _post_summary(summary, ctx.head_sha, model)
 
     # Record every review thread of ours, with its current state and replies,

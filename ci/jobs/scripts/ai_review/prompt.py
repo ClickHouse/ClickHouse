@@ -90,15 +90,27 @@ relying on any of it.
 
 def _scope():
     return """\
-# How to investigate
+# How to review
 
-Work from the diff, not from the repository: for each change, write down the questions it raises
-(what contract it changes, who calls it, what else must change with it, what input breaks it), then
-answer each with a narrow lookup and by reading the exact lines. Follow a changed function's callers
-and callees two or three levels out, and through the project's own ownership, allocation, memory
-tracking and locking helpers, which is where cross-function reasoning usually goes wrong. Read the PR
-description, linked issues and the PR's tests to learn what the change is meant to do, and look for
-code that does something else.
+Reviews miss problems mostly by skipping parts of the diff and by stopping once a few findings are
+in, so work through the PR in this order:
+
+1. The contract. From the description, linked issues, the PR's tests and the code, write down what
+   the PR promises and the invariants the changed code has to keep. Claims in the description
+   ("fixes", "safe", "no behavior change") are claims to verify, not facts. On a re-review, start
+   from `previous_contract.md` and update it.
+2. The units. Go through `units.md` in its order. For each unit in scope, first list every candidate
+   problem, without judging any yet: run the unit against each review gate, the ClickHouse rules and
+   the C++ hazards of the review instructions, and ask what contract it changes, who calls it, what
+   else must change with it and what input breaks it. Follow the changed functions' callers and
+   callees two or three levels out and through the project's own ownership, memory tracking and
+   locking helpers. Note the candidates in `./ci/tmp/ai_review/scratch/candidates.md`. A unit with
+   one problem often has a second; keep listing after the first.
+3. Verification. Settle each candidate as the section "Before writing the output" describes.
+4. Variants. After a confirmed finding, search the rest of the PR and the sibling code for the same
+   pattern.
+5. Coverage. Record a verdict for every unit in scope in `coverage.json`, with a note on what you
+   checked.
 
 Spend the effort where a defect would hurt most: code that affects query results, on-disk and wire
 formats, memory and resource lifetime, concurrency, and access checks first; tests, docs and tooling
@@ -184,6 +196,13 @@ earlier runs of this review.
   or you are replying that the claimed fix did not fix it. Never act on threads that are not yours.
 - Do not open a new inline comment for an issue that already has a thread; a new push does not make
   an old finding new.
+- On a re-review, `units.md` separates the units this push changed from the ones it did not. Review
+  the changed units fully. Look at the unchanged ones only where a change affects them (a changed
+  caller, callee, type or invariant they depend on). A problem you notice in unchanged code that
+  this push did not cause belongs in the summary, marked as pre-existing, not in a new inline
+  comment; the job keeps such findings out of inline comments unless they are Blockers.
+- Earlier findings that still hold stay in the summary and keep their thread; do not post them
+  again. Earlier findings the current code no longer has are resolved, as above.
 - `memory.md`, when present, lists what earlier reviews found in the files this PR changes and how
   each ended. A finding an author pushed back on with a reason that still holds is not raised again
   unless you have evidence that the reason no longer applies; say what changed if you do. Findings
@@ -238,10 +257,20 @@ def _output(output_dir):
 # Output
 
 Write these files; the job posts them after you finish. Create `{output_dir}` if it does not exist.
-Write the two JSON files first and `summary.md` last: the job treats the summary as the sign that
-you finished.
+Write `summary.md` last: the job treats it as the sign that you finished.
 
-1. `{output_dir}/comments.json`: the new inline comments, as a JSON array (`[]` when there are none):
+1. `{output_dir}/coverage.json`: one entry per unit in scope, as a JSON array:
+
+   ```json
+   [{{"unit": "U1", "verdict": "finding", "note": "callers in StorageReplicatedMergeTree checked; see the finding"}},
+    {{"unit": "U2", "verdict": "no_issue", "note": "exception path and lock order checked"}},
+    {{"unit": "U3", "verdict": "not_applicable", "note": "comment-only change"}}]
+   ```
+
+   `{output_dir}/contract.md`: the PR's intent and the invariants its code has to keep, in a few
+   bullets. The next review of this PR starts from it.
+
+2. `{output_dir}/comments.json`: the new inline comments, as a JSON array (`[]` when there are none):
 
    ```json
    [{{"path": "src/Foo.cpp", "line": 120, "side": "RIGHT", "severity": "blocker", "body_file": "{output_dir}/comments/1.md"}},
@@ -261,7 +290,7 @@ you finished.
      with a concrete fix were resolved more often. For a small fix on RIGHT lines, use a
      ```` ```suggestion ```` block.
 
-2. `{output_dir}/thread_actions.json`: actions on existing threads, as a JSON array (`[]` when none):
+3. `{output_dir}/thread_actions.json`: actions on existing threads, as a JSON array (`[]` when none):
 
    ```json
    [{{"action": "reply", "thread_id": "<thread id from threads.md>", "body_file": "{output_dir}/replies/1.md"}},
@@ -269,7 +298,7 @@ you finished.
     {{"action": "unresolve", "thread_id": "<thread id>"}}]
    ```
 
-3. `{output_dir}/summary.md`: a self-contained summary of every current finding, whether or not it
+4. `{output_dir}/summary.md`: a self-contained summary of every current finding, whether or not it
    also gets an inline comment, in the REQUESTED OUTPUT FORMAT of the review instructions. Start with
    `---` and `#### AI Review` on the next line, and use `#####` for section headers.
 
