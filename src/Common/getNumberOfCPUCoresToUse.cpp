@@ -154,6 +154,17 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
     if (cgroup_quota > -1 && cgroup_period > 0)
         quota_count = static_cast<uint32_t>(ceil(static_cast<float>(cgroup_quota) / static_cast<float>(cgroup_period)));
 
+    /// The base count is the online CPUs, which ignores the affinity mask, so a container limited
+    /// only by `cpuset.cpus` (e.g. `docker run --cpuset-cpus`) must be accounted for here.
+    std::ifstream cpuset_cpus_file(default_cgroups_mount / "cpuset/cpuset.cpus");
+    if (cpuset_cpus_file.is_open())
+    {
+        std::string cpuset_line;
+        cpuset_cpus_file >> cpuset_line;
+        if (auto cpus_count = countCPUsInList(cpuset_line))
+            quota_count = std::min(*cpus_count, quota_count);
+    }
+
     return std::min(default_cpu_count, quota_count);
 }
 #endif

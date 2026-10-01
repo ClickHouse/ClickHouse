@@ -57,10 +57,12 @@ public:
     static constexpr Int64 UNLIMITED_BUDGET = std::numeric_limits<Int64>::max() / 2;
 
     /// Slots are indexed by the raw `sched_getcpu` id, so the count must bound the ids, not the
-    /// affinity mask (which is what musl's `sysconf(_SC_NPROCESSORS_CONF)` reports): see `PerCPU::getNumCPUs`.
+    /// affinity mask (which is what musl's `sysconf(_SC_NPROCESSORS_CONF)` reports): see `PerCPU::getNumPossibleCPUs`.
+    /// Not capped at `PerCPU::MAX_CPUS`: the slots are allocated dynamically, and on CPUs past the cap
+    /// every `publish` would fall through to the shared tracker.
     static int numberOfCPUs()
     {
-        return static_cast<int>(PerCPU::getNumCPUs());
+        return static_cast<int>(PerCPU::getNumPossibleCPUs());
     }
 
     PerCPUMemory(int cpu_count_, Int64 capacity_, Int64 buffer_)
