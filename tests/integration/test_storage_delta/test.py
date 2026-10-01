@@ -6778,6 +6778,98 @@ def test_kill_waiter_on_shared_snapshot_load(started_cluster):
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
+def test_latest_snapshot_load_shared_per_client_options(started_cluster):
+    """Latest-version queries with the same effective S3 client options share one in-flight
+    snapshot load, also when a query with other options resolves the latest version in between:
+    that query builds with its own options and must not make the next query with the first
+    options start a duplicate load."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_latest_snapshot_load_shared_per_client_options")
+    delta_path = f"/{TABLE_NAME}"
+
+    write_delta_from_df(spark, spark.range(10).selectExpr("id as a"), delta_path)
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+    engine_args = f"s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{started_cluster.minio_bucket}/'"
+    instance.query(f"CREATE TABLE {TABLE_NAME} ENGINE = DeltaLake({engine_args})")
+
+    # The failpoint pauses one snapshot load: the one started by the first query below.
+    instance.query(f"SYSTEM ENABLE FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT}")
+
+    # Every query resolves the latest version anew. Query-level S3 timeouts are forwarded into
+    # the kernel client, so they decide whether two queries may share a build.
+    select = f"SELECT count() FROM {TABLE_NAME}"
+    options = {"s3_request_timeout_ms": 20000}
+    other_options = {"s3_request_timeout_ms": 25000}
+    first_id = f"{TABLE_NAME}_first"
+    second_id = f"{TABLE_NAME}_second"
+    executor = ThreadPoolExecutor(max_workers=3)
+    try:
+        wait_future = executor.submit(
+            lambda: instance.query(
+                f"SYSTEM WAIT FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT} PAUSE", timeout=60
+            )
+        )
+        first_future = executor.submit(
+            lambda: instance.query_and_get_error(
+                select, settings=options, query_id=first_id, timeout=120
+            )
+        )
+        # The build started by the first query is paused inside the kernel call.
+        wait_future.result(timeout=60)
+
+        # A query with other options does not adopt that build: it resolves the latest version
+        # through a build of its own, which is not paused.
+        assert instance.query(select, settings=other_options, timeout=120).strip() == "10"
+
+        # The paused build is still the one in flight for the first query's options, so the
+        # next query with these options joins it instead of starting a duplicate.
+        second_future = executor.submit(
+            lambda: instance.query(select, settings=options, query_id=second_id, timeout=120)
+        )
+        second_is_waiting = False
+        for _ in range(300):
+            if second_future.done():
+                break
+            # Counted when the query starts waiting for a snapshot load.
+            if (
+                int(
+                    instance.query(
+                        f"SELECT sum(ProfileEvents['DeltaLakeSnapshotInitializations']) FROM system.processes WHERE query_id = '{second_id}'"
+                    )
+                )
+                >= 1
+            ):
+                second_is_waiting = True
+                break
+            time.sleep(0.1)
+        assert (
+            second_is_waiting and not second_future.done()
+        ), "The second query must wait for the paused build of the first one, not for a build of its own"
+
+        # Killing the first query leaves the shared build to the second one: nobody gave up on
+        # the build as a whole, so it is not counted as stuck.
+        instance.query(f"KILL QUERY WHERE query_id = '{first_id}' ASYNC")
+        error = first_future.result(timeout=60)
+        assert "QUERY_WAS_CANCELLED" in error, error
+        assert get_stuck_snapshot_loads(instance) == 0
+        assert (
+            instance.query(
+                f"SELECT count() FROM system.processes WHERE query_id = '{second_id}'"
+            ).strip()
+            == "1"
+        )
+    finally:
+        release_paused_snapshot_load(instance)
+        executor.shutdown(wait=False)
+
+    # The second query completes from the build which the first one started.
+    assert second_future.result(timeout=60).strip() == "10"
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
 def test_create_table_concurrent_race_attaches(started_cluster):
     # Two CREATE TABLE statements for the SAME location race to write commit 0. Creator A pauses right
     # after its `_delta_log` existence check via the delta_lake_create_table_pause failpoint; while it is

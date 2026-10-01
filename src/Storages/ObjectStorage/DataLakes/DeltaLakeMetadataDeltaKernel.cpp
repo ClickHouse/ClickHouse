@@ -171,37 +171,65 @@ DeltaLakeMetadataDeltaKernel::LatestSnapshot DeltaLakeMetadataDeltaKernel::resol
     const auto client_options = kernel_helper->resolveClientOptions();
     {
         std::lock_guard lock(snapshots_mutex);
-        /// Concurrent callers share one TableSnapshot, and with it one in-flight kernel build,
-        /// instead of each starting their own `snapshot_builder_build` for the same table.
+        /// Concurrent callers with the same client options share one `TableSnapshot`, and with it
+        /// one in-flight kernel build, instead of each starting their own
+        /// `snapshot_builder_build` for the same table. Query-level S3 timeouts are forwarded
+        /// into the build, so a query never adopts a build made with other options: it resolves
+        /// through an object of its own, and the one in flight for these options stays in place
+        /// for the next query which has them.
         /// A latest-version load is never repeated on one object (it could resolve a different
-        /// version), so once every waiter gave up on the shared one — or when this query's
-        /// client options differ from the ones the shared build runs with — a fresh object
-        /// takes over.
-        if (!latest_snapshot_in_flight || latest_snapshot_in_flight->isAbandonedWithoutWaiters()
-            || !latest_snapshot_in_flight->canShareInflightLoad(client_options))
+        /// version), so once every waiter gave up on the shared one a fresh object takes over.
+        auto it = latest_snapshots_in_flight.find(client_options);
+        if (it == latest_snapshots_in_flight.end() || it->second.snapshot->isAbandonedWithoutWaiters())
         {
             /// Constructor itself is lightweight.
-            latest_snapshot_in_flight = std::make_shared<DeltaLake::TableSnapshot>(
+            auto fresh_snapshot = std::make_shared<DeltaLake::TableSnapshot>(
                 /* version */std::nullopt,
                 kernel_helper,
                 object_storage,
                 log);
-            /// Reserved before publishing, so that a concurrent caller with other options does
-            /// not grab this object in the window before its first load has started.
-            latest_snapshot_in_flight->reserveClientOptions(client_options);
+            /// Reserved before publishing: the first load must run with exactly the options the
+            /// object is shared under.
+            fresh_snapshot->reserveClientOptions(client_options);
+            it = latest_snapshots_in_flight.insert_or_assign(
+                client_options, LatestSnapshotInFlight{.snapshot = std::move(fresh_snapshot), .users = 0}).first;
         }
-        snapshot = latest_snapshot_in_flight;
+        ++it->second.users;
+        snapshot = it->second.snapshot;
     }
 
     /// Resolving the version builds the kernel snapshot, which may block on object storage.
     /// Never do that under `snapshots_mutex`: every other query on this table would sleep
-    /// inside the mutex, unreachable by `KILL QUERY`. On failure the shared object stays
-    /// in flight, so the next caller retries through it rather than starting a duplicate.
-    const SnapshotVersion version = snapshot->getVersion();
+    /// inside the mutex, unreachable by `KILL QUERY`.
+    SnapshotVersion version = 0;
+    try
+    {
+        version = snapshot->getVersion();
+    }
+    catch (...)
+    {
+        /// The object stays in flight for the callers still resolving through it: a query which
+        /// was killed or timed out must not divert the others, and a caller which took the
+        /// object just before its build failed retries through it. Once the last of them is
+        /// gone there is nothing left to share, so the entry is removed and the next caller
+        /// starts with a fresh object. An object which has already been replaced (given up on
+        /// by every waiter) is not this caller's to account for.
+        std::lock_guard lock(snapshots_mutex);
+        auto it = latest_snapshots_in_flight.find(client_options);
+        if (it != latest_snapshots_in_flight.end() && it->second.snapshot == snapshot)
+        {
+            --it->second.users;
+            if (it->second.users == 0)
+                latest_snapshots_in_flight.erase(it);
+        }
+        throw;
+    }
 
     std::lock_guard lock(snapshots_mutex);
-    if (latest_snapshot_in_flight == snapshot)
-        latest_snapshot_in_flight = nullptr;
+    /// The version is resolved: later callers resolve "latest" anew, through a fresh object.
+    if (auto it = latest_snapshots_in_flight.find(client_options);
+        it != latest_snapshots_in_flight.end() && it->second.snapshot == snapshot)
+        latest_snapshots_in_flight.erase(it);
 
     /// A slower resolution must not move "latest" backwards.
     if (!latest_snapshot_version.has_value() || version >= latest_snapshot_version.value())

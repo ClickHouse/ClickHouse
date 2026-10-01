@@ -728,16 +728,6 @@ bool TableSnapshot::isInitialized() const
     return kernel_snapshot_state != nullptr;
 }
 
-bool TableSnapshot::canShareInflightLoad(const KernelClientOptions & client_options) const
-{
-    std::lock_guard lock(mutex);
-    if (inflight_load)
-        return inflight_load->client_options == client_options;
-    if (reserved_client_options)
-        return *reserved_client_options == client_options;
-    return true;
-}
-
 void TableSnapshot::reserveClientOptions(const KernelClientOptions & client_options)
 {
     std::lock_guard lock(mutex);
@@ -981,13 +971,16 @@ void TableSnapshot::initOrUpdateSnapshot() const
         const bool given_up = load && load->state.load() == InflightSnapshotLoad::State::Abandoned
             && load->waiters.load() == 0;
         const bool other_options = load && !(load->client_options == client_options);
-        /// For a first latest-version load the metadata layer already handed out a separate
-        /// object when the options differ (see canShareInflightLoad), so here only pinned
-        /// versions and rebuilds ever start a second load on the same object.
+        /// For a first latest-version load the metadata layer keys the objects in flight by the
+        /// client options (see `DeltaLakeMetadataDeltaKernel::resolveLatestSnapshot`), so a query
+        /// with other options never reaches this object; here only pinned versions and rebuilds
+        /// ever start a second load on the same object.
         if (!load || (version_to_build.has_value() && (given_up || other_options)))
         {
             /// The first load of an object reserved by the metadata layer runs with the reserved
-            /// options (they equal this query's: other queries were turned away by then).
+            /// options: they are the key the object is shared under. This query's own options
+            /// were resolved once more above, and the storage's live settings may have changed
+            /// in between.
             const auto load_options = (!kernel_snapshot_state && reserved_client_options)
                 ? *reserved_client_options
                 : client_options;

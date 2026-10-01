@@ -5,6 +5,7 @@
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <compare>
 #include <string>
 #include <utility>
 #include <vector>
@@ -38,6 +39,8 @@ struct KernelClientOptions
     std::optional<UInt64> s3_request_timeout_ms;
 
     bool operator==(const KernelClientOptions &) const = default;
+    /// Ordered, so that the options can key the in-flight builds of a table.
+    auto operator<=>(const KernelClientOptions &) const = default;
 };
 
 /**
