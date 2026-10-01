@@ -96,9 +96,8 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
         if (identifier_parser.parse(pos, ast, expected))
         {
             String first_identifier = getIdentifierName(ast);
-            bool database_has_wildcard = false;
             if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
-                database_has_wildcard = true;
+                wildcard = true;
 
             auto pos_before_dot = pos;
 
@@ -106,23 +105,17 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
             {
                 if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                 {
-                    /// db.* or db*.* — both are valid
-                    /// Note: wildcard is NOT set here; db.* uses empty table name
-                    /// to represent "all tables", consistent with original behavior.
+                    /// db.*
                     database = std::move(first_identifier);
                     table.clear();
-                    wildcard = database_has_wildcard;
                     return true;
                 }
-                if (database_has_wildcard)
-                {
-                    /// db*.table or db*.table* — invalid, ambiguous syntax.
-                    /// A database wildcard cannot be combined with a specific table name.
+                /// db*.table is ambiguous: a database wildcard cannot be combined with a table name.
+                if (wildcard)
                     return false;
-                }
                 if (identifier_parser.parse(pos, ast, expected))
                 {
-                    /// db.table or db.table*
+                    /// db.table
                     database = std::move(first_identifier);
                     table = getIdentifierName(ast);
                     if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
@@ -132,18 +125,13 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
                 }
             }
 
-            /// table or table* (no dot found)
+            /// table
             pos = pos_before_dot;
             database.clear();
             table = std::move(first_identifier);
             default_database = true;
 
-            /// If asterisk was already consumed as part of "table*" pattern,
-            /// carry it forward as table wildcard.
-            /// e.g. "foo*" → table="foo", wildcard=true
-            if (database_has_wildcard)
-                wildcard = true;
-            else if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+            if (!wildcard && ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                 wildcard = true;
 
             return true;
