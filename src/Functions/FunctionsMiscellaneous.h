@@ -388,8 +388,6 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
     bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
 
-    /// Expensive if any function in the inner DAG is, so a higher-order function carrying an
-    /// expensive call in its lambda body is not mistaken for a cheap condition.
     bool isExpensive() const override
     {
         for (const auto & inner_node : expression_actions->getActionsDAG().getNodes())

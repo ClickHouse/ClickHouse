@@ -235,9 +235,8 @@ public:
     virtual bool isVolumeReducing() const { return false; }
 
     /** Returns true if the function costs far more than reading its arguments, e.g. one network
-      * request per row. `MergeTreeWhereOptimizer` does not move such a condition to `PREWHERE`,
-      * where it would be evaluated on every row read rather than only on the rows that survive
-      * the cheaper conditions.
+      * request per row. Can be used to postpone the execution of such functions as much as possible
+      * (e.g. PREWHERE vs. WHERE)
       */
     virtual bool isExpensive() const { return false; }
 
