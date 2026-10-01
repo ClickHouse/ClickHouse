@@ -8,7 +8,6 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/TopKThresholdTracker.h>
@@ -117,6 +116,14 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     {
         if (auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get()))
         {
+            /// The filter shrinks the blocks this step sees, so an expression that depends on its block
+            /// (`rowNumberInBlock`, `runningDifference`, `rand`) could change the result.
+            if (dependsOnItsBlock(expression_step->getExpression()))
+            {
+                LOG_TRACE(log, "No dynamic filter: the expression step depends on its block");
+                return nullptr;
+            }
+
             auto input_name = findPassedThroughInput(expression_step->getExpression(), key_name);
             if (!input_name)
             {
@@ -127,6 +134,14 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
         }
         else if (auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
         {
+            /// The filter shrinks the blocks this step sees, so an expression that depends on its block
+            /// (`rowNumberInBlock`, `runningDifference`, `rand`) could change the result.
+            if (dependsOnItsBlock(filter_step->getExpression()))
+            {
+                LOG_TRACE(log, "No dynamic filter: the filter step depends on its block");
+                return nullptr;
+            }
+
             auto input_name = findPassedThroughInput(filter_step->getExpression(), key_name);
             if (!input_name)
             {
@@ -186,18 +201,22 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     SortColumnDescription key_sort_description(key_name, direction, nulls_direction);
     auto threshold_tracker = std::make_shared<TopKThresholdTracker>(key_sort_description);
 
-    auto new_prewhere_info = std::make_shared<PrewhereInfo>();
-    new_prewhere_info->prewhere_actions = ActionsDAG({NameAndTypePair(key_name, key_column.type)});
-    auto filter_function = createInternalFunctionTopKFilterResolver(threshold_tracker);
-    const auto & prewhere_node = new_prewhere_info->prewhere_actions.addFunction(
-        filter_function, {new_prewhere_info->prewhere_actions.getInputs().front()}, {});
-    new_prewhere_info->prewhere_actions.getOutputs().push_back(&prewhere_node);
-    new_prewhere_info->prewhere_column_name = prewhere_node.result_name;
-    new_prewhere_info->remove_prewhere_column = true;
-    new_prewhere_info->need_filter = true;
+    /// `where_clause = true` keeps `MergeTreeDataSelectExecutor` from narrowing the read up front to the granules
+    /// that hold the `LIMIT` smallest rows (`getTopKMarks`): a group needs all of its rows, and `LIMIT` rows may
+    /// hold fewer than `LIMIT` distinct keys. Only the boundary-driven filtering and granule skipping apply here.
+    TopKFilterInfo info{key_name, key_column.type, num_key_columns, limit, direction, /*where_clause=*/ true, threshold_tracker, /*condition_hash=*/ 0};
 
+    /// Built the way `installTopKDynamicFilter` builds it: the existing PREWHERE must not depend on its block, and
+    /// `__topKFilter` must bind to the column the read produces, not to a computed node of the PREWHERE under its name.
     auto initial_header = read_step->getOutputHeader();
-    read_step->updatePrewhereInfo(mergePrewhereInfos(read_step->getPrewhereInfo(), std::move(new_prewhere_info)));
+    auto new_prewhere_info = buildTopKDynamicFilterPrewhere(read_step->getPrewhereInfo(), info);
+    if (!new_prewhere_info || initial_header->has(new_prewhere_info->prewhere_column_name))
+    {
+        LOG_TRACE(log, "No dynamic filter: the filter over {} cannot be combined with the PREWHERE of the read", key_name);
+        return nullptr;
+    }
+
+    read_step->updatePrewhereInfo(std::move(new_prewhere_info));
     auto updated_header = read_step->getOutputHeader();
 
     if (!blocksHaveEqualStructure(*initial_header, *updated_header))
@@ -217,11 +236,6 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
         node->children.push_back(&converting_node);
         std::swap(node->step, converting_node.step);
     }
-
-    /// `where_clause = true` keeps `MergeTreeDataSelectExecutor` from narrowing the read up front to the granules
-    /// that hold the `LIMIT` smallest rows (`getTopKMarks`): a group needs all of its rows, and `LIMIT` rows may
-    /// hold fewer than `LIMIT` distinct keys. Only the boundary-driven filtering and granule skipping apply here.
-    TopKFilterInfo info{key_name, key_column.type, num_key_columns, limit, direction, /*where_clause=*/ true, threshold_tracker, /*condition_hash=*/ 0};
 
     /// Salts the query condition cache key the way `tryOptimizeTopK` does, with an extra mark so that a
     /// `GROUP BY key LIMIT n` read never shares entries with an `ORDER BY key LIMIT n` read over the same table.
