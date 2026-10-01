@@ -470,4 +470,26 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(message, ['a', '', 
 
 DROP TABLE tab;
 
+SELECT '20. An Array column with a postprocessor numbers its positions across the whole row.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tags Array(String),
+    INDEX idx(tags) TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(tags), support_phrase_search = 1)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, allow_experimental_text_index_phrase_search = 1;
+
+INSERT INTO tab VALUES (1, ['Quick BROWN', 'Fox']), (2, ['Fox', 'Quick BROWN']), (3, ['zz']);
+
+-- Row 1 holds both tokens but not adjacently, so answering from the index alone must still exclude it.
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'fox quick') SETTINGS text_index_hint_max_selectivity = 1.;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'fox quick') SETTINGS use_skip_indexes = 0;
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'brown fox') SETTINGS text_index_hint_max_selectivity = 1.;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'brown fox') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
 DROP TABLE IF EXISTS tab;

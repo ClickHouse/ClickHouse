@@ -146,7 +146,7 @@ static DataTypePtr removeArrayNullableLowCardinality(const DataTypePtr & type)
     return inner_type;
 }
 
-/// An `Array` column restarts token positions for every element, so its positions cannot answer a phrase.
+/// Token positions of an `Array` column restart per element, unless a postprocessor renumbers them densely.
 static bool isIndexedColumnArray(const Block & header)
 {
     if (header.columns() != 1)
@@ -353,7 +353,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     }
 
     if (function_name == "hasPhrase")
-        return has_positions && !indexed_column_is_array ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+        return has_positions && (!indexed_column_is_array || has_postprocessor) ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
 
     /// Exact mode requires array tokenizer with neither pre- nor postprocessor.
     const bool can_be_exact_read_mode = is_array_tokenizer && !has_preprocessor && !has_postprocessor;
@@ -1525,7 +1525,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return false;
 
         /// Positions restart per element, so the granule token test plus the row-level function decide instead.
-        const bool use_positions = has_positions && !indexed_column_is_array;
+        const bool use_positions = has_positions && (!indexed_column_is_array || has_postprocessor);
 
         /// An Array phrase carries the tokens verbatim: neither the tokenizer nor the preprocessor applies.
         if (value_field.getType() == Field::Types::Array)
