@@ -12,6 +12,7 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromVector.h>
+#include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Common/getRandomASCIIString.h>
@@ -46,14 +47,6 @@ namespace ErrorCodes
 
 namespace
 {
-    /// `HttpStatusCode::None` (a transport error) is 0, which the log reserves for success.
-    Int32 getErrorCodeForLog(const Azure::Core::RequestFailedException & e)
-    {
-        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::None)
-            return ErrorCodes::AZURE_BLOB_STORAGE_ERROR;
-        return static_cast<Int32>(e.StatusCode);
-    }
-
     class UploadHelper
     {
     public:
@@ -194,7 +187,7 @@ namespace
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = getErrorCodeForLog(e);
+                error_code = getAzureErrorCodeForLog(e);
                 error_message = e.Message;
                 if (blob_storage_log)
                     blob_storage_log->addEvent(
@@ -237,7 +230,7 @@ namespace
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = getErrorCodeForLog(e);
+                error_code = getAzureErrorCodeForLog(e);
                 error_message = e.Message;
                 if (blob_storage_log)
                     blob_storage_log->addEvent(
@@ -343,7 +336,7 @@ namespace
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = getErrorCodeForLog(e);
+                error_code = getAzureErrorCodeForLog(e);
                 error_message = e.Message;
                 if (blob_storage_log)
                     blob_storage_log->addEvent(
@@ -493,7 +486,7 @@ void copyAzureBlobStorageFile(
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                log_copy(getErrorCodeForLog(e), e.Message);
+                log_copy(getAzureErrorCodeForLog(e), e.Message);
                 throw;
             }
             catch (...)
