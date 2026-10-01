@@ -315,7 +315,7 @@ export const IntegrationGrid = () => {
           clearTimeout(timeoutId)
 
           if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`)
+            throw new Error(`Erro HTTP! status: ${response.status}`)
           }
 
           const data = await response.json()
@@ -582,6 +582,7 @@ export const IntegrationGrid = () => {
           -webkit-backdrop-filter: blur(4px);
           border-radius: 0.75rem;
           opacity: 0;
+          transition: opacity 0.2s ease;
           pointer-events: none;
           z-index: 1;
         }
@@ -594,7 +595,7 @@ export const IntegrationGrid = () => {
           color: #fff;
         }
         .dark .integration-external-overlay svg {
-          color: #fff;
+          color: #1f1f1f;
         }
         .integration-card:hover .integration-external-overlay {
           opacity: 1;
@@ -641,7 +642,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedFilter("All")}
             >
-              All
+              Todos
             </button>
             {integrationTypes.map((type) => (
               <button
@@ -669,7 +670,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedTier("All")}
             >
-              All tiers
+              Todos os níveis
             </button>
             {integrationTiers.map((tier) => (
               <button

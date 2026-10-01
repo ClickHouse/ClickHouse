@@ -83,25 +83,7 @@ public:
         ContextPtr context,
         size_t num_streams,
         PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
-        bool use_query_condition_cache = true,
-        /// Whether the query condition cache entries a TopK read writes under its `PREWHERE` key may
-        /// be consulted here. Projection candidate analysis is the only place a warm query consults
-        /// the cache before the plan is final, so it has to pass the gate of the read it analyses;
-        /// every other caller runs before `tryOptimizeTopK` and keeps the conservative default.
-        bool allow_top_k_prewhere_query_condition_cache = false) const;
-
-    static MarkRanges markRangesFromPKRange(
-        const MergeTreeData::DataPartPtr & part,
-        const MarkRanges & part_ranges,
-        size_t part_starting_offset_in_query,
-        const StorageMetadataPtr & metadata_snapshot,
-        const KeyCondition & key_condition,
-        const KeyCondition * part_offset_condition,
-        const KeyCondition * total_offset_condition,
-        MarkRanges * exact_ranges,
-        const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
-        const Settings & settings,
-        LoggerPtr log);
+        bool use_query_condition_cache = true) const;
 
     static MarkRanges markRangesFromPKRange(
         const RangesInDataPart & part_with_ranges,
@@ -118,7 +100,7 @@ public:
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
         const std::optional<KeyCondition> & key_condition_rpn_template,
-        const MergeTreeDataPartInfoForReaderPtr & part_info,
+        MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const RangesInDataPartReadHints & in_read_hints,
         const MergeTreeReaderSettings & reader_settings,
@@ -130,7 +112,7 @@ public:
         LoggerPtr log);
 
     static MergeTreeIndexBulkGranulesMinMaxPtr getMinMaxIndexGranules(
-        const MergeTreeDataPartInfoForReaderPtr & part_info,
+        MergeTreeData::DataPartPtr part,
         MergeTreeIndexPtr skip_index_minmax,
         const MarkRanges & ranges,
         int direction,
@@ -220,19 +202,6 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context);
 
-    /// Apply snapshot, virtual-column, min-max, partition and statistics filters before range analysis.
-    static RangesInDataParts filterParts(
-        const RangesInDataParts & parts,
-        const ReadFromMergeTree::Indexes & indexes,
-        const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeData & data,
-        const SelectQueryInfo & query_info,
-        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
-        const ContextPtr & context,
-        const PartitionIdToMaxBlock * max_block_numbers_to_read,
-        LoggerPtr log,
-        ReadFromMergeTree::IndexStats & index_stats);
-
     /// Filter parts using minmax index and partition key.
     static RangesInDataParts filterPartsByPartition(
         const RangesInDataParts & parts,
@@ -244,8 +213,7 @@ public:
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         LoggerPtr log,
-        ReadFromMergeTree::IndexStats & index_stats,
-        bool check_index_usage = true);
+        ReadFromMergeTree::IndexStats & index_stats);
 
     /// Filter parts using column statistics.
     /// Returns filtered parts and updates index_stats with statistics pruning info.
@@ -272,7 +240,6 @@ public:
         bool find_exact_ranges;
         bool is_parallel_reading_from_replicas;
         bool has_projections;
-        bool check_row_limits;
         ReadFromMergeTree::AnalysisResult & result;
     };
 
@@ -286,7 +253,6 @@ public:
         const SelectQueryInfo & select_query_info,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
         const std::optional<TopKFilterInfo> & top_k_filter_info,
-        bool allow_top_k_prewhere_query_condition_cache,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
         const ReadFromMergeTree::Indexes & indexes,
         const ContextPtr & context,
@@ -327,7 +293,7 @@ public:
     static RowLimits getRowLimits(const Settings & settings, const SelectQueryInfo & query_info);
 
     static MarkRanges mergePartialResultsForDisjunctions(
-        const IMergeTreeDataPartInfoForReader & part_info,
+        MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const KeyCondition & rpn_template_for_eval_result,
         const PartialDisjunctionResult & partial_eval_results,

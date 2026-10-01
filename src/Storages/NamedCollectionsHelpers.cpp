@@ -72,72 +72,7 @@ namespace
         }
 
         auto value = literal_value->as<ASTLiteral>()->value;
-
-        /// A named collection value is stored as text, and an aggregate state has no text
-        /// representation: fieldToString() on it raises a LOGICAL_ERROR (an abort under
-        /// debug/sanitizers). The value comes from the query, so this is a user error.
-        if (value.getType() == Field::Types::AggregateFunctionState)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Value of key '{}' cannot be an aggregate function state", key);
-
         return std::pair{key, Field(value)};
-    }
-
-    /// A credential can be given either as a path to a file (`ssl_ca`, `nats_credential_file`) or as
-    /// the contents of that file (`ssl_ca_pem`, `nats_credentials`) - two spellings of one setting.
-    /// Only the contents form is accepted from a query (see `StorageMySQL::getSSLParams`,
-    /// `StoragePostgreSQL::getSSLParams` and `resolveCredentialSource` in `StorageNATS.cpp`), where it
-    /// replaces the path inherited from the collection.
-    /// Returns the path key a contents key replaces, if the key is a contents key.
-    std::optional<std::string> credentialsPathKeyFor(const std::string & key)
-    {
-        static constexpr std::pair<std::string_view, std::string_view> credentials_keys[] = {
-            {"ssl_ca_pem", "ssl_ca"},
-            {"ssl_cert_pem", "ssl_cert"},
-            {"ssl_key_pem", "ssl_key"},
-            {"sslrootcert_pem", "sslrootcert"},
-            {"sslcert_pem", "sslcert"},
-            {"sslkey_pem", "sslkey"},
-            {"nats_credentials", "nats_credential_file"},
-        };
-
-        for (const auto & [contents_key, path_key] : credentials_keys)
-        {
-            if (key == contents_key)
-                return std::string(path_key);
-        }
-
-        return std::nullopt;
-    }
-
-    /// Whether an override of `key` at the point of use is permitted by the collection.
-    /// Returns the key that forbids it - which is not always `key` itself - or nullopt when allowed.
-    ///
-    /// A contents form (`ssl_ca_pem`) is not a brand-new key when the collection defines the
-    /// corresponding path (`ssl_ca`): it replaces it, so the permission is taken from the key it
-    /// replaces. Passing the contents is the only way to supply such a credential from SQL at all - a
-    /// path is refused there unconditionally - so the permission is the one the operator states
-    /// explicitly with `<ssl_ca overridable="false">` rather than the value of
-    /// `allow_named_collection_override_by_default`. `StorageMySQL::getSSLParams` re-checks the very
-    /// same condition when the replacement happens; without this the two disagree, and the documented
-    /// SQL-safe form is rejected on exactly the installations that need it.
-    std::optional<std::string> findOverrideForbiddingKey(const NamedCollection & collection, const std::string & key, bool default_value)
-    {
-        if (!collection.has(key))
-        {
-            auto path_key = credentialsPathKeyFor(key);
-            if (path_key && collection.has(*path_key))
-            {
-                /// The locked key is the path, so name it rather than the contents form the query used.
-                if (collection.isOverridable(*path_key, /* default_value= */ true))
-                    return std::nullopt;
-                return path_key;
-            }
-        }
-
-        if (collection.isOverridable(key, default_value))
-            return std::nullopt;
-        return key;
     }
 }
 
@@ -216,8 +151,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
             // if allow_override_by_default is false we don't allow extra arguments
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed because setting allow_override_by_default is disabled");
         }
-        if (auto forbidding_key = findOverrideForbiddingKey(*collection_copy, value_override->first, allow_override_by_default))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", *forbidding_key);
+        if (!collection_copy->isOverridable(value_override->first, allow_override_by_default))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", value_override->first);
 
         if (const ASTPtr * value = std::get_if<ASTPtr>(&value_override->second))
         {
@@ -226,11 +161,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         }
 
         const auto & [key, value] = *value_override;
-        /// Marked before the value is written: the mark remembers the stored value the override
-        /// replaces, so consumers can tell an override that drops a collection-provided value
-        /// from one that never had anything to drop (see `StorageMySQL::getSSLParams`).
-        collection_copy->markQueryOverridden(key);
         collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
+        collection_copy->markQueryOverridden(key);
     }
 
     if (dependent_table_id)
@@ -260,15 +192,10 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         if (key == "name")
             continue;
 
-        if (auto forbidding_key = findOverrideForbiddingKey(*collection_copy, key, allow_override_by_default))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", *forbidding_key);
-
-        /// The keys of a dictionary created with a DDL query come from the query, so mark them the
-        /// same way as the AST-based overload above: `StorageMySQL::getSSLParams` distinguishes a
-        /// credential supplied at the point of use from one defined in the collection itself.
-        /// Marked before the value is written so the mark remembers the replaced stored value.
-        collection_copy->markQueryOverridden(key);
-        collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
+        if (collection_copy->isOverridable(key, allow_override_by_default))
+            collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
     }
 
     /// Register the dictionary that uses this named collection as a dependency,

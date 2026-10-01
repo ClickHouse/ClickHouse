@@ -202,19 +202,6 @@ public:
         return &it->second;
     }
 
-    /** Identifier of the column synthesized only to learn the row count, set when the query
-      * references no column of this table expression. It carries no value the query asked for.
-      */
-    const std::optional<ColumnIdentifier> & getRowCountOnlyColumnIdentifier() const
-    {
-        return row_count_only_column_identifier;
-    }
-
-    void setRowCountOnlyColumnIdentifier(const ColumnIdentifier & column_identifier)
-    {
-        row_count_only_column_identifier = column_identifier;
-    }
-
     /** Returns true if storage is remote, false otherwise.
       *
       * Valid only for table and table function node.
@@ -258,12 +245,6 @@ public:
     void setPrewhereFilterActions(ActionsDAG prewhere_filter_actions_value)
     {
         prewhere_filter_actions = std::move(prewhere_filter_actions_value);
-    }
-
-    /// Drop initiator-side `PREWHERE` actions after the predicate has been moved onto a subquery.
-    void resetPrewhereFilterActions()
-    {
-        prewhere_filter_actions.reset();
     }
 
     const std::optional<ActionsDAG> & getFilterActions() const
@@ -337,10 +318,6 @@ private:
 
     /// Valid for table, table function
     std::optional<ActionsDAG> row_level_filter_actions;
-
-    /// Set only when the column was synthesized because the query reads no column of this
-    /// table expression, so no output can legitimately depend on it.
-    std::optional<ColumnIdentifier> row_count_only_column_identifier;
 
     /// Is storage remote
     bool is_remote = false;

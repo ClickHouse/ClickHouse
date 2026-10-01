@@ -25,6 +25,5 @@ INSERT INTO t_lazy_arrays_wide SELECT number, arrayMap(i -> concat('a', toString
 -- Used to materialize the whole block of arrays in every join, way above this limit.
 SELECT count() FROM (SELECT x, y, z FROM t_lazy_arrays_wide ARRAY JOIN a AS x ARRAY JOIN b AS y ARRAY JOIN c AS z LIMIT 10) SETTINGS max_block_size = 65409, max_threads = 1, enable_lazy_columns_replication = 1, max_memory_usage = 100000000;
 SELECT count() FROM (SELECT x, y, z FROM t_lazy_arrays_wide LEFT ARRAY JOIN a AS x LEFT ARRAY JOIN b AS y LEFT ARRAY JOIN c AS z LIMIT 10) SETTINGS max_block_size = 65409, max_threads = 1, enable_lazy_columns_replication = 1, max_memory_usage = 100000000;
-SELECT count() FROM (SELECT arrayJoin(a) AS x, arrayJoin(b) AS y, arrayJoin(c) AS z FROM t_lazy_arrays_wide WHERE id >= 0 LIMIT 10) SETTINGS max_block_size = 65409, max_threads = 1, enable_lazy_columns_replication = 1, max_memory_usage = 100000000, query_plan_lower_array_join_function = 1;
 
 DROP TABLE t_lazy_arrays_wide;
