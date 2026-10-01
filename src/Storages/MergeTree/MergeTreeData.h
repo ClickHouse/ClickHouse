@@ -1092,9 +1092,6 @@ public:
 
     UniqueKeyTxnManager & uniqueKeyTxnManager() const;
 
-    /// A synchronous `DELETE FROM` on a unique-key table; the base throws.
-    virtual void deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr context);
-
     /// Whether `part` holds the only copy of some other part's kills, in which case no removal
     /// path may take it. The overload taking a lock is for a caller that already holds one.
     bool isPinnedByDeleteBitmap(const IMergeTreeDataPart & part) const;
