@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Tags: no-random-merge-tree-settings
+# no-random-merge-tree-settings: the checks assume that a full scan returns every byte it caches. Some random
+# MergeTree settings (for example `enable_block_number_column`, `prewarm_mark_cache`) make readers revisit and
+# predownload segments, which leaves a few percent of the downloaded bytes unread.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
