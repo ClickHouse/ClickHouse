@@ -10,7 +10,8 @@ test_suffix="${CLICKHOUSE_TEST_UNIQUE_NAME//[^[:alnum:]_]/_}"
 table="cache_incomplete_${test_suffix}"
 dim="cache_dim_${test_suffix}"
 query_prefix="${test_suffix}_$$_${RANDOM}_${RANDOM}"
-common_settings="--allow_statistics=1 --enable_analyzer=1 --explain_query_plan_default=legacy --use_statistics=1 --use_statistics_for_part_pruning=0 --enable_cascades_optimizer=0 --enable_parallel_replicas=0 --enable_join_runtime_filters=0 --query_plan_optimize_join_order_limit=10 --query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_order_algorithm=greedy --query_plan_join_swap_table=0 --use_hash_table_stats_for_join_reordering=0 --mutations_sync=2 --alter_sync=2 --log_queries=1 --max_threads=1"
+# Disable query-condition pruning: statistics-cache checks need all fixture parts.
+common_settings="--allow_statistics=1 --enable_analyzer=1 --explain_query_plan_default=legacy --use_statistics=1 --use_statistics_for_part_pruning=0 --use_query_condition_cache=0 --enable_cascades_optimizer=0 --enable_parallel_replicas=0 --enable_join_runtime_filters=0 --query_plan_optimize_join_order_limit=10 --query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_order_algorithm=greedy --query_plan_join_swap_table=0 --use_hash_table_stats_for_join_reordering=0 --mutations_sync=2 --alter_sync=2 --log_queries=1 --max_threads=1"
 
 cleanup()
 {
