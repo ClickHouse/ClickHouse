@@ -1575,15 +1575,6 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
 }
 
 
-namespace
-{
-
-/// As `nats_secret_keys` of the `NATS` engine, for RabbitMQ; `rabbitmq_address` is hidden only when it carries an '@'.
-/// Keep in sync with `RabbitMQ::SETTINGS_TO_HIDE`.
-constexpr std::string_view rabbitmq_secret_keys[] = {"rabbitmq_password"};
-
-}
-
 void registerStorageRabbitMQ(StorageFactory & factory);
 void registerStorageRabbitMQ(StorageFactory & factory)
 {
@@ -1614,12 +1605,10 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         "RabbitMQ",
         creator_fn,
         SecretArgumentsSpec{
-            .secret_settings = RabbitMQ::SETTINGS_TO_HIDE,
             /// RabbitMQ(named_collection, rabbitmq_address = '...', rabbitmq_password = '...')
-            .custom = [](FunctionSecretArgumentsFinder & finder)
-            {
-                finder.findBrokerSecretArguments(rabbitmq_secret_keys, "rabbitmq_address");
-            },
+            .secret_settings = RabbitMQ::SETTINGS_TO_HIDE,
+            .settings_as_arguments = true,
+            .custom = [](FunctionSecretArgumentsFinder & finder) { finder.maskPositionalsAfterCollectionName(); },
         },
         StorageFactory::StorageFeatures{
             .supports_settings = true,

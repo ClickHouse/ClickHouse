@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include <Core/Field.h>
+#include <Common/HiddenSecret.h>
 #include <base/defines.h>
 
 namespace DB
@@ -52,6 +54,9 @@ void FunctionSecretArgumentsFinder::findPositionalAndNamedSecretArguments(const 
 
     for (const auto & key : spec.secret_keys)
         findSecretNamedArgument(key);
+
+    if (spec.settings_as_arguments)
+        findSecretSettingArguments(spec);
 }
 
 void FunctionSecretArgumentsFinder::maskEveryArgument()
@@ -149,59 +154,47 @@ void FunctionSecretArgumentsFinder::markNamedArgumentsWithUnreadableKeys(size_t 
     }
 }
 
-void FunctionSecretArgumentsFinder::findBrokerSecretArguments(
-    std::span<const std::string_view> secret_keys, std::string_view address_key)
+void FunctionSecretArgumentsFinder::maskPositionalsAfterCollectionName()
 {
-    /// NATS(named_collection [, nats_password = 'password'] [, nats_token = 'token']
-    ///      [, nats_credential_file = '/path'] [, nats_credentials = 'user JWT and seed']
-    ///      [, nats_url = 'nats://user:password@host:4222']
-    ///      [, nats_server_list = 'nats://user:password@host:4222,...'], ...)
-    /// RabbitMQ(named_collection [, rabbitmq_password = '...'] [, rabbitmq_address = 'amqp://user:pass@host'], ...)
-    /// The only positional argument these engines accept is the name of a named collection, so the
-    /// credentials can only appear as named overrides. The `SETTINGS` clause form is masked
-    /// separately by the engine's own `SETTINGS_TO_HIDE`, which this function must stay in sync with.
-    /// A destination key (`nats_server_list`) is hidden whole: each list entry can carry userinfo.
-    /// Fail closed on a key we cannot read as a plain literal: it can name a secret setting.
+    /// The engine accepts no positional arguments except the collection name in the first
+    /// position, but it rejects them only after the query has been formatted for logging.
+    /// A malformed positional argument can carry a secret (a credential file path, a url
+    /// with a password), so hide it whole rather than leak it (fail closed).
     for (size_t i = 0; i < function->arguments->size(); ++i)
     {
         const auto equals_func = function->arguments->at(i)->getFunction();
-        if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments()
-            || equals_func->arguments->size() != 2)
-        {
-            /// The engine accepts no positional arguments except the collection name in the first
-            /// position, but it rejects them only after the query has been formatted for logging.
-            /// A malformed positional argument can carry a secret (a credential file path, a url
-            /// with a password), so hide it whole rather than leak it (fail closed).
-            if (i > 0 || !function->arguments->at(i)->isIdentifier())
-                markSecretArgument(i, /* argument_is_named= */ false);
+        if (equals_func && equals_func->name() == "equals" && equals_func->hasArguments() && equals_func->arguments->size() == 2)
             continue;
-        }
+        if (i > 0 || !function->arguments->at(i)->isIdentifier())
+            markSecretArgument(i, /* argument_is_named= */ false);
+    }
+}
 
+void FunctionSecretArgumentsFinder::findSecretSettingArguments(const SecretArgumentsSpec & spec)
+{
+    for (size_t i = 0; i < function->arguments->size(); ++i)
+    {
+        const auto equals_func = function->arguments->at(i)->getFunction();
+        if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments() || equals_func->arguments->size() != 2)
+            continue;
+
+        /// The generic rules hide the value of a key that is not a plain literal.
         String key;
-        if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
-        {
+        if (!tryGetStringFromArgument(*equals_func->arguments->at(0), &key))
+            continue;
+        const auto masker = spec.secret_settings.find(key);
+        if (masker == spec.secret_settings.end())
+            continue;
+
+        /// A value built from a constant expression can embed the secret in its pieces, which cannot be
+        /// evaluated here. A value the setting's masker hides any part of is hidden whole: the argument is
+        /// printed as written, not as the masker renders it.
+        String value;
+        const auto masked = equals_func->arguments->at(1)->tryGetString(&value, /* allow_identifier= */ false)
+            ? masker->second(Field(value))
+            : std::optional<String>(HIDDEN_SECRET_LITERAL);
+        if (masked && masked->contains(HIDDEN_SECRET))
             markSecretArgument(i, /* argument_is_named= */ true);
-        }
-        else if (key == address_key)
-        {
-            String url;
-            if (equals_func->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
-            {
-                /// An '@' is the only reliable sign of a credential here; see the engine's `_fwd.h`.
-                if (url.contains('@'))
-                    markSecretArgument(i, /* argument_is_named= */ true);
-            }
-            else
-            {
-                /// A url built from a constant expression can embed credentials in its pieces, which
-                /// we cannot evaluate here; hide it whole rather than leak.
-                markSecretArgument(i, /* argument_is_named= */ true);
-            }
-        }
-        else if (std::find(secret_keys.begin(), secret_keys.end(), key) != secret_keys.end())
-        {
-            markSecretArgument(i, /* argument_is_named= */ true);
-        }
     }
 }
 

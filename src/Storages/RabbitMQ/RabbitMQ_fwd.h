@@ -10,8 +10,8 @@ namespace RabbitMQ
 static constexpr auto TABLE_ENGINE_NAME = "RabbitMQ";
 
 using ValueMaskingFunc = std::function<std::optional<std::string>(const DB::Field &)>;
-/// Masks the `SETTINGS` clause of the `RabbitMQ` engine, as its `SecretArgumentsSpec::secret_settings`.
-/// Keep in sync with `rabbitmq_secret_keys` in `StorageRabbitMQ.cpp`.
+/// Masks the `SETTINGS` clause of the `RabbitMQ` engine, as its `SecretArgumentsSpec::secret_settings`, and the same
+/// settings given as overrides of a named collection among the engine arguments.
 static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
     {"rabbitmq_password", DB::hideSecretValue},

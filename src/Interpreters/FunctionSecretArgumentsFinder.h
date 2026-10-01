@@ -51,9 +51,9 @@ public:
     /// duplicate-key validation runs, so `session_token = 'a', session_token = 'b'` must hide both.
     bool findSecretNamedArgument(std::string_view key, size_t start = 0);
 
-    /// The shape of the brokers (`NATS`, `RabbitMQ`): the only positional argument is the name of a named
-    /// collection, the secrets are `secret_keys` overrides, and `address_key` is hidden when it carries an '@'.
-    void findBrokerSecretArguments(std::span<const std::string_view> secret_keys, std::string_view address_key);
+    /// For an engine whose only positional argument is the name of a named collection (`NATS`, `RabbitMQ`):
+    /// hides every other positional argument.
+    void maskPositionalsAfterCollectionName();
 
     bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const;
     static bool tryGetStringFromArgument(const AbstractFunction::Argument & argument, String * res, bool allow_identifier = true);
@@ -67,6 +67,7 @@ public:
 
 private:
     void findPositionalAndNamedSecretArguments(const SecretArgumentsSpec & spec);
+    void findSecretSettingArguments(const SecretArgumentsSpec & spec);
 };
 
 }

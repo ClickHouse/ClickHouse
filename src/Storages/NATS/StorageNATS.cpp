@@ -1288,19 +1288,6 @@ bool resolveCredentialSource(
 
 }
 
-namespace
-{
-
-/// Named arguments carrying NATS credentials. They are the setting names, because the `NATS` engine
-/// takes its arguments as overrides of a named collection (`NATS(collection, nats_token = '...')`).
-/// `nats_server_list` is a destination and can carry URI userinfo credentials, so hide it whole.
-/// `nats_url` is not here: it is hidden only when its value carries an '@'.
-/// Keep in sync with `NATS::SETTINGS_TO_HIDE`, which masks the same secrets in the `SETTINGS` clause.
-constexpr std::string_view nats_secret_keys[]
-    = {"nats_password", "nats_token", "nats_credential_file", "nats_credentials", "nats_server_list"};
-
-}
-
 void registerStorageNATS(StorageFactory & factory);
 void registerStorageNATS(StorageFactory & factory)
 {
@@ -1434,12 +1421,10 @@ void registerStorageNATS(StorageFactory & factory)
         "NATS",
         creator_fn,
         SecretArgumentsSpec{
-            .secret_settings = NATS::SETTINGS_TO_HIDE,
             /// NATS(named_collection, nats_password = 'password', nats_credentials = '...', ...)
-            .custom = [](FunctionSecretArgumentsFinder & finder)
-            {
-                finder.findBrokerSecretArguments(nats_secret_keys, "nats_url");
-            },
+            .secret_settings = NATS::SETTINGS_TO_HIDE,
+            .settings_as_arguments = true,
+            .custom = [](FunctionSecretArgumentsFinder & finder) { finder.maskPositionalsAfterCollectionName(); },
         },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
