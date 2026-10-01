@@ -8935,32 +8935,58 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & /*
     are_columns_and_secondary_indices_sizes_calculated = true;
 }
 
-void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedLock & parts_lock, std::unique_lock<std::mutex> & /*sizes_lock*/) const
+void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedLock & parts_lock, std::unique_lock<std::mutex> & sizes_lock) const
 {
     if (are_columns_and_secondary_indices_sizes_calculated)
         return;
 
-    column_sizes.clear();
-    secondary_index_sizes.clear();
-    primary_index_size = {};
-
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
-
-    /// Per-part size calculation can read from storage and, for secondary indices renamed by a
-    /// pending mutation, acquire currently_processing_in_background_mutex via getMutationsSnapshot().
-    /// Mutation-status paths acquire that mutex before the parts lock, so calculating sizes while
-    /// holding the parts lock would invert the lock order and can deadlock.
-    ///
-    /// Snapshot the active parts and release the parts lock before doing any per-part calculation.
-    /// The aggregate remains correct because columns_and_secondary_indices_sizes_mutex serializes
-    /// this rebuild with part contribution updates from concurrent commits.
     DataParts data_parts(committed_parts_range.begin(), committed_parts_range.end());
+
+    /// A lazy per-part size calculation may acquire currently_processing_in_background_mutex via
+    /// getMutationsSnapshot() when secondary indices are present. MergeTree maintenance has the
+    /// opposite lock order: currently_processing_in_background_mutex -> parts lock -> sizes lock.
+    /// Release both table-level locks before warming the per-part caches to avoid that inversion.
     parts_lock.unlock();
+    sizes_lock.unlock();
 
-    for (const auto & part : data_parts)
-        addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+    while (true)
+    {
+        for (const auto & part : data_parts)
+        {
+            if (!part->areColumnAndSecondaryIndexSizesCalculated())
+                part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+        }
 
-    are_columns_and_secondary_indices_sizes_calculated = true;
+        /// Reacquire in the normal order and verify that the active set did not change while the
+        /// table-level locks were released. Contribution updates skip work while this aggregate is
+        /// invalid, so retrying with the new active set is enough to publish a consistent snapshot.
+        auto current_parts_lock = readLockParts();
+        sizes_lock.lock();
+
+        if (are_columns_and_secondary_indices_sizes_calculated)
+            return;
+
+        auto current_parts_range = getDataPartsStateRange(DataPartState::Active);
+        DataParts current_parts(current_parts_range.begin(), current_parts_range.end());
+        if (current_parts != data_parts)
+        {
+            data_parts = std::move(current_parts);
+            sizes_lock.unlock();
+            current_parts_lock.unlock();
+            continue;
+        }
+
+        column_sizes.clear();
+        secondary_index_sizes.clear();
+        primary_index_size = {};
+
+        for (const auto & part : data_parts)
+            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+
+        are_columns_and_secondary_indices_sizes_calculated = true;
+        return;
+    }
 }
 
 /// A part whose sizes are not computed yet cannot be accounted for without reading them from its
