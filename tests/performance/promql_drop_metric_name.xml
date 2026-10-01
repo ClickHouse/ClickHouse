@@ -9,7 +9,7 @@
     </create_query>
 
     <fill_query>
-        INSERT INTO promql_drop_metric_name (metric_name, tags, time_series)
+        INSERT INTO promql_drop_metric_name (metric_name, tags, samples)
         SELECT
             'promql_drop_metric_name_metric',
             map('instance', toString(number)),
