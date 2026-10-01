@@ -450,8 +450,7 @@ def should_skip_job(job_name):
     # The AI `Code Review` job is not skipped for an empty merge commit (the
     # GitHub "Update branch" button): the job itself compares the PR's diff with
     # the last review it published and does not run the model when nothing
-    # changed. Skipping here would lose a review: the previous commit's run stops
-    # once the head moves on, expecting this commit's run to review it.
+    # changed, and an earlier commit's run may be relying on this one.
 
     changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:

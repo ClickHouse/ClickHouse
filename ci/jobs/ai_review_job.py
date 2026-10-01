@@ -99,18 +99,7 @@ def _reset_output_dir():
         os.makedirs(f"{OUTPUT_DIR}/{sub}", exist_ok=True)
 
 
-def _agent_env(loom_config, extra=None):
-    """Environment of the agent process: the job's environment without GitHub
-    credentials, plus the Loom configuration for the Loom CLI."""
-    env = {k: v for k, v in os.environ.items() if k not in ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN")}
-    env.update(loom_config.env())
-    env["LOOM_CALL_LOG"] = os.path.abspath(LOOM_CALL_LOG)
-    env["PYTHONPATH"] = os.pathsep.join(p for p in (os.getcwd(), env.get("PYTHONPATH", "")) if p)
-    env.update(extra or {})
-    return env
-
-
-def _run_codex_once(loom_config):
+def _run_codex_once(loom_config, commit="HEAD"):
     """One attempt: `codex login` + `codex exec`, confined (see `sandbox.py`).
 
     Codex stores credentials in `$CODEX_HOME/auth.json` and does NOT consult
@@ -129,10 +118,12 @@ def _run_codex_once(loom_config):
         raise RuntimeError("the codex CLI is not installed on this runner")
     root = sandbox.scratch_root()
     try:
-        ws = sandbox.Workspace(root, CONTEXT_DIR, WORK_DIR)
+        ws = sandbox.Workspace(root, CONTEXT_DIR, WORK_DIR, commit)
         for sub in ("out/comments", "out/replies", "out/simplicity", "scratch"):
             os.makedirs(os.path.join(ws.work_dir, sub), exist_ok=True)
-        sandbox.codex_login(codex, ws.codex_home, _ssm(OPENAI_KEY_SECRET))
+        openai_key = _ssm(OPENAI_KEY_SECRET)
+        _mask(openai_key)
+        sandbox.codex_login(codex, ws.codex_home, openai_key)
         agent_log = os.path.join(ws.work_dir, "loom_calls.jsonl")
         env = {
             "HOME": ws.codex_home,
@@ -180,37 +171,73 @@ class Superseded(Exception):
     """A newer commit was pushed; its own run reviews the PR."""
 
 
+def _mask(value):
+    """Keep a secret out of the public job log, which also carries the agent's
+    output (GitHub Actions replaces masked values with ***)."""
+    if value:
+        print(f"::add-mask::{value}")
+
+
 class _SupersededWatch:
-    """Checks the PR head while the agent runs and stops the agent when it
-    moves. It uses a token read before the agent starts and kept in this
-    process only: the agent runs as another user and cannot read it."""
+    """Watches whether a newer commit's review has taken over this one.
+
+    A newer head alone is not enough: its Code Review may never run (it is
+    skipped when Style check or Fast test fails, or by labels), and stopping
+    this review would then leave the PR unreviewed. So this review is
+    superseded only once the newer head's Code Review is running or has
+    succeeded. GitHub is asked with an installation token minted in this
+    process (and refreshed before it expires), which the agent, running as
+    another user, cannot read."""
 
     def __init__(self, repo, pr_number, sha):
-        self.url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+        from ci.praktika.gh_auth import GHTokenProvider
+
+        self.api = f"https://api.github.com/repos/{repo}"
+        self.pr_number = pr_number
         self.sha = sha
-        self.token = Shell.get_output("gh auth token", verbose=False).strip()
+        self._token = GHTokenProvider()
         self.superseded = threading.Event()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, daemon=True)
 
-    def head(self):
-        request = urllib.request.Request(self.url, headers={"Accept": "application/vnd.github+json",
-                                                           **({"Authorization": f"Bearer {self.token}"} if self.token else {})})
+    def _get(self, path):
+        try:
+            token = self._token()
+        except Exception:  # noqa: BLE001 - the public repository can be read without a token
+            token = ""
+        request = urllib.request.Request(f"{self.api}{path}", headers={
+            "Accept": "application/vnd.github+json", **({"Authorization": f"Bearer {token}"} if token else {})})
         try:
             with urllib.request.urlopen(request, timeout=20) as response:
-                return (json.loads(response.read().decode()).get("head") or {}).get("sha") or ""
+                return json.loads(response.read().decode())
         except Exception as e:  # noqa: BLE001 - a failed check is not a reason to stop the review
-            print(f"WARNING: could not check the PR head: {type(e).__name__}")
+            print(f"WARNING: could not ask GitHub about the PR: {type(e).__name__}")
+            return {}
+
+    def head(self):
+        return ((self._get(f"/pulls/{self.pr_number}") or {}).get("head") or {}).get("sha") or ""
+
+    def newer_review(self):
+        """The status of the newer head's Code Review: "running", "succeeded"
+        or "" (no newer head, or its review has not started)."""
+        head = self.head()
+        if not self.sha or not head or head == self.sha:
             return ""
+        runs = (self._get(f"/commits/{head}/check-runs?check_name=Code%20Review") or {}).get("check_runs") or []
+        statuses = {(r.get("status"), r.get("conclusion")) for r in runs if isinstance(r, dict)}
+        if ("completed", "success") in statuses:
+            return "succeeded"
+        if any(status == "in_progress" for status, _ in statuses):
+            return "running"
+        return ""
 
     def _loop(self):
         while not self._stop.wait(SUPERSEDED_CHECK_SECONDS):
-            head = self.head()
-            if head and head != self.sha:
-                print(f"A newer commit {head[:12]} was pushed; stopping the review of {self.sha[:12]}")
+            if not self.superseded.is_set() and self.newer_review():
+                print(f"The review of a newer commit has started; stopping the review of {self.sha[:12]}")
                 self.superseded.set()
-                sandbox.stop_agent()
-                return
+            if self.superseded.is_set():
+                sandbox.stop_agent()  # again on every tick, in case an attempt was starting
 
     def __enter__(self):
         self._thread.start()
@@ -241,7 +268,7 @@ def _outputs_problem():
     return ""
 
 
-def _run_agent(loom_config, watch=None):
+def _run_agent(loom_config, watch=None, commit="HEAD"):
     """Run the agent until it produces publishable output. Returns the model
     that produced it. Raises otherwise."""
     started = time.time()
@@ -250,11 +277,13 @@ def _run_agent(loom_config, watch=None):
         if attempt > 1 and time.time() - started > NO_NEW_ATTEMPT_AFTER_SECONDS:
             print(f"Not starting attempt {attempt}: {int(time.time() - started)}s already spent")
             break
+        if watch and watch.superseded.is_set():
+            raise Superseded()
         _reset_output_dir()
         attempt_started = time.time()
         print(f"Codex attempt {attempt}/{MAX_ATTEMPTS} with {MODEL} ({REASONING_EFFORT})")
         try:
-            exit_code = _run_codex_once(loom_config)
+            exit_code = _run_codex_once(loom_config, commit)
             problem = _outputs_problem()
             if exit_code != 0 and problem:
                 last_error = f"Codex exited with code {exit_code}: {problem}"
@@ -359,8 +388,13 @@ def review():
     os.makedirs(WORK_DIR, exist_ok=True)
 
     ctx = review_context.fetch(CONTEXT_DIR, repo, info.pr_number)
-    if ctx.head_sha and info.sha and ctx.head_sha != info.sha:
-        print(f"Not reviewing {info.sha[:12]}: the PR head is already {ctx.head_sha[:12]}, whose run reviews it")
+    # The context is the PR as it is now, so a run whose commit was already
+    # superseded reviews the newer head. It stands down only when that head's
+    # own review is running or done: that one may never run at all (Style
+    # check or Fast test failed, a label), and the PR would go unreviewed.
+    watch = _SupersededWatch(repo, info.pr_number, ctx.head_sha or info.sha)
+    if ctx.head_sha != info.sha and watch.newer_review():
+        print(f"Not reviewing: the review of the PR head {ctx.head_sha[:12]} has already started")
         return []
     if ctx.nothing_new:
         # A merge of the base branch, a rebase or a re-run that leaves the
@@ -411,25 +445,27 @@ def review():
         f.write(text)
 
     Shell.check("codex --version", verbose=True)
-    # From here until the agent is done, the job holds no GitHub token. It is
-    # minted again whatever happens: publishing needs it, and so does the
-    # runner, which posts the commit status after the job command.
-    watch = _SupersededWatch(repo, info.pr_number, info.sha)
+    commit = sandbox.pr_head_commit(ctx.head_sha)
+    _mask(loom_config.token)
+    # From here until the agent is done, the job's gh store holds no token
+    # (the watcher keeps its own in memory). It is minted again whatever
+    # happens: publishing needs it, and so does the runner, which posts the
+    # commit status after the job command.
     try:
         sandbox.prepare()
         with watch:
-            model = _run_agent(loom_config, watch)
+            model = _run_agent(loom_config, watch, commit)
     except Superseded:
-        print("Review stopped: superseded by a newer commit")
+        print("Review stopped: the review of a newer commit has started")
         return []
     finally:
-        sandbox.reauthenticate()
+        if not sandbox.reauthenticate():
+            print("ERROR: no GitHub token after the review; publishing will fail")
 
-    # A newer commit may have arrived while the agent finished: its run
-    # publishes, and this one must not overwrite that with an older review.
-    head = watch.head()
-    if head and head != info.sha:
-        print(f"Not publishing: the PR head moved to {head[:12]} while the review ran")
+    # A newer commit's review may have finished while this one ran: it has
+    # published, and this older review must not overwrite it.
+    if watch.newer_review() == "succeeded":
+        print("Not publishing: a newer commit's review has already been published")
         return []
 
     # Re-read the threads: the author may have replied or resolved while the

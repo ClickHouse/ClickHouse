@@ -208,7 +208,11 @@ class GHAuth:
         from praktika.settings import Settings
 
         if cls._authenticated and not force:
-            return True
+            # A job may have removed the token store since (the AI review does,
+            # before running its agent); then mint again instead of trusting
+            # the cached state.
+            if Shell.check("gh auth status > /dev/null 2>&1"):
+                return True
 
         lambda_name = (
             workflow.gh_auth_lambda_name if workflow else ""
