@@ -174,8 +174,16 @@ Pipe::Pipe(ProcessorPtr source)
     max_parallel_streams = 1;
 }
 
-Pipe::Pipe(std::shared_ptr<Processors> processors_) : processors(std::move(processors_))
+Pipe::Pipe(std::shared_ptr<Processors> processors_) : Pipe(std::move(processors_), nullptr)
 {
+}
+
+Pipe::Pipe(std::shared_ptr<Processors> processors_, InputPort * pending_seal_input_)
+    : processors(std::move(processors_))
+{
+    if (pending_seal_input_)
+        pending_seal_inputs.push_back(pending_seal_input_);
+
     /// Create hash table with processors.
     UnorderedSetWithMemoryTracking<const IProcessor *> set;
     for (const auto & processor : *processors)
@@ -185,6 +193,9 @@ Pipe::Pipe(std::shared_ptr<Processors> processors_) : processors(std::move(proce
     {
         for (const auto & port : processor->getInputs())
         {
+            if (&port == pending_seal_input_)
+                continue;
+
             if (!port.isConnected())
                 throw Exception(
                                 ErrorCodes::LOGICAL_ERROR,
@@ -324,6 +335,8 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
 
         if (pipe.extremes_port)
             extremes.emplace_back(pipe.extremes_port);
+
+        res.pending_seal_inputs.insert(res.pending_seal_inputs.end(), pipe.pending_seal_inputs.begin(), pipe.pending_seal_inputs.end());
     }
 
     Processors totals_processors;
