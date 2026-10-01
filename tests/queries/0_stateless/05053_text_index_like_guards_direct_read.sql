@@ -19,7 +19,9 @@ CREATE TABLE t_text_index_like_direct
     INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha)
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+-- A tiny randomized granularity made the merge below hit the test timeout in CI.
+SETTINGS index_granularity = 8192;
 
 -- 676 tokens 'paa'..'pzz' (~148 rows each, non-embedded postings) plus 'common' in every row;
 -- '%pa%' matches 27 of them (3995 rows).
