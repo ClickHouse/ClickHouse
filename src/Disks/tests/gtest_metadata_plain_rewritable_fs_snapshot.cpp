@@ -43,12 +43,12 @@ TEST(FsSnapshot, WideDirectorySharesUnchangedEntries)
     for (size_t i = 0; i < 10000; ++i)
         original.recordDirectoryPath("table/" + std::to_string(i), {.remote_path = std::to_string(i), .etag = "", .files = {}});
 
-    auto children = original.getRoot()->subdirectories.get("table")->subdirectories;
+    auto children = original.getRoot()->subdirectories.findChild("table")->subdirectories;
     FsSnapshot changed(original.getRoot());
     changed.recordFile("table/5000/data", {123, 456});
 
     size_t copied_entries = 0;
-    children.forEach([&](const auto &, const auto & child)
+    children.forEachChild([&](const auto &, const auto & child)
     {
         if (child.use_count() > 1)
             ++copied_entries;
@@ -67,12 +67,12 @@ TEST(FsSnapshot, WideDirectoryRemovalSharesUnchangedEntries)
     for (size_t i = 0; i < 10000; ++i)
         original.recordDirectoryPath("table/" + std::to_string(i), {.remote_path = std::to_string(i), .etag = "", .files = {}});
 
-    auto children = original.getRoot()->subdirectories.get("table")->subdirectories;
+    auto children = original.getRoot()->subdirectories.findChild("table")->subdirectories;
     FsSnapshot changed(original.getRoot());
     changed.removeDirectory("table/5000");
 
     size_t copied_entries = 0;
-    children.forEach([&](const auto &, const auto & child)
+    children.forEachChild([&](const auto &, const auto & child)
     {
         if (child.use_count() > 1)
             ++copied_entries;
@@ -87,18 +87,18 @@ TEST(FsSnapshot, WideDirectoryRemovalSharesUnchangedEntries)
 
 TEST(FsSnapshot, DirectoryMapMatchesOrderedMap)
 {
-    FsDirectoryMap actual;
+    FsDirectoryEntries actual;
     std::map<std::string, std::shared_ptr<FsNode>> expected;
     std::mt19937 random(123); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible test
 
     auto check = [](const auto & map, const auto & reference)
     {
         std::map<std::string, std::shared_ptr<FsNode>> entries;
-        map.forEach([&](const auto & name, const auto & value) { entries.emplace(name, value); });
+        map.forEachChild([&](const auto & name, const auto & value) { entries.emplace(name, value); });
         EXPECT_EQ(entries, reference);
-        EXPECT_EQ(map.empty(), reference.empty());
+        EXPECT_EQ(map.isEmpty(), reference.empty());
         for (const auto & [name, value] : reference)
-            EXPECT_EQ(map.get(name), value);
+            EXPECT_EQ(map.findChild(name), value);
     };
 
     for (size_t i = 0; i < 10000; ++i)
@@ -109,14 +109,14 @@ TEST(FsSnapshot, DirectoryMapMatchesOrderedMap)
         if (random() % 2)
         {
             auto value = std::make_shared<FsNode>();
-            actual.set(name, value);
+            actual.putChild(name, value);
             expected[name] = value;
         }
         else
         {
-            actual.erase(name);
+            actual.removeChild(name);
             expected.erase(name);
-            EXPECT_FALSE(actual.get(name));
+            EXPECT_FALSE(actual.findChild(name));
         }
         check(actual, expected);
         check(snapshot, before);
@@ -124,7 +124,7 @@ TEST(FsSnapshot, DirectoryMapMatchesOrderedMap)
 
     while (!expected.empty())
     {
-        actual.erase(expected.begin()->first);
+        actual.removeChild(expected.begin()->first);
         expected.erase(expected.begin());
         check(actual, expected);
     }
