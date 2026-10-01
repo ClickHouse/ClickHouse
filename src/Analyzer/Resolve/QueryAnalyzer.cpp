@@ -6091,16 +6091,45 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
             IdentifierResolveScope & left_subquery_scope = createIdentifierResolveScope(left_subquery, nullptr /*parent_scope*/);
             /// We are using alias column mechanism for USING column from projection.
-            /// It will be calculated right after reading, so column will be not nullable there.
+            /// It will be calculated right after reading, so column will be not nullable there, and a column of a USING key
+            /// inside the left side keeps the type it is read with rather than the key's supertype, the same way as in PREWHERE.
             left_subquery_scope.join_use_nulls = false;
+            left_subquery_scope.allow_resolve_from_using = false;
 
             /// The left side is already resolved (a USING list inside it holds columns, not identifiers), so it must not be
-            /// resolved again; the scope takes over the table expression data the current scope has built for its leaves.
+            /// resolved again; the scope takes over what resolveQuery builds for a join tree: the table expression data of
+            /// the leaves, their aliases (a qualified matcher such as `t1.*` finds its table only through them) and the
+            /// join counters.
             for (const auto & table_expression : extractTableExpressions(subquery_join_tree, true /*add_array_join*/))
             {
                 left_subquery_scope.registered_table_expression_nodes.insert(table_expression);
+                if (table_expression->hasAlias())
+                    left_subquery_scope.aliases.alias_name_to_table_expression_node.emplace(table_expression->getAlias(), table_expression);
                 if (table_expression->getNodeType() != QueryTreeNodeType::ARRAY_JOIN)
                     left_subquery_scope.table_expression_node_to_data.emplace(table_expression, scope_.getTableExpressionDataOrThrow(table_expression));
+            }
+
+            for (std::vector<const IQueryTreeNode *> join_tree_nodes{subquery_join_tree.get()}; !join_tree_nodes.empty();)
+            {
+                const auto * join_tree_node = join_tree_nodes.back();
+                join_tree_nodes.pop_back();
+
+                if (const auto * join = join_tree_node->as<JoinNode>())
+                {
+                    ++left_subquery_scope.joins_count;
+                    if (join->isUsingJoinExpression())
+                        ++left_subquery_scope.using_joins_count;
+                    join_tree_nodes.push_back(join->getLeftTableExpressionNode().get());
+                    join_tree_nodes.push_back(join->getRightTableExpressionNode().get());
+                }
+                else if (const auto * cross_join = join_tree_node->as<CrossJoinNode>())
+                {
+                    left_subquery_scope.joins_count += cross_join->getTableExpressions().size() - 1;
+                    for (const auto & cross_join_table_expression : cross_join->getTableExpressions())
+                        join_tree_nodes.push_back(cross_join_table_expression.get());
+                }
+                else if (const auto * array_join = join_tree_node->as<ArrayJoinNode>())
+                    join_tree_nodes.push_back(array_join->getTableExpressionNode().get());
             }
 
             auto & projection_node = left_subquery->getProjection().getNodes().front();

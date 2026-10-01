@@ -20,6 +20,14 @@ ARRAY JOIN above the JOIN is not a level: the JOIN stays outermost
 2	3	1
 a matcher inside the aliased key expression expands over the left side
 (1,(1))	(1)
+(1)	(1)
+(1)	(1)
+the key is computed before the joins of the left side: a column retyped by an inner USING keeps the type it is read with
+(1)	Tuple(UInt16)	(1)	Tuple(UInt16)
+(1)	Tuple(UInt16)	(1)	Tuple(UInt16)
+2	UInt32	2	UInt16
+join_use_nulls: the key is computed before the inner RIGHT JOIN makes the left columns nullable
+2	Nullable(UInt16)	2	UInt16
 a subquery has its own join tree
 2	2	7
 2	3

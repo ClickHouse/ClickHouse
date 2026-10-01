@@ -43,6 +43,26 @@ SELECT a + 1 AS b, t2.b AS right_b, x FROM (SELECT 1 AS a, 3 AS b, [1] AS arr) t
 
 SELECT 'a matcher inside the aliased key expression expands over the left side';
 SELECT tuple(*) AS k, t2.k AS right_k FROM (SELECT 1 AS a) t1 JOIN (SELECT tuple(1) AS k) t2 USING (k);
+SELECT tuple(t1.*) AS k, t2.k AS right_k FROM (SELECT 1 AS a) t1 JOIN (SELECT tuple(1) AS k) t2 USING (k);
+SELECT tuple(t1.*) AS k, t3.k AS right_k FROM (SELECT 1 AS a) t1, (SELECT 1 AS z) t2 JOIN (SELECT tuple(1) AS k) t3 USING (k);
+
+SELECT 'the key is computed before the joins of the left side: a column retyped by an inner USING keeps the type it is read with';
+SELECT tuple(t1.a) AS k, toTypeName(k), t3.k AS right_k, toTypeName(right_k)
+FROM (SELECT toUInt8(1) AS a) t1 JOIN (SELECT toUInt16(1) AS a) t2 USING (a) JOIN (SELECT tuple(toUInt16(1)) AS k) t3 USING (k);
+SELECT tuple(t1.*) AS k, toTypeName(k), t3.k AS right_k, toTypeName(right_k)
+FROM (SELECT toUInt8(1) AS a) t1 JOIN (SELECT toUInt16(1) AS a) t2 USING (a) JOIN (SELECT tuple(toUInt16(1)) AS k) t3 USING (k);
+-- An unqualified matcher expands the key column of the inner USING JOIN from both of its tables, as in PREWHERE,
+-- so the expression has no single source table and is not a key.
+SELECT tuple(*) AS k, toTypeName(k), t3.k AS right_k, toTypeName(right_k)
+FROM (SELECT toUInt8(1) AS a) t1 JOIN (SELECT toUInt16(1) AS a) t2 USING (a) JOIN (SELECT tuple(toUInt16(1)) AS k) t3 USING (k); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT a + 1 AS b, toTypeName(b), t3.b AS right_b, toTypeName(right_b)
+FROM (SELECT toUInt8(1) AS a) t1 JOIN (SELECT toUInt16(1) AS a) t2 USING (a) JOIN (SELECT toUInt16(2) AS b) t3 USING (b);
+
+SELECT 'join_use_nulls: the key is computed before the inner RIGHT JOIN makes the left columns nullable';
+SET join_use_nulls = 1;
+SELECT a + 1 AS b, toTypeName(b), t3.b AS right_b, toTypeName(right_b)
+FROM (SELECT 1 AS a, 10 AS x) t1 RIGHT JOIN (SELECT 10 AS x) t2 USING (x) JOIN (SELECT 2 AS b) t3 USING (b);
+SET join_use_nulls = 0;
 
 SELECT 'a subquery has its own join tree';
 SELECT s.b, s.right_b, t.c FROM (SELECT a + 1 AS b, t2.b AS right_b FROM (SELECT 1 AS a, 3 AS b) t1 JOIN (SELECT 2 AS b) t2 USING (b)) s JOIN (SELECT 7 AS c) t ON 1 = 1 JOIN (SELECT 1 AS z) u ON 1 = 1;
