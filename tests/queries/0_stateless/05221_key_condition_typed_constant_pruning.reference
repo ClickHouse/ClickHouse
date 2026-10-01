@@ -1,0 +1,20 @@
+v = CAST(CAST('37' AS Enum8('zero' = 0, '37' = 3)) AS Dynamic)	1	1	100
+v = CAST(CAST('37' AS Enum8('zero' = 0, '37' = 3)) AS Dynamic)	1	1	2	Condition: (v in ['37', '37'])
+v = CAST(CAST('37' AS Enum8('zero' = 0, '37' = 3)) AS Dynamic(max_types = 0))	1	1	2	Condition: (v in ['37', '37'])
+v = CAST(CAST('37' AS Enum8('zero' = 0, '37' = 3)) AS Variant(Array(UInt8), Enum8('zero' = 0, '37' = 3)))	1	1	2	Condition: (v in ['37', '37'])
+v = CAST(CAST('37' AS Enum16('zero' = 0, '37' = 3)) AS Dynamic)	1	1	2	Condition: (v in ['37', '37'])
+v = CAST(CAST('37' AS Enum16('zero' = 0, '37' = 3)) AS Dynamic(max_types = 0))	1	1	2	Condition: (v in ['37', '37'])
+v = CAST(CAST('37' AS Enum16('zero' = 0, '37' = 3)) AS Variant(Array(UInt8), Enum16('zero' = 0, '37' = 3)))	1	1	2	Condition: (v in ['37', '37'])
+CAST(CAST('37' AS Enum8('zero' = 0, '37' = 3)) AS Dynamic) = v	1	1	100
+CAST(CAST('37' AS Enum8('zero' = 0, '37' = 3)) AS Dynamic) = v	1	1	2	Condition: and((reverse(v) in ['73', '73']), (v in ['37', '37']))
+CAST(CAST('37' AS Enum8('zero' = 0, '37' = 3)) AS Dynamic(max_types = 0)) = v	1	1	2	Condition: and((reverse(v) in ['73', '73']), (v in ['37', '37']))
+CAST(CAST('37' AS Enum8('zero' = 0, '37' = 3)) AS Variant(Array(UInt8), Enum8('zero' = 0, '37' = 3))) = v	1	1	2	Condition: and((reverse(v) in ['73', '73']), (v in ['37', '37']))
+CAST(CAST('37' AS Enum16('zero' = 0, '37' = 3)) AS Dynamic) = v	1	1	2	Condition: and((reverse(v) in ['73', '73']), (v in ['37', '37']))
+CAST(CAST('37' AS Enum16('zero' = 0, '37' = 3)) AS Dynamic(max_types = 0)) = v	1	1	2	Condition: and((reverse(v) in ['73', '73']), (v in ['37', '37']))
+CAST(CAST('37' AS Enum16('zero' = 0, '37' = 3)) AS Variant(Array(UInt8), Enum16('zero' = 0, '37' = 3))) = v	1	1	2	Condition: and((reverse(v) in ['73', '73']), (v in ['37', '37']))
+v < CAST(CAST('37' AS Enum8('zero' = 0, '37' = 3)) AS Dynamic)	31	31	32	Condition: (toString(v) in (-Inf, '37'])
+v < CAST(CAST('37' AS Enum8('zero' = 0, '37' = 3)) AS Dynamic(max_types = 0))	31	31	32
+v < CAST(CAST('37' AS Enum8('zero' = 0, '37' = 3)) AS Variant(Array(UInt8), Enum8('zero' = 0, '37' = 3)))	31	31	32
+v < CAST(CAST('37' AS Enum16('zero' = 0, '37' = 3)) AS Dynamic)	31	31	32
+v < CAST(CAST('37' AS Enum16('zero' = 0, '37' = 3)) AS Dynamic(max_types = 0))	31	31	32
+v < CAST(CAST('37' AS Enum16('zero' = 0, '37' = 3)) AS Variant(Array(UInt8), Enum16('zero' = 0, '37' = 3)))	31	31	32

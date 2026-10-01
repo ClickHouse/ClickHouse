@@ -1,0 +1,14 @@
+toDayOfWeek(d, toNullable(toUInt8(1))) >= 5	2	2	3
+toDayOfWeek(d, toNullable(toUInt8(6))) >= 5	2	2	7
+toDayOfWeek(d, toLowCardinality(toUInt8(1))) >= 5	2	2	3
+toDayOfWeek(d, toLowCardinality(toUInt8(6))) >= 5	2	2	7
+toDayOfWeek(d, CAST(NULL AS Nullable(UInt8))) >= 5	0	0	7
+toDayOfWeek(d, toNullable(toUInt8(1))) >= 5	2	2	3
+toDayOfWeek(d, toNullable(toUInt8(6))) >= 5	2	2	7
+toDayOfWeek(d, toLowCardinality(toUInt8(1))) >= 5	2	2	3
+toDayOfWeek(d, toLowCardinality(toUInt8(6))) >= 5	2	2	7
+toDayOfWeek(d, CAST(NULL AS Nullable(UInt8))) >= 5	0	0	7
+[0,6]
+[1,0]
+\N	\N
+[]

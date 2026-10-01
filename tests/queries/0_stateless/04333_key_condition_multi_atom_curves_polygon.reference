@@ -1,0 +1,9 @@
+x BETWEEN 2 AND 3	16	16	20	Condition: (mortonEncode(x, y) has args in [2, 3] × (-Inf, +Inf))
+y BETWEEN 2 AND 3	16	16	18
+x BETWEEN 2 AND 3 AND y BETWEEN 2 AND 3	4	4	5	Condition: (mortonEncode(x, y) has args in [2, 3] × [2, 3])
+x = 2 AND z = 2	8	8	18
+x < 2 OR y < 2	28	28	31
+x BETWEEN 2 AND 3 AND y BETWEEN 2 AND 3	4	4	5	Condition: (hilbertEncode(x, y) has args in [2, 3] × [2, 3])
+pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])	31	31	48	Condition: pointInPolygon((x, y), [(0, 0), (0, 2), (5, 8), (8, 4), (0, 0)])
+pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)], [(2, 2), (3, 2), (3, 3), (2, 3)])	30	30	48	Condition: pointInPolygon((x, y), [(0, 0), (0, 2), (5, 8), (8, 4), (0, 0)])
+pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)]) AND x < 3	9	9	14

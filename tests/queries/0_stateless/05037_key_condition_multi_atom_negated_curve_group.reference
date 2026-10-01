@@ -1,0 +1,3 @@
+NOT x	8	8	16	Condition: or(not((plus(x, 1) not in [1, 1])), not((argument 0 of mortonEncode(x, y) not in [0, 0])))
+x = 0	8	8	7	Condition: and((plus(x, 1) in [1, 1]), (mortonEncode(x, y) has args in [0, 0] × (-Inf, +Inf)))
+NOT has([3, 5], x)	48	48	16	Condition: (plus(x, 1) notIn 2-element set)

@@ -1,0 +1,17 @@
+flag	48	48	25	Condition: (flag not in [0, 0])
+flag AND ts >= toDateTime('2026-01-03 00:00:00', 'UTC')	24	24	13	Condition: and(and((toDate(ts) in [20456, +Inf)), (ts in [1767398400, +Inf))), (flag not in [0, 0]))
+NOT flag	48	48	24
+flag OR ts = toDateTime('2026-01-02 00:00:00', 'UTC')	49	49	27
+flag	50	50	25	Condition: and((plus(flag, 1) not in [1, 1]), (negate(flag) not in [0, 0]))
+flag != 0	50	50	25	Condition: and((plus(flag, 1) not in [1, 1]), (negate(flag) not in [0, 0]))
+NOT flag	50	50	26
+flag	50	50	50
+NOT flag	50	50	50
+flag	32	32	48	Condition: true
+flag	48	48	25	Condition: (flag not in [0, 0])
+f	6	6	5	Condition: true
+NOT f	4	4	5
+f	6	6	5
+NOT f	4	4	5
+f	6	6	4	Condition: (f not in [0., 0.])
+NOT f	4	4	2

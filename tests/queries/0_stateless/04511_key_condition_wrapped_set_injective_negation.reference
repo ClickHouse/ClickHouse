@@ -1,0 +1,11 @@
+NOT has([1], x)	20	20	21	Condition: and((toString(x) notIn 1-element set), (x notIn 1-element set))
+x NOT IN (1)	20	20	21	Condition: and((toString(x) notIn 1-element set), (x notIn 1-element set))
+has([1], x)	4	4	5
+NOT has(['b'], s)	20	20	21	Condition: (s notIn 1-element set)
+NOT (s IS NOT DISTINCT FROM 'b')	20	20	21	Condition: or(not((concat(s, '_x') in ['b_x', 'b_x'])), not((s in ['b', 'b'])))
+NOT has(['b'], s)	20	20	21	Condition: (s notIn 1-element set)
+NOT (s IS NOT DISTINCT FROM 'b')	20	20	21	Condition: or(not((modulo(cityHash64(s), 8) in [5, 5])), not((s in ['b', 'b'])))
+NOT has([(1, 1)], (x, y))	20	20	21	Condition: ((x, y) notIn 1-element set)
+(x, y) NOT IN ((1, 1))	20	20	21	Condition: ((x, y) notIn 1-element set)
+NOT has(['b'], s)	20	20	24	Condition: (concat(s, '_x') notIn 1-element set)
+NOT (s IS NOT DISTINCT FROM 'b')	20	20	24	Condition: not((concat(s, '_x') in ['b_x', 'b_x']))

@@ -47,9 +47,9 @@ Expression ((Project names + Projection))
       PrimaryKey
         Keys:
           divide(c0, -42)
-        Condition: (divide(c0, -42) in [-0., +Inf))
+        Condition: (divide(c0, -42) in [0.023809523809523808, +Inf))
         Parts: 1/1
-        Granules: 4/5
+        Granules: 3/5
         Search Algorithm: binary search
       Ranges: 1
 -- intDiv(var, neg_const): integer result variant of the same case. The integer divisor

@@ -119,6 +119,8 @@ public:
 
         /// If result of this not is deterministic. Checks only this node, not a subtree.
         bool isDeterministic() const;
+        /// Follows alias nodes to the expression they name.
+        const Node * getWithoutAlias() const;
         void toTree(JSONBuilder::JSONMap & map) const;
         UInt64 getHash() const;
         void updateHash(SipHash & hash_state) const;

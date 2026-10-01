@@ -1,0 +1,44 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: the selected marks and EXPLAIN output may differ with
+-- random settings.
+
+SET explain_query_plan_default = 'legacy';
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan and the marks
+    selected by index analysis; with `condition`, it also prints the key condition. -#}
+{% macro check(table, predicate, condition = false) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }}))
+    {%- if condition %}, (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE trimLeft(explain) LIKE 'Condition:%'){% endif %}
+FORMAT TSVRaw;
+{%- endmacro %}
+
+CREATE TABLE test_morton (x UInt32, y UInt32, z UInt8) ENGINE = MergeTree ORDER BY (mortonEncode(x, y), z)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_morton SELECT number % 8, intDiv(number, 8), number % 4 FROM numbers(64);
+
+-- Ranges over space-filling curve arguments.
+{{ check('test_morton', 'x BETWEEN 2 AND 3', condition = true) }}
+{{ check('test_morton', 'y BETWEEN 2 AND 3') }}
+-- Conjunction over both curve arguments folds into one hyperrectangle.
+{{ check('test_morton', 'x BETWEEN 2 AND 3 AND y BETWEEN 2 AND 3', condition = true) }}
+-- Curve argument predicate combined with a plain key column predicate.
+{{ check('test_morton', 'x = 2 AND z = 2') }}
+-- Disjunction over curve arguments.
+{{ check('test_morton', 'x < 2 OR y < 2') }}
+
+CREATE TABLE test_hilbert (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY hilbertEncode(x, y)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_hilbert SELECT number % 8, intDiv(number, 8) FROM numbers(64);
+{{ check('test_hilbert', 'x BETWEEN 2 AND 3 AND y BETWEEN 2 AND 3', condition = true) }}
+
+-- pointInPolygon over two key columns.
+CREATE TABLE test_polygon (x UInt32, y UInt32, z UInt8) ENGINE = MergeTree ORDER BY (x, y)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_polygon SELECT number % 10, intDiv(number, 10), number % 2 FROM numbers(100);
+{{ check('test_polygon', 'pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])', condition = true) }}
+-- Polygon with holes: holes are ignored for index analysis but applied by the filter.
+{{ check('test_polygon', 'pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)], [(2, 2), (3, 2), (3, 3), (2, 3)])', condition = true) }}
+-- Polygon predicate combined with a prunable key range.
+{{ check('test_polygon', 'pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)]) AND x < 3') }}

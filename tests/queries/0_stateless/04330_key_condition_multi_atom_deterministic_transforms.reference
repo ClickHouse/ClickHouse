@@ -1,0 +1,12 @@
+ts = toDateTime('2026-03-02 06:00:00', 'UTC')	1	1	2	Condition: and((cityHash64(ts) in [5771977039523260380, 5771977039523260380]), (toDate(ts) in [20514, 20514]))
+ts != toDateTime('2026-03-02 06:00:00', 'UTC')	11	11	12
+s = 'a'	1	1	1
+s != 'a'	2	2	3	Condition: (concat(s, '_x') not in ['a_x', 'a_x'])
+s = '00000000-0000-0000-0000-000000000001'	1	1	1
+s = 'not-a-uuid'	0	0	2	Condition: true
+c0 = -30	1	1	52	Condition: (c0 in [-30, -30])
+c0 = 25	1	1	2
+x = 55	1	1	11
+x != 55	99	99	100
+ts = toDateTime('2026-03-02 06:00:00', 'UTC')	1	1	2	Condition: and((toDate(ts) in [20514, 20514]), (ts in [1772431200, 1772431200]))
+k % 16 = 3	2	2	Min-Max Parts: 16/16 Granules: 32/32 Partition Parts: 1/16 Granules: 2/32 PrimaryKey Parts: 1/1 Granules: 2/2

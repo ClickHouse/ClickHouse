@@ -1,0 +1,6 @@
+504
+1
+x = 257	1	1	2	Condition: and((toUInt8(x) in [1, 1]), (x in [257, 257]))
+1
+1
+ts >= toDateTime('2026-01-20 12:00:00', 'UTC')	492	492	505
