@@ -588,7 +588,7 @@ def write_brief(config, pr, files, out_dir):
 # ── Review memory ────────────────────────────────────────────────────────────
 
 
-def _thread_state(thread):
+def thread_state(thread):
     if not thread.get("isResolved"):
         return "open"
     resolved_by = ((thread.get("resolvedBy") or {}).get("login") or "")
@@ -610,7 +610,7 @@ def thread_record(repo, pr_number, thread, is_ours):
     first = comments[0]
     replies = [c for c in comments[1:] if (c.get("body") or "").strip()]
     others = [c for c in replies if not (c.get("viewerDidAuthor") or _is_bot_login((c.get("author") or {}).get("login")))]
-    state = _thread_state(thread)
+    state = thread_state(thread)
     lines = [
         f"Review finding on {repo}#{pr_number} at {thread.get('path')}:{thread.get('line') or first.get('originalLine') or '?'} "
         f"(state: {state}{', outdated' if thread.get('isOutdated') else ''}).",

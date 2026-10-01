@@ -327,9 +327,16 @@ def validate_simplicity(entries, files, threads, base_dir, units=None, known_fin
         path, side = _text(e.get("path")), _text(e.get("side")).upper() or "RIGHT"
         try:
             line = int(e.get("line"))
+            start = int(e["start_line"]) if e.get("start_line") is not None else None
         except (TypeError, ValueError):
             continue
-        if line not in lines_by_path.get(path, {}).get(side, {}):
+        side_lines = lines_by_path.get(path, {}).get(side, {})
+        if line not in side_lines:
+            listed.append((e, body, rule))
+            continue
+        if start is not None and (start >= line or side_lines.get(start) != side_lines[line]):
+            # The suggestion replaces the range; a range that is not within one
+            # hunk cannot be posted, and one line of it would garble it.
             listed.append((e, body, rule))
             continue
         unit = review_units.unit_for_line(units or [], path, line, side)
@@ -340,6 +347,7 @@ def validate_simplicity(entries, files, threads, base_dir, units=None, known_fin
         thread_texts.setdefault(path, []).append(body)
         if side == "RIGHT" and "```suggestion" in body and len(inline) < MAX_INLINE_SIMPLICITY:
             inline.append({"path": path, "line": line, "side": side,
+                           **({"start_line": start, "start_side": side} if start is not None else {}),
                            "body_file": posted.write(body, RULE_MARKER.format(rule=rule)),
                            "_fingerprint": review_units.finding_fingerprint(path, unit["key"] if unit else "", body)})
         else:

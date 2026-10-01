@@ -322,35 +322,44 @@ _MARKER_RE = re.compile(r"\n*<!-- ai-review-(?:reviewed-sha|model|state): [^>]*-
 
 
 def _verified_dismissals(repo, records):
-    """The memory records that may suppress a finding, checked against GitHub.
+    """The memory records that may suppress a finding, rebuilt from GitHub.
 
     The agent holds the Loom token, so a prompt-injected agent could write a
-    record that claims an author dismissed some finding. A record counts only
-    if its review comment exists, was posted by the app on that file, and has
-    a reply by a person in its thread. Other records are kept for the prompt's
-    context (which treats them as untrusted) but cannot drive the job's filter."""
+    record that claims an author dismissed some finding. Of a record, only the
+    comment id is used: the comment must exist and have been posted by the app,
+    and its thread's state, path, replies and finding text are all taken from
+    GitHub. Records that do not check out are kept for the prompt's context
+    (which treats them as untrusted) but cannot drive the job's filter."""
     out = []
-    pr_comments = {}  # one listing per earlier PR, however many of its threads were recalled
+    pr_threads = {}  # one listing per earlier PR, however many of its threads were recalled
     for r in records or []:
-        dismissal = r.get("author_replied") and r.get("state") in ("resolved_by_author", "open")
-        if not dismissal or not r.get("comment_id"):
+        claimed = r.get("author_replied") and r.get("state") in ("resolved_by_author", "open")
+        if not claimed or not r.get("comment_id"):
             out.append({**r, "author_replied": False})
             continue
         comment = review_context.gh_json(f"/repos/{repo}/pulls/comments/{r['comment_id']}") or {}
         pr = (comment.get("pull_request_url") or "").rsplit("/", 1)[-1]
-        if comment and pr not in pr_comments:
-            pr_comments[pr] = review_context.gh_json(f"/repos/{repo}/pulls/{pr}/comments?per_page=100", paginate=True) or []
-        replies = pr_comments.get(pr, [])
-        real = (review_context.is_bot((comment.get("user") or {}).get("login")) and comment.get("path") == r.get("path")
-                and any(c.get("in_reply_to_id") == r["comment_id"] and not review_context.is_automation(
-                    (c.get("user") or {}).get("login")) for c in replies or []))
-        if not real:
+        thread = None
+        if pr.isdigit() and review_context.is_bot((comment.get("user") or {}).get("login")):
+            if pr not in pr_threads:
+                try:
+                    pr_threads[pr] = GH.list_pr_review_threads(pr=int(pr), repo=repo)
+                except Exception as e:  # noqa: BLE001 - unverifiable means not a dismissal
+                    print(f"WARNING: could not list the review threads of PR #{pr}: {e}")
+                    pr_threads[pr] = []
+            thread = next((t for t in pr_threads[pr]
+                           if ((t.get("comments") or {}).get("nodes") or [{}])[0].get("databaseId") == r["comment_id"]),
+                          None)
+        replies = ((thread or {}).get("comments") or {}).get("nodes", [])[1:]
+        replied = any((c.get("body") or "").strip() and not c.get("viewerDidAuthor")
+                      and not review_context.is_automation((c.get("author") or {}).get("login")) for c in replies)
+        state = loom.thread_state(thread) if thread else ""
+        if not (thread and replied and state in ("resolved_by_author", "open")):
             print(f"Memory record for comment {r['comment_id']} not confirmed by GitHub; not used as a dismissal")
             out.append({**r, "author_replied": False})
             continue
-        # The finding text that may suppress a new comment is the comment as
-        # GitHub has it, not the record's copy, which the agent could rewrite.
-        out.append({**r, "finding": comment.get("body") or ""})
+        out.append({**r, "path": thread.get("path") or comment.get("path") or "", "state": state,
+                    "author_replied": True, "finding": comment.get("body") or ""})
     return out
 
 
@@ -470,10 +479,12 @@ def review():
         if not sandbox.reauthenticate():
             print("ERROR: no GitHub token after the review; publishing will fail")
 
-    # A newer commit's review may have finished while this one ran: it has
-    # published, and this older review must not overwrite it.
-    if watch.newer_review() == "succeeded":
-        print("Not publishing: a newer commit's review has already been published")
+    # A newer commit's review may have started or finished while this one ran
+    # (the agent can finish between two watcher ticks). It reviews the newer
+    # head and publishes for it; this older review must not post comments it
+    # did not account for, or overwrite its summary.
+    if watch.superseded.is_set() or watch.newer_review():
+        print("Not publishing: the review of a newer commit has taken over")
         return []
 
     # Re-read the threads: the author may have replied or resolved while the

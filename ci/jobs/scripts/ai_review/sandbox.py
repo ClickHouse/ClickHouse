@@ -163,34 +163,55 @@ class Workspace:
 
     def collect(self, rel_path, dest):
         """Copy the agent's `rel_path` directory to `dest`: regular files and
-        directories only, each file opened without following links and checked
-        on the open descriptor. A link the agent left there could otherwise
-        make the job read (and publish) or write a file outside the output."""
-        src = os.path.join(self.tree, rel_path)
+        directories only. Every component, from the tree down, is opened
+        relative to its parent's descriptor without following links, so a link
+        the agent left anywhere on the path (`ci/tmp` included) cannot make the
+        job read (and publish) or write a file outside the output."""
         if os.path.exists(dest):
             shutil.rmtree(dest)
-        if not os.path.isdir(src) or os.path.islink(src):
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY
+        try:
+            fd = os.open(self.tree, flags)
+        except OSError as e:
+            print(f"WARNING: agent's tree not readable: {e}")
             return
+        try:
+            for name in rel_path.split(os.sep):
+                parent, fd = fd, -1
+                try:
+                    fd = os.open(name, flags, dir_fd=parent)
+                except OSError as e:
+                    print(f"WARNING: no agent output at {rel_path}: {e}")
+                    return
+                finally:
+                    os.close(parent)
+            self._copy_dir(fd, os.path.join(self.tree, rel_path), dest)
+        finally:
+            if fd >= 0:
+                os.close(fd)
+
+    @staticmethod
+    def _copy_dir(dir_fd, shown, dest):
         os.makedirs(dest)
-        for name in os.listdir(src):
-            path, target = os.path.join(src, name), os.path.join(dest, name)
-            mode = os.lstat(path).st_mode
-            if stat.S_ISDIR(mode):
-                self.collect(os.path.join(rel_path, name), target)
-                continue
-            if not stat.S_ISREG(mode):
-                print(f"WARNING: dropping {path} from the agent's output: not a regular file")
-                continue
+        for name in os.listdir(dir_fd):
+            path, target = os.path.join(shown, name), os.path.join(dest, name)
             try:
-                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+                fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd)
             except OSError as e:
                 print(f"WARNING: dropping {path} from the agent's output: {e}")
                 continue
-            with os.fdopen(fd, "rb") as f:
-                if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
-                    continue
-                with open(target, "wb") as out:
-                    shutil.copyfileobj(f, out)
+            try:
+                mode = os.fstat(fd).st_mode
+                if stat.S_ISDIR(mode):
+                    Workspace._copy_dir(fd, path, target)
+                elif stat.S_ISREG(mode):
+                    with open(target, "wb") as out:
+                        while chunk := os.read(fd, 1 << 20):
+                            out.write(chunk)
+                else:
+                    print(f"WARNING: dropping {path} from the agent's output: not a regular file")
+            finally:
+                os.close(fd)
 
 
 def pr_head_commit(sha):
