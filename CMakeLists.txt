@@ -398,6 +398,14 @@ if (NOT ENABLE_FUZZING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
 endif()
 
+# Probe every page of a large stack allocation (big frames, `alloca`, VLAs) so that it cannot jump over
+# the guard page into another mapping. Only functions with frames larger than a page pay for it.
+# Clang ignores it (and `-Werror` turns the warning into an error) on Darwin, WebAssembly and LoongArch.
+# Note: it's not enabled on RISC-V64 due to bugs in LLVM.
+if (NOT OS_DARWIN AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X))
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-clash-protection")
+endif ()
+
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
@@ -681,6 +689,12 @@ endif ()
 # Not on Darwin: ld64 does not accept '-z' options.
 if (NOT OS_DARWIN)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro,-z,now")
+endif ()
+
+# Keep read-only data out of executable pages, so its bytes cannot serve as ROP gadgets.
+# Not on Darwin (no '-z' options in ld64) and not on WebAssembly (no ELF segments).
+if (NOT OS_DARWIN AND NOT OS_WASM)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,separate-code")
 endif ()
 
 if (ENABLE_TESTS)

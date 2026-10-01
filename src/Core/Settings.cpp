@@ -3695,7 +3695,9 @@ Possible values:
 - `break`: stop executing the query and return the partial result.
 )", 0) \
     DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
-Prefer maximum block bytes for external sort, reduce the memory usage during merging.
+Preferred block size in bytes for spill files used by external `ORDER BY` and `DISTINCT`. Smaller blocks reduce memory usage when merging spill files.
+
+The block size is estimated from average row size, so blocks with unusually large rows can exceed this target. Set to `0` to size blocks by the row limit only.
 )", 0, \
         {"24.5", 0, DEFAULT_BLOCK_SIZE * 256, "Prefer maximum block bytes for external sort, reduce the memory usage during merging."}) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
@@ -9230,7 +9232,7 @@ Index analysis done only on replica-coordinator and skipped on other replicas. E
         {"24.12", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, \
         {"24.10", false, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}) \
     DECLARE(Bool, parallel_replicas_support_projection, true, R"(
-Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive.
+Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan.
 )", 0, \
         {"25.8", false, true, "New setting. Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive."}) \
     DECLARE(Milliseconds, parallel_replicas_connect_timeout_ms, 300, R"(
@@ -9312,7 +9314,7 @@ The analyzer is the query analysis and planning infrastructure that has been the
         {"24.8", 1, 1, "Added the alias `enable_analyzer`."}, \
         {"24.3", false, true, "Enable analyzer and planner by default."}) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
-Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`). Aliases defined on subexpressions inside the SELECT list are also considered (for example, in `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` the join is performed by `t1.a + 1 = t2.b`). When the matching alias is defined on a subexpression inside the SELECT list rather than as a top-level alias, parallel replicas are disabled for the query. For queries sent to remote servers (`Distributed` tables, the `remote` table function), such a query is rejected with an exception only when the identifier cannot be resolved on the remote server at all; if the alias shadows a real column of the left table, the remote server joins by that column instead, so the results may differ from local execution.
+Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`). Aliases defined elsewhere in the query are also considered: in the `WITH` clause, on subexpressions inside the SELECT list, or in other clauses (for example, in `WITH a + 1 AS b SELECT count() FROM t1 JOIN t2 USING (b)` and in `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` the join is performed by `t1.a + 1 = t2.b`). When the matching alias is not a top-level alias of the SELECT list, parallel replicas are disabled for the query. For queries sent to remote servers (`Distributed` tables, the `remote` table function), such a query is rejected with an exception only when the identifier cannot be resolved on the remote server at all; if the alias shadows a real column of the left table, the remote server joins by that column instead, so the results may differ from local execution.
 )", 0, \
         {"24.3", false, false, "Force to resolve identifier in JOIN USING from projection"}) \
     DECLARE(Bool, analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested, true, R"(
