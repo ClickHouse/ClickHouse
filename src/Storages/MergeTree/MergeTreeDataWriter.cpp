@@ -848,12 +848,25 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         global_settings,
         *data_settings);
 
+    /// The engine merge below would aggregate skip index inputs like data columns,
+    /// so they are computed from the merged rows.
+    const bool compute_indices_after_merge = optimize_on_insert && !indices.empty();
+    const Names inserted_columns = compute_indices_after_merge ? block.getNames() : Names{};
+
+    auto compute_sorting_key_and_skip_indices = [&](const MergeTreeIndices & indices_to_compute)
+    {
+        auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices_to_compute);
+        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
+        expr->execute(block);
+    };
+
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
-        auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices);
-        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
-        expr->execute(block);
+        if (compute_indices_after_merge)
+            compute_sorting_key_and_skip_indices({});
+        else
+            compute_sorting_key_and_skip_indices(indices);
     }
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
@@ -900,6 +913,15 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
+    }
+
+    if (compute_indices_after_merge)
+    {
+        Block merged_block;
+        for (const auto & name : inserted_columns)
+            merged_block.insert(std::move(block.getByName(name)));
+        block = std::move(merged_block);
+        compute_sorting_key_and_skip_indices(indices);
     }
 
     ColumnsStatistics statistics;
