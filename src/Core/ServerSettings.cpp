@@ -2241,6 +2241,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "password_complexity",
         "default_password_type",
         "bcrypt_workfactor",
+        "max_concurrent_bcrypt_authentications",
         "allow_implicit_no_password",
         "allow_no_password",
         "allow_plaintext_password",
