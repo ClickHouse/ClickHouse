@@ -339,6 +339,61 @@ TEST(TestKeeperTest, ListWatchFiresOnChildSetOnlyWithStatOrData)
     events.expect({1, 1, 1, 1, 1, 1, 1, 1, 1});
 }
 
+TEST(TestKeeperTest, ListWatchFiresOnSetOfChildOnlyIfFilterPassesIt)
+{
+    TestKeeper keeper = makeKeeper();
+
+    create(keeper, "/dir", "", /* is_ephemeral */ false);
+    create(keeper, "/dir/persistent", "", /* is_ephemeral */ false);
+    create(keeper, "/dir/ephemeral", "", /* is_ephemeral */ true);
+
+    WatchEvents events;
+    ListOptions ephemeral_only;
+    ephemeral_only.filter = ListRequestType::EPHEMERAL_ONLY;
+    ephemeral_only.with_data = true;
+    const auto persistent_only = [&]
+    {
+        return list(keeper, "/dir", ListRequestType::PERSISTENT_ONLY, false, /* with_data */ true, events.make("/dir")).error;
+    };
+
+    /// 0
+    ASSERT_EQ(persistent_only(), Error::ZOK);
+    set(keeper, "/dir/ephemeral", "new");
+    events.expect({0});
+    set(keeper, "/dir/persistent", "new");
+    events.expect({1});
+
+    /// 1
+    ASSERT_EQ(listWithOptions(keeper, "/dir", ephemeral_only, events.make("/dir")).error, Error::ZOK);
+    set(keeper, "/dir/persistent", "new");
+    events.expect({1, 0});
+    set(keeper, "/dir/ephemeral", "new");
+    events.expect({1, 1});
+
+    /// 2, 3 and 4, 5: requests with different filters on one path fire on a change of any child.
+    ASSERT_EQ(persistent_only(), Error::ZOK);
+    ASSERT_EQ(listWithOptions(keeper, "/dir", ephemeral_only, events.make("/dir")).error, Error::ZOK);
+    set(keeper, "/dir/ephemeral", "new");
+    events.expect({1, 1, 1, 1});
+    ASSERT_EQ(persistent_only(), Error::ZOK);
+    ASSERT_EQ(listWithOptions(keeper, "/dir", ephemeral_only, events.make("/dir")).error, Error::ZOK);
+    set(keeper, "/dir/persistent", "new");
+    events.expect({1, 1, 1, 1, 1, 1});
+
+    /// 6: creating a child fires it whatever the filter.
+    ASSERT_EQ(persistent_only(), Error::ZOK);
+    create(keeper, "/dir/ephemeral2", "", /* is_ephemeral */ true);
+    events.expect({1, 1, 1, 1, 1, 1, 1});
+
+    /// 7: a filter value TestKeeper does not know leaves out no child, as in Keeper.
+    const auto unknown_filter = static_cast<ListRequestType>(3); // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+    const auto response = list(keeper, "/dir", unknown_filter, false, /* with_data */ true, events.make("/dir"));
+    ASSERT_EQ(response.error, Error::ZOK);
+    EXPECT_EQ(response.names, std::vector<String>({"ephemeral", "ephemeral2", "persistent"}));
+    set(keeper, "/dir/ephemeral", "new");
+    events.expect({1, 1, 1, 1, 1, 1, 1, 1});
+}
+
 TEST(TestKeeperTest, ListWatchFiresOnRemoval)
 {
     TestKeeper keeper = makeKeeper();

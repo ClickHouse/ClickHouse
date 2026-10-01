@@ -1656,10 +1656,11 @@ TEST_P(CoordinationTest, TestListWithStatOrDataWatches)
         return events;
     };
 
-    const auto create = [&](const String & path)
+    const auto create = [&](const String & path, bool is_ephemeral = false)
     {
         auto request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = path;
+        request->is_ephemeral = is_ephemeral;
         return run(request, writer);
     };
 
@@ -1678,21 +1679,21 @@ TEST_P(CoordinationTest, TestListWithStatOrDataWatches)
         return run(request, writer);
     };
 
-    const auto set_acl = [&](const String & path)
+    const auto set_acl = [&](const String & path, int32_t permissions = ACL::All)
     {
         auto request = std::make_shared<ZooKeeperSetACLRequest>();
         request->path = path;
-        request->acls = {ACL{.permissions = ACL::All, .scheme = "world", .id = "anyone"}};
+        request->acls = {ACL{.permissions = permissions, .scheme = "world", .id = "anyone"}};
         return run(request, writer);
     };
 
     /// `FilteredListWithStatsAndData` with a watch.
-    const auto list_with = [&](const String & path, bool with_stat, bool with_data)
+    const auto list_with = [&](const String & path, bool with_stat, bool with_data, ListRequestType filter = ListRequestType::ALL)
     {
         auto request = std::make_shared<ZooKeeperListRequest>();
         request->path = path;
         request->has_watch = true;
-        request->list_request_type = ListRequestType::ALL;
+        request->list_request_type = filter;
         request->with_stat = with_stat;
         request->with_data = with_data;
         EXPECT_TRUE(run(request, watcher).empty());
@@ -1708,11 +1709,12 @@ TEST_P(CoordinationTest, TestListWithStatOrDataWatches)
     };
 
     /// `ListWithOptions` with a watch, through the local read path.
-    const auto list_with_options = [&](const String & path, bool with_stat, bool with_data)
+    const auto list_with_options = [&](const String & path, bool with_stat, bool with_data, ListRequestType filter = ListRequestType::ALL)
     {
         auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
         request->path = path;
         request->has_watch = true;
+        request->options.filter = filter;
         request->options.with_stat = with_stat;
         request->options.with_data = with_data;
         KeeperRequestsForSessions requests{KeeperRequestForSession{.session_id = watcher, .request = request}};
@@ -1751,6 +1753,52 @@ TEST_P(CoordinationTest, TestListWithStatOrDataWatches)
         EXPECT_TRUE(set("/dir/child").empty());
         EXPECT_TRUE(set_acl("/dir/child").empty());
         EXPECT_EQ(create("/dir/child2"), children_changed);
+    }
+
+    {
+        SCOPED_TRACE("Children the filter leaves out");
+        create("/dir/ephemeral", /*is_ephemeral=*/true);
+
+        list_with("/dir", /*with_stat=*/true, /*with_data=*/true, ListRequestType::PERSISTENT_ONLY);
+        EXPECT_TRUE(set("/dir/ephemeral").empty());
+        EXPECT_EQ(set("/dir/child"), children_changed);
+
+        list_with_options("/dir", /*with_stat=*/false, /*with_data=*/true, ListRequestType::EPHEMERAL_ONLY);
+        EXPECT_TRUE(set("/dir/child").empty());
+        EXPECT_EQ(set("/dir/ephemeral"), children_changed);
+
+        /// A filter value the server does not know leaves out no child.
+        const auto unknown_filter = static_cast<ListRequestType>(3); // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+        list_with("/dir", /*with_stat=*/true, /*with_data=*/true, unknown_filter);
+        EXPECT_EQ(set("/dir/ephemeral"), children_changed);
+
+        /// Both requests check the ACL of a child they leave out, so they fail once it cannot be read.
+        list_with("/dir", /*with_stat=*/false, /*with_data=*/true, ListRequestType::PERSISTENT_ONLY);
+        EXPECT_EQ(set_acl("/dir/ephemeral", ACL::All & ~ACL::Read), children_changed);
+        auto unwatched_list = std::make_shared<ZooKeeperListRequest>();
+        unwatched_list->path = "/dir";
+        unwatched_list->list_request_type = ListRequestType::PERSISTENT_ONLY;
+        unwatched_list->with_stat = false;
+        unwatched_list->with_data = true;
+        KeeperRequestsForSessions requests{KeeperRequestForSession{.session_id = watcher, .request = unwatched_list}};
+        EXPECT_EQ(storage.processLocalRequests(requests, /*check_acl=*/true).at(0).response->error, Error::ZNOAUTH);
+        EXPECT_TRUE(set_acl("/dir/ephemeral").empty());
+        list_with_options("/dir", /*with_stat=*/false, /*with_data=*/true, ListRequestType::PERSISTENT_ONLY);
+        EXPECT_EQ(set_acl("/dir/ephemeral", ACL::All & ~ACL::Read), children_changed);
+        EXPECT_TRUE(set_acl("/dir/ephemeral").empty());
+
+        /// The watch covers the children any of the session's requests returned.
+        list_with("/dir", /*with_stat=*/true, /*with_data=*/true, ListRequestType::EPHEMERAL_ONLY);
+        list_with_options("/dir", /*with_stat=*/false, /*with_data=*/true, ListRequestType::PERSISTENT_ONLY);
+        EXPECT_EQ(storage.getTotalWatchesCount(), 1);
+        EXPECT_EQ(set("/dir/ephemeral"), children_changed);
+        list_with("/dir", /*with_stat=*/true, /*with_data=*/true, ListRequestType::EPHEMERAL_ONLY);
+        list_with_options("/dir", /*with_stat=*/false, /*with_data=*/true, ListRequestType::PERSISTENT_ONLY);
+        EXPECT_EQ(set("/dir/child"), children_changed);
+
+        /// Creating or removing a child fires it whatever the filter, as it does every list watch.
+        list_with("/dir", /*with_stat=*/true, /*with_data=*/true, ListRequestType::PERSISTENT_ONLY);
+        EXPECT_EQ(remove("/dir/ephemeral"), children_changed);
     }
 
     {

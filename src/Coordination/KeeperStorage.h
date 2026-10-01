@@ -86,6 +86,13 @@ public:
         StringHashForHeterogeneousLookup,
         StringHashForHeterogeneousLookup::transparent_key_equal>;
 
+    /// Path -> session -> the children filter of the session's list requests on the path, `ALL` if they differ.
+    using ListWithDataWatches = std::unordered_map<
+        String,
+        std::unordered_map<int64_t, Coordination::ListRequestType>,
+        StringHashForHeterogeneousLookup,
+        StringHashForHeterogeneousLookup::transparent_key_equal>;
+
     using Delta = KeeperDelta;
     using Operation = KeeperDelta::Operation;
     using DeltaIterator = std::list<KeeperStorage::Delta>::iterator;
@@ -147,8 +154,9 @@ public:
     /// Currently active watches (node_path -> subscribed sessions)
     Watches watches;
     Watches list_watches; /// Watches for 'list' request (watches on children).
-    /// Watches of list requests that returned children stats or data. They also fire on a change of a child's data or ACL.
-    Watches list_with_data_watches;
+    /// Watches of list requests that returned children stats or data. They also fire on a change of a child's ACL,
+    /// and of its data if the child passes their filter.
+    ListWithDataWatches list_with_data_watches;
     Watches persistent_watches;
     Watches persistent_list_watches;
     Watches persistent_recursive_watches;

@@ -41,6 +41,11 @@ static String descendantsPrefix(const String & path)
     return path == "/" ? path : path + "/";
 }
 
+static bool passesFilter(ListRequestType filter, bool is_ephemeral)
+{
+    return filter != (is_ephemeral ? ListRequestType::PERSISTENT_ONLY : ListRequestType::EPHEMERAL_ONLY);
+}
+
 
 using Undo = std::function<void()>;
 
@@ -50,7 +55,9 @@ struct TestKeeperRequest : virtual Request
     virtual ResponsePtr createResponse() const = 0;
     virtual std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const = 0;
     virtual void processWatches(
-        TestKeeper::Watches & /*watches*/, TestKeeper::Watches & /*list_watches*/, TestKeeper::Watches & /*list_with_data_watches*/) const
+        TestKeeper::Watches & /*watches*/,
+        TestKeeper::Watches & /*list_watches*/,
+        TestKeeper::ListWithDataWatches & /*list_with_data_watches*/) const
     {
     }
 
@@ -62,8 +69,9 @@ struct TestKeeperRequest : virtual Request
         const String & path,
         TestKeeper::Watches & watches,
         TestKeeper::Watches & list_watches,
-        TestKeeper::Watches & list_with_data_watches,
-        Event event);
+        TestKeeper::ListWithDataWatches & list_with_data_watches,
+        Event event,
+        bool is_ephemeral = false);
 };
 
 
@@ -71,8 +79,9 @@ void TestKeeperRequest::processWatchesImpl(
     const String & path,
     TestKeeper::Watches & watches,
     TestKeeper::Watches & list_watches,
-    TestKeeper::Watches & list_with_data_watches,
-    Event event)
+    TestKeeper::ListWithDataWatches & list_with_data_watches,
+    Event event,
+    bool is_ephemeral)
 {
     {
         WatchResponse watch_response;
@@ -101,13 +110,15 @@ void TestKeeperRequest::processWatchesImpl(
         watch_list_response.path = watch_path;
 
         TestKeeper::WatchCallbacks callbacks;
-        for (auto * list : {&list_watches, &list_with_data_watches})
+        if (auto it = list_watches.find(watch_path); it != list_watches.end())
         {
-            auto it = list->find(watch_path);
-            if (it == list->end())
-                continue;
-            callbacks.insert(it->second.begin(), it->second.end());
-            list->erase(it);
+            callbacks = std::move(it->second);
+            list_watches.erase(it);
+        }
+        if (auto it = list_with_data_watches.find(watch_path); it != list_with_data_watches.end())
+        {
+            callbacks.merge(it->second.callbacks);
+            list_with_data_watches.erase(it);
         }
 
         for (const auto & event_or_callback : callbacks)
@@ -120,10 +131,13 @@ void TestKeeperRequest::processWatchesImpl(
     if (event == DELETED)
         trigger_list_watches(path, DELETED);
 
-    /// Keeper keeps one children watch per session and path, and fires it on a child's data change only if
-    /// a list request with children stats or data set it.
+    /// Keeper keeps one children watch per session and path, and fires it on a child's data change only if it was
+    /// set by a list request with children stats or data whose filter passes the child.
     const String parent_path = parentPath(path);
-    if (path != "/" && (event != CHANGED || list_with_data_watches.contains(parent_path)))
+    const auto with_data_it = list_with_data_watches.find(parent_path);
+    const bool fires_on_change
+        = with_data_it != list_with_data_watches.end() && passesFilter(with_data_it->second.filter, is_ephemeral);
+    if (path != "/" && (event != CHANGED || fires_on_change))
         trigger_list_watches(parent_path, CHILD);
 }
 
@@ -136,7 +150,9 @@ struct TestKeeperCreateRequest final : CreateRequest, TestKeeperRequest
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
     void processWatches(
-        TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches, TestKeeper::Watches & list_with_data_watches) const override
+        TestKeeper::Watches & node_watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::ListWithDataWatches & list_with_data_watches) const override
     {
         processWatchesImpl(getPath(), node_watches, list_watches, list_with_data_watches, CREATED);
     }
@@ -150,7 +166,9 @@ struct TestKeeperRemoveRequest final : RemoveRequest, TestKeeperRequest
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
     void processWatches(
-        TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches, TestKeeper::Watches & list_with_data_watches) const override
+        TestKeeper::Watches & node_watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::ListWithDataWatches & list_with_data_watches) const override
     {
         processWatchesImpl(getPath(), node_watches, list_watches, list_with_data_watches, DELETED);
     }
@@ -164,7 +182,9 @@ struct TestKeeperRemoveRecursiveRequest final : RemoveRecursiveRequest, TestKeep
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
     void processWatches(
-        TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches, TestKeeper::Watches & list_with_data_watches) const override
+        TestKeeper::Watches & node_watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::ListWithDataWatches & list_with_data_watches) const override
     {
         /// Sorted, so every node comes after its parent; Keeper removes a child before its parent.
         for (const auto & removed_path : removed_paths | std::views::reverse)
@@ -214,10 +234,14 @@ struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
     void processWatches(
-        TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches, TestKeeper::Watches & list_with_data_watches) const override
+        TestKeeper::Watches & node_watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::ListWithDataWatches & list_with_data_watches) const override
     {
-        processWatchesImpl(getPath(), node_watches, list_watches, list_with_data_watches, CHANGED);
+        processWatchesImpl(getPath(), node_watches, list_watches, list_with_data_watches, CHANGED, is_ephemeral);
     }
+
+    mutable bool is_ephemeral = false;
 };
 
 struct TestKeeperListRequest : ListRequest, TestKeeperRequest
@@ -337,7 +361,9 @@ struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperReques
     }
 
     void processWatches(
-        TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches, TestKeeper::Watches & list_with_data_watches) const override
+        TestKeeper::Watches & node_watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::ListWithDataWatches & list_with_data_watches) const override
     {
         for (const auto & generic_request : requests)
         {
@@ -613,9 +639,7 @@ std::pair<ResponsePtr, Undo> TestKeeperListWithOptionsRequest::process(TestKeepe
         if (!options.recursive && parentPath(it->first) != path)
             continue;
 
-        const bool is_ephemeral = it->second.stat.ephemeralOwner != 0;
-        if ((options.filter == ListRequestType::PERSISTENT_ONLY && is_ephemeral)
-            || (options.filter == ListRequestType::EPHEMERAL_ONLY && !is_ephemeral))
+        if (!passesFilter(options.filter, it->second.stat.ephemeralOwner != 0))
             continue;
 
         if (!options.shuffle)
@@ -676,6 +700,7 @@ std::pair<ResponsePtr, Undo> TestKeeperSetRequest::process(TestKeeper::Container
     else if (version == -1 || version == it->second.stat.version)
     {
         auto prev_node = it->second;
+        is_ephemeral = it->second.stat.ephemeralOwner != 0;
 
         it->second.data = data;
         ++it->second.stat.version;
@@ -727,11 +752,7 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
             using enum ListRequestType;
             if (parentPath(child_it->first) == path)
             {
-                const bool is_ephemeral = child_it->second.stat.ephemeralOwner != 0;
-                const bool should_return = !list_request_type.has_value()
-                    || list_request_type.value() == ALL
-                    || (is_ephemeral && list_request_type.value() == EPHEMERAL_ONLY)
-                    || (!is_ephemeral && list_request_type.value() == PERSISTENT_ONLY);
+                const bool should_return = passesFilter(list_request_type.value_or(ALL), child_it->second.stat.ephemeralOwner != 0);
 
                 if (should_return)
                 {
@@ -1009,16 +1030,32 @@ void TestKeeper::processingThread()
                     /// or if it was exists request which allows to add watches for non existing nodes.
                     if (response->error == Error::ZOK)
                     {
-                        auto & watches_type = [&]() -> Watches &
+                        const auto with_data_filter = [&]() -> std::optional<ListRequestType>
                         {
-                            if (const auto * list = dynamic_cast<const ListRequest *>(info.request.get()))
-                                return (list->with_stat.value_or(false) || list->with_data.value_or(false)) ? list_with_data_watches : list_watches;
-                            if (const auto * list = dynamic_cast<const ListWithOptionsRequest *>(info.request.get()))
-                                return (list->options.with_stat || list->options.with_data) ? list_with_data_watches : list_watches;
-                            return watches;
+                            if (const auto * list = dynamic_cast<const ListRequest *>(info.request.get());
+                                list && (list->with_stat.value_or(false) || list->with_data.value_or(false)))
+                                return list->list_request_type.value_or(ListRequestType::ALL);
+                            if (const auto * list = dynamic_cast<const ListWithOptionsRequest *>(info.request.get());
+                                list && (list->options.with_stat || list->options.with_data))
+                                return list->options.filter;
+                            return std::nullopt;
                         }();
 
-                        watches_type[info.request->getPath()].insert(info.watch);
+                        if (with_data_filter)
+                        {
+                            auto & watch = list_with_data_watches
+                                .try_emplace(info.request->getPath(), ListWithDataWatch{.callbacks = {}, .filter = *with_data_filter})
+                                .first->second;
+                            if (watch.filter != *with_data_filter)
+                                watch.filter = ListRequestType::ALL;
+                            watch.callbacks.insert(info.watch);
+                        }
+                        else
+                        {
+                            const bool is_list = dynamic_cast<const ListRequest *>(info.request.get())
+                                || dynamic_cast<const ListWithOptionsRequest *>(info.request.get());
+                            (is_list ? list_watches : watches)[info.request->getPath()].insert(info.watch);
+                        }
                     }
                     else if (response->error == Error::ZNONODE && dynamic_cast<const ExistsRequest *>(info.request.get()))
                     {
@@ -1130,8 +1167,8 @@ void TestKeeper::finalize(const String &)
     {
         {
             /// A client keeps one bucket of list callbacks per path.
-            for (auto & [path, callbacks] : list_with_data_watches)
-                list_watches[path].merge(callbacks);
+            for (auto & [path, watch] : list_with_data_watches)
+                list_watches[path].merge(watch.callbacks);
             list_with_data_watches.clear();
 
             for (auto * watches_type : {&watches, &list_watches})
