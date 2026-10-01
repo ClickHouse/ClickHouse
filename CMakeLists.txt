@@ -192,10 +192,6 @@ if (OS_LINUX)
         # Fold identical code and data sections to reduce binary size.
         # `safe` keeps address-taken functions distinct, as C and C++ require.
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--icf=safe")
-        # lldb tries to attach to __jit_debug_register_code (controllable plugin.jit-loader.gdb.enable, default ON)
-        # and this function may be merged with others, which will make the clickhouse under lldb unusable,
-        # because on each this function lldb will hit a breakpoint
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--keep-unique=__jit_debug_register_code")
     endif ()
 
     # In Release builds, strip residual debug sections that may come from contrib
