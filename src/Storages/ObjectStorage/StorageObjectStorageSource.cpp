@@ -214,6 +214,7 @@ namespace Setting
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool s3_validate_etag_on_read;
+    extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 }
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -239,8 +240,8 @@ static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerP
 /// number of rows the file contributes WITHOUT touching the file itself, so both
 /// directions are unsafe: a count cached before a delete resurfaces deleted rows, and a
 /// count cached after it goes stale once the deletes are compacted away. Such files must
-/// neither use nor populate the cache. `need_only_count` stays enabled for position deletes
-/// and deletion vectors (they filter by row index); only equality deletes disable it.
+/// neither use nor populate the cache. `need_only_count` stays enabled when `DeletionVectorTransform`
+/// applies the deletes. Streaming position deletes and equality deletes disable it.
 static bool hasAttachedDeletes(const ObjectInfo & object_info)
 {
 #if USE_AVRO
@@ -1249,16 +1250,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
     };
 
-    /// Equality-delete `FilterTransform` evaluates predicates against column values, but `need_only_count`
-    /// emits default-filled chunks — so disable the fast path for equality deletes only.
-    /// Position deletes and deletion vectors filter by row index (preserved on synthetic chunks);
-    /// `DeletionVectorTransform` adjusts const count chunks via roaring range cardinality, and Parquet
-    /// `needOnlyCount` reads footer/row-group metadata only (including bucketed reads). Count-from-files
-    /// cache stays separately fail-closed in `canUseCountFromFilesCache`.
+    /// Equality deletes need column values. Streaming position deletes (`IcebergStreamingPositionDeleteTransform`)
+    /// build a dense filter per input chunk, so a `need_only_count` row-group chunk would allocate one filter
+    /// of that length. `DeletionVectorTransform` already resizes const count chunks from the bitmap, so
+    /// deletion vectors and `use_roaring_bitmap_iceberg_positional_deletes` keep `need_only_count`.
 #if USE_AVRO
     if (const auto * iceberg_object = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
     {
-        if (!iceberg_object->info.equality_deletes_objects.empty())
+        const bool streaming_position_deletes = !iceberg_object->info.position_deletes_objects.empty()
+            && !iceberg_object->info.deletion_vector.has_value()
+            && !context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes];
+        if (!iceberg_object->info.equality_deletes_objects.empty() || streaming_position_deletes)
             need_only_count = false;
     }
 #endif
