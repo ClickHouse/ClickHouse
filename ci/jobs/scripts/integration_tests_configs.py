@@ -1239,7 +1239,6 @@ test_tcp_handler_http_responses/test_case.py	10152
 test_webterminal_startup/test.py	10148
 test_system_reload_async_metrics/test_async_metrics_invalid_settings.py	9982
 test_http_auth_config_credentials/test.py	9951
-test_cgroup_metrics/test.py	9935
 test_storage_iceberg_no_spark/test_iceberg_history_operation_summary.py	9922
 test_arrowflight_interface/test_prepared_statement_malformed_params.py	9909
 test_filesystem_cache_uninitialized/test.py	9874
