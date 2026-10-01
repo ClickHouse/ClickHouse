@@ -518,10 +518,18 @@ struct UTF8StringSource : public StringSource
 {
     using StringSource::StringSource;
 
+    /// Avoid a SIMD probe for very short requests.
+    static constexpr size_t min_ascii_skip = 8;
+
     static const ColumnString::Char * skipCodePointsForward(const ColumnString::Char * pos, size_t size, const ColumnString::Char * end)
     {
         if constexpr (UTF8::ascii_chunk_size != 0)
         {
+            /// A full, in-bounds ASCII load can also satisfy a request shorter than one chunk.
+            if (size >= min_ascii_skip && size < UTF8::ascii_chunk_size && pos < end
+                && static_cast<size_t>(end - pos) >= UTF8::ascii_chunk_size && UTF8::isAllASCIIChunk(pos))
+                return pos + size;
+
             while (size >= UTF8::ascii_chunk_size && pos < end && static_cast<size_t>(end - pos) >= UTF8::ascii_chunk_size
                    && UTF8::isAllASCIIChunk(pos))
             {
@@ -538,27 +546,33 @@ struct UTF8StringSource : public StringSource
     static const ColumnString::Char * skipCodePointsBackward(
         const ColumnString::Char * pos, size_t size, const ColumnString::Char * begin, size_t * skipped = nullptr)
     {
-        size_t skipped_count = 0;
+        const size_t requested = size;
         if constexpr (UTF8::ascii_chunk_size != 0)
         {
+            if (size >= min_ascii_skip && size < UTF8::ascii_chunk_size && pos > begin
+                && static_cast<size_t>(pos - begin) >= UTF8::ascii_chunk_size && UTF8::isAllASCIIChunk(pos - UTF8::ascii_chunk_size))
+            {
+                if (skipped)
+                    *skipped = size;
+                return pos - size;
+            }
+
             while (size >= UTF8::ascii_chunk_size && pos > begin && static_cast<size_t>(pos - begin) >= UTF8::ascii_chunk_size
                    && UTF8::isAllASCIIChunk(pos - UTF8::ascii_chunk_size))
             {
                 pos -= UTF8::ascii_chunk_size;
                 size -= UTF8::ascii_chunk_size;
-                skipped_count += UTF8::ascii_chunk_size;
             }
         }
 
-        size_t i = 0;
-        for (; i < size && pos > begin; ++i)
+        for (; size && pos > begin; --size)
         {
             --pos;
             if (pos != begin)
                 UTF8::syncBackward(pos, begin);
         }
         if (skipped)
-            *skipped = skipped_count + i;
+            *skipped = requested - size;
         return pos;
     }
 

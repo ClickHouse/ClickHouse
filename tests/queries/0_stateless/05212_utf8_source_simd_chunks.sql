@@ -40,4 +40,27 @@ FROM
 )
 FORMAT Null;
 
+-- Exercise both SIMD widths, short requests, mixed chunks, and clipped negative offsets.
+-- Construct expected results from code-point arrays, independently of UTF-8 string traversal.
+WITH
+    arrayConcat(arrayMap(x -> 'a', range(prefix)), [code_point], arrayMap(x -> 'b', range(suffix))) AS code_points,
+    arrayStringConcat(code_points) AS s,
+    length(code_points) AS code_point_count,
+    least(skip, code_point_count) AS right_size
+SELECT throwIf(
+    leftUTF8(materialize(s), skip) != arrayStringConcat(arraySlice(code_points, 1, skip))
+    OR rightUTF8(materialize(s), skip) != arrayStringConcat(arraySlice(code_points, code_point_count - right_size + 1, right_size))
+    OR substringUTF8(materialize(s), -toInt64(code_point_count + 5), 8) != arrayStringConcat(arraySlice(code_points, 1, 3))
+    OR substringUTF8(materialize(s), -toInt64(code_point_count + 5), 5) != ''
+    , 'UTF-8 source short request or clipped offset mismatch')
+FROM
+    (SELECT arrayJoin([0, 1, 7, 8, 9, 15, 16, 17, 31, 32, 33, 64]) AS prefix)
+CROSS JOIN
+    (SELECT arrayJoin([0, 7, 15, 31, 64]) AS suffix)
+CROSS JOIN
+    (SELECT arrayJoin([0, 1, 7, 8, 9, 15, 16, 17, 24, 31, 32, 33, 64, 128]) AS skip)
+CROSS JOIN
+    (SELECT arrayJoin([unhex('00'), 'a', unhex('C3A9'), unhex('E4BDA0'), unhex('F09F9880')]) AS code_point)
+FORMAT Null;
+
 SELECT 'OK';
