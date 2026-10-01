@@ -428,7 +428,7 @@ Returns the exponentially decayed sum of values at the index `t` in time. Withou
     FunctionDocumentation::Parameters exponentialTimeDecayedSum_parameters = {
         {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue exponentialTimeDecayedSum_returned_value = {"Returns `Float64` for the legacy window form and `ExponentialTimeDecaying(decay_length)` for the experimental regular aggregate form.", {"Float64", "ExponentialTimeDecaying"}};
+    FunctionDocumentation::ReturnedValue exponentialTimeDecayedSum_returned_value = {"Returns `Float64` for the legacy window form and `ExponentialTimeDecaying(decay_length)` for the experimental regular aggregate form.", {}};
     FunctionDocumentation::Examples exponentialTimeDecayedSum_examples = {
     {
         "Window function usage with visual representation",
@@ -635,7 +635,7 @@ Returns the cumulative exponential decay over a time series at the index `t` in 
     FunctionDocumentation::Parameters exponentialTimeDecayedCount_parameters = {
         {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue exponentialTimeDecayedCount_returned_value = {"Returns `Float64` for the legacy window form and `ExponentialTimeDecaying(decay_length)` for the experimental regular aggregate form.", {"Float64", "ExponentialTimeDecaying"}};
+    FunctionDocumentation::ReturnedValue exponentialTimeDecayedCount_returned_value = {"Returns `Float64` for the legacy window form and `ExponentialTimeDecaying(decay_length)` for the experimental regular aggregate form.", {}};
     FunctionDocumentation::Examples exponentialTimeDecayedCount_examples = {
     {
         "Window function usage with visual representation",
