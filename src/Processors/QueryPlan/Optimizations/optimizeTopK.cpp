@@ -102,7 +102,7 @@ static size_t tryTopKForFormatSource(
     if (!source_step->supportsTopKDynamicFilter(*source_column))
         return 0;
 
-    auto threshold_tracker = std::make_shared<TopKThresholdTracker>(sort_col_desc);
+    auto threshold_tracker = createTopKThresholdTracker(sort_col_desc, *sort_column.type);
     sorting_step->setTopKThresholdTracker(threshold_tracker);
 
     auto info = std::make_shared<FormatTopKFilterInfo>();

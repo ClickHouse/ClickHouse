@@ -17,8 +17,8 @@ struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 struct FilterDAGInfo;
 using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
-struct TopKThresholdTracker;
-using TopKThresholdTrackerPtr = std::shared_ptr<TopKThresholdTracker>;
+class ITopKThresholdTracker;
+using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
 
 /// TopN dynamic filtering (`ORDER BY x LIMIT n`, see `tryOptimizeTopK`): the format may drop rows
 /// that cannot enter the query's top-K, and skip whole row groups / pages whose statistics prove
