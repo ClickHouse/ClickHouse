@@ -107,9 +107,12 @@ public:
         /// into the next one, where the same name is an ordinary table name and has to be qualified.
         auto enclosing_with_aliases = std::move(with_aliases);
         with_aliases.clear();
+        auto enclosing_recursive_with_aliases = std::move(recursive_with_aliases);
+        recursive_with_aliases.clear();
         auto enclosing_settings_context = std::exchange(table_expressions_settings_context, context);
         visitTableExpressionsImpl(ast);
         table_expressions_settings_context = std::move(enclosing_settings_context);
+        recursive_with_aliases = std::move(enclosing_recursive_with_aliases);
         with_aliases = std::move(enclosing_with_aliases);
     }
 
@@ -162,6 +165,14 @@ private:
     /// enclosing `SELECT` that declares the same name keeps hiding the table. `visitTableExpressionsImpl`
     /// maintains this; the full traversal uses `scopes` instead.
     mutable std::unordered_map<String, size_t> with_aliases;
+    /// The names of the recursive elements whose recursive member the narrow pass is inside,
+    /// innermost last. Such a name references the element at any depth of the member, also in a
+    /// nested `SELECT` that stops inheriting, as `BodyWalk` makes it in the full traversal.
+    mutable std::vector<String> recursive_member_names;
+    /// The part of `with_aliases` declared by recursive elements. `ApplyWithSubqueryVisitor` puts a
+    /// copy of a recursive element's body, tagged with its name, where the element is referenced,
+    /// and the narrow pass walks that copy as the element's body.
+    mutable std::unordered_map<String, size_t> recursive_with_aliases;
     /// The settings in effect at the `SELECT` the narrow pass is inside, the counterpart of
     /// `Scope::settings_context` of the full traversal. Null outside `visitTableExpressions`.
     mutable ContextPtr table_expressions_settings_context;
@@ -413,6 +424,18 @@ private:
         bool masked = false;
     };
 
+    /// Marks the recursive member of `name` as being walked for as long as it lives.
+    struct RecursiveMemberGuard
+    {
+        RecursiveMemberGuard(std::vector<String> & names_, const String & name) : names(names_) { names.push_back(name); }
+        ~RecursiveMemberGuard() { names.pop_back(); }
+
+        RecursiveMemberGuard(const RecursiveMemberGuard &) = delete;
+        RecursiveMemberGuard & operator=(const RecursiveMemberGuard &) = delete;
+
+        std::vector<String> & names;
+    };
+
     /// The body of a `WITH` element of the narrow pass. A plain element is not in scope inside its
     /// own body, and neither is a recursive one in its seed - the first branch, which the analyzer
     /// resolves like any other query - so there the name is a table (or an element of an enclosing
@@ -424,12 +447,7 @@ private:
         {
             if (ASTs * branches = ApplyWithSubqueryVisitor::getRecursiveBodyBranches(with_element.subquery))
             {
-                {
-                    MaskedWithAlias masked(with_aliases, with_element.name);
-                    visitTableExpressionsImpl(*branches->front());
-                }
-                for (size_t i = 1; i < branches->size(); ++i)
-                    visitTableExpressionsImpl(*(*branches)[i]);
+                visitTableExpressionsRecursiveBody(*branches, with_element.name);
                 return;
             }
         }
@@ -438,8 +456,37 @@ private:
         visitTableExpressionsImpl(*with_element.subquery);
     }
 
+    /// The branches of the body of the recursive element `name`, or of a copy of it.
+    void visitTableExpressionsRecursiveBody(ASTs & branches, const String & name) const
+    {
+        {
+            MaskedWithAlias masked(with_aliases, name);
+            visitTableExpressionsImpl(*branches.front());
+        }
+        RecursiveMemberGuard recursive_member(recursive_member_names, name);
+        for (size_t i = 1; i < branches.size(); ++i)
+            visitTableExpressionsImpl(*branches[i]);
+    }
+
     void visitTableExpressionsImpl(IAST & ast) const
     {
+        /// A copy of the body of a recursive element, which `ApplyWithSubqueryVisitor` substituted for
+        /// a reference to it, keeps referencing the element in its recursive members, as the full
+        /// traversal walks it through `BodyWalk`. Walked as a plain subquery, a self-reference in a
+        /// nested `SELECT` that stops inheriting was taken for a table.
+        if (const auto * subquery = ast.as<ASTSubquery>(); subquery && !subquery->cte_name.empty())
+        {
+            auto it = recursive_with_aliases.find(subquery->cte_name);
+            if (it != recursive_with_aliases.end() && it->second > 0)
+            {
+                if (ASTs * branches = ApplyWithSubqueryVisitor::getRecursiveBodyBranches(ast.ptr()))
+                {
+                    visitTableExpressionsRecursiveBody(*branches, subquery->cte_name);
+                    return;
+                }
+            }
+        }
+
         if (auto * select = ast.as<ASTSelectQuery>())
         {
             /// A name defined by a `WITH` element is a common table expression and not a table,
@@ -459,11 +506,18 @@ private:
             auto enclosing_settings_context = std::exchange(table_expressions_settings_context, settings_context);
 
             auto enclosing_with_aliases = with_aliases;
+            auto enclosing_recursive_with_aliases = recursive_with_aliases;
             auto enclosing_with_expression_aliases = with_expression_aliases;
             if (!inherit_from_outer)
             {
                 with_aliases.clear();
+                recursive_with_aliases.clear();
                 with_expression_aliases.clear();
+                for (const auto & name : recursive_member_names)
+                {
+                    ++with_aliases[name];
+                    ++recursive_with_aliases[name];
+                }
             }
             registerWithExpressionAliases(*select);
             /// Every name of the list is bound before any body is walked, as `QueryAnalyzer` does,
@@ -474,7 +528,11 @@ private:
                 for (const auto & child : with->children)
                 {
                     if (const auto * with_element = typeid_cast<const ASTWithElement *>(child.get()))
+                    {
                         ++with_aliases[with_element->name];
+                        if (isRecursiveElement(*select, *with_element))
+                            ++recursive_with_aliases[with_element->name];
+                    }
                 }
             }
 
@@ -507,6 +565,7 @@ private:
 
             expression_aliases = std::move(enclosing_query_aliases);
             with_aliases = std::move(enclosing_with_aliases);
+            recursive_with_aliases = std::move(enclosing_recursive_with_aliases);
             with_expression_aliases = std::move(enclosing_with_expression_aliases);
             table_expressions_settings_context = std::move(enclosing_settings_context);
             return;
