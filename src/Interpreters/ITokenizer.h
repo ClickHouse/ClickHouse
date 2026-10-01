@@ -47,6 +47,12 @@ public:
 #endif
     };
 
+    /// Their terms never contain a zero byte, so the padding of a `FixedString` value keeps all its terms.
+    static bool splitsAtZeroByte(Type type)
+    {
+        return type == Type::SplitByNonAlpha || type == Type::Ngrams || type == Type::SparseGrams || type == Type::AsciiCJK;
+    }
+
     ITokenizer() = delete;
     explicit ITokenizer(Type type_) : type(type_) {}
     ITokenizer(const ITokenizer &) = default;

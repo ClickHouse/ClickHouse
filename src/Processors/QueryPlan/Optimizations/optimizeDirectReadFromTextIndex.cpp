@@ -909,7 +909,7 @@ private:
                     if (!drop_empty_needles || !element_value.empty())
                         tokens.push_back(element_value);
                 }
-                /// Compaction is unsound after a postprocessor, and the functions collapse duplicates themselves.
+                /// Compaction is unsound after a postprocessor, and `hasPhrase` needs every duplicate, in order.
                 tokens = postprocessor->processTokens(std::move(tokens));
                 needles_field = Array(tokens.begin(), tokens.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());

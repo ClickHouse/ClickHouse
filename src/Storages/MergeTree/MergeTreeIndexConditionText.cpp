@@ -1111,15 +1111,6 @@ static std::optional<FixedStringPaddingSemantics> fixedStringPaddingSemantics(co
     return std::nullopt;
 }
 
-/// Their terms never contain a zero byte, so appending zero bytes to a value keeps all its terms.
-static bool tokenizerSplitsAtZeroByte(ITokenizer::Type type)
-{
-    return type == ITokenizer::Type::SplitByNonAlpha
-        || type == ITokenizer::Type::Ngrams
-        || type == ITokenizer::Type::SparseGrams
-        || type == ITokenizer::Type::AsciiCJK;
-}
-
 static std::string_view withoutTrailingZeros(std::string_view value)
 {
     return value.substr(0, value.find_last_not_of('\0') + 1);
@@ -1278,7 +1269,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         const FixedStringNeedleContext context{
             .semantics = *semantics,
             .indexed_fixed_string_size = indexed_fixed_string_size,
-            .padding_never_in_terms = !has_preprocessor && tokenizerSplitsAtZeroByte(tokenizer->getType()),
+            .padding_never_in_terms = !has_preprocessor && ITokenizer::splitsAtZeroByte(tokenizer->getType()),
         };
         if (!tryNormalizeNeedlePadding(value_field, value_type, context))
             return false;
@@ -2291,7 +2282,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     const FixedStringNeedleContext context{
         .semantics = FixedStringPaddingSemantics::BothStripped,
         .indexed_fixed_string_size = indexed_fixed_string_size,
-        .padding_never_in_terms = !has_preprocessor && tokenizerSplitsAtZeroByte(tokenizer->getType()),
+        .padding_never_in_terms = !has_preprocessor && ITokenizer::splitsAtZeroByte(tokenizer->getType()),
     };
     String normalized;
 
