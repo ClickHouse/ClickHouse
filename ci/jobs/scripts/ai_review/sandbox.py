@@ -118,12 +118,22 @@ class Workspace:
             chown(f"{os.getuid()}:{os.getgid()}", self.attempt_dir)
 
     def collect(self, rel_path, dest):
-        """Copy the agent's `rel_path` directory to `dest`, symlinks as links."""
+        """Copy the agent's `rel_path` directory to `dest`, keeping only
+        regular files and directories. A symlink the agent left there could
+        make the job read (and publish) or write a file outside the output
+        directory, so links and special files are dropped, not followed."""
         src = os.path.join(self.tree, rel_path)
         if os.path.exists(dest):
             shutil.rmtree(dest)
-        if os.path.isdir(src) and not os.path.islink(src):
-            shutil.copytree(src, dest, symlinks=True)
+        if not os.path.isdir(src) or os.path.islink(src):
+            return
+        shutil.copytree(src, dest, symlinks=True)
+        for root, dirs, files in os.walk(dest):
+            for name in dirs + files:
+                path = os.path.join(root, name)
+                if os.path.islink(path) or not (os.path.isdir(path) or os.path.isfile(path)):
+                    print(f"WARNING: dropping {path} from the agent's output: not a regular file")
+                    os.unlink(path)
 
     def remove(self):
         Shell.check(f"rm -rf {shlex.quote(self.attempt_dir)}", verbose=False)

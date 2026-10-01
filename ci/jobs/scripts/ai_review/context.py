@@ -161,7 +161,7 @@ def _render_conversation(issue_comments, reviews):
     events = []
     for c in issue_comments or []:
         body = c.get("body") or ""
-        if _REVIEW_COMMENT_START in body:
+        if _REVIEW_COMMENT_START in body and is_bot((c.get("user") or {}).get("login")):
             continue  # the previous AI summary is in previous_review.md
         events.append((c.get("created_at") or "", (c.get("user") or {}).get("login"), "comment", body))
     for r in reviews or []:
@@ -215,6 +215,8 @@ def _previous_review(issue_comments):
     """The review section of the CI comment. CI keeps several tagged sections
     (report, summary, review, ...) in one comment."""
     for c in reversed(issue_comments or []):
+        if not is_bot((c.get("user") or {}).get("login")):
+            continue  # only the app's own comment; anyone can paste the tags
         body = c.get("body") or ""
         start = body.find(_REVIEW_COMMENT_START)
         if start < 0:
@@ -347,8 +349,7 @@ def fetch(directory, repo, pr_number):
             _write(os.path.join(directory, "since_last_review.md"), since)
     times = [c.get("createdAt") or "" for t in threads for c in (t.get("comments") or {}).get("nodes") or []
              if not (c.get("viewerDidAuthor") or is_bot((c.get("author") or {}).get("login")))]
-    times += [c.get("created_at") or "" for c in issue_comments
-              if not is_bot((c.get("user") or {}).get("login")) and _REVIEW_COMMENT_START not in (c.get("body") or "")]
+    times += [c.get("created_at") or "" for c in issue_comments if not is_bot((c.get("user") or {}).get("login"))]
     times += [r.get("submitted_at") or "" for r in reviews if not is_bot((r.get("user") or {}).get("login"))]
     return Context(directory, repo, pr, files, threads, previous, units, previous_state, max(times, default=""))
 

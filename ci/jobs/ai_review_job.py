@@ -390,8 +390,7 @@ def review():
         if os.path.exists(action_file):
             os.unlink(action_file)
 
-    with open(SUMMARY_FILE, "r", encoding="utf-8") as f:
-        summary = f.read()
+    summary, _ = publish._read_body({"body_file": SUMMARY_FILE}, OUTPUT_DIR)
     # A backport copies reviewed code; simplicity findings there are noise.
     is_backport = (ctx.pr.get("title") or "").startswith("Backport") or any(
         (label.get("name") or "") == "pr-backport" for label in ctx.pr.get("labels") or [])

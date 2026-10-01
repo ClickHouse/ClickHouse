@@ -136,7 +136,9 @@ def dismissed_findings(records):
 def _write_reanchored(base_dir, path, line, body):
     target = os.path.join(base_dir, "comments", f"reanchored_{abs(hash((path, line)))}.md")
     os.makedirs(os.path.dirname(target), exist_ok=True)
-    with open(target, "w", encoding="utf-8") as f:
+    if os.path.lexists(target):
+        os.unlink(target)
+    with os.fdopen(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644), "w", encoding="utf-8") as f:
         f.write(body + "\n")
     return target
 
@@ -285,7 +287,9 @@ def validate_simplicity(entries, files, threads, base_dir, units=None, known_fin
         if side == "RIGHT" and "```suggestion" in body and len(inline) < MAX_INLINE_SIMPLICITY:
             posted = os.path.join(base_dir, "simplicity", f"posted_{len(inline) + 1}.md")
             os.makedirs(os.path.dirname(posted), exist_ok=True)
-            with open(posted, "w", encoding="utf-8") as f:
+            if os.path.lexists(posted):
+                os.unlink(posted)
+            with os.fdopen(os.open(posted, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644), "w", encoding="utf-8") as f:
                 f.write(body + "\n\n" + RULE_MARKER.format(rule=rule) + "\n")
             inline.append({"path": path, "line": line, "side": side, "body_file": posted,
                            "_fingerprint": review_units.finding_fingerprint(path, unit["key"] if unit else "", body)})
@@ -485,6 +489,10 @@ def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_t
         posted = {c["_fingerprint"] for c in comments if c.get("_fingerprint")}
         findings += [{"fp": fp} for fp in sorted(posted - known)]
         contract, _ = _read_body({"body_file": os.path.join(output_dir, "contract.md")}, output_dir)
+        # A unit without a verdict was not reviewed: leave it out of the
+        # state, so the next push treats it as new instead of unchanged.
+        gap_ids = {u["id"] for u in gaps}
         summary += "\n" + review_units.encode_state(
-            units, findings[-200:], contract or (previous_state or {}).get("contract", ""), activity) + "\n"
+            [u for u in units if u["id"] not in gap_ids], findings[-200:],
+            contract or (previous_state or {}).get("contract", ""), activity) + "\n"
     return summary

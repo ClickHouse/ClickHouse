@@ -496,6 +496,11 @@ def should_skip_job(job_name):
     if job_name == JobNames.BUILD_PROFILE_DIFF and only_docs(changed_files):
         return True, "Skipped, only documentation changed"
 
+    # Documentation has its own check jobs; an AI code review of a docs-only PR
+    # costs a full model run for little value.
+    if job_name == JobNames.CODE_REVIEW and only_docs(changed_files):
+        return True, "Skipped, only documentation changed"
+
     # Run Keeper Stress jobs only when there are changes in src/Coordination,
     # tests/stress/keeper, or ci/jobs/keeper_stress_job.py
     if job_name == KEEPER_STRESS_PR_NAME:
