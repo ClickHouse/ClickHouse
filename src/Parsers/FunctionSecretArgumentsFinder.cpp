@@ -458,38 +458,67 @@ void FunctionSecretArgumentsFinder::findTLSCredentialsSecretArguments(size_t sta
 
 void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
 {
-    String uri;
-
     if (isNamedCollectionName(0))
     {
-        /// MongoDB(named_collection, ..., password = 'password', ...)
-        if (findSecretNamedArgument("password", 1))
-            return;
+        /// MongoDB(named_collection, ..., password = '...', uri = 'mongodb://user:password@host/db', ...)
+        /// The named collection parser applies every override in turn, so a repeated key is legal and the
+        /// last one wins; it also evaluates the key, so one that is not a plain literal can still name a secret.
+        for (size_t i = 1; i < function->arguments->size(); ++i)
+        {
+            const auto equals_func = function->arguments->at(i)->getFunction();
+            if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments()
+                || equals_func->arguments->size() != 2)
+            {
+                /// A post-collection argument that is not a `key = value` override is ignored by the
+                /// named collection parser rather than rejected, so it can still spell out a credential.
+                markSecretArgument(i);
+                continue;
+            }
 
-        /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
-        if (findNamedArgument(&uri, "uri", 1) == -1)
-            return;
-
-        result.are_named = true;
-        result.start = 1;
-    }
-    else if (function->arguments->size() == 2)
-    {
-        tryGetStringFromArgument(0, &uri);
-        result.are_named = false;
-        result.start = 0;
-    }
-    else
-    {
-        // MongoDB('127.0.0.1:27017', 'database', 'collection', 'user, 'password'...)
-        markSecretArgument(4, false);
+            String key;
+            if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
+            {
+                markSecretArgument(i, /* argument_is_named= */ true);
+            }
+            else if (key == "password")
+            {
+                markSecretArgument(i, /* argument_is_named= */ true);
+            }
+            else if (key == "uri")
+            {
+                String uri;
+                if (equals_func->arguments->at(1)->tryGetString(&uri, /* allow_identifier= */ false))
+                {
+                    if (maskURIPassword(&uri))
+                        result.replaced_arguments[i] = "uri = " + quoteString(uri);
+                }
+                else
+                    markSecretArgument(i, /* argument_is_named= */ true);
+            }
+        }
         return;
     }
 
-    chassert(result.count == 0);
-    maskURIPassword(&uri);
-    result.count = 1;
-    result.replacement = std::move(uri);
+    /// mongodb(uri, collection, structure[, oid_columns])    MongoDB(uri, collection[, oid_columns])
+    /// mongodb('host:port', database, collection, user, password, structure[, options[, oid_columns]])
+    /// MongoDB('host:port', database, collection, user, password[, options[, oid_columns]])
+    /// maskURIPassword needs a `scheme://user:password@`, so it is a no-op on a `host:port`.
+    String uri;
+    if (tryGetStringFromArgument(0, &uri, /* allow_identifier= */ false))
+    {
+        if (maskURIPassword(&uri))
+            result.replaced_arguments[0] = quoteString(uri);
+    }
+    else if (function->arguments->size() <= 4)
+    {
+        /// Only the URI forms carry a credential in argument 0, and both surfaces select them by
+        /// argument count: at most 4, against 5 and up for `host:port`. An unreadable argument 0 can
+        /// still be a URI carrying credentials, so hide it whole.
+        markSecretArgument(0);
+    }
+
+    /// The password of the `host:port` form; an out-of-range index is ignored, so the URI forms are unaffected.
+    markSecretArgument(4, false);
 }
 
 void FunctionSecretArgumentsFinder::findRedisTableEngineSecretArguments()
