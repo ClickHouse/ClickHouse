@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 
 #include <Core/MySQL/IMySQLReadPacket.h>
@@ -19,8 +18,7 @@ namespace ProtocolText
 enum CharacterSet
 {
     utf8_general_ci = 33,
-    binary = 63,
-    utf8mb4_0900_ai_ci = 255
+    binary = 63
 };
 
 // https://dev.mysql.com/doc/dev/mysql-server/latest/group__group__cs__column__definition__flags.html
@@ -71,7 +69,7 @@ protected:
     const Columns & columns;
     size_t row_num;
     size_t payload_size = 0;
-    VectorWithMemoryTracking<String> serialized;
+    std::vector<String> serialized;
 
     size_t getPayloadSize() const override;
 

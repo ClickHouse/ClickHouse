@@ -1,5 +1,4 @@
 #include <Columns/ColumnArray.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
@@ -36,13 +35,6 @@
 #include <Common/assert_cast.h>
 
 #include <vector>
-
-/// ICU wraps every entry point in a `U_ICU_ENTRY_POINT_RENAME(name)` macro that
-/// re-uses the original name during expansion (`#define u_charType
-/// U_ICU_ENTRY_POINT_RENAME(u_charType)`), so every ICU call below triggers
-/// `-Wdisabled-macro-expansion`. Keep the suppression at file scope.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -184,7 +176,7 @@ constexpr UProperty string_properties[]
 // Other properties
 constexpr UProperty other_properties[] = {UCHAR_SCRIPT_EXTENSIONS, UCHAR_IDENTIFIER_TYPE};
 
-static std::vector<std::pair<String, UProperty>> getPropNames()
+std::vector<std::pair<String, UProperty>> getPropNames()
 {
     std::vector<std::pair<String, UProperty>> properties;
 
@@ -301,13 +293,7 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
             std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
     }
 
-    auto result = ColumnsDescription::fromNamesAndTypes(names_and_types);
-
-    result.modify("code_point", [](ColumnDescription & col) { col.comment = "The Unicode code point represented as U+XXXX."; });
-    result.modify("code_point_value", [](ColumnDescription & col) { col.comment = "The integer value of the Unicode code point."; });
-    result.modify("notation", [](ColumnDescription & col) { col.comment = "The code point in `U+XXXX` notation, e.g. `U+0041`."; });
-
-    return result;
+    return ColumnsDescription::fromNamesAndTypes(names_and_types);
 }
 
 Block StorageSystemUnicode::getFilterSampleBlock() const
@@ -362,7 +348,7 @@ void StorageSystemUnicode::fillData(
     /// Common buffers/err_code used for ICU API calls
     UChar buffer[32];
     char char_name_buffer[100];
-    UErrorCode err_code = {};
+    UErrorCode err_code;
 
     auto prop_names = getPropNames();
 
@@ -397,7 +383,7 @@ void StorageSystemUnicode::fillData(
             ColumnString::Offset offset = col_notation_offsets.back();
             if (code <= 0xFFFF)
             {
-                col_notation_chars.resize(offset + 6);
+                col_notation_chars.resize(offset + 7);
                 col_notation_chars[offset] = 'U';
                 ++offset;
                 col_notation_chars[offset] = '+';
@@ -406,11 +392,13 @@ void StorageSystemUnicode::fillData(
                 offset += 2;
                 writeHexByteUppercase(code & 0xFF, &col_notation_chars[offset]);
                 offset += 2;
+                col_notation_chars[offset] = 0;
+                ++offset;
                 col_notation_offsets.push_back(offset);
             }
             else if (code <= 0xFFFFF)
             {
-                col_notation_chars.resize(offset + 7);
+                col_notation_chars.resize(offset + 8);
                 col_notation_chars[offset] = 'U';
                 ++offset;
                 col_notation_chars[offset] = '+';
@@ -421,11 +409,13 @@ void StorageSystemUnicode::fillData(
                 offset += 2;
                 writeHexByteUppercase(code & 0xFF, &col_notation_chars[offset]);
                 offset += 2;
+                col_notation_chars[offset] = 0;
+                ++offset;
                 col_notation_offsets.push_back(offset);
             }
             else if (code <= 0x10FFFF)
             {
-                col_notation_chars.resize(offset + 8);
+                col_notation_chars.resize(offset + 9);
                 col_notation_chars[offset] = 'U';
                 ++offset;
                 col_notation_chars[offset] = '+';
@@ -436,6 +426,8 @@ void StorageSystemUnicode::fillData(
                 offset += 2;
                 writeHexByteUppercase(code & 0xFF, &col_notation_chars[offset]);
                 offset += 2;
+                col_notation_chars[offset] = 0;
+                ++offset;
                 col_notation_offsets.push_back(offset);
             }
             else
@@ -748,8 +740,3 @@ void StorageSystemUnicode::fillData(
 }
 
 }
-
-#pragma clang diagnostic pop
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemUnicode) }

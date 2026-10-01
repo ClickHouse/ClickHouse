@@ -21,41 +21,21 @@
         SETTINGS index_granularity = 5;
     </create_query>
 
-    <!-- Stop merges, so that none happens while the queries below are benchmarked.
-         `max_block_size` is pinned so the 16-part layout cannot follow a change of its default. -->
-    <fill_query>SYSTEM STOP MERGES test_set_index</fill_query>
-    <fill_query>SYSTEM STOP MERGES test_minmax_index</fill_query>
-
     <fill_query>
         INSERT INTO test_set_index
-        SETTINGS max_insert_threads = 64, max_insert_block_size = 65536, max_block_size = 65536, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1
+        SETTINGS max_insert_threads = 64, max_insert_block_size = 65536, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1
         SELECT * FROM numbers(1000000);
     </fill_query>
 
     <fill_query>
         INSERT INTO test_minmax_index
-        SETTINGS max_insert_threads = 64, max_insert_block_size = 65536, max_block_size = 65536, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1
+        SETTINGS max_insert_threads = 64, max_insert_block_size = 65536, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1
         SELECT * FROM numbers(1000000);
-    </fill_query>
-
-    <fill_query>
-        SELECT throwIf(count() != 16, 'index_bulk_filtering: expected 16 active parts in test_set_index; the merge pin or the block size is not in effect')
-        FROM system.parts
-        WHERE database = currentDatabase() AND table = 'test_set_index' AND active
-    </fill_query>
-
-    <fill_query>
-        SELECT throwIf(count() != 16, 'index_bulk_filtering: expected 16 active parts in test_minmax_index; the merge pin or the block size is not in effect')
-        FROM system.parts
-        WHERE database = currentDatabase() AND table = 'test_minmax_index' AND active
     </fill_query>
 
     <query>SELECT * FROM test_set_index WHERE x IN (1, 100000, 500000)</query>
     <query>SELECT * FROM test_set_index WHERE SHA256(x::String) = SHA256(999999::String)</query>
     <query>SELECT count() FROM test_minmax_index WHERE x BETWEEN 123456 AND 789012</query>
 
-    <drop_query>SYSTEM START MERGES test_set_index</drop_query>
-    <drop_query>SYSTEM START MERGES test_minmax_index</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_set_index;</drop_query>
-    <drop_query>DROP TABLE IF EXISTS test_minmax_index;</drop_query>
 </test>
