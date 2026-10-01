@@ -4,6 +4,7 @@
 #include <Processors/Transforms/Window/WindowTransformParams.h>
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace DB
@@ -23,7 +24,7 @@ public:
 
 private:
     const WindowTransformParams & params;
-    Columns last_partition_key;
+    std::optional<Columns> last_partition_key;
 };
 
 }
