@@ -951,9 +951,8 @@ struct InfixPhraseWord
     bool is_token = false;
 };
 
-/// A word of an infix phrase '%<w1><sep>...<sep><wN>%' that every matching value holds, as a token if `is_token`, else as
-/// the start of one, when every ASCII character other than a letter or a digit is a separator. The first word may end a
-/// longer token, so it is never chosen.
+/// A word that every value matching the infix phrase '%<w1><sep>...<sep><wN>%' holds under `splitByNonAlpha`, as a token
+/// if `is_token`, else as the start of one. The first word may end a longer token, so it is never chosen.
 std::optional<InfixPhraseWord> chooseInfixPhraseWord(std::string_view pattern, bool case_insensitive, size_t min_length)
 {
     if (pattern.size() < 3 || pattern.front() != '%' || pattern.back() != '%')
