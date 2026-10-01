@@ -195,12 +195,12 @@ def _thread_texts(threads):
 
 
 def validate_comments(entries, files, threads, base_dir, dismissed=None, units=None, known_findings=None,
-                      repo="", sha=""):
+                      repo="", sha="", posted=None):
     """Split the agent's inline comments into (postable, moved) where `moved`
     are (entry, body, reason) to be listed in the summary instead. Nothing
     the agent wrote is dropped silently. `dismissed` maps a path to findings
     authors pushed back on in earlier PRs."""
-    posted = _Posted(base_dir, repo, sha)
+    posted = posted or _Posted(base_dir, repo, sha)
     lines_by_path = {f["filename"]: commentable_lines(f.get("patch")) for f in files}
     open_ours = {(t.get("path"), t["line"]) for t in threads or []
                  if thread_is_ours(t) and not t.get("isResolved") and isinstance(t.get("line"), int)}
@@ -507,10 +507,18 @@ def _post_review_once(repo, pr_number, head_sha, comments):
             if "Validation Failed" in result.stderr or "422" in result.stderr:
                 return False  # the request itself is wrong; repeating it cannot help
             time.sleep(5)
-            listed = subprocess.run(["gh", "api", f"/repos/{repo}/pulls/{pr_number}/comments?per_page=100",
-                                     "--paginate", "--jq", ".[] | select(.commit_id == \"" + head_sha + "\") | .body"],
-                                    capture_output=True, text=True)
-            if listed.returncode == 0 and first_body.strip()[:200] in listed.stdout:
+            listed = None
+            for _ in range(3):  # whether the failed POST created the review after all
+                listed = subprocess.run(["gh", "api", f"/repos/{repo}/pulls/{pr_number}/comments?per_page=100",
+                                         "--paginate", "--jq", ".[] | select(.commit_id == \"" + head_sha + "\") | .body"],
+                                        capture_output=True, text=True)
+                if listed.returncode == 0:
+                    break
+                time.sleep(10)
+            if listed.returncode != 0:
+                print("WARNING: cannot tell whether the review was created; not posting it again")
+                return False
+            if first_body.strip()[:200] in listed.stdout:
                 print("The review was created despite the error; not posting it again")
                 return True
         return False
@@ -527,7 +535,7 @@ def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_t
     posted = _Posted(output_dir, repo, head_sha)
     comments, moved = validate_comments(
         _load_json_list(os.path.join(output_dir, "comments.json")), files, threads, output_dir,
-        dismissed_findings(memory), units, known, repo, head_sha)
+        dismissed_findings(memory), units, known, repo, head_sha, posted)
     simplicity_inline, simplicity_listed = ([], [])
     if simplicity:
         simplicity_inline, simplicity_listed = validate_simplicity(

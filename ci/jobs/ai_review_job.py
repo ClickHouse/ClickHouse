@@ -221,8 +221,9 @@ class _SupersededWatch:
         return ((self._get(f"/pulls/{self.pr_number}") or {}).get("head") or {}).get("sha") or ""
 
     def newer_review(self):
-        """The status of the newer head's Code Review: "running", "succeeded"
-        or "" (no newer head, or its review has not started)."""
+        """The status of the Code Review of the PR head when that head is not
+        this run's own commit: "running", "succeeded" or "" (this run is the
+        head's own review, or the head's review has not started)."""
         head = self.head()
         if not self.sha or not head or head == self.sha:
             return ""
@@ -345,7 +346,11 @@ def _verified_dismissals(repo, records):
                     (c.get("user") or {}).get("login")) for c in replies or []))
         if not real:
             print(f"Memory record for comment {r['comment_id']} not confirmed by GitHub; not used as a dismissal")
-        out.append(r if real else {**r, "author_replied": False})
+            out.append({**r, "author_replied": False})
+            continue
+        # The finding text that may suppress a new comment is the comment as
+        # GitHub has it, not the record's copy, which the agent could rewrite.
+        out.append({**r, "finding": comment.get("body") or ""})
     return out
 
 
@@ -395,7 +400,7 @@ def review():
     # superseded reviews the newer head. It stands down only when that head's
     # own review is running or done: that one may never run at all (Style
     # check or Fast test failed, a label), and the PR would go unreviewed.
-    watch = _SupersededWatch(repo, info.pr_number, ctx.head_sha or info.sha)
+    watch = _SupersededWatch(repo, info.pr_number, info.sha)
     if ctx.head_sha != info.sha and watch.newer_review():
         print(f"Not reviewing: the review of the PR head {ctx.head_sha[:12]} has already started")
         return []
