@@ -129,8 +129,7 @@ public:
         /// List of file segments which we need to read
         /// given initial [start_offset, read_until_position).
         FileSegmentsHolderPtr file_segments;
-        /// Reserve-ahead state of this reader, kept across file segments and seeks
-        /// (not cleared by reset()), so that it grows while the reader keeps downloading.
+        /// Kept across file segments and seeks, not cleared by reset().
         FileCacheReserveAhead reserve_ahead;
 
         void reset();

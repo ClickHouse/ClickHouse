@@ -712,8 +712,7 @@ bool FileSegment::reserve(
 
     if (!is_unbound && reserve_ahead)
     {
-        /// Don't reserve ahead past the segment end, nor past the end of the read: `reserve_hint`
-        /// is measured from the current download offset, so the read ends at `read_horizon`.
+        /// Don't reserve ahead past the segment end or the end of the read.
         size_t max_reserve_size = range().size() - reserved_size;
         if (reserve_hint)
         {
@@ -741,7 +740,7 @@ bool FileSegment::reserve(
     if (!reserved && reserve_ahead)
         reserve_ahead->reset();
 
-    /// Reserve-ahead is best-effort: if it does not fit, retry with exactly the size the write needs.
+    /// Reserve-ahead is best-effort: retry with the exact size.
     if (!reserved && size_to_reserve > minimum_reserve_size)
     {
         ProfileEvents::increment(ProfileEvents::FilesystemCacheReserveAheadRetries);

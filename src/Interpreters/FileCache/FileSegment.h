@@ -26,15 +26,11 @@ namespace DB
 class ReadBufferFromFileBase;
 struct FileCacheReserveStat;
 
-/// Reserve-ahead state of one downloader (reader or writer), passed to `FileSegment::reserve`.
-/// Starts at 0 (the first reservation is exact), then twice the request, then doubles, up to the
-/// cache's `reserve_granularity`: a small read does not hold a whole granule, a long download rarely
-/// takes the cache lock. Reset on a failed reservation, which is then retried with the exact size.
+/// Reserve-ahead state of one reader/writer: the first reservation is exact, then the reserve-ahead
+/// doubles up to the cache's `reserve_granularity`. Reset on a failed reservation.
 struct FileCacheReserveAhead
 {
-    /// Returns how many bytes to reserve for a write of `size_to_reserve` bytes: the reserve-ahead
-    /// capped by `limit` and `max_reserve_size`, but never less than `size_to_reserve`.
-    /// Grows the reserve-ahead for the next reservation.
+    /// Returns the size to reserve, at least `size_to_reserve`, and grows the reserve-ahead.
     size_t getReserveSize(size_t size_to_reserve, size_t max_reserve_size, size_t limit)
     {
         const size_t result = std::max(size_to_reserve, std::min({granularity, limit, max_reserve_size}));
@@ -234,10 +230,8 @@ public:
      * ========== Methods for _only_ file segment's `downloader` ==================
      */
 
-    /// Try to reserve `size` bytes on top of getDownloadedSize(), returns false on failure.
-    /// `reserve_ahead` (see `FileCacheReserveAhead`) enables reserving ahead; without it exactly `size`
-    /// is reserved. `reserve_hint`, if set, is the number of bytes left to read from the current
-    /// download offset, the reserve-ahead never goes past it.
+    /// Try to reserve `size` bytes on top of getDownloadedSize(). Reserves ahead if `reserve_ahead` is
+    /// set, but not past `reserve_hint` bytes from the current download offset.
     bool reserve(
         size_t size_to_reserve,
         size_t lock_wait_timeout_milliseconds,

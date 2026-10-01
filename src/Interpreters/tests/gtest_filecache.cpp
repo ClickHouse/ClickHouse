@@ -3935,9 +3935,8 @@ TEST(FileCacheReserveAhead, GrowsUpToLimitAndResets)
 {
     DB::FileCacheReserveAhead reserve_ahead;
 
-    /// The first reservation is exact.
+    /// Exact first, then doubling up to the limit.
     ASSERT_EQ(reserve_ahead.getReserveSize(/* size_to_reserve */ 2, /* max_reserve_size */ 100, /* limit */ 16), 2u);
-    /// Then twice the request, doubling with each further reservation up to the limit.
     ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 16), 4u);
     ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 16), 8u);
     ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 16), 16u);
@@ -3948,13 +3947,11 @@ TEST(FileCacheReserveAhead, GrowsUpToLimitAndResets)
     ASSERT_EQ(reserve_ahead.getReserveSize(2, 1, 16), 2u);
     ASSERT_EQ(reserve_ahead.getReserveSize(32, 100, 16), 32u);
 
-    /// A lowered limit takes effect immediately.
     ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 4), 4u);
 
     /// Limit 0 disables reserve-ahead.
     ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 0), 2u);
 
-    /// After a reset it starts again from the exact size.
     reserve_ahead.reset();
     ASSERT_EQ(reserve_ahead.getReserveSize(6, 100, 16), 6u);
     ASSERT_EQ(reserve_ahead.getReserveSize(6, 100, 16), 12u);
@@ -3985,7 +3982,6 @@ TEST_F(FileCacheTest, DynamicReserveGranularity)
     std::string failure_reason;
     std::string data(100, '0');
 
-    /// Reserve and write `size` bytes at the current write offset, return the reserved size after it.
     auto reserve_and_write = [&](DB::FileSegment & segment, size_t size, DB::FileCacheReserveAhead * reserve_ahead)
     {
         EXPECT_TRUE(segment.reserve(size, 1000, failure_reason, nullptr, std::nullopt, reserve_ahead)) << failure_reason;
@@ -3994,7 +3990,6 @@ TEST_F(FileCacheTest, DynamicReserveGranularity)
     };
 
     {
-        /// Without reserve-ahead state the requested size is reserved exactly.
         auto holder = cache->getOrSet(DB::FileCacheKey::fromPath("no_reserve_ahead"), 0, 100, /*file_size=*/100, {}, 0, user);
         auto segment = *holder->begin();
         ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
@@ -4004,22 +3999,21 @@ TEST_F(FileCacheTest, DynamicReserveGranularity)
     }
 
     {
-        /// The same downloader repeatedly reserving: exact first, then growing up to the limit.
         auto holder = cache->getOrSet(DB::FileCacheKey::fromPath("reserve_ahead"), 0, 100, /*file_size=*/100, {}, 0, user);
         auto segment = *holder->begin();
         ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
 
         DB::FileCacheReserveAhead reserve_ahead;
-        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 2u);       /// downloaded 2, exact
-        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 2u + 4);   /// downloaded 4, +4 (twice the request)
-        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 6u);       /// downloaded 6, served from surplus
-        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 6u + 8);   /// downloaded 8, +8
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 2u);
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 2u + 4);
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 6u);
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 6u + 8);
         for (size_t downloaded = 10; downloaded <= 14; downloaded += 2)
-            ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 14u);  /// served from surplus
-        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 14u + 16); /// downloaded 16, +16 (limit)
+            ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 14u);
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 14u + 16);
         for (size_t downloaded = 18; downloaded <= 30; downloaded += 2)
             ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 30u);
-        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 30u + 16); /// stays at the limit
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 30u + 16);
     }
 }
 
@@ -4059,17 +4053,16 @@ TEST_F(FileCacheTest, ReserveAheadFallsBackToExactSize)
         return segment->getReservedSize();
     };
 
-    ASSERT_EQ(reserve_and_write(), 2u);  /// exact
-    ASSERT_EQ(reserve_and_write(), 6u);  /// +4
-    ASSERT_EQ(reserve_and_write(), 6u);  /// served from surplus
+    ASSERT_EQ(reserve_and_write(), 2u);
+    ASSERT_EQ(reserve_and_write(), 6u);
+    ASSERT_EQ(reserve_and_write(), 6u);
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before);
     ASSERT_EQ(reserve_and_write(), 8u);  /// +8 does not fit, falls back to exact +2 and resets
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before + 1);
-    ASSERT_EQ(reserve_and_write(), 10u); /// exact again
+    ASSERT_EQ(reserve_and_write(), 10u);
     ASSERT_EQ(reserve_and_write(), 12u); /// +4 does not fit, falls back to exact +2, the cache is full
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before + 2);
 
-    /// The exact size does not fit either; there is nothing to retry.
     ASSERT_FALSE(segment->reserve(2, 1000, failure_reason, nullptr, std::nullopt, &reserve_ahead));
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before + 2);
     ASSERT_EQ(segment->getReservedSize(), 12u);
