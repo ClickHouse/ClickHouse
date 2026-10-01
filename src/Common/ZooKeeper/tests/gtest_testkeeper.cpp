@@ -1,6 +1,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -44,18 +45,29 @@ bool exists(TestKeeper & keeper, const String & path, WatchCallbackPtrOrEventPtr
     return future.get().error == Coordination::Error::ZOK;
 }
 
-ListResponse list(TestKeeper & keeper, const String & path, ListRequestType list_request_type, bool with_stat, bool with_data)
+void set(TestKeeper & keeper, const String & path, const String & data)
+{
+    std::promise<SetResponse> sink;
+    std::future<SetResponse> future = sink.get_future();
+    keeper.set(path, data, /* version */ -1, [&](const auto & response) { sink.set_value(response); });
+
+    ASSERT_EQ(future.get().error, Error::ZOK);
+}
+
+ListResponse list(
+    TestKeeper & keeper, const String & path, ListRequestType list_request_type, bool with_stat, bool with_data,
+    WatchCallbackPtrOrEventPtr watch = {})
 {
     std::promise<ListResponse> sink;
     std::future<ListResponse> future = sink.get_future();
     keeper.list(path, list_request_type,
         [&](const auto & response) { sink.set_value(std::move(response)); },
-        WatchCallbackPtrOrEventPtr(), with_stat, with_data);
+        std::move(watch), with_stat, with_data);
 
     return future.get();
 }
 
-ListWithOptionsResponse listWithOptions(TestKeeper & keeper, const String & path, const ListOptions & options)
+ListWithOptionsResponse listWithOptions(TestKeeper & keeper, const String & path, const ListOptions & options, WatchCallbackPtrOrEventPtr watch = {})
 {
     std::promise<ListWithOptionsResponse> sink;
     std::future<ListWithOptionsResponse> future = sink.get_future();
@@ -63,7 +75,7 @@ ListWithOptionsResponse listWithOptions(TestKeeper & keeper, const String & path
         path,
         options,
         [&](const auto & response) { sink.set_value(response); },
-        WatchCallbackPtrOrEventPtr());
+        std::move(watch));
 
     return future.get();
 }
@@ -85,6 +97,30 @@ ListRecursiveResponse listRecursive(TestKeeper & keeper, const String & path)
 
     return future.get();
 }
+
+/// Counts the events of every watch it makes and checks that each one carries the expected type and path.
+struct WatchEvents
+{
+    std::vector<std::shared_ptr<std::atomic<size_t>>> counters;
+
+    WatchCallbackPtr make(const String & path, int32_t type = CHILD)
+    {
+        auto counter = counters.emplace_back(std::make_shared<std::atomic<size_t>>(0));
+        return std::make_shared<WatchCallback>([counter, path, type](const WatchResponse & response)
+        {
+            EXPECT_EQ(response.type, type);
+            EXPECT_EQ(response.path, path);
+            ++*counter;
+        });
+    }
+
+    void expect(const std::vector<size_t> & expected) const
+    {
+        ASSERT_EQ(counters.size(), expected.size());
+        for (size_t i = 0; i < counters.size(); ++i)
+            EXPECT_EQ(counters[i]->load(), expected[i]) << "watch " << i;
+    }
+};
 
 }
 
@@ -249,4 +285,143 @@ TEST(TestKeeperTest, ListSubtreeWithSiblingSortedBeforeChildren)
     ListOptions recursive_options;
     recursive_options.recursive = true;
     EXPECT_EQ(listWithOptions(keeper, "/q", recursive_options).names, std::vector<std::string>({"a", "a/b"}));
+}
+
+TEST(TestKeeperTest, ListWatchFiresOnChildSetOnlyWithStatOrData)
+{
+    TestKeeper keeper = makeKeeper();
+
+    const std::vector<String> dirs{"/plain", "/stat", "/data", "/options"};
+    for (const auto & dir : dirs)
+    {
+        create(keeper, dir, "", /* is_ephemeral */ false);
+        create(keeper, dir + "/child", "", /* is_ephemeral */ false);
+    }
+
+    WatchEvents events;
+    ListOptions with_data_options;
+    with_data_options.with_data = true;
+
+    /// 0, 1: plain list requests.
+    ASSERT_EQ(list(keeper, "/plain", ListRequestType::ALL, false, false, events.make("/plain")).error, Error::ZOK);
+    ASSERT_EQ(listWithOptions(keeper, "/plain", ListOptions{}, events.make("/plain")).error, Error::ZOK);
+    /// 2, 3, 4: list requests with stats or data; 5: a plain one on the path of 4, which shares its watch.
+    ASSERT_EQ(list(keeper, "/stat", ListRequestType::ALL, /* with_stat */ true, false, events.make("/stat")).error, Error::ZOK);
+    ASSERT_EQ(list(keeper, "/data", ListRequestType::ALL, false, /* with_data */ true, events.make("/data")).error, Error::ZOK);
+    ASSERT_EQ(listWithOptions(keeper, "/options", with_data_options, events.make("/options")).error, Error::ZOK);
+    ASSERT_EQ(list(keeper, "/options", ListRequestType::ALL, false, false, events.make("/options")).error, Error::ZOK);
+
+    for (const auto & dir : dirs)
+        set(keeper, dir + "/child", "new");
+    events.expect({0, 0, 1, 1, 1, 1});
+
+    for (const auto & dir : dirs)
+        create(keeper, dir + "/child2", "", /* is_ephemeral */ false);
+    events.expect({1, 1, 1, 1, 1, 1});
+
+    /// 6: a change of the listed node itself is not a change of its children.
+    ASSERT_EQ(list(keeper, "/", ListRequestType::ALL, false, /* with_data */ true, events.make("/")).error, Error::ZOK);
+    set(keeper, "/", "new");
+    events.expect({1, 1, 1, 1, 1, 1, 0});
+    create(keeper, "/new", "", /* is_ephemeral */ false);
+    events.expect({1, 1, 1, 1, 1, 1, 1});
+
+    /// 7: a callback set by both kinds of list request is called once.
+    auto shared = events.make("/data");
+    ASSERT_EQ(list(keeper, "/data", ListRequestType::ALL, false, false, shared).error, Error::ZOK);
+    ASSERT_EQ(list(keeper, "/data", ListRequestType::ALL, false, /* with_data */ true, shared).error, Error::ZOK);
+    create(keeper, "/data/child3", "", /* is_ephemeral */ false);
+    events.expect({1, 1, 1, 1, 1, 1, 1, 1});
+
+    /// 8: a node watch gets the type of the change.
+    ASSERT_TRUE(exists(keeper, "/data/child", events.make("/data/child", CHANGED)));
+    set(keeper, "/data/child", "newer");
+    events.expect({1, 1, 1, 1, 1, 1, 1, 1, 1});
+}
+
+TEST(TestKeeperTest, ListWatchFiresOnRemoval)
+{
+    TestKeeper keeper = makeKeeper();
+
+    for (const auto * path : {"/gone", "/dir", "/dir/sub", "/dir/sub/leaf"})
+        create(keeper, path, "", /* is_ephemeral */ false);
+
+    WatchEvents events;
+    ASSERT_EQ(list(keeper, "/gone", ListRequestType::ALL, false, false, events.make("/gone", DELETED)).error, Error::ZOK);
+    ASSERT_EQ(list(keeper, "/gone", ListRequestType::ALL, false, /* with_data */ true, events.make("/gone", DELETED)).error, Error::ZOK);
+    ASSERT_EQ(list(keeper, "/dir", ListRequestType::ALL, false, false, events.make("/dir")).error, Error::ZOK);
+    ASSERT_EQ(list(keeper, "/dir", ListRequestType::ALL, false, /* with_data */ true, events.make("/dir")).error, Error::ZOK);
+    /// 4: removing `leaf` changes the children of `sub` before `sub` itself is removed.
+    ASSERT_EQ(list(keeper, "/dir/sub", ListRequestType::ALL, false, false, events.make("/dir/sub")).error, Error::ZOK);
+    /// 5: a node that does not exist is not removed.
+    ASSERT_FALSE(exists(keeper, "/dir/sub/none", events.make("/dir/sub/none", CREATED)));
+
+    std::promise<RemoveResponse> sink;
+    keeper.remove("/gone", /* version */ -1, [&](const auto & response) { sink.set_value(response); });
+    ASSERT_EQ(sink.get_future().get().error, Error::ZOK);
+    ASSERT_EQ(removeRecursive(keeper, "/dir/sub", /* remove_nodes_limit */ 100).error, Error::ZOK);
+    events.expect({1, 1, 1, 1, 1, 0});
+
+    create(keeper, "/dir/sub", "", /* is_ephemeral */ false);
+    create(keeper, "/dir/sub/none", "", /* is_ephemeral */ false);
+    events.expect({1, 1, 1, 1, 1, 1});
+}
+
+TEST(TestKeeperTest, FinalizeExpiresListWatches)
+{
+    TestKeeper keeper = makeKeeper();
+
+    create(keeper, "/dir", "", /* is_ephemeral */ false);
+
+    std::vector<std::shared_ptr<std::atomic<size_t>>> counters;
+    auto watch = [&]
+    {
+        auto counter = counters.emplace_back(std::make_shared<std::atomic<size_t>>(0));
+        return std::make_shared<WatchCallback>([counter](const WatchResponse & response)
+        {
+            EXPECT_EQ(response.type, SESSION);
+            EXPECT_EQ(response.state, EXPIRED_SESSION);
+            ++*counter;
+        });
+    };
+
+    ASSERT_TRUE(exists(keeper, "/dir", watch()));
+    ASSERT_EQ(list(keeper, "/dir", ListRequestType::ALL, false, false, watch()).error, Error::ZOK);
+    ASSERT_EQ(list(keeper, "/dir", ListRequestType::ALL, false, /* with_data */ true, watch()).error, Error::ZOK);
+    auto shared = watch();
+    ASSERT_EQ(list(keeper, "/dir", ListRequestType::ALL, false, false, shared).error, Error::ZOK);
+    ASSERT_EQ(list(keeper, "/dir", ListRequestType::ALL, false, /* with_data */ true, shared).error, Error::ZOK);
+
+    keeper.finalize("test");
+
+    for (size_t i = 0; i < counters.size(); ++i)
+        EXPECT_EQ(counters[i]->load(), 1u) << "watch " << i;
+}
+
+TEST(TestKeeperTest, NoOpWritesTriggerNoWatches)
+{
+    TestKeeper keeper = makeKeeper();
+
+    create(keeper, "/dir", "", /* is_ephemeral */ false);
+    create(keeper, "/dir/child", "", /* is_ephemeral */ false);
+
+    WatchEvents events;
+    ASSERT_EQ(list(keeper, "/dir", ListRequestType::ALL, false, false, events.make("/dir")).error, Error::ZOK);
+    ASSERT_EQ(list(keeper, "/dir", ListRequestType::ALL, false, /* with_data */ true, events.make("/dir")).error, Error::ZOK);
+    ASSERT_TRUE(exists(keeper, "/dir/child", events.make("/dir/child", CHANGED)));
+    ASSERT_FALSE(exists(keeper, "/dir/missing", events.make("/dir/missing", CREATED)));
+
+    std::promise<MultiResponse> sink;
+    keeper.multi(
+        Requests{
+            zkutil::makeCreateRequest("/dir/child", "", zkutil::CreateMode::Persistent, /* ignore_if_exists */ true),
+            zkutil::makeRemoveRequest("/dir/missing", /* version */ -1, /* try_remove */ true)},
+        [&](const auto & response) { sink.set_value(response); });
+    ASSERT_EQ(sink.get_future().get().error, Error::ZOK);
+    ASSERT_EQ(removeRecursive(keeper, "/dir/missing", /* remove_nodes_limit */ 100).error, Error::ZOK);
+    events.expect({0, 0, 0, 0});
+
+    set(keeper, "/dir/child", "new");
+    create(keeper, "/dir/missing", "", /* is_ephemeral */ false);
+    events.expect({1, 1, 1, 1});
 }

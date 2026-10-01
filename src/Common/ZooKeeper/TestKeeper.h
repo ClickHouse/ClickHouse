@@ -164,6 +164,7 @@ private:
 
     Watches watches;
     Watches list_watches; /// Watches for 'list' request (watches on children).
+    Watches list_with_data_watches; /// Same for a 'list' request with children stats or data: also fires on a child's data change.
 
     int64_t last_ttl_cleanup_ms = 0;
 
