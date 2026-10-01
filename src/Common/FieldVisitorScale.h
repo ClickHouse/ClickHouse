@@ -30,6 +30,7 @@ public:
     [[noreturn]] void operator() (IPv6 &) const;
     [[noreturn]] void operator() (AggregateFunctionStateData &) const;
     [[noreturn]] void operator() (CustomType &) const;
+    [[noreturn]] void operator() (NumberLiteral &) const;
     [[noreturn]] void operator() (bool &) const;
 
     template <typename T>
