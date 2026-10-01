@@ -34,6 +34,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheHoldFileSegments;
     extern const Event FilesystemCacheUnusedHoldFileSegments;
     extern const Event FilesystemCacheBackgroundDownloadQueuePush;
+    extern const Event FilesystemCacheReserveAheadRetries;
 }
 
 namespace CurrentMetrics
@@ -753,6 +754,7 @@ bool FileSegment::reserve(
     /// Reserve-ahead is best-effort: if it does not fit, retry with exactly the size the write needs.
     if (!reserved && size_to_reserve > minimum_reserve_size)
     {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheReserveAheadRetries);
         *reserve_stat = FileCacheReserveStat{};
         reserved = cache->tryReserve(
             *this, minimum_reserve_size, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);

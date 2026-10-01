@@ -946,6 +946,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheStateLockMicroseconds, "Lock filesystem cache time for state lock", ValueType::Microseconds) \
     M(FilesystemCacheReserveMicroseconds, "Filesystem cache space reservation time", ValueType::Microseconds) \
     M(FilesystemCacheReserveAttempts, "Filesystem cache space reservation attempt", ValueType::Number) \
+    M(FilesystemCacheReserveAheadRetries, "Number of times a filesystem cache reservation with reserve-ahead did not fit and was retried with exactly the requested size", ValueType::Number) \
     M(FilesystemCacheFailedReserveAttempts, "Number of failed file cache space reservation attempts.", ValueType::Number) \
     M(FilesystemCacheEvictMicroseconds, "Filesystem cache eviction time", ValueType::Microseconds) \
     M(FilesystemCacheGetOrSetMicroseconds, "Filesystem cache getOrSet() time", ValueType::Microseconds) \

@@ -78,6 +78,7 @@ namespace ProfileEvents
 {
     extern const Event FilesystemCacheDowngradedFileSegments;
     extern const Event FilesystemCacheEvictedFileSegments;
+    extern const Event FilesystemCacheReserveAheadRetries;
 }
 
 using namespace std::chrono_literals;
@@ -4047,6 +4048,8 @@ TEST_F(FileCacheTest, ReserveAheadFallsBackToExactSize)
     std::string failure_reason;
     std::string data(20, '0');
     DB::FileCacheReserveAhead reserve_ahead;
+    auto & events = CurrentThread::getProfileEvents();
+    const auto retries_before = events[ProfileEvents::FilesystemCacheReserveAheadRetries];
     auto reserve_and_write = [&]()
     {
         EXPECT_TRUE(segment->reserve(2, 1000, failure_reason, nullptr, 0, &reserve_ahead)) << failure_reason;
@@ -4058,12 +4061,15 @@ TEST_F(FileCacheTest, ReserveAheadFallsBackToExactSize)
     ASSERT_EQ(reserve_and_write(), 4u);  /// +2
     ASSERT_EQ(reserve_and_write(), 8u);  /// +4
     ASSERT_EQ(reserve_and_write(), 8u);  /// served from surplus
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before);
     ASSERT_EQ(reserve_and_write(), 10u); /// +8 does not fit, falls back to exact +2 and resets
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before + 1);
     ASSERT_EQ(reserve_and_write(), 12u); /// exact again
     ASSERT_EQ(reserve_and_write(), 14u); /// +2, the cache is full
 
     /// Neither the reserve-ahead nor the exact size fits.
     ASSERT_FALSE(segment->reserve(2, 1000, failure_reason, nullptr, 0, &reserve_ahead));
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before + 2);
     ASSERT_EQ(segment->getReservedSize(), 14u);
     ASSERT_EQ(cache->getUsedCacheSize(), 14u);
 }
