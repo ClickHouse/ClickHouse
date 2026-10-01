@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1186669",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1194182",
       "email": "support@clickhouse.com"
     }
   },
@@ -67,6 +67,102 @@
     }
   ],
   "paths": {
+    "/v1/whoami": {
+      "get": {
+        "summary": "Resolve the caller identity",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns the identity of the authenticated caller. For a user (JWT or clickhousectl token) the result carries the user fields; for an organization API key it carries the key fields instead. Use `actorType` to tell the two apart.",
+        "operationId": "whoamiGet",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/Whoami"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "User management"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
     "/v1/organizations": {
       "get": {
         "summary": "Get list of available organizations",
@@ -23700,6 +23796,22 @@
           }
         }
       },
+      "BackupEncryptionConfig": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "The `encryption_config.json` stored alongside this backup in your bucket, passed through unchanged. Supply the file contents verbatim rather than constructing this object — its shape is versioned and depends on your cloud provider. See [Export backups to your own cloud account](https://clickhouse.com/docs/cloud/manage/backups/export-backups-to-own-cloud-account) for what it contains.\n\nAccepted only for organizations enrolled in the private preview, and only when the backup is of a service that has transparent data encryption enabled. Such a restore always produces a service with transparent data encryption enabled, inherited from the source service.",
+        "example": {
+          "schema_version": 1,
+          "restore_key_pairs": [
+            {
+              "customer_managed_encryption_key": {
+                "aws_kms_key_arn": "arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+              },
+              "encrypted_dek": "<base64 wrapped data encryption key>"
+            }
+          ]
+        }
+      },
       "IpAccessListPatch": {
         "properties": {
           "add": {
@@ -36060,6 +36172,98 @@
           }
         }
       },
+      "WhoamiOrganization": {
+        "properties": {
+          "organizationId": {
+            "description": "ID of the organization the user belongs to.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationName": {
+            "description": "Name of the organization.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organizationId",
+          "organizationName"
+        ]
+      },
+      "WhoamiUser": {
+        "properties": {
+          "actorType": {
+            "description": "Discriminator identifying the caller as a user (JWT or clickhousectl token).",
+            "type": "string",
+            "const": "user"
+          },
+          "userId": {
+            "description": "Unique ID of the user.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "description": "Email address of the user.",
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "description": "Full name of the user.",
+            "type": "string"
+          },
+          "organizations": {
+            "type": "array",
+            "description": "Organizations the user belongs to.",
+            "items": {
+              "$ref": "#/components/schemas/WhoamiOrganization"
+            }
+          }
+        },
+        "required": [
+          "actorType",
+          "userId",
+          "email",
+          "name",
+          "organizations"
+        ]
+      },
+      "WhoamiApiKey": {
+        "properties": {
+          "actorType": {
+            "description": "Discriminator identifying the caller as an organization API key.",
+            "type": "string",
+            "const": "apiKey"
+          },
+          "keyId": {
+            "description": "Unique ID of the API key.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Name of the API key.",
+            "type": "string"
+          },
+          "organizationId": {
+            "description": "ID of the organization that owns the API key.",
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "actorType",
+          "keyId",
+          "name",
+          "organizationId"
+        ]
+      },
+      "Whoami": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/WhoamiUser"
+          },
+          {
+            "$ref": "#/components/schemas/WhoamiApiKey"
+          }
+        ]
+      },
       "OrganizationQuota": {
         "properties": {
           "quotaCode": {
@@ -38007,9 +38211,12 @@
             "type": "string"
           },
           "backupId": {
-            "description": "Optional backup ID used as an initial state for the new service. When used the region and the tier of the new instance must be the same as the values of the original instance.",
+            "description": "Optional backup ID used as an initial state for the new service. When used the region and the tier of the new instance must be the same as the values of the original instance. If the backup is stored in your organization's own bucket, `backupEncryptionConfig` is required; it must be omitted otherwise.",
             "type": "string",
             "format": "uuid"
+          },
+          "backupEncryptionConfig": {
+            "$ref": "#/components/schemas/BackupEncryptionConfig"
           },
           "encryptionKey": {
             "description": "Optional customer provided disk encryption key",
