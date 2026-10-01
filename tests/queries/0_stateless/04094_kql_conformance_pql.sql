@@ -67,7 +67,7 @@ INSERT INTO StateCapitals VALUES
     ('Mississippi', 'Jackson');
 
 
-set allow_experimental_kusto_dialect=1;
+set enable_kusto_dialect=1;
 set dialect='kusto';
 
 print '-- pql::Count --';

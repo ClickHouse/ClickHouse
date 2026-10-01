@@ -108,7 +108,7 @@ Per-table counterpart of the query-level setting of the same name: allows backgr
 Unlike the query-level setting, this one is stored in the table definition, so it survives a server restart.
 When it is not set explicitly in the table definition, the query-level setting of the context that initializes the table metadata is used instead.
 )", 0) \
-    DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
+    DECLARE(Bool, enable_cleanup_old_data_files_compaction, false, R"(
 Per-table counterpart of the query-level setting of the same name: allows removing old data files after they were merged by compaction.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
 )", 0) \
