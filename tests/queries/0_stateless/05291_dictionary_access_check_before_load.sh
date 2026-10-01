@@ -31,14 +31,20 @@ ${CLICKHOUSE_CLIENT} -m --query "
     GRANT CREATE TEMPORARY TABLE ON *.* TO ${username};
 "
 
+# The queries go over HTTP: starting a client for each of them makes the test too slow.
+function query()
+{
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "$1"
+}
+
 function status()
 {
-    ${CLICKHOUSE_CLIENT} --query "SELECT status FROM system.dictionaries WHERE database = currentDatabase() AND name = '${1:-d}'"
+    query "SELECT status FROM system.dictionaries WHERE database = currentDatabase() AND name = '${1:-d}'"
 }
 
 function unload()
 {
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM UNLOAD DICTIONARY d"
+    query "SYSTEM UNLOAD DICTIONARY d"
     status
 }
 
@@ -46,7 +52,7 @@ function as_user()
 {
     echo "$1" | sed "s/${CLICKHOUSE_DATABASE}/db/g"
     local output
-    output=$(${CLICKHOUSE_CLIENT} --user "${username}" --query "$1" 2>&1)
+    output=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${username}" --data-binary "$1" 2>&1)
     if grep -q ACCESS_DENIED <<< "${output}"
     then
         echo ACCESS_DENIED
@@ -74,7 +80,7 @@ do
 done
 
 echo "--- SELECT on a Dictionary table is not enough without a grant on the dictionary"
-${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.w TO ${username}"
+query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.w TO ${username}"
 as_user "SELECT * FROM w"
 status
 # A join may use the dictionary directly as a key-value storage, check it is covered as well.
@@ -84,7 +90,7 @@ do
     status
 done
 # Queries that are only analyzed do not read the right table, but the join planning must not load the dictionary either.
-${CLICKHOUSE_CLIENT} --query "GRANT CREATE VIEW ON ${CLICKHOUSE_DATABASE}.* TO ${username}"
+query "GRANT CREATE VIEW ON ${CLICKHOUSE_DATABASE}.* TO ${username}"
 for analyzer in 1 0
 do
     as_user "EXPLAIN SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = ${analyzer}"
@@ -111,7 +117,7 @@ as_user "SELECT naiveBayesClassifierWithAllProbs('nb', 'good')"
 status nb
 
 echo "--- SELECT is enough for the dictionary table function, but not for dictGet"
-${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.d TO ${username}"
+query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.d TO ${username}"
 as_user "SELECT dictGet('d', 'value', toUInt64(1))"
 status
 as_user "DESCRIBE TABLE dictionary('d')"
@@ -154,8 +160,8 @@ as_user "CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(${
 status
 
 echo "--- dictGet, naiveBayesClassifier"
-${CLICKHOUSE_CLIENT} --query "GRANT dictGet ON ${CLICKHOUSE_DATABASE}.nb TO ${username}"
+query "GRANT dictGet ON ${CLICKHOUSE_DATABASE}.nb TO ${username}"
 as_user "SELECT naiveBayesClassifier('nb', 'good')"
 status nb
 
-${CLICKHOUSE_CLIENT} --query "DROP USER ${username}"
+query "DROP USER ${username}"
