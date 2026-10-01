@@ -536,13 +536,15 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     StorageInMemoryMetadata new_metadata = old_metadata;
     new_metadata.columns = new_columns;
     new_metadata.virtuals = virtuals;
+    const bool columns_changed = new_metadata.columns != old_metadata.columns;
 
     if (partition_key_changed)
     {
         if (new_partition_key.empty())
             new_metadata.partition_key = KeyDescription::buildEmptyKey();
         else
-            new_metadata.partition_key = KeyDescription::parse(new_partition_key, new_metadata.columns, new_metadata.virtuals, context, false);
+            new_metadata.partition_key = KeyDescription::parse(
+                new_partition_key, new_metadata.columns, new_metadata.virtuals, context, false);
 
         if (!new_metadata.partition_key.definition_ast)
             new_metadata.virtuals.remove(PartitionValueColumn::name);
@@ -629,24 +631,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
 
     auto old_partition_key_sample_block = old_metadata.partition_key.sample_block;
     if (new_metadata.partition_key.definition_ast != nullptr)
-    {
         new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, new_metadata.virtuals, context);
-    }
-
-    /// If partition key expression structure changed we must rebuild minmax_count_projection,
-    /// otherwise it retains stale column types (e.g. plain Int8 instead of LowCardinality(Int8))
-    /// and the aggregation engine hits a type mismatch. See #100175.
-    /// An unpartitioned MergeTree still has this implicit projection, so rebuild it for the empty
-    /// partition key instead of dropping the projection.
-    if (new_metadata.minmax_count_projection
-        && !blocksHaveEqualStructure(new_metadata.partition_key.sample_block, old_partition_key_sample_block))
-    {
-        auto minmax_columns = new_metadata.getColumnsRequiredForPartitionKey();
-        auto partition_key_ast = new_metadata.partition_key.expression_list_ast->clone();
-        FunctionNameNormalizer::visit(partition_key_ast.get());
-        new_metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            new_metadata.columns, partition_key_ast, minmax_columns, new_metadata.primary_key, &new_metadata.partition_key, context));
-    }
 
     if (!sorting_key_changed) /// otherwise already updated
         new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, new_metadata.virtuals, context);
@@ -661,8 +646,22 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     }
     else
     {
-        new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, new_metadata.virtuals, context);
+        new_metadata.primary_key = KeyDescription::getKeyFromAST(
+            new_metadata.sorting_key.definition_ast, new_metadata.columns, new_metadata.virtuals, context);
         new_metadata.primary_key.definition_ast = nullptr;
+    }
+
+    /// Derived inputs and types can change even when the partition key output structure does not.
+    /// Dropping the partition key changes the structure without changing columns.
+    if (new_metadata.minmax_count_projection
+        && (columns_changed
+            || !blocksHaveEqualStructure(new_metadata.partition_key.sample_block, old_partition_key_sample_block)))
+    {
+        auto minmax_columns = new_metadata.getColumnsRequiredForPartitionKey();
+        auto partition_key_ast = new_metadata.partition_key.expression_list_ast->clone();
+        FunctionNameNormalizer::visit(partition_key_ast.get());
+        new_metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+            new_metadata.columns, partition_key_ast, minmax_columns, new_metadata.primary_key, &new_metadata.partition_key, context));
     }
 
     if (!sampling_expression_changed && new_metadata.sampling_key.definition_ast != nullptr)

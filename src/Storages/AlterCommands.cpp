@@ -799,6 +799,20 @@ void AlterCommand::apply(
         return if_exists && !metadata.columns.has(column_name);
     };
 
+    /// validate() screens these column names too, but against a model that tracks only ADD/DROP/MODIFY/RENAME
+    /// COLUMN - not MODIFY QUERY, which replaces a materialized view's columns with its new query's output.
+    auto skip_absent_column_or_fail = [&](std::string_view action) -> bool
+    {
+        if (should_skip_column_operation())
+            return true;
+        if (metadata.columns.has(column_name))
+            return false;
+
+        auto message = PreformattedMessage::create("Wrong column name. Cannot find column {} to {}", backQuote(column_name), action);
+        metadata.columns.appendHintsMessage(message.text, column_name);
+        throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+    };
+
     if (type == ADD_COLUMN)
     {
         ColumnDescription column(column_name, data_type);
@@ -860,7 +874,7 @@ void AlterCommand::apply(
     }
     else if (type == MODIFY_COLUMN)
     {
-        if (should_skip_column_operation())
+        if (skip_absent_column_or_fail("modify"))
             return;
         metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
@@ -984,7 +998,7 @@ void AlterCommand::apply(
     }
     else if (type == COMMENT_COLUMN)
     {
-        if (should_skip_column_operation())
+        if (skip_absent_column_or_fail("comment"))
             return;
 
         metadata.columns.modify(column_name,
@@ -1234,8 +1248,9 @@ void AlterCommand::apply(
                 "Use DROP PROJECTION and ADD PROJECTION to change the query",
                 projection_name);
 
-        /// Intentionally not a mutation because the new settings apply lazily
-        /// to parts written by future inserts and merges; `MATERIALIZE PROJECTION` forces a rebuild.
+        /// Intentionally not a mutation: the new settings apply lazily, to projection parts written
+        /// by future inserts and merges. `MATERIALIZE PROJECTION` does not rebuild a projection that
+        /// a part already has, so existing data picks up the new settings only when its parts are merged.
         metadata.projections.replace(std::move(new_projection));
     }
     else if (type == DROP_PROJECTION)
@@ -1832,6 +1847,8 @@ void AlterCommands::apply(
             command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns, settings_defaults);
     }
 
+    const bool columns_changed = metadata_copy.columns != metadata.columns;
+
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
@@ -1847,15 +1864,13 @@ void AlterCommands::apply(
 
     /// And in partition key expression
     if (metadata_copy.partition_key.definition_ast != nullptr)
-    {
         metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
-    }
 
-    /// If partition key expression is changed, we also need to rebuild minmax_count_projection.
-    /// An unpartitioned MergeTree still has this implicit projection, so rebuild it for the empty
-    /// partition key instead of dropping the projection.
+    /// Derived inputs and types can change even when the partition key output structure does not.
+    /// Dropping the partition key changes the structure without changing columns.
     if (metadata_copy.minmax_count_projection
-        && !blocksHaveEqualStructure(metadata_copy.partition_key.sample_block, metadata.partition_key.sample_block))
+        && (columns_changed
+            || !blocksHaveEqualStructure(metadata_copy.partition_key.sample_block, metadata.partition_key.sample_block)))
     {
         auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
         auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
@@ -2133,12 +2148,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
-    /// The constraint names the table has, followed through the adds and drops of this same `ALTER`
-    /// - `apply()` runs the commands one after another - so that a command is screened below only when
-    /// it will really install a declaration.
-    NameSet constraint_names;
-    for (const auto & constraint : metadata->constraints.getConstraints())
-        constraint_names.insert(constraint->as<const ASTConstraintDeclaration &>().name);
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
     for (size_t i = 0; i < size(); ++i)
     {
@@ -2150,26 +2159,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside
         /// it would check a row against another row's value, or read past the end of a shorter column.
         /// `MODIFY CONSTRAINT` replaces the stored declaration in place, so it installs a new expression
-        /// just like `ADD CONSTRAINT` does.
-        ///
-        /// Only a declaration that `apply()` will really install is screened. An
-        /// `ADD CONSTRAINT IF NOT EXISTS` of a name that is taken, and a `MODIFY CONSTRAINT` of a name
-        /// that is not there, install nothing, so they keep meaning what they meant before this check
-        /// existed - the same way a no-op `ADD COLUMN IF NOT EXISTS` skips the validation of its column
-        /// below, and the way a missing name is reported by `apply()` rather than pre-empted here.
-        if (command.type == AlterCommand::ADD_CONSTRAINT)
-        {
-            if (command.constraint_decl && !(command.if_not_exists && constraint_names.contains(command.constraint_name)))
-                ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
-            constraint_names.insert(command.constraint_name);
-        }
-        else if (command.type == AlterCommand::MODIFY_CONSTRAINT)
-        {
-            if (command.constraint_decl && constraint_names.contains(command.constraint_name))
-                ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
-        }
-        else if (command.type == AlterCommand::DROP_CONSTRAINT)
-            constraint_names.erase(command.constraint_name);
+        /// just like `ADD CONSTRAINT` does. Screened wherever the expression is stated, whether or not
+        /// `apply()` goes on to install it, so that the answer does not depend on the name being taken.
+        if ((command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
+            && command.constraint_decl)
+            ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
 
         /// `column_statistics_decl` covers the column-declaration spelling
         /// `ALTER TABLE t ADD/MODIFY COLUMN c UInt64 STATISTICS(...)`, which must honor the same
@@ -2484,6 +2478,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (from_nested_table_name != to_nested_table_name)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
                 all_columns.rename(command.column_name, command.rename_to);
+                renamed_columns.emplace(command.column_name);
+                renamed_columns.emplace(command.rename_to);
             }
             else if (!from_nested && !to_nested)
             {

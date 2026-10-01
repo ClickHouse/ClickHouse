@@ -97,7 +97,31 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
     return res;
 }
 
-SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns)
+namespace
+{
+
+/// Values that comparison declares equal while hash equality - the equality of `GROUP BY`, `DISTINCT`,
+/// `LIMIT BY` and `IN` - keeps apart: `-0.0` and `0.0`, and the `NaN` payloads. `Dynamic`, `Variant`
+/// and `Object` are only known at run time and may hold such a value.
+bool comparisonCanMergeDistinctValues(const IDataType & type)
+{
+    auto is_ambiguous = [](const IDataType & subtype)
+    {
+        WhichDataType which(subtype);
+        return which.isFloat() || which.isDynamic() || which.isVariant() || which.isObject();
+    };
+
+    if (is_ambiguous(type))
+        return true;
+
+    bool result = false;
+    type.forEachChild([&](const IDataType & child) { result = result || is_ambiguous(child); });
+    return result;
+}
+
+}
+
+SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns, const Block & header)
 {
     std::unordered_set<std::string_view> column_set(columns.begin(), columns.end());
 
@@ -110,6 +134,14 @@ SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & des
         /// A collated column is ordered by its collation key, not by value, so equal values are not
         /// adjacent; in-order grouping (DISTINCT / LIMIT BY) cannot rely on it. Stop the prefix here.
         if (sort_column_desc.collator)
+            break;
+
+        /// A group taken from the sort order is a range of rows that compare equal, and comparison
+        /// merges `-0.0` with `0.0`. The hash grouping the same steps use otherwise - and `GROUP BY` -
+        /// keeps them apart, so a float in the prefix would make the answer depend on which variant the
+        /// plan picks. The column keeps being grouped, just by hash.
+        const auto * column_in_header = header.findByName(sort_column_desc.column_name);
+        if (!column_in_header || !column_in_header->type || comparisonCanMergeDistinctValues(*column_in_header->type))
             break;
 
         prefix.emplace_back(sort_column_desc);
@@ -317,6 +349,19 @@ bool isFillArithmeticValue(const Field & value)
     }
 }
 
+/// No `WITH FILL` parameter is usable as `NaN` or `Inf`, and each fails in its own way. `NaN` compares
+/// greater than every value in the totalized `Field` order, so a `TO` bound of `NaN`, or of the infinity
+/// the fill runs towards, leaves the loop's termination test in `FillingRow::next` always true: the query
+/// generated fill rows until it hit a time limit, and forever without one. A `TO` bound the fill runs
+/// away from is passed at once and nothing is filled. A non-finite `FROM` or `STEP` makes the cursor
+/// itself non-finite, which is where the guards inside `FillingRow::next` stop the fill on their own, so
+/// nothing is filled either - and for `FROM` the bound has by then been emitted as a row, replacing the
+/// fill that a perfectly good `TO` asked for.
+bool isNonFiniteFillValue(const Field & value)
+{
+    return value.isNaN() || value.isInf();
+}
+
 }
 
 String checkFillDescription(const FillColumnDescription & fill, int direction)
@@ -337,6 +382,20 @@ String checkFillDescription(const FillColumnDescription & fill, int direction)
 
     if (!fill.fill_staleness.isNull() && !fill.fill_from.isNull())
         return "WITH FILL STALENESS cannot be used together with WITH FILL FROM";
+
+    if (isNonFiniteFillValue(fill.fill_from))
+        return "WITH FILL FROM value must be finite";
+
+    if (isNonFiniteFillValue(fill.fill_to))
+        return "WITH FILL TO value must be finite";
+
+    if (isNonFiniteFillValue(fill.fill_step))
+        return "WITH FILL STEP value must be finite";
+
+    /// `STALENESS` reaches the same fill loop as `TO`: `updateConstraintsWithStalenessRow` derives the
+    /// loop constraint from it exactly like from `TO`, and writes it into the same `constraints` array.
+    if (isNonFiniteFillValue(fill.fill_staleness))
+        return "WITH FILL STALENESS value must be finite";
 
     if (direction > 0)
     {
