@@ -24,6 +24,7 @@
 #include "config.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <algorithm>
 #include <charconv>
@@ -264,6 +265,11 @@ Strings getFileSuffixesForCompressionMethodHint(const std::string & hint)
         throwUnknownCompressionMethod(hint);
 
     return result;
+}
+
+bool isCompressionMethodHintAuto(const std::string & hint)
+{
+    return hint.empty() || boost::algorithm::iequals(hint, "auto");
 }
 
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint)

@@ -253,4 +253,7 @@ do
 done
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM s3('$path/gz_lake/**', 'test', 'testtest', format = 'JSONEachRow', compression_method = 'gzip')"
 $CLICKHOUSE_CLIENT --use_cache_for_count_from_files=1 -q "SELECT count() FROM $attach_db.bad_codec" 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
+# Nor may a row count read through an explicit codec answer `count()` for another codec: with
+# `compression_method = 'none'` the gzipped files are not valid `JSONEachRow`, warm cache or not.
+$CLICKHOUSE_CLIENT --use_cache_for_count_from_files=1 -q "SELECT count() FROM s3('$path/gz_lake/key=9/data.jsonl.custom', 'test', 'testtest', format = 'JSONEachRow', structure = 'id UInt64', compression_method = 'none')" 2>&1 | grep -cm1 "Code: "
 $CLICKHOUSE_CLIENT -q "DROP DATABASE $attach_db"

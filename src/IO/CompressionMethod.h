@@ -48,6 +48,9 @@ std::string toContentEncodingName(CompressionMethod method);
   */
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint);
 
+/// Whether `chooseCompressionMethod` derives the method from the path for this hint (an empty hint or `auto`).
+bool isCompressionMethodHintAuto(const std::string & hint);
+
 /** File name suffixes that `chooseCompressionMethod` recognizes for the given compression method
   * hint, e.g. `{"gz", "gzip"}` for `gzip`. An empty hint or `auto` yields the suffixes of every
   * supported method, `none` yields nothing, and an unrecognized hint throws the same exception as

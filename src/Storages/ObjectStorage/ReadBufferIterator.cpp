@@ -126,7 +126,8 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
 
 void ReadBufferIterator::setNumRowsToLastFile(size_t num_rows)
 {
-    if (query_settings.schema_inference_use_cache)
+    /// Same as `StorageObjectStorageSource::addNumRowsToCache`: the key does not include the compression method.
+    if (query_settings.schema_inference_use_cache && isCompressionMethodHintAuto(configuration->compression_method))
         schema_cache.addNumRows(getKeyForSchemaCache(*current_object_info, *format), num_rows);
 }
 
