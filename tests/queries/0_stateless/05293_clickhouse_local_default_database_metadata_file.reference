@@ -11,6 +11,6 @@
 --- a table created after a stateless run uses the UUID from the metadata file ---
 1
 3
---- only-system-tables writes no metadata ---
+--- --only-system-tables writes no metadata ---
 1
 no metadata

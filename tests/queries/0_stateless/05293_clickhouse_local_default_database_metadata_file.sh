@@ -38,7 +38,7 @@ ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/stateless" \
     -q "CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x; INSERT INTO t VALUES (3)"
 ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/stateless" -q "SELECT x FROM default.t" -- --default_database=other
 
-echo "--- only-system-tables writes no metadata ---"
+echo "--- --only-system-tables writes no metadata ---"
 ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/system" --only-system-tables -q "SELECT 1"
 [ -e "${WORKING_FOLDER}/system/metadata" ] && echo "metadata exists" || echo "no metadata"
 
