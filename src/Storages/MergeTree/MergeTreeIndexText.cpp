@@ -1850,11 +1850,14 @@ void MergeTreeIndexTextGranuleBuilder::addDocumentsFromLowCardinality(
     const IColumnUnique & dictionary = column_low_cardinality.getDictionary();
     auto elements_begin = [&](size_t row) { return column_array ? column_array->getOffsets()[row - 1] : row; };
 
+    /// Values must repeat for the cache to pay off.
     static constexpr size_t min_documents_per_value = 8;
+    /// Bounds `ranges` to 1 MiB.
     static constexpr size_t max_dictionary_size = 65536;
+    /// Bounds `builders` to 64 MiB for long values.
     static constexpr size_t max_cached_tokens = 1 << 23;
     /// A stateful tokenizer may return other tokens for a value it tokenizes again, and with a drop filter `addToken`
-    /// may leave a token without a builder. The cache costs O(dictionary) and a lookup per token, so values must repeat.
+    /// may leave a token without a builder.
     const bool use_cache = !tokenizer->isStateful() && !postprocessor_drop_filter && dictionary.size() <= max_dictionary_size
         && dictionary.size() * min_documents_per_value <= elements_begin(start_row + rows_read) - elements_begin(start_row);
 
