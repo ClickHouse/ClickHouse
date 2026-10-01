@@ -47,6 +47,9 @@ SET use_statistics_cache = 1;
 SET max_threads = 1;
 SET merge_tree_min_bytes_per_task_for_remote_reading = 1024;
 SET automatic_parallel_replicas_min_bytes_per_replica = 0;
+-- The small side of the join is read in full by every replica; the replicated-read gate would
+-- decline the candidate for that, and this test is about which read the statistics follow.
+SET automatic_parallel_replicas_max_replicated_read_ratio = 1;
 
 -- What the query answers without parallel replicas, so the adopted plan can be checked against it.
 INSERT INTO t_coord_baseline
