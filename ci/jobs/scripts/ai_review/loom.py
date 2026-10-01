@@ -675,6 +675,12 @@ def _cli_body(args, config):
         return "tracker.similar", {"text": args.text, "top_k": args.limit}
     if args.command == "issue":
         return "tracker.item", {"numbers": [int(n) for n in args.numbers]}
+    if args.command == "setting":
+        return "code.setting_facts", {"name": args.name, "history_limit": 10}
+    if args.command == "guards":
+        return "code.path_guards", {"from_symbol": args.from_symbol, "to_symbol": args.to_symbol, "depth": args.depth}
+    if args.command == "test-signal":
+        return "tracker.test_signal", {"test_name": args.test_name, "window_days": 30, "code_namespace": config.namespace}
     if args.command == "verify-citations":
         with open(args.file, "r", encoding="utf-8") as f:
             text = f.read()
@@ -746,6 +752,14 @@ def _parser():
     s.add_argument("--limit", type=int, default=8)
     s = sub.add_parser("issue", help="tracker items by number")
     s.add_argument("numbers", nargs="+")
+    s = sub.add_parser("setting", help="a setting's declaration, default, history and whether CI randomizes it")
+    s.add_argument("name")
+    s = sub.add_parser("guards", help="whether every call path from one function to another passes a check")
+    s.add_argument("from_symbol")
+    s.add_argument("to_symbol")
+    s.add_argument("--depth", type=int, default=4)
+    s = sub.add_parser("test-signal", help="whether a failing test is flaky, infrastructure, or a regression candidate")
+    s.add_argument("test_name")
     s = sub.add_parser("verify-citations", help="check every file:line and name cited in a Markdown file")
     s.add_argument("file")
     return p

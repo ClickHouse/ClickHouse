@@ -99,19 +99,38 @@ in, so work through the PR in this order:
    the PR promises and the invariants the changed code has to keep. Claims in the description
    ("fixes", "safe", "no behavior change") are claims to verify, not facts. On a re-review, start
    from `previous_contract.md` and update it.
-2. The units. Go through `units.md` in its order. For each unit in scope, first list every candidate
-   problem, without judging any yet: run the unit against each review gate, the ClickHouse rules and
-   the C++ hazards of the review instructions, and ask what contract it changes, who calls it, what
+2. The lenses. Note in `./ci/tmp/ai_review/scratch/lenses.md` which of these the diff triggers, and
+   for each one left out a few words on why it does not apply. The rules behind each are in the
+   review instructions.
+
+   | lens | triggered by | a finding needs |
+   |---|---|---|
+   | results | functions, casts, analyzer passes, plan optimizations, index analysis, formats | a small input or query pair with the wrong output |
+   | data edges | anything that handles column values | the variant or edge value that breaks (wrapper, empty, NULL, extreme, more than a block) |
+   | untrusted input | parsing or deserializing client, file or Keeper bytes | where the size or index comes from and the missing bound |
+   | concurrency | locks, atomics, shared state, background tasks, callbacks | the protecting lock, the lock order, or a concrete interleaving |
+   | lifetime and shutdown | lambdas, pools, `Context`, DROP/DETACH while in use | the owner and the path on which the use outlives it |
+   | durability | files, renames, part states, metadata, Keeper commits | the crash point and the state left after restart |
+   | distributed | replication, Keeper, `ON CLUSTER`, distributed or parallel-replicas paths | the replica, shard or retry sequence that diverges |
+   | compatibility | serialization, protocol, defaults, function semantics in stored DDL | the mixed-version or upgrade sequence that breaks |
+   | performance and scale | loops on query, merge or read paths; per-part, per-column or per-replica work | the cost before and after, and what it scales with |
+   | resources | buffers, caches, queues, threads, blocking calls, retries | the missing bound, deadline, cancellation check or backoff |
+   | security | access checks, credentials, network egress, file paths, external queries | the privilege or filter missing on a reachable path |
+   | settings and tests | new or changed settings; tests added, changed or deleted | the consumer that ignores it, or the assertion that cannot fail |
+
+3. The units. Go through `units.md` in its order. For each unit in scope, first list every candidate
+   problem, without judging any yet: run the unit through the lenses it triggers, each review gate,
+   the ClickHouse rules and the C++ hazards of the review instructions, and ask what contract it changes, who calls it, what
    else must change with it and what input breaks it. Follow the changed functions' callers and
    callees two or three levels out and through the project's own ownership, memory tracking and
    locking helpers. Note the candidates in `./ci/tmp/ai_review/scratch/candidates.md`. A unit with
    one problem often has a second; keep listing after the first.
-3. Verification. Settle each candidate as the section "Before writing the output" describes.
-4. Variants. After a confirmed finding, search the rest of the PR and the sibling code for the same
+4. Verification. Settle each candidate as the section "Before writing the output" describes.
+5. Variants. After a confirmed finding, search the rest of the PR and the sibling code for the same
    pattern.
-5. Coverage. Record a verdict for every unit in scope in `coverage.json`, with a note on what you
+6. Coverage. Record a verdict for every unit in scope in `coverage.json`, with a note on what you
    checked.
-6. Simplicity and comments, as a separate pass once the correctness review is done, so that it
+7. Simplicity and comments, as a separate pass once the correctness review is done, so that it
    never displaces a bug. See the section of that name.
 
 Spend the effort where a defect would hurt most: code that affects query results, on-disk and wire
@@ -159,6 +178,11 @@ Run `python3 -m ci.jobs.scripts.ai_review.loom <command>` (`--help` on any comma
 - For the simplicity rules: `search "what the new code does"` finds an existing helper, `callers NAME`
   shows whether a new function has any user, `symbol NAME` shows how widely an existing one is used.
 - `similar "text"`, `issue N ...`: tracker search. Reference a matching existing issue in a finding.
+- `setting NAME`: a setting's declaration, default, history and whether CI randomizes it.
+- `guards FROM TO`: whether the call paths from one function to another pass a given check (an
+  `unknown` answer is a search bound, not an absence).
+- `test-signal TEST`: whether a failing test in `ci_status.md` is flaky, infrastructure or a
+  regression candidate.
 - `verify-citations FILE`: checks every `path:line` and name cited in a Markdown file against master.
 
 Loom sees master, not this PR.{overlay_note}
@@ -267,6 +291,18 @@ and with the exact deletion or replacement. Each finding uses one of these rules
 | `test_comment_internals` | a test comment citing C++ internals or `file:line` instead of what is tested in user terms | the quoted comment and the replacement |
 | `scope_creep` | a hunk unrelated to the PR's purpose that makes the diff larger | the hunk and why it is independent of the purpose |
 | `simpler_equivalent` | a strictly smaller replacement with identical behavior | the replacement as a `suggestion` and why the behavior is the same |
+
+Do this unit by unit, as in the correctness pass, and note these candidates with the others:
+
+- For every check, branch, conversion or cast the PR adds (a NULL or type check, `removeNullable`, a
+  range check, an `assert_cast` guard), ask what already guarantees it: the argument types validated
+  in `getReturnTypeImpl` or by the function's argument validators, the caller, the callee, the column
+  type. If something does, the check is `impossible_check` and the guarantor is its evidence.
+- For every new helper, template parameter, wrapper, special case or setting, ask who needs it and
+  whether an existing facility already does the job. In functions, `IFunction`'s default handling of
+  NULLs, constants and `LowCardinality` arguments and the declarative `FunctionArgumentDescriptor` /
+  `validateFunctionArguments` replace hand-written handling and validation.
+- For every comment, ask what it says that the code does not.
 
 Without the evidence, there is no finding. Do not comment on naming, formatting or design taste,
 and never write "consider" or "could be cleaner". A comment that contradicts the code is not a
