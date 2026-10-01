@@ -255,7 +255,7 @@ export const AskAILink = ({ children }) => {
             id="home-assistant-entry"
             data-galaxy-event="docs.home.ask-ai"
             onClick={openKapa}
-            className="flex-none inline-flex items-center justify-center gap-1.5 pl-3 pr-3.5 h-9 shadow-none bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 border border-white/10 rounded text-gray-500 dark:text-white/50 cursor-pointer"
+            className="w-full sm:w-auto flex-none inline-flex items-center justify-center gap-1.5 pl-3 pr-3.5 h-9 shadow-none bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 border border-white/10 rounded text-gray-500 dark:text-white/50 cursor-pointer"
         >
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 18 18" aria-hidden="true" className="shrink-0"><g fill="currentColor"><path d="M5.658,2.99l-1.263-.421-.421-1.263c-.137-.408-.812-.408-.949,0l-.421,1.263-1.263,.421c-.204,.068-.342,.259-.342,.474s.138,.406,.342,.474l1.263,.421,.421,1.263c.068,.204,.26,.342,.475,.342s.406-.138,.475-.342l.421-1.263,1.263-.421c.204-.068,.342-.259,.342-.474s-.138-.406-.342-.474Z" fill="currentColor" data-stroke="none" stroke="none"></path><polygon points="9.5 2.75 11.412 7.587 16.25 9.5 11.412 11.413 9.5 16.25 7.587 11.413 2.75 9.5 7.587 7.587 9.5 2.75" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"></polygon></g></svg>
             {children}
@@ -319,8 +319,8 @@ export const PageWrapper = ({ children }) => {
         最快的数据平台文档
       </div>
 
-      <div className="flex items-center justify-center gap-2 mx-auto mt-8 px-4 max-w-[480px]">
-        <button type="button" id="home-search-entry" data-galaxy-event="docs.home.search" className="flex pointer-events-auto items-center text-sm leading-6 h-9 pl-3.5 pr-4 text-gray-500 dark:text-white/50 gap-2 flex-1 min-w-0 bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 shadow-none border border-gray-950/10 dark:border-white/10 ring-0 dark:ring-0 rounded" aria-label="打开搜索">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2 mx-auto mt-8 px-4 max-w-[480px]">
+        <button type="button" id="home-search-entry" data-galaxy-event="docs.home.search" className="flex w-full sm:flex-1 pointer-events-auto items-center text-sm leading-6 h-9 pl-3.5 pr-4 text-gray-500 dark:text-white/50 gap-2 min-w-0 bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 shadow-none border border-gray-950/10 dark:border-white/10 ring-0 dark:ring-0 rounded" aria-label="打开搜索">
           <div className="flex items-center gap-2 min-w-0"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-search min-w-4 flex-none text-gray-700 hover:text-gray-800 dark:text-gray-400 hover:dark:text-gray-200"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg><div className="truncate min-w-0">搜索...</div></div>
         </button>
         <AskAILink>咨询 AI</AskAILink>

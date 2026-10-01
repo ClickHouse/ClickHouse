@@ -1565,13 +1565,16 @@ html:not(.dark) #home-assistant-entry:hover {
    visually disappear when focused. */
 #search-bar-entry:focus,
 #search-bar-entry:focus-visible,
-#home-search-entry:focus,
-#home-search-entry:focus-visible,
 #ch-ask-ai-btn:focus,
-#ch-ask-ai-btn:focus-visible,
-#home-assistant-entry:focus,
-#home-assistant-entry:focus-visible {
+#ch-ask-ai-btn:focus-visible {
     outline: none !important;
+}
+
+/* Homepage controls retain a clear keyboard focus indicator. */
+#home-search-entry:focus-visible,
+#home-assistant-entry:focus-visible {
+    outline: 2px solid rgb(59, 130, 246) !important;
+    outline-offset: 2px;
 }
 
 /* Dark-mode contrast bump for the navbar controls (search, Ask AI, theme
