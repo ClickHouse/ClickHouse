@@ -1085,6 +1085,12 @@ def test_nulls(started_cluster):
     )
 
     assert node.query("SELECT COUNT() FROM nulls_table") == "1\n"
+    # A date-family constant is pushed down against a `Nullable` column as against a plain one.
+    assert node.query("SELECT COUNT() FROM nulls_table WHERE k_datetime = toDate('2024-01-02')") == "0\n"
+    assert (
+        node.query("SELECT COUNT() FROM nulls_table WHERE k_datetime64 IN (toDateTime('2024-01-02 00:00:00'))")
+        == "0\n"
+    )
 
     assert (
         node.query(

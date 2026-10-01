@@ -387,9 +387,8 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
         /// The list is a `Tuple` type over an `Array` value, so the elements are converted one by one.
         /// A member converts as `IN` converts it, strictly but to the column's type; a member the type cannot
-        /// hold matches nothing. MongoDB compares the stored value, though: a `Date` member made of a `DateTime`
-        /// with a time of day would be sent as midnight and miss the row, so such a member is refused like a
-        /// lossy bound. `$nin` only returns more rows, which the `WHERE` drops, so it keeps the member.
+        /// hold matches nothing. A member whose conversion loses part of the value is refused like a lossy
+        /// bound; `$nin` only returns more rows, which the `WHERE` drops, so it keeps the member.
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(const_type.get());
         const auto * array_type = typeid_cast<const DataTypeArray *>(const_type.get());
         Array converted_elements;

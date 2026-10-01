@@ -1158,11 +1158,13 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
 Field tryConvertFieldToTypeExact(const Field & from_value, const IDataType & to_type, const IDataType * from_type)
 {
     Field converted = tryConvertFieldToType(from_value, to_type, from_type, {}, /*strict=*/ true);
+    /// The conversion unwraps its target but not its hint, so the round trip is given the bare target.
+    const DataTypePtr bare_to_type = removeLowCardinalityAndNullable(to_type.getPtr());
     if (converted.isNull() || !from_type || isStringOrFixedString(*from_type)
-        || (isNativeNumber(*from_type) && isNativeNumber(to_type)))
+        || (isNativeNumber(*from_type) && isNativeNumber(*bare_to_type)))
         return converted;
 
-    Field round_trip = tryConvertFieldToType(converted, *from_type, &to_type, {}, /*strict=*/ true);
+    Field round_trip = tryConvertFieldToType(converted, *from_type, bare_to_type.get(), {}, /*strict=*/ true);
     if (round_trip.isNull() || !accurateEquals(round_trip, from_value))
         return {};
     return converted;

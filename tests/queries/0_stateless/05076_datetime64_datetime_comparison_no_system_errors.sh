@@ -37,13 +37,20 @@ $CLICKHOUSE_CLIENT --query_id="${query_id}_date" -q "
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_date_cmp"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_date_cmp (A String, d Date) ENGINE = MergeTree ORDER BY (A, d)"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_date_cmp VALUES ('x', '2020-01-01'), ('y', '2020-01-02')"
-$CLICKHOUSE_CLIENT --query_id="${query_id}_date32" -q "
+$CLICKHOUSE_CLIENT --query_id="${query_id}_date_col" -q "
     SELECT count() FROM t_date_cmp
+    WHERE A = 'x' AND d >= toDateTime64('2019-01-01 00:00:00', 3)"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_date32_cmp"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_date32_cmp (A String, d Date32) ENGINE = MergeTree ORDER BY (A, d)"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_date32_cmp VALUES ('x', '2020-01-01'), ('y', '2020-01-02')"
+$CLICKHOUSE_CLIENT --query_id="${query_id}_date32_col" -q "
+    SELECT count() FROM t_date32_cmp
     WHERE A = 'x' AND d >= toDateTime64('2019-01-01 00:00:00', 3)"
 $CLICKHOUSE_CLIENT -q "
     SELECT count() = 0 FROM system.errors
-    WHERE name = 'TYPE_MISMATCH' AND query_id IN ('${query_id}_date', '${query_id}_date32')"
+    WHERE name = 'TYPE_MISMATCH' AND query_id IN ('${query_id}_date', '${query_id}_date_col', '${query_id}_date32_col')"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_date_cmp"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_date32_cmp"
 
 # A DateTime constant is representable as DateTime64, so the fold applies and the result is right.
 $CLICKHOUSE_CLIENT -q "
