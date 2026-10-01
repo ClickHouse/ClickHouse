@@ -62,6 +62,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
+    extern const char check_data_part_before_projection_read[];
     extern const char merge_tree_reader_pause_before_report_broken[];
 }
 
@@ -385,6 +386,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         IMergeTreeDataPart::Checksums projection_checksums;
         try
         {
+            FailPointInjection::pauseFailPoint(FailPoints::check_data_part_before_projection_read);
+
             bool noop = false;
             auto projection_storage = data_part_storage.getProjection(projection_file);
 
@@ -412,7 +415,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
         catch (...)
         {
-            if (isRetryableException(std::current_exception()))
+            const auto exception = std::current_exception();
+            if (CurrentThread::isQueryCancellationException(exception) || isRetryableException(exception))
                 throw;
 
             is_broken_projection = true;
@@ -580,7 +584,11 @@ IMergeTreeDataPart::Checksums checkDataPart(
         }
         catch (...)
         {
-            if (isRetryableException(std::current_exception()))
+            const auto exception = std::current_exception();
+            if (CurrentThread::isQueryCancellationException(exception))
+                throw;
+
+            if (isRetryableException(exception))
             {
                 LOG_DEBUG(
                     getLogger("checkDataPart"),
@@ -613,7 +621,11 @@ IMergeTreeDataPart::Checksums checkDataPart(
     }
     catch (...)
     {
-        if (isRetryableException(std::current_exception()))
+        const auto exception = std::current_exception();
+        if (CurrentThread::isQueryCancellationException(exception))
+            throw;
+
+        if (isRetryableException(exception))
         {
             LOG_DEBUG(
                 getLogger("checkDataPart"),

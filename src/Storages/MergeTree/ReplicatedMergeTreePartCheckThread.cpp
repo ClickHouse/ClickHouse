@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -419,7 +420,8 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
         }
         catch (...)
         {
-            if (isRetryableException(std::current_exception()))
+            const auto exception = std::current_exception();
+            if (CurrentThread::isQueryCancellationException(exception) || isRetryableException(exception))
                 throw;
 
             PreformattedMessage message;

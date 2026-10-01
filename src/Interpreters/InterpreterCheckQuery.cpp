@@ -10,6 +10,7 @@
 #include <Columns/IColumn.h>
 
 #include <Common/FailPoint.h>
+#include <Common/CurrentThread.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
@@ -150,9 +151,13 @@ public:
         }
         catch (const Exception & e)
         {
+            const auto exception = std::current_exception();
+            if (CurrentThread::isQueryCancellationException(exception))
+                throw;
+
             /// Rethrow transient errors instead of reporting a false "broken" row. Keep swallowing the shutdown
             /// ABORTED (what this catch was added for) — `isRetryableException` treats ABORTED as retryable.
-            if (e.code() != ErrorCodes::ABORTED && isRetryableException(std::current_exception()))
+            if (e.code() != ErrorCodes::ABORTED && isRetryableException(exception))
                 throw;
 
             is_finished = true;
