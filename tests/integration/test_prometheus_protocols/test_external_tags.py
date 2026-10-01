@@ -1,4 +1,4 @@
-"""Creation, selector reads and metadata time filtering with external tags at version 7."""
+"""Creation, selector reads and metadata time filtering with external tags at version 8."""
 
 import pytest
 import requests
@@ -33,7 +33,7 @@ def setup():
         )
         node.query(
             "CREATE TABLE external_tags.prometheus ENGINE = TimeSeries "
-            "SETTINGS version = 7, store_min_time_and_max_time = 1 "
+            "SETTINGS version = 8, store_min_time_and_max_time = 1 "
             "TAGS external_tags.ext_tags"
         )
         node.query(

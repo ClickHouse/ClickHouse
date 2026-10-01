@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: the selector below parses PromQL, which needs ANTLR4, disabled in the fast-test build.
 --
--- Version 7 moves `min_time` / `max_time` out of the tags target into a separate `TAGS MIN MAX`
+-- Version 8 moves `min_time` / `max_time` out of the tags target into a separate `TAGS MIN MAX`
 -- target. The tags target then holds only identity columns, so it no longer needs an aggregating
 -- engine nor `allow_dimensions_outside_sorting_key`. A table pinned to version 6 keeps the old
 -- single-table layout forever. The exact generated DDL is asserted in
@@ -75,7 +75,7 @@ SELECT count() FROM timeSeriesSelector(ts_v7, '{job="api"}', toDateTime64(0, 3),
 
 DROP TABLE ts_v7;
 
-SELECT '-- the bounds are always aggregated, aggregate_min_time_and_max_time is ignored from version 7';
+SELECT '-- the bounds are always aggregated, aggregate_min_time_and_max_time is ignored from version 8';
 
 CREATE TABLE ts_v7_no_agg ENGINE = TimeSeries SETTINGS aggregate_min_time_and_max_time = 0;
 
@@ -108,7 +108,7 @@ WHERE database = currentDatabase() AND table LIKE '.inner\_id.tags.%';
 SELECT count() FROM system.tables
 WHERE database = currentDatabase() AND name LIKE '.inner\_id.tagsminmax.%';
 
-SELECT '-- `AS` a version 6 table produces a version 7 split copy';
+SELECT '-- `AS` a version 6 table produces a version 8 split copy';
 
 CREATE TABLE ts_v6_copy AS ts_v6;
 

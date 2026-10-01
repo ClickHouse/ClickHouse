@@ -80,7 +80,7 @@ namespace
 {
     /// All target kinds of a TimeSeries table.
     /// The RecentSamples target is optional: it's enabled by the `recent_samples_ttl_seconds` setting.
-    /// The TagsMinMax target exists from version 7 and only while `store_min_time_and_max_time` is enabled.
+    /// The TagsMinMax target exists from version 8 and only while `store_min_time_and_max_time` is enabled.
     constexpr std::array<ViewTarget::Kind, 5> getTargetKinds()
     {
         return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::TagsMinMax, ViewTarget::MetricFamilies};
@@ -524,13 +524,24 @@ namespace
         if (const auto * value = get_new_value("version"); value && (SettingFieldUInt64{*value}.value < TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING))
             old_settings.removeSetting("id_type");
 
+        /// The same for the settings of the deduplication caches which exist from version 7.
+        if (const auto * value = get_new_value("version"); value && (SettingFieldUInt64{*value}.value < TimeSeriesVersion::MIN_WITH_DEDUPLICATION_CACHES))
+            old_settings.removeSettings({"metric_families_deduplication_cache_size_bytes", "metric_families_deduplication_cache_expiration_seconds",
+                                        "tags_deduplication_cache_size_bytes", "tags_deduplication_cache_expiration_seconds"});
+
         /// The default value of `recent_samples_ttl_seconds` is 345600 (4 days), so an absent setting doesn't disable the recent samples table.
         if (const auto * value = get_new_value("recent_samples_ttl_seconds"); value && (SettingFieldUInt64{*value}.value == 0))
             old_settings.removeSettings({"recent_samples_partition_by", "recent_samples_index_granularity"});
 
         /// The default value of `store_min_time_and_max_time` is true, so an absent setting doesn't disable the columns.
+        /// The deduplication cache of the tags table is used only without these columns in the tags table.
+        const auto * new_version = get_new_value("version");
+        bool separate_tags_min_max = (new_version ? SettingFieldUInt64{*new_version}.value : TimeSeriesVersion::LATEST)
+            >= TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX;
         if (const auto * value = get_new_value("store_min_time_and_max_time"); value && !SettingFieldBool{*value}.value)
             old_settings.removeSettings({"aggregate_min_time_and_max_time", "filter_by_min_time_and_max_time"});
+        else if (!separate_tags_min_max)
+            old_settings.removeSettings({"tags_deduplication_cache_size_bytes", "tags_deduplication_cache_expiration_seconds"});
     }
 
     /// Removes the settings copied from the old table which were written for its `id` type, if this table has another one.
@@ -566,7 +577,7 @@ namespace
         if (inner_table_kind != ViewTarget::Tags)
             return;
 
-        /// The columns "min_time" and "max_time" are not stored, or (from version 7) are stored in the
+        /// The columns "min_time" and "max_time" are not stored, or (from version 8) are stored in the
         /// separate "tags min max" table instead.
         if (!new_settings[TimeSeriesSetting::store_min_time_and_max_time]
             || (new_settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX))
@@ -943,7 +954,7 @@ namespace
             case ViewTarget::Tags:
             {
                 /// The generated engine kind follows the `aggregate_min_time_and_max_time` setting of the old table.
-                /// From version 7 the aggregated columns live in the separate "tags min max" table.
+                /// From version 8 the aggregated columns live in the separate "tags min max" table.
                 const bool separate_tags_min_max
                     = settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX;
                 std::string_view generated_engine_name
@@ -1117,7 +1128,7 @@ namespace
                 add_column_if_missing(TimeSeriesColumnNames::Tags,
                     makeASTDataType("Map", makeASTDataType("LowCardinality", makeASTDataType("String")), makeASTDataType("String")));
 
-                /// Columns "min_time" and "max_time". From version 7 they live in the "tags min max" table.
+                /// Columns "min_time" and "max_time". From version 8 they live in the "tags min max" table.
                 if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time]
                     && (time_series_settings[TimeSeriesSetting::version] < TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX))
                 {
@@ -1657,7 +1668,7 @@ namespace
 
             case ViewTarget::Tags:
             {
-                /// From version 7 `min_time` and `max_time` live in the separate "tags min max" table, so the tags
+                /// From version 8 `min_time` and `max_time` live in the separate "tags min max" table, so the tags
                 /// table stores no aggregate states and `aggregate_min_time_and_max_time` doesn't apply to it.
                 const bool separate_tags_min_max
                     = settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX;
@@ -1694,7 +1705,7 @@ namespace
                 /// by default (see the `allow_dimensions_outside_sorting_key` setting and
                 /// https://github.com/ClickHouse/ClickHouse/issues/751), so enable that setting on the inner tags
                 /// engine — both when we generate it and when the user specifies an aggregating engine explicitly.
-                /// From version 7 the tags table has no aggregate states, so the setting is not needed there.
+                /// From version 8 the tags table has no aggregate states, so the setting is not needed there.
                 if (!separate_tags_min_max && inner_engine.engine->name.contains("Aggregating")
                     && !has_engine_setting("allow_dimensions_outside_sorting_key"))
                 {
@@ -2298,7 +2309,7 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
         }
 
         /// Pin `store_min_time_and_max_time`, so that the table keeps its layout if a future version changes
-        /// the default: from version 7 the setting decides whether the "tags min max" target table exists.
+        /// the default: from version 8 the setting decides whether the "tags min max" target table exists.
         if (!settings[TimeSeriesSetting::store_min_time_and_max_time].isChanged() && create_query.storage)
         {
             setEngineSettings(*create_query.storage, "store_min_time_and_max_time",
@@ -2319,7 +2330,7 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                 create_query.targets->removeTarget(ViewTarget::RecentSamples);
         }
 
-        /// The tags min max target exists from version 7 and only while `store_min_time_and_max_time` is enabled.
+        /// The tags min max target exists from version 8 and only while `store_min_time_and_max_time` is enabled.
         /// An external tags table is supplied by the user and keeps carrying `min_time` and `max_time` itself,
         /// so the split applies only to a table whose tags target is an inner one.
         const bool tags_min_max_enabled

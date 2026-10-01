@@ -1,13 +1,13 @@
 #pragma once
 
+#include <Common/Logger_fwd.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/BlockIO.h>
-#include <Common/HashTable/HashSet.h>
-#include <Common/Logger_fwd.h>
+#include <Storages/TimeSeries/TimeSeriesDeduplicationCache.h>
 
 #include <string_view>
 #include <unordered_map>
@@ -87,9 +87,6 @@ private:
     bool insert_metric_families = false;
     bool async_insert = false;
 
-    /// Stable across cache hits, unlike the number of times a target pipeline has been opened.
-    UInt64 input_block_number = 0;
-
     /// Source header for the tags pipeline WITHOUT the `id` column.
     Block tags_header_before_id;
 
@@ -112,9 +109,13 @@ private:
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
     std::unique_ptr<TargetPipeline> metric_families_pipeline;
 
-    /// Accumulates series IDs written by this sink, committed to the active series cache on finish.
-    std::vector<UInt128> pending_cached_ids;
-    HashSet<UInt128, HashCRC32<UInt128>> pending_cached_set;
+    /// Skip the rows already written to the "tags" and "metric families" tables, null if the corresponding cache is disabled.
+    TimeSeriesDeduplicationCachePtr tags_deduplication_cache;
+    TimeSeriesDeduplicationCachePtr metric_families_deduplication_cache;
+
+    /// Rows of the "tags" and "metric families" tables which this insert is going to write, they are marked as written when the insert is finished.
+    TimeSeriesDeduplicationCache::PendingRows pending_tags;
+    TimeSeriesDeduplicationCache::PendingRows pending_metric_families;
 };
 
 }

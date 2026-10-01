@@ -4,15 +4,17 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
+#include <base/defines.h>
 #include <array>
+#include <mutex>
 
 
 namespace DB
 {
+class TimeSeriesDeduplicationCache;
+using TimeSeriesDeduplicationCachePtr = std::shared_ptr<TimeSeriesDeduplicationCache>;
 struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
-class TimeSeriesActiveSeriesCache;
-using TimeSeriesActiveSeriesCachePtr = std::shared_ptr<const TimeSeriesActiveSeriesCache>;
 
 /// Represents a table engine to keep time series received by Prometheus protocols.
 /// Examples of using this table engine:
@@ -44,7 +46,6 @@ public:
     std::string getName() const override { return "TimeSeries"; }
 
     std::shared_ptr<const TimeSeriesSettings> getStorageSettings() const { return storage_settings.get(); }
-    TimeSeriesActiveSeriesCachePtr getActiveSeriesCache() const { return active_series_cache.get(); }
 
     /// Returns the schema version of this table (the `version` setting, see TimeSeriesVersion.h).
     UInt64 getVersion() const;
@@ -67,6 +68,16 @@ public:
     {
         return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::TagsMinMax, ViewTarget::MetricFamilies};
     }
+
+    /// Return the caches used to skip the rows already written to the "tags" and "metric families" tables,
+    /// or null if the cache is disabled by the settings (see `tags_deduplication_cache_size_bytes`
+    /// and `metric_families_deduplication_cache_size_bytes`).
+    TimeSeriesDeduplicationCachePtr getTagsDeduplicationCache() const;
+    TimeSeriesDeduplicationCachePtr getMetricFamiliesDeduplicationCache() const;
+
+    /// Clears the caches used by inserts, so that the next insert writes all its rows to the target tables.
+    /// It's called by `TRUNCATE TABLE` and by `SYSTEM DROP TIME SERIES CACHES`.
+    void clearCaches();
 
     void readImpl(
         QueryPlan & query_plan,
@@ -145,11 +156,19 @@ private:
     /// Implementation for getTargetTable() and tryGetTargetTable().
     StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
 
+    /// Creates a cache from the current settings, replacing the old one, or drops it when the settings disable it.
+    /// The running inserts continue with the old cache.
+    void createOrDropTagsDeduplicationCache();
+    void createOrDropMetricFamiliesDeduplicationCache();
+
     MultiVersion<TimeSeriesSettings> storage_settings;
 
     std::vector<Target> targets;
     bool has_inner_tables = false;
-    MultiVersion<TimeSeriesActiveSeriesCache> active_series_cache;
+
+    mutable std::mutex caches_mutex;
+    TimeSeriesDeduplicationCachePtr tags_deduplication_cache TSA_GUARDED_BY(caches_mutex);
+    TimeSeriesDeduplicationCachePtr metric_families_deduplication_cache TSA_GUARDED_BY(caches_mutex);
 };
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);

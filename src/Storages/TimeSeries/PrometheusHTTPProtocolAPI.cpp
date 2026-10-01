@@ -554,7 +554,7 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
     {
         tags_min_max_table_id = time_series_storage->getTargetTableID(ViewTarget::TagsMinMax, getContext());
     }
-    /// Without a separate target, the bounds remain in the tags table, including external tags at version 7.
+    /// Without a separate target, the bounds remain in the tags table, including external tags at version 8.
 
     auto tags_table_id = tags_table->getStorageID();
 

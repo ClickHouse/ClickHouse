@@ -146,7 +146,7 @@
                     <table>default.prometheus_datetime</table>
                 </handler>
             </my_rule_17>
-            <!-- External tags keep their time bounds in the tags table, including at version 7. -->
+            <!-- External tags keep their time bounds in the tags table, including at version 8. -->
             <my_rule_18>
                 <url_prefix>/external_tags</url_prefix>
                 <handler>

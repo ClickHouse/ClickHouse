@@ -4,8 +4,9 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 #include <Core/Field.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -21,255 +22,248 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageTimeSeries.h>
-#include <Storages/TimeSeries/TimeSeriesActiveSeriesCache.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
-#include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
+#include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
+#include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <base/EnumReflection.h>
-#include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
 
 #include <algorithm>
-#include <chrono>
 #include <ranges>
 
 
 namespace DB
 {
 
-namespace Setting
-{
-extern const SettingsString insert_deduplication_token;
-}
-
 namespace TimeSeriesSetting
 {
-extern const TimeSeriesSettingsASTFunction id_generator;
-extern const TimeSeriesSettingsBool store_min_time_and_max_time;
-extern const TimeSeriesSettingsMap tags_to_columns;
+    extern const TimeSeriesSettingsASTFunction id_generator;
+    extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+    extern const TimeSeriesSettingsMap tags_to_columns;
 }
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_COLUMN;
-extern const int ILLEGAL_TIME_SERIES_TAGS;
-extern const int INCORRECT_DATA;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TIME_SERIES_TAGS;
+    extern const int INCORRECT_DATA;
 }
 
 
 namespace
 {
-/// Fills tag columns for the "tags" table by iterating over the columns metric_name and tags.
-void fillTagsColumns(
-    const PaddedPODArray<UInt8> & filter,
-    const IColumn & metric_name_column,
-    const ColumnArray::Offsets & tags_offsets,
-    const IColumn & tags_keys,
-    const IColumn & tags_values,
-    IColumn & out_tags_names,
-    IColumn & out_tags_values,
-    IColumn & out_tags_offsets,
-    std::unordered_map<std::string_view, IColumn *> & columns_by_tag_name)
-{
-    std::vector<std::pair<std::string_view, std::string_view>> sorted_tags;
-
-    for (size_t i = 0; i < filter.size(); ++i)
+    /// Fills tag columns for the "tags" table by iterating over the columns metric_name and tags.
+    void fillTagsColumns(
+        const PaddedPODArray<UInt8> & filter,
+        const IColumn & metric_name_column,
+        const ColumnArray::Offsets & tags_offsets,
+        const IColumn & tags_keys,
+        const IColumn & tags_values,
+        IColumn & out_tags_names,
+        IColumn & out_tags_values,
+        IColumn & out_tags_offsets,
+        std::unordered_map<std::string_view, IColumn *> & columns_by_tag_name)
     {
-        if (!filter[i])
-            continue;
+        std::vector<std::pair<std::string_view, std::string_view>> sorted_tags;
 
-        sorted_tags.clear();
-        size_t tags_start = (i == 0) ? 0 : tags_offsets[i - 1];
-        size_t tags_end = tags_offsets[i];
-        sorted_tags.reserve(tags_end - tags_start + 1);
-        for (size_t j = tags_start; j < tags_end; ++j)
-            sorted_tags.emplace_back(tags_keys.getDataAt(j), tags_values.getDataAt(j));
-        std::string_view metric_name_sv = metric_name_column.getDataAt(i);
-        if (!metric_name_sv.empty())
-            sorted_tags.emplace_back(TimeSeriesTagNames::MetricName, metric_name_sv);
-
-        TimeSeriesSink::sortTagsAndRemoveDuplicates(sorted_tags);
-
-        TimeSeriesSink::insertSortedTagsToColumns(sorted_tags, out_tags_names, out_tags_values, out_tags_offsets, columns_by_tag_name);
-    }
-}
-
-/// Returns the minimum and maximum values in a range in a column.
-std::pair<Field, Field> findMinMax(const IColumn & column, size_t start, size_t end)
-{
-    chassert(start < end);
-    Field min_value;
-    column.get(start, min_value);
-    Field max_value = min_value;
-    for (size_t j = start + 1; j < end; ++j)
-    {
-        Field value;
-        column.get(j, value);
-        if (value < min_value)
-            min_value = value;
-        if (value > max_value)
-            max_value = value;
-    }
-    return {min_value, max_value};
-}
-
-/// Fills columns min_time and max_time for the "tags" table.
-void fillMinMaxTimeColumns(
-    const PaddedPODArray<UInt8> & filter,
-    const ColumnArray::Offsets & ts_offsets,
-    const IColumn & ts_timestamps,
-    IColumn & out_min_time_column,
-    IColumn & out_max_time_column)
-{
-    for (size_t i = 0; i < filter.size(); ++i)
-    {
-        if (!filter[i])
-            continue;
-
-        size_t ts_start = (i == 0) ? 0 : ts_offsets[i - 1];
-        size_t ts_end = ts_offsets[i];
-
-        if (ts_start == ts_end)
+        for (size_t i = 0; i < filter.size(); ++i)
         {
-            out_min_time_column.insertDefault();
-            out_max_time_column.insertDefault();
-            continue;
+            if (!filter[i])
+                continue;
+
+            sorted_tags.clear();
+            size_t tags_start = (i == 0) ? 0 : tags_offsets[i - 1];
+            size_t tags_end = tags_offsets[i];
+            sorted_tags.reserve(tags_end - tags_start + 1);
+            for (size_t j = tags_start; j < tags_end; ++j)
+                sorted_tags.emplace_back(tags_keys.getDataAt(j), tags_values.getDataAt(j));
+            std::string_view metric_name_sv = metric_name_column.getDataAt(i);
+            if (!metric_name_sv.empty())
+                sorted_tags.emplace_back(TimeSeriesTagNames::MetricName, metric_name_sv);
+
+            TimeSeriesSink::sortTagsAndRemoveDuplicates(sorted_tags);
+
+            TimeSeriesSink::insertSortedTagsToColumns(
+                sorted_tags,
+                out_tags_names, out_tags_values, out_tags_offsets,
+                columns_by_tag_name);
         }
-
-        auto [min_time, max_time] = findMinMax(ts_timestamps, ts_start, ts_end);
-        out_min_time_column.insert(min_time);
-        out_max_time_column.insert(max_time);
     }
-}
 
-/// Fills columns id, timestamp, value for the "samples" table.
-void fillSamplesColumns(
-    const PaddedPODArray<UInt8> & filter,
-    const IColumn & id_column,
-    const IColumn & ts_timestamps,
-    const IColumn & ts_values,
-    const ColumnArray::Offsets & ts_offsets,
-    IColumn & out_id_column,
-    IColumn & out_timestamp_column,
-    IColumn & out_value_column)
-{
-    size_t id_index = 0;
-    for (size_t i = 0; i < filter.size(); ++i)
+    /// Returns the minimum and maximum values in a range in a column.
+    std::pair<Field, Field> findMinMax(const IColumn & column, size_t start, size_t end)
     {
-        size_t ts_start = (i == 0) ? 0 : ts_offsets[i - 1];
-        size_t ts_end = ts_offsets[i];
-        size_t num_samples = ts_end - ts_start;
-
-        if (!filter[i])
+        chassert(start < end);
+        Field min_value;
+        column.get(start, min_value);
+        Field max_value = min_value;
+        for (size_t j = start + 1; j < end; ++j)
         {
+            Field value;
+            column.get(j, value);
+            if (value < min_value)
+                min_value = value;
+            if (value > max_value)
+                max_value = value;
+        }
+        return {min_value, max_value};
+    }
+
+    /// Fills columns min_time and max_time for the "tags" table.
+    void fillMinMaxTimeColumns(
+        const PaddedPODArray<UInt8> & filter,
+        const ColumnArray::Offsets & ts_offsets,
+        const IColumn & ts_timestamps,
+        IColumn & out_min_time_column,
+        IColumn & out_max_time_column)
+    {
+        for (size_t i = 0; i < filter.size(); ++i)
+        {
+            if (!filter[i])
+                continue;
+
+            size_t ts_start = (i == 0) ? 0 : ts_offsets[i - 1];
+            size_t ts_end = ts_offsets[i];
+
+            if (ts_start == ts_end)
+            {
+                out_min_time_column.insertDefault();
+                out_max_time_column.insertDefault();
+                continue;
+            }
+
+            auto [min_time, max_time] = findMinMax(ts_timestamps, ts_start, ts_end);
+            out_min_time_column.insert(min_time);
+            out_max_time_column.insert(max_time);
+        }
+    }
+
+    /// Fills columns id, timestamp, value for the "samples" table.
+    void fillSamplesColumns(
+        const PaddedPODArray<UInt8> & filter,
+        const IColumn & id_column,
+        const IColumn & ts_timestamps,
+        const IColumn & ts_values,
+        const ColumnArray::Offsets & ts_offsets,
+        IColumn & out_id_column,
+        IColumn & out_timestamp_column,
+        IColumn & out_value_column)
+    {
+        size_t id_index = 0;
+        for (size_t i = 0; i < filter.size(); ++i)
+        {
+            size_t ts_start = (i == 0) ? 0 : ts_offsets[i - 1];
+            size_t ts_end = ts_offsets[i];
+            size_t num_samples = ts_end - ts_start;
+
+            if (!filter[i])
+            {
+                if (num_samples > 0)
+                {
+                    /// We can't store time series without metric name and tags.
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Got {} samples without a metric name or tags", num_samples);
+                }
+                continue;
+            }
+
             if (num_samples > 0)
             {
-                /// We can't store time series without metric name and tags.
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Got {} samples without a metric name or tags", num_samples);
+                out_id_column.insertManyFrom(id_column, id_index, num_samples);
+                out_timestamp_column.insertRangeFrom(ts_timestamps, ts_start, num_samples);
+                out_value_column.insertRangeFrom(ts_values, ts_start, num_samples);
             }
-            continue;
-        }
 
-        if (num_samples > 0)
-        {
-            out_id_column.insertManyFrom(id_column, id_index, num_samples);
-            out_timestamp_column.insertRangeFrom(ts_timestamps, ts_start, num_samples);
-            out_value_column.insertRangeFrom(ts_values, ts_start, num_samples);
+            ++id_index;
         }
-
-        ++id_index;
     }
-}
 
-/// Fills the columns of the "metric families" table: the name of a metric family, type, unit, help.
-void fillMetricFamiliesColumns(
-    const IColumn & metric_family_column,
-    const IColumn & type_column,
-    const IColumn & unit_column,
-    const IColumn & help_column,
-    IColumn & out_metric_family_column,
-    IColumn & out_type_column,
-    IColumn & out_unit_column,
-    IColumn & out_help_column)
-{
-    for (size_t i = 0; i < metric_family_column.size(); ++i)
+    /// Returns the total number of samples in the outer column with samples across all rows.
+    size_t getTotalSamples(const ColumnArray::Offsets & ts_offsets)
     {
-        if (metric_family_column.getDataAt(i).empty())
+        return ts_offsets.empty() ? 0 : ts_offsets.back();
+    }
+
+    /// Fills `filter` with 1 for rows that have either a non-empty metric name or at least one tag.
+    /// Returns the number of such rows.
+    /// The function returns 0 and leaves `filter` empty if there are no such rows.
+    size_t findRowsWithMetricNameOrTags(
+        const IColumn & metric_name_column,
+        const ColumnArray::Offsets & tags_offsets,
+        PaddedPODArray<UInt8> & filter)
+    {
+        filter.clear();
+        size_t count = 0;
+
+        size_t num_rows = metric_name_column.size();
+        chassert(tags_offsets.size() == num_rows);
+        if (!num_rows)
+            return 0;
+
+        auto set_filter = [&](size_t i)
         {
+            if (filter.empty())
+                filter.resize_fill(num_rows);
+            if (!filter[i])
+            {
+                filter[i] = 1;
+                ++count;
+            }
+        };
+
+        for (size_t i = 0; i != num_rows; ++i)
+            if (!metric_name_column.getDataAt(i).empty())
+                set_filter(i);
+
+        if (tags_offsets.back() != 0)
+        {
+            for (size_t i = 0; i != num_rows; ++i)
+            {
+                size_t start = (i == 0) ? 0 : tags_offsets[i - 1];
+                if (tags_offsets[i] > start)
+                    set_filter(i);
+            }
+        }
+
+        return count;
+    }
+
+    /// Marks the rows with a non-empty `metric_family` in `filter` and returns the number of such rows.
+    /// The other rows must have empty `type`, `unit` and `help` too.
+    /// The function returns 0 and leaves `filter` empty if there are no such rows.
+    size_t findRowsWithMetricFamily(
+        const IColumn & metric_family_column,
+        const IColumn & type_column,
+        const IColumn & unit_column,
+        const IColumn & help_column,
+        IColumn::Filter & filter)
+    {
+        filter.clear();
+        size_t count = 0;
+        size_t num_rows = metric_family_column.size();
+
+        for (size_t i = 0; i != num_rows; ++i)
+        {
+            if (!metric_family_column.getDataAt(i).empty())
+            {
+                if (filter.empty())
+                    filter.resize_fill(num_rows);
+                filter[i] = true;
+                ++count;
+                continue;
+            }
+
             if (!type_column.getDataAt(i).empty())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Got non-empty type without a metric family");
             if (!unit_column.getDataAt(i).empty())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Got non-empty unit without a metric family");
             if (!help_column.getDataAt(i).empty())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Got non-empty help without a metric family");
-            continue;
         }
 
-        out_metric_family_column.insertFrom(metric_family_column, i);
-        out_type_column.insertFrom(type_column, i);
-        out_unit_column.insertFrom(unit_column, i);
-        out_help_column.insertFrom(help_column, i);
+        return count;
     }
-}
-
-/// Fills `filter` with 1 for rows having a non-empty metric name or tag, returning count.
-/// Leaves `filter` empty if there are no such rows.
-size_t
-buildNonEmptyTagsFilter(const IColumn & metric_name_column, const ColumnArray::Offsets & tags_offsets, PaddedPODArray<UInt8> & filter)
-{
-    filter.clear();
-    size_t count = 0;
-
-    size_t num_rows = metric_name_column.size();
-    chassert(tags_offsets.size() == num_rows);
-    if (!num_rows)
-        return 0;
-
-    auto set_filter = [&](size_t i)
-    {
-        if (filter.empty())
-            filter.resize_fill(num_rows);
-        if (!filter[i])
-        {
-            filter[i] = 1;
-            ++count;
-        }
-    };
-
-    for (size_t i = 0; i != num_rows; ++i)
-        if (!metric_name_column.getDataAt(i).empty())
-            set_filter(i);
-
-    if (tags_offsets.back() != 0)
-    {
-        for (size_t i = 0; i != num_rows; ++i)
-        {
-            size_t start = (i == 0) ? 0 : tags_offsets[i - 1];
-            if (tags_offsets[i] > start)
-                set_filter(i);
-        }
-    }
-
-    return count;
-}
-
-/// Returns the total number of samples in the outer column with samples across all rows.
-size_t getTotalSamples(const ColumnArray::Offsets & ts_offsets)
-{
-    return ts_offsets.empty() ? 0 : ts_offsets.back();
-}
-
-/// Returns true if the column has at least one non-empty string value.
-bool hasNonEmptyValue(const IColumn & column)
-{
-    for (size_t i = 0; i < column.size(); ++i)
-        if (!column.getDataAt(i).empty())
-            return true;
-    return false;
-}
 
 }
 
@@ -285,23 +279,20 @@ void TimeSeriesSink::sortTagsAndRemoveDuplicates(std::vector<std::pair<std::stri
 
     std::erase_if(tags, [](const auto & x) { return x.second.empty(); });
 
-    auto adjacent
-        = std::adjacent_find(tags.begin(), tags.end(), [](const auto & left, const auto & right) { return left.first == right.first; });
+    auto adjacent = std::adjacent_find(tags.begin(), tags.end(),
+        [](const auto & left, const auto & right) { return left.first == right.first; });
     if (adjacent != tags.end())
     {
         throw Exception(
             ErrorCodes::ILLEGAL_TIME_SERIES_TAGS,
             "Found two tags with the same name {} but different values {} and {}",
-            adjacent->first,
-            adjacent->second,
-            std::next(adjacent)->second);
+            adjacent->first, adjacent->second, std::next(adjacent)->second);
     }
 
-    auto it = std::lower_bound(
-        tags.begin(), tags.end(), TimeSeriesTagNames::MetricName, [](const auto & tag, const char * name) { return tag.first < name; });
+    auto it = std::lower_bound(tags.begin(), tags.end(), TimeSeriesTagNames::MetricName,
+        [](const auto & tag, const char * name) { return tag.first < name; });
     if (it == tags.end() || it->first != TimeSeriesTagNames::MetricName)
-        throw Exception(
-            ErrorCodes::ILLEGAL_TIME_SERIES_TAGS,
+        throw Exception(ErrorCodes::ILLEGAL_TIME_SERIES_TAGS,
             "Metric name is missing: the `metric_name` column is empty and there is no `{}` tag with a non-empty value",
             TimeSeriesTagNames::MetricName);
 }
@@ -347,8 +338,9 @@ void TimeSeriesSink::TargetPipeline::push(Block block) const
 
 TimeSeriesSink::TargetPipeline::~TargetPipeline()
 {
-    /// Cancel uncompleted executor on cancellation without exception
-    /// so ~PushingPipelineExecutor finished-or-unwinding invariant holds.
+    /// On cancellation without an exception (e.g. `timeout_overflow_mode='break'`) neither
+    /// `onFinish` nor `onException` runs, leaving the executor started but unfinished.
+    /// Cancel it so `~PushingPipelineExecutor`'s finished-or-unwinding invariant holds.
     if (executor)
     {
         try
@@ -372,7 +364,8 @@ ColumnPtr TimeSeriesSink::calculateId(const Block & tags_block) const
 }
 
 
-std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipeline(ViewTarget::Kind kind, const Block & header)
+std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipeline(
+    ViewTarget::Kind kind, const Block & header)
 {
     auto pipeline = std::make_unique<TargetPipeline>();
 
@@ -388,16 +381,6 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
 
     pipeline->context = Context::createCopy(getContext());
     pipeline->context->setCurrentQueryId(fmt::format("{}:{}", getContext()->getCurrentQueryId(), kind));
-
-    /// Reopening a target pipeline restarts its internal block counter. Give each source block a
-    /// distinct user token so a deduplicating target does not discard later blocks as retries.
-    /// Source block numbers, rather than cache misses, keep these tokens stable when an insert is retried.
-    if (kind == ViewTarget::Tags || kind == ViewTarget::TagsMinMax)
-    {
-        const auto & token = getContext()->getSettingsRef()[Setting::insert_deduplication_token].value;
-        if (!token.empty())
-            pipeline->context->setSetting("insert_deduplication_token", fmt::format("{}:{}:{}", token, kind, input_block_number));
-    }
 
     InterpreterInsertQuery interpreter(
         insert_query,
@@ -418,15 +401,19 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
         target_header.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name,
         pipeline->context);
-    pipeline->converting_actions
-        = std::make_shared<ExpressionActions>(std::move(converting_dag), ExpressionActionsSettings(pipeline->context));
+    pipeline->converting_actions = std::make_shared<ExpressionActions>(
+        std::move(converting_dag), ExpressionActionsSettings(pipeline->context));
 
     return pipeline;
 }
 
 
 TimeSeriesSink::TimeSeriesSink(
-    StorageTimeSeries & time_series_storage_, const Block & header_, const Names & insert_columns_, ContextPtr context_, bool async_insert_)
+    StorageTimeSeries & time_series_storage_,
+    const Block & header_,
+    const Names & insert_columns_,
+    ContextPtr context_,
+    bool async_insert_)
     : SinkToStorage(std::make_shared<const Block>(header_))
     , WithContext(context_)
     , time_series_storage(time_series_storage_)
@@ -437,13 +424,18 @@ TimeSeriesSink::TimeSeriesSink(
     /// Determine which target tables need pipelines based on the columns mentioned in the INSERT query.
     /// If insert_columns is empty (e.g. INSERT INTO mytable VALUES ...), all columns are being inserted.
     auto is_insert_column = [&](const String & name)
-    { return (insert_columns_.empty() || std::find(insert_columns_.begin(), insert_columns_.end(), name) != insert_columns_.end()); };
+    {
+        return (insert_columns_.empty() || std::find(insert_columns_.begin(), insert_columns_.end(), name) != insert_columns_.end());
+    };
 
-    insert_tags_and_samples = is_insert_column(TimeSeriesColumnNames::MetricName) || is_insert_column(TimeSeriesColumnNames::Tags)
+    insert_tags_and_samples = is_insert_column(TimeSeriesColumnNames::MetricName)
+        || is_insert_column(TimeSeriesColumnNames::Tags)
         || is_insert_column(TimeSeriesColumnNames::getOuterSamples(time_series_storage.getVersion()));
 
-    insert_metric_families = is_insert_column(TimeSeriesColumnNames::MetricFamily) || is_insert_column(TimeSeriesColumnNames::Type)
-        || is_insert_column(TimeSeriesColumnNames::Unit) || is_insert_column(TimeSeriesColumnNames::Help);
+    insert_metric_families = is_insert_column(TimeSeriesColumnNames::MetricFamily)
+        || is_insert_column(TimeSeriesColumnNames::Type)
+        || is_insert_column(TimeSeriesColumnNames::Unit)
+        || is_insert_column(TimeSeriesColumnNames::Help);
 
     if (insert_tags_and_samples)
         initTagsAndSamplesPipelines();
@@ -465,15 +457,16 @@ void TimeSeriesSink::consume(Chunk & chunk)
 
     if (insert_metric_families)
         consumeMetricFamilies(block);
-
-    ++input_block_number;
 }
 
 
 void TimeSeriesSink::initTagsAndSamplesPipelines()
 {
-    /// Use matching data types for tags/samples headers as consumeTagsAndSamples uses.
-    /// Pipeline converting actions handle any final target table type differences.
+    /// It's important to use here for `tags_header` and `samples_header`
+    /// the same data types as function consumeTagsAndSamples() uses to push blocks.
+    /// There is a conversion step in all the target pipelines, so we don't have to always
+    /// match the data types of the columns in the "tags" or "samples" tables.
+
     auto tags_target = time_series_storage.getTargetTable(ViewTarget::Tags, getContext());
     auto tags_target_metadata = tags_target->getInMemoryMetadataPtr(getContext(), false);
     const auto & settings = *time_series_settings;
@@ -501,8 +494,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
         tags_header_before_id.insert(ColumnWithTypeAndName{column_type, column_name});
     }
 
-    auto tags_map_type
-        = typeid_cast<std::shared_ptr<const DataTypeMap>>(tags_target_metadata->columns.get(TimeSeriesColumnNames::Tags).type);
+    auto tags_map_type = typeid_cast<std::shared_ptr<const DataTypeMap>>(tags_target_metadata->columns.get(TimeSeriesColumnNames::Tags).type);
     if (!tags_map_type)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have a Map type", TimeSeriesColumnNames::Tags);
     tags_header_before_id.insert(ColumnWithTypeAndName{tags_map_type, TimeSeriesColumnNames::Tags});
@@ -513,8 +505,13 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
         tags_header_before_id.insert(ColumnWithTypeAndName{tags_map_type, TimeSeriesColumnNames::AllTags});
     }
 
-    /// Derive sample types from input chunk because fillSamplesColumns uses insertRangeFrom.
-    /// Any remaining differences are handled by converting actions in samples_pipeline.
+    /// Get timestamp/value types from the inner tuple of the outer column with samples.
+    /// This part is different from class PrometheusRemoteWriteProtocol.
+    /// Class PrometheusRemoteWriteProtocol derives these types from the samples target metadata
+    /// because it creates columns from protobuf data.
+    /// And here we derive them from the input chunk's column because fillSamplesColumns()
+    /// later does insertRangeFrom(), which requires matching binary representations.
+    /// In the end any final difference is handled by the converting actions inside `samples_pipeline`.
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage.getVersion());
     auto [timestamp_type, value_type] = splitTimeSeriesType(getHeader().getByName(samples_column_name).type);
 
@@ -525,8 +522,13 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
 
     if (settings[TimeSeriesSetting::store_min_time_and_max_time] && !store_min_max_in_separate_table)
     {
-        /// Use Nullable(timestamp_type) matching findMinMax return type for min_max_time.
-        /// Any remaining differences are handled by converting actions in tags_pipeline.
+        /// Use Nullable(timestamp_type) as min_max_time_type.
+        /// This part is different from class PrometheusRemoteWriteProtocol.
+        /// Class PrometheusRemoteWriteProtocol derives types `min_time_type`, `max_time_type`
+        /// from the tags target metadata because it creates columns from protobuf data.
+        /// And here we derive them from the input chunk's column because findMinMax() will return
+        /// a Field of the same type, and ColumnDecimal::insert(Field) doesn't do any conversion.
+        /// In the end any final difference is handled by the converting actions inside `tags_pipeline`.
         auto min_max_time_type = makeNullable(timestamp_type);
         tags_header_before_id.insert(ColumnWithTypeAndName{min_max_time_type, TimeSeriesColumnNames::MinTime});
         tags_header_before_id.insert(ColumnWithTypeAndName{min_max_time_type, TimeSeriesColumnNames::MaxTime});
@@ -544,15 +546,22 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     /// Evaluates the id_generator expression (e.g. reinterpretAsUUID(sipHash128(tags)))
     /// to compute the "id" column from tags columns.
     auto calculate_id_dag = addMissingDefaults(
-        tags_header_before_id, id_header.getNamesAndTypesList(), ColumnsDescription{id_column_description}, getContext());
+        tags_header_before_id,
+        id_header.getNamesAndTypesList(),
+        ColumnsDescription{id_column_description},
+        getContext());
     auto calculate_id_result_columns = calculate_id_dag.getResultColumns();
     calculate_id_actions = std::make_shared<ExpressionActions>(std::move(calculate_id_dag));
 
     /// Converts the computed "id" column to the configured id_type.
     auto convert_id_dag = ActionsDAG::makeConvertingActions(
-        calculate_id_result_columns, id_header.getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Position, getContext());
-    convert_id_actions
-        = std::make_shared<ExpressionActions>(std::move(convert_id_dag), ExpressionActionsSettings(getContext(), CompileExpressions::yes));
+        calculate_id_result_columns,
+        id_header.getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Position,
+        getContext());
+    convert_id_actions = std::make_shared<ExpressionActions>(
+        std::move(convert_id_dag),
+        ExpressionActionsSettings(getContext(), CompileExpressions::yes));
 
     /// Build the full tags source header WITH the "id" column (what we push to the pipeline).
     Block tags_header;
@@ -566,6 +575,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     }
 
     tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_header);
+    tags_deduplication_cache = time_series_storage.getTagsDeduplicationCache();
 
     /// Build source header for the min/max time block.
     if (store_min_max_in_separate_table)
@@ -607,29 +617,17 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
 
     const auto * ts_arrays = typeid_cast<const ColumnArray *>(time_series_col.column.get());
     if (!ts_arrays)
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Expected ColumnArray for the column `{}`, got {}",
-            time_series_col.name,
-            time_series_col.column->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnArray for the column `{}`, got {}", time_series_col.name, time_series_col.column->getName());
     const auto * ts_tuples = typeid_cast<const ColumnTuple *>(&ts_arrays->getData());
     if (!ts_tuples)
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Expected ColumnTuple for the data of the column `{}`, got {}",
-            time_series_col.name,
-            ts_arrays->getData().getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnTuple for the data of the column `{}`, got {}", time_series_col.name, ts_arrays->getData().getName());
     if (ts_tuples->tupleSize() != 2)
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Expected ColumnTuple with 2 elements for the data of the column `{}`, got {}",
-            time_series_col.name,
-            ts_tuples->tupleSize());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnTuple with 2 elements for the data of the column `{}`, got {}", time_series_col.name, ts_tuples->tupleSize());
     const ColumnArray::Offsets & ts_offsets = ts_arrays->getOffsets();
     size_t total_samples = getTotalSamples(ts_offsets);
 
     PaddedPODArray<UInt8> filter;
-    size_t num_time_series = buildNonEmptyTagsFilter(*metric_name_col.column, tags_offsets, filter);
+    size_t num_time_series = findRowsWithMetricNameOrTags(*metric_name_col.column, tags_offsets, filter);
 
     if (!num_time_series)
     {
@@ -683,12 +681,8 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     fillTagsColumns(
         filter,
         *metric_name_col.column,
-        tags_offsets,
-        tags_keys,
-        tags_values,
-        *new_tags_names,
-        *new_tags_values,
-        *new_tags_offsets,
+        tags_offsets, tags_keys, tags_values,
+        *new_tags_names, *new_tags_values, *new_tags_offsets,
         columns_by_tag_name);
 
     auto [timestamp_type, value_type] = splitTimeSeriesType(time_series_col.type);
@@ -718,8 +712,8 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     Columns new_tags_tuples_columns;
     new_tags_tuples_columns.push_back(std::move(new_tags_names));
     new_tags_tuples_columns.push_back(std::move(new_tags_values));
-    ColumnPtr new_tags_column
-        = ColumnMap::create(ColumnArray::create(ColumnTuple::create(std::move(new_tags_tuples_columns)), std::move(new_tags_offsets)));
+    ColumnPtr new_tags_column = ColumnMap::create(
+        ColumnArray::create(ColumnTuple::create(std::move(new_tags_tuples_columns)), std::move(new_tags_offsets)));
     tags_block.insert(ColumnWithTypeAndName{new_tags_column, tags_map_type, TimeSeriesColumnNames::Tags});
 
     if (id_generator_uses_all_tags)
@@ -752,91 +746,20 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         tags_min_max_block.insert(ColumnWithTypeAndName{max_time_column, min_max_time_type, TimeSeriesColumnNames::MaxTime});
     }
 
-    /// Step 4. Push the tags block.
-    /// Deduplicate against active series cache and sink-local pending set to skip redundant tag inserts.
-    auto active_series_cache = time_series_storage.getActiveSeriesCache();
-    if (active_series_cache)
-    {
-        UInt32 now = static_cast<UInt32>(
-            std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+    /// Step 4. Push the tags block without the time series already written to the "tags" table.
+    if (tags_deduplication_cache)
+        tags_block = tags_deduplication_cache->filterOutWrittenRows(
+            tags_block, /* key_column_index = */ tags_block.getPositionByName(TimeSeriesColumnNames::ID), pending_tags);
 
-        IColumn::Filter tags_filter;
-        size_t tags_to_write = 0;
-
-        active_series_cache->checkBulk(id_column, now, tags_filter, tags_to_write);
-
-        if (tags_to_write > 0)
-        {
-            size_t num_ids = id_column->size();
-            for (size_t i = 0; i < num_ids; ++i)
-            {
-                if (!tags_filter[i])
-                    continue;
-
-                UInt128 id = TimeSeriesActiveSeriesCache::extractId(*id_column, i);
-                if (pending_cached_set.has(id))
-                {
-                    tags_filter[i] = 0;
-                    --tags_to_write;
-                }
-                else
-                {
-                    pending_cached_set.insert(id);
-                    pending_cached_ids.push_back(id);
-                }
-            }
-        }
-
-        if (tags_to_write > 0)
-        {
-            if (tags_to_write < num_time_series)
-            {
-                for (size_t col_idx = 0; col_idx < tags_block.columns(); ++col_idx)
-                {
-                    auto & col = tags_block.getByPosition(col_idx);
-                    col.column = col.column->filter(tags_filter, tags_to_write);
-                }
-            }
-
-            if (!tags_pipeline)
-                tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_block.cloneEmpty());
-            tags_pipeline->push(std::move(tags_block));
-        }
-
-        /// A push is not a commit barrier: squashing and the target sink can both retain rows until
-        /// `finish`. Commit the tags before samples can advance, including when the cache became
-        /// enabled after a previous block. A later cache miss creates a new pipeline, while a hit
-        /// writes no duplicate rows merely to flush the previous block.
-        if (tags_pipeline)
-        {
-            tags_pipeline->executor->finish();
-            tags_pipeline.reset();
-        }
-    }
-    else
-    {
-        /// Tags are pushed first so that if the samples insert fails,
-        /// we don't end up with sample rows referencing IDs that were never written to the tags table.
-        if (!tags_pipeline)
-            tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_block.cloneEmpty());
+    /// Tags are pushed first so that if the samples insert fails,
+    /// we don't end up with sample rows referencing IDs that were never written to the tags table.
+    if (tags_block.rows())
         tags_pipeline->push(std::move(tags_block));
-    }
 
     /// Step 4a. Push the min/max time block. It is pushed for every block, including one whose tags rows
     /// were all skipped above, because the time range of a time series changes with every block.
     if (store_min_max_in_separate_table)
-    {
-        if (!tags_min_max_pipeline)
-            tags_min_max_pipeline = createTargetPipeline(ViewTarget::TagsMinMax, tags_min_max_block.cloneEmpty());
         tags_min_max_pipeline->push(std::move(tags_min_max_block));
-        if (active_series_cache)
-        {
-            /// Cached tags also need committed bounds before their samples become visible to a
-            /// time-bounded selector; the bounds pipeline may squash fewer rows than the samples one.
-            tags_min_max_pipeline->executor->finish();
-            tags_min_max_pipeline.reset();
-        }
-    }
 
     /// Step 5. Assemble and push the samples block.
     if (total_samples)
@@ -851,7 +774,10 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         auto value_column = value_type->createColumn();
         value_column->reserve(total_samples);
 
-        fillSamplesColumns(filter, *id_column, ts_timestamps, ts_values, ts_offsets, *samples_id_column, *timestamp_column, *value_column);
+        fillSamplesColumns(
+            filter,
+            *id_column, ts_timestamps, ts_values, ts_offsets,
+            *samples_id_column, *timestamp_column, *value_column);
 
         /// Assemble the block and push it to the "samples" table.
         Block samples_block;
@@ -859,8 +785,11 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), value_type, TimeSeriesColumnNames::Value});
 
-        /// Samples table is written before recent samples to avoid exposing lost data if insert fails.
-        /// Block copy is cheap as it only copies column pointers.
+        /// The samples table is written before the recent samples table: if the insert fails between
+        /// the two writes, the sample is then missing from the recent samples table and just stays
+        /// invisible until the TTL window slides past it. With the opposite order the sample would be
+        /// visible in the TTL window and then disappear, which looks like data loss.
+        /// The copy is cheap: a Block copy only copies column pointers.
         samples_pipeline->push(samples_block);
 
         if (recent_samples_pipeline)
@@ -871,8 +800,10 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
 
 void TimeSeriesSink::initMetricFamiliesPipeline()
 {
-    /// Use matching data types for metric_families_header as consumeMetricFamilies uses.
-    /// Pipeline converting actions handle any final target table differences.
+    /// It's important to use here for `metric_families_header`
+    /// the same data types as function consumeMetricFamilies() uses to push blocks.
+    /// There is a conversion step in the target pipelines, so we don't have to always
+    /// match the data types of the columns in the "tags" or "samples" tables.
 
     const Block & header = getHeader();
 
@@ -880,13 +811,17 @@ void TimeSeriesSink::initMetricFamiliesPipeline()
     metric_families_header.insert(ColumnWithTypeAndName{
         header.getByName(TimeSeriesColumnNames::MetricFamily).type, TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage.getVersion())});
 
-    metric_families_header.insert(ColumnWithTypeAndName{header.getByName(TimeSeriesColumnNames::Type).type, TimeSeriesColumnNames::Type});
+    metric_families_header.insert(ColumnWithTypeAndName{
+        header.getByName(TimeSeriesColumnNames::Type).type, TimeSeriesColumnNames::Type});
 
-    metric_families_header.insert(ColumnWithTypeAndName{header.getByName(TimeSeriesColumnNames::Unit).type, TimeSeriesColumnNames::Unit});
+    metric_families_header.insert(ColumnWithTypeAndName{
+        header.getByName(TimeSeriesColumnNames::Unit).type, TimeSeriesColumnNames::Unit});
 
-    metric_families_header.insert(ColumnWithTypeAndName{header.getByName(TimeSeriesColumnNames::Help).type, TimeSeriesColumnNames::Help});
+    metric_families_header.insert(ColumnWithTypeAndName{
+        header.getByName(TimeSeriesColumnNames::Help).type, TimeSeriesColumnNames::Help});
 
     metric_families_pipeline = createTargetPipeline(ViewTarget::MetricFamilies, metric_families_header);
+    metric_families_deduplication_cache = time_series_storage.getMetricFamiliesDeduplicationCache();
 }
 
 
@@ -898,48 +833,37 @@ void TimeSeriesSink::consumeMetricFamilies(const Block & block)
     const auto & unit_col = block.getByName(TimeSeriesColumnNames::Unit);
     const auto & help_col = block.getByName(TimeSeriesColumnNames::Help);
 
-    if (!hasNonEmptyValue(*metric_family_col.column))
-    {
-        /// All metric_family values are empty - type/unit/help must also be empty.
-        if (hasNonEmptyValue(*type_col.column))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Got non-empty type without a metric family");
-
-        if (hasNonEmptyValue(*unit_col.column))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Got non-empty unit values without a metric family");
-
-        if (hasNonEmptyValue(*help_col.column))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Got non-empty help values without a metric family");
-
-        /// Nothing to insert.
+    /// Step 2. Mark the rows with a metric family.
+    IColumn::Filter filter;
+    size_t num_rows_with_metric_family = findRowsWithMetricFamily(*metric_family_col.column, *type_col.column, *unit_col.column, *help_col.column, filter);
+    if (!num_rows_with_metric_family)
         return;
+
+    /// Step 3. Assemble the block without the other rows and without the metric families already written, and push it to the "metric families" table.
+    Block metric_families_block;
+    const char * inner_metric_family_column_name
+        = TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage.getVersion());
+    metric_families_block.insert(ColumnWithTypeAndName{metric_family_col.column, metric_family_col.type, inner_metric_family_column_name});
+    metric_families_block.insert(ColumnWithTypeAndName{type_col.column, type_col.type, TimeSeriesColumnNames::Type});
+    metric_families_block.insert(ColumnWithTypeAndName{unit_col.column, unit_col.type, TimeSeriesColumnNames::Unit});
+    metric_families_block.insert(ColumnWithTypeAndName{help_col.column, help_col.type, TimeSeriesColumnNames::Help});
+
+    if (metric_families_deduplication_cache)
+    {
+        metric_families_block = metric_families_deduplication_cache->filterOutWrittenRows(
+            metric_families_block,
+            /* key_column_index = */ metric_families_block.getPositionByName(inner_metric_family_column_name),
+            pending_metric_families,
+            std::move(filter));
+    }
+    else if (num_rows_with_metric_family != metric_families_block.rows())
+    {
+        for (auto & column : metric_families_block)
+            column.column = column.column->filter(filter, num_rows_with_metric_family);
     }
 
-    /// Step 2. Build columns for the metric families block, skipping rows with empty metric_family.
-    auto new_metric_family_column = metric_family_col.type->createColumn();
-    auto new_type_column = type_col.type->createColumn();
-    auto new_unit_column = unit_col.type->createColumn();
-    auto new_help_column = help_col.type->createColumn();
-
-    fillMetricFamiliesColumns(
-        *metric_family_col.column,
-        *type_col.column,
-        *unit_col.column,
-        *help_col.column,
-        *new_metric_family_column,
-        *new_type_column,
-        *new_unit_column,
-        *new_help_column);
-
-    /// We've already checked that at least one non-empty `metric_family` is present.
-    chassert(!new_metric_family_column->empty());
-
-    /// Step 3. Assemble the block and push it to the "metric families" table.
-    Block metric_families_block;
-    metric_families_block.insert(ColumnWithTypeAndName{
-        std::move(new_metric_family_column), metric_family_col.type, TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage.getVersion())});
-    metric_families_block.insert(ColumnWithTypeAndName{std::move(new_type_column), type_col.type, TimeSeriesColumnNames::Type});
-    metric_families_block.insert(ColumnWithTypeAndName{std::move(new_unit_column), unit_col.type, TimeSeriesColumnNames::Unit});
-    metric_families_block.insert(ColumnWithTypeAndName{std::move(new_help_column), help_col.type, TimeSeriesColumnNames::Help});
+    if (!metric_families_block.rows())
+        return;
 
     metric_families_pipeline->push(std::move(metric_families_block));
 }
@@ -948,7 +872,12 @@ void TimeSeriesSink::consumeMetricFamilies(const Block & block)
 void TimeSeriesSink::onFinish()
 {
     if (tags_pipeline)
+    {
         tags_pipeline->executor->finish();
+        /// The pending rows are in the table for sure now.
+        if (tags_deduplication_cache && !pending_tags.empty())
+            tags_deduplication_cache->markRowsAsWritten(std::move(pending_tags));
+    }
     if (tags_min_max_pipeline)
         tags_min_max_pipeline->executor->finish();
     if (samples_pipeline)
@@ -956,12 +885,11 @@ void TimeSeriesSink::onFinish()
     if (recent_samples_pipeline)
         recent_samples_pipeline->executor->finish();
     if (metric_families_pipeline)
-        metric_families_pipeline->executor->finish();
-
-    if (!pending_cached_ids.empty())
     {
-        if (auto cache = time_series_storage.getActiveSeriesCache())
-            cache->commit(pending_cached_ids);
+        metric_families_pipeline->executor->finish();
+        /// The pending rows are in the table for sure now.
+        if (metric_families_deduplication_cache && !pending_metric_families.empty())
+            metric_families_deduplication_cache->markRowsAsWritten(std::move(pending_metric_families));
     }
 }
 

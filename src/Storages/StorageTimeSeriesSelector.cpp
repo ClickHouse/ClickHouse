@@ -1084,7 +1084,7 @@ void StorageTimeSeriesSelector::readImpl(
     std::optional<DateTime64> min_time_to_filter_ids;
     std::optional<DateTime64> max_time_to_filter_ids;
     /// Set when the time bounds live in a separate target table instead of the tags table itself. Without that
-    /// target the bounds are in the tags table, including an external tags table of version 7 and later.
+    /// target the bounds are in the tags table, including an external tags table of version 8 and later.
     std::optional<StorageID> tags_min_max_table_id;
     if ((*time_series_settings)[TimeSeriesSetting::filter_by_min_time_and_max_time]
         && (*time_series_settings)[TimeSeriesSetting::store_min_time_and_max_time])
