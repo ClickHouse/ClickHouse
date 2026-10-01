@@ -611,7 +611,9 @@ Block MergeTreeDataWriter::mergeBlock(
     span.addAttribute("clickhouse.rows", block_size);
     span.addAttribute("clickhouse.columns", header->columns());
 
+    /// Nested SimpleAggregateFunction leaves still need the merge when tuple elements aggregate.
     if (merging_params.mode == MergeTreeData::MergingParams::Aggregating
+        && !merging_params.allow_tuple_element_aggregation
         && hasOnlyScalarSimpleAggregates(*header)
         && hasUniqueSortingKey(*header, sort_description, permutation))
     {
