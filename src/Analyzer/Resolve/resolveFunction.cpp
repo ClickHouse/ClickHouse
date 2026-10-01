@@ -1290,6 +1290,22 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
             scope.scope_node->formatASTForErrorMessage());
     }
 
+    /// The projection name of the whole `UNIQUE` predicate must be stable: it must not depend on the
+    /// boolean result or on synthetic scalar-subquery numbers. The rewritten subquery can be cloned
+    /// while a view is analyzed, assigning it a different `_subquery_N` name and making an enclosing
+    /// parametric aggregate look up a non-existent column. Name the predicate after the tree hash of
+    /// its original subquery AST instead, the same way `ASTSubquery::getColumnName` does:
+    /// `UNIQUE(__subquery_<hash>)`. The original AST survives cloning, so the name is identical in
+    /// `only_analyze` and execution modes; different predicates of one query get different names, so
+    /// their (different) constant values never collide in one header; and the name of the internal
+    /// `__unique` function is not exposed in result headers (`DESCRIBE`, `TSVWithNames`, ...).
+    const auto * original_unique_function = function_node_ptr->getOriginalAST() ? function_node_ptr->getOriginalAST()->as<ASTFunction>() : nullptr;
+    if (!original_unique_function || !original_unique_function->arguments || original_unique_function->arguments->children.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "UNIQUE predicate has no original function AST with a single argument. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
+    String unique_projection_name = "UNIQUE(" + original_unique_function->arguments->children[0]->getColumnName() + ")";
+
     /// Wrap the subquery as `SELECT * FROM (subquery)` and resolve it once.
     /// This detects correlation and lets us address every projected column by position.
     auto inner_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
@@ -1372,13 +1388,6 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
         true /*allow_table_expression*/,
         false /*ignore_alias*/,
         allow_niladic_functions);
-
-    /// The projection name of the whole `UNIQUE` predicate must be stable: it must not depend on the
-    /// boolean result or on synthetic scalar-subquery numbers. The rewritten subquery can be cloned
-    /// while a view is analyzed, assigning it a different `_subquery_N` name and making an enclosing
-    /// parametric aggregate look up a non-existent column. Keep the internal predicate name instead;
-    /// it is identical in `only_analyze` and execution modes.
-    auto unique_projection_name = function_node_ptr->getFunctionName();
 
     /// Table function, parameterized view, and constant-expression arguments need their actual
     /// values during analysis. They configure a storage or the query structure itself, so use

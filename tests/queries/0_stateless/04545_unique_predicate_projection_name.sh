@@ -13,6 +13,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # and a distributed query failed with "Block structure mismatch in ... stream: different columns".
 # See https://github.com/ClickHouse/ClickHouse/pull/99877
 
+# The name is `UNIQUE(__subquery_<hash of the subquery AST>)`; mask the hash to keep the test robust.
+mask_hash() { echo "$1" | sed -E 's/__subquery_[0-9_]+/__subquery_<hash>/g'; }
+
 # The name built by only_analyze (here via DESCRIBE) must equal the name built by execution.
 # Capture the full output first, then take the first line, so the client is never killed by a
 # broken pipe (which the test harness would report as a failure).
@@ -26,11 +29,21 @@ execute_name=$(echo "$execute_out" | head -n 1)
     && echo "analyze and execute header names match" \
     || echo "MISMATCH: analyze='$analyze_name' execute='$execute_name'"
 
+# The name must be built from the public keyword, never from the internal `__unique` function name.
+echo "header name: $(mask_hash "$execute_name")"
+
+# Different predicates in one query must get different names: they may have different values,
+# and constant columns with identical names must have identical values in one header.
+two_out=$($CLICKHOUSE_CLIENT -q \
+    "SELECT UNIQUE((SELECT number FROM numbers(3))), UNIQUE((SELECT number % 2 FROM numbers(4))) FORMAT TSVWithNames")
+mask_hash "$two_out"
+
 # The name must not depend on whether the subquery is actually unique.
 dup_out=$($CLICKHOUSE_CLIENT --enable_analyzer=1 -q \
     "SELECT UNIQUE((SELECT number % 2 FROM numbers(4))) FORMAT TSVWithNames")
+# The two subqueries differ, so do their AST hashes; compare the names with the hashes masked.
 name_dup=$(echo "$dup_out" | head -n 1)
-[ "$execute_name" = "$name_dup" ] \
+[ "$(mask_hash "$execute_name")" = "$(mask_hash "$name_dup")" ] \
     && echo "header name is independent of the boolean result" \
     || echo "VALUE-DEPENDENT: unique='$execute_name' dup='$name_dup'"
 
