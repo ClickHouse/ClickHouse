@@ -2624,19 +2624,23 @@ TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitReappliedOnOperatorResou
     limits.memory_bytes = 100;
     t.manager->updateServerLimits(limits);
 
-    // Operator resource takes precedence: no implicit resource is created.
+    // Operator resource takes precedence: no implicit resource is created, and the getter resolves to it.
     EXPECT_TRUE(t.manager->hasResource("memory"));
     EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "memory");
 
-    // Dropping the operator resource while enabled re-derives the implicit one in place.
+    // Dropping the operator resource while enabled re-derives the implicit one in place, and the getter
+    // follows in lockstep (never naming a resource the manager lacks).
     t.query("DROP RESOURCE memory");
     EXPECT_FALSE(t.manager->hasResource("memory"));
     EXPECT_TRUE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), implicit_resource);
 
     // Re-declaring the operator resource hands precedence back and drops the implicit one.
     t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
     EXPECT_TRUE(t.manager->hasResource("memory"));
     EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "memory");
 }
 
 // Hot-reload: the budget moves finite -> unlimited -> finite in place (the resource is kept for the
@@ -2780,6 +2784,59 @@ TEST(SchedulerWorkloadResourceManager, ServerCPULimitOperatorResource)
             root_semaphore_seen = true;
     });
     EXPECT_TRUE(root_semaphore_seen);
+}
+
+// Regression for the operator CREATE/DROP RESOURCE switchover race: the storage getters must never
+// resolve a CPU role to a resource this manager lacks. Across precedence handoffs the getters resolve to
+// the implicit resource exactly when the manager has it, and to the operator resource otherwise -- the
+// manager drives both in one ordered step, so no window ever names a never-created resource.
+TEST(SchedulerWorkloadResourceManager, ServerCPULimitResolutionTracksOperatorDropAndReplace)
+{
+    ResourceTest t;
+    const String implicit_resource(IMPLICIT_CPU_RESOURCE_NAME);
+
+    auto resolves_to_existing = [&]()
+    {
+        for (const String & name : {t.storage.getMasterThreadResourceName(), t.storage.getWorkerThreadResourceName()})
+            if (!name.empty() && !t.manager->hasResource(name))
+                return false;
+        return true;
+    };
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    ServerResourceLimits limits;
+    limits.respect_cpu_limit = true;
+    limits.cpu_slots = 4;
+    t.manager->updateServerLimits(limits);
+
+    // Operator resource takes precedence: both roles resolve to it, implicit not created.
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "cpu");
+    EXPECT_TRUE(resolves_to_existing());
+
+    // Drop the operator resource: both roles now resolve to the implicit resource, which the manager
+    // recreated in the same step -- never a dangling implicit name.
+    t.query("DROP RESOURCE cpu");
+    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), implicit_resource);
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), implicit_resource);
+    EXPECT_TRUE(resolves_to_existing());
+
+    // Re-declare the operator resource: precedence returns, implicit removed, roles resolve to "cpu".
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "cpu");
+    EXPECT_TRUE(resolves_to_existing());
+
+    // Disable: no resolution to implicit; implicit absent; the operator resource still resolves.
+    t.manager->updateServerLimits(ServerResourceLimits{});
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu");
+    EXPECT_TRUE(resolves_to_existing());
 }
 
 // A split CPU layout (separate MASTER and WORKER resources) is an unsupported configuration: the

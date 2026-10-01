@@ -644,11 +644,14 @@ scope_guard WorkloadEntityStorageBase::getAllEntitiesAndSubscribe(const OnChange
 String WorkloadEntityStorageBase::getMasterThreadResourceName()
 {
     std::lock_guard lock{mutex};
-    // Fall back to the implicit combined CPU resource only when the operator declared NO CPU resource
-    // for either role: the manager creates `__server_cpu__` (MASTER + WORKER) only in that
-    // fully-implicit case. A partial operator CPU layout (only one role declared) is unsupported, so
-    // the other role stays unscheduled (empty) rather than pointing at a resource that is never created.
-    if (master_thread_resource.empty() && worker_thread_resource.empty() && server_respect_cpu_limit)
+    // Resolve to the implicit combined CPU resource exactly when the resource manager has told this
+    // storage to. The manager sets this flag in lockstep with creating/removing `__server_cpu__` (feature
+    // enabled, supported layout, no operator CPU resource), so resolution never names a resource the
+    // manager lacks. This must NOT be inferred from operator-name emptiness here: those names change inside
+    // `applyEvent` before the manager is notified of a CREATE/DROP RESOURCE, which would open a race
+    // window. When resolution is off, each role returns its own operator name (empty if the role is
+    // undeclared, e.g. an unsupported partial layout), never the never-created implicit name.
+    if (resolve_cpu_to_implicit)
         return String(IMPLICIT_CPU_RESOURCE_NAME);
     return master_thread_resource;
 }
@@ -656,7 +659,7 @@ String WorkloadEntityStorageBase::getMasterThreadResourceName()
 String WorkloadEntityStorageBase::getWorkerThreadResourceName()
 {
     std::lock_guard lock{mutex};
-    if (master_thread_resource.empty() && worker_thread_resource.empty() && server_respect_cpu_limit)
+    if (resolve_cpu_to_implicit)
         return String(IMPLICIT_CPU_RESOURCE_NAME);
     return worker_thread_resource;
 }
@@ -670,23 +673,24 @@ String WorkloadEntityStorageBase::getQueryResourceName()
 String WorkloadEntityStorageBase::getMemoryReservationResourceName()
 {
     std::lock_guard lock{mutex};
-    // An operator-declared memory-reservation resource takes precedence; otherwise, when the feature
-    // is enabled, route reservations through the implicit resource created by the manager.
-    if (memory_reservation_resource.empty() && server_respect_memory_limit)
+    // Resolve to the implicit memory-reservation resource exactly when the manager has told this storage
+    // to (set in lockstep with creating/removing `__server_memory__`); otherwise use the operator-declared
+    // resource, if any. Not inferred from operator-name emptiness -- see getMasterThreadResourceName.
+    if (resolve_memory_to_implicit)
         return String(IMPLICIT_MEMORY_RESOURCE_NAME);
     return memory_reservation_resource;
 }
 
-void WorkloadEntityStorageBase::setServerCPULimitEnabled(bool respect_cpu_limit)
+void WorkloadEntityStorageBase::setResolveCPUToImplicit(bool resolve)
 {
     std::lock_guard lock{mutex};
-    server_respect_cpu_limit = respect_cpu_limit;
+    resolve_cpu_to_implicit = resolve;
 }
 
-void WorkloadEntityStorageBase::setServerMemoryLimitEnabled(bool respect_memory_limit)
+void WorkloadEntityStorageBase::setResolveMemoryToImplicit(bool resolve)
 {
     std::lock_guard lock{mutex};
-    server_respect_memory_limit = respect_memory_limit;
+    resolve_memory_to_implicit = resolve;
 }
 
 void WorkloadEntityStorageBase::unlockAndNotify(

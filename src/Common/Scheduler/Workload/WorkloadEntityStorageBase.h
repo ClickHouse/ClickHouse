@@ -57,8 +57,8 @@ public:
     String getQueryResourceName() override;
     String getMemoryReservationResourceName() override;
 
-    void setServerCPULimitEnabled(bool respect_cpu_limit) override;
-    void setServerMemoryLimitEnabled(bool respect_memory_limit) override;
+    void setResolveCPUToImplicit(bool resolve) override;
+    void setResolveMemoryToImplicit(bool resolve) override;
 
     void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, WorkloadEntityType entity_type) const override;
     void restore(RestorerFromBackup & restorer, const String & data_path_in_backup, WorkloadEntityType entity_type) override;
@@ -167,11 +167,11 @@ private:
     String query_resource; /// current resource name for queries
     String memory_reservation_resource; /// current resource name for memory reservations
 
-    /// Whether the server-limit workload features are enabled (set from the server-settings reload).
-    /// When enabled and the operator declared no matching resource, the resource-name getters fall
-    /// back to the implicit server-synthesized resource name.
-    bool server_respect_cpu_limit = false;
-    bool server_respect_memory_limit = false;
+    /// Whether the resource-name getters resolve a CPU / memory role to the implicit server-synthesized
+    /// resource. Set by `WorkloadResourceManager` in lockstep with creating / removing that implicit
+    /// resource (true only in the fully-implicit case); never inferred from operator-name emptiness here.
+    bool resolve_cpu_to_implicit = false;
+    bool resolve_memory_to_implicit = false;
 
     // Chain of storages
     std::unique_ptr<IWorkloadEntityStorage> next_storage; /// Next storage in the chain (e.g. `disk -> config` or `keeper -> config`)

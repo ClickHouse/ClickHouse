@@ -112,17 +112,17 @@ public:
     /// Returns the name of resource used for memory reservation
     virtual String getMemoryReservationResourceName() = 0;
 
-    /// Records whether the server CPU / memory limit features are enabled, controlled per role. When a
-    /// role is enabled and the operator declared no matching resource, the resource-name getters above
-    /// resolve to the implicit server-synthesized resource (`IMPLICIT_CPU_RESOURCE_NAME` /
-    /// `IMPLICIT_MEMORY_RESOURCE_NAME`) that `WorkloadResourceManager` creates, so the execution paths
-    /// route through it. `WorkloadResourceManager::updateServerLimits` is the sole caller: it flips each
-    /// role's resolution together with creating / removing that role's implicit resource, ordered so the
-    /// resolution turns on only after the resource exists and off before it is removed. Keeping both
-    /// sides in one ordered step is what prevents a query from resolving the implicit name while the
-    /// manager has no such resource.
-    virtual void setServerCPULimitEnabled(bool /*respect_cpu_limit*/) {}
-    virtual void setServerMemoryLimitEnabled(bool /*respect_memory_limit*/) {}
+    /// Controls whether the resource-name getters above resolve a CPU / memory role to the implicit
+    /// server-synthesized resource (`IMPLICIT_CPU_RESOURCE_NAME` / `IMPLICIT_MEMORY_RESOURCE_NAME`) that
+    /// `WorkloadResourceManager` creates. The manager is the sole caller and sets each flag in lockstep
+    /// with creating / removing that implicit resource -- ordered so resolution turns on only after the
+    /// resource exists and off before it is removed -- so a query can never resolve the implicit name
+    /// while the manager has no such resource. The flag is true exactly in the fully-implicit case
+    /// (feature enabled, supported layout, no operator resource of that unit); it is deliberately NOT
+    /// inferred from "operator names are empty" in the storage, whose state flips inside `applyEvent`
+    /// before the manager is notified of a CREATE / DROP RESOURCE.
+    virtual void setResolveCPUToImplicit(bool /*resolve*/) {}
+    virtual void setResolveMemoryToImplicit(bool /*resolve*/) {}
 
     /// Makes backup entries to back up all the workload entities of the specified type.
     virtual void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, WorkloadEntityType entity_type) const = 0;

@@ -442,7 +442,7 @@ void WorkloadResourceManager::applyServerLimitsLocked()
         current_limits.respect_cpu_limit,
         current_limits.cpu_slots,
         [](WorkloadSettings & s, Int64 v) { s.max_concurrent_threads = v; },
-        [this](bool on) { storage->setServerCPULimitEnabled(on); });
+        [this](bool on) { storage->setResolveCPUToImplicit(on); });
 
     // Memory reservation admission budget on a `MEMORY RESERVATION` resource.
     applyResourceLimitLocked(
@@ -452,7 +452,7 @@ void WorkloadResourceManager::applyServerLimitsLocked()
         current_limits.respect_memory_limit,
         current_limits.memory_bytes,
         [](WorkloadSettings & s, Int64 v) { s.max_memory = v; },
-        [this](bool on) { storage->setServerMemoryLimitEnabled(on); });
+        [this](bool on) { storage->setResolveMemoryToImplicit(on); });
 
     server_limits_applied = any_enabled;
 }
@@ -510,53 +510,46 @@ void WorkloadResourceManager::applyResourceLimitLocked(
     // implicit resource is created.
     const bool supported = operator_resources.empty()
         || (operator_resources.size() == 1 && operator_resources.front()->coversAllModes(implicit_modes));
-    if (enabled && supported)
+    // A role resolves to the implicit resource IFF this manager currently has it, which is exactly the
+    // fully-implicit case: feature enabled, layout supported, and no operator resource of this unit. The
+    // manager drives the storage-side resolution from this condition, in lockstep with creating/removing
+    // the implicit resource. It must NOT be inferred from "operator names are empty" in the storage: those
+    // names flip inside `applyEvent` before this manager is notified of a CREATE/DROP RESOURCE, which would
+    // resolve the implicit name in a window where the manager has not (yet) created it (raising
+    // RESOURCE_ACCESS_DENIED under `throw_on_unknown_workload`, or silently falling back to unlimited).
+    if (enabled && supported && operator_resources.empty())
     {
-        // An operator-declared resource takes precedence: drop the auto-created one if both exist.
-        if (!operator_resources.empty())
-        {
-            if (implicit)
-            {
-                resources.erase(implicit_name);
-                implicit.reset();
-            }
-        }
-        else if (!implicit)
-        {
+        // Fully implicit: create the implicit resource first, cap its root, then turn resolution ON — so a
+        // query can never resolve the implicit name before this manager has that resource.
+        if (!implicit)
             implicit = createImplicitResourceLocked(implicit_name, makeImplicitResourceAST(implicit_name, implicit_modes));
-        }
 
         WorkloadSettings root_settings;
         set_limit_field(root_settings, effective_limit);
-        if (implicit)
-            implicit->setImplicitRootLimit(root_settings);
-        for (auto & resource : operator_resources)
-            resource->setImplicitRootLimit(root_settings);
+        implicit->setImplicitRootLimit(root_settings);
 
-        // Enable ordering: the resource this role resolves to is now present in the manager (the implicit
-        // one just created, or an operator one that takes precedence), so turn the storage-side resolution
-        // ON only now. Doing it after creation guarantees a query can never resolve the implicit name
-        // before the manager has that resource (which would raise RESOURCE_ACCESS_DENIED under
-        // `throw_on_unknown_workload`).
-        set_storage_resolution_enabled(enabled);
+        set_storage_resolution_enabled(true);
     }
     else
     {
-        // Disable ordering: turn the storage-side resolution for this role OFF first, so a query can
-        // never resolve the implicit name after the manager has removed that resource. Only then reset
-        // operator roots and drop the implicit resource. (When enabled but the layout is unsupported,
-        // at least one operator role name stays non-empty, so the getters never fall back to the
-        // never-created implicit resource regardless of this flag.)
-        set_storage_resolution_enabled(enabled);
+        // Not fully implicit (feature disabled, unsupported layout, or an operator resource takes
+        // precedence): roles must never resolve to the implicit resource. Turn resolution OFF first, so a
+        // query can never resolve the implicit name after the manager removes that resource; only then
+        // drop the auto-created implicit resource and set operator roots.
+        set_storage_resolution_enabled(false);
 
-        // Reset any operator resource's root to unlimited in place; never remove an operator resource.
-        WorkloadSettings unlimited_root_settings;
-        for (auto & resource : operator_resources)
-            resource->setImplicitRootLimit(unlimited_root_settings);
         // Remove the auto-created implicit resource; its nodes drain via the version machinery once no
-        // classifier references them any longer.
+        // classifier references them any longer. An operator resource is never removed here.
         if (implicit)
             resources.erase(implicit_name);
+
+        WorkloadSettings root_settings;
+        if (enabled && supported)
+            // One operator resource covers this unit and takes precedence: cap its root in place.
+            set_limit_field(root_settings, effective_limit);
+        // else (disabled or unsupported): leave every operator root unlimited (default-constructed).
+        for (auto & resource : operator_resources)
+            resource->setImplicitRootLimit(root_settings);
     }
 }
 
