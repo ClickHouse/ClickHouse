@@ -29,24 +29,27 @@ JSON=$($CLICKHOUSE_CLIENT -q "SELECT parseQueryToJSON('CREATE DATABASE db_05292_
 [[ "$JSON" == *'"kind":"BACKUP_NAME"'* ]] && echo ok_tagged || echo FAIL_tagged
 UNTAGGED_JSON=$(printf '%s' "$JSON" | sed 's/,"kind":"BACKUP_NAME"//')
 [[ "$UNTAGGED_JSON" != "$JSON" && "$UNTAGGED_JSON" != *'"kind":"BACKUP_NAME"'* ]] && echo ok_untagged || echo FAIL_untagged
+DOUBLE_UNTAGGED_JSON=$(printf '%s' "$UNTAGGED_JSON" | sed 's/,"kind":"DATABASE_ENGINE"//')
+[[ "$DOUBLE_UNTAGGED_JSON" != "$UNTAGGED_JSON" && "$DOUBLE_UNTAGGED_JSON" != *'"kind":"DATABASE_ENGINE"'* ]] && echo ok_double_untagged || echo FAIL_double_untagged
 
 JSON_URL="${CLICKHOUSE_URL}&enable_json_ast_dialect=1&dialect=clickhouse_json&log_queries=1&log_formatted_queries=1"
 ${CLICKHOUSE_CURL} -sS --max-time 10 "${JSON_URL}&query_id=${QUERY_ID_PREFIX}tagged" --data-binary "$JSON" > /dev/null
 ${CLICKHOUSE_CURL} -sS --max-time 10 "${JSON_URL}&query_id=${QUERY_ID_PREFIX}untagged" --data-binary "$UNTAGGED_JSON" > /dev/null
+${CLICKHOUSE_CURL} -sS --max-time 10 "${JSON_URL}&query_id=${QUERY_ID_PREFIX}double_untagged" --data-binary "$DOUBLE_UNTAGGED_JSON" > /dev/null
 
 LOG_FILTER="current_database = currentDatabase()
   AND query_id LIKE '${QUERY_ID_PREFIX}%'
   AND type != 'QueryStart'
   AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE"
 
-# The query_log row of an HTTP query is written after its response (#84364): flush until all 12 have landed.
+# The query_log row of an HTTP query is written after its response (#84364): flush until all 13 have landed.
 for _ in {1..60}; do
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log" > /dev/null
-    [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE ${LOG_FILTER}") -ge 12 ]] && break
+    [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE ${LOG_FILTER}") -ge 13 ]] && break
     sleep 0.5
 done
 
-$CLICKHOUSE_CLIENT -q "SELECT count() >= 12,
+$CLICKHOUSE_CLIENT -q "SELECT count() >= 13,
     countIf(query NOT LIKE '%[HIDDEN]%'),
     countIf(position(concat(query, formatted_query, exception), 'SEKRIT_05292') > 0),
     countIf(position(query, '925292') > 0),

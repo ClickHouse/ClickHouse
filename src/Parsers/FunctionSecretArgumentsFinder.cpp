@@ -1337,10 +1337,6 @@ void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
     {
         findDataLakeCatalogSecretArguments();
     }
-    else if (engine_name == "Backup")
-    {
-        findBackupDatabaseSecretArguments();
-    }
     else if (engine_name == "URL")
     {
         /// URL('base_url')

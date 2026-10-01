@@ -101,6 +101,13 @@ public:
         if (!function->hasArguments())
             return;
 
+        if (function_.name == "Backup")
+        {
+            if (!backupS3LocatorMasksItself(function_))
+                findBackupDatabaseSecretArguments();
+            return;
+        }
+
         switch (function_.getKind())
         {
             case ASTFunction::Kind::ORDINARY_FUNCTION: findOrdinaryFunctionSecretArguments(); break;
@@ -109,12 +116,7 @@ public:
             case ASTFunction::Kind::CODEC: break;
             case ASTFunction::Kind::STATISTICS: break;
             case ASTFunction::Kind::TABLE_ENGINE: findTableEngineSecretArguments(); break;
-            case ASTFunction::Kind::DATABASE_ENGINE:
-            {
-                if (!backupS3LocatorMasksItself(function_))
-                    findDatabaseEngineSecretArguments();
-                break;
-            }
+            case ASTFunction::Kind::DATABASE_ENGINE: findDatabaseEngineSecretArguments(); break;
             case ASTFunction::Kind::BACKUP_NAME: findBackupNameSecretArguments(); break;
         }
     }
@@ -122,13 +124,12 @@ public:
     FunctionSecretArgumentsFinder::Result getResult() const { return result; }
 
 private:
-    static bool backupS3LocatorMasksItself(const ASTFunction & database_engine)
+    static bool backupS3LocatorMasksItself(const ASTFunction & backup)
     {
-        if (database_engine.name != "Backup" || database_engine.arguments->children.size() != 2
-            || !database_engine.arguments->children[0]->as<ASTLiteral>())
+        if (backup.arguments->children.size() != 2 || !backup.arguments->children[0]->as<ASTLiteral>())
             return false;
 
-        const auto * locator = database_engine.arguments->children[1]->as<ASTFunction>();
+        const auto * locator = backup.arguments->children[1]->as<ASTFunction>();
         return locator && locator->name == "S3" && locator->getKind() == ASTFunction::Kind::BACKUP_NAME
             && !locator->parameters && locator->tryGetAlias().empty() && !locator->isWindowFunction()
             && locator->getNullsAction() == NullsAction::EMPTY;
