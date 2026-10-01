@@ -83,7 +83,7 @@ void WriteBufferToFileSegment::nextImpl()
     std::string failure_reason;
     bool ok = file_segment->reserve(
         bytes_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason,
-        &reserve_stat, /* reserve_hint */0, &reserve_ahead);
+        &reserve_stat, /* reserve_hint */std::nullopt, &reserve_ahead);
 
     if (!ok)
     {

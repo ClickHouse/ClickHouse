@@ -669,7 +669,7 @@ bool FileSegment::reserve(
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
     FileCacheReserveStat * reserve_stat,
-    size_t reserve_hint,
+    std::optional<size_t> reserve_hint,
     FileCacheReserveAhead * reserve_ahead)
 {
     if (!size_to_reserve)
@@ -715,9 +715,11 @@ bool FileSegment::reserve(
         /// Don't reserve ahead past the segment end, nor past the end of the read: `reserve_hint`
         /// is measured from the current download offset, so the read ends at `read_horizon`.
         size_t max_reserve_size = range().size() - reserved_size;
-        const size_t read_horizon = current_downloaded_size + reserve_hint;
-        if (reserve_hint && read_horizon > reserved_size)
-            max_reserve_size = std::min(max_reserve_size, read_horizon - reserved_size);
+        if (reserve_hint)
+        {
+            const size_t read_horizon = current_downloaded_size + *reserve_hint;
+            max_reserve_size = std::min(max_reserve_size, read_horizon > reserved_size ? read_horizon - reserved_size : 0);
+        }
 
         size_to_reserve = reserve_ahead->getReserveSize(size_to_reserve, max_reserve_size, cache->getReserveGranularity());
     }

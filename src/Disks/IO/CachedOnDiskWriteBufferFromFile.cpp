@@ -201,7 +201,7 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
 
         bool reserved = file_segment->reserve(
             size_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason,
-            /* reserve_stat */nullptr, /* reserve_hint */0, &reserve_ahead);
+            /* reserve_stat */nullptr, /* reserve_hint */std::nullopt, &reserve_ahead);
         if (!reserved)
         {
             appendFilesystemCacheLog(*file_segment);

@@ -3988,7 +3988,7 @@ TEST_F(FileCacheTest, DynamicReserveGranularity)
     /// Reserve and write `size` bytes at the current write offset, return the reserved size after it.
     auto reserve_and_write = [&](DB::FileSegment & segment, size_t size, DB::FileCacheReserveAhead * reserve_ahead)
     {
-        EXPECT_TRUE(segment.reserve(size, 1000, failure_reason, nullptr, 0, reserve_ahead)) << failure_reason;
+        EXPECT_TRUE(segment.reserve(size, 1000, failure_reason, nullptr, std::nullopt, reserve_ahead)) << failure_reason;
         segment.write(data.data(), size, segment.getCurrentWriteOffset());
         return segment.getReservedSize();
     };
@@ -4054,7 +4054,7 @@ TEST_F(FileCacheTest, ReserveAheadFallsBackToExactSize)
     const auto retries_before = events[ProfileEvents::FilesystemCacheReserveAheadRetries];
     auto reserve_and_write = [&]()
     {
-        EXPECT_TRUE(segment->reserve(2, 1000, failure_reason, nullptr, 0, &reserve_ahead)) << failure_reason;
+        EXPECT_TRUE(segment->reserve(2, 1000, failure_reason, nullptr, std::nullopt, &reserve_ahead)) << failure_reason;
         segment->write(data.data(), 2, segment->getCurrentWriteOffset());
         return segment->getReservedSize();
     };
@@ -4070,7 +4070,7 @@ TEST_F(FileCacheTest, ReserveAheadFallsBackToExactSize)
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before + 2);
 
     /// The exact size does not fit either; there is nothing to retry.
-    ASSERT_FALSE(segment->reserve(2, 1000, failure_reason, nullptr, 0, &reserve_ahead));
+    ASSERT_FALSE(segment->reserve(2, 1000, failure_reason, nullptr, std::nullopt, &reserve_ahead));
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before + 2);
     ASSERT_EQ(segment->getReservedSize(), 12u);
     ASSERT_EQ(cache->getUsedCacheSize(), 12u);

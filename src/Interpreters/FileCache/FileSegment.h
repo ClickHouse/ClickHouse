@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <condition_variable>
+#include <optional>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/Guards.h>
@@ -235,14 +236,14 @@ public:
 
     /// Try to reserve `size` bytes on top of getDownloadedSize(), returns false on failure.
     /// `reserve_ahead` (see `FileCacheReserveAhead`) enables reserving ahead; without it exactly `size`
-    /// is reserved. `reserve_hint`, if non-zero, is the number of bytes left to read from the current
+    /// is reserved. `reserve_hint`, if set, is the number of bytes left to read from the current
     /// download offset, the reserve-ahead never goes past it.
     bool reserve(
         size_t size_to_reserve,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason,
         FileCacheReserveStat * reserve_stat = nullptr,
-        size_t reserve_hint = 0,
+        std::optional<size_t> reserve_hint = std::nullopt,
         FileCacheReserveAhead * reserve_ahead = nullptr);
 
     /// Write data into reserved space.
