@@ -222,6 +222,7 @@ const char * auto_contributors[] {
     "Anton Zhabolenko",
     "Antonio Andelic",
     "Antonio Bonuccelli",
+    "Antonio Filipovic",
     "Antony Southworth",
     "Aram Peres",
     "Ariel Robaldo",
