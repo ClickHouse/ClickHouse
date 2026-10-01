@@ -57,7 +57,7 @@ public:
     String getQueryResourceName() override;
     String getMemoryReservationResourceName() override;
 
-    void setServerCpuLimitEnabled(bool respect_cpu_limit) override;
+    void setServerCPULimitEnabled(bool respect_cpu_limit) override;
     void setServerMemoryLimitEnabled(bool respect_memory_limit) override;
 
     void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, WorkloadEntityType entity_type) const override;

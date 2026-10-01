@@ -121,7 +121,7 @@ public:
     /// resolution turns on only after the resource exists and off before it is removed. Keeping both
     /// sides in one ordered step is what prevents a query from resolving the implicit name while the
     /// manager has no such resource.
-    virtual void setServerCpuLimitEnabled(bool /*respect_cpu_limit*/) {}
+    virtual void setServerCPULimitEnabled(bool /*respect_cpu_limit*/) {}
     virtual void setServerMemoryLimitEnabled(bool /*respect_memory_limit*/) {}
 
     /// Makes backup entries to back up all the workload entities of the specified type.

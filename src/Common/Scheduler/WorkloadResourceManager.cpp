@@ -442,7 +442,7 @@ void WorkloadResourceManager::applyServerLimitsLocked()
         current_limits.respect_cpu_limit,
         current_limits.cpu_slots,
         [](WorkloadSettings & s, Int64 v) { s.max_concurrent_threads = v; },
-        [this](bool on) { storage->setServerCpuLimitEnabled(on); });
+        [this](bool on) { storage->setServerCPULimitEnabled(on); });
 
     // Memory reservation admission budget on a `MEMORY RESERVATION` resource.
     applyResourceLimitLocked(
