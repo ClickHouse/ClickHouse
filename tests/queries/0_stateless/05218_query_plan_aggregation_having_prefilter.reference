@@ -16,6 +16,7 @@ outer WHERE on a group key, merged	1
 computed output beside the aggregate	1
 pure lambda over the aggregate	1
 side-effecting conjunct pushed below the aggregation	1
+array join lowered out of the having	1
 --- refused ---
 setting off	0
 optimizations off	0
@@ -51,12 +52,16 @@ serialized plan	0
 2000	8000	2000	8000
 2000	8000
 2000	8000
+4000	16000
+4000	16000
 05218hp_eq_general_off	1
 05218hp_eq_general_on	1
 05218hp_ge_mirrored_off	1
 05218hp_ge_mirrored_on	1
 05218hp_ge_simple_off	1
 05218hp_ge_simple_on	1
+05218hp_gt_arrayjoin_off	1
+05218hp_gt_arrayjoin_on	1
 05218hp_le_general_off	1
 05218hp_le_general_on	1
 05218hp_lt_simple_off	1

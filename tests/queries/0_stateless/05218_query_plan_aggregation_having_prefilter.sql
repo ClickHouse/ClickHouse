@@ -122,6 +122,13 @@ SELECT 'side-effecting conjunct pushed below the aggregation', count() FROM (EXP
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3 AND sleep(0.001) = 0
 ) WHERE explain LIKE '%HAVING pre-filter: count() > 3%';
 
+-- `query_plan_lower_array_join_function` moves the arrayJoin into its own step above an arrayJoin-free
+-- filter that holds the bound, so the annotation is applied to that filter.
+SELECT 'array join lowered out of the having', count() FROM (EXPLAIN actions = 1
+    SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3 AND arrayJoin([1, 2, 2]) = 2
+    SETTINGS query_plan_lower_array_join_function = 1
+) WHERE explain LIKE '%HAVING pre-filter: count() > 3%';
+
 SELECT '--- refused ---';
 
 SELECT 'setting off', count() FROM (EXPLAIN actions = 1
@@ -215,8 +222,10 @@ SELECT 'non-deterministic conjunct over the aggregate', count() FROM (EXPLAIN ac
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3 AND rand(cnt) % 2 = 0
 ) WHERE explain LIKE '%HAVING pre-filter%';
 
+-- Lowering would move the arrayJoin out of this filter, as in the applied cell above, so pin it off.
 SELECT 'array join in having', count() FROM (EXPLAIN actions = 1
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3 AND arrayJoin([1, 1]) = 1
+    SETTINGS query_plan_lower_array_join_function = 0
 ) WHERE explain LIKE '%HAVING pre-filter%';
 
 -- The same class reached through the merge instead of written into the HAVING: the pass reads the
@@ -274,6 +283,13 @@ SELECT count(), sum(cnt) FROM (SELECT a, count() AS cnt FROM having_prefilter GR
 SELECT count(), sum(cnt) FROM (SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING 4 <= cnt)
     SETTINGS query_plan_aggregation_having_prefilter = 1, log_comment = '05218hp_ge_mirrored_on';
 
+-- An arrayJoin lowered out of the HAVING leaves the bound in its own filter directly above the
+-- aggregation; each surviving group is expanded into two rows above it.
+SELECT count(), sum(cnt) FROM (SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3 AND arrayJoin([1, 2, 2]) = 2)
+    SETTINGS query_plan_aggregation_having_prefilter = 0, query_plan_lower_array_join_function = 1, log_comment = '05218hp_gt_arrayjoin_off';
+SELECT count(), sum(cnt) FROM (SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3 AND arrayJoin([1, 2, 2]) = 2)
+    SETTINGS query_plan_aggregation_having_prefilter = 1, query_plan_lower_array_join_function = 1, log_comment = '05218hp_gt_arrayjoin_on';
+
 SYSTEM FLUSH LOGS query_log;
 
 -- `tests/clickhouse-test` gives every query of this file its own `log_comment` of
@@ -291,7 +307,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT log_comment,
        ProfileEvents['AggregationHavingPrefilterGroupsSkipped'] = map(
            '05218hp_ge_simple_on', 4000, '05218hp_lt_simple_on', 2000, '05218hp_le_general_on', 2000,
-           '05218hp_eq_general_on', 4000, '05218hp_ge_mirrored_on', 4000)[log_comment]
+           '05218hp_eq_general_on', 4000, '05218hp_ge_mirrored_on', 4000, '05218hp_gt_arrayjoin_on', 4000)[log_comment]
        OR (ProfileEvents['AggregationHavingPrefilterGroupsSkipped'] = 0
            AND ProfileEvents['AggregationHashTablesInitializedAsTwoLevel'] = 0
            AND ProfileEvents['AggregationConvertedToTwoLevel'] = 0) AS groups_skipped_ok
