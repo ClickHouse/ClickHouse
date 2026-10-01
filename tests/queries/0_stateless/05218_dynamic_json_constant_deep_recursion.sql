@@ -3,3 +3,6 @@ SELECT finalizeAggregation(CAST(unhex('01300080082000000001016130008008200000000
 -- Turning a Dynamic constant into a literal recurses once per JSON level, and the depth comes from the
 -- value, so it must be reported rather than overflow the stack.
 SELECT finalizeAggregation(CAST(unhex(concat('01', repeat('3000800820000000010161', 4000), '300080082000000000')) AS AggregateFunction(any, Dynamic))); -- { serverError TOO_DEEP_RECURSION }
+
+-- Constant folding reads the value as a Field, which walks the same nesting through the columns.
+SELECT if(finalizeAggregation(CAST(unhex(concat('01', repeat('3000800820000000010161', 4000), '300080082000000000')) AS AggregateFunction(any, Dynamic))), 1, 2); -- { serverError TOO_DEEP_RECURSION }
