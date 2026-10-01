@@ -20,6 +20,14 @@ INSERT INTO prometheus (metric_name, tags, samples) VALUES
     ('m', map('host', 'h3', 'dc', 'b'), [(toDateTime64(100, 3), 3), (toDateTime64(110, 3), 5), (toDateTime64(120, 3), 2), (toDateTime64(130, 3), 3)]),
     ('m', map('host', 'h4', 'dc', 'b'), [(toDateTime64(100, 3), 4), (toDateTime64(130, 3), 4)]);
 
+-- Metric `g` has two buckets whose values overlap at timestamp 130.
+-- dc=a holds 100 and 1. dc=b holds 50 and 49.
+INSERT INTO prometheus (metric_name, tags, samples) VALUES
+    ('g', map('host', 'h1', 'dc', 'a'), [(toDateTime64(130, 3), 100)]),
+    ('g', map('host', 'h2', 'dc', 'a'), [(toDateTime64(130, 3), 1)]),
+    ('g', map('host', 'h3', 'dc', 'b'), [(toDateTime64(130, 3), 50)]),
+    ('g', map('host', 'h4', 'dc', 'b'), [(toDateTime64(130, 3), 49)]);
+
 SELECT '-- topk(2), range';
 SELECT * FROM prometheusQueryRange('prometheus', 'topk(2, last_over_time(m[10]))', 100, 130, 10) ORDER BY tags;
 SELECT '-- bottomk(2), range';
@@ -51,6 +59,28 @@ SELECT '-- NaN is chosen after any non-NaN value, instant at 140 where h1 is NaN
 SELECT * FROM prometheusQuery('prometheus', 'topk(3, m)', 140) ORDER BY tags;
 SELECT * FROM prometheusQuery('prometheus', 'topk(4, m)', 140) ORDER BY tags;
 SELECT * FROM prometheusQuery('prometheus', 'bottomk(1, m)', 140) ORDER BY tags;
+SELECT '-- ordered instant topk';
+SELECT * FROM prometheusQuery('prometheus', 'topk(3, m)', 130);
+SELECT '-- ordered instant topk with parentheses';
+SELECT * FROM prometheusQuery('prometheus', 'topk((3), (m))', 130);
+SELECT '-- ordered instant topk with fewer series than k';
+SELECT * FROM prometheusQuery('prometheus', 'topk(5, m{dc="b"})', 130);
+SELECT '-- ordered instant bottomk';
+SELECT * FROM prometheusQuery('prometheus', 'bottomk(3, m)', 130);
+SELECT '-- ordered instant bottomk by one group';
+SELECT * FROM prometheusQuery('prometheus', 'bottomk by (dc) (2, m{dc="a"})', 130);
+SELECT '-- ordered instant topk with NaN last';
+SELECT * FROM prometheusQuery('prometheus', 'topk(4, m)', 140);
+SELECT '-- ordered instant bottomk with NaN last';
+SELECT * FROM prometheusQuery('prometheus', 'bottomk(4, m)', 140);
+SELECT '-- ordered instant topk with k above the series count';
+SELECT * FROM prometheusQuery('prometheus', 'topk(9999999999, m)', 140);
+SELECT '-- ordered instant topk with scalar k';
+SELECT * FROM prometheusQuery('prometheus', 'topk(scalar(count(m)) - 1, m)', 130);
+SELECT '-- ordered instant topk by (dc) keeps overlapping buckets contiguous';
+SELECT * FROM prometheusQuery('prometheus', 'topk by (dc) (2, g)', 130);
+SELECT '-- ordered instant bottomk without (host) keeps overlapping buckets contiguous';
+SELECT * FROM prometheusQuery('prometheus', 'bottomk without (host) (2, g)', 130);
 SELECT '-- topk of a metric which matches no series';
 SELECT * FROM prometheusQuery('prometheus', 'topk(2, nonexistent)', 130) ORDER BY tags;
 SELECT '-- k = +Inf is an error';
