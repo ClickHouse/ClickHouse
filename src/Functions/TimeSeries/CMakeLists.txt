@@ -1,4 +1,9 @@
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions_time_series .)
+
+# extractTagNamesAndValuesFromArguments (Used by StorageTimeSeriesSelector.cpp)
+extract_into_parent_list(clickhouse_functions_time_series_sources dbms_sources TimeSeriesTagsFunctionHelpers.cpp)
+extract_into_parent_list(clickhouse_functions_time_series_headers dbms_headers TimeSeriesTagsFunctionHelpers.h)
+
 add_library(clickhouse_functions_time_series OBJECT ${clickhouse_functions_time_series_sources} ${clickhouse_functions_time_series_headers})
 target_link_libraries(clickhouse_functions_time_series PRIVATE dbms)

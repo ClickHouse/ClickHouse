@@ -127,6 +127,12 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
                 }
                 if (recent_samples_enabled)
                     generate_target_uuid(ViewTarget::RecentSamples);
+
+                const bool histograms_enabled = hasExplicitTimeSeriesSettingVersion(query)
+                    ? (getTimeSeriesSettingVersion(query) >= TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET)
+                    : !for_restore;
+                if (histograms_enabled)
+                    generate_target_uuid(ViewTarget::Histograms);
             }
         }
     }

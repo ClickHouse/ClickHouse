@@ -35,10 +35,22 @@ struct TimeSeriesColumnNames
     static constexpr const char * Unit = "unit";
     static constexpr const char * Help = "help";
 
+    /// The columns of the "histograms" inner table besides `id` and `timestamp` are defined in TimeSeriesHistogramsColumns.h.
+
     /// The outer column with (timestamp, value) pairs of a time series, also returned by `prometheusQuery` and `prometheusQueryRange`.
     /// It's named `time_series` in tables of versions before 3, see `getOuterSamples`.
     static constexpr const char * Samples = "samples";
     static constexpr const char * TimeSeries = "time_series";
+
+    /// The outer group of columns with the histogram samples of a time series: `histograms.timestamp`, `histograms.is_float`, ...
+    /// It's the flattened form of `histograms Nested(...)`, one array per column of the "histograms" inner table with `timestamp`
+    /// in place of `id`, see class TimeSeriesHistogramsColumns.
+    /// Tables of versions before `TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET` have no such columns.
+    static constexpr const char * Histograms = "histograms";
+
+    /// The column with the histogram samples returned by `timeSeriesSelector` for tables of versions
+    /// `TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET` and later, see `TimeSeriesHistogramsColumns::getHistogramColumnType`.
+    static constexpr const char * Histogram = "histogram";
 
     /// Internal columns used by steps of prometheus query evaluation.
     /// The function prometheusQuery() doesn't output them.

@@ -20,8 +20,8 @@ VALUES ('m', {'n': 'a'}, [('2024-01-01 00:00:00', 1)], 'm', 'gauge');
 INSERT INTO ts_join_settings (metric_name, tags, samples)
 VALUES ('m', {'n': 'a'}, [('2024-01-01 00:00:01', 2)]);
 
--- Both internal joins must use the requested algorithm.
-SELECT countIf(explain LIKE '%Algorithm: GraceHashJoin%') = 2
+-- All internal joins must use the requested algorithm: samples with histograms, then tags, then metric families.
+SELECT countIf(explain LIKE '%Algorithm: GraceHashJoin%') = 3
 FROM (EXPLAIN PLAN actions = 1 SELECT * FROM ts_join_settings);
 
 -- The outer column types and complete samples remain valid with these caller settings.

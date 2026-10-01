@@ -27,6 +27,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/makePrometheusHistogramsBlock.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 #include <chrono>
@@ -68,14 +69,6 @@ std::string_view metricTypeToString(prometheus::MetricMetadata::MetricType metri
         default: break;
     }
     return "";
-}
-
-void insertTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
-{
-    if (typeid_cast<ColumnDecimal<DateTime64> *>(&column))
-        column.insert(DecimalUtils::convertTo<DateTime64>(scale, DateTime64{timestamp_ms}, 3));
-    else
-        column.insert(DecimalUtils::convertTo<UInt32>(DateTime64{timestamp_ms}, 3));
 }
 
 Block makeTimeSeriesBlock(
@@ -136,7 +129,7 @@ Block makeTimeSeriesBlock(
 
         for (const auto & sample : element.samples())
         {
-            insertTimestamp(sample.timestamp(), timestamp_scale, *timestamps);
+            insertPrometheusTimestamp(sample.timestamp(), timestamp_scale, *timestamps);
             values->insert(sample.value());
         }
         time_series_offsets->insert(timestamps->size());
@@ -300,6 +293,15 @@ void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutableP
 }
 
 
+void insertPrometheusTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
+{
+    if (typeid_cast<ColumnDecimal<DateTime64> *>(&column))
+        column.insert(DecimalUtils::convertTo<DateTime64>(scale, DateTime64{timestamp_ms}, 3));
+    else
+        column.insert(DecimalUtils::convertTo<UInt32>(DateTime64{timestamp_ms}, 3));
+}
+
+
 PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     StoragePtr time_series_storage_, const ContextMutablePtr & context_)
     : WithMutableContext(context_)
@@ -326,7 +328,9 @@ void PrometheusRemoteWriteProtocol::write(
 
     auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
-    insertBlock(makeBlock(time_series, metrics_metadata, *metadata, samples_column_name), *time_series_storage, getContext());
+    auto block = makeBlock(time_series, metrics_metadata, *metadata, samples_column_name);
+    appendBlock(block, makePrometheusHistogramsBlock(time_series, metrics_metadata.size(), *time_series_storage, *metadata));
+    insertBlock(std::move(block), *time_series_storage, getContext());
 
     LOG_TRACE(
         log,
