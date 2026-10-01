@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS t_summing_modulo;
 DROP TABLE IF EXISTS t_summing_map_keys;
 DROP TABLE IF EXISTS t_coalescing;
 DROP TABLE IF EXISTS t_aggregating;
+DROP TABLE IF EXISTS t_graphite;
 DROP TABLE IF EXISTS t_summing_zero;
 
 CREATE TABLE t_summing_length (id UInt64, name String, v UInt64, INDEX il length(name) TYPE minmax GRANULARITY 1)
@@ -56,6 +57,17 @@ SELECT 'aggregating v % 7',
     (SELECT count() FROM t_aggregating WHERE v % 7 = 1 SETTINGS use_skip_indexes = 1, use_query_condition_cache = 0),
     (SELECT count() FROM t_aggregating WHERE v % 7 = 1 SETTINGS use_skip_indexes = 0, use_query_condition_cache = 0);
 
+-- Three points per path in one 600 s rollup window one day ago, rolled up into one row with Value = 15.
+CREATE TABLE t_graphite (Path String, Time DateTime('UTC'), Value Float64, Version UInt32, INDEX iv toUInt64(Value) % 7 TYPE minmax GRANULARITY 1)
+ENGINE = GraphiteMergeTree('graphite_rollup') ORDER BY (Path, Time) SETTINGS index_granularity = 100;
+INSERT INTO t_graphite SELECT concat('sum_', toString(number % 1000)),
+    toDateTime(intDiv(toUInt32(now()) - 86400, 600) * 600 + intDiv(number, 1000) * 60, 'UTC'), 5, 1
+FROM numbers(3000)
+SETTINGS optimize_on_insert = 1, max_insert_threads = 1, max_block_size = 65536;
+SELECT 'graphite toUInt64(Value) % 7',
+    (SELECT count() FROM t_graphite WHERE toUInt64(Value) % 7 = 1 SETTINGS use_skip_indexes = 1, use_query_condition_cache = 0),
+    (SELECT count() FROM t_graphite WHERE toUInt64(Value) % 7 = 1 SETTINGS use_skip_indexes = 0, use_query_condition_cache = 0);
+
 -- Rows whose summed columns total zero are removed; a skip index input must not keep them.
 CREATE TABLE t_summing_zero (id UInt64, name String, v Int64, INDEX il length(name) TYPE minmax GRANULARITY 1)
 ENGINE = SummingMergeTree ORDER BY id SETTINGS index_granularity = 100;
@@ -68,4 +80,5 @@ DROP TABLE t_summing_modulo;
 DROP TABLE t_summing_map_keys;
 DROP TABLE t_coalescing;
 DROP TABLE t_aggregating;
+DROP TABLE t_graphite;
 DROP TABLE t_summing_zero;

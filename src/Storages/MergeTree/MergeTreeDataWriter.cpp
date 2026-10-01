@@ -849,8 +849,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         *data_settings);
 
     /// The engine merge below would aggregate skip index inputs like data columns,
-    /// so they are computed from the merged rows.
-    const bool compute_indices_after_merge = optimize_on_insert && !indices.empty();
+    /// so they are computed from the merged rows. Row-preserving merges keep each input with its row.
+    const bool merge_keeps_whole_rows = data.merging_params.mode == MergeTreeData::MergingParams::Replacing
+        || data.merging_params.mode == MergeTreeData::MergingParams::Collapsing
+        || data.merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
+    const bool compute_indices_after_merge = optimize_on_insert && !merge_keeps_whole_rows && !indices.empty();
     const Names inserted_columns = compute_indices_after_merge ? block.getNames() : Names{};
 
     auto compute_sorting_key_and_skip_indices = [&](const MergeTreeIndices & indices_to_compute)
