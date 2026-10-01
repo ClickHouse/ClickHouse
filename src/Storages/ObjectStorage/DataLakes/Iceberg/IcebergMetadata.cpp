@@ -223,13 +223,26 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     };
 }
 
+void IcebergMetadata::setExplicitMetadataFilePath(const String & path)
+{
+    explicit_metadata_file_path.set(std::make_unique<const String>(path));
+}
+
+DataLakeStorageSettings IcebergMetadata::getMetadataLookupSettings() const
+{
+    DataLakeStorageSettings result = data_lake_settings;
+    if (auto path = explicit_metadata_file_path.get())
+        result[DataLakeStorageSetting::iceberg_metadata_file_path] = *path;
+    return result;
+}
+
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
     const ContextPtr & context, bool force_fetch_latest_metadata) const
 {
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
-        data_lake_settings,
+        getMetadataLookupSettings(),
         persistent_components.metadata_cache,
         context,
         log.get(),
@@ -473,10 +486,27 @@ IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object,
 
 bool IcebergMetadata::optimize(
     [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
-    [[maybe_unused]] ContextPtr context,
-    [[maybe_unused]] const std::optional<FormatSettings> & format_settings)
+    ContextPtr context,
+    [[maybe_unused]] const std::optional<FormatSettings> & format_settings,
+    std::shared_ptr<DataLake::ICatalog> catalog)
 {
     checkTableRootIsQueriedPath("OPTIMIZE");
+
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::iceberg_snapshot_id].changed || settings[Setting::iceberg_timestamp_ms].changed)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "OPTIMIZE is not supported with iceberg_snapshot_id or iceberg_timestamp_ms");
+
+    /// `iceberg_metadata_file_path` also carries the catalog's metadata pointer, so reject it only without a catalog.
+    if (!catalog)
+    {
+        const auto lookup_settings = getMetadataLookupSettings();
+        if (lookup_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "OPTIMIZE is not supported with iceberg_metadata_file_path on a standalone Iceberg table");
+    }
 
 #if CLICKHOUSE_CLOUD
     if (!compaction_enabled)
@@ -490,7 +520,18 @@ bool IcebergMetadata::optimize(
     iceberg_compaction_metadata_generator->waitUntilUpdated();
     return true;
 #else
-    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
+    /// `compactIcebergTable` rewrites files directly and cannot commit through a catalog.
+    if (catalog)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "OPTIMIZE is not supported for catalog-backed Iceberg tables in this build");
+
+    if (getMetadataLookupSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "OPTIMIZE is not supported with iceberg_use_version_hint on a standalone Iceberg table");
+
+    if (settings[Setting::allow_experimental_iceberg_compaction])
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
         auto snapshots_info = getHistory(context);
@@ -498,7 +539,7 @@ bool IcebergMetadata::optimize(
             snapshots_info,
             persistent_components,
             object_storage,
-            data_lake_settings,
+            getMetadataLookupSettings(),
             format_settings,
             sample_block,
             context,
@@ -1036,7 +1077,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
-        data_lake_settings,
+        getMetadataLookupSettings(),
         persistent_components.metadata_cache,
         local_context,
         log.get(),
