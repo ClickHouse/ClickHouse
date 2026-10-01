@@ -1,8 +1,12 @@
 #include <Processors/QueryPlan/ReadFromTextIndexCount.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -14,6 +18,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 
@@ -21,6 +26,12 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsTextIndexPostingListApplyMode text_index_posting_list_apply_mode;
+    extern const SettingsTextIndexPostingsIntersectionAlgorithm text_index_postings_intersection_algorithm;
+}
 
 namespace ErrorCodes
 {
@@ -89,6 +100,41 @@ private:
     const CheckCancelledCallback & check_cancelled;
 };
 
+/// Counts the rows matched by the posting-list cursors in `range`, without materializing the postings.
+/// The cursors are applied window by window to a reusable byte filter, the same way the lazy reader fills its columns.
+template <typename CheckCancelledCallback>
+UInt64 countWithCursors(
+    const std::vector<PostingListCursorPtr> & cursors,
+    TextSearchMode search_mode,
+    TextIndexPostingsIntersectionAlgorithm intersection_algorithm,
+    const RowsRange & range,
+    const CheckCancelledCallback & check_cancelled)
+{
+    static constexpr size_t window_size = 65536;
+
+    auto filter = ColumnUInt8::create();
+    auto & filter_data = filter->getData();
+    UInt64 count = 0;
+
+    for (size_t row_offset = range.begin; row_offset <= range.end; row_offset += window_size)
+    {
+        check_cancelled();
+
+        const size_t num_rows = std::min(window_size, range.end - row_offset + 1);
+        filter_data.clear();
+        filter_data.resize_fill(num_rows, 0);
+
+        const bool may_be_true = search_mode == TextSearchMode::Any
+            ? lazyUnionPostingLists(*filter, cursors, 0, row_offset, num_rows)
+            : lazyIntersectPostingLists(*filter, cursors, 0, row_offset, num_rows, intersection_algorithm);
+
+        if (may_be_true)
+            count += countBytesInFilter(filter_data);
+    }
+
+    return count;
+}
+
 /// Counts matching rows in one part from the text-index posting metadata, without reading rows.
 /// `check_cancelled` is polled between posting blocks and tokens so a large part stays interruptible.
 template <typename CheckCancelledCallback>
@@ -100,6 +146,9 @@ UInt64 computeCountForPart(
 {
     const auto & data_part = part_with_ranges.data_part;
     const auto & index = resolved.index;
+
+    if (data_part->rows_count == 0)
+        return 0;
 
     auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
     if (!index_format)
@@ -162,33 +211,97 @@ UInt64 computeCountForPart(
         return it == token_infos.end() ? 0 : static_cast<UInt64>(it->second->cardinality);
     }
 
-    /// `is_failed`: e.g. All mode with a token missing from the part. An empty part matches nothing.
-    if (data_part->rows_count == 0)
-        return 0;
-
     const auto & query_builder = analyzer.getQueryBuilder(*resolved.query);
     if (query_builder.is_failed)
         return 0;
-
-    const RowsRange full_range(0, data_part->rows_count - 1);
-    auto postings_serialization = PostingsSerialization(
-        PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType()),
-        granule->getSerializationVersion());
-
-    const PostingBlockReader<CheckCancelledCallback> posting_reader(
-        *postings_stream, state, postings_serialization, granule->getIndexIdForCaches(), check_cancelled);
 
     /// `analyzePostings` already folded the small (single-block) postings into `query_builder.postings` by search mode.
     std::vector<const TokenPostingsInfo *> tokens_to_read;
     tokens_to_read.reserve(query_builder.tokens.size());
     for (const auto & [token, token_info] : query_builder.tokens)
+    {
         if (!analyzer.hasReadPostings(token))
             tokens_to_read.push_back(token_info.get());
+    }
 
     if (tokens_to_read.empty())
         return query_builder.postings ? query_builder.postings->cardinality() : 0;
 
-    if (resolved.query->getSearchMode() != TextSearchMode::All)
+    const auto & settings = resolved.condition->getContext()->getSettingsRef();
+    const auto search_mode = resolved.query->getSearchMode();
+
+    /// Same conditions as the lazy mode of `MergeTreeReaderTextIndex`: cursors need the per-segment block index of compressed postings.
+    const bool use_lazy_mode = settings[Setting::text_index_posting_list_apply_mode] == TextIndexPostingListApplyMode::Lazy
+        && granule->getPostingsCodecType() != IPostingListCodec::Type::None
+        && granule->getSerializationVersion() >= MergeTreeTextIndexSerializationVersion::V1_WithCodec;
+
+    if (use_lazy_mode)
+    {
+        if (search_mode == TextSearchMode::All && query_builder.postings && query_builder.postings->isEmpty())
+            return 0;
+
+        /// Each cursor seeks its own stream, so the cursors do not invalidate each other's buffered reads.
+        std::vector<std::unique_ptr<MergeTreeReaderStream>> cursor_streams;
+        std::vector<PostingListCursorPtr> cursors;
+        cursor_streams.reserve(tokens_to_read.size());
+        cursors.reserve(tokens_to_read.size() + 1);
+
+        /// The row range that can contain matches: the hull of the cursors for `Any`, their overlap for `All`.
+        std::optional<RowsRange> count_range;
+        auto add_cursor_range = [&](size_t begin, size_t end)
+        {
+            if (!count_range)
+                count_range.emplace(begin, end);
+            else if (search_mode == TextSearchMode::Any)
+                count_range.emplace(std::min(count_range->begin, begin), std::max(count_range->end, end));
+            else
+                count_range.emplace(std::max(count_range->begin, begin), std::min(count_range->end, end));
+        };
+
+        for (const auto * token_info : tokens_to_read)
+        {
+            if (!(token_info->header & PostingsSerialization::Flags::IsCompressed))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected uncompressed multi-block posting list in text index {}", index.index->index.name);
+
+            cursor_streams.push_back(make_stream(substreams[2]));
+            cursors.push_back(std::make_shared<PostingListCursor>(
+                *cursor_streams.back(),
+                *token_info,
+                resolved.condition->postingsCache().get(),
+                granule->getIndexIdForCaches()));
+
+            add_cursor_range(token_info->ranges.front().begin, token_info->ranges.back().end);
+        }
+
+        /// The folded small postings join the intersection or union as one more cursor over a flat array.
+        if (query_builder.postings && !query_builder.postings->isEmpty())
+        {
+            auto flat = std::make_shared<PaddedPODArray<UInt32>>(query_builder.postings->cardinality());
+            query_builder.postings->toUint32Array(flat->data());
+            add_cursor_range(flat->front(), flat->back());
+            cursors.push_back(std::make_shared<PostingListCursor>(FlatPostingsPtr(std::move(flat))));
+        }
+
+        if (count_range->begin > count_range->end)
+            return 0;
+
+        return countWithCursors(cursors, search_mode, settings[Setting::text_index_postings_intersection_algorithm], *count_range, check_cancelled);
+    }
+
+    auto postings_serialization = PostingsSerialization(
+        PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType()),
+        granule->getSerializationVersion());
+
+    const PostingBlockReader<CheckCancelledCallback> posting_reader(
+        *postings_stream,
+        state,
+        postings_serialization,
+        granule->getIndexIdForCaches(),
+        check_cancelled);
+
+    const RowsRange full_range(0, data_part->rows_count - 1);
+
+    if (search_mode != TextSearchMode::All)
     {
         std::optional<PostingList> merged_postings = query_builder.postings;
         for (const auto * token_info : tokens_to_read)
@@ -211,6 +324,7 @@ UInt64 computeCountForPart(
 
     std::optional<PostingList> candidates = query_builder.postings;
     size_t next = 0;
+
     if (!candidates)
     {
         candidates = posting_reader.read(*tokens_to_read.front(), full_range, nullptr);
@@ -245,7 +359,7 @@ public:
         std::shared_ptr<const ReadFromTextIndexCount::ResolvedQuery> resolved_,
         MergeTreeReaderSettings reader_settings_,
         QueryStatusPtr query_status_)
-        : ISource(std::move(header))
+        : ISource(std::move(header), /*enable_auto_progress=*/ false)
         , state(std::move(state_))
         , resolved(std::move(resolved_))
         , reader_settings(std::move(reader_settings_))
@@ -272,8 +386,11 @@ protected:
                 query_status->checkTimeLimit();
         };
 
-        UInt64 count = computeCountForPart(state->parts[part_idx], *resolved, reader_settings, check_cancelled);
+        const auto & part = state->parts[part_idx];
+        UInt64 count = computeCountForPart(part, *resolved, reader_settings, check_cancelled);
 
+        /// The whole part is answered, so report its rows as processed instead of the one-row output chunk.
+        progress(part.data_part->rows_count, 0);
         auto agg_count = std::make_shared<AggregateFunctionCount>(DataTypes{});
         return Chunk(Columns{createSingleCountStateColumn(agg_count, count)}, 1);
     }
@@ -315,10 +432,20 @@ void ReadFromTextIndexCount::initializePipeline(QueryPipelineBuilder & pipeline,
 
     size_t streams = std::max<size_t>(1, std::min(num_streams, state->parts.size()));
 
+    size_t total_rows = 0;
+    for (const auto & part : state->parts)
+        total_rows += part.data_part->rows_count;
+
     Pipes pipes;
     for (size_t i = 0; i < streams; ++i)
-        pipes.emplace_back(std::make_shared<TextIndexCountSource>(
-            getOutputHeader(), state, resolved, reader_settings, settings.process_list_element));
+    {
+        auto source = std::make_shared<TextIndexCountSource>(getOutputHeader(), state, resolved, reader_settings, settings.process_list_element);
+
+        if (i == 0)
+            source->addTotalRowsApprox(total_rows);
+
+        pipes.emplace_back(std::move(source));
+    }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
