@@ -9,14 +9,12 @@
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterUpdateQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserUpdateQuery.h>
@@ -41,6 +39,7 @@ namespace Setting
     extern const SettingsBool enable_lightweight_update;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsBool validate_mutation_query;
 }
 
 namespace MergeTreeSetting
@@ -71,17 +70,15 @@ BlockIO InterpreterDeleteQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
 
-    /// Inline the bodies of SQL user-defined functions before the database is filled in, otherwise an
-    /// unqualified table inside a body is resolved later, in a context whose current database is not
-    /// the database of the deleted-from table.
-    if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
-
     /// The spelling must be canonical before the query is enqueued for a Replicated database or
     /// lowered into an UPDATE / ALTER text: the replaying host may not carry this session's settings.
-    /// SQL UDF bodies are inlined above, so a `toTime` hidden in one is canonicalized too.
+    /// SQL UDF bodies are inlined first, so a `toTime` hidden in one is canonicalized too.
     if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
+    {
+        if (!UserDefinedSQLFunctionFactory::instance().empty())
+            UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
         replaceLegacyToTime(*query_ptr);
+    }
 
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
@@ -100,9 +97,6 @@ BlockIO InterpreterDeleteQuery::execute()
     if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
-
-    if (delete_query.cluster.empty())
-        checkNoRowPolicyForSetOperands(query_ptr, table_id.database_name, getContext());
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
@@ -144,12 +138,17 @@ BlockIO InterpreterDeleteQuery::execute()
         mutation_commands.emplace_back(mut_command);
 
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
-        /// Checked ahead of the full validation below, which repeats it, so that a
-        /// nondeterministic mutation is reported as such even when the predicate also fails
-        /// to analyze.
+        /// Replicated-storage non-determinism check must always run, even when
+        /// `validate_mutation_query=0` — bypassing it would let nondeterministic mutations
+        /// diverge replicas.  The heavier query-shape validation that constructs a full
+        /// `MutationsInterpreter` is gated by the setting, since invalid mutations may
+        /// reference not-yet-existing objects when the user opts out of validation.
         MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, mutation_commands, getContext());
-        MutationsInterpreter::Settings mutation_settings(false);
-        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
+        if (getContext()->getSettingsRef()[Setting::validate_mutation_query])
+        {
+            MutationsInterpreter::Settings mutation_settings(false);
+            MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
+        }
         table->mutate(mutation_commands, getContext());
         return {};
     }
@@ -170,30 +169,6 @@ BlockIO InterpreterDeleteQuery::execute()
                         "User should change lightweight_mutation_projection_mode OR "
                         "drop all the projections manually before running the query",
                         table_id.getFullTableName());
-        }
-
-        /// The cluster case ships the DELETE itself rather than a rewritten ALTER, so that every host
-        /// derives its delete mode and its own storage-check relaxation from its own settings.
-        if (!delete_query.cluster.empty())
-        {
-            /// Substitute the database into table functions that use the current database implicitly, e.g.
-            /// `merge('tables_regexp')`, before `executeDDLQueryOnCluster` replaces `currentDatabase()` with
-            /// the database of the session. The table identifiers are qualified on each host instead.
-            AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
-            auto & mutable_delete_query = query_ptr->as<ASTDeleteQuery &>();
-            if (mutable_delete_query.predicate)
-                visitor.substituteDatabaseInTableFunctions(*mutable_delete_query.predicate);
-            if (mutable_delete_query.partition)
-                visitor.substituteDatabaseInTableFunctions(*mutable_delete_query.partition);
-
-            DDLQueryOnClusterParams params;
-            params.access_to_check.emplace_back(AccessType::ALTER_DELETE, table_id.database_name, table_id.table_name);
-            params.additional_access_check = [captured_query_ptr = query_ptr, table_id, context = getContext()](const String &)
-            {
-                checkNoRowPolicyForSetOperands(
-                    captured_query_ptr, table_id.database_name, context, /* throw_if_unresolved = */ true);
-            };
-            return executeDDLQueryOnCluster(query_ptr, getContext(), params);
         }
 
         using enum LightweightDeleteMode;
@@ -278,9 +253,6 @@ BlockIO InterpreterDeleteQuery::execute()
 
             auto context = Context::createCopy(getContext());
             context->setSetting("mutations_sync", Field(context->getSettingsRef()[Setting::lightweight_deletes_sync]));
-            /// A user-written `ALTER TABLE ... UPDATE _row_exists = 0` reaches the storage as an
-            /// identical command, so `allow_non_metadata_alters` can only be relaxed here.
-            context->setSetting("allow_non_metadata_alters", true);
             InterpreterAlterQuery alter_interpreter(alter_ast, context);
             return alter_interpreter.execute();
         }

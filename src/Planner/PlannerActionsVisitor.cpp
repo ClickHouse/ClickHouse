@@ -888,12 +888,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             const auto & arg_names = lambda_node.getArguments().getNames();
             if (std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end())
             {
-                /// The synthetic column of an `INTERPOLATE` expression is not backed by a table expression,
-                /// so it has no column identifier. Derive a name that no lambda argument can have instead.
-                const auto * column_identifier = planner_context->getColumnNodeIdentifierOrNull(node);
-                String disambiguated = column_identifier
-                    ? *column_identifier
-                    : fmt::format("__{}.{}", column_source ? toString(column_source->getNodeType()) : "COLUMN", column_node_name);
+                const auto & disambiguated = planner_context->getColumnNodeIdentifierOrThrow(node);
 
                 actions_stack[i].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
 
@@ -1102,7 +1097,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::makeSetForInFunction(const QueryTreeNodePtr & node)
 {
     const auto & function_node = node->as<FunctionNode &>();
-    const bool ignore_set = function_node.getFunctionName().ends_with("IgnoreSet");
     auto in_first_argument = function_node.getArguments().getNodes().at(0);
     auto in_second_argument = function_node.getArguments().getNodes().at(1);
 
@@ -1122,7 +1116,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     FutureSetPtr set;
     auto set_key = in_second_argument->getTreeHash({ .ignore_cte = true });
 
-    if (!subquery_or_table && !ignore_set)
+    if (!subquery_or_table)
     {
         set_element_types = {in_first_argument->getResultType()};
         const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
@@ -1135,14 +1129,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef()[Setting::transform_null_in]);
         set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
     }
-    else if (!ignore_set)
+    else
     {
         set = planner_context->getPreparedSets().findSubquery(set_key);
         if (!set)
             set = planner_context->getPreparedSets().findStorage(set_key);
     }
 
-    if (!set && !ignore_set)
+    if (!set)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "No set is registered for key {}",
             PreparedSets::toString(set_key, set_element_types));

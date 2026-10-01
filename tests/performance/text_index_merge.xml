@@ -50,16 +50,6 @@
     </create_query>
 
     <create_query>
-        CREATE TABLE t_text_index_merge_vocabulary_mostly_disjoint_{codec}
-        (
-            id UInt64,
-            s String,
-            INDEX idx_s (s) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = '{codec}')
-        )
-        ENGINE = MergeTree ORDER BY id
-    </create_query>
-
-    <create_query>
         CREATE TABLE t_text_index_merge_multiblock_{codec}
         (
             id UInt64,
@@ -83,7 +73,6 @@
     <fill_query>SYSTEM STOP MERGES t_text_index_merge_intersecting_{codec}</fill_query>
     <fill_query>SYSTEM STOP MERGES t_text_index_merge_vocabulary_{codec}</fill_query>
     <fill_query>SYSTEM STOP MERGES t_text_index_merge_vocabulary_intersecting_{codec}</fill_query>
-    <fill_query>SYSTEM STOP MERGES t_text_index_merge_vocabulary_mostly_disjoint_{codec}</fill_query>
     <fill_query>SYSTEM STOP MERGES t_text_index_merge_multiblock_{codec}</fill_query>
     <fill_query>SYSTEM STOP MERGES t_text_index_merge_multiblock_intersecting_{codec}</fill_query>
 
@@ -118,15 +107,6 @@
     <fill_query>INSERT INTO t_text_index_merge_vocabulary_{codec} SELECT * FROM t_text_index_merge_vocabulary_intersecting_{codec} WHERE id &gt;= 400000 AND id &lt; 500000</fill_query>
     <fill_query>INSERT INTO t_text_index_merge_vocabulary_{codec} SELECT * FROM t_text_index_merge_vocabulary_intersecting_{codec} WHERE id &gt;= 500000</fill_query>
 
-    <!-- The same rows in parts that own ascending ranges, except that two interior rows of every
-         range belong to the next part: parts are mostly disjoint, with rare exceptions. -->
-    <fill_query>INSERT INTO t_text_index_merge_vocabulary_mostly_disjoint_{codec} SELECT * FROM t_text_index_merge_vocabulary_intersecting_{codec} WHERE least(intDiv(id, 100000) + (id % 50000 = 25000), 5) = 0</fill_query>
-    <fill_query>INSERT INTO t_text_index_merge_vocabulary_mostly_disjoint_{codec} SELECT * FROM t_text_index_merge_vocabulary_intersecting_{codec} WHERE least(intDiv(id, 100000) + (id % 50000 = 25000), 5) = 1</fill_query>
-    <fill_query>INSERT INTO t_text_index_merge_vocabulary_mostly_disjoint_{codec} SELECT * FROM t_text_index_merge_vocabulary_intersecting_{codec} WHERE least(intDiv(id, 100000) + (id % 50000 = 25000), 5) = 2</fill_query>
-    <fill_query>INSERT INTO t_text_index_merge_vocabulary_mostly_disjoint_{codec} SELECT * FROM t_text_index_merge_vocabulary_intersecting_{codec} WHERE least(intDiv(id, 100000) + (id % 50000 = 25000), 5) = 3</fill_query>
-    <fill_query>INSERT INTO t_text_index_merge_vocabulary_mostly_disjoint_{codec} SELECT * FROM t_text_index_merge_vocabulary_intersecting_{codec} WHERE least(intDiv(id, 100000) + (id % 50000 = 25000), 5) = 4</fill_query>
-    <fill_query>INSERT INTO t_text_index_merge_vocabulary_mostly_disjoint_{codec} SELECT * FROM t_text_index_merge_vocabulary_intersecting_{codec} WHERE least(intDiv(id, 100000) + (id % 50000 = 25000), 5) = 5</fill_query>
-
     <!-- Token 'v{x}' occurs in each row with (id + x) % 5 != 0: 240000 postings per token per part. -->
     <fill_query>INSERT INTO t_text_index_merge_multiblock_{codec} SELECT number AS id, arrayStringConcat(arrayMap(x -> 'v' || toString(x), arrayFilter(x -> (id + x) % 5 != 0, range(8))), ' ') FROM numbers(0, 300000)</fill_query>
     <fill_query>INSERT INTO t_text_index_merge_multiblock_{codec} SELECT number AS id, arrayStringConcat(arrayMap(x -> 'v' || toString(x), arrayFilter(x -> (id + x) % 5 != 0, range(8))), ' ') FROM numbers(300000, 300000)</fill_query>
@@ -146,7 +126,6 @@
     <query>OPTIMIZE TABLE t_text_index_merge_intersecting_{codec} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0'</query>
     <query>OPTIMIZE TABLE t_text_index_merge_vocabulary_{codec} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0'</query>
     <query>OPTIMIZE TABLE t_text_index_merge_vocabulary_intersecting_{codec} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0'</query>
-    <query>OPTIMIZE TABLE t_text_index_merge_vocabulary_mostly_disjoint_{codec} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0'</query>
     <query>OPTIMIZE TABLE t_text_index_merge_multiblock_{codec} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0'</query>
     <query>OPTIMIZE TABLE t_text_index_merge_multiblock_intersecting_{codec} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0'</query>
 
@@ -154,7 +133,6 @@
     <drop_query>DROP TABLE IF EXISTS t_text_index_merge_intersecting_{codec}</drop_query>
     <drop_query>DROP TABLE IF EXISTS t_text_index_merge_vocabulary_{codec}</drop_query>
     <drop_query>DROP TABLE IF EXISTS t_text_index_merge_vocabulary_intersecting_{codec}</drop_query>
-    <drop_query>DROP TABLE IF EXISTS t_text_index_merge_vocabulary_mostly_disjoint_{codec}</drop_query>
     <drop_query>DROP TABLE IF EXISTS t_text_index_merge_multiblock_{codec}</drop_query>
     <drop_query>DROP TABLE IF EXISTS t_text_index_merge_multiblock_intersecting_{codec}</drop_query>
 </test>

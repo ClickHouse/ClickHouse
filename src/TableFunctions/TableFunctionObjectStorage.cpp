@@ -274,15 +274,25 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         return storage;
     }
 
-    /// For a data-lake function with `SETTINGS disk = '...'` this returns the table's private copy of the
-    /// disk's object storage (see `DataLakeConfiguration::fromDisk`), never the disk's own storage: the
-    /// settings update in `lazyInitializeIfNeeded` must not touch the disk.
-    ///
+    std::string disk_name;
+    if constexpr (is_data_lake)
+    {
+        disk_name = settings && (*settings)[DataLakeStorageSetting::disk].changed
+            ? (*settings)[DataLakeStorageSetting::disk].value
+            : "";
+    }
+
+    ObjectStoragePtr current_object_storage;
+    if (configuration->isDataLakeConfiguration() && !disk_name.empty())
+        current_object_storage = context->getDisk(disk_name)->getObjectStorage();
+    else
+        current_object_storage = getObjectStorage(context, !is_insert_query);
+
     /// Note: distributed_processing is always false for non-cluster table functions (s3, azure, etc.).
     /// Cluster table functions (s3Cluster, etc.) handle distributed processing in their own getStorage() method.
     storage = std::make_shared<StorageObjectStorage>(
         configuration,
-        getObjectStorage(context, !is_insert_query),
+        current_object_storage,
         context,
         StorageID(getDatabaseName(), table_name),
         columns,
@@ -1503,7 +1513,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ```
 
 <Warning>
-ClickHouse supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure`, `icebergHDFS` and `icebergLocal` table functions and `IcebergS3`, `IcebergAzure`, `IcebergHDFS` and `IcebergLocal` table engines. Support for v3 is partial: deletion vector reads are supported; manifest compaction isn't supported.
+ClickHouse supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure`, `icebergHDFS` and `icebergLocal` table functions and `IcebergS3`, `IcebergAzure`, `IcebergHDFS` and `IcebergLocal` table engines. Support for v3 is partial; deletion vectors and manifest compaction aren't supported.
 </Warning>
 
 ## Defining a named collection {#defining-a-named-collection}
@@ -1581,7 +1591,8 @@ ClickHouse supports time travel for Iceberg tables, allowing you to query histor
 
 ClickHouse supports Iceberg tables with [position deletes](https://iceberg.apache.org/spec/#position-delete-files) and [equality deletes](https://iceberg.apache.org/spec/#equality-delete-files). Equality deletes are supported from v25.8.
 
-ClickHouse also supports reading [deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3). This support is read-only: ClickHouse does not write, update, or compact deletion vectors, and `ALTER TABLE ... DELETE` and `ALTER TABLE ... UPDATE` are not supported for Iceberg format-version 3 tables.
+The following deletion method is **not supported**:
+- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
 
 ### Basic usage {#basic-usage}
 
@@ -1860,32 +1871,6 @@ Row 1:
 x: Ivanov
 y: 993
 ```
-
-### `DROP PARTITION` {#iceberg-writes-drop-partition}
-
-`ALTER TABLE ... DROP PARTITION <value>` removes every data file belonging to a single partition and creates a new snapshot that no longer references them. It is currently supported for local and object-storage Iceberg tables, but not for catalog-backed tables.
-
-Enable `allow_insert_into_iceberg` to use this operation.
-
-The operation is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. Each manifest containing the selected partition must contain no files from other partitions. If a manifest is shared by the selected partition and another partition, the operation fails without changing the table. The operation also rejects affected manifests containing equality-delete files.
-
-The partition value follows the same rules as for `MergeTree`. For a single-column partition, pass a scalar literal; for a multi-column partition, pass a tuple of values:
-
-```sql
-ALTER TABLE iceberg_table DROP PARTITION 2;
-ALTER TABLE iceberg_table DROP PARTITION (2, 5);
-```
-
-For a partition defined with a transform, you can supply either the already-transformed partition-key value as a literal, or the same transform expression applied to a raw source value. The supported transforms are `identity`, `icebergBucket`, `icebergTruncate`, `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum`, and `toRelativeHourNum`. For a single-column partition the transform-expression form must be wrapped in `tuple(...)`:
-
-```sql
-ALTER TABLE iceberg_table DROP PARTITION 0;
-ALTER TABLE iceberg_table DROP PARTITION tuple(icebergBucket(4, 'apple'));
-```
-
-The operation rejects explicitly set `iceberg_snapshot_id`, `iceberg_timestamp_ms`, or `iceberg_metadata_file_path` settings. It modifies the current table state, not a historical snapshot or an explicitly selected metadata version.
-
-The `DROP PARTITION ID '...'` and `DROP PARTITION ALL` forms are not supported. Dropping a partition that does not exist is a no-op. The operation does not physically delete the data files. Earlier snapshots retain access to the removed rows and remain available to time-travel queries until those snapshots expire and their files are cleaned up.
 
 ### Schema evolution {#iceberg-writes-schema-evolution}
 
@@ -2313,7 +2298,7 @@ Table function `paimon` is an alias to `paimonS3` now.
 
 | Paimon Data Type | ClickHouse Data Type
 |-------|--------|
-|BOOLEAN     |Bool      |
+|BOOLEAN     |Int8      |
 |TINYINT     |Int8      |
 |SMALLINT     |Int16      |
 |INTEGER     |Int32      |

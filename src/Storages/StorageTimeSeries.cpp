@@ -750,10 +750,6 @@ void StorageTimeSeries::readImpl(
 
     auto generated_plan = std::make_unique<QueryPlan>(std::move(query_plan));
     query_plan = QueryPlan();
-    /// The generated plan joins the outer plan only during optimization, after the outer plan has decided
-    /// on distribution, so its contexts must be handed over now for a fallback to reach them.
-    query_plan.takeContextsFrom(*generated_plan);
-    query_plan.addDistributedPlanDecisionContext(read_context);
     query_plan.addStep(std::make_unique<ReadFromTimeSeriesStep>(std::move(generated_plan), read_context));
 }
 
@@ -836,7 +832,7 @@ Input the command `set enable_time_series_table = 1`.
 </Info>
 
 <Note>
-The `TimeSeries` table engine is available in ClickHouse Cloud as a private preview feature.
+The TimeSeries table engine in ClickHouse Cloud is also in private preview.
 The services that take part in the private preview already have the
 `enable_time_series_table` setting configured. Other ClickHouse Cloud services
 do not have this configuration, and you cannot enable the engine yourself on
@@ -879,7 +875,7 @@ Columns of a TimeSeries table are generated automatically. These are outer colum
 |---|---|---|
 | `metric_name` | `String` | The name of the metric |
 | `tags` | `Map(String, String)` | Map of tags (labels) for the time series |
-| `samples` | `Array(Tuple(DateTime64(3), Float64))` by default | Array of (timestamp, value) pairs for a time series. The tuple's timestamp and value element types can be derived from the samples `INNER COLUMNS` declaration (see [Specifying outer columns](#specifying-outer-columns)). The column is named `time_series` in tables of [version](#schema-versioning) 2 and earlier |
+| `samples` | `Array(Tuple(DateTime64(3), Float64))` by default | Array of (timestamp, value) pairs for a time series. The tuple's timestamp and scalar element types can be derived from the samples `INNER COLUMNS` declaration (see [Specifying outer columns](#specifying-outer-columns)). The column is named `time_series` in tables of [version](#schema-versioning) 2 and earlier |
 | `metric_family` | `String` | The name of the metric family (for metrics metadata) |
 | `type` | `String` | The type of the metric (e.g. "counter", "gauge") |
 | `unit` | `String` | The unit of the metric |
@@ -911,7 +907,7 @@ INSERT INTO my_table (metric_name, tags, samples, metric_family, type, unit, hel
 
 ### Specifying outer columns {#specifying-outer-columns}
 
-The outer `samples` column can be listed explicitly in a `CREATE TABLE` statement to override its default `Array(Tuple(DateTime64(3), Float64))` type (its old name `time_series` is accepted too). ClickHouse extracts the timestamp and value types from the tuple and propagates them to the inner samples table:
+The outer `samples` column can be listed explicitly in a `CREATE TABLE` statement to override its default `Array(Tuple(DateTime64(3), Float64))` type (its old name `time_series` is accepted too). ClickHouse extracts the timestamp and scalar types from the tuple and propagates them to the inner samples table:
 
 ```sql
 CREATE TABLE my_table (samples Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
@@ -921,7 +917,7 @@ This is equivalent to declaring the timestamp and value column types in the samp
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 If both forms are used in the same `CREATE TABLE` statement, the declared types must match.
@@ -955,9 +951,8 @@ The _samples_ table must have columns:
 | `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
 
 Columns the engine creates itself get time-series compression codecs:
-`timestamp CODEC(Delta, T64, ZSTD(3))` and `value CODEC(ALP, ZSTD(3))`. Near-monotonic timestamps barely
+`timestamp CODEC(DoubleDelta, ZSTD(1))` and `value CODEC(ZSTD(3))`. Near-monotonic timestamps barely
 compress under generic codecs and can otherwise dominate the on-disk size of the samples table.
-The engine enables `ALP` for its inner samples and recent samples tables without requiring `enable_alp_codec` to be set.
 See also [Adjusting types of columns](#adjusting-column-types).
 
 ### Recent samples table {#recent-samples-table}
@@ -965,8 +960,6 @@ See also [Adjusting types of columns](#adjusting-column-types).
 The _recent samples_ table is optional and enabled by default (see the [recent_samples_ttl_seconds](#settings) setting;
 setting it to zero disables the table). It contains a copy of the samples newer than the TTL defined by that setting,
 and it must have the same columns as the [samples](#samples-table) table.
-The generated `timestamp` column uses `CODEC(Delta, T64, ZSTD(3))`,
-and the generated `value` column uses `CODEC(ALP, ZSTD(3))`.
 
 Every inserted sample is written both to the samples table and to the recent samples table.
 Queries whose time range fits in the TTL window read from the recent samples table instead of the main samples table
@@ -989,14 +982,6 @@ The _tags_ table must have columns:
 | `min_time` | [ ] | `Nullable(DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))` | Minimum timestamp of time series with that `id`. The column is created if [store_min_time_and_max_time](#settings) is `true` |
 | `max_time` | [ ] | `Nullable(DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))` | Maximum timestamp of time series with that `id`. The column is created if [store_min_time_and_max_time](#settings) is `true` |
 
-New inner tags tables of [version](#schema-versioning) 5 and later with a `MergeTree` family engine have an inverted text index on `tags`:
-`INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs')`. It accelerates exact label matches such as
-`{job="api"}` in PromQL by looking up the key and value together. Comparisons with an empty string also
-match missing labels and do not use this index.
-
-Explicit indexes declared in `TAGS INNER COLUMNS` replace the default index. Existing tables and external
-tags tables keep their indexes; add and materialize the index on their tags target table to enable it.
-
 ### Metric families table {#metric-families-table}
 
 The _metric families_ table contains some information about the metric families being collected, the types of those metric families and their descriptions.
@@ -1006,7 +991,7 @@ The _metric families_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
-| `metric_family` | [x] | `String` | `String` or `LowCardinality(String)` | The name of a metric family. In tables of versions before 6 this column is named `metric_family_name` (see [Version history](#version-history)) |
+| `metric_family_name` | [x] | `String` | `String` or `LowCardinality(String)` | The name of a metric family |
 | `type` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The type of a metric family, one of "counter", "gauge", "summary", "stateset", "histogram", "gaugehistogram" |
 | `unit` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The unit used in a metric |
 | `help` | [x] | `String` | `String` or `LowCardinality(String)` | The description of a metric |
@@ -1034,19 +1019,19 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 6, recent_samples_ttl_seconds = 345600
+SETTINGS version = 4, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
-    `value` Float64 CODEC(ALP, ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
-    `value` Float64 CODEC(ALP, ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
 )
 RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
@@ -1055,18 +1040,17 @@ TAGS INNER COLUMNS
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
-    INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
 TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRIC FAMILIES INNER COLUMNS
 (
-    `metric_family` String,
+    `metric_family_name` String,
     `type` LowCardinality(String),
     `unit` LowCardinality(String),
     `help` String
 )
-METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family
+METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
 So the columns were generated automatically and also there are four inner target tables with their own column definitions
@@ -1083,8 +1067,8 @@ and each target table has its own set of columns:
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
-    `value` Float64 CODEC(ALP, ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -1095,8 +1079,8 @@ SETTINGS index_granularity = 32768
 CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
-    `value` Float64 CODEC(ALP, ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
@@ -1112,8 +1096,7 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
-    INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
@@ -1124,13 +1107,13 @@ SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 ```sql
 CREATE TABLE default.`.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `metric_family` String,
+    `metric_family_name` String,
     `type` LowCardinality(String),
     `unit` LowCardinality(String),
     `help` String
 )
 ENGINE = ReplacingMergeTree
-ORDER BY metric_family
+ORDER BY metric_family_name
 SETTINGS index_granularity = 8192
 ```
 
@@ -1155,8 +1138,7 @@ The types of the `id`, timestamp and value columns and the replication type of t
 The outer column list is regenerated and not copied.
 
 A table created by an older version of ClickHouse can be used as `existing_table`: the new table gets the current
-structure, e.g. the current `id` type and default identifier expression, and the customized parts copied from
-`existing_table` are adjusted to it.
+structure, e.g. the current `id` type and default identifier expression.
 
 ## Adjusting types of columns {#adjusting-column-types}
 
@@ -1164,7 +1146,7 @@ You can adjust the types of columns in the inner target tables using the `INNER 
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 Specifying inner columns without codecs means using the default codec for them:
@@ -1334,14 +1316,14 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
-| `version` | UInt64 | 6 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
+| `version` | UInt64 | 4 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
 
 ## Schema versioning {#schema-versioning}
 
 The `TimeSeries` table engine and the PromQL execution layer are under active development:
 the set of the target tables and their structure can change between ClickHouse versions.
 To make such changes detectable, every `TimeSeries` table stores its version in the [version](#settings) setting.
-The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 6) -
+The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 4) -
 persists in the table metadata, and can't be changed by `ALTER`. Tables created before the setting was introduced are considered as version 0.
 Normally the setting should just be omitted in the `CREATE TABLE` query - then the table gets the latest version.
 An explicit `version` is accepted if the server supports that version; then the table is defined the way that version does it (see [Version history](#version-history)).
@@ -1367,8 +1349,6 @@ the `promql` dialect, and the Prometheus HTTP query API):
 | 2 | The [`id_type`](#settings) setting was introduced: a table with an external tags table records the type of the `id` column in `id_type` and the expression generating identifiers in [`id_generator`](#settings), so its definition doesn't depend on the external table. `id_type` is also recorded when `id_generator` is set (see [The `id` column](#id-column)) |
 | 3 | The outer column `time_series` was renamed to `samples` (see [Outer columns](#outer-columns)). Tables of earlier versions keep the old name of the column, and the [prometheusQuery](/reference/functions/table-functions/prometheusQuery) and [prometheusQueryRange](/reference/functions/table-functions/prometheusQueryRange) table functions return the column under the name the table uses. The stored data didn't change |
 | 4 | The `metrics` target table was renamed to `metric families`: the inner table is named `.inner_id.metricfamilies.<uuid>` instead of `.inner_id.metrics.<uuid>`, and the definition is written with the keyword `METRIC FAMILIES` instead of `METRICS`. The stored data didn't change |
-| 5 | New inner tags tables with a `MergeTree` family engine get a `keyValuePairs` text index on the `tags` map by default (see [Tags table](#tags-table)) |
-| 6 | The column `metric_family_name` of the [metric families](#metric-families-table) table was renamed to `metric_family`, the name of the corresponding outer column. Tables of earlier versions keep the old name of the column, and the [timeSeriesMetricFamilies](/reference/functions/table-functions/timeSeriesMetrics) table function returns the column under the name the table uses. An external metric families table must name the column the way the version of the `TimeSeries` table does |
 
 # Functions {#functions}
 

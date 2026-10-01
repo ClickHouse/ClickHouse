@@ -1,41 +1,5 @@
 [
   {
-    "destination": "/get-started/sample-datasets/nyc-taxi",
-    "source": "/get-started/quickstarts/tutorial"
-  },
-  {
-    "destination": "/ar/get-started/sample-datasets/nyc-taxi",
-    "source": "/ar/get-started/quickstarts/tutorial"
-  },
-  {
-    "destination": "/es/get-started/sample-datasets/nyc-taxi",
-    "source": "/es/get-started/quickstarts/tutorial"
-  },
-  {
-    "destination": "/fr/get-started/sample-datasets/nyc-taxi",
-    "source": "/fr/get-started/quickstarts/tutorial"
-  },
-  {
-    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
-    "source": "/ja/get-started/quickstarts/tutorial"
-  },
-  {
-    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
-    "source": "/ko/get-started/quickstarts/tutorial"
-  },
-  {
-    "destination": "/pt-BR/get-started/sample-datasets/nyc-taxi",
-    "source": "/pt-BR/get-started/quickstarts/tutorial"
-  },
-  {
-    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
-    "source": "/ru/get-started/quickstarts/tutorial"
-  },
-  {
-    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
-    "source": "/zh/get-started/quickstarts/tutorial"
-  },
-  {
     "destination": "/get-started/setup/cloud",
     "source": "/get-started/quickstarts/create-your-first-service-on-cloud"
   },
@@ -3800,7 +3764,7 @@
     "source": "/getting-started/quick-start/oss"
   },
   {
-    "destination": "/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/getting-started/tutorial"
   },
   {
@@ -3848,7 +3812,7 @@
     "source": "/getting_started/playground"
   },
   {
-    "destination": "/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/getting_started/tutorial"
   },
   {
@@ -8652,7 +8616,7 @@
     "source": "/jp/getting-started/quick-start/oss"
   },
   {
-    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/jp/getting-started/tutorial"
   },
   {
@@ -8700,7 +8664,7 @@
     "source": "/jp/getting_started/playground"
   },
   {
-    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/jp/getting_started/tutorial"
   },
   {
@@ -15340,7 +15304,7 @@
     "source": "/jp/troubleshooting"
   },
   {
-    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/jp/tutorial"
   },
   {
@@ -19416,7 +19380,7 @@
     "source": "/ko/getting-started/quick-start/oss"
   },
   {
-    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/ko/getting-started/tutorial"
   },
   {
@@ -19464,7 +19428,7 @@
     "source": "/ko/getting_started/playground"
   },
   {
-    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/ko/getting_started/tutorial"
   },
   {
@@ -26100,7 +26064,7 @@
     "source": "/ko/troubleshooting"
   },
   {
-    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/ko/tutorial"
   },
   {
@@ -31532,7 +31496,7 @@
     "source": "/ru/getting-started/quick-start/oss"
   },
   {
-    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/ru/getting-started/tutorial"
   },
   {
@@ -31580,7 +31544,7 @@
     "source": "/ru/getting_started/playground"
   },
   {
-    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/ru/getting_started/tutorial"
   },
   {
@@ -38216,7 +38180,7 @@
     "source": "/ru/troubleshooting"
   },
   {
-    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/ru/tutorial"
   },
   {
@@ -41516,7 +41480,7 @@
     "source": "/troubleshooting"
   },
   {
-    "destination": "/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/tutorial"
   },
   {
@@ -45104,7 +45068,7 @@
     "source": "/zh/getting-started/quick-start/oss"
   },
   {
-    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/zh/getting-started/tutorial"
   },
   {
@@ -45152,7 +45116,7 @@
     "source": "/zh/getting_started/playground"
   },
   {
-    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/zh/getting_started/tutorial"
   },
   {
@@ -51788,7 +51752,7 @@
     "source": "/zh/troubleshooting"
   },
   {
-    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/zh/tutorial"
   },
   {
@@ -52718,10 +52682,6 @@
   {
     "destination": "/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
     "source": "/integrations/airflow"
-  },
-  {
-    "destination": "/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin",
-    "source": "/integrations/airflow/migrating-from-airflow-clickhouse-plugin"
   },
   {
     "destination": "/concepts/features/interfaces/documentation-search",

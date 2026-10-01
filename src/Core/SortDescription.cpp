@@ -97,31 +97,7 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
     return res;
 }
 
-namespace
-{
-
-/// Values that comparison declares equal while hash equality - the equality of `GROUP BY`, `DISTINCT`,
-/// `LIMIT BY` and `IN` - keeps apart: `-0.0` and `0.0`, and the `NaN` payloads. `Dynamic`, `Variant`
-/// and `Object` are only known at run time and may hold such a value.
-bool comparisonCanMergeDistinctValues(const IDataType & type)
-{
-    auto is_ambiguous = [](const IDataType & subtype)
-    {
-        WhichDataType which(subtype);
-        return which.isFloat() || which.isDynamic() || which.isVariant() || which.isObject();
-    };
-
-    if (is_ambiguous(type))
-        return true;
-
-    bool result = false;
-    type.forEachChild([&](const IDataType & child) { result = result || is_ambiguous(child); });
-    return result;
-}
-
-}
-
-SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns, const Block & header)
+SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns)
 {
     std::unordered_set<std::string_view> column_set(columns.begin(), columns.end());
 
@@ -134,14 +110,6 @@ SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & des
         /// A collated column is ordered by its collation key, not by value, so equal values are not
         /// adjacent; in-order grouping (DISTINCT / LIMIT BY) cannot rely on it. Stop the prefix here.
         if (sort_column_desc.collator)
-            break;
-
-        /// A group taken from the sort order is a range of rows that compare equal, and comparison
-        /// merges `-0.0` with `0.0`. The hash grouping the same steps use otherwise - and `GROUP BY` -
-        /// keeps them apart, so a float in the prefix would make the answer depend on which variant the
-        /// plan picks. The column keeps being grouped, just by hash.
-        const auto * column_in_header = header.findByName(sort_column_desc.column_name);
-        if (!column_in_header || !column_in_header->type || comparisonCanMergeDistinctValues(*column_in_header->type))
             break;
 
         prefix.emplace_back(sort_column_desc);
@@ -401,12 +369,15 @@ namespace
 
 /// The plan may be client-supplied (`TCPHandler::receiveQueryPlan`), so an out-of-range enum value has
 /// to be rejected instead of cast into the enum: `FillingTransform::getStepFunction` switches on it
-/// without a default case.
+/// without a default case. Same check as `decodeDataType` does for an `Interval` type.
 IntervalKind readIntervalKind(ReadBuffer & in)
 {
     UInt8 kind = 0;
     readIntBinary(kind, in);
-    return IntervalKind::fromBinary(kind);
+    if (kind > static_cast<UInt8>(IntervalKind::Kind::Year))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Unknown IntervalKind in a serialized WITH FILL description: {0:#04x}", UInt64(kind));
+    return IntervalKind(static_cast<IntervalKind::Kind>(kind));
 }
 
 /// The `WITH FILL` bounds of one column. `step_func`/`staleness_step_func` are not written: they are
@@ -435,11 +406,11 @@ void serializeFillColumnDescription(const FillColumnDescription & fill, WriteBuf
 
     writeFieldBinary(fill.fill_step, out);
     if (fill.step_kind)
-        writeIntBinary(fill.step_kind->toBinary(), out);
+        writeIntBinary(static_cast<UInt8>(fill.step_kind->kind), out);
 
     writeFieldBinary(fill.fill_staleness, out);
     if (fill.staleness_kind)
-        writeIntBinary(fill.staleness_kind->toBinary(), out);
+        writeIntBinary(static_cast<UInt8>(fill.staleness_kind->kind), out);
 }
 
 void deserializeFillColumnDescription(FillColumnDescription & fill, ReadBuffer & in, size_t max_type_complexity)

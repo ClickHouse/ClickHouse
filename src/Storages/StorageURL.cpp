@@ -1672,7 +1672,7 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
     {
         Settings settings = args.getContext()->getSettingsCopy();
 
-        // Applying the changes validates the values, not the names.
+        // Apply changes from SETTINGS clause, with validation.
         settings.applyChanges(args.storage_def->settings->changes);
 
         format_settings = getFormatSettings(args.getContext(), settings);
@@ -1921,9 +1921,8 @@ String StorageURL::resolveURLBase(const String & url, const String & base, const
     }
 
     auto scheme_end = base.find("://");
-    /// Not echoed back: the value can carry a credential, and password masking anchors on the `://` it lacks.
     if (scheme_end == String::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `{}` setting must contain a scheme (e.g. https://)", base_setting_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `{}` setting must contain a scheme (e.g. https://), got: {}", base_setting_name, base);
 
     /// Find the boundary of the path component in the base URL (before '?' or '#').
     auto authority_start = scheme_end + 3; /// skip "://"
@@ -2598,8 +2597,6 @@ void registerStorageURL(StorageFactory & factory)
         "URL",
         [](const StorageFactory::Arguments & args) -> StoragePtr
         {
-            checkStorageSettingNames(args);
-
             /// The `URL` engine is a unified wrapper: dispatch by scheme to File/S3/Azure/HDFS.
             if (auto dispatched = tryDispatchURLEngineByScheme(args))
                 return dispatched;
