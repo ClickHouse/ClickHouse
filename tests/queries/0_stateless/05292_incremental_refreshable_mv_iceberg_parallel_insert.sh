@@ -26,7 +26,7 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TGT} (k UInt64)
     ENGINE = IcebergLocal('${TGT_PATH}', 'Parquet')
-    PARTITION BY (k % 2)
+    PARTITION BY icebergBucket(2, k)
 "
 
 # Small blocks spread the round over all the parallel sinks.
