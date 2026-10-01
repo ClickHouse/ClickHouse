@@ -308,6 +308,33 @@ struct MapToNestedAdapter : public MapAdapterBase<MapToNestedAdapter<Name, retur
     }
 };
 
+/// Adapter for mapEntries. It exposes singular public tuple field names while reusing
+/// the Map's existing nested Array(Tuple(...)) column without materializing entries.
+template <typename Name>
+struct MapEntriesAdapter : public MapAdapterBase<MapEntriesAdapter<Name>, Name>
+{
+    using MapAdapterBase<MapEntriesAdapter, Name>::extractNestedTypes;
+    using MapAdapterBase<MapEntriesAdapter, Name>::extractNestedTypesAndColumns;
+
+    /// mapEntries follows Array semantics and strips nested LowCardinality, like mapKeys/mapValues.
+    static constexpr bool preserve_low_cardinality = false;
+
+    static DataTypePtr extractNestedType(const DataTypeMap & type_map)
+    {
+        return std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeTuple>(type_map.getKeyValueTypes(), Names{"key", "value"}));
+    }
+
+    static ColumnPtr extractNestedColumn(const ColumnMap & column_map)
+    {
+        return column_map.getNestedColumnPtr();
+    }
+
+    static DataTypePtr extractResultType(const DataTypePtr & result_type) { return result_type; }
+    static DataTypePtr wrapType(DataTypePtr type) { return type; }
+    static ColumnPtr wrapColumn(ColumnPtr column) { return column; }
+};
+
 /// Adapter that extracts array with keys or values from Map columns.
 template <typename Name, size_t position>
 struct MapToSubcolumnAdapter
@@ -626,7 +653,7 @@ struct NameMapValues { static constexpr auto name = "mapValues"; };
 using FunctionMapValues = FunctionMapToArrayAdapter<FunctionIdentity, MapToSubcolumnAdapter<NameMapValues, 1>, NameMapValues>;
 
 struct NameMapEntries { static constexpr auto name = "mapEntries"; };
-using FunctionMapEntries = FunctionMapToArrayAdapter<FunctionIdentity, MapToNestedAdapter<NameMapEntries, false>, NameMapEntries>;
+using FunctionMapEntries = FunctionMapToArrayAdapter<FunctionIdentity, MapEntriesAdapter<NameMapEntries>, NameMapEntries>;
 
 struct NameMapContainsKey { static constexpr auto name = "mapContainsKey"; };
 using FunctionMapContainsKey = FunctionMapToArrayAdapter<FunctionArrayIndex<HasAction, NameMapContainsKey>, MapToSubcolumnAdapter<NameMapContainsKey, 0>, NameMapContainsKey>;
@@ -746,14 +773,14 @@ The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FR
 
     /// mapEntries documentation
     FunctionDocumentation::Description description_mapEntries = R"(
-Returns the key-value pairs of a map as an array of tuples.
+Returns the key-value pairs of a map as an array of named tuples with fields `key` and `value`.
 Duplicate keys are preserved.
 )";
     FunctionDocumentation::Syntax syntax_mapEntries = "mapEntries(map)";
     FunctionDocumentation::Arguments arguments_mapEntries = {
         {"map", "Map to extract entries from.", {"Map(K, V)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_mapEntries = {"Returns an array containing the key-value pairs from the map.", {"Array(Tuple(K, V))"}};
+    FunctionDocumentation::ReturnedValue returned_value_mapEntries = {"Returns an array containing the key-value pairs from the map.", {"Array(Tuple(key K, value V))"}};
     FunctionDocumentation::Examples examples_mapEntries = {
     {
         "Usage example",
