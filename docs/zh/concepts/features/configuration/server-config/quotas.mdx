@@ -25,16 +25,16 @@ doc_type: 'guide'
 下面来看一下 &#39;users.xml&#39; 文件中定义配额的部分。
 
 ```xml
-<!-- 配额 -->
+<!-- Quotas -->
 <quotas>
-    <!-- 配额名称。 -->
+    <!-- Quota name. -->
     <default>
-        <!-- 针对某一时间段的限制。您可以设置多个具有不同限制的时间间隔。 -->
+        <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
         <interval>
-            <!-- 时间间隔长度。 -->
+            <!-- Length of the interval. -->
             <duration>3600</duration>
 
-            <!-- 不限制。仅收集指定时间间隔内的数据。 -->
+            <!-- Unlimited. Just collect data for the specified time interval. -->
             <queries>0</queries>
             <query_selects>0</query_selects>
             <query_inserts>0</query_inserts>
@@ -44,6 +44,7 @@ doc_type: 'guide'
             <execution_time>0</execution_time>
         </interval>
     </default>
+</quotas>
 ```
 
 默认情况下，配额会按小时统计资源消耗，但不限制使用量。
@@ -51,9 +52,9 @@ doc_type: 'guide'
 
 ```xml
 <statbox>
-    <!-- 某一时间段的限制。您可以设置多个具有不同限制的时间间隔。 -->
+    <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
     <interval>
-        <!-- 时间间隔的长度。 -->
+        <!-- Length of the interval. -->
         <duration>3600</duration>
 
         <queries>1000</queries>
@@ -153,6 +154,7 @@ doc_type: 'guide'
         <keyed_by_forwarded_ip />.
     -->
     <keyed />
+</web_global>
 ```
 
 还可以按归一化查询哈希值来设置配额键，这样每种不同的查询模式都会拥有各自独立的配额桶。在 XML 配置中，写法如下：`<keyed_by_normalized_query_hash />`：

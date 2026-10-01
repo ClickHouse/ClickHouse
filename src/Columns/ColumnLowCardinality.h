@@ -74,6 +74,8 @@ public:
     bool isNullAt(size_t n) const override { return getDictionary().isNullAt(getIndexes().getUInt(n)); }
     ColumnPtr cut(size_t start, size_t length) const override
     {
+        if (start == 0 && length == size())
+            return getPtr();
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().cut(start, length), isSharedDictionary());
     }
 
@@ -113,8 +115,6 @@ public:
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-
-    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
@@ -406,8 +406,8 @@ private:
 
     template <typename IndexColumn>
     void updatePermutationWithIndexType(
-        IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & position_by_index,
-        IColumn::Permutation & res, EqualRanges & equal_ranges) const;
+        IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & rank_by_index,
+        bool has_value_equal_entries, IColumn::Permutation & res, EqualRanges & equal_ranges) const;
 };
 
 bool isColumnLowCardinalityNullable(const IColumn & column);

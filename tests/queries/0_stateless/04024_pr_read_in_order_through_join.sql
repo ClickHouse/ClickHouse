@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- Regression test: parallel replicas coordination mode mismatch with read_in_order_through_join.
 -- The optimization can produce different results on the initiator and remote replicas
 -- (due to differences in plan construction), leading to "Replica decided to read in Default
@@ -90,6 +91,8 @@ SELECT DISTINCT events.Time
 FROM events LEFT JOIN payloads ON events.Id = payloads.Id
 ORDER BY events.Time LIMIT 3
 FORMAT Null;
+
+SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 DROP TABLE events;
 DROP TABLE payloads;

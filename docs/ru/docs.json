@@ -4,7 +4,7 @@
       "pages": [
         "ru/index"
       ],
-      "tab": "Home"
+      "tab": "Главная"
     },
     {
       "menu": [
@@ -21,7 +21,7 @@
           "$ref": "./reference/navigation.json"
         }
       ],
-      "tab": "Database"
+      "tab": "База данных"
     },
     {
       "menu": [
@@ -44,7 +44,7 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Open source"
+          "item": "С открытым исходным кодом"
         },
         {
           "$ref": "./clickstack/navigation.json"
@@ -56,12 +56,12 @@
           "$ref": "./products/kubernetes-operator/navigation.json"
         }
       ],
-      "tab": "Solutions"
+      "tab": "Решения"
     },
     {
       "menu": [
         {
-          "item": "Ecosystem",
+          "item": "Экосистема",
           "pages": [
             "ru/integrations/home",
             "ru/integrations/data-catalogs"
@@ -77,7 +77,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "Integrations"
+      "tab": "Интеграции"
     },
     {
       "menu": [
@@ -94,7 +94,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "Resources"
+      "tab": "Ресурсы"
     }
   ]
 }

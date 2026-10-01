@@ -288,6 +288,14 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, so a function that throws on the default value must not be executed on the
+    /// whole dictionary - it would fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override
+    {
+        return exception_mode != IPStringToNumExceptionMode::Throw || cast_ipv4_ipv6_default_on_conversion_error;
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -459,6 +467,14 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, so a function that throws on the default value must not be executed on the
+    /// whole dictionary - it would fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override
+    {
+        return exception_mode != IPStringToNumExceptionMode::Throw || cast_ipv4_ipv6_default_on_conversion_error;
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -612,7 +628,9 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 1; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    /// Not injective: only the low 6 bytes of the argument are formatted, the higher two bytes are ignored,
+    /// so 2^64 possible inputs are mapped onto 2^48 possible outputs.
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

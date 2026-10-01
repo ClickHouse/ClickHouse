@@ -4,7 +4,7 @@
       "pages": [
         "zh/index"
       ],
-      "tab": "Home"
+      "tab": "首页"
     },
     {
       "menu": [
@@ -21,7 +21,7 @@
           "$ref": "./reference/navigation.json"
         }
       ],
-      "tab": "Database"
+      "tab": "数据库"
     },
     {
       "menu": [
@@ -44,7 +44,7 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Open source"
+          "item": "开源"
         },
         {
           "$ref": "./clickstack/navigation.json"
@@ -56,12 +56,12 @@
           "$ref": "./products/kubernetes-operator/navigation.json"
         }
       ],
-      "tab": "Solutions"
+      "tab": "解决方案"
     },
     {
       "menu": [
         {
-          "item": "Ecosystem",
+          "item": "生态系统",
           "pages": [
             "zh/integrations/home",
             "zh/integrations/data-catalogs"
@@ -77,7 +77,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "Integrations"
+      "tab": "集成"
     },
     {
       "menu": [
@@ -94,7 +94,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "Resources"
+      "tab": "资源"
     }
   ]
 }
