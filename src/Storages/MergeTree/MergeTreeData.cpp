@@ -8958,27 +8958,19 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
 
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
 
-    /// If we have columns with dynamic subcolumns like JSON, columns size calculation
-    /// can read a column sample from each part, it can be slow and we don't want to
-    /// do it under parts lock, so we create a copy of the data parts and release parts lock
-    /// before calculation.
+    /// Per-part size calculation can read from storage and, for secondary indices renamed by a
+    /// pending mutation, acquire currently_processing_in_background_mutex via getMutationsSnapshot().
+    /// Mutation-status paths acquire that mutex before the parts lock, so calculating sizes while
+    /// holding the parts lock would invert the lock order and can deadlock.
     ///
-    /// Note, the result will be still correct, since it is guarded by the
-    /// columns_and_secondary_indices_sizes_mutex.
-    auto storage_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    if (hasColumnsWithDynamicSubcolumns(storage_metadata_snapshot->getSampleBlock()))
-    {
-        DataParts data_parts(committed_parts_range.begin(), committed_parts_range.end());
-        parts_lock.unlock();
+    /// Snapshot the active parts and release the parts lock before doing any per-part calculation.
+    /// The aggregate remains correct because columns_and_secondary_indices_sizes_mutex serializes
+    /// this rebuild with part contribution updates from concurrent commits.
+    DataParts data_parts(committed_parts_range.begin(), committed_parts_range.end());
+    parts_lock.unlock();
 
-        for (const auto & part : data_parts)
-            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
-    }
-    else
-    {
-        for (const auto & part : committed_parts_range)
-            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
-    }
+    for (const auto & part : data_parts)
+        addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
 
     are_columns_and_secondary_indices_sizes_calculated = true;
 }
