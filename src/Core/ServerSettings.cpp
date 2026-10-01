@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Common/Jemalloc.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
+#include <Common/SeccompFilter.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/BaseSettings.h>
@@ -1154,15 +1155,17 @@ If the response exceeds this limit, the query fails with an error.
 
 Default: `10485760` (10 MiB).
 )", 0) \
-    DECLARE(Bool, http_allow_path_requests, false, R"(
+    DECLARE(Bool, http_allow_path_requests, true, R"(
 Allow the HTTP interface to route path-style requests (such as `/my_db/my_table.csv`) to the query handler.
 
 This flag gates the routing decision only, which is made before the request is authenticated, so it cannot depend on a per-user setting. After routing, the per-user settings [`http_allow_database_as_path`](/operations/settings/settings#http_allow_database_as_path), [`http_allow_table_as_file`](/operations/settings/settings#http_allow_table_as_file), and [`http_allow_filters_as_path`](/operations/settings/settings#http_allow_filters_as_path) control whether the routed path is actually interpreted for the authenticated user. When this flag is off, unknown paths return a plain `404`.
 
+Enabled by default. Set it to `0` to restore the previous behavior, in which every path that is not a configured handler returns `404`.
+
 **Example**
 
 ```xml
-<http_allow_path_requests>1</http_allow_path_requests>
+<http_allow_path_requests>0</http_allow_path_requests>
 ```
 )", 0) \
     DECLARE(UInt64, max_keep_alive_requests, 10000, R"(
@@ -1230,7 +1233,7 @@ The replica name in ZooKeeper.
 <default_replica_name>{replica}</default_replica_name>
 ```
 )", 0) \
-    DECLARE(UInt64, disk_connections_soft_limit, 5000, R"(Connections above this limit have significantly shorter time to live. The limit applies to the disks connections.)", 0) \
+    DECLARE(UInt64, disk_connections_soft_limit, 5000, R"(Connections above this limit have significantly shorter time to live. While the number of connections in the group, in use and idle together, is at or above this limit, reads from S3 disks stop keeping a connection open between buffer fills: each fill is a separate request whose connection returns to the pool as soon as the fill completes. This bounds the connections held by readers that keep many streams open at once, such as merges of parts with a `JSON` column, at the cost of one request per fill. The limit applies to the disks connections.)", 0) \
     DECLARE(UInt64, disk_connections_warn_limit, 8000, R"(Warning massages are written to the logs if number of in-use connections are higher than this limit. The limit applies to the disks connections.)", 0) \
     DECLARE(UInt64, disk_connections_store_limit, 10000, R"(The maximum number of idle connections kept in the pool for reuse. Once this many connections are stored, further connections are reset after use instead of being kept. The limit does not bound the connections in use. Set to 0 to turn connection cache off. The limit applies to the disks connections.)", 0) \
     DECLARE(UInt64, disk_connections_hard_limit, 200000, R"(Exception is thrown at a creation attempt when this limit is reached. Set to 0 to turn off hard limitation. The limit applies to the disks connections.)", 0) \
@@ -1363,8 +1366,14 @@ The threshold ratio for purging jemalloc relative to the memory available to Cli
     DECLARE(UInt64, memory_worker_decay_adjustment_period_ms, 5000, R"(
 Duration in milliseconds that memory pressure must persist before dynamically adjusting jemalloc's `dirty_decay_ms`. When memory usage remains above the purge threshold for this period, automatic dirty page decay is disabled (`dirty_decay_ms=0`) to aggressively reclaim memory. When usage stays below the threshold for this period, the default decay behavior is restored. Set to 0 to disable dynamic adjustment and use jemalloc's default decay settings.
 )", 0) \
-    DECLARE(Bool, memory_worker_correct_memory_tracker, 0, R"(
-Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups
+    DECLARE(Bool, memory_worker_correct_memory_tracker, 1, R"(
+Whether the background memory worker corrects the global memory tracker, on every tick, from an external measurement of the memory the process really uses: the cgroup memory usage when cgroups are available (see `memory_worker_use_cgroup`), otherwise jemalloc's `stats.resident`.
+
+The global memory tracker is a counter: allocations add to it and deallocations subtract from it. Any accounting asymmetry stays in it for the lifetime of the process, because nothing else lowers it, and an upward drift is never worked off — the memory it describes has already been freed. Once the drift alone exceeds `max_server_memory_usage`, every allocation fails, down to the zero-byte check at the start of a connection, and the server rejects all queries while using a fraction of its limit. Correcting from a measurement bounds the lifetime of such a drift to one tick of the worker (`memory_worker_period_ms`, by default 50 ms when reading from cgroups and 100 ms when reading from jemalloc).
+
+The correction does not hide the drift. `MemoryTrackingUncorrected` keeps the value the tracker would have had with no corrections applied (a snapshot of the plain counter, refreshed on every tick of the worker), so `MemoryTrackingUncorrected - MemoryTracking` is the drift accumulated so far.
+
+Setting this to `0` restores the behavior of previous versions: the tracker is corrected only on the first tick of the worker and whenever it goes negative.
 )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
     DECLARE(Double, memory_worker_rss_speculative_reserve_ratio, getDefaultMemoryWorkerRssSpeculativeReserveRatio(), R"(
@@ -1519,7 +1528,7 @@ See [Controlling behavior on server CPU overload](/concepts/features/configurati
     DECLARE(Float, distributed_cache_keep_up_free_connections_ratio, 0.1f, "Soft limit for number of active connection distributed cache will try to keep free. After the number of free connections goes below distributed_cache_keep_up_free_connections_ratio * max_connections, connections with oldest activity will be closed until the number goes above the limit.", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_num, 0, R"(Maximum number of queries allowed per TCP connection before the connection is closed. Set to 0 for unlimited queries.)", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_seconds, 0, R"(Maximum lifetime of a TCP connection in seconds before it is closed. Set to 0 for unlimited connection lifetime.)", 0) \
-    DECLARE(UInt64, handshake_timeout_milliseconds, 30000, R"(Wall-clock timeout in milliseconds for the entire TCP handshake phase (Hello + Addendum). Limits how long an unauthenticated connection can hold a thread. Set to 0 to disable.)", 0) \
+    DECLARE(UInt64, handshake_timeout_milliseconds, 30000, R"(Wall-clock timeout in milliseconds for the entire handshake phase of a native protocol (Hello and Addendum), MySQL or PostgreSQL connection, including the TLS negotiation. Limits how long an unauthenticated connection can hold a thread: the deadline is checked on every read, and the socket receive timeout is clamped to it, so a client that sends nothing cannot outlast the budget either. That clamp keeps a floor of 100 milliseconds, so a small value overdraws the budget slightly rather than cutting reads too short. Set to 0 to disable.)", 0) \
     DECLARE(Bool, skip_binary_checksum_checks, false, R"(Skips ClickHouse binary checksum integrity checks)", 0) \
     DECLARE(Bool, abort_on_logical_error, false, R"(Crash the server on LOGICAL_ERROR exceptions. Only for experts.)", 0) \
     DECLARE(UInt64, jemalloc_merge_tree_arenas, 1, R"(Number of dedicated jemalloc arenas for long-lived MergeTree per-part and per-table metadata. `0` disables the dedicated arena (metadata uses the default per-CPU arenas). `1` uses a single shared arena. `N > 1` creates a pool of `N` arenas and routes allocations per CPU; on many-core machines this avoids serializing metadata allocation on a single arena's locks. Capped at the number of CPUs the process may run on (its affinity mask), so a large value (or the core count) yields one arena per allowed CPU. Applied at startup.)", 0) \
@@ -1857,6 +1866,37 @@ Enabling this option is recommended but will lead to increased startup time for 
 ```
 )", 0) \
     DECLARE(UInt64, mlock_executable_min_total_memory_amount_bytes, 5000000000, R"(The minimum memory threshold for performing `<mlockall>`)", 0) \
+    DECLARE(SeccompMode, seccomp, SeccompMode::Log, R"(
+What the Linux kernel does when the server makes a system call that it is not supposed to make.
+
+At startup the server installs a [`seccomp`](https://man7.org/linux/man-pages/man2/seccomp.2.html) filter on itself, allowing only the system calls ClickHouse uses. An attacker who manages to run code inside the server process is then left without the kernel interfaces that turn code execution into something worse: loading kernel modules, rebooting, mounting filesystems, `chroot`, changing the process identity, creating namespaces, `ptrace` and reading another process's memory, eBPF, the kernel keyring, `userfaultfd` and `vmsplice`, file handles, `fanotify`, swap and quota control, setting the system clock or the host name, and System V and POSIX message queues. The two requests of `ioctl` that let a process take over the terminal it holds, `TIOCSTI` and `TIOCLINUX`, are refused as well. The `io_uring` system calls are allowed, because `local_filesystem_read_method = io_uring` uses them, and the filter does not see the operations submitted through a ring - so the operations `io_uring` implements, such as the extended-attribute ones, stay reachable that way even though their system calls are refused. In every mode but `disabled` the server also sets `PR_SET_NO_NEW_PRIVS`, so that neither it nor anything it starts can gain privileges by running a setuid program.
+
+Creating a namespace is refused in every form it takes: `unshare` and `setns` are not allowed at all, a `clone` that asks for a namespace among its flags is refused, and `clone3` - whose arguments live in a structure that a filter cannot read, so that a namespace cannot be told from a thread - is refused as a whole, with `ENOSYS`. That is how a libc discovers that it has to use `clone` instead, so making threads and processes keeps working; `docker` and `systemd` refuse `clone3` the same way in their own policies.
+
+Possible values:
+
+- `trap` - the kernel sends `SIGSYS` to the offending thread. ClickHouse treats it as any other fatal signal: the system call number and a stack trace go to the log, and the server terminates.
+- `kill` - the kernel kills the whole process at once. Nothing is written to the log, because no signal handler gets to run.
+- `errno` - the system call fails with `EPERM` and the server keeps running. Whatever made the call sees an error it most likely does not expect.
+- `log` - the system call is allowed, and only recorded. No system call is refused, so this mode enforces no policy at all; use it to check the policy against your workload before turning it on. `PR_SET_NO_NEW_PRIVS` is still set in this mode, because the kernel asks for it before it accepts a filter at all, so a setuid program the server runs does not get to elevate even here.
+- `disabled` - no filter is installed.
+
+The default is `log`, so that the policy enforces nothing until it has been validated against a workload: run the server with it, watch the kernel audit log for a system call the policy does not cover, and only then switch the setting to `trap`, `kill` or `errno`.
+
+Where the kernel cannot install a filter with the `log` action - it predates Linux 4.14, it is built without `CONFIG_SECCOMP_FILTER`, or an outer sandbox such as a container runtime refuses the `seccomp` system call - the `log` mode logs a warning with the reason and the server runs without a filter, since there is nothing the filter would have enforced. `PR_SET_NO_NEW_PRIVS` is set all the same. The enforcing modes do not do that: if their filter cannot be installed, the server does not start.
+
+In every mode but `disabled` the kernel also records the offending system call in its audit log, naming the process and the system call number - which is the only evidence left behind in the `kill` mode, where the server does not get to write to its own log.
+
+A filter cannot be removed or relaxed once installed, and it is inherited across both `fork` and `execve`, so it also applies to executable dictionaries and executable user defined functions, to the library and ODBC bridges, and to the OOM canary. A script run by one of those is subject to the same policy, which is worth keeping in mind if it does something unusual.
+
+The policy is only implemented for x86-64 and AArch64, since it is a list of architecture-specific system call numbers. On any other architecture the server logs a warning at startup and runs without a filter, but `PR_SET_NO_NEW_PRIVS`, which does not depend on the architecture, is still set in every mode but `disabled`.
+
+**Example**
+
+```xml
+<seccomp>log</seccomp>
+```
+)", 0) \
     DECLARE(UInt32, listen_backlog, 4096, R"(
 Backlog (queue size of pending connections) of the listen socket. The default value of `<4096>` is the same as that of linux 5.4+).
 
@@ -2038,18 +2078,11 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
         const auto & name = setting.getName();
         String path {setting.getPath()};
         const String * path_or_name = path.empty() ? &name : &path;
-        try
-        {
-            if (config.has(*path_or_name))
-                set(name, config.getString(*path_or_name));
-            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + *path_or_name))
-                set(name, config.getString("profiles.default." + *path_or_name));
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("while parsing setting '{}' value", name);
-            throw;
-        }
+        /// `set` names the setting and the value it was given, so nothing has to be added here.
+        if (config.has(*path_or_name))
+            set(name, config.getString(*path_or_name));
+        else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + *path_or_name))
+            set(name, config.getString("profiles.default." + *path_or_name));
     }
 }
 
@@ -2242,6 +2275,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "remote_url_allow_hosts",
         "http_handlers",
         "arrowflight",
+        "iceberg_rest_catalog",
         "proxy",
         "enable_http_stacktrace",
         "enable_verbose_replicas_status",
@@ -2341,6 +2375,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "server_uuid_from_replica_name",
         "cloud",
         "default_user_for_system_dictionaries",
+        "default_user_for_backups",
 
         /// Miscellaneous
         "core_dump",
@@ -3805,6 +3840,12 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"parquet_metadata_cache_size",
              {std::to_string(context->getParquetMetadataCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
 #endif
+
+    /// The seccomp filter is installed once at startup and cannot be changed afterwards, so a reloaded
+    /// configuration that says otherwise does not describe the policy in force.
+    if (const auto seccomp_mode = getInstalledSeccompMode())
+        changeable_settings.insert(
+            {"seccomp", {SettingFieldSeccompMode(*seccomp_mode).toString(), ChangeableWithoutRestart::No}});
 
     /// `keeper_hosts` is not a regular config setting; it is derived from the `<zookeeper>` config and follows
     /// it on config reload, so the live value diverges from the empty default stored in `ServerSettings`.
