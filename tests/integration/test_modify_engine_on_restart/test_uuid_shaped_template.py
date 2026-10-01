@@ -313,8 +313,10 @@ def check_converted_table_can_be_renamed(node, table):
     expected_replica_name = f"{database_name}_{table}_node6"
     assert get_replica_name(node, table) == expected_replica_name
     # Only {database} and {table} are unfolded into the metadata; {replica} stays a macro, as after a CREATE.
+    # `TSVRaw` keeps the quotes of the engine arguments unescaped.
     assert f"'{database_name}_{table}_{{replica}}'" in q(
-        node, f"SHOW CREATE TABLE {table}"
+        node,
+        f"SELECT engine_full FROM system.tables WHERE database = '{database_name}' AND name = '{table}' FORMAT TSVRaw",
     )
 
     q(node, f"RENAME TABLE {table} TO renamed")
