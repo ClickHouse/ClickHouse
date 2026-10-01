@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Introduction",
+      "group": "简介",
       "pages": [
         "zh/resources/develop-contribute/introduction/developer-instruction",
         "zh/resources/develop-contribute/introduction/architecture"
       ]
     },
     {
-      "group": "Building",
+      "group": "构建",
       "pages": [
         "zh/resources/develop-contribute/build/build",
         "zh/resources/develop-contribute/build/build-osx",
@@ -21,17 +21,15 @@
       ]
     },
     {
-      "group": "Native protocol",
+      "group": "原生协议",
       "pages": [
-        "zh/resources/develop-contribute/native-protocol/basics",
-        "zh/resources/develop-contribute/native-protocol/client",
-        "zh/resources/develop-contribute/native-protocol/server",
-        "zh/resources/develop-contribute/native-protocol/columns",
+        "zh/resources/develop-contribute/native-protocol/protocol",
+        "zh/resources/develop-contribute/native-protocol/format",
         "zh/resources/develop-contribute/native-protocol/hash"
       ]
     },
     {
-      "group": "Contributing",
+      "group": "贡献",
       "pages": [
         "zh/resources/develop-contribute/contribute/tests",
         "zh/resources/develop-contribute/contribute/continuous-integration",
@@ -44,7 +42,7 @@
       ]
     },
     {
-      "group": "Integration development",
+      "group": "集成开发",
       "pages": [
         "zh/resources/develop-contribute/integrations/index",
         "zh/resources/develop-contribute/integrations/building-integrations",
@@ -53,13 +51,13 @@
       ]
     },
     {
-      "group": "Roadmap",
+      "group": "路线图",
       "pages": [
         "zh/resources/develop-contribute/roadmap"
       ]
     }
   ],
   "icon": "/images/icons/icon-contribute.svg",
-  "item": "Development & contributing",
+  "item": "开发与贡献",
   "root": "zh/resources/develop-contribute/index"
 }
