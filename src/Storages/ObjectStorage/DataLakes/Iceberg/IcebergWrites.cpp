@@ -149,25 +149,6 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
     }
 }
 
-void checkNoUInt64(const ColumnWithTypeAndName & column)
-{
-    auto throw_uint64 = [&]
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Cannot write column {} of type {} into Iceberg: the widest Iceberg integer type is the signed 64-bit `long`, "
-            "which cannot represent every UInt64 value. Declare the column as Int64 instead",
-            column.name, column.type->getName());
-    };
-    if (column.type->getTypeId() == TypeIndex::UInt64)
-        throw_uint64();
-    column.type->forEachChild([&](const IDataType & child)
-    {
-        if (child.getTypeId() == TypeIndex::UInt64)
-            throw_uint64();
-    });
-}
-
 /// Whether a float/double partition value is NaN, which the manifest-list partition summary records via `contains_nan` rather than as ordered lower/upper bounds.
 bool isNaNPartitionValue(const Field & field, DataTypePtr type)
 {
@@ -1186,9 +1167,6 @@ IcebergStorageSink::IcebergStorageSink(
             current_schema = schemas->getObject(static_cast<UInt32>(i));
         }
     }
-
-    for (const auto & column : *sample_block)
-        checkNoUInt64(column);
 
     sort_description = Iceberg::getSortingKeyDescriptionFromMetadata(metadata, sample_block->getNamesAndTypesList(), context);
 
