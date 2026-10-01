@@ -1321,16 +1321,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     };
 
     /// Lets the worker threads of long single-block steps (e.g. vector similarity index build) stop on cancellation.
-    /// Captures the blocker, not `merge_list_element_ptr`: the thread group it owns would otherwise hold a reference cycle.
-    auto merge_cancelled = [merges_blocker = global_ctx->merges_blocker, partition_id = global_ctx->future_part->part_info.getPartitionId()]
-    {
-        return merges_blocker->isCancelledForPartition(partition_id);
-    };
     global_ctx->merge_list_element_ptr->thread_group->setQueryCancellationPredicates(
-        merge_cancelled,
-        [merge_cancelled]
+        ctx->is_cancelled,
+        [is_cancelled = ctx->is_cancelled]
         {
-            if (merge_cancelled())
+            if (is_cancelled())
                 throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
         });
 

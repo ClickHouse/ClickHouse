@@ -3552,10 +3552,12 @@ MutateTask::MutateTask(
     ctx->source_part = ctx->future_part->parts[0];
 
     /// Lets the worker threads of long single-block steps (e.g. vector similarity index build) stop on cancellation.
-    /// Captures the blocker, not the merge list element: the thread group it owns would otherwise hold a reference cycle.
-    auto mutation_cancelled = [merges_blocker = ctx->merges_blocker, partition_id = ctx->future_part->part_info.getPartitionId()]
+    /// Same condition as `checkOperationIsNotCanceled`.
+    auto mutation_cancelled = [merges_blocker = ctx->merges_blocker,
+        partition_id = ctx->future_part->part_info.getPartitionId(),
+        mutate_entry = ctx->mutate_entry]
     {
-        return merges_blocker->isCancelledForPartition(partition_id);
+        return merges_blocker->isCancelledForPartition(partition_id) || (*mutate_entry)->is_cancelled;
     };
     (*ctx->mutate_entry)->thread_group->setQueryCancellationPredicates(
         mutation_cancelled,
