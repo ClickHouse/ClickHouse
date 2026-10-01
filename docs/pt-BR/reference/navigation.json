@@ -973,15 +973,6 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Interfaces",
-      "pages": [
-        "pt-BR/reference/interfaces/specs/NativeProtocol",
-        "pt-BR/reference/interfaces/specs/NativeFormat"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
       "group": "Configurações",
       "pages": [
         "pt-BR/reference/settings/index",

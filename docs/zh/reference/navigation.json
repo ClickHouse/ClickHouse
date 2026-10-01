@@ -973,15 +973,6 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "接口",
-      "pages": [
-        "zh/reference/interfaces/specs/NativeProtocol",
-        "zh/reference/interfaces/specs/NativeFormat"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
       "group": "设置",
       "pages": [
         "zh/reference/settings/index",

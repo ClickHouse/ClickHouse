@@ -2857,7 +2857,7 @@ Use client timezone for interpreting DateTime string values, instead of adopting
 )", 0) \
     \
     DECLARE(Bool, send_profile_events, true, R"(
-Enables or disables sending of [ProfileEvents](/resources/develop-contribute/native-protocol/server#profile-events) packets to the client.
+Enables or disables sending of [ProfileEvents](/resources/develop-contribute/native-protocol/protocol#profileevents) packets to the client.
 
 This can be disabled to reduce network traffic for clients that do not require profile events.
 

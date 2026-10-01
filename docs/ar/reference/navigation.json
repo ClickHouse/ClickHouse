@@ -973,15 +973,6 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "الواجهات",
-      "pages": [
-        "ar/reference/interfaces/specs/NativeProtocol",
-        "ar/reference/interfaces/specs/NativeFormat"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
       "group": "الإعدادات",
       "pages": [
         "ar/reference/settings/index",

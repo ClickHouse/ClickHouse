@@ -411,6 +411,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.try_infer_datetimes = settings[Setting::input_format_try_infer_datetimes];
     format_settings.try_infer_datetimes_only_datetime64 = settings[Setting::input_format_try_infer_datetimes_only_datetime64];
     format_settings.try_infer_exponent_floats = settings[Setting::input_format_try_infer_exponent_floats];
+    format_settings.freeform_max_search_steps = settings[Setting::input_format_freeform_max_search_steps];
     format_settings.markdown.escape_special_characters = settings[Setting::output_format_markdown_escape_special_characters];
     format_settings.bson.output_string_as_string = settings[Setting::output_format_bson_string_as_string];
     format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_bson_skip_fields_with_unsupported_types_in_schema_inference];
