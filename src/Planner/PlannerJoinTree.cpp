@@ -31,6 +31,7 @@
 #include <Storages/MergeTree/SparsityFilter.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageJoin.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
@@ -193,6 +194,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
+    extern const int ACCESS_DENIED;
 }
 
 namespace
@@ -765,6 +767,21 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     return true;
 }
 
+/** Check the SELECT privilege for the columns that the planner resolved "away": `indexHint` arguments and ALIAS
+  * columns inlined into PREWHERE. Checked separately from the selected columns on purpose: a trivial query such as
+  * `SELECT count() FROM t` passes with a grant on any one column, while these names are always required.
+  */
+void checkAccessRightsForColumnsResolvedAway(
+    const TableNode & table_node, const TableExpressionData & table_expression_data, const ContextPtr & query_context)
+{
+    const auto & column_names = table_expression_data.getAccessCheckedColumnsNames();
+    if (column_names.empty())
+        return;
+
+    checkAccessRights(
+        table_node.getStorage(), table_node.getStorageID(), table_node.getStorageSnapshot(), column_names, query_context);
+}
+
 void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expression, const SelectQueryOptions & select_query_options, PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
@@ -787,6 +804,8 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
         columns_names_allowed_to_select = checkAccessRights(
             table_node->getStorage(), table_node->getStorageID(), table_node->getStorageSnapshot(), column_names_with_aliases, query_context);
+
+        checkAccessRightsForColumnsResolvedAway(*table_node, table_expression_data, query_context);
     }
     else if (table_function_node)
     {
@@ -3278,12 +3297,22 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         join_node,
         planner_context);
 
-    PreparedJoinStorage prepared_join;
-    bool allow_storage_join = right_join_tree_query_plan.used_row_policies.empty()
+    /// A prepared storage replaces the right-side plan, and with it the `FilterStep` applying the
+    /// table's row policy, so such a table is joined as a stream. A `Join` table is a prebuilt
+    /// hash table read as is, so it cannot be filtered at all.
+    bool right_table_has_row_policy = !right_join_tree_query_plan.used_row_policies.empty();
+
+    PreparedJoinStorage prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpressionNode(), planner_context);
+    if (prepared_join.storage_join && right_table_has_row_policy)
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot join table {} with the Join engine because a row policy is applied on it",
+            prepared_join.storage_join->getStorageID().getNameForLogs());
+
+    bool allow_storage_join = !right_table_has_row_policy
         && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
         && right_join_tree_query_plan.useful_sets.empty();
-    if (allow_storage_join)
-        prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpressionNode(), planner_context);
+    if (!allow_storage_join)
+        prepared_join = {};
     if (prepared_join)
     {
         bool use_nulls = settings[Setting::join_use_nulls] && isLeftOrFull(join_node.getKind());
