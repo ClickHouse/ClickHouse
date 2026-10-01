@@ -385,6 +385,59 @@ SQLQueryPiece fromSelector(const PrometheusQueryTree::InstantSelector * instant_
 }
 
 
+SQLQueryPiece fromSelectorSampleTimestamps(const PrometheusQueryTree::InstantSelector * instant_selector_node, ConverterContext & context)
+{
+    auto instant_selector_text = instant_selector_node->toString(*context.promql_tree);
+    auto range_selector = fromRangeSelector(
+        instant_selector_text, instant_selector_node, /* filter_stale_markers = */ false, context);
+
+    if (range_selector.store_method == StoreMethod::RAW_DATA || range_selector.store_method == StoreMethod::HISTOGRAM_RAW_DATA)
+    {
+        /// SELECT group, timestamp,
+        ///        if(<value is a stale marker>, CAST(value, 'Float64'), CAST(timestamp, 'Float64')) AS value
+        /// FROM <raw_data>
+        /// Stale markers are kept so that last_over_time() can still select them and they are turned into absence below,
+        /// exactly as for a plain instant selector.
+        SelectQueryBuilder builder;
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+
+        ASTPtr is_stale = isStaleMarker(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+        ASTPtr stale_value
+            = makeASTFunction("CAST", make_intrusive<ASTIdentifier>(ColumnNames::Value), make_intrusive<ASTLiteral>("Float64"));
+
+        /// A histogram sample yields its timestamp too, as in Prometheus; a histogram stale marker becomes a float one.
+        if (range_selector.store_method == StoreMethod::HISTOGRAM_RAW_DATA)
+        {
+            is_stale = makeASTFunction(
+                "or", std::move(is_stale), isStaleHistogramMarker(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Flags)));
+            stale_value = makeASTFunction("reinterpretAsFloat64", make_intrusive<ASTLiteral>(STALE_NAN_BITS));
+        }
+
+        ASTPtr value = makeASTFunction(
+            "if",
+            std::move(is_stale),
+            std::move(stale_value),
+            makeASTFunction("CAST", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), make_intrusive<ASTLiteral>("Float64")));
+        value->setAlias(ColumnNames::Value);
+        builder.select_list.push_back(std::move(value));
+
+        context.subqueries.emplace_back(
+            context.subqueries.size(),
+            std::move(range_selector.select_query),
+            SQLSubqueryType::TABLE);
+        builder.from_table = context.subqueries.back().name;
+
+        range_selector.select_query = builder.getSelectQuery();
+        range_selector.store_method = StoreMethod::RAW_DATA;
+    }
+
+    auto vector_grid = applyFunctionOverRange(
+        instant_selector_node, "last_over_time", {std::move(range_selector)}, context);
+    return replaceStaleMarkersWithNulls(std::move(vector_grid), context);
+}
+
+
 SQLQueryPiece fromSelector(const PrometheusQueryTree::RangeSelector * range_selector_node, ConverterContext & context)
 {
     auto instant_selector_text = range_selector_node->getInstantSelector()->toString(*context.promql_tree);
