@@ -1,0 +1,2 @@
+SELECT * FROM a INNER JOIN b ON (a.x = b.y AS {x:Identifier})
+SELECT n FROM t ORDER BY n ASC WITH FILL INTERPOLATE (`n` AS (1 AS {x:Identifier}))

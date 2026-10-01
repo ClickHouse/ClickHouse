@@ -66,6 +66,19 @@ public:
     {
         max_pos = 0;
     }
+
+    /// A syntax error is reported at the rightmost token read so far (see `max`). A parser that
+    /// reads ahead only to decide how to parse saves this position before the lookahead and
+    /// restores it afterwards, so the lookahead does not move the reported error. Every access to
+    /// a token marks it read, so after the restore, the parser must not access a token that only
+    /// the lookahead reached (keep what it needs from such a token before the restore).
+    size_t getMaxPos() const { return max_pos; }
+
+    void restoreMaxPos(size_t saved_max_pos)
+    {
+        chassert(saved_max_pos <= max_pos);
+        max_pos = saved_max_pos;
+    }
 };
 
 
@@ -103,6 +116,10 @@ public:
 
     /// Rightmost token we had looked.
     ALWAYS_INLINE const Token & max() { return tokens->max(); }
+
+    /// See `Tokens::getMaxPos` and `Tokens::restoreMaxPos`.
+    ALWAYS_INLINE size_t getMaxPos() const { return tokens->getMaxPos(); }
+    ALWAYS_INLINE void restoreMaxPos(size_t saved_max_pos) { tokens->restoreMaxPos(saved_max_pos); }
 };
 
 

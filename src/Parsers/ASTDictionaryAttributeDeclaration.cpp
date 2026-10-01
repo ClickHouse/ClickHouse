@@ -107,7 +107,7 @@ void ASTDictionaryAttributeDeclaration::formatImpl(WriteBuffer & ostr, const For
     {
         ostr << ' ' << "EXPRESSION" << ' ';
         auto nested_frame = frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(expression.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(expression.get()); ast_alias && ast_alias->hasAlias())
             nested_frame.need_parens = true;
         expression->format(ostr, settings, state, nested_frame);
     }

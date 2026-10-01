@@ -1,0 +1,2 @@
+INSERT INTO t SELECT * FROM input(\'x UInt8\') FORMAT CSV
+1	1

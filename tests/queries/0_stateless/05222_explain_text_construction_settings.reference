@@ -1,0 +1,2 @@
+SELECT 1 SETTINGS filter = \'0\'
+SELECT 1 LIMIT 10, 10 SETTINGS page = 2

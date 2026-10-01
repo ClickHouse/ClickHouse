@@ -38,7 +38,7 @@ protected:
         settings.writeIdentifier(ostr, column_name, /*ambiguous=*/false);
         ostr << " = ";
 
-        if (auto ast = boost::dynamic_pointer_cast<ASTWithAlias>(expression()); ast && !ast->alias.empty())
+        if (auto ast = boost::dynamic_pointer_cast<ASTWithAlias>(expression()); ast && ast->hasAlias())
         {
             frame.need_parens = true;
         }

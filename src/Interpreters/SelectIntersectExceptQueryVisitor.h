@@ -24,7 +24,7 @@ public:
         const SetOperationMode except_default_mode;
     };
 
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+    static bool needChildVisit(const ASTPtr & ast, const ASTPtr & child);
 
     static void visit(ASTPtr & ast, Data &);
     static void visit(ASTSelectWithUnionQuery &, Data &);

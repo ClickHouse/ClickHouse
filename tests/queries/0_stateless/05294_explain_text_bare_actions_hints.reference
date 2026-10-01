@@ -1,0 +1,8 @@
+failed at position 28 (x)
+unsigned integer
+failed at position 30 (x)
+unsigned integer
+failed at position 31 (end of query)
+EXPLAIN TEXT action
+failed at position 33 (end of query)
+EXPLAIN TEXT action

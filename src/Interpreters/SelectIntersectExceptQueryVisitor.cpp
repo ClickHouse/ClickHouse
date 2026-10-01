@@ -1,4 +1,5 @@
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Common/typeid_cast.h>
@@ -171,4 +172,9 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
     ast.list_of_modes = std::move(modes);
 }
 
+bool SelectIntersectExceptQueryMatcher::needChildVisit(const ASTPtr & ast, const ASTPtr &)
+{
+    const auto * explain = ast->as<ASTExplainQuery>();
+    return !explain || explain->getKind() != ASTExplainQuery::FormattedQuery;
+}
 }

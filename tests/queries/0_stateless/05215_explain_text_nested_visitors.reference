@@ -1,0 +1,37 @@
+SELECT 1 UNION SELECT 2
+SELECT 1 INTERSECT SELECT 2
+(SELECT 1) EXCEPT (SELECT 2)
+WITH 1 AS x SELECT x UNION ALL SELECT 2
+Explain EXPLAIN TEXT (children 2)
+ SelectWithUnionQuery (children 1)
+  ExpressionList (children 2)
+   SelectQuery (children 1)
+    ExpressionList (children 1)
+     Literal UInt64_1
+   SelectQuery (children 1)
+    ExpressionList (children 1)
+     Literal UInt64_2
+ ExpressionList (children 1)
+  ExplainTextAction ONELINE
+Explain EXPLAIN TEXT (children 2)
+ SelectWithUnionQuery (children 1)
+  ExpressionList (children 2)
+   SelectQuery (children 1)
+    ExpressionList (children 1)
+     Literal UInt64_1
+   SelectQuery (children 1)
+    ExpressionList (children 1)
+     Literal UInt64_2
+ ExpressionList (children 1)
+  ExplainTextAction ONELINE
+Explain EXPLAIN TEXT (children 2)
+ SelectWithUnionQuery (children 1)
+  ExpressionList (children 2)
+   SelectQuery (children 1)
+    ExpressionList (children 1)
+     Literal UInt64_1
+   SelectQuery (children 1)
+    ExpressionList (children 1)
+     Literal UInt64_2
+ ExpressionList (children 1)
+  ExplainTextAction ONELINE

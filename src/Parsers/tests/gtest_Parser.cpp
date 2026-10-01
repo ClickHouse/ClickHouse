@@ -118,6 +118,51 @@ TEST(ParserExplainQuery, ExplainSettingsChildOrderIsCanonical)
     }
 }
 
+/// In debug builds `executeQueryImpl` checks that a query survives a format and reparse, and parses
+/// the formatted text with the parser it built for the original query, whose `end` still points
+/// into the original buffer. `EXPLAIN TEXT` must find where its source ends on the token stream it
+/// is given, never by lexing up to `end`. Both texts share one buffer here, so the stale `end` lies
+/// before the text being parsed in every build: the address order in which the check failed.
+TEST(ParserExplainQuery, ExplainTextParsesWithStaleEnd)
+{
+    const std::vector<String> queries = {
+        "EXPLAIN TEXT (SELECT 1)",
+        "EXPLAIN TEXT (SELECT 1 LIMIT 3 AFTER 1) MODIFY OFFSET 1",
+        "EXPLAIN TEXT (WITH 1 AS {name:Identifier} SELECT {name:Identifier}) ONELINE",
+        "EXPLAIN TEXT SELECT 1 ONELINE",
+        "EXPLAIN TEXT SELECT * FROM t LIMIT 10 PAGE 3, MULTILINE FORMAT JSONEachRow",
+        "EXPLAIN TEXT SELECT x FROM t WHERE x = 1 SETTINGS max_threads = 1",
+        "EXPLAIN AST EXPLAIN TEXT SELECT 1 ONELINE",
+    };
+
+    for (const auto & query : queries)
+    {
+        String formatted;
+        {
+            ParserQuery parser(query.data() + query.size());
+            ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+            ASSERT_NE(nullptr, ast) << "query: " << query;
+            formatted = ast->formatWithSecretsOneLine();
+        }
+
+        /// the bare form as written, and the parenthesized form the formatter prints
+        for (const auto & text : {query, formatted})
+        {
+            const String buffer = query + " " + text;
+            const char * original_end = buffer.data() + query.size();
+            ParserQuery parser(original_end);
+
+            ASTPtr ast = parseQuery(parser, buffer.data(), original_end, "", 0, 0, 0);
+            ASSERT_NE(nullptr, ast) << "query: " << query;
+
+            ASTPtr reparsed = parseQuery(parser, original_end, buffer.data() + buffer.size(), "", 0, 0, 0);
+            ASSERT_NE(nullptr, reparsed) << "reparse of: " << text;
+            EXPECT_EQ(formatted, reparsed->formatWithSecretsOneLine()) << "reparse of: " << text;
+            EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "reparse of: " << text;
+        }
+    }
+}
+
 /// `ASTExecuteAsQuery` is another `ASTQueryWithOutput` carrier, but it is parsed outside
 /// `ParserQueryWithOutput`: `ParserExecuteAsQuery` hoists the subquery output options to the
 /// outer query. The hoisting appends them to `children` after the subquery and in the canonical

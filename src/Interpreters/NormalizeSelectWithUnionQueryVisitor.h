@@ -22,7 +22,7 @@ public:
 
     static void visit(ASTPtr & ast, Data &);
     static void visit(ASTSelectWithUnionQuery &, Data &);
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+    static bool needChildVisit(const ASTPtr & ast, const ASTPtr & child);
 };
 
 /// We need normalize children first, so we should visit AST tree bottom up

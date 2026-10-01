@@ -19,16 +19,25 @@ static void writeAlias(const String & name, WriteBuffer & ostr, const ASTWithAli
     settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
 }
 
+/// An alias given as a query parameter (`AS {name:Identifier}`) is resolved only once the parameter
+/// values are known. Until then it has to be printed as written, or formatting silently drops it.
+static void writeParametrisedAlias(const ASTQueryParameter & parameter, WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame)
+{
+    ostr << " AS ";
+    parameter.format(ostr, settings, state, frame);
+}
+
 
 void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    const bool has_alias = hasAlias();
     /// This is needed for distributed queries with the old analyzer. Remove it after removing the old analyzer.
     /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
     if (settings.collapse_identical_nodes_to_aliases && !alias.empty() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash(/*ignore_aliases=*/ true)).second)
     {
         settings.writeIdentifier(ostr, alias, /*ambiguous=*/false);
     }
-    else if (frame.parenthesize_alias_inner_only && !alias.empty())
+    else if (frame.parenthesize_alias_inner_only && has_alias)
     {
         /// `IAST::format` deferred parens emission to us so we can produce `(expr) AS alias`
         /// instead of `(expr AS alias)`. At the top level of an expression / SELECT element /
@@ -41,7 +50,10 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
         inner.need_parens = false;
         formatImplWithoutAlias(ostr, settings, state, inner);
         ostr.write(')');
-        writeAlias(alias, ostr, settings);
+        if (!alias.empty())
+            writeAlias(alias, ostr, settings);
+        else if (parametrised_alias)
+            writeParametrisedAlias(*parametrised_alias, ostr, settings, state, frame);
     }
     else
     {
@@ -51,7 +63,7 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
         /// to `b` only instead of to `(a AND b)`. After re-parsing, the parser sets
         /// `parenthesized=true` on the aliased node; the next format goes through the
         /// `parenthesize_alias_inner_only` branch above.
-        const bool wrap_around_alias = frame.need_parens && !alias.empty();
+        const bool wrap_around_alias = frame.need_parens && has_alias;
         if (wrap_around_alias)
         {
             ostr.write('(');
@@ -64,6 +76,8 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
         formatImplWithoutAlias(ostr, settings, state, frame);
         if (!alias.empty())
             writeAlias(alias, ostr, settings);
+        else if (parametrised_alias)
+            writeParametrisedAlias(*parametrised_alias, ostr, settings, state, frame);
         if (wrap_around_alias)
             ostr.write(')');
     }

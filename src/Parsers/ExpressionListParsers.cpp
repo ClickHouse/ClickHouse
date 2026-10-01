@@ -1362,7 +1362,7 @@ static bool allElementsAreCompatibleLiterals(const ASTs & elements, Field::Types
         const auto * literal = elem->as<ASTLiteral>();
         if (!literal)
             return false;
-        if (!elem->tryGetAlias().empty())
+        if (elem->hasAlias())
             return false;
         auto field_type = literal->value.getType();
         if (field_type == Field::Types::Array || field_type == Field::Types::Tuple)
@@ -1404,7 +1404,7 @@ public:
                 /// This keeps `1 IN (((1), (2)))` equivalent to `1 IN (1, 2)`.
                 if (auto * literal = elements[0]->as<ASTLiteral>())
                 {
-                    if (literal->value.getType() == Field::Types::Tuple && elements[0]->tryGetAlias().empty())
+                    if (literal->value.getType() == Field::Types::Tuple && !elements[0]->hasAlias())
                     {
                         /// Save the tuple value before clearing elements,
                         /// because elements.clear() destroys the ASTLiteral
