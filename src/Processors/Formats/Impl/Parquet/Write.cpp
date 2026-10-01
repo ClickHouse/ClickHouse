@@ -1786,9 +1786,6 @@ size_t ColumnChunkWriteState::allocatedBytes() const
     size_t r = def.allocated_bytes() + rep.allocated_bytes();
     if (primitive_column)
         r += primitive_column->allocatedBytes();
-    /// The folded bloom filter is held here until the row group is written out, so it is part of the
-    /// memory a completed column chunk keeps alive.
-    r += indexes.bloom_filter_data.allocated_bytes();
     return r;
 }
 
