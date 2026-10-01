@@ -1,0 +1,3 @@
+CREATE TABLE wv (`cnt` UInt64) ENGINE = Memory AS SELECT count(a) AS cnt FROM mt GROUP BY tumble(ts, toIntervalSecond(5)) AS wid
+CREATE TABLE t (`a` UInt64) ENGINE = Memory
+CREATE MATERIALIZED VIEW mv TO dst AS SELECT 1

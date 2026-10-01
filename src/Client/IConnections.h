@@ -29,6 +29,10 @@ public:
 
     virtual void sendQueryPlan(const QueryPlan & query_plan) = 0;
 
+    /// All currently connected replicas must support this version before the caller sends a
+    /// query-plan packet serialized at it.
+    virtual bool supportsQueryPlanSerializationVersion(UInt64 version) const = 0;
+
     virtual void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) = 0;
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
     virtual void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) = 0;

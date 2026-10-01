@@ -2,12 +2,12 @@
 slug: /cloud/managed-postgres/local-development
 sidebarTitle: 'Desenvolvimento local'
 title: 'Ambientes de desenvolvimento local'
-description: 'Execute o PostgreSQL localmente com Docker para desenvolver rapidamente com o Managed Postgres'
+description: 'Execute o PostgreSQL localmente com Docker para desenvolver rapidamente com o ClickHouse Managed Postgres'
 keywords: ['managed postgres', 'desenvolvimento local', 'docker', 'postgresql', 'dados iniciais', 'migrações']
 doc_type: 'guide'
 ---
 
-O Managed Postgres é baseado no PostgreSQL padrão e funciona com o ecossistema PostgreSQL existente. Para a maioria das tarefas de desenvolvimento, você pode desenvolver e testar em uma instância local do PostgreSQL em execução no Docker, em vez de uma implantação em nuvem.
+O ClickHouse Managed Postgres é baseado no PostgreSQL padrão e funciona com o ecossistema PostgreSQL existente. Para a maioria das tarefas de desenvolvimento, você pode desenvolver e testar em uma instância local do PostgreSQL em execução no Docker, em vez de uma implantação em nuvem.
 
 Essa abordagem oferece um ciclo de feedback rápido, simplifica o onboarding, reduz dependências de infraestrutura compartilhada e permite experimentar com segurança sem impactar sistemas de produção.
 
@@ -18,7 +18,7 @@ O objetivo não é replicar a produção exatamente. Em vez disso, crie um ambie
 * Contenha dados de desenvolvimento representativos.
 * Dê suporte aos fluxos normais de desenvolvimento e teste de aplicações.
 
-Como o Managed Postgres é PostgreSQL padrão, frameworks de migração existentes, ferramentas de gerenciamento de schema e abordagens de seeding de dados funcionam sem modificações.
+Como o ClickHouse Managed Postgres é PostgreSQL padrão, frameworks de migração existentes, ferramentas de gerenciamento de schema e abordagens de seeding de dados funcionam sem modificações.
 
 <div id="example-development-flow">
   ## Exemplo de fluxo de desenvolvimento
@@ -28,15 +28,15 @@ Um fluxo típico de desenvolvimento local é o seguinte:
 
 ```mermaid
 graph LR
-    A[Aplicar o schema da<br/>aplicação] --> B[PostgreSQL local no Docker] --> C[Aplicar o schema]
+    A[Apply the application<br/>schema] --> B[Local PostgreSQL in Docker] --> C[Apply schema]
 ```
 
 ```mermaid
 graph LR
-    A[Restaurar dataset sanitizado<br/>do tenant] -.-> B[Gerar dados iniciais] -.-> C[Desenvolver e testar localmente]
+    A[Restore sanitized tenant<br/>dataset] -.-> B[Generate seed data] -.-> C[Develop and test locally]
 ```
 
-O Managed Postgres se integra aos fluxos de trabalho de desenvolvimento com PostgreSQL já existentes. Ao desenvolver em uma instância local do PostgreSQL, as equipes podem iterar rapidamente, manter ambientes reproduzíveis e ter mais confiança de que os aplicativos se comportarão de forma consistente quando implantados no Managed Postgres.
+O ClickHouse Managed Postgres se integra aos fluxos de trabalho de desenvolvimento com PostgreSQL já existentes. Ao desenvolver em uma instância local do PostgreSQL, as equipes podem iterar rapidamente, manter ambientes reproduzíveis e ter mais confiança de que os aplicativos se comportarão de forma consistente quando implantados no ClickHouse Managed Postgres.
 
 <div id="run-postgresql-locally-with-docker">
   ## Execute o PostgreSQL localmente com Docker
@@ -44,7 +44,7 @@ O Managed Postgres se integra aos fluxos de trabalho de desenvolvimento com Post
 
 A forma mais simples de criar um ambiente de desenvolvimento local é executar o PostgreSQL no Docker.
 
-Escolha uma versão do PostgreSQL que corresponda à implantação do seu Managed Postgres:
+Escolha uma versão do PostgreSQL que corresponda à implantação do seu ClickHouse Managed Postgres:
 
 ```yaml title="docker-compose.yml"
 services:

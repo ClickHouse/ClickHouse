@@ -48,6 +48,7 @@ public:
     size_t getSubstreamPosition(size_t column_position, const String & substream) const;
     std::optional<size_t> tryGetSubstreamPosition(size_t column_position, const String & substream) const;
     size_t getSubstreamPosition(size_t column_position, const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path, const MergeTreeSettingsPtr & storage_settings) const;
+    std::optional<size_t> tryGetSubstreamPosition(size_t column_position, const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path, const MergeTreeSettingsPtr & storage_settings) const;
     std::optional<size_t> tryGetSubstreamPosition(const String & substream) const;
     size_t getFirstSubstreamPosition(size_t column_position) const;
     size_t getLastSubstreamPosition(size_t column_position) const;
@@ -63,6 +64,9 @@ public:
 
     size_t getTotalSubstreams() const { return total_substreams; }
     bool empty() const { return !total_substreams; }
+
+    /// Names of the recorded columns, in serialization order.
+    std::vector<String> getColumnNames() const;
 
     /// Check that we have substreams for all columns and they have the same order as in provided list.
     void validateColumns(const std::vector<String> & columns) const;

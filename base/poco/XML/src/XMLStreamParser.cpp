@@ -587,7 +587,21 @@ XMLStreamParser::EventType XMLStreamParser::nextBody()
 	}
 	case XML_SUSPENDED:
 	{
-		switch (XML_ResumeParser(_parser))
+		XML_Status rs;
+		try
+		{
+			rs = XML_ResumeParser(_parser);
+		}
+		catch (...)
+		{
+			// An exception thrown from an expat handler unwinds out of the parse call and skips
+			// expat's handler-call-depth bookkeeping; rebalance it, or XML_ParserFree in
+			// ~XMLStreamParser would silently refuse to free the parser and it would leak.
+			// No handler frame of this parser is on the stack here.
+			XML_ResetHandlerCallDepth(_parser);
+			throw;
+		}
+		switch (rs)
 		{
 		case XML_STATUS_SUSPENDED:
 		{
@@ -620,51 +634,63 @@ XMLStreamParser::EventType XMLStreamParser::nextBody()
 		_currentEvent = EV_EOF;
 
 	XML_Status s;
-	do
+	try
 	{
-		if (_size != 0)
+		do
 		{
-			s = XML_Parse(_parser, static_cast<const char*>(_data.buf), static_cast<int>(_size), true);
-
-			if (s == XML_STATUS_ERROR)
-				handleError();
-
-			break;
-		}
-		else
-		{
-			const size_t cap(4096);
-
-			char* b(static_cast<char*>(XML_GetBuffer(_parser, cap)));
-			if (b == 0)
-				throw std::bad_alloc();
-
-			// Temporarily unset the exception failbit. Also clear the fail bit
-			// when we reset the old state if it was caused by eof.
-			//
-			std::istream& is(*_data.is);
+			if (_size != 0)
 			{
-				StreamExceptionController sec(is);
-				is.read(b, static_cast<std::streamsize>(cap));
-			}
+				s = XML_Parse(_parser, static_cast<const char*>(_data.buf), static_cast<int>(_size), true);
 
-			// If the caller hasn't configured the stream to use exceptions,
-			// then use the parsing exception to report an error.
-			//
-			if (is.bad() || (is.fail() && !is.eof()))
-				throw XMLStreamParserException(*this, "io failure");
+				if (s == XML_STATUS_ERROR)
+					handleError();
 
-			bool eof(is.eof());
-
-			s = XML_ParseBuffer(_parser, static_cast<int>(is.gcount()), eof);
-
-			if (s == XML_STATUS_ERROR)
-				handleError();
-
-			if (eof)
 				break;
-		}
-	} while (s != XML_STATUS_SUSPENDED);
+			}
+			else
+			{
+				const size_t cap(4096);
+
+				char* b(static_cast<char*>(XML_GetBuffer(_parser, cap)));
+				if (b == 0)
+					throw std::bad_alloc();
+
+				// Temporarily unset the exception failbit. Also clear the fail bit
+				// when we reset the old state if it was caused by eof.
+				//
+				std::istream& is(*_data.is);
+				{
+					StreamExceptionController sec(is);
+					is.read(b, static_cast<std::streamsize>(cap));
+				}
+
+				// If the caller hasn't configured the stream to use exceptions,
+				// then use the parsing exception to report an error.
+				//
+				if (is.bad() || (is.fail() && !is.eof()))
+					throw XMLStreamParserException(*this, "io failure");
+
+				bool eof(is.eof());
+
+				s = XML_ParseBuffer(_parser, static_cast<int>(is.gcount()), eof);
+
+				if (s == XML_STATUS_ERROR)
+					handleError();
+
+				if (eof)
+					break;
+			}
+		} while (s != XML_STATUS_SUSPENDED);
+	}
+	catch (...)
+	{
+		// See the catch around XML_ResumeParser above: rebalance expat's handler-call-depth
+		// counter after an exception unwound out of XML_Parse / XML_ParseBuffer, or the parser
+		// can never be freed. None of the other throw sites in this loop run inside a handler,
+		// so resetting the counter for them is a no-op.
+		XML_ResetHandlerCallDepth(_parser);
+		throw;
+	}
 
 	return _currentEvent;
 }
