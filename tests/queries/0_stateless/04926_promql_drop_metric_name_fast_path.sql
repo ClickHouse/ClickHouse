@@ -12,7 +12,7 @@ SET session_timezone = 'UTC';
 DROP TABLE IF EXISTS prometheus;
 CREATE TABLE prometheus ENGINE = TimeSeries;
 
-INSERT INTO prometheus (metric_name, tags, time_series) VALUES
+INSERT INTO prometheus (metric_name, tags, samples) VALUES
     ('m', map('job', 'api'), [(toDateTime64(100, 3), 1.0), (toDateTime64(110, 3), 2.0), (toDateTime64(120, 3), 3.0)]),
     ('m', map('job', 'worker'), [(toDateTime64(100, 3), 2.0), (toDateTime64(110, 3), 4.0), (toDateTime64(120, 3), 8.0)]),
     ('n', map('job', 'backend'), [(toDateTime64(100, 3), 3.0), (toDateTime64(110, 3), 6.0), (toDateTime64(120, 3), 9.0)]);
