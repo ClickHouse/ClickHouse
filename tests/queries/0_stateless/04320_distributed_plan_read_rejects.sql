@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 DROP TABLE IF EXISTS t_read_rejects;
 CREATE TABLE t_read_rejects (x UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_read_rejects SELECT number FROM numbers(200000);

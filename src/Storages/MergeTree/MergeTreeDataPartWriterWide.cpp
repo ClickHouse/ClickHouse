@@ -149,6 +149,7 @@ ISerialization::EnumerateStreamsSettings MergeTreeDataPartWriterWide::getEnumera
     enumerate_settings.object_serialization_version = settings_.object_serialization_version;
     enumerate_settings.object_shared_data_serialization_version = settings_.object_shared_data_serialization_version;
     enumerate_settings.object_shared_data_buckets = settings_.object_shared_data_buckets;
+    enumerate_settings.object_shared_data_target_chunk_rows = settings_.object_shared_data_target_chunk_rows;
     enumerate_settings.max_buckets_in_map = settings_.max_buckets_in_map;
     enumerate_settings.map_buckets_strategy = settings_.map_buckets_strategy;
     enumerate_settings.map_buckets_coefficient = settings_.map_buckets_coefficient;
@@ -481,13 +482,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(const Nam
     const WrittenOffsetSubstreams & offset_substreams)
 {
     StreamsWithMarks result;
-    const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
-    UInt64 min_compress_block_size = 0;
-    if (column_desc)
-        if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
-            min_compress_block_size = value->safeGet<UInt64>();
-    if (!min_compress_block_size)
-        min_compress_block_size = settings.min_compress_block_size;
+    const UInt64 min_compress_block_size = getEffectiveMinCompressBlockSize(name_and_type);
 
     auto callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
@@ -571,6 +566,7 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterWide::getSeri
     serialize_settings.object_serialization_version = settings.object_serialization_version;
     serialize_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     serialize_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
+    serialize_settings.object_shared_data_target_chunk_rows = settings.object_shared_data_target_chunk_rows;
     serialize_settings.max_buckets_in_map = settings.max_buckets_in_map;
     serialize_settings.map_buckets_strategy = settings.map_buckets_strategy;
     serialize_settings.map_buckets_coefficient = settings.map_buckets_coefficient;
@@ -578,6 +574,7 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterWide::getSeri
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
     serialize_settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::SUFFIX;
+    serialize_settings.min_compress_block_size = settings.min_compress_block_size;
     return serialize_settings;
 }
 
@@ -611,6 +608,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     auto serialize_settings = getSerializationSettings();
     serialize_settings.getter = createStreamGetter(name_and_type, offset_substreams);
+    serialize_settings.min_compress_block_size = getEffectiveMinCompressBlockSize(name_and_type);
     serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
     {
         auto stream_name = getStreamName(name_and_type, substream_path);
