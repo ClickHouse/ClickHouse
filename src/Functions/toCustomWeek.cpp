@@ -45,6 +45,8 @@ For mode values with a meaning of "contains January 1", the week contains Januar
 It does not matter how many days in the new year the week contained, even if it contained only one day.
 I.e. if the last week of December contains January 1 of the next year, it will be week 1 of the next year.
 
+If `mode` is omitted, mode `0` is used, with the settings [`week_functions_starting_day`](/reference/settings/session-settings/week-functions#week_functions_starting_day), [`week_functions_range`](/reference/settings/session-settings/week-functions#week_functions_range) and [`week_functions_first_week_of_year`](/reference/settings/session-settings/week-functions#week_functions_first_week_of_year) applied on top: each of them that is not `'auto'` replaces its part of the mode. For example, with `week_functions_starting_day = 'monday'`, `toWeek(date)` equals `toWeek(date, 5)`. An explicit `mode` ignores these settings.
+
 The first argument can also be specified as [`String`](/reference/data-types/string) in a format supported by [`parseDateTime64BestEffort`](/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). Support for string arguments exists only for reasons of compatibility with MySQL which is expected by certain 3rd party tools. As string argument support may in future be made dependent on new MySQL-compatibility settings and because string parsing is generally slow, it is recommended to not use it.
     )";
     FunctionDocumentation::Syntax syntax_toWeek = R"(
@@ -52,7 +54,7 @@ toWeek(datetime[, mode[, time_zone]])
     )";
     FunctionDocumentation::Arguments arguments_toWeek = {
         {"datetime", "Date or date with time to get the week number from.", {"Date", "DateTime"}},
-        {"mode", "Optional. A mode `0` to `9` determines the first day of the week and the range of the week number. Default `0`."},
+        {"mode", "Optional. A mode `0` to `9` determines the first day of the week and the range of the week number. Default `0`, adjusted by the `week_functions_*` settings."},
         {"time_zone", "Optional. Time zone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toWeek = {"Returns the week number according to the specified mode.", {"UInt32"}};
@@ -75,9 +77,9 @@ SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS we
     FunctionDocumentation::Description description_toYearWeek = R"(
 Returns the year and week for a date. The year in the result may be different from the year in the date argument for the first and the last week of the year.
 
-The mode argument works like the mode argument of [`toWeek()`](/reference/functions/regular-functions/date-time-functions#toWeek).
+The mode argument works like the mode argument of [`toWeek()`](/reference/functions/regular-functions/date-time-functions#toWeek), including the settings that apply when it is omitted.
 
-Warning: The week number returned by `toYearWeek()` can be different from what the `toWeek()` returns. `toWeek()` always returns week number in the context of the given year, and in case `toWeek()` returns `0`, `toYearWeek()` returns the value corresponding to the last week of previous year. See `prev_yearWeek` in example below.
+Warning: The week number returned by `toYearWeek()` can be different from what the `toWeek()` returns. `toWeek()` always returns week number in the context of the given year, and in case `toWeek()` returns `0`, `toYearWeek()` returns the value corresponding to the last week of previous year. In other words, `toYearWeek()` always numbers the week in the range `1` to `53` of the year it belongs to, and the setting [`week_functions_range`](/reference/settings/session-settings/week-functions#week_functions_range) has no effect. See `prev_yearWeek` in example below.
 
 The first argument can also be specified as [`String`](/reference/data-types/string) in a format supported by [`parseDateTime64BestEffort`](/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). Support for string arguments exists only for reasons of compatibility with MySQL which is expected by certain 3rd party tools. As string argument support may in future be made dependent on new MySQL-compatibility settings and because string parsing is generally slow, it is recommended to not use it.
     )";
@@ -86,7 +88,7 @@ toYearWeek(datetime[, mode[, timezone]])
     )";
     FunctionDocumentation::Arguments arguments_toYearWeek = {
         {"datetime", "Date or date with time to get the year and week of.", {"Date", "DateTime"}},
-        {"mode", "Optional. A mode `0` to `9` determines the first day of the week and the range of the week number. Default `0`."},
+        {"mode", "Optional. A mode `0` to `9` determines the first day of the week and the range of the week number. Default `0`, adjusted by the `week_functions_*` settings."},
         {"timezone", "Optional. Time zone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toYearWeek = {"Returns year and week number as a combined integer value.", {"UInt32"}};
@@ -109,6 +111,8 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
     FunctionDocumentation::Description description_to_start_of_week = R"(
 Rounds a date or date with time down to the nearest Sunday or Monday.
 
+If `mode` is omitted, the week starts on Sunday, or on the day set by [`week_functions_starting_day`](/reference/settings/session-settings/week-functions#week_functions_starting_day). An explicit `mode` ignores the setting.
+
 <Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
@@ -119,10 +123,10 @@ toStartOfWeek(datetime[, mode[, timezone]])
     FunctionDocumentation::Arguments arguments_to_start_of_week =
     {
         {"datetime", "A date or date with time to convert.", {"Date", "DateTime", "Date32", "DateTime64"}},
-        {"mode", "Determines the first day of the week as described in the `toWeek()` function. Default `0`.", {"UInt8"}},
+        {"mode", "Determines the first day of the week as described in the `toWeek()` function. Default `0`, adjusted by the `week_functions_starting_day` setting.", {"UInt8"}},
         {"timezone", "The timezone to use for the conversion. If not specified, the server's timezone is used.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_start_of_week = {"Returns the date of the nearest Sunday or Monday on, or prior to, the given date, depending on the mode.", {"Date", "Date32"}};
+    FunctionDocumentation::ReturnedValue returned_value_to_start_of_week = {"Returns the date of the nearest first day of the week on, or prior to, the given date, depending on the mode or the settings.", {"Date", "Date32"}};
     FunctionDocumentation::Examples examples_to_start_of_week = {
         {"Round down to the nearest Sunday or Monday", R"(
     SELECT
@@ -148,6 +152,8 @@ toStartOfWeek(toDate('2023-04-24'), 1):              2023-04-24
     FunctionDocumentation::Description description_to_last_day_of_week = R"(
 Rounds a date or date with time up to the nearest Saturday or Sunday.
 
+If `mode` is omitted, the week starts on Sunday, or on the day set by [`week_functions_starting_day`](/reference/settings/session-settings/week-functions#week_functions_starting_day), and ends on the day before. An explicit `mode` ignores the setting.
+
 <Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
@@ -157,10 +163,10 @@ The return type can be configured by setting [`enable_extended_results_for_datet
     )";
     FunctionDocumentation::Arguments arguments_to_last_day_of_week = {
         {"datetime", "A date or date with time to convert.", {"Date", "DateTime", "Date32", "DateTime64"}},
-        {"mode", "Determines the first day of the week as described in the `toWeek()` function. Default `0`.", {"UInt8"}},
+        {"mode", "Determines the first day of the week as described in the `toWeek()` function. Default `0`, adjusted by the `week_functions_starting_day` setting.", {"UInt8"}},
         {"timezone", "Optional. The timezone to use for the conversion. If not specified, the server's timezone is used.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_last_day_of_week = {"Returns the date of the nearest Saturday or Sunday, on or after the given date, depending on the mode.", {"Date", "Date32"}};
+    FunctionDocumentation::ReturnedValue returned_value_to_last_day_of_week = {"Returns the date of the nearest last day of the week, on or after the given date, depending on the mode or the settings.", {"Date", "Date32"}};
     FunctionDocumentation::Examples examples_to_last_day_of_week = {
         {"Round up to the nearest Saturday or Sunday", R"(
 SELECT

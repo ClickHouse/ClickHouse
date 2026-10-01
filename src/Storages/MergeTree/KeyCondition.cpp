@@ -25,6 +25,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/geometryConverters.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/RegexpUtils.h>
 #include <Common/HilbertUtils.h>
@@ -3703,6 +3704,8 @@ public:
         /// transform is `ToMondayImpl`. That holds for the Monday-first modes 0 and 1, but not for the
         /// Sunday-first modes 2 and 3, where the value drops back at Sunday - in the middle of the factor's
         /// interval. Pruning a key range with the unsound claim silently loses matching rows.
+        /// Without the `mode` argument, the function itself declines monotonicity when `week_functions_starting_day`
+        /// starts the week on another day than Monday.
         if (kind == Kind::RIGHT_CONST && func->getName() == "toDayOfWeek" && !isMondayFirstDayOfWeekMode())
             return {};
 
@@ -3751,9 +3754,7 @@ private:
         else
             return false;
 
-        /// Only the two lowest bits of the mode are significant, see `DateLUTImpl::check_week_day_mode`,
-        /// and the second one selects the Sunday-first numbering.
-        return (mode_value & 2) == 0;
+        return WeekDaySpec::fromMode(static_cast<UInt8>(mode_value)).first_weekday == 1;
     }
 
     FunctionBasePtr func;

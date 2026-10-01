@@ -28,7 +28,8 @@ public:
     }
 
     explicit FunctionCustomWeekToDateOrDate32(ContextPtr context)
-        : enable_extended_results_for_datetime_functions(context->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
+        : IFunctionCustomWeek<Transform>(context)
+        , enable_extended_results_for_datetime_functions(context->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
     {
     }
 
@@ -49,16 +50,19 @@ public:
         WhichDataType which(from_type);
 
         if (which.isDate())
-            return CustomWeekTransformImpl<DataTypeDate, DataTypeDate>::execute(arguments, result_type, input_rows_count, Transform{});
+            return CustomWeekTransformImpl<DataTypeDate, DataTypeDate>::execute(
+                arguments, result_type, input_rows_count, this->default_spec, Transform{});
         if (which.isDate32())
         {
             if (enable_extended_results_for_datetime_functions)
                 return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate32, /*is_extended_result*/ true>::execute(
-                    arguments, result_type, input_rows_count, Transform{});
-            return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate>::execute(arguments, result_type, input_rows_count, Transform{});
+                    arguments, result_type, input_rows_count, this->default_spec, Transform{});
+            return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate>::execute(
+                arguments, result_type, input_rows_count, this->default_spec, Transform{});
         }
         if (which.isDateTime())
-            return CustomWeekTransformImpl<DataTypeDateTime, DataTypeDate>::execute(arguments, result_type, input_rows_count, Transform{});
+            return CustomWeekTransformImpl<DataTypeDateTime, DataTypeDate>::execute(
+                arguments, result_type, input_rows_count, this->default_spec, Transform{});
         if (which.isDateTime64())
         {
             if (enable_extended_results_for_datetime_functions)
@@ -66,16 +70,18 @@ public:
                     arguments,
                     result_type,
                     input_rows_count,
+                    this->default_spec,
                     TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
             return CustomWeekTransformImpl<DataTypeDateTime64, DataTypeDate>::execute(
                 arguments,
                 result_type,
                 input_rows_count,
+                this->default_spec,
                 TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
         }
         if (Transform::value_may_be_string && which.isString())
             return CustomWeekTransformImpl<DataTypeString, DataTypeDate>::execute(
-                arguments, result_type, input_rows_count, Transform{}); // TODO
+                arguments, result_type, input_rows_count, this->default_spec, Transform{}); // TODO
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal type {} of argument of function {}",

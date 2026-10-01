@@ -333,8 +333,6 @@ const std::unordered_map<String, String> & getRenames()
         {"format_datetime", "formatDateTimeInJodaSyntax"},
         {"parse_datetime", "parseDateTimeInJodaSyntax"},
         {"day_of_month", "toDayOfMonth"},
-        {"day_of_week", "toDayOfWeek"},
-        {"dow", "toDayOfWeek"},
         {"day_of_year", "toDayOfYear"},
         {"doy", "toDayOfYear"},
         /// DANGER if unmapped: ClickHouse `week` defaults to the non-ISO Sunday-based mode.
@@ -427,6 +425,15 @@ const std::unordered_map<String, String> & getRenames()
 
 const std::unordered_map<String, Rewriter> & getRewriters()
 {
+    /// Trino `day_of_week` and its alias `dow` are ISO: 1 = Monday, 7 = Sunday, which is `toDayOfWeek` mode 0. The
+    /// explicit mode keeps the `week_functions_starting_day` setting from changing the result.
+    static const Rewriter day_of_week = [](ASTPtr &, ASTFunction & function, ASTs & arguments)
+    {
+        function.name = "toDayOfWeek";
+        if (arguments.size() == 1)
+            arguments.push_back(make_intrusive<ASTLiteral>(UInt64(0)));
+    };
+
     static const std::unordered_map<String, Rewriter> rewriters =
     {
         /// Higher-order functions: the lambda moves from the last to the first argument.
@@ -704,6 +711,8 @@ const std::unordered_map<String, Rewriter> & getRewriters()
             function.name = "formatDateTime";
             arguments.push_back(make_intrusive<ASTLiteral>(String("%Y-%m-%dT%H:%i:%S")));
         }},
+        {"day_of_week", day_of_week},
+        {"dow", day_of_week},
         {"timezone", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
         {
             /// Trino timezone(x) returns the zone of the value. The zero-argument

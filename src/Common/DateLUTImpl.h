@@ -97,6 +97,13 @@ enum class FirstWeekRule : UInt8
     ContainsJanuary1,
 };
 
+/// The number of days from `first_weekday` to `day_of_week`, 0-6. Both number the days 1 = Monday ... 7 = Sunday,
+/// as `toDayOfWeek` does.
+constexpr UInt8 daysSinceStartOfWeek(UInt8 day_of_week, UInt8 first_weekday)
+{
+    return static_cast<UInt8>((day_of_week + 7 - first_weekday) % 7);
+}
+
 /// How week functions number weeks: the day a week starts on, the week number range, and which week is week 1.
 struct WeekSpec
 {
@@ -126,17 +133,29 @@ struct WeekSpec
     /// The number of days from the first day of the week to `day_of_week` (1 = Monday ... 7 = Sunday), 0-6.
     constexpr UInt8 daysSinceStartOfWeek(UInt8 day_of_week) const
     {
-        return static_cast<UInt8>((day_of_week + 7 - first_weekday) % 7);
+        return ::daysSinceStartOfWeek(day_of_week, first_weekday);
     }
 };
 
-/// Modes for toDayOfWeek() function.
-enum class WeekDayMode : uint8_t
+/// How `toDayOfWeek` numbers the days of the week: the day the week starts on, and whether it counts from 0 or 1.
+struct WeekDaySpec
 {
-    WeekStartsMonday1 = 0,
-    WeekStartsMonday0 = 1,
-    WeekStartsSunday0 = 2,
-    WeekStartsSunday1 = 3
+    /// The day numbered first, 1 = Monday ... 7 = Sunday.
+    UInt8 first_weekday;
+    /// true: the days are numbered 0-6, false: 1-7.
+    bool zero_based;
+
+    /// The `mode` argument of `toDayOfWeek`. Only its two lowest bits are significant:
+    /// 0 = Monday, 1-7; 1 = Monday, 0-6; 2 = Sunday, 0-6; 3 = Sunday, 1-7.
+    static constexpr WeekDaySpec fromMode(UInt8 mode)
+    {
+        mode &= 3;
+
+        const bool start_from_sunday = (mode == 2 || mode == 3);
+        const bool zero_based = (mode == 1 || mode == 2);
+
+        return {static_cast<UInt8>(start_from_sunday ? 7 : 1), zero_based};
+    }
 };
 
 namespace DB
@@ -1103,21 +1122,10 @@ public:
     UInt8 toDayOfWeek(DateOrTime v) const { return getValues(v).day_of_week; }
 
     template <typename DateOrTime>
-    UInt8 toDayOfWeek(DateOrTime v, UInt8 week_day_mode) const
+    UInt8 toDayOfWeek(DateOrTime v, WeekDaySpec spec) const
     {
-        WeekDayMode mode = check_week_day_mode(week_day_mode);
-
-        UInt8 res = toDayOfWeek(v);
-        using enum WeekDayMode;
-        bool start_from_sunday = (mode == WeekStartsSunday0 || mode == WeekStartsSunday1);
-        bool zero_based = (mode == WeekStartsMonday0 || mode == WeekStartsSunday0);
-
-        if (start_from_sunday)
-            res = res % 7 + 1;
-        if (zero_based)
-            --res;
-
-        return res;
+        const UInt8 days_since_start = daysSinceStartOfWeek(toDayOfWeek(v), spec.first_weekday);
+        return spec.zero_based ? days_since_start : static_cast<UInt8>(days_since_start + 1);
     }
 
     template <typename DateOrTime>
@@ -1140,26 +1148,29 @@ public:
         return static_cast<UInt16>(i + 1 - toFirstDayNumOfYearIndex(i));
     }
 
-    /// Number of week from some fixed moment in the past. Week begins at monday.
-    /// (round down to monday and divide DayNum by 7; we made an assumption,
+    /// Number of week from some fixed moment in the past. Week begins at `first_weekday`, 1 = Monday ... 7 = Sunday.
+    /// (round down to the first day of the week and divide `DayNum` by 7; we made an assumption,
     ///  that in domain of the function there was no weeks with any other number of days than 7)
     template <typename DateOrTime>
-    Int32 toRelativeWeekNum(DateOrTime v) const
+    Int32 toRelativeWeekNum(DateOrTime v, UInt8 first_weekday = 1) const
     {
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
             {
-                /// Mirror the in-range formula in day-number space (toDayNum(i + (8 - dow)) / 7), using floor
-                /// division so a pre-epoch week number rounds towards -inf; otherwise dateDiff('week', ...) undercounts.
+                /// The in-range formula, `(toDayNum(i) + 7 - days_since_start) / 7`, with floor division so that a
+                /// pre-epoch week number rounds towards -inf; otherwise `dateDiff('week', ...)` undercounts.
                 const Int64 day_index = outOfRangeDayIndex(v);
-                const UInt8 day_of_week = outOfRangeValues(v).day_of_week;
-                const Int64 shifted = day_index + (8 - day_of_week) - daynum_offset_epoch;
+                const UInt8 days_since_start = daysSinceStartOfWeek(outOfRangeValues(v).day_of_week, first_weekday);
+                const Int64 shifted = day_index + (7 - days_since_start) - daynum_offset_epoch;
                 return static_cast<Int32>(shifted >= 0 ? shifted / 7 : -((-shifted + 6) / 7));
             }
 
         const LUTIndex i = toLUTIndex(v);
-        /// We add 8 to avoid underflow at beginning of unix epoch.
-        return toDayNum(i + (8 - toDayOfWeek(i))) / 7;
+        /// The day number of the start of the next week, `7 - days_since_start` (1 to 7) days away, divided by 7. It is
+        /// computed on the day number, not on the `LUTIndex`: an index past the end of the lookup table is clamped to
+        /// its last day, 2299-12-31, which is a week too early when weeks start on Thursday to Sunday.
+        const UInt8 days_since_start = daysSinceStartOfWeek(toDayOfWeek(i), first_weekday);
+        return (toDayNum(i).toUnderType() + (7 - days_since_start)) / 7;
     }
 
     /// Get year that contains most of the current week. Week begins at monday.
@@ -1388,10 +1399,9 @@ public:
         /// lookup table - and not on `LUTIndex`, whose arithmetic saturates at the ends of the table, because
         /// both ends of a week can lie outside of it: the Sunday that starts the first week of 1900 is
         /// 1899-12-31, and the Saturday that ends the week of 2299-12-31 is 2300-01-06.
-        /// `toDayOfWeek` numbers the days 1 for Monday to 7 for Sunday.
         auto days_since_start_of_week = [this, first_weekday](LUTIndex index) -> Int64
         {
-            return (toDayOfWeek(index) + 7 - first_weekday) % 7;
+            return daysSinceStartOfWeek(toDayOfWeek(index), first_weekday);
         };
 
         /// The day the week of the queried day starts on, and the day it ends on.
@@ -1415,51 +1425,45 @@ public:
         return yw;
     }
 
-    /// The first day of the week that starts on `spec.first_weekday`.
+    /// The first day of the week that starts on `first_weekday`, 1 = Monday ... 7 = Sunday.
     template <typename DateOrTime>
-    auto toFirstDayNumOfWeek(DateOrTime v, WeekSpec spec) const
+    auto toFirstDayNumOfWeek(DateOrTime v, UInt8 first_weekday) const
     {
-        if (spec.first_weekday == 1)
+        if (first_weekday == 1)
             return toFirstDayNumOfWeek(v);
 
         /// Out of LUT range the day number must be clamped before any arithmetic, otherwise the subtraction below
         /// overflows a signed day number.
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
-                return dayNumOfDayIndex(outOfRangeDayIndex(v) - spec.daysSinceStartOfWeek(outOfRangeValues(v).day_of_week));
+                return dayNumOfDayIndex(outOfRangeDayIndex(v) - daysSinceStartOfWeek(outOfRangeValues(v).day_of_week, first_weekday));
 
-        const UInt8 days_since_start = spec.daysSinceStartOfWeek(toDayOfWeek(v));
+        const UInt8 days_since_start = daysSinceStartOfWeek(toDayOfWeek(v), first_weekday);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
             return (days_since_start != 0) ? DayNum(static_cast<UInt16>(saturateMinus(v, days_since_start))) : toDayNum(v);
         else
             return (days_since_start != 0) ? ExtendedDayNum(v - days_since_start) : toDayNum(v);
     }
 
-    /// The last day of the week that starts on `spec.first_weekday`.
+    /// The last day of the week that starts on `first_weekday`, 1 = Monday ... 7 = Sunday.
     template <typename DateOrTime>
-    auto toLastDayNumOfWeek(DateOrTime v, WeekSpec spec) const
+    auto toLastDayNumOfWeek(DateOrTime v, UInt8 first_weekday) const
     {
-        if (spec.first_weekday == 1)
+        if (first_weekday == 1)
             return toLastDayNumOfWeek(v);
 
         /// Out of LUT range the day number must be clamped before any arithmetic, otherwise `v += 6` below
         /// overflows a signed day number.
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
-                return dayNumOfDayIndex(outOfRangeDayIndex(v) + 6 - spec.daysSinceStartOfWeek(outOfRangeValues(v).day_of_week));
+                return dayNumOfDayIndex(outOfRangeDayIndex(v) + 6 - daysSinceStartOfWeek(outOfRangeValues(v).day_of_week, first_weekday));
 
-        const UInt8 days_since_start = spec.daysSinceStartOfWeek(toDayOfWeek(v));
+        const UInt8 days_since_start = daysSinceStartOfWeek(toDayOfWeek(v), first_weekday);
         v += 6;
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
             return (days_since_start != 0) ? DayNum(static_cast<UInt16>(saturateMinus(v, days_since_start))) : toDayNum(v);
         else
             return (days_since_start != 0) ? ExtendedDayNum(v - days_since_start) : toDayNum(v);
-    }
-
-    /// Check and change mode to effective.
-    WeekDayMode check_week_day_mode(UInt8 mode) const /// NOLINT
-    {
-        return static_cast<WeekDayMode>(mode & 3);
     }
 
     /// Calculate days in one year.
@@ -1616,39 +1620,41 @@ public:
 
     template <typename Date>
     requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
-    auto toStartOfWeekInterval(Date d, UInt64 weeks) const
+    auto toStartOfWeekInterval(Date d, UInt64 weeks, UInt8 first_weekday = 1) const
     {
         if (weeks == 1)
-            return toFirstDayNumOfWeek(d);
+            return toFirstDayNumOfWeek(d, first_weekday);
         /// `weeks` is only validated to be positive, so `weeks * 7` can wrap; saturate to a positive Int64
         /// divisor. The rounding result for such a meaningless interval count is discarded anyway.
         UInt64 product = 0;
         if (unlikely(__builtin_mul_overflow(weeks, static_cast<UInt64>(7), &product)
                      || product > static_cast<UInt64>(std::numeric_limits<Int64>::max())))
             product = static_cast<UInt64>(std::numeric_limits<Int64>::max());
-        // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday.
-        // Floor towards -inf so a pre-epoch day rounds to the start of its interval, not forward in time.
-        // roundDownToMultiple avoids the `shifted + 1 - idays` overflow for an extreme `weeks` interval count.
+        /// January 1st 1970 was Thursday, so the intervals are aligned to the first `first_weekday` on or after it:
+        /// 1970-01-05 (day 4) for Monday, 1970-01-04 (day 3) for Sunday, 1970-01-01 (day 0) for Thursday.
+        /// Floor towards -inf so a pre-epoch day rounds to the start of its interval, not forward in time.
+        /// `roundDownToMultiple` avoids the `shifted + 1 - idays` overflow for an extreme `weeks` interval count.
+        const Int64 anchor = (first_weekday + 3) % 7;
         const Int64 idays = static_cast<Int64>(product);
-        const Int64 shifted = static_cast<Int64>(d.toUnderType()) - 4;
-        const Int64 day = 4 + roundDownToMultiple(shifted, idays);
-        // Clamp the reconstructed day number back into the representable range. For an extreme `weeks` count
-        // the floored boundary is far below any representable day, so it must saturate to the earliest one
-        // (not wrap through the narrow cast, which would round forward past the start of the interval).
-        // Week boundaries lie on the `4 + 7 * n` (Monday) lattice, so both clamp bounds must themselves be
-        // representable start-of-week days, not the raw minimum/maximum day number (0000-01-01 is a Saturday
-        // and 9999-12-31 is a Friday). Snap the minimum up to the first Monday >= the minimum representable
-        // day and the maximum down to the last Monday <= the maximum representable day. Otherwise an
-        // out-of-range input (e.g. a Date32 pushed past the range by arithmetic) would return a boundary off
-        // the lattice, breaking the function's own invariant and disagreeing with toFirstDayNumOfWeek.
+        const Int64 shifted = static_cast<Int64>(d.toUnderType()) - anchor;
+        const Int64 day = anchor + roundDownToMultiple(shifted, idays);
+        /// Clamp the reconstructed day number back into the representable range. For an extreme `weeks` count
+        /// the floored boundary is far below any representable day, so it must saturate to the earliest one
+        /// (not wrap through the narrow cast, which would round forward past the start of the interval).
+        /// Week boundaries lie on the `anchor + 7 * n` lattice (`4 + 7 * n` for Monday), so both clamp bounds must
+        /// themselves be representable start-of-week days, not the raw minimum/maximum day number (0000-01-01 is a
+        /// Saturday and 9999-12-31 is a Friday). Snap the minimum up to the first start of week >= the minimum
+        /// representable day and the maximum down to the last start of week <= the maximum representable day.
+        /// Otherwise an out-of-range input (e.g. a `Date32` pushed past the range by arithmetic) would return a
+        /// boundary off the lattice, breaking the function's own invariant and disagreeing with `toFirstDayNumOfWeek`.
         if constexpr (std::is_same_v<Date, DayNum>)
             return DayNum(static_cast<UInt16>(std::clamp<Int64>(day, 0, DATE_LUT_MAX_DAY_NUM)));
         else
         {
             const Int64 min_daynum = min_representable_day_index - static_cast<Int64>(daynum_offset_epoch);
             const Int64 max_daynum = max_representable_day_index - static_cast<Int64>(daynum_offset_epoch);
-            const Int64 lattice_min = min_daynum + ((4 - min_daynum) % 7 + 7) % 7;
-            const Int64 lattice_max = max_daynum - ((max_daynum - 4) % 7 + 7) % 7;
+            const Int64 lattice_min = min_daynum + ((anchor - min_daynum) % 7 + 7) % 7;
+            const Int64 lattice_max = max_daynum - ((max_daynum - anchor) % 7 + 7) % 7;
             return ExtendedDayNum(static_cast<Int32>(std::clamp(day, lattice_min, lattice_max)));
         }
     }

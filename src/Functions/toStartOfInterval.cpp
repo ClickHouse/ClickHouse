@@ -14,6 +14,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/WeekFunctionsSettings.h>
 #include <IO/WriteHelpers.h>
 #include <algorithm>
 #include <Core/Settings.h>
@@ -65,12 +66,15 @@ class FunctionToStartOfInterval final : public IFunction
 {
 private:
     ToStartOfIntervalOverload overload;
+    /// The day weeks start on without `origin`, 1 = Monday ... 7 = Sunday, from `week_functions_starting_day`.
+    UInt8 first_weekday;
 
 public:
     static constexpr auto name = "toStartOfInterval";
 
-    explicit FunctionToStartOfInterval(ToStartOfIntervalOverload overload_)
+    FunctionToStartOfInterval(ToStartOfIntervalOverload overload_, UInt8 first_weekday_)
         : overload(overload_)
+        , first_weekday(first_weekday_)
     {
     }
 
@@ -415,8 +419,15 @@ private:
             }
 
             for (size_t i = 0; i != size; ++i)
-                result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(
-                    ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
+            {
+                if constexpr (unit == IntervalKind::Kind::Week)
+                    result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(
+                        ToStartOfInterval<unit>::executeWithFirstWeekday(
+                            time_data[i], num_units, time_zone, scale_multiplier, first_weekday));
+                else
+                    result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(
+                        ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
+            }
         }
 
         return result_col;
@@ -433,6 +444,7 @@ public:
 
     explicit FunctionToStartOfIntervalOverloadResolver(ContextPtr context_)
         : enable_extended_results_for_datetime_functions(context_->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
+        , first_weekday(WeekFunctionsSettings(context_).firstWeekday(1))
     {
     }
 
@@ -634,7 +646,7 @@ public:
         if (args.size() >= 3 && isDateOrDate32OrDateTimeOrDateTime64(args[2].type))
             overload = ToStartOfIntervalOverload::Origin;
 
-        auto function = std::make_shared<FunctionToStartOfInterval>(overload);
+        auto function = std::make_shared<FunctionToStartOfInterval>(overload, first_weekday);
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -645,6 +657,8 @@ public:
 
 private:
     const bool enable_extended_results_for_datetime_functions;
+    /// Weeks start on this day without `origin`, see `FunctionToStartOfInterval`.
+    const UInt8 first_weekday;
 };
 
 }
@@ -679,7 +693,7 @@ The calculation is performed relative to specific points in time:
 (*) hour intervals are special: the calculation is always performed relative to 00:00:00 (midnight) of the current day. As a result, only
 hour values between 1 and 23 are useful.
 
-If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday.
+If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday. The setting [`week_functions_starting_day`](/reference/settings/session-settings/week-functions#week_functions_starting_day) changes the day weeks start on: the intervals are then aligned to the first such day on or after 1970-01-01 instead of 1970-01-05. The setting doesn't apply to the overload with an `origin`.
 
 The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function.
         )";

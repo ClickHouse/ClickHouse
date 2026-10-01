@@ -13,6 +13,7 @@
 #include <Functions/FunctionLowCardinalityFastPath.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/WeekFunctionsSettings.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/numLiteralChars.h>
@@ -182,6 +183,9 @@ private:
 
         // Holds literal characters that will be copied into the output. Used by the mysqlLiteral instruction.
         String literal;
+
+        /// How `%w` numbers the days: from 0 on Sunday, or on the day set by `week_functions_starting_day`.
+        WeekDaySpec day_of_week_spec = WeekDaySpec::fromMode(2);
 
         Instruction() = default;
 
@@ -422,13 +426,13 @@ private:
 
         size_t mysqlDayOfWeek(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            *dest = '0' + ToDayOfWeekImpl::execute(source, 0, timezone);
+            *dest = '0' + ToDayOfWeekImpl::execute(source, WeekDaySpec::fromMode(0), timezone);
             return 1;
         }
 
         static size_t dayOfWeekText(char * dest, Time source, bool abbreviate, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto week_day = ToDayOfWeekImpl::execute(source, 0, timezone);
+            auto week_day = ToDayOfWeekImpl::execute(source, WeekDaySpec::fromMode(0), timezone);
             if (week_day == 7)
                 week_day = 0;
 
@@ -449,8 +453,7 @@ private:
 
         size_t mysqlDayOfWeek0To6(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto day = ToDayOfWeekImpl::execute(source, 0, timezone);
-            *dest = '0' + (day == 7 ? 0 : day);
+            *dest = '0' + ToDayOfWeekImpl::execute(source, day_of_week_spec, timezone);
             return 1;
         }
 
@@ -720,7 +723,7 @@ private:
 
         static size_t jodaDayOfWeek1Based(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto week_day = ToDayOfWeekImpl::execute(source, 0, timezone);
+            auto week_day = ToDayOfWeekImpl::execute(source, WeekDaySpec::fromMode(0), timezone);
             return writeNumberWithPadding(dest, week_day, min_represent_digits);
         }
 
@@ -958,6 +961,8 @@ private:
     const bool mysql_f_prints_scale_number_of_digits;
     const bool mysql_format_ckl_without_leading_zeros;
     const bool mysql_e_with_space_padding;
+    /// How `%w` numbers the days, see `Instruction::day_of_week_spec`.
+    const WeekDaySpec mysql_w_day_of_week_spec;
 
     /// Whether the function may be executed on a LowCardinality dictionary as is, see
     /// `canBeExecutedOnDefaultArguments` below. The delegate is the same function with that
@@ -976,10 +981,12 @@ public:
         , mysql_f_prints_scale_number_of_digits(context->getSettingsRef()[Setting::formatdatetime_f_prints_scale_number_of_digits])
         , mysql_format_ckl_without_leading_zeros(context->getSettingsRef()[Setting::formatdatetime_format_without_leading_zeros])
         , mysql_e_with_space_padding(context->getSettingsRef()[Setting::formatdatetime_e_with_space_padding])
+        , mysql_w_day_of_week_spec(WeekFunctionsSettings(context).apply(WeekDaySpec::fromMode(2)))
         , execute_on_dictionary_default(execute_on_dictionary_default_)
         , dictionary_default_delegate(
-              execute_on_dictionary_default_ ? nullptr
-                                             : std::make_shared<FunctionFormatDateTimeImpl>(context, /*execute_on_dictionary_default_=*/true))
+              execute_on_dictionary_default_
+                  ? nullptr
+                  : std::make_shared<FunctionFormatDateTimeImpl>(context, /*execute_on_dictionary_default_=*/true))
     {
     }
 
@@ -1568,6 +1575,7 @@ public:
                     {
                         Instruction<T> instruction;
                         instruction.setMysqlFunc(&Instruction<T>::mysqlDayOfWeek0To6);
+                        instruction.day_of_week_spec = mysql_w_day_of_week_spec;
                         instructions.push_back(std::move(instruction));
                         out_template += "0";
                         break;
@@ -2148,7 +2156,7 @@ The example column in the table below shows formatting result for `2018-01-02 22
 | %T | ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S | 22:33:44 |
 | %u | ISO 8601 weekday as number with Monday as 1 (1-7) | 2 |
 | %V | ISO 8601 week number (01-53) | 01 |
-| %w | weekday as a integer number with Sunday as 0 (0-6) | 2 |
+| %w | weekday as a integer number with Sunday as 0 (0-6), or with the day set by [`week_functions_starting_day`](/reference/settings/session-settings/week-functions#week_functions_starting_day) as 0 | 2 |
 | %W | full weekday name (Monday-Sunday) | Monday |
 | %y | Year, last two digits (00-99) | 18 |
 | %Y | Year | 2018 |

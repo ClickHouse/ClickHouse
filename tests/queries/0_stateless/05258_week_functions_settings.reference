@@ -1,0 +1,188 @@
+-- examples
+By default, some functions start weeks on Sunday, the others on Monday
+┌──────────d─┬─toDayOfWeek(d)─┬─%w─┬─toStartOfWeek(d)─┬─toLastDayOfWeek(d)─┬─toStartOfInterval─┬─date_trunc─┬─toRelativeWeekNum(d)─┬─dateDiff─┐
+│ 2026-01-03 │              6 │ 6  │       2025-12-28 │         2026-01-03 │        2025-12-29 │ 2025-12-29 │                 2922 │        0 │
+│ 2026-01-04 │              7 │ 0  │       2026-01-04 │         2026-01-10 │        2025-12-29 │ 2025-12-29 │                 2922 │        0 │
+│ 2026-01-05 │              1 │ 1  │       2026-01-04 │         2026-01-10 │        2026-01-05 │ 2026-01-05 │                 2923 │        1 │
+│ 2026-01-06 │              2 │ 2  │       2026-01-04 │         2026-01-10 │        2026-01-05 │ 2026-01-05 │                 2923 │        1 │
+│ 2026-01-07 │              3 │ 3  │       2026-01-04 │         2026-01-10 │        2026-01-05 │ 2026-01-05 │                 2923 │        1 │
+│ 2026-01-08 │              4 │ 4  │       2026-01-04 │         2026-01-10 │        2026-01-05 │ 2026-01-05 │                 2923 │        1 │
+│ 2026-01-09 │              5 │ 5  │       2026-01-04 │         2026-01-10 │        2026-01-05 │ 2026-01-05 │                 2923 │        1 │
+│ 2026-01-10 │              6 │ 6  │       2026-01-04 │         2026-01-10 │        2026-01-05 │ 2026-01-05 │                 2923 │        1 │
+└────────────┴────────────────┴────┴──────────────────┴────────────────────┴───────────────────┴────────────┴──────────────────────┴──────────┘
+With week_functions_starting_day = saturday, all of them start weeks on Saturday
+┌──────────d─┬─toDayOfWeek(d)─┬─%w─┬─toStartOfWeek(d)─┬─toLastDayOfWeek(d)─┬─toStartOfInterval─┬─date_trunc─┬─toRelativeWeekNum(d)─┬─dateDiff─┐
+│ 2026-01-03 │              1 │ 0  │       2026-01-03 │         2026-01-09 │        2026-01-03 │ 2026-01-03 │                 2923 │        0 │
+│ 2026-01-04 │              2 │ 1  │       2026-01-03 │         2026-01-09 │        2026-01-03 │ 2026-01-03 │                 2923 │        0 │
+│ 2026-01-05 │              3 │ 2  │       2026-01-03 │         2026-01-09 │        2026-01-03 │ 2026-01-03 │                 2923 │        0 │
+│ 2026-01-06 │              4 │ 3  │       2026-01-03 │         2026-01-09 │        2026-01-03 │ 2026-01-03 │                 2923 │        0 │
+│ 2026-01-07 │              5 │ 4  │       2026-01-03 │         2026-01-09 │        2026-01-03 │ 2026-01-03 │                 2923 │        0 │
+│ 2026-01-08 │              6 │ 5  │       2026-01-03 │         2026-01-09 │        2026-01-03 │ 2026-01-03 │                 2923 │        0 │
+│ 2026-01-09 │              7 │ 6  │       2026-01-03 │         2026-01-09 │        2026-01-03 │ 2026-01-03 │                 2923 │        0 │
+│ 2026-01-10 │              1 │ 0  │       2026-01-10 │         2026-01-16 │        2026-01-10 │ 2026-01-10 │                 2924 │        1 │
+└────────────┴────────────────┴────┴──────────────────┴────────────────────┴───────────────────┴────────────┴──────────────────────┴──────────┘
+The week of the year: toWeek and toYearWeek, in weeks from Monday
+dates	['2025-12-29','2026-01-01','2026-01-05','2026-12-31','2027-01-01','2027-01-04']
+first_full_week 0-53	[52,0,1,52,0,1]	[202552,202552,202601,202652,202652,202701]
+first_full_week 1-53	[52,52,1,52,52,1]	[202552,202552,202601,202652,202652,202701]
+four_or_more_days 0-53	[53,1,2,53,0,1]	[202601,202601,202602,202653,202653,202701]
+four_or_more_days 1-53	[1,1,2,53,53,1]	[202601,202601,202602,202653,202653,202701]
+contains_january_1	[1,1,2,1,1,2]	[202601,202601,202602,202701,202701,202702]
+dateName(week): the ISO week by default, and with first_full_week
+auto	['1','1','2','53','53','1']	[1,1,2,53,53,1]
+first_full_week	['52','52','1','52','52','1']
+An explicit mode or origin ignores the settings
+┌─toDayOfWeek(d)─┬─toDayOfWeek(d, 0)─┬─toStartOfWeek(d)─┬─toStartOfWeek(d, 0)─┬─toStartOfInterval─┬─with_origin─┐
+│              2 │                 7 │       2026-01-03 │          2026-01-04 │        2026-01-03 │  2025-12-29 │
+└────────────────┴───────────────────┴──────────────────┴─────────────────────┴───────────────────┴─────────────┘
+Not affected: ISO weeks, age, formatDateTime %u, EXTRACT(ISODOW) and EXTRACT(DOW)
+┌─toISOWeek(d)─┬─age─┬─%u─┬─isodow─┬─dow─┐
+│            1 │   1 │ 7  │      7 │   0 │
+└──────────────┴─────┴────┴────────┴─────┘
+-- values
+week_functions_first_week_of_year	auto	auto
+week_functions_range	auto	auto
+week_functions_starting_day	auto	auto
+week_functions_first_week_of_year	contains_january_1
+week_functions_range	1-53
+week_functions_starting_day	saturday
+week_functions_first_week_of_year	contains_january_1
+week_functions_range	1-53
+week_functions_starting_day	saturday
+-- the settings that describe each mode
+mode 0	0
+mode 1	0
+mode 2	0
+mode 3	0
+mode 4	0
+mode 5	0
+mode 6	0
+mode 7	0
+mode 8	0
+mode 9	0
+toDayOfWeek mode 0	0
+toDayOfWeek mode 3	0
+-- an explicit mode or origin, and the functions that do not depend on the settings
+20	0	20
+-- translations
+toDayOfWeek(d, 0)	toDayOfWeek(d, 2)
+6	6
+2026-01-03	6	6
+2026-01-04	7	0
+2026-01-05	1	1
+6	7	1	6	7	1
+6	0	1
+1
+1
+-- every start day
+starting_day	first_day	toDayOfWeek	toLastDayOfWeek	toStartOfInterval	date_trunc	toRelativeWeekNum	dateDiff	%w
+monday	[1]	0	0	0	0	0	0	0
+tuesday	[2]	0	0	0	0	0	0	0
+wednesday	[3]	0	0	0	0	0	0	0
+thursday	[4]	0	0	0	0	0	0	0
+friday	[5]	0	0	0	0	0	0	0
+saturday	[6]	0	0	0	0	0	0	0
+sunday	[7]	0	0	0	0	0	0	0
+starting_day	week_1	week_2	week_3	toRelativeWeekNum
+monday	2025-12-29	2025-12-22	2025-12-15	[2922,2922,2922,2923]
+tuesday	2025-12-30	2025-12-23	2025-12-16	[2922,2922,2922,2922]
+wednesday	2025-12-31	2025-12-24	2025-12-17	[2922,2922,2922,2922]
+thursday	2026-01-01	2026-01-01	2026-01-01	[2923,2923,2923,2923]
+friday	2026-01-02	2026-01-02	2026-01-02	[2923,2923,2923,2923]
+saturday	2025-12-27	2025-12-20	2025-12-13	[2922,2923,2923,2923]
+sunday	2025-12-28	2025-12-21	2025-12-14	[2922,2922,2923,2923]
+starting_day	date_start	date_last	date32_start	date32_last	date32_min_start	date32_max_last
+monday	1970-01-01	2149-06-06	1900-01-01	2299-12-31	0000-01-01	9999-12-31
+tuesday	1970-01-01	2149-06-06	1899-12-26	2300-01-01	0000-01-01	9999-12-31
+wednesday	1970-01-01	2149-06-06	1899-12-27	2300-01-02	0000-01-01	9999-12-31
+thursday	1970-01-01	2149-06-06	1899-12-28	2300-01-03	0000-01-01	9999-12-31
+friday	1970-01-01	2149-06-06	1899-12-29	2300-01-04	0000-01-01	9999-12-31
+saturday	1970-01-01	2149-06-06	1899-12-30	2300-01-05	0000-01-01	9999-12-31
+sunday	1970-01-01	2149-06-06	1899-12-31	2300-01-06	0000-01-01	9999-12-31
+starting_day	week_start	week_2	dateDiff
+monday	0005-06-20	0005-06-13	1
+tuesday	0005-06-21	0005-06-14	1
+wednesday	0005-06-22	0005-06-15	1
+thursday	0005-06-16	0005-06-09	2
+friday	0005-06-17	0005-06-10	2
+saturday	0005-06-18	0005-06-11	2
+sunday	0005-06-19	0005-06-12	1
+starting_day	toRelativeWeekNum	dateDiff	dateDiff_datetime64
+monday	[0,1,1,1,1,1,1,1]	1	1
+tuesday	[0,0,1,1,1,1,1,1]	1	1
+wednesday	[0,0,0,1,1,1,1,1]	1	1
+thursday	[0,0,0,0,1,1,1,1]	1	1
+friday	[0,0,0,0,0,1,1,1]	1	1
+saturday	[0,0,0,0,0,0,1,1]	1	1
+sunday	[0,0,0,0,0,0,0,1]	1	1
+toDayOfWeek	toStartOfWeek	toLastDayOfWeek	toWeek	toYearWeek	toStartOfInterval	date_trunc	toRelativeWeekNum	dateDiff	%w	fromUnixTimestamp	dateName	nullable
+0	0	0	0	0	0	0	0	0	0	0	0	0
+toStartOfWeek	toDayOfWeek	toStartOfInterval	toRelativeWeekNum	%w
+2026-01-03	1	2026-01-03	2923	0
+toStartOfInterval	date_trunc	toRelativeWeekNum	dateDiff	%w
+2026-01-03	2026-01-03	2923	1	0
+2	202602	1	2	202602
+1	0
+0	0
+1	1	1	1	1	1	1
+dateDiff	age_1_day	age_7_days	age_datetime64	timeDiff	timeDiff_datetime64
+1	0	1	0	86400	1
+2025-12-27	1
+2025-12-27	1
+-- the week of the year
+dates	['2023-12-29','2023-12-30','2024-01-01','2024-01-06','2025-12-26','2025-12-27','2026-01-01','2026-01-03']
+saturday first_full_week 0-53	[51,52,0,1,51,52,0,1]	[202351,202352,202352,202401,202551,202552,202552,202601]
+saturday first_full_week 1-53	[51,52,52,1,51,52,52,1]	[202351,202352,202352,202401,202551,202552,202552,202601]
+saturday four_or_more_days 0-53	[52,53,1,2,51,52,0,1]	[202352,202401,202401,202402,202551,202552,202552,202601]
+saturday four_or_more_days 1-53	[52,1,1,2,51,52,52,1]	[202352,202401,202401,202402,202551,202552,202552,202601]
+saturday contains_january_1 0-53	[52,1,1,2,52,1,1,2]	[202352,202401,202401,202402,202552,202601,202601,202602]
+saturday contains_january_1 1-53	[52,1,1,2,52,1,1,2]	[202352,202401,202401,202402,202552,202601,202601,202602]
+dateName, saturday only	['52','1','1','2','51','52','52','1']
+dateName auto	0
+dateName sunday	0
+dateName 0-53	0
+dateName first_full_week	0
+dateName contains_january_1	0
+dateName saturday 0-53 first_full_week	0
+-- primary key analysis
+saturday
+6	['2025-12-06','2025-12-13','2025-12-20','2025-12-27','2026-01-03','2026-01-10']
+6	['2025-12-06','2025-12-13','2025-12-20','2025-12-27','2026-01-03','2026-01-10']
+12
+12
+12
+12
+6
+6
+sunday
+6	['2025-12-07','2025-12-14','2025-12-21','2025-12-28','2026-01-04','2026-01-11']
+6	['2025-12-07','2025-12-14','2025-12-21','2025-12-28','2026-01-04','2026-01-11']
+6
+6
+granules auto	Granules: 8/14
+granules saturday	Granules: 14/14
+granules auto, explicit Monday-first mode	Granules: 10/14
+granules saturday, explicit Monday-first mode	Granules: 14/14
+-- query condition cache
+0
+7
+0
+0
+7
+0
+3
+0
+3
+-- stored expressions
+partition key
+2025-12-28
+2025-12-28
+2025-12-28
+0
+2
+sorting key
+1
+7
+DEFAULT and MATERIALIZED columns
+2026-01-02	2025-12-27	2025-12-27
+2026-01-02	2025-12-28	2025-12-28

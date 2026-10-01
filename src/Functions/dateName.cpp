@@ -13,6 +13,7 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/WeekFunctionsSettings.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
 namespace DB
@@ -58,7 +59,13 @@ class FunctionDateNameImpl final : public IFunction
 public:
     static constexpr auto name = "dateName";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateNameImpl>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateNameImpl>(context); }
+
+    /// The `week` part is the ISO week (mode 3 of `toWeek`) with the `week_functions_*` settings applied on top.
+    explicit FunctionDateNameImpl(ContextPtr context)
+        : week_spec(WeekFunctionsSettings(context).apply(WeekSpec::fromMode(3)))
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -250,11 +257,22 @@ private:
     };
 
     template <typename Time>
-    struct WeekWriter
+    struct ISOWeekWriter
     {
         static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             writeText(ToISOWeekImpl::execute(source, timezone), buffer);
+        }
+    };
+
+    template <typename Time>
+    struct WeekWriter
+    {
+        WeekSpec spec;
+
+        void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone) const
+        {
+            writeText(ToWeekImpl::execute(source, spec, timezone), buffer);
         }
     };
 
@@ -281,7 +299,7 @@ private:
     {
         static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
-            const auto day = ToDayOfWeekImpl::execute(source, 0, timezone);
+            const auto day = ToDayOfWeekImpl::execute(source, WeekDaySpec::fromMode(0), timezone);
             static constexpr std::string_view day_names[] =
             {
                 "Monday",
@@ -334,7 +352,15 @@ private:
         else if (date_part == "month")
             std::forward<Call>(call)(MonthWriter<Time>());
         else if (date_part == "week")
-            std::forward<Call>(call)(WeekWriter<Time>());
+        {
+            /// With the settings at 'auto' the spec is mode 3; keep `toISOWeek` then, which has always computed this part.
+            const WeekSpec iso = WeekSpec::fromMode(3);
+            if (week_spec.first_weekday == iso.first_weekday && week_spec.week_year == iso.week_year
+                && week_spec.first_week_rule == iso.first_week_rule)
+                std::forward<Call>(call)(ISOWeekWriter<Time>());
+            else
+                std::forward<Call>(call)(WeekWriter<Time>{week_spec});
+        }
         else if (date_part == "dayofyear")
             std::forward<Call>(call)(DayOfYearWriter<Time>());
         else if (date_part == "day")
@@ -351,6 +377,8 @@ private:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid date part {} for function {}", date_part, getName());
     }
 
+    /// The spec of the `week` part.
+    const WeekSpec week_spec;
 };
 
 }
@@ -371,6 +399,8 @@ Possible values:
 - 'hour'
 - 'minute'
 - 'second'
+
+The `week` part is the ISO week number, as returned by [`toISOWeek`](/reference/functions/regular-functions/date-time-functions#toISOWeek). The settings [`week_functions_starting_day`](/reference/settings/session-settings/week-functions#week_functions_starting_day), [`week_functions_range`](/reference/settings/session-settings/week-functions#week_functions_range) and [`week_functions_first_week_of_year`](/reference/settings/session-settings/week-functions#week_functions_first_week_of_year) change it: it is then computed like `toWeek` with mode 3, with each setting that is not `'auto'` applied on top. The `weekday` part is not affected.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 dateName(date_part, date[, timezone])
