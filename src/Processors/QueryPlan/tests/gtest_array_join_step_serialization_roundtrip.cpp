@@ -68,7 +68,7 @@ QueryPlanStepPtr deserializeStep(const String & bytes, const SharedHeader & head
     ContextPtr context = getContext().context;
 
     IQueryPlanStep::Deserialization ctx{
-        in, registry, {}, context, input_headers, header, settings, 0, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, false};
+        in, registry, {}, context, input_headers, header, settings, 0, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, 0, false};
 
     return ArrayJoinStep::deserialize(ctx);
 }
