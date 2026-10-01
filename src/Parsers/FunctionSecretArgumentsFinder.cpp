@@ -521,6 +521,20 @@ void FunctionSecretArgumentsFinder::findMongoDBConnectionStringSecretArguments()
 
     const bool is_engine = function->name() == "MongoDB";
     const size_t size = function->arguments->size();
+
+    /// The table function appends `options` and `oid_columns` to the positionals before index 5, so a named argument
+    /// there can move them into the user or password slot.
+    bool shifted = false;
+    if (!is_engine && size > 4 && !isNamedCollectionName(0))
+    {
+        for (size_t i = 0; i < 5; ++i)
+        {
+            const auto equals = function->arguments->at(i)->getFunction();
+            if (equals && equals->name() == "equals" && equals->hasArguments() && equals->arguments->size() == 2)
+                shifted = true;
+        }
+    }
+
     bool seen_named = false;
     for (size_t i = 0; i < size; ++i)
     {
@@ -538,9 +552,12 @@ void FunctionSecretArgumentsFinder::findMongoDBConnectionStringSecretArguments()
                 result.replaced_arguments[i] = "'[HIDDEN]'";
                 continue;
             }
-            /// The table function binds a named `oid_columns` to the `options` slot when an argument before it is missing.
-            if (!equalsCaseInsensitive(key, "uri") && !equalsCaseInsensitive(key, "options")
-                && !equalsCaseInsensitive(key, "oid_columns"))
+            if (shifted && (equalsCaseInsensitive(key, "options") || equalsCaseInsensitive(key, "oid_columns")))
+            {
+                result.replaced_arguments[i] = key + " = '[HIDDEN]'";
+                continue;
+            }
+            if (!equalsCaseInsensitive(key, "uri") && !equalsCaseInsensitive(key, "options"))
                 continue;
 
             String value;
@@ -553,6 +570,12 @@ void FunctionSecretArgumentsFinder::findMongoDBConnectionStringSecretArguments()
 
         if (is_masked(i))
             continue;
+
+        if (shifted && i > 5)
+        {
+            result.replaced_arguments[i] = "'[HIDDEN]'";
+            continue;
+        }
 
         if (seen_named)
         {

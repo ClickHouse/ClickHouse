@@ -35,14 +35,17 @@ probe "CREATE TABLE e06 (x String) ENGINE = MongoDB(${NC}, options = 'tls=true&t
 probe "CREATE TABLE e07 (x String) ENGINE = MongoDB(${NC}, concat('op', 'tions') = 'tlsCertificateKeyFilePassword=OPTSECRET13')"
 
 # Table function: the URI form, the positional and the named options of the host:port form, a URI written
-# after a named argument, an upper-case OPTIONS key (both rejected after being logged), and a named
-# oid_columns bound to the options slot.
+# after a named argument, an upper-case OPTIONS key (both rejected after being logged), a named
+# oid_columns bound to the options slot, and a named options and a positional after structure moved into
+# the password slot.
 probe "CREATE VIEW f01 AS SELECT * FROM mongodb('mongodb://127.0.0.1:27017/db?authMechanismProperties=AWS_SESSION_TOKEN:OPTSECRET5', 'c', 'x String')"
 probe "CREATE VIEW f02 AS SELECT * FROM mongodb('127.0.0.1:27017', 'db', 'c', 'usr', 'pw', 'x String', 'tlsCertificateKeyFilePassword=OPTSECRET6')"
 probe "CREATE VIEW f03 AS SELECT * FROM mongodb('127.0.0.1:27017', 'db', 'c', 'usr', 'pw', 'x String', options = 'TLSCERTIFICATEKEYFILEPASSWORD=OPTSECRET7')"
 probe "CREATE VIEW f04 AS SELECT * FROM mongodb(structure = 'x String', 'mongodb://127.0.0.1:27017/db?tlsCertificateKeyFilePassword=OPTSECRET16', 'c')"
 probe "CREATE VIEW f05 AS SELECT * FROM mongodb('127.0.0.1:27017', 'db', 'c', 'usr', 'pw', 'x String', OPTIONS = 'tlsCertificateKeyFilePassword=OPTSECRET17')"
 probe "CREATE VIEW f06 AS SELECT * FROM mongodb(oid_columns = 'tlsCertificateKeyFilePassword=OPTSECRET22', '127.0.0.1:27017', 'db', 'c', '', 'x String')"
+probe "CREATE VIEW f07 AS SELECT * FROM mongodb(options = 'OPTSECRET23', '127.0.0.1:27017', 'db', 'c', 'usr', 'x String')"
+probe "CREATE VIEW f08 AS SELECT * FROM mongodb(oid_columns = 'appName=keep', '127.0.0.1:27017', 'db', 'c', 'usr', 'x String', 'OPTSECRET24')"
 
 # Dictionary source: an option given twice, a URI written as an identifier with '#' in the value, the
 # OPTIONS of the host form, and OPTIONS given as an expression.
@@ -60,11 +63,13 @@ probe "CREATE TABLE u04 (x String) ENGINE = MongoDB('mongodb://u?tlsCertificateK
 probe "CREATE DICTIONARY u05 (_id String, v String) PRIMARY KEY _id SOURCE(MONGODB(HOST '127.0.0.1' PORT 27017 USER 'usr' PASSWORD 'OPTSECRET21' DB 'db' COLLECTION 'c')) LAYOUT(COMPLEX_KEY_DIRECT())"
 
 $CLICKHOUSE_CLIENT -m -q "
--- Controls, shown as written: options without a secret, a computed oid_columns, and a collection name.
+-- Controls, shown as written: options without a secret, a computed oid_columns, a collection name, and a
+-- named oid_columns after five positionals.
 CREATE TABLE c01 (x String) ENGINE = MongoDB('mongodb://127.0.0.1:27017/db?tls=true&appName=keep', 'c');
 CREATE DICTIONARY c02 (_id String, v String) PRIMARY KEY _id SOURCE(MONGODB(HOST '127.0.0.1' PORT 27017 DB 'db' COLLECTION 'c' OPTIONS 'tls=true&appName=keep')) LAYOUT(COMPLEX_KEY_DIRECT());
 CREATE TABLE c03 (x String) ENGINE = MongoDB('127.0.0.1:27017', 'db', 'c', 'usr', 'pw', 'tls=true', concat('_', 'id'));
 CREATE TABLE c04 (x String) ENGINE = MongoDB('mongodb://127.0.0.1:27017/db', 'c?tlsCertificateKeyFilePassword=KEEPCOLL');
+CREATE VIEW c05 AS SELECT * FROM mongodb('127.0.0.1:27017', 'db', 'c', 'usr', 'pw', 'x String', oid_columns = '_id');
 
 SYSTEM RELOAD DICTIONARY d01;
 SYSTEM RELOAD DICTIONARY d02;
