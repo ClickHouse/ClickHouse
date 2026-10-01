@@ -927,6 +927,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
         {
             auto contextPtr = getContext();
             std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client = azure_storage->getAzureBlobStorageClient();
+            const String src_container = azure_storage->getAzureBlobStorageConnectionParams()->getContainer();
             auto connection_params = getAzureConnectionParams(
                 move_connection_string,
                 move_container,
@@ -995,7 +996,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                             copyAzureBlobStorageFile(
                                 src_client,
                                 dst_client,
-                                connection_params.getContainer(),
+                                src_container,
                                 /* src_blob */ object_from.remote_path,
                                 blob_size,
                                 move_container,
@@ -1004,7 +1005,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                                 read_settings,
                                 provenance,
                                 scheduler,
-                                /* blob_storage_log */ {},
+                                BlobStorageLogWriter::create(object_storage->getDiskName()),
                                 /* dest_if_none_match */ move_if_none_match,
                                 /* src_etag */ src_etag);
                         }

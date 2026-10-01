@@ -106,6 +106,14 @@ Possible values:
 - 'path' — Use FlightDescriptor::Path (default, works with most Arrow Flight servers)
 - 'command' — Use FlightDescriptor::Command with a SELECT query (required for Dremio)
 
+## arrow_flight_request_timeout_sec {#arrow_flight_request_timeout_sec}
+
+<SettingsInfoBlock type="UInt64" default_value="300" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "300"},{"label": "New setting bounding a single Arrow Flight request. No timeout was set before, so a Flight server that accepted a request and never answered blocked the query indefinitely; 0 restores that behavior."}]}]}/>
+
+Timeout in seconds for a single Arrow Flight request. It bounds the whole request: for a read that is the entire result stream, not just the wait for the first record batch. Zero means no timeout, in which case a Flight server that accepts a request and never answers blocks the query until the connection is closed.
+
 ## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -865,6 +873,21 @@ The interval in microseconds for checking whether request execution has been can
 
 Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
 
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]}/>
+
+Controls whether [`KILL QUERY`](/reference/statements/kill#kill-query) and [`KILL MUTATION`](/reference/statements/kill#kill-mutation) throw an exception when their `WHERE` clauses match no rows.
+
+If set to true, `KILL QUERY` throws when there are no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when no rows match in `system.mutations`. By default, an empty match returns without an exception. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
+
+Possible values:
+
+- 1 — Throw an exception.
+- 0 — Do not throw an exception.
+
 ## least_greatest_legacy_null_behavior {#least_greatest_legacy_null_behavior}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -872,6 +895,14 @@ Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DIST
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "New setting"}]}]}/>
 
 If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
+
+## legacy_array_join_function_nondeterministic_evaluation {#legacy_array_join_function_nondeterministic_evaluation}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "A non-deterministic function next to the `arrayJoin` function gives a different value on every output row, like with the `ARRAY JOIN` clause. The setting restores one value per source row."}]}]}/>
+
+How a non-deterministic function next to the `arrayJoin` function is evaluated when it does not depend on the joined value, for example `rand()` or `generateUUIDv4()` in the same `SELECT`. By default it gives a different value on every output row, like with the `ARRAY JOIN` clause. Enable to get the behavior of older versions: one value per source row, repeated across that row's expanded rows.
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 
@@ -1395,11 +1426,13 @@ Applies to queries received over the native TCP and HTTP protocols. Over HTTP, p
 
 The main use case is a long `INSERT ... SELECT` that must not be lost when the client connection drops.
 
-## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
+## secondary_indexes_enable_bulk_filtering {#secondary_indexes_enable_bulk_filtering}
+
+**Aliases**: `secondary_indices_enable_bulk_filtering`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "A new algorithm for filtering by data skipping indices"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Added an alias for setting `secondary_indices_enable_bulk_filtering`."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "A new algorithm for filtering by data skipping indices"}]}]}/>
 
 Enable the bulk filtering algorithm for indices. It is expected to be always better, but we have this setting for compatibility and control.
 

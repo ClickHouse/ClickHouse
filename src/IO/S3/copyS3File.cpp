@@ -505,7 +505,7 @@ namespace
 
                 auto request = makeUploadPartRequest(task.part_number, task.part_offset, task.part_size);
                 auto checksum = prepareChecksums(*request);
-                auto tag = processUploadPartRequest(*request);
+                auto tag = processUploadPartRequest(*request, task.part_size);
 
                 watch.stop();
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, task.part_size);
@@ -532,7 +532,7 @@ namespace
 
         /// These functions can be called from multiple threads, so derived class needs to take care about synchronization.
         virtual std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const = 0;
-        virtual String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) = 0;
+        virtual String processUploadPartRequest(Aws::AmazonWebServiceRequest & request, size_t part_size) = 0;
     };
 
     /// Helper class to help implementing copyDataToS3File().
@@ -721,7 +721,7 @@ namespace
             return request;
         }
 
-        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
+        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request, size_t part_size) override
         {
             auto & req = typeid_cast<S3::UploadPartRequest &>(request);
 
@@ -735,7 +735,7 @@ namespace
 
             if (blob_storage_log)
                 blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadWrite,
-                                           dest_bucket, dest_key, /* local_path_ */ {}, size, elapsed,
+                                           dest_bucket, dest_key, /* local_path_ */ {}, part_size, elapsed,
                                            outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
                                            outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
 
@@ -907,7 +907,15 @@ namespace
                 if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3CopyObject);
 
+                Stopwatch watch;
                 auto outcome = client_ptr->CopyObject(request);
+                auto elapsed = watch.elapsedMicroseconds();
+
+                if (blob_storage_log)
+                    blob_storage_log->addCopyEvent(src_bucket, src_key, dest_bucket, dest_key, size, elapsed,
+                                                   outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                                                   outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
+
                 if (outcome.IsSuccess())
                 {
                     LOG_TRACE(
@@ -1016,7 +1024,7 @@ namespace
             return request;
         }
 
-        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
+        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request, size_t part_size) override
         {
             auto & req = typeid_cast<S3::UploadPartCopyRequest &>(request);
 
@@ -1024,7 +1032,15 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPartCopy);
 
+            Stopwatch watch;
             auto outcome = client_ptr->UploadPartCopy(req);
+            auto elapsed = watch.elapsedMicroseconds();
+
+            if (blob_storage_log)
+                blob_storage_log->addCopyEvent(src_bucket, src_key, dest_bucket, dest_key, part_size, elapsed,
+                                               outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                                               outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
+
             if (!outcome.IsSuccess())
             {
                 if (sourceIsNotThePinnedGeneration(outcome.GetError()))
