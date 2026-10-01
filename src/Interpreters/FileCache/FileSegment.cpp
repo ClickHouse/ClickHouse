@@ -712,27 +712,15 @@ bool FileSegment::reserve(
 
     if (!is_unbound && reserve_ahead)
     {
-        const auto reserve_granularity = reserve_ahead->getAndGrow(size_to_reserve, cache->getReserveGranularity());
-        if (reserve_granularity && reserve_granularity > size_to_reserve)
-        {
-            size_to_reserve = reserved_size + reserve_granularity > range().size()
-                ? range().size() - reserved_size
-                : reserve_granularity;
+        /// Don't reserve ahead past the segment end, nor past the end of the read: `reserve_hint`
+        /// is measured from the current download offset, so the read ends at `read_horizon`.
+        size_t max_reserve_size = range().size() - reserved_size;
+        const size_t read_horizon = current_downloaded_size + reserve_hint;
+        if (reserve_hint && read_horizon > reserved_size)
+            max_reserve_size = std::min(max_reserve_size, read_horizon - reserved_size);
 
-            /// `reserve_hint` is measured from the current download offset, so the read ends at
-            /// `read_horizon` in segment-relative terms. Don't reserve ahead past it.
-            const size_t read_horizon = current_downloaded_size + reserve_hint;
-            if (reserve_hint
-                && read_horizon > reserved_size
-                && read_horizon < reserved_size + size_to_reserve)
-                size_to_reserve = read_horizon - reserved_size;
-        }
+        size_to_reserve = reserve_ahead->getReserveSize(size_to_reserve, max_reserve_size, cache->getReserveGranularity());
     }
-
-    /// The reserve-ahead caps above (segment range, read horizon) are only an upper bound; they
-    /// must never reserve less than the current write needs, otherwise the write would exceed the
-    /// reservation. A bare assert would not protect release builds, so clamp explicitly.
-    size_to_reserve = std::max(size_to_reserve, minimum_reserve_size);
 
     /// This (resizable file segments) is allowed only for single threaded use of file segment.
     /// Currently it is used only for temporary files through cache.

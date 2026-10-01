@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <condition_variable>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/FileCache/FileCacheKey.h>
@@ -25,17 +26,18 @@ class ReadBufferFromFileBase;
 struct FileCacheReserveStat;
 
 /// Reserve-ahead state of one downloader (reader or writer), passed to `FileSegment::reserve`.
-/// Starts at 0 (the first reservation is exact), then `size_to_reserve`, then doubles, up to the
+/// Starts at 0 (the first reservation is exact), then twice the request, then doubles, up to the
 /// cache's `reserve_granularity`: a small read does not hold a whole granule, a long download rarely
 /// takes the cache lock. Reset on a failed reservation, which is then retried with the exact size.
 struct FileCacheReserveAhead
 {
-    /// Returns the reserve-ahead to use for the current reservation of `size_to_reserve` bytes
-    /// and grows it for the next one.
-    size_t getAndGrow(size_t size_to_reserve, size_t limit)
+    /// Returns how many bytes to reserve for a write of `size_to_reserve` bytes: the reserve-ahead
+    /// capped by `limit` and `max_reserve_size`, but never less than `size_to_reserve`.
+    /// Grows the reserve-ahead for the next reservation.
+    size_t getReserveSize(size_t size_to_reserve, size_t max_reserve_size, size_t limit)
     {
-        const size_t result = std::min(granularity, limit);
-        granularity = std::min(limit, granularity ? granularity * 2 : size_to_reserve);
+        const size_t result = std::max(size_to_reserve, std::min({granularity, limit, max_reserve_size}));
+        granularity = std::min(limit, granularity ? granularity * 2 : size_to_reserve * 2);
         return result;
     }
 

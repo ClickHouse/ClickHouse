@@ -3935,29 +3935,32 @@ TEST(FileCacheReserveAhead, GrowsUpToLimitAndResets)
 {
     DB::FileCacheReserveAhead reserve_ahead;
 
-    /// Starts from 0: the first reservation is exact.
-    ASSERT_EQ(reserve_ahead.getAndGrow(/* size_to_reserve */ 2, /* limit */ 16), 0u);
-    /// Then starts from the requested size and doubles with each further reservation, up to the limit.
-    ASSERT_EQ(reserve_ahead.getAndGrow(2, 16), 2u);
-    ASSERT_EQ(reserve_ahead.getAndGrow(2, 16), 4u);
-    ASSERT_EQ(reserve_ahead.getAndGrow(2, 16), 8u);
-    ASSERT_EQ(reserve_ahead.getAndGrow(2, 16), 16u);
-    ASSERT_EQ(reserve_ahead.getAndGrow(2, 16), 16u);
+    /// The first reservation is exact.
+    ASSERT_EQ(reserve_ahead.getReserveSize(/* size_to_reserve */ 2, /* max_reserve_size */ 100, /* limit */ 16), 2u);
+    /// Then twice the request, doubling with each further reservation up to the limit.
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 16), 4u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 16), 8u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 16), 16u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 16), 16u);
+
+    /// Capped by `max_reserve_size`, but never less than the request.
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 10, 16), 10u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 1, 16), 2u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(32, 100, 16), 32u);
 
     /// A lowered limit takes effect immediately.
-    ASSERT_EQ(reserve_ahead.getAndGrow(2, 4), 4u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 4), 4u);
 
     /// Limit 0 disables reserve-ahead.
-    ASSERT_EQ(reserve_ahead.getAndGrow(2, 0), 0u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 0), 2u);
 
-    /// After a reset it starts again from 0 and then from the requested size.
+    /// After a reset it starts again from the exact size.
     reserve_ahead.reset();
-    ASSERT_EQ(reserve_ahead.getAndGrow(6, 16), 0u);
-    ASSERT_EQ(reserve_ahead.getAndGrow(6, 16), 6u);
-    ASSERT_EQ(reserve_ahead.getAndGrow(6, 16), 12u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(6, 100, 16), 6u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(6, 100, 16), 12u);
 
     reserve_ahead.reset();
-    ASSERT_EQ(reserve_ahead.getAndGrow(2, 16), 0u);
+    ASSERT_EQ(reserve_ahead.getReserveSize(2, 100, 16), 2u);
 }
 
 TEST_F(FileCacheTest, DynamicReserveGranularity)
@@ -4008,16 +4011,15 @@ TEST_F(FileCacheTest, DynamicReserveGranularity)
 
         DB::FileCacheReserveAhead reserve_ahead;
         ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 2u);       /// downloaded 2, exact
-        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 2u + 2);   /// downloaded 4, +2 (requested size)
-        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 4u + 4);   /// downloaded 6, +4
-        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 8u);       /// downloaded 8, served from surplus
-        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 8u + 8);   /// downloaded 10, +8
-        for (size_t downloaded = 12; downloaded <= 16; downloaded += 2)
-            ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 16u);  /// served from surplus
-        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 16u + 16); /// downloaded 18, +16 (limit)
-        for (size_t downloaded = 20; downloaded <= 32; downloaded += 2)
-            ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 32u);
-        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 32u + 16); /// stays at the limit
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 2u + 4);   /// downloaded 4, +4 (twice the request)
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 6u);       /// downloaded 6, served from surplus
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 6u + 8);   /// downloaded 8, +8
+        for (size_t downloaded = 10; downloaded <= 14; downloaded += 2)
+            ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 14u);  /// served from surplus
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 14u + 16); /// downloaded 16, +16 (limit)
+        for (size_t downloaded = 18; downloaded <= 30; downloaded += 2)
+            ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 30u);
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 30u + 16); /// stays at the limit
     }
 }
 
@@ -4029,7 +4031,7 @@ TEST_F(FileCacheTest, ReserveAheadFallsBackToExactSize)
     /// The cache is smaller than the reserve-ahead limit.
     DB::FileCacheSettings settings;
     settings[FileCacheSetting::path] = cache_base_path;
-    settings[FileCacheSetting::max_size] = 14;
+    settings[FileCacheSetting::max_size] = 12;
     settings[FileCacheSetting::max_elements] = 10;
     settings[FileCacheSetting::max_file_segment_size] = 20;
     settings[FileCacheSetting::boundary_alignment] = 20;
@@ -4058,20 +4060,20 @@ TEST_F(FileCacheTest, ReserveAheadFallsBackToExactSize)
     };
 
     ASSERT_EQ(reserve_and_write(), 2u);  /// exact
-    ASSERT_EQ(reserve_and_write(), 4u);  /// +2
-    ASSERT_EQ(reserve_and_write(), 8u);  /// +4
-    ASSERT_EQ(reserve_and_write(), 8u);  /// served from surplus
+    ASSERT_EQ(reserve_and_write(), 6u);  /// +4
+    ASSERT_EQ(reserve_and_write(), 6u);  /// served from surplus
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before);
-    ASSERT_EQ(reserve_and_write(), 10u); /// +8 does not fit, falls back to exact +2 and resets
+    ASSERT_EQ(reserve_and_write(), 8u);  /// +8 does not fit, falls back to exact +2 and resets
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before + 1);
-    ASSERT_EQ(reserve_and_write(), 12u); /// exact again
-    ASSERT_EQ(reserve_and_write(), 14u); /// +2, the cache is full
+    ASSERT_EQ(reserve_and_write(), 10u); /// exact again
+    ASSERT_EQ(reserve_and_write(), 12u); /// +4 does not fit, falls back to exact +2, the cache is full
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before + 2);
 
-    /// Neither the reserve-ahead nor the exact size fits.
+    /// The exact size does not fit either; there is nothing to retry.
     ASSERT_FALSE(segment->reserve(2, 1000, failure_reason, nullptr, 0, &reserve_ahead));
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before + 2);
-    ASSERT_EQ(segment->getReservedSize(), 14u);
-    ASSERT_EQ(cache->getUsedCacheSize(), 14u);
+    ASSERT_EQ(segment->getReservedSize(), 12u);
+    ASSERT_EQ(cache->getUsedCacheSize(), 12u);
 }
 
 TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
