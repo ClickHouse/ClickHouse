@@ -34,3 +34,6 @@ the broadcast run logged a task with several sinks and no scatter	1
 scatter: serializers = scatters * sinks	1
 scatter: max rows into one serializer <= max rows into one scatter	1
 broadcast: serializers = read streams and serialized rows = read rows	1
+receive: deserializers >= sources in every task	1
+receive: deserializers > sources in some task	1
+receive: the initiator deserializes its result behind its one source	1

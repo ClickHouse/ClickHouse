@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/QueryPlan/Profiling/Execution/WorkInterval.h>
 #include <base/types.h>
 
 #include <atomic>
@@ -12,7 +13,7 @@ namespace DB
 
 class IProcessor;
 class ReadProgressCallback;
-class StepWallClockRegistry;
+class StepProfiler;
 
 /// Context for each executing thread of PipelineExecutor.
 class ExecutionThreadContext
@@ -32,6 +33,10 @@ private:
     /// Callback for read progress.
     ReadProgressCallback * read_progress_callback = nullptr;
 
+    /// EXPLAIN ANALYZE statistics.
+    StepProfiler * step_profiler = nullptr;
+    std::vector<WorkInterval> work_intervals;
+
 public:
 #ifndef NDEBUG
     /// Time for different processing stages.
@@ -49,11 +54,10 @@ public:
     constexpr static size_t max_scheduled_local_tasks = 128;
     size_t num_scheduled_local_tasks = 0;
 
-    const StepWallClockRegistry * step_to_wall_clock_registry = nullptr;
-
     const size_t thread_number;
     const bool profile_processors;
     const bool trace_processors;
+    const bool collect_work_intervals;
 
     void wait(std::atomic_bool & finished);
     void wakeUp();
@@ -69,13 +73,10 @@ public:
     std::exception_ptr getException();
     void rethrowExceptionIfHas();
 
-    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, const StepWallClockRegistry * step_wall_clock_registry_, ReadProgressCallback * callback)
-        : read_progress_callback(callback)
-        , step_to_wall_clock_registry(step_wall_clock_registry_)
-        , thread_number(thread_number_)
-        , profile_processors(profile_processors_)
-        , trace_processors(trace_processors_)
-    {}
+    /// Hands the recorded intervals to the profiler; called once, after the thread finished.
+    void flushWorkIntervals();
+
+    ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback, StepProfiler * step_profiler_);
 };
 
 }
