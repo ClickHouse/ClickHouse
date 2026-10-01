@@ -686,6 +686,10 @@ void AzureObjectStorage::copyObject( /// NOLINT
 
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::AZURE_COPY_POOL);
 
+    auto blob_storage_log = BlobStorageLogWriter::create(name);
+    if (blob_storage_log)
+        blob_storage_log->local_path = object_to.local_path;
+
     const String container = connection_params.get()->getContainer();
     copyAzureBlobStorageFile(
         client_ptr,
@@ -698,7 +702,8 @@ void AzureObjectStorage::copyObject( /// NOLINT
         settings_ptr,
         read_settings,
         object_to_attributes,
-        scheduler);
+        scheduler,
+        blob_storage_log);
 }
 
 void AzureObjectStorage::applyNewSettings(
