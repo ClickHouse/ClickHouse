@@ -39,7 +39,7 @@ struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistStat
     {
         auto default_window_frame = getDefaultFrame();
         /// See the note in percent_rank: an exclusion does not reach this function either.
-        WindowFrame frame = transform->window_description.frame;
+        WindowFrame frame = transform->params.window_description.frame;
         frame.exclusion = WindowFrame::Exclusion::NoOthers;
         if (frame != default_window_frame)
         {

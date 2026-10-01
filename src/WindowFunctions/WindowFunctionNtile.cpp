@@ -126,7 +126,7 @@ struct WindowFunctionNtile final : public StatefulWindowFunction<NtileState>
 
     bool checkWindowFrameType(const WindowTransform * transform) const override
     {
-        if (transform->order_by_indices.empty())
+        if (transform->params.order_by_indices.empty())
         {
             LOG_ERROR(getLogger("WindowFunctionNtile"), "Window frame for 'ntile' function must have ORDER BY clause");
             return false;
@@ -135,8 +135,8 @@ struct WindowFunctionNtile final : public StatefulWindowFunction<NtileState>
         // We must wait all for the partition end and get the total rows number in this
         // partition. So before the end of this partition, there is no any block could be
         // dropped out.
-        bool is_frame_supported = transform->window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded
-            && transform->window_description.frame.end_type == WindowFrame::BoundaryType::Unbounded;
+        bool is_frame_supported = transform->params.window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded
+            && transform->params.window_description.frame.end_type == WindowFrame::BoundaryType::Unbounded;
         if (!is_frame_supported)
         {
             LOG_ERROR(

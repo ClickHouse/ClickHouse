@@ -1,10 +1,14 @@
 #pragma once
 
 #include <WindowFunctions/IWindowFunction.h>
-#include <Core/Block.h>
+
 #include <Interpreters/WindowDescription.h>
+
+#include <Processors/Transforms/Window/WindowTransformParams.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+
+#include <Core/Block.h>
 
 #include <deque>
 #include <optional>
@@ -74,9 +78,10 @@ public:
 
     ~WindowTransform() override;
 
-    void resolveColumnIndices(const std::vector<WindowFunctionDescription> & functions);
     void initWorkspaces(const std::vector<WindowFunctionDescription> & functions);
-    void setupRangeOffsetComparison();
+    /// Refuses a frame exclusion that this function cannot be given: one that reads the frame rows
+    /// itself, one whose peers would be decided without the collator of the window order, and one
+    /// that allocates its state in the arena.
     void checkFrameExclusion(const WindowFunctionWorkspace & workspace) const;
 
     String getName() const override
@@ -233,26 +238,14 @@ public:
         return RowNumber{first_block_number, 0};
     }
 
+    /// Data for window transform itself.
+    const WindowTransformParams params;
+
     /// Runtime data.
     InputPort & input;
     OutputPort & output;
     std::optional<Chunk> pending_input;
     bool input_is_finished = false;
-
-    /* Data for window transform itself.
-     */
-    Block input_header;
-
-    WindowDescription window_description;
-
-    // Indices of the PARTITION BY columns in block.
-    std::vector<size_t> partition_by_indices;
-    // Indices of the ORDER BY columns in block;
-    std::vector<size_t> order_by_indices;
-
-    // Which input columns we actually read while computing the window functions: the PARTITION BY
-    // and ORDER BY keys and the function arguments.
-    std::vector<UInt8> should_materialize;
 
     // Per-window-function scratch spaces.
     std::vector<WindowFunctionWorkspace> workspaces;
@@ -328,23 +321,12 @@ public:
     // state after we find the new frame.
     RowNumber prev_frame_start;
     RowNumber prev_frame_end;
-
-    // Whether the frame exclusion actually took rows out for the previous row of the partition. The
-    // state left behind then is not a prefix of this row's frame, so it cannot be carried over.
     /// Whether the aggregate state of the current row, and of the one before it, was built with a
     /// hole in it. An exclusion that takes nothing out leaves both false, and then the frame behaves
     /// as it would without the clause.
     bool current_row_excluded_rows = false;
     bool previous_row_excluded_rows = false;
 
-    // Comparison function for RANGE OFFSET frames. We choose the appropriate
-    // overload once, based on the type of the ORDER BY column. Choosing it for
-    // each row would be slow.
-    std::function<int(
-        const IColumn * compared_column, size_t compared_row,
-        const IColumn * reference_column, size_t reference_row,
-        const Field & offset,
-        bool offset_is_preceding)> compare_values_with_offset;
 };
 
 }

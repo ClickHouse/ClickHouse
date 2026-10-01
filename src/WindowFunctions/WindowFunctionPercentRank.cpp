@@ -33,7 +33,7 @@ struct WindowFunctionPercentRank final : public StatefulWindowFunction<PercentRa
         auto default_window_frame = getDefaultFrame();
         /// This function does not read the rows of the frame, so an exclusion leaves it alone and
         /// must not make the frame count as a different one.
-        WindowFrame frame = transform->window_description.frame;
+        WindowFrame frame = transform->params.window_description.frame;
         frame.exclusion = WindowFrame::Exclusion::NoOthers;
         if (frame != default_window_frame)
         {

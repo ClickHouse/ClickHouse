@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- Value exceeds INT_MAX, should be rejected at config load -->
+    <storage_connections_rcvbuf>9999999999999</storage_connections_rcvbuf>
+</clickhouse>
