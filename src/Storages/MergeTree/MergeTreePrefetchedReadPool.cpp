@@ -14,6 +14,7 @@
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 
 namespace ProfileEvents
@@ -106,8 +107,9 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     /// Both the task and the pool outlive this job: the task owns this object through
     /// readers_future and waits for the job in its destructor.
     CurrentThread::checkIfNotCancelled();
-    prefetch_runner.enqueueAndKeepTrack([this, &task, &read_prefetch]
+    prefetch_runner.enqueueAndKeepTrack([this, &task, &read_prefetch, current_component = Coordination::getCurrentComponent()]
     {
+        auto component_guard = Coordination::setCurrentComponent(current_component);
         CurrentThread::checkIfNotCancelled();
         task.ranges = read_prefetch.refineReadRanges(*task.read_info, std::move(task.ranges));
         FailPointInjection::pauseFailPoint(FailPoints::prefetch_refiner_after_refine);
