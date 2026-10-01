@@ -147,6 +147,37 @@ static void changeOwnership(const String & file_name, const String & user_name, 
     }
 }
 
+/// Whether the user at `user_path` in a users config has any authentication method other than an empty password or `no_password`.
+/// Checks the same carriers as `UsersConfigParser`: the flat fields of the user and every entry of `auth_methods`.
+static bool hasAuthentication(const Poco::Util::AbstractConfiguration & config, const std::string & user_path)
+{
+    auto has_authentication_at = [&](const std::string & path)
+    {
+        for (const auto * key : {"password", "password_sha256_hex", "password_scram_sha256_hex", "password_double_sha1_hex"})
+            if (!config.getString(path + "." + key, "").empty())
+                return true;
+        for (const auto * key : {"ldap", "kerberos", "ssl_certificates", "ssh_keys", "http_authentication"})
+            if (config.has(path + "." + key))
+                return true;
+        return false;
+    };
+
+    if (has_authentication_at(user_path))
+        return true;
+
+    const std::string auth_methods_path = user_path + ".auth_methods";
+    if (config.has(auth_methods_path))
+    {
+        Poco::Util::AbstractConfiguration::Keys auth_methods;
+        config.keys(auth_methods_path, auth_methods);
+        for (const auto & auth_method : auth_methods)
+            if (has_authentication_at(auth_methods_path + "." + auth_method))
+                return true;
+    }
+
+    return false;
+}
+
 static void createGroup(const String & group_name)
 {
     if (!group_name.empty())
@@ -812,9 +843,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     continue;
 
                 is_default_user_removed = false;
-                has_password_for_default_user = !configuration->getString("users.default.password", "").empty()
-                    || !configuration->getString("users.default.password_sha256_hex", "").empty()
-                    || !configuration->getString("users.default.password_double_sha1_hex", "").empty();
+                has_password_for_default_user = hasAuthentication(*configuration, "users.default");
                 break;
             }
         }
@@ -1026,6 +1055,21 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// Chmod and chown configs
         changeOwnership(config_dir, user, group);
+
+        /// The users config may live outside the config directory, the server needs to read it as well.
+        if (has_users_xml_config)
+        {
+            auto is_outside_config_dir = [&](const fs::path & path)
+            {
+                auto relative = path.lexically_normal().lexically_relative(config_dir.lexically_normal());
+                return relative.empty() || *relative.begin() == "..";
+            };
+
+            if (fs::exists(users_config_file) && is_outside_config_dir(users_config_file))
+                changeOwnership(users_config_file, user, group, /* recursive= */ false);
+            if (fs::exists(users_d) && is_outside_config_dir(users_d))
+                changeOwnership(users_d, user, group);
+        }
 
         /// Symlink "preprocessed_configs" is created by the server, so "write" is needed.
         fs::permissions(config_dir, fs::perms::owner_all, fs::perm_options::replace);
