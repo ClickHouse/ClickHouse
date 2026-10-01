@@ -14,7 +14,7 @@
 
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
@@ -141,6 +141,8 @@ public:
     ~HashJoin() override;
 
     std::string getName() const override { return "HashJoin"; }
+
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::HASH); }
 
     const TableJoin & getTableJoin() const override { return *table_join; }
 

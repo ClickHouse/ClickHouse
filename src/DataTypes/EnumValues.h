@@ -59,6 +59,11 @@ private:
     /// Returns true and writes the value into `result` if `field_name` matches an enum name.
     bool findValueByName(std::string_view field_name, T & result) const;
 
+    /// Value-to-name lookup, `nullptr` if not found. Returns a pointer rather than filling an out
+    /// parameter so that callers keep no address-taken local, which costs a canary under
+    /// `-fstack-protector-strong`.
+    const std::string * findNameForValue(T value) const;
+
 public:
     explicit EnumValues(const Values & values_, ValidationMode validation_mode = ValidationMode::Normal);
     ~EnumValues() override;
