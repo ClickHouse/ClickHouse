@@ -48,8 +48,8 @@ namespace Setting
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
     extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
-    extern const SettingsBool semi_join_compatibility;
-    extern const SettingsBool anti_join_compatibility;
+    extern const SettingsBool semi_join_include_columns_from_both_sides;
+    extern const SettingsBool anti_join_include_columns_from_both_sides;
 }
 
 namespace ErrorCodes
@@ -1430,7 +1430,7 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
     if (arguments.size() < 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 2 arguments for USING projection, but got {}", arguments.size());
 
-    /** When `semi_join_compatibility` / `anti_join_compatibility` hides one side of the JOIN, the
+    /** When a disabled `semi_join_include_columns_from_both_sides` / `anti_join_include_columns_from_both_sides` hides one side of the JOIN, the
       * visible `USING` key must keep the preserved side's own type: widening it to the `USING`
       * supertype would expose the type of a table that is not part of the result at all.
       * The preserved side never needs `join_use_nulls` either - a `SEMI`/`ANTI` JOIN only preserves
@@ -1511,8 +1511,8 @@ SemiAntiJoinSideChecker::SemiAntiJoinSideChecker(
         return;
 
     const auto & settings = context->getSettingsRef();
-    const bool skip_non_preserved_side = (is_semi && settings[Setting::semi_join_compatibility])
-        || (is_anti && settings[Setting::anti_join_compatibility]);
+    const bool skip_non_preserved_side = (is_semi && !settings[Setting::semi_join_include_columns_from_both_sides])
+        || (is_anti && !settings[Setting::anti_join_include_columns_from_both_sides]);
     skip_left = skip_non_preserved_side && isRight(kind);
     skip_right = skip_non_preserved_side && isLeft(kind);
 
@@ -1554,7 +1554,7 @@ bool IdentifierResolver::isTableExpressionHiddenBySemiAntiJoin(
     const IdentifierResolveScope & scope)
 {
     const auto & settings = scope.context->getSettingsRef();
-    if (!settings[Setting::semi_join_compatibility] && !settings[Setting::anti_join_compatibility])
+    if (settings[Setting::semi_join_include_columns_from_both_sides] && settings[Setting::anti_join_include_columns_from_both_sides])
         return false;
 
     const auto * nearest_query_scope = scope.getNearestQueryScope();
@@ -1722,7 +1722,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     }
 
     SemiAntiJoinSideChecker side_checker(from_join_node, join_strictness, join_kind, scope.context, scope.resolving_join_on_expression);
-    /// Set when one side of this JOIN is hidden by `semi_join_compatibility` / `anti_join_compatibility`.
+    /// Set when one side of this JOIN is hidden because `semi_join_include_columns_from_both_sides` / `anti_join_include_columns_from_both_sides` is disabled.
     const auto using_preserved_side = side_checker.preservedSideOrNone();
     std::optional<JoinTableSide> denied_qualified_access;
 

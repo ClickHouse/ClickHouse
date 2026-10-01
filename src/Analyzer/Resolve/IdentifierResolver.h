@@ -99,7 +99,7 @@ public:
         const IdentifierResolveScope & scope);
 
     /// Returns true if `table_expression_node` is on the non-preserved side of a SEMI/ANTI JOIN of the nearest
-    /// query scope's join tree and `semi_join_compatibility` / `anti_join_compatibility` hides that side from
+    /// query scope's join tree and a disabled `semi_join_include_columns_from_both_sides` / `anti_join_include_columns_from_both_sides` hides that side from
     /// everything outside that join's own ON expression (see `SemiAntiJoinSideChecker`).
     static bool isTableExpressionHiddenBySemiAntiJoin(
         const IQueryTreeNode * table_expression_node,

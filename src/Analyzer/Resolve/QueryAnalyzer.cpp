@@ -2258,7 +2258,7 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     bool join_node_in_resolve_process = nearest_query_scope->table_expressions_in_resolve_process.contains(join_node);
     if (!join_node_in_resolve_process && join_node && join_node->isUsingJoinExpression())
     {
-        /** When `semi_join_compatibility` / `anti_join_compatibility` hides one side of the JOIN, only the
+        /** When a disabled `semi_join_include_columns_from_both_sides` / `anti_join_include_columns_from_both_sides` hides one side of the JOIN, only the
           * preserved side is part of the result, so its `USING` key must keep its own type rather than be
           * widened to the `USING` supertype - which is derived from the hidden side as well.
           */
@@ -2770,7 +2770,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             /** For SEMI/ANTI JOIN, SELECT * should only return columns from one side per SQL standard:
               * - LEFT SEMI/ANTI JOIN: only left table columns
               * - RIGHT SEMI/ANTI JOIN: only right table columns
-              * Controlled by `semi_join_compatibility` and `anti_join_compatibility` (see `SemiAntiJoinSideChecker`).
+              * Controlled by `semi_join_include_columns_from_both_sides` and `anti_join_include_columns_from_both_sides` (see `SemiAntiJoinSideChecker`).
               */
             SemiAntiJoinSideChecker semi_anti_star_checker(
                 *join_node,

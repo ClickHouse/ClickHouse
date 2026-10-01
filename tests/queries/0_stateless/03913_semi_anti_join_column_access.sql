@@ -1,5 +1,5 @@
 -- Test SEMI/ANTI JOIN column access restrictions with SQL standard semantics.
--- When semi_join_compatibility or anti_join_compatibility settings are enabled,
+-- When semi_join_include_columns_from_both_sides or anti_join_include_columns_from_both_sides settings are disabled,
 -- only columns from the preserved side are accessible in expressions resolved
 -- from the joined result, including:
 -- 1. SELECT clause (SELECT *, qualified matchers like t2.*)
@@ -17,8 +17,8 @@
 SET allow_experimental_analyzer = 1;
 
 -- Test ANTI JOIN setting
-SET anti_join_compatibility = 1;
-SET semi_join_compatibility = 0;
+SET anti_join_include_columns_from_both_sides = 0;
+SET semi_join_include_columns_from_both_sides = 1;
 
 -- LEFT ANTI JOIN with false condition: all left rows returned, only left columns
 SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false;
@@ -36,7 +36,7 @@ SELECT * FROM (SELECT 1 AS a) t1 RIGHT ANTI JOIN (SELECT 2 AS b) t2 ON false;
 SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true;
 
 -- Test SEMI JOIN setting
-SET semi_join_compatibility = 1;
+SET semi_join_include_columns_from_both_sides = 0;
 
 -- LEFT SEMI JOIN with true condition: matched rows, only left columns
 SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true;
@@ -69,7 +69,7 @@ SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1; -- { serverErro
 
 -- Default behavior (both settings = 0): returns columns from both sides
 SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false
-SETTINGS anti_join_compatibility = 0;
+SETTINGS anti_join_include_columns_from_both_sides = 1;
 
 -- Test that non-preserved side columns are not accessible with qualified references
 SELECT d.* FROM (SELECT 1 AS id, 2 AS value) AS l SEMI LEFT JOIN (SELECT 1 AS id, 3 AS values) AS d USING id; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
@@ -384,14 +384,14 @@ SELECT * FROM (SELECT 1 AS a, 2 AS b) AS t1 LEFT SEMI JOIN (SELECT 3 AS a) AS t2
 -- of the visible outer join side still does.
 SELECT * FROM (SELECT 1 AS a) AS t1 LEFT SEMI JOIN (SELECT 2 AS a) AS t3 ON true LEFT JOIN (SELECT 3 AS a) AS t2 ON t1.a = t2.a - 2 FORMAT TSVWithNames;
 SELECT * FROM (SELECT 1 AS a) AS t1 LEFT SEMI JOIN (SELECT 2 AS a) AS t3 ON true LEFT JOIN (SELECT 3 AS a) AS t2 ON true FORMAT TSVWithNames;
--- With the compatibility setting disabled, both sides are returned and the right side stays
+-- With `semi_join_include_columns_from_both_sides` enabled, both sides are returned and the right side stays
 -- qualified as before (the left side of a single join is never qualified, see `single_join_prefer_left_table`).
-SET semi_join_compatibility = 0;
+SET semi_join_include_columns_from_both_sides = 1;
 SELECT * FROM (SELECT 1 AS a) AS t1 RIGHT SEMI JOIN (SELECT 2 AS a) AS t2 ON true FORMAT TSVWithNames;
 SELECT t2.a FROM (SELECT * FROM (SELECT 1 AS a) AS t1 RIGHT SEMI JOIN (SELECT 2 AS a) AS t2 ON true);
-SET semi_join_compatibility = 1;
+SET semi_join_include_columns_from_both_sides = 0;
 
-SET semi_join_compatibility = 1, anti_join_compatibility = 1;
+SET semi_join_include_columns_from_both_sides = 0, anti_join_include_columns_from_both_sides = 0;
 -- A `USING` key of the preserved side must keep its own type: the `USING` supertype is derived from
 -- the hidden side too, so exposing it would leak the type of a table that is not part of the result.
 SELECT toTypeName(id) FROM (SELECT toUInt8(1) AS id) AS l LEFT SEMI JOIN (SELECT toUInt16(1) AS id) AS r USING (id);
@@ -401,7 +401,7 @@ SELECT l.* FROM (SELECT toUInt8(1) AS id) AS l LEFT SEMI JOIN (SELECT toUInt16(1
 SELECT id FROM (SELECT toUInt8(1) AS id) AS l LEFT SEMI JOIN (SELECT toUInt16(1) AS id) AS r USING (id) FORMAT TSVWithNamesAndTypes;
 -- The preserved side of a RIGHT SEMI JOIN is the right one.
 SELECT * FROM (SELECT toUInt16(1) AS id) AS l RIGHT SEMI JOIN (SELECT toUInt8(1) AS id) AS r USING (id) FORMAT TSVWithNamesAndTypes;
--- The same for ANTI JOIN, controlled by `anti_join_compatibility`.
+-- The same for ANTI JOIN, controlled by `anti_join_include_columns_from_both_sides`.
 SELECT * FROM (SELECT toUInt8(2) AS id) AS l LEFT ANTI JOIN (SELECT toUInt16(1) AS id) AS r USING (id) FORMAT TSVWithNamesAndTypes;
 SELECT * FROM (SELECT toUInt16(2) AS id) AS l RIGHT ANTI JOIN (SELECT toUInt8(1) AS id) AS r USING (id) FORMAT TSVWithNamesAndTypes;
 -- Every `USING` key of a multi-column clause is kept on the preserved side.
@@ -423,8 +423,8 @@ SELECT id FROM (SELECT toLowCardinality(toUInt8(1)) AS id) AS l LEFT SEMI JOIN (
 -- The nested-subquery shape resolves the bare name and keeps the preserved-side type.
 SELECT toTypeName(id) FROM (SELECT * FROM (SELECT toUInt8(1) AS id) AS l LEFT SEMI JOIN (SELECT toUInt16(1) AS id) AS r USING (id));
 -- With the compatibility settings disabled, the `USING` supertype is exposed as before.
-SELECT toTypeName(id) FROM (SELECT toUInt8(1) AS id) AS l LEFT SEMI JOIN (SELECT toUInt16(1) AS id) AS r USING (id) SETTINGS semi_join_compatibility = 0;
-SELECT * FROM (SELECT toUInt8(2) AS id) AS l LEFT ANTI JOIN (SELECT toUInt16(1) AS id) AS r USING (id) SETTINGS anti_join_compatibility = 0 FORMAT TSVWithNamesAndTypes;
+SELECT toTypeName(id) FROM (SELECT toUInt8(1) AS id) AS l LEFT SEMI JOIN (SELECT toUInt16(1) AS id) AS r USING (id) SETTINGS semi_join_include_columns_from_both_sides = 1;
+SELECT * FROM (SELECT toUInt8(2) AS id) AS l LEFT ANTI JOIN (SELECT toUInt16(1) AS id) AS r USING (id) SETTINGS anti_join_include_columns_from_both_sides = 1 FORMAT TSVWithNamesAndTypes;
 -- A plain LEFT JOIN is unaffected by these settings.
 SELECT * FROM (SELECT toUInt8(1) AS id) AS l LEFT JOIN (SELECT toUInt16(1) AS id) AS r USING (id) FORMAT TSVWithNamesAndTypes;
 DROP TABLE t_semi_using_left;

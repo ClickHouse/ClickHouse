@@ -76,8 +76,8 @@ namespace Setting
     extern const SettingsBool allow_general_join_planning;
     extern const SettingsBool query_plan_display_internal_aliases;
     extern const SettingsJoinAlgorithm join_algorithm;
-    extern const SettingsBool semi_join_compatibility;
-    extern const SettingsBool anti_join_compatibility;
+    extern const SettingsBool semi_join_include_columns_from_both_sides;
+    extern const SettingsBool anti_join_include_columns_from_both_sides;
 }
 
 static const ActionsDAG::Node * appendExpression(
@@ -206,15 +206,15 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
 
     std::unordered_map<String, const ActionsDAG::Node *> changed_types;
 
-    /** When `semi_join_compatibility` / `anti_join_compatibility` hides one side of the JOIN, only the
+    /** When a disabled `semi_join_include_columns_from_both_sides` / `anti_join_include_columns_from_both_sides` hides one side of the JOIN, only the
       * preserved side is part of the result, so its key column must keep its own type there instead of
       * being widened to the `USING` supertype - the supertype is derived from the hidden side as well.
       * Only the output type is kept: the join condition below still reads the supertype cast.
       */
     const auto & join_query_settings = builder_context.planner_context->getQueryContext()->getSettingsRef();
     const bool hides_non_preserved_side
-        = (join_operator.strictness == JoinStrictness::Semi && join_query_settings[Setting::semi_join_compatibility])
-        || (join_operator.strictness == JoinStrictness::Anti && join_query_settings[Setting::anti_join_compatibility]);
+        = (join_operator.strictness == JoinStrictness::Semi && !join_query_settings[Setting::semi_join_include_columns_from_both_sides])
+        || (join_operator.strictness == JoinStrictness::Anti && !join_query_settings[Setting::anti_join_include_columns_from_both_sides]);
     std::optional<JoinTableSide> preserved_side;
     if (hides_non_preserved_side && isLeft(join_operator.kind))
         preserved_side = JoinTableSide::Left;
