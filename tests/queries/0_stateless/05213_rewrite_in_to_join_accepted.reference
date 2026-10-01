@@ -34,18 +34,28 @@
 1	0
 [1,1,0]
 [1,1,0]
+-- The subquery column type needs a cast
+1	0
+[1,1,0]
+[1,1,0]
+-- A key and a subquery column with no common supertype
+1	0
+[1,1,0]
+[1,1,0]
+-- One tuple value against several subquery columns
+1	0
 [0,0,0]
 [0,0,0]
+-- A nullable tuple key
+1	0
+['1','0','NULL']
+['1','0','NULL']
 -- The subquery column is Bool, which the key is cast to like the set casts it
 1	0
 ['0','1','1']
 ['0','1','1']
 ['1']
 ['1']
--- `Array(UInt8)` against `Array(Bool)`, which a set casts without normalizing the elements
-1	0
-['1','0','0']
-['1','0','0']
 -- The subquery column carries the name of the key, which the join keys on by side
 1	0
 2

@@ -55,7 +55,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
@@ -1284,10 +1283,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     {
         if (!actions_stack.front().containsInputOrConstantNode(function_node_name))
             throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Expression '{}' reads the result of an `IN` that a join evaluates above it. "
-                "Disable setting `rewrite_in_to_join` to evaluate that `IN` with a set",
-                node->formatASTForErrorMessage());
+                ErrorCodes::LOGICAL_ERROR, "'{}' is evaluated with a join, but no join below this expression delivers it", function_node_name);
 
         for (auto & scope : actions_stack)
             scope.addInputColumnIfNecessary(function_node_name, function_node.getResultType());

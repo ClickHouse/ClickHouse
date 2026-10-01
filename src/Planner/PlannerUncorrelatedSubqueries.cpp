@@ -1,6 +1,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Planner/PlannerUncorrelatedSubqueries.h>
 
+#include <ranges>
+
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -17,7 +19,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -66,22 +67,6 @@ void applySetSemantics(JoinStepLogical & join_step, const Settings & settings)
     join_settings.max_rows_in_join = settings[Setting::max_rows_in_set];
     join_settings.max_bytes_in_join = settings[Setting::max_bytes_in_set];
     join_settings.join_overflow_mode = OverflowMode::THROW;
-}
-
-/// Whether `equals` compares one key the way regular `IN` does.
-bool isSetKeyComparableWithEquals(const DataTypePtr & lhs_type, const DataTypePtr & rhs_type)
-{
-    auto lhs_base = removeNullable(removeLowCardinality(lhs_type));
-    auto rhs_base = removeNullable(removeLowCardinality(rhs_type));
-
-    if (typeid_cast<const DataTypeTuple *>(lhs_base.get()) || lhs_base->hasDynamicStructure() || isVariant(lhs_base))
-        return false;
-
-    if (lhs_base->equals(*rhs_base))
-        return true;
-
-    return isNativeNumber(lhs_base) && isNativeNumber(rhs_base)
-        && tryGetLeastSupertype(DataTypes{lhs_base, rhs_base}) != nullptr;
 }
 
 /// A constant the join carries over to the matched outer rows; the unmatched ones get 0 from the outer join.
@@ -236,12 +221,30 @@ bool canRewriteInToJoin(
         return false;
 
     auto key_elements = getInToJoinKeyElements(function_node);
-    if (key_elements.size() != subquery_columns.size())
+    DataTypes key_types;
+    if (key_elements.size() == subquery_columns.size())
+        key_types = key_elements | std::views::transform(&IQueryTreeNode::getResultType) | std::ranges::to<DataTypes>();
+    else if (const auto * key_tuple = typeid_cast<const DataTypeTuple *>(key_elements.front()->getResultType().get()))
+        key_types = key_tuple->getElements();
+
+    if (key_types.size() != subquery_columns.size())
         return false;
 
-    for (size_t i = 0; i < key_elements.size(); ++i)
-        if (!isSetKeyComparableWithEquals(key_elements[i]->getResultType(), subquery_columns[i].type))
+    for (size_t i = 0; i < key_types.size(); ++i)
+    {
+        auto column_base = removeNullable(removeLowCardinality(subquery_columns[i].type));
+        auto key_base = removeNullable(removeLowCardinality(key_types[i]));
+        if (key_base->hasDynamicStructure() || isVariant(key_base))
             return false;
+
+        /// A set turns a key carrying a sub-second part into no match when it casts it to a type that cannot hold one.
+        if (isDateTime64(key_base) && !isDateTime64(column_base))
+            return false;
+
+        /// A cast to a tuple, or to a type that cannot be inside `Nullable`, throws on a value the column type cannot hold.
+        if (key_base->getName() != column_base->getName() && (!column_base->canBeInsideNullable() || isTuple(column_base)))
+            return false;
+    }
 
     if (readsCorrelatedColumn(left_key, query_node->as<const QueryNode &>().getCorrelatedColumnsSet()))
         return false;
@@ -257,11 +260,9 @@ void buildQueryPlanForUncorrelatedInSubquery(
     GlobalPlannerContextPtr subquery_global_planner_context)
 {
     auto subquery_options = select_query_options.subquery();
-    /// Mirror the set subquery setup in `addBuildSubqueriesForSetsStepIfNeeded`.
     subquery_options.forceMaterializeCTE();
     subquery_options.ignore_limits = false;
-    Planner subquery_planner(
-        in_subquery.subquery, subquery_options, std::move(subquery_global_planner_context));
+    Planner subquery_planner(in_subquery.subquery, subquery_options, std::move(subquery_global_planner_context));
     subquery_planner.buildQueryPlanIfNeeded();
     auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
     for (const auto & context : subquery_plan.getInterpretersContexts())
@@ -288,19 +289,14 @@ void buildQueryPlanForUncorrelatedInSubquery(
     auto subquery_column_names = subquery_plan.getCurrentHeader()->getNames();
     const auto & key_column_names = in_subquery.key_column_names;
     if (key_column_names.size() != subquery_column_names.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "`IN` has {} key columns against {} columns of its subquery",
-            key_column_names.size(),
-            subquery_column_names.size());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "`IN` has {} key columns against {} columns of its subquery", key_column_names.size(), subquery_column_names.size());
 
     addStepForMarker(subquery_plan, in_subquery.action_node_name);
 
     auto lhs_header = query_plan.getCurrentHeader();
     auto rhs_header = subquery_plan.getCurrentHeader();
 
-    JoinExpressionActions join_expression_actions(
-        lhs_header->getColumnsWithTypeAndName(), rhs_header->getColumnsWithTypeAndName());
+    JoinExpressionActions join_expression_actions(lhs_header->getColumnsWithTypeAndName(), rhs_header->getColumnsWithTypeAndName());
 
     std::vector<JoinActionRef> predicates;
     for (size_t i = 0; i < key_column_names.size(); ++i)
@@ -308,8 +304,7 @@ void buildQueryPlanForUncorrelatedInSubquery(
         std::vector<JoinActionRef> eq_arguments;
         eq_arguments.push_back(join_expression_actions.findNode(key_column_names[i], /*is_input=*/ true));
         eq_arguments.push_back(join_expression_actions.findNode(subquery_column_names[i], /*is_input=*/ true));
-        predicates.push_back(
-            JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+        predicates.push_back(JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
     }
 
     /// The outer rows are the result, plus the marker the subquery side contributes.

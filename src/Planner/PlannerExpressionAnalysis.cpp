@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <stack>
@@ -10,6 +11,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+
+#include <Functions/FunctionFactory.h>
 
 #include <Interpreters/Context.h>
 
@@ -83,68 +86,78 @@ InToJoinAnalysisResults analyzeInToJoin(
             continue;
 
         const auto & function_node = in_node->as<const FunctionNode &>();
-        UncorrelatedInSubquery in_subquery(
-            getInToJoinKeyElements(function_node),
-            function_node.getArguments().getNodes()[1],
-            action_node_name,
-            function_node.getResultType(),
-            function_node.getFunctionName() == "notIn");
+        const auto & subquery = function_node.getArguments().getNodes()[1];
+        auto key_elements = getInToJoinKeyElements(function_node);
 
-        const size_t key_elements_count = in_subquery.key_elements.size();
-        auto [key_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
-            std::make_shared<ListNode>(in_subquery.key_elements),
-            key_input_columns,
-            planner_context,
-            correlated_columns_set);
+        auto [key_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(std::make_shared<ListNode>(key_elements), key_input_columns, planner_context, correlated_columns_set);
+        if (key_dag.getOutputs().size() != key_elements.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The dag for the left arguments of `IN` has {} outputs. Expected {}", key_dag.getOutputs().size(), key_elements.size());
 
-        /// One output per key, in the order the list was built.
-        if (key_dag.getOutputs().size() != key_elements_count)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "The dag for the left arguments of `IN` has {} outputs. Expected {}",
-                key_dag.getOutputs().size(),
-                key_elements_count);
+        const auto subquery_columns = getSubqueryProjectionColumns(subquery);
+        auto key_outputs = key_dag.getOutputs();
 
-        bool has_computed_key = false;
+        /// Split a tuple key into one element per subquery column.
+        if (key_outputs.size() != subquery_columns.size())
+        {
+            const auto & tuple_key = *key_outputs.front();
+            chassert(isTuple(tuple_key.result_type), "A key that `IN` does not compare column by column has to be a tuple");
+
+            key_outputs.clear();
+            auto index_type = std::make_shared<DataTypeUInt64>();
+            auto tuple_element = FunctionFactory::instance().get("tupleElement", planner_context->getQueryContext());
+            for (size_t i = 0; i < subquery_columns.size(); ++i)
+            {
+                const auto & index_node = key_dag.addColumn(index_type->createColumnConst(0, i + 1), index_type, calculateConstantActionNodeName(i + 1, index_type));
+                key_outputs.push_back(&key_dag.addFunction(tuple_element, {&tuple_key, &index_node}, {}));
+            }
+        }
+
+        /// One `IN` can key on the same expression twice, and a block cannot carry one column twice.
         NameSet distinct_key_names;
         ActionsDAG::NodeRawConstPtrs distinct_key_outputs;
+        auto addToOutput = [&](const ActionsDAG::Node * node)
+        {
+            if (distinct_key_names.insert(node->result_name).second)
+                distinct_key_outputs.push_back(node);
+        };
 
-        const auto subquery_columns = getSubqueryProjectionColumns(in_subquery.subquery);
-        const auto key_outputs = key_dag.getOutputs();
-
+        Names key_column_names_before_cast;
+        Names key_column_names;
+        bool has_computed_key = false;
         for (size_t i = 0; i < key_outputs.size(); ++i)
         {
             const auto * key_output = key_outputs[i];
 
-            /// A set casts the key to its own type before probing it, so the join keys on that same cast.
-            auto subquery_column_type = removeNullable(removeLowCardinality(subquery_columns[i].type));
+            key_column_names_before_cast.push_back(key_output->result_name);
+            addToOutput(key_output);
+
+            /// The cast a set applies to the key before it probes.
             auto key_type = removeNullable(removeLowCardinality(key_output->result_type));
-            const auto * key_before_cast = key_output;
-            if (key_type->getName() != subquery_column_type->getName() && subquery_column_type->canBeInsideNullable())
-                key_output = &key_dag.addAccurateCastOrNull(
-                    *key_output, subquery_column_type, {}, planner_context->getQueryContext());
+            auto target_type = removeNullable(removeLowCardinality(subquery_columns[i].type));
+            if (key_type->getName() != target_type->getName())
+                key_output = &key_dag.addAccurateCastOrNull(*key_output, target_type, {}, planner_context->getQueryContext());
 
+            key_column_names.push_back(key_output->result_name);
+            addToOutput(key_output);
             has_computed_key |= key_output->type != ActionsDAG::ActionType::INPUT;
-            in_subquery.key_column_names_before_cast.push_back(key_before_cast->result_name);
-            in_subquery.key_column_names.push_back(key_output->result_name);
-
-            /// One `IN` can key on the same expression twice, and a block cannot carry one column twice.
-            if (distinct_key_names.insert(key_output->result_name).second)
-                distinct_key_outputs.push_back(key_output);
-            if (distinct_key_names.insert(key_before_cast->result_name).second)
-                distinct_key_outputs.push_back(key_before_cast);
         }
 
         key_dag.getOutputs() = std::move(distinct_key_outputs);
 
         auto key_actions = std::make_shared<ActionsAndProjectInputsFlag>();
         key_actions->dag = std::move(key_dag);
-        actions_chain.addStep(std::make_unique<ActionsChainStep>(
-            key_actions,
-            /*use_actions_nodes_as_output_columns=*/true,
-            ColumnsWithTypeAndName{{nullptr, in_subquery.result_type, in_subquery.action_node_name}}));
+        actions_chain.addStep(std::make_unique<ActionsChainStep>(key_actions, /*use_actions_nodes_as_output_columns=*/true, ColumnsWithTypeAndName{{nullptr, function_node.getResultType(), action_node_name}}));
 
-        InToJoinAnalysisResult analyzed{std::move(in_subquery), nullptr, {}};
+        InToJoinAnalysisResult analyzed{
+            UncorrelatedInSubquery{
+                subquery,
+                action_node_name,
+                function_node.getResultType(),
+                function_node.getFunctionName() == "notIn",
+                std::move(key_column_names),
+                std::move(key_column_names_before_cast)},
+            nullptr,
+            {}};
         if (has_computed_key || !correlated_subtrees.subqueries.empty())
         {
             analyzed.key_actions = std::move(key_actions);

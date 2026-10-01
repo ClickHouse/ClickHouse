@@ -83,8 +83,33 @@ FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT toUInt16(k) FROM s));
 SELECT groupArray(c) FROM (SELECT id IN (SELECT toUInt16(k) FROM s) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 0;
 SELECT groupArray(c) FROM (SELECT id IN (SELECT toUInt16(k) FROM s) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 1;
 
-SELECT groupArray(c) FROM (SELECT id + 255 IN (SELECT toUInt8(k) FROM s) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 0;
-SELECT groupArray(c) FROM (SELECT id + 255 IN (SELECT toUInt8(k) FROM s) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 1;
+SELECT '-- The subquery column type needs a cast';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT count() FROM t WHERE toString(id) IN (SELECT toUInt8(k) FROM s));
+
+SELECT groupArray(c) FROM (SELECT toString(id) IN (SELECT toUInt8(k) FROM s) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 0;
+SELECT groupArray(c) FROM (SELECT toString(id) IN (SELECT toUInt8(k) FROM s) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 1;
+
+SELECT '-- A key and a subquery column with no common supertype';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT count() FROM t WHERE toInt64(id) IN (SELECT k FROM s));
+
+SELECT groupArray(c) FROM (SELECT toInt64(id) IN (SELECT k FROM s) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 0;
+SELECT groupArray(c) FROM (SELECT toInt64(id) IN (SELECT k FROM s) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 1;
+
+SELECT '-- One tuple value against several subquery columns';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT count() FROM w WHERE CAST((k, v), 'Tuple(UInt64, UInt64)') IN (SELECT toUInt8(k), v FROM w));
+
+SELECT groupArray(c) FROM (SELECT CAST((k + 256, v), 'Tuple(UInt64, UInt64)') IN (SELECT toUInt8(k), v FROM w) AS c FROM w ORDER BY k) SETTINGS rewrite_in_to_join = 0;
+SELECT groupArray(c) FROM (SELECT CAST((k + 256, v), 'Tuple(UInt64, UInt64)') IN (SELECT toUInt8(k), v FROM w) AS c FROM w ORDER BY k) SETTINGS rewrite_in_to_join = 1;
+
+SELECT '-- A nullable tuple key';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT count() FROM w WHERE if(k = 3, NULL, (k, v)) IN (SELECT CAST((1, 1), 'Tuple(UInt64, UInt64)')));
+
+SELECT groupArray(ifNull(toString(c), 'NULL')) FROM (SELECT if(k = 3, NULL, (k, v)) IN (SELECT CAST((1, 1), 'Tuple(UInt64, UInt64)')) AS c FROM w ORDER BY k) SETTINGS rewrite_in_to_join = 0;
+SELECT groupArray(ifNull(toString(c), 'NULL')) FROM (SELECT if(k = 3, NULL, (k, v)) IN (SELECT CAST((1, 1), 'Tuple(UInt64, UInt64)')) AS c FROM w ORDER BY k) SETTINGS rewrite_in_to_join = 1;
 
 SELECT '-- The subquery column is Bool, which the key is cast to like the set casts it';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
@@ -95,13 +120,6 @@ SELECT groupArray(toString(c)) FROM (SELECT id - 1 IN (SELECT true) AS c FROM t 
 
 SELECT groupArray(toString(c)) FROM (SELECT k IN (SELECT true) AS c FROM n ORDER BY k) SETTINGS rewrite_in_to_join = 0;
 SELECT groupArray(toString(c)) FROM (SELECT k IN (SELECT true) AS c FROM n ORDER BY k) SETTINGS rewrite_in_to_join = 1;
-
-SELECT '-- `Array(UInt8)` against `Array(Bool)`, which a set casts without normalizing the elements';
-SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
-FROM (EXPLAIN SELECT CAST([arr[1]], 'Array(UInt8)') IN (SELECT [true]) AS c FROM t);
-
-SELECT groupArray(toString(c)) FROM (SELECT CAST([arr[1]], 'Array(UInt8)') IN (SELECT [true]) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 0;
-SELECT groupArray(toString(c)) FROM (SELECT CAST([arr[1]], 'Array(UInt8)') IN (SELECT [true]) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 1;
 
 SELECT '-- The subquery column carries the name of the key, which the join keys on by side';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0

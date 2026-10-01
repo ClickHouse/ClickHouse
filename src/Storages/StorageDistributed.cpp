@@ -68,6 +68,7 @@
 
 #include <Planner/CollectSets.h>
 #include <Planner/Planner.h>
+#include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
@@ -574,9 +575,11 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     ColumnsWithTypeAndName empty_input_columns;
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
 
-    /// The set registry of a planner context derived per child table is empty, and
-    /// `PlannerActionsVisitor` resolves `IN` through it.
-    collectSets(expr, *query_info.planner_context);
+    /// Collect into a context of its own. The query context already records which `IN`s
+    /// `rewrite_in_to_join` evaluates with a join, and those joins are only built further down in
+    /// planning, so reading their result here would key on a column nothing produces yet.
+    auto planner_context = std::make_shared<PlannerContext>(query_info.planner_context->getMutableQueryContext(), query_info.planner_context);
+    collectSets(expr, *planner_context);
 
     // When comparing sharding key expressions, we need to ignore table qualifiers in column names
     // because the sharding key is defined without table qualifiers, but the query expression
@@ -585,7 +588,7 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     auto [expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
         expr,
         empty_input_columns,
-        query_info.planner_context,
+        planner_context,
         empty_correlated_columns_set,
         false /* use_column_identifier_as_action_node_name */);
 
