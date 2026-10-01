@@ -191,7 +191,8 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     /// However, if data is somewhat randomly distributed and high cardinality, then each stream will have a hash table
     /// whose size is the number of unique keys, and this can cause OOM.
     const auto & limit_by_columns = limit_by->getColumns();
-    if (getCollationAwareSortPrefixInColumns(sort->getSortDescription(), limit_by_columns).size() != limit_by_columns.size())
+    if (getCollationAwareSortPrefixInColumns(sort->getSortDescription(), limit_by_columns, *limit_by->getInputHeaders().front()).size()
+        != limit_by_columns.size())
         return;
 
     const UInt64 length = limit_by->getGroupLength();

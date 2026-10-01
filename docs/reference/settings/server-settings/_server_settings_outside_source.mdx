@@ -1216,6 +1216,32 @@ Keys for server/client settings:
 </openSSL>
 ```
 
+## placement {#placement}
+The cloud availability zone and region the server runs in. The availability zone is used by the ZooKeeper client to prefer hosts in the same zone (`prefer_local_availability_zone` in the [zookeeper](#zookeeper) section), and by ClickHouse Keeper, which publishes it in the `/keeper/availability_zone` node.
+
+If the `placement` section is absent, the availability zone and region are empty.
+
+The following settings are available:
+
+| Setting                       | Description                                                                                                                                                       | Default Value                      |
+|-------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------|
+| `use_imds`                    | Get the availability zone from the instance metadata service of the cloud provider: AWS first, then GCP. When enabled, all other settings are ignored and the region is empty. | `false`                            |
+| `availability_zone`           | The availability zone.                                                                                                                                            | Empty                              |
+| `availability_zone_from_file` | The file to read the availability zone from when `availability_zone` is empty. If the file does not exist, the availability zone is empty.                       | `/run/instance-metadata/node-zone` |
+| `region`                      | The region.                                                                                                                                                       | Empty                              |
+| `region_from_file`            | The file to read the region from when `region` is empty. If the file does not exist, the region is empty.                                                         | `/run/instance-metadata/node-region` |
+
+The placement is read once, at server startup.
+
+**Example**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
+```
+
 ## part_log {#part_log}
 Logging events that are associated with [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
@@ -1564,6 +1590,10 @@ The option applies to all system log tables; it does not allow for a different c
 When the `cluster` setting is used, the table definition references the cluster, and the cluster has to exist for the table to be loaded. If you remove the cluster from the configuration, also drop the `all_...` tables (they will be recreated according to the new configuration at the next flush).
 </Note>
 
+<Warning>
+Once this section is enabled, the `all_...` names in the `system` database are reserved for this feature. Do not keep your own tables under these names: rename any such table before enabling the section.
+</Warning>
+
 **Example**
 
 ```xml
@@ -1808,6 +1838,7 @@ Settings for optional improvements in the access control system.
 
 | Setting                                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Default |
 |-------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| `enable_read_write_grants` | Enables separation of `READ` and `WRITE` privileges for external data sources such as `S3`, `HDFS`, `Kafka`, and others. Available starting with version 25.7. When set to `true`, you can grant `READ` and `WRITE` separately for sources instead of a single grant covering both. | `false` |
 | `on_cluster_queries_require_cluster_grant` | Sets whether `ON CLUSTER` queries require the `CLUSTER` grant.                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `true`  |
 | `role_cache_expiration_time_seconds` | Sets the number of seconds since last access, that a role is stored in the Role Cache.                                                                                                                                                                                                                                                                                                                                                                                                                           | `600`   |
 | `select_from_information_schema_requires_grant` | Sets whether `SELECT * FROM information_schema.<table>` requires any grants and can be executed by any user. If set to true, then this query requires `GRANT SELECT ON information_schema.<table>`, just as for ordinary tables.                                                                                                                                                                                                                                                                                 | `true`  |
@@ -1829,6 +1860,7 @@ Example:
     <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
     <table_engines_require_grant>false</table_engines_require_grant>
     <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
+    <enable_read_write_grants>false</enable_read_write_grants>
 </access_control_improvements>
 ```
 

@@ -2275,6 +2275,8 @@ struct ConvertImpl
             || std::is_same_v<FromDataType, DataTypeFloat32>
             || std::is_same_v<FromDataType, DataTypeFloat64>
             || std::is_same_v<FromDataType, DataTypeBFloat16>
+            || std::is_same_v<FromDataType, DataTypeEnum8>
+            || std::is_same_v<FromDataType, DataTypeEnum16>
             ) && std::is_same_v<ToDataType, DataTypeDate>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransformFromSecondsOrDays<typename FromDataType::FieldType, date_time_overflow_behavior>, false>::template execute<Additions>(
@@ -2321,10 +2323,13 @@ struct ConvertImpl
         /// convenience, Float32, Float64, BFloat16) to DateTime. Without the wide integers here the
         /// conversion would fall through to the generic numeric path, which narrows to `UInt32` modulo
         /// 2^32 instead of saturating - and the monotonicity `toDateTime` claims would not hold.
+        /// `Enum8`/`Enum16` are stored as `Int8`/`Int16`, so they take the same saturating transform.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeInt8>
                 || std::is_same_v<FromDataType, DataTypeInt16>
-                || std::is_same_v<FromDataType, DataTypeInt32>)
+                || std::is_same_v<FromDataType, DataTypeInt32>
+                || std::is_same_v<FromDataType, DataTypeEnum8>
+                || std::is_same_v<FromDataType, DataTypeEnum16>)
             && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, date_time_overflow_behavior>, false>::template execute<Additions>(
@@ -3481,7 +3486,10 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return std::is_same_v<Name, NameToString>; }
+    bool isInjective(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return std::is_same_v<Name, NameToString> && arguments.size() <= 1;
+    }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));
@@ -4793,7 +4801,7 @@ struct ToDateTimeMonotonicity
 {
     static bool has() { return true; }
 
-    static IFunction::Monotonicity get(const IDataType & type_with_wrappers, const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType & type_with_wrappers, const Field & left, const Field & right)
     {
         const IDataType * type_without_wrappers = &type_with_wrappers;
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type_without_wrappers))
@@ -4804,7 +4812,42 @@ struct ToDateTimeMonotonicity
         if (type.isValueRepresentedByNumber())
         {
             auto which = WhichDataType(type);
-            if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isDate() || which.isUInt8() || which.isUInt16()
+
+            /// Rescaling a day number to seconds wraps the `UInt32` result outside a bounded window, and
+            /// this trait cannot read `date_time_overflow_behavior`, so the window must hold for the
+            /// wrapping default. `Date32` also needs a floor: its raw day 0 is negative ahead of UTC.
+            if constexpr (std::is_same_v<T, DataTypeDateTime>)
+            {
+                if (which.isDateOrDate32())
+                {
+                    const Int64 min_day_num = which.isDate32() ? 1 : 0;
+
+                    /// An absent or non-integer bound is outside the window: the range may then hold any day.
+                    auto is_within_window = [&](const Field & bound)
+                    {
+                        if (bound.getType() == Field::Types::UInt64)
+                        {
+                            const UInt64 day_num = bound.safeGet<UInt64>();
+                            return day_num <= static_cast<UInt64>(MAX_DATETIME_DAY_NUM)
+                                && static_cast<Int64>(day_num) >= min_day_num;
+                        }
+                        if (bound.getType() == Field::Types::Int64)
+                        {
+                            const Int64 day_num = bound.safeGet<Int64>();
+                            return day_num >= min_day_num && day_num <= static_cast<Int64>(MAX_DATETIME_DAY_NUM);
+                        }
+                        return false;
+                    };
+
+                    if (!is_within_window(left) || !is_within_window(right))
+                        return {};
+
+                    /// Not strict: a timezone may skip a civil day, mapping two day numbers to one instant.
+                    return {.is_monotonic = true};
+                }
+            }
+
+            if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isUInt8() || which.isUInt16()
                 || which.isUInt32()))
                 return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
 
