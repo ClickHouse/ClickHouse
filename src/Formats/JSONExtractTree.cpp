@@ -1826,12 +1826,11 @@ private:
     {
         /// Array nesting depth is bounded only by the input and becomes the depth of the inferred
         /// type, so the limit also protects the later unguarded recursions over that type (building
-        /// its name, its extract tree, its column, destroying it).
-        /// max_parser_depth == 0 means unlimited, matching the SQL parser; checkStackSize is the backstop.
+        /// its name, its extract tree, its column, destroying it). checkStackSize is the backstop.
         checkStackSize();
-        if (format_settings.max_parser_depth != 0 && depth > format_settings.max_parser_depth)
+        if (depth > format_settings.json.max_depth)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
-                "Maximum parse depth ({}) exceeded. Consider raising max_parser_depth setting.", format_settings.max_parser_depth);
+                "Maximum JSON depth ({}) exceeded. Consider raising input_format_json_max_depth setting.", format_settings.json.max_depth);
 
         switch (element.type())
         {
@@ -2079,11 +2078,11 @@ private:
     {
         /// Object nesting depth is bounded only by the input; the limit also keeps the memory spent
         /// on paths, which every level appends to, from growing quadratically with the depth.
-        /// max_parser_depth == 0 means unlimited, matching the SQL parser; checkStackSize is the backstop.
+        /// checkStackSize is the backstop.
         checkStackSize();
-        if (format_settings.max_parser_depth != 0 && depth > format_settings.max_parser_depth)
+        if (depth > format_settings.json.max_depth)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
-                "Maximum parse depth ({}) exceeded. Consider raising max_parser_depth setting.", format_settings.max_parser_depth);
+                "Maximum JSON depth ({}) exceeded. Consider raising input_format_json_max_depth setting.", format_settings.json.max_depth);
 
         if (shouldSkipPath(current_path, insert_settings))
             return true;
