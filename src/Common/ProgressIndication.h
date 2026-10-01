@@ -103,9 +103,20 @@ public:
     void updateThreadEventData(HostToTimesMap & new_hosts_data);
 
 private:
-    double getCPUUsage();
-    /// Average number of threads sleeping in throttlers or waiting for the IO scheduler.
-    double getWaitedUsage();
+    struct ProfileSnapshot
+    {
+        double cpu_usage = 0;
+        /// Average number of threads sleeping in throttlers or waiting for the IO scheduler.
+        double waited = 0;
+        MemoryUsage memory;
+        TempDataOnDiskUsage temp_data_on_disk;
+    };
+
+    /// All resource usage values at once, consistent with each other.
+    ProfileSnapshot getProfileSnapshot();
+
+    static MemoryUsage sumMemoryUsage(const HostToTimesMap & hosts);
+    static TempDataOnDiskUsage sumTempDataOnDiskUsage(const HostToTimesMap & hosts);
 
     UInt64 getElapsedNanoseconds() const;
 

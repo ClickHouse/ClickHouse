@@ -80,23 +80,9 @@ void ProgressIndication::updateThreadEventData(HostToTimesMap & new_hosts_data)
     waited_meter.add(now, static_cast<double>(total_waited_ns));
 }
 
-double ProgressIndication::getCPUUsage()
+ProgressIndication::MemoryUsage ProgressIndication::sumMemoryUsage(const HostToTimesMap & hosts)
 {
-    std::lock_guard lock(profile_events_mutex);
-    return cpu_usage_meter.rate(static_cast<double>(getElapsedNanoseconds()));
-}
-
-double ProgressIndication::getWaitedUsage()
-{
-    std::lock_guard lock(profile_events_mutex);
-    return waited_meter.rate(static_cast<double>(getElapsedNanoseconds()));
-}
-
-ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
-{
-    std::lock_guard lock(profile_events_mutex);
-
-    return std::accumulate(hosts_data.cbegin(), hosts_data.cend(), MemoryUsage{},
+    return std::accumulate(hosts.cbegin(), hosts.cend(), MemoryUsage{},
         [](MemoryUsage const & acc, auto const & host_data)
         {
             UInt64 host_usage = host_data.second.memory_usage;
@@ -104,16 +90,39 @@ ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
         });
 }
 
-ProgressIndication::TempDataOnDiskUsage ProgressIndication::getTempDataOnDiskUsage() const
+ProgressIndication::TempDataOnDiskUsage ProgressIndication::sumTempDataOnDiskUsage(const HostToTimesMap & hosts)
 {
-    std::lock_guard lock(profile_events_mutex);
-
-    return std::accumulate(hosts_data.cbegin(), hosts_data.cend(), TempDataOnDiskUsage{},
+    return std::accumulate(hosts.cbegin(), hosts.cend(), TempDataOnDiskUsage{},
         [](TempDataOnDiskUsage const & acc, auto const & host_data)
         {
             UInt64 host_usage = host_data.second.temp_data_on_disk_usage;
             return TempDataOnDiskUsage{.total = acc.total + host_usage, .max = std::max(acc.max, host_usage)};
         });
+}
+
+ProgressIndication::ProfileSnapshot ProgressIndication::getProfileSnapshot()
+{
+    std::lock_guard lock(profile_events_mutex);
+
+    double now = static_cast<double>(getElapsedNanoseconds());
+    return ProfileSnapshot{
+        .cpu_usage = cpu_usage_meter.rate(now),
+        .waited = waited_meter.rate(now),
+        .memory = sumMemoryUsage(hosts_data),
+        .temp_data_on_disk = sumTempDataOnDiskUsage(hosts_data),
+    };
+}
+
+ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
+{
+    std::lock_guard lock(profile_events_mutex);
+    return sumMemoryUsage(hosts_data);
+}
+
+ProgressIndication::TempDataOnDiskUsage ProgressIndication::getTempDataOnDiskUsage() const
+{
+    std::lock_guard lock(profile_events_mutex);
+    return sumTempDataOnDiskUsage(hosts_data);
 }
 
 void ProgressIndication::writeFinalProgress()
@@ -188,10 +197,14 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
 
     /// We don't want -0. that can appear due to rounding errors, and a query that is not waiting
     /// at all must not count as stalled just because its CPU usage rounded to a negative value.
-    double cpu_usage = std::max(getCPUUsage(), 0.);
-    double waited = std::max(getWaitedUsage(), 0.);
-    auto [memory_usage, max_host_usage, peak_usage] = getMemoryUsage();
-    auto [temp_data_on_disk_usage, max_host_temp_data_on_disk_usage] = getTempDataOnDiskUsage();
+    /// All values are taken from one snapshot under `profile_events_mutex`: otherwise a concurrent
+    /// `updateThreadEventData` could make `cpu_usage` and `waited` come from different packets, and
+    /// the torn `stalled` state below would be recorded in `bar_segments` permanently.
+    const ProfileSnapshot profile = getProfileSnapshot();
+    double cpu_usage = std::max(profile.cpu_usage, 0.);
+    double waited = std::max(profile.waited, 0.);
+    auto [memory_usage, max_host_usage, peak_usage] = profile.memory;
+    auto [temp_data_on_disk_usage, max_host_temp_data_on_disk_usage] = profile.temp_data_on_disk;
 
     /// Mostly waiting instead of working: yellow instead of green.
     bool stalled = waited > cpu_usage;
