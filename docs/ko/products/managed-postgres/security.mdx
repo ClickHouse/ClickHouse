@@ -2,8 +2,8 @@
 slug: /cloud/managed-postgres/security
 sidebarTitle: '보안'
 title: '보안'
-description: 'IP 허용 목록, 암호화, Private Link를 포함한 ClickHouse Managed Postgres 보안 기능'
-keywords: ['postgres 보안', 'IP 허용 목록', '암호화', 'tls', 'ssl', 'private link', '백업 보존']
+description: 'IP 허용 목록, 암호화, AWS PrivateLink, GCP Private Service Connect를 포함한 ClickHouse Managed Postgres 보안 기능'
+keywords: ['postgres 보안', 'IP 허용 목록', '암호화', 'tls', 'ssl', 'private link', 'private service connect', 'psc', '백업 보존']
 doc_type: 'guide'
 ---
 
@@ -21,7 +21,7 @@ IP 필터는 ClickHouse Managed Postgres 인스턴스에 연결할 수 있는 �
 <Image img="/images/managed-postgres/ip-filters.webp" alt="IP 액세스 목록 구성" size="md" border />
 
 <div id="configuring-ip-filters">
-  ### IP 필터 구성
+  ### IP 필터 구성 {#configuring-ip-filters}
 </div>
 
 IP 필터를 구성하려면:
@@ -58,7 +58,7 @@ ClickHouse Managed Postgres는 포괄적인 데이터 보호를 위해 저장 �
 ClickHouse Managed Postgres에 저장되는 모든 데이터는 기반 스토리지 인프라에 대한 무단 액세스를 방지하기 위해 저장 시 암호화됩니다.
 
 <div id="nvme-encryption">
-  #### NVMe 스토리지 암호화
+  #### NVMe 스토리지 암호화 {#nvme-encryption}
 </div>
 
 NVMe 드라이브에 저장되는 데이터베이스 파일, 트랜잭션 로그, 임시 파일은 업계 표준 암호화 알고리즘으로 암호화됩니다. 이 암호화는 애플리케이션에 투명하게 적용되며 별도의 구성이 필요하지 않습니다.
@@ -78,13 +78,13 @@ NVMe 드라이브에 저장되는 데이터베이스 파일, 트랜잭션 로그
 </Info>
 
 <div id="encryption-in-transit">
-  ### 전송 중 암호화
+  ### 전송 중 암호화 {#encryption-in-transit}
 </div>
 
 ClickHouse Managed Postgres에 대한 모든 네트워크 연결은 애플리케이션과 데이터베이스 간에 데이터가 전송되는 동안 이를 보호하기 위해 TLS(Transport Layer Security)로 보호됩니다.
 
 <div id="tls-ssl">
-  #### TLS/SSL 구성
+  #### TLS/SSL 구성 {#tls-ssl}
 </div>
 
 기본적으로 연결은 인증서 검증 없이 TLS로 암호화됩니다. 프로덕션 환경에서는 올바른 서버와 통신하고 있는지 확인할 수 있도록 인증서가 검증된 TLS로 연결하는 것을 권장합니다.
@@ -123,16 +123,58 @@ ClickHouse Managed Postgres 인스턴스에서 AWS PrivateLink를 활성화하�
 
 ## GCP Private Service Connect {#gcp-private-service-connect}
 
-Private Service Connect를 사용하면 ClickHouse Managed Postgres 인스턴스와 GCP Virtual Private Cloud(VPC) 사이에 퍼블릭 인터넷으로 트래픽을 노출하지 않는 프라이빗 연결을 설정할 수 있습니다.
+GCP Private Service Connect(PSC)를 사용하면 트래픽을 공용 인터넷에 노출하지 않고도 ClickHouse Managed Postgres 인스턴스와 Google Cloud VPC(Virtual Private Cloud) 간에 프라이빗 연결을 구성할 수 있습니다. 이를 통해 네트워크 격리와 보안을 한층 더 강화할 수 있습니다.
 
-ClickHouse Managed Postgres 인스턴스에 Private Service Connect를 활성화하려면 지원 티켓을 생성하여 ClickHouse 지원팀에 문의하십시오.
+<Info>
+  **수동 설정 필요**
+
+  GCP Private Service Connect를 지원하지만, ClickHouse 지원팀이 직접 구성해야 합니다. 이 기능은 네트워크 격리 요구 사항이 엄격한 엔터프라이즈 고객에게 적합합니다.
+</Info>
+
+### GCP Private Service Connect 설정 요청 {#requesting-gcp-private-service-connect}
+
+액세스 권한은 GCP 프로젝트 단위가 아니라 Private Service Connect 엔드포인트 단위로 부여됩니다. 사용자가 직접 생성하여 ClickHouse 지원팀에 알린 엔드포인트만 승인되므로, 설정을 완료하려면 지원팀과 두 차례 요청을 주고받아야 합니다.
+
+ClickHouse Managed Postgres 인스턴스에 GCP Private Service Connect를 활성화하려면 다음 단계를 따르십시오.
+
+1. 지원 티켓을 생성하여 **ClickHouse 지원팀에 문의**합니다
+
+2. **다음 정보를 제공**합니다:
+   * ClickHouse 조직 ID
+   * Postgres 서비스의 ID/호스트명
+
+3. **ClickHouse 지원팀이 수행하는 작업**:
+   * ClickHouse Managed Postgres 측에 Private Service Connect 서비스 어태치먼트를 프로비저닝합니다
+   * 엔드포인트 생성에 사용할 서비스 어태치먼트 ID를 제공합니다.
+
+4. **Private Service Connect 엔드포인트 생성**:
+   * ClickHouse 지원팀이 제공한 서비스 어태치먼트 ID를 사용하여, Postgres 서비스와 동일한 리전의 VPC에 Private Service Connect 엔드포인트를 생성합니다. Private Service Connect 엔드포인트는 리전 단위로 동작하므로 리전 간 연결은 지원되지 않습니다.
+
+   * GCP 콘솔에서 연결이 &quot;Pending&quot;으로 표시됩니다. ClickHouse 지원팀이 승인하기 전까지는 정상적인 상태입니다.
+
+   * 엔드포인트의 **PSC 연결 ID**를 확인합니다. GCP 콘솔의 엔드포인트 정보에서 확인하거나 다음 명령을 실행하면 됩니다:
+
+     ```bash
+     gcloud compute forwarding-rules describe <endpoint-name> --region <region> --format='value(pscConnectionId)'
+     ```
+
+   * 기존 지원 티켓을 통해 PSC 연결 ID를 ClickHouse 지원팀에 전달합니다.
+
+5. **ClickHouse 지원팀이 수행하는 작업**:
+   * 엔드포인트를 서비스 어태치먼트의 허용 목록에 추가합니다. 그러면 연결 상태가 &quot;Pending&quot;에서 &quot;Accepted&quot;로 바뀝니다.
+
+6. **ClickHouse Managed Postgres 인스턴스에 연결**:
+   * 엔드포인트가 &quot;Accepted&quot; 상태가 되면 엔드포인트 IP의 포트 `5432`(direct) 또는 `6432`(pooler)로 연결할 수 있습니다.
+   * 엔드포인트 IP에는 Postgres 호스트명과 일치하는 DNS 이름이 없으므로 `sslmode=require`를 사용하십시오. `sslmode=verify-full`을 사용하려면 Postgres 호스트명을 엔드포인트 IP에 매핑하는 비공개 Cloud DNS 레코드를 추가하십시오.
+
+다른 VPC에서 연결하거나 엔드포인트를 다시 생성하는 등 동일한 인스턴스에 엔드포인트를 추가로 연결하려면 4단계와 5단계를 반복하십시오. 즉, 동일한 서비스 어태치먼트 ID로 엔드포인트를 생성한 뒤 해당 PSC 연결 ID를 ClickHouse 지원팀에 전달합니다. 엔드포인트의 액세스 권한을 해제하려면 ClickHouse 지원팀에 해당 엔드포인트를 허용 목록에서 제거해 달라고 요청하십시오.
 
 ## 백업 보존 {#backup-retention}
 
 ClickHouse Managed Postgres는 실수로 인한 삭제, 손상 및 기타 데이터 손실 상황으로부터 데이터를 보호하기 위해 자동으로 백업을 수행합니다.
 
 <div id="retention-policy">
-  ### 보존 정책
+  ### 보존 정책 {#retention-policy}
 </div>
 
 * **기본 보존 기간**: 7일

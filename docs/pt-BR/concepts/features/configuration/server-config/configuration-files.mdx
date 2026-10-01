@@ -28,7 +28,7 @@ Arquivos de configuração XML devem usar `<clickhouse>...</clickhouse>` como ta
 Em arquivos de configuração YAML, `clickhouse:` é opcional; se estiver ausente, o parser o insere automaticamente.
 
 <div id="merging">
-  ## Mesclagem de configuração
+  ## Mesclagem de configuração {#merging}
 </div>
 
 Dois arquivos de configuração (geralmente o arquivo de configuração principal e outro arquivo de configuração em `config.d/`) são mesclados da seguinte forma:
@@ -84,7 +84,7 @@ O arquivo de configuração mesclado resultante será:
 ```
 
 <div id="from_env_zk">
-  ### Substituição por variáveis de ambiente e nós do ZooKeeper
+  ### Substituição por variáveis de ambiente e nós do ZooKeeper {#from_env_zk}
 </div>
 
 Para especificar que o valor de um elemento deve ser substituído pelo valor de uma variável de ambiente, você pode usar o atributo `from_env`.
@@ -137,8 +137,31 @@ Resultando na configuração a seguir:
 </clickhouse>
 ```
 
+#### Como os valores são interpretados {#value-interpretation}
+
+`from_env` e `from_zk` diferem na forma como o valor substituído é interpretado:
+
+* Um valor direto substituído via `from_env` é tratado como texto literal. Caracteres especiais de XML, como `&`, `<` e `>`, são escapados automaticamente, de modo que uma variável de ambiente pode conter qualquer valor representável em XML, por exemplo `a&b<c>d`, sem quebrar a configuração (consulte abaixo a nota sobre caracteres de controle inválidos em XML). Um valor direto nunca é interpretado como XML, mesmo que pareça um fragmento XML: `<a>1</a>` é substituído pelo texto literal `<a>1</a>`. Isso também se aplica quando o atributo direto é colocado em um contêiner comum, como `<profiles from_env="…"/>`: uma substituição de subárvore XML já existente deve ser migrada para `<profiles><include from_env="…"/></profiles>`. Por compatibilidade retroativa, `<include from_env="…"/>` se comporta de forma diferente: ele interpreta a variável de ambiente como um fragmento XML e insere os filhos desse fragmento no elemento pai.
+* A interpretação de um valor substituído via `from_zk` depende de ele começar ou não com `<`. Um valor que começa com `<` é sempre interpretado como um fragmento XML: é assim que uma subárvore é inserida em qualquer elemento, tanto em um `<include from_zk="…"/>` estrutural quanto em um contêiner comum, como `<profiles from_zk="…"/>`. Esse comportamento é mantido por compatibilidade retroativa, pois versões anteriores sempre interpretavam um valor de `from_zk` como XML. Um valor que não começa com `<` só é interpretado como uma subárvore YAML com a forma explícita `<include from_zk="…" yaml="true"/>`; nesse caso, um YAML malformado faz com que a configuração seja rejeitada. O atributo `yaml="true"` habilita o parsing de YAML em qualquer lugar onde a forma genérica `<include>` seja usada, inclusive dentro de um elemento folha; portanto, não o utilize para uma configuração literal ou um segredo. Sem `yaml="true"`, um valor que não começa com `<` é tratado como texto literal, inclusive quando usado por meio da forma genérica de substituição de folha `<password><include from_zk="/secret"/></password>`. Isso preserva valores que por acaso contenham sintaxe YAML ou sejam YAML malformado, como `abc # rotated` ou `[1`. Nessa forma, os bytes exatos só são preservados quando o `<include>` está em linha, sem nós de texto com espaços em branco ao redor; para segredos e configurações folha em que os bytes exatos importam, prefira a forma direta `<password from_zk="…"/>`. Em qualquer outro elemento — seja uma substituição de folha, como `<some_setting from_zk="…"/>` ou `<password from_zk="…"/>`, seja um contêiner comum, como `<profiles from_zk="…"/>` —, um valor que não começa com `<` também é mantido como texto literal, com seus bytes originais exatos (caracteres especiais de XML são escapados automaticamente, assim como em `from_env`). Assim, um valor como `abc: def` permanece como o texto literal `abc: def`, em vez de se tornar um subelemento `<abc>def</abc>`. Para inserir uma subárvore em um elemento comum (e não em um `<include>` estrutural), forneça-a como um fragmento XML (um valor que começa com `<`).
+
+<Note>
+  **Valores literais devem ser texto XML 1.0 válido**
+
+  Uma substituição literal (`from_env`, ou um valor `from_zk` de folha que não começa com `<`) preserva os bytes exatos do valor para todo caractere que o XML 1.0 consegue representar como texto. Caracteres de controle inválidos em XML 1.0 — `0x00`–`0x08`, `0x0B`, `0x0C` e `0x0E`–`0x1F` — não podem, de forma alguma, ser transportados em uma configuração XML (a especificação XML os proíbe até mesmo como referências numéricas de caracteres, como `&#1;`), e um valor que contenha algum deles é rejeitado quando a substituição é processada. Tabulação (`\t`), quebra de linha (`\n`) e retorno de carro (`\r`) são válidos e são preservados byte a byte na ida e volta.
+</Note>
+
+<Note>
+  **Comportamento no upgrade para valores folha codificados com entidades**
+
+  Versões anteriores reinterpretavam todo valor `from_env` direto como XML, de modo que um `&`, `<` ou `>` bruto era rejeitado como XML malformado, e a única forma de incluí-lo era codificá-lo com entidades XML: uma variável de ambiente definida como `a&amp;b` era decodificada como `a&b`, `&lt;a&gt;1&lt;/a&gt;` como `<a>1</a>` e `&#13;` como um retorno de carro. Agora, um valor `from_env` direto é tratado como texto literal, então esses mesmos valores de ambiente passam a ser resolvidos como os literais `a&amp;b`, `&lt;a&gt;1&lt;/a&gt;` e `&#13;`. Ou seja, apenas valores em *texto simples* mantêm o significado anterior: um valor de ambiente que era codificado com entidades para o antigo caminho de processamento XML agora deve ser definido em forma bruta (por exemplo, defina `a&b`, que o caminho antigo rejeitava, mas o novo aceita como o texto literal `a&b`).
+
+  Versões anteriores reinterpretavam todo valor folha `from_zk` como XML, de modo que um `&`, `<` ou `>` bruto era rejeitado como XML malformado, e a única forma de incluí-lo era codificá-lo com entidades XML: um valor armazenado como `a&amp;b` era decodificado como `a&b`, `&lt;a&gt;1&lt;/a&gt;` como `<a>1</a>` e `&#13;` como um retorno de carro. Agora, um valor folha que não começa com `<` é mantido com seus bytes originais exatos, então esses mesmos nós passam a ser resolvidos como os literais `a&amp;b`, `&lt;a&gt;1&lt;/a&gt;` e `&#13;`. Ou seja, apenas escalares em *texto simples* mantêm o significado anterior: um valor folha que era codificado com entidades para o antigo caminho de processamento XML agora deve ser armazenado em forma bruta (por exemplo, armazene `a&b`, que o caminho antigo rejeitava, mas o novo aceita como o texto literal `a&b`).
+
+  A mesma mudança se aplica a um escalar simples substituído por meio de um `<include from_zk="…"/>` inline dentro de uma configuração folha ou de um segredo, por exemplo `<password><include from_zk="/secret"/></password>`: nesse caso, o escalar também passa a ser mantido com seus bytes originais exatos, então `/secret = a&amp;b` (que antes era decodificado como `a&b`) agora é resolvido como o literal `a&amp;b` e deve ser armazenado em forma bruta como `a&b`. Não use espaços em branco ao redor nessa forma, pois eles passam a fazer parte do valor resultante da configuração; prefira a forma direta `<password from_zk="…"/>` quando os bytes exatos forem importantes. (Um valor `from_zk` que começa com `<`, ou uma subárvore YAML referenciada com `<include from_zk="…" yaml="true"/>`, não é afetado — apenas valores sem marcação que não começam com `<` são mantidos como literais.)
+</Note>
+
 <div id="default-values">
-  #### Valores padrão
+  #### Valores padrão {#default-values}
 </div>
 
 Um elemento com os atributos `from_env` ou `from_zk` também pode ter o atributo `replace="1"` (este último deve aparecer antes de `from_env`/`from_zk`).
@@ -170,7 +193,7 @@ O resultado é a configuração:
 ```
 
 <div id="substitution-with-file-content">
-  ## Substituição com conteúdo de arquivo
+  ## Substituição com conteúdo de arquivo {#substitution-with-file-content}
 </div>
 
 Também é possível substituir partes da configuração pelo conteúdo de arquivos. Isso pode ser feito de duas formas:
@@ -200,7 +223,7 @@ Um exemplo disso é mostrado abaixo:
 Se você quiser mesclar o conteúdo da substituição com a configuração existente, em vez de apenas anexá-lo, pode usar o atributo `merge="true"`. Por exemplo: `<include from_zk="/some_path" merge="true">`. Nesse caso, a configuração existente será mesclada com o conteúdo da substituição, e as configurações existentes serão substituídas pelos valores da substituição.
 
 <div id="encryption">
-  ## Criptografando e ocultando a configuração
+  ## Criptografando e ocultando a configuração {#encryption}
 </div>
 
 Você pode usar criptografia simétrica para criptografar um elemento de configuração, por exemplo, uma senha em texto simples ou uma chave privada.
@@ -322,7 +345,7 @@ Por exemplo:
 ```
 
 <div id="user-settings">
-  ## Configurações de usuário
+  ## Configurações de usuário {#user-settings}
 </div>
 
 O arquivo `config.xml` pode especificar uma configuração separada com configurações de usuário, perfis e cotas. O caminho relativo para essa configuração é definido no elemento `users_config`. Por padrão, ele é `users.xml`. Se `users_config` for omitido, as configurações de usuário, os perfis e as cotas serão especificados diretamente em `config.xml`.
@@ -335,7 +358,7 @@ Os fragmentos de configuração de usuário são mesclados em ordem lexicográfi
 Observe que os arquivos de configuração primeiro são [mesclados](#merging), levando em conta as configurações, e as inclusões são processadas depois disso.
 
 <div id="example">
-  ## Exemplo em XML
+  ## Exemplo em XML {#example}
 </div>
 
 Por exemplo, você pode ter um arquivo de configuração separado para cada usuário, assim:
@@ -475,7 +498,7 @@ XML correspondente:
 ```
 
 <div id="implementation-details">
-  ## Detalhes de implementação
+  ## Detalhes de implementação {#implementation-details}
 </div>
 
 Para cada arquivo de configuração, o servidor também gera arquivos `file-preprocessed.xml` ao iniciar. Esses arquivos contêm todas as substituições e sobrescritas já resolvidas e se destinam apenas à consulta. Se substituições do ZooKeeper tiverem sido usadas nos arquivos de configuração, mas o ZooKeeper não estiver disponível na inicialização do servidor, o servidor carregará a configuração a partir do arquivo pré-processado.

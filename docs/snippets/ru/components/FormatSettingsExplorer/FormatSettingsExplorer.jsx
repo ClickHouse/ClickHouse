@@ -132,7 +132,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "input_format_*",
-      count: 129,
+      count: 130,
       settings: [
         { name: "input_format_allow_errors_num", path: "/input-format#input_format_allow_errors_num", default: "0" },
         { name: "input_format_allow_errors_ratio", path: "/input-format#input_format_allow_errors_ratio", default: "0" },
@@ -246,6 +246,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "input_format_parquet_enable_json_parsing", path: "/input-format#input_format_parquet_enable_json_parsing", default: "1" },
         { name: "input_format_parquet_enable_row_group_prefetch", path: "/input-format#input_format_parquet_enable_row_group_prefetch", default: "1" },
         { name: "input_format_parquet_filter_push_down", path: "/input-format#input_format_parquet_filter_push_down", default: "1" },
+        { name: "input_format_parquet_footer_read_size", path: "/input-format#input_format_parquet_footer_read_size", default: "0" },
         { name: "input_format_parquet_local_file_min_bytes_for_seek", path: "/input-format#input_format_parquet_local_file_min_bytes_for_seek", default: "8192" },
         { name: "input_format_parquet_local_time_as_utc", path: "/input-format#input_format_parquet_local_time_as_utc", default: "1" },
         { name: "input_format_parquet_max_block_size", path: "/input-format#input_format_parquet_max_block_size", default: "65409" },
@@ -296,7 +297,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "output_format_*",
-      count: 110,
+      count: 111,
       settings: [
         { name: "output_format_always_write_decimal_point_in_float_and_decimal", path: "/output-format#output_format_always_write_decimal_point_in_float_and_decimal", default: "0" },
         { name: "output_format_arrow_compression_method", path: "/output-format#output_format_arrow_compression_method", default: "lz4_frame" },
@@ -392,6 +393,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "output_format_pretty_max_value_width_apply_for_single_value", path: "/output-format#output_format_pretty_max_value_width_apply_for_single_value", default: "0" },
         { name: "output_format_pretty_multiline_fields", path: "/output-format#output_format_pretty_multiline_fields", default: "1" },
         { name: "output_format_pretty_named_tuples_as_json", path: "/output-format#output_format_pretty_named_tuples_as_json", default: "1" },
+        { name: "output_format_pretty_named_tuples_as_subcolumns", path: "/output-format#output_format_pretty_named_tuples_as_subcolumns", default: "1" },
         { name: "output_format_pretty_row_numbers", path: "/output-format#output_format_pretty_row_numbers", default: "1" },
         { name: "output_format_pretty_single_large_number_tip_threshold", path: "/output-format#output_format_pretty_single_large_number_tip_threshold", default: "1000000" },
         { name: "output_format_pretty_squash_consecutive_ms", path: "/output-format#output_format_pretty_squash_consecutive_ms", default: "50" },

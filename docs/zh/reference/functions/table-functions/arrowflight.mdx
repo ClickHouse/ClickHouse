@@ -34,6 +34,7 @@ arrowFlight('host:port', 'dataset_name' [, 'username', 'password'])
 **设置**
 
 * `arrow_flight_request_descriptor_type` — 控制数据集名称发送到 Flight server 的方式。取值：`path` (默认) 或 `command`。详情请参见 [ArrowFlight 表引擎](/zh/reference/engines/table-engines/integrations/arrowflight#settings)。
+* `arrow_flight_request_timeout_sec` — 单个 Arrow Flight 请求的超时时间 (秒) ，默认值为 `300`；`0` 表示不设超时。详情请参见 [ArrowFlight 表引擎](/zh/reference/engines/table-engines/integrations/arrowflight#settings)。
 
 **示例**
 

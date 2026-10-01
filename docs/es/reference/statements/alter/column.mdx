@@ -19,6 +19,14 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 En la consulta, especifique una lista de una o más acciones separadas por comas.
 Cada acción es una operación sobre una columna.
 
+Por ejemplo, una misma sentencia puede eliminar una columna y agregar otra:
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, ADD COLUMN referrer String;
+```
+
+Que una consulta de este tipo finalice antes de que termine su trabajo sobre los datos existentes depende de [`alter_sync`](/es/reference/settings/session-settings/alter#alter_sync), que también abarca la mutación que genera `DROP COLUMN` o un cambio de tipo con `MODIFY COLUMN`; [`mutations_sync`](/es/reference/settings/session-settings/mutations#mutations_sync) se aplica a [MATERIALIZE COLUMN](#materialize-column), que se ejecuta mediante el mecanismo de mutaciones. Ambas se describen en [Sincronía de las consultas ALTER](/es/reference/statements/alter/index#synchronicity-of-alter-queries).
+
 Se admiten las siguientes acciones:
 
 * [ADD COLUMN](#add-column) — Agrega una nueva columna a la tabla.
@@ -34,9 +42,7 @@ Se admiten las siguientes acciones:
 * [MATERIALIZE COLUMN](#materialize-column) — Materializa la columna en las partes donde no existe.
   Estas acciones se describen en detalle a continuación.
 
-<div id="add-column">
-  ## ADD COLUMN
-</div>
+## ADD COLUMN {#add-column}
 
 ```sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
@@ -72,9 +78,7 @@ ToDrop  UInt32
 Added3  UInt32
 ```
 
-<div id="drop-column">
-  ## DROP COLUMN
-</div>
+## DROP COLUMN {#drop-column}
 
 ```sql
 DROP COLUMN [IF EXISTS] name
@@ -94,9 +98,7 @@ Ejemplo:
 ALTER TABLE visits DROP COLUMN browser
 ```
 
-<div id="rename-column">
-  ## RENAME COLUMN
-</div>
+## RENAME COLUMN {#rename-column}
 
 ```sql
 RENAME COLUMN [IF EXISTS] name to new_name
@@ -112,9 +114,7 @@ Ejemplo:
 ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 ```
 
-<div id="clear-column">
-  ## CLEAR COLUMN
-</div>
+## CLEAR COLUMN {#clear-column}
 
 ```sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
@@ -130,9 +130,7 @@ Ejemplo:
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
-<div id="comment-column">
-  ## COMMENT COLUMN
-</div>
+## COMMENT COLUMN {#comment-column}
 
 ```sql
 COMMENT COLUMN [IF EXISTS] name 'Text comment'
@@ -150,9 +148,7 @@ Ejemplo:
 ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used for accessing the site.'
 ```
 
-<div id="modify-column">
-  ## MODIFY COLUMN
-</div>
+## MODIFY COLUMN {#modify-column}
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name
@@ -187,7 +183,7 @@ Para ver ejemplos de cómo modificar la configuración a nivel de columna, consu
 
 Si se especifica la cláusula `IF EXISTS`, la consulta no devolverá un error si la columna no existe.
 
-Al cambiar el tipo, los valores se convierten como si se les hubieran aplicado las funciones [toType](/es/reference/functions/regular-functions/type-conversion-functions). Si solo se cambia la expresión predeterminada, la consulta no realiza ninguna operación compleja y se completa casi al instante.
+Al cambiar el tipo, los valores se convierten como si se les hubieran aplicado las funciones [toType](/es/reference/functions/regular-functions/type-conversion-functions). Si solo se cambia la expresión predeterminada, la consulta únicamente modifica los metadatos.
 
 Ejemplo:
 
@@ -195,7 +191,9 @@ Ejemplo:
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
-Cambiar el tipo de una columna es la única operación compleja, ya que modifica el contenido de los archivos de datos. En tablas grandes, esto puede llevar mucho tiempo.
+Algunos cambios de tipo son operaciones de solo metadatos porque su representación en disco no cambia. Entre ellos se incluyen la ampliación de un enum y las conversiones entre `Date` y `UInt16` o entre `DateTime` y `UInt32`; la misma regla se aplica de forma recursiva dentro de los tipos `Array` y `Nullable`. Algunos cambios en las sugerencias de tipo de JSON y la adición de elementos a tuplas con nombre también pueden evitar una reescritura inmediata si está habilitada la configuración correspondiente.
+
+Los demás cambios de tipo crean una mutación `READ_COLUMN` que reescribe la columna afectada en las partes existentes. El comportamiento de espera depende de [`alter_sync`](/es/reference/settings/session-settings/alter#alter_sync): su valor predeterminado es `1` en ClickHouse y `0` en ClickHouse Cloud. Supervise el progreso en [`system.mutations`](/es/reference/system-tables/mutations).
 
 La consulta también puede cambiar el orden de las columnas mediante la cláusula `FIRST | AFTER`; consulta la descripción de [ADD COLUMN](#add-column), aunque en este caso el tipo de columna es obligatorio.
 
@@ -239,9 +237,7 @@ La consulta `ALTER` para cambiar columnas se replica. Las instrucciones se guard
   Tenga mucho cuidado al cambiar una columna Nullable a Non-Nullable. Asegúrese de que no tenga ningún valor NULL; de lo contrario, causará problemas al leerla. En ese caso, la solución alternativa sería ejecutar Kill sobre la mutación y revertir la columna al tipo Nullable.
 </Note>
 
-<div id="modify-column-remove">
-  ## MODIFY COLUMN REMOVE
-</div>
+## MODIFY COLUMN REMOVE {#modify-column-remove}
 
 Elimina una de las propiedades de una columna: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`, `SETTINGS`.
 
@@ -263,9 +259,7 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 * [REMOVE TTL](/es/reference/statements/alter/ttl).
 
-<div id="modify-column-modify-setting">
-  ## MODIFY COLUMN MODIFY SETTING
-</div>
+## MODIFY COLUMN MODIFY SETTING {#modify-column-modify-setting}
 
 Modifica una configuración de columna.
 
@@ -283,9 +277,7 @@ Modifique el valor de `max_compress_block_size` de la columna a `1MB`:
 ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING max_compress_block_size = 1048576;
 ```
 
-<div id="modify-column-reset-setting">
-  ## MODIFY COLUMN RESET SETTING
-</div>
+## MODIFY COLUMN RESET SETTING {#modify-column-reset-setting}
 
 Restablece la configuración de una columna; además, elimina la declaración de esa configuración en la expresión de columna de la consulta CREATE de la tabla.
 
@@ -303,9 +295,7 @@ Restablecer la configuración de la columna `max_compress_block_size` a su valor
 ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_block_size;
 ```
 
-<div id="modify-column-add-enum-values">
-  ## MODIFY COLUMN ADD ENUM VALUES
-</div>
+## MODIFY COLUMN ADD ENUM VALUES {#modify-column-add-enum-values}
 
 Añade nuevos valores a una columna de tipo `Enum`, `Enum8`, `Enum16`, `Nullable(Enum)`, `Nullable(Enum8)` o `Nullable(Enum16)`
 
@@ -323,9 +313,7 @@ Agregue dos valores a la columna `enum_column_name`:
 ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('Hundred' = 100, 'HundredOne');
 ```
 
-<div id="materialize-column">
-  ## MATERIALIZE COLUMN
-</div>
+## MATERIALIZE COLUMN {#materialize-column}
 
 Materializa una columna con una expresión de valor `DEFAULT` o `MATERIALIZED`. Al añadir una columna materializada mediante `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED`, las filas existentes sin valores materializados no se rellenan automáticamente. La sentencia `MATERIALIZE COLUMN` puede usarse para reescribir los datos existentes de la columna después de añadir o actualizar una expresión `DEFAULT` o `MATERIALIZED` (lo que solo actualiza los metadatos, pero no modifica los datos existentes). Tenga en cuenta que materializar una columna en la clave de ordenación es una operación no válida porque podría alterar el orden de clasificación.
 Se implementa como una [mutación](/es/reference/statements/alter/index#mutations).
@@ -396,9 +384,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 * [MATERIALIZED](/es/reference/statements/create/view#materialized-view).
 * [MATERIALIZE INDEX](/es/reference/statements/alter/skipping-index#materialize-index).
 
-<div id="limitations">
-  ## Limitaciones
-</div>
+## Limitaciones {#limitations}
 
 La consulta `ALTER` permite crear y eliminar elementos individuales (columnas) en estructuras de datos anidadas, pero no estructuras de datos anidadas completas. Para añadir una estructura de datos anidada, puede añadir columnas con un nombre como `name.nested_name` y el tipo `Array(T)`. Una estructura de datos anidada equivale a varias columnas de array cuyo nombre comparte el mismo prefijo antes del punto.
 

@@ -344,13 +344,13 @@ SETTINGS allow_introspection_functions=1
 
 ### Example : générer un flame graph de la fragmentation {#example-fragmentation-flamegraph}
 
-La même requête peut répartir le gaspillage de chaque size class entre ses backtraces, proportionnellement à leur nombre d&#39;anciennes allocations, puis afficher le résultat au format collapsed pour `flamegraph.pl`. Les size classes présentant du gaspillage mais dépourvues d&#39;échantillons suffisamment anciens sont regroupées sous un frame `[unattributed]`, de sorte que le total du flame graph corresponde au gaspillage total. Ne lisez `system.jemalloc_sampled_allocations` qu&#39;une seule fois par requête : chaque lecture déclenche le flush d&#39;un nouveau profile, si bien que deux subqueries verraient des données différentes.
+La même requête peut répartir le gaspillage de chaque size class entre ses backtraces, proportionnellement à leur nombre d&#39;anciennes allocations, puis afficher le résultat au format collapsed pour `flamegraph.pl`. Les size classes présentant du gaspillage mais dépourvues d&#39;échantillons suffisamment anciens sont regroupées sous un frame `[unattributed]`, de sorte que le total du flame graph corresponde au gaspillage total. Ne lisez `system.jemalloc_sampled_allocations` qu&#39;une seule fois par requête : chaque lecture déclenche le vidage d&#39;un nouveau profil, si bien que deux subqueries verraient des données différentes.
 
 ```sql
 WITH 60e9 AS min_age_ns
 SELECT format('{} {}',
     if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))),
-    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste))))
+    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), toFloat64(b.waste)))))
 FROM system.jemalloc_arena_bins AS b
 LEFT JOIN
 (

@@ -55,32 +55,40 @@ ClickHouse Managed Postgres에는 PostGIS, pgvector, pg&#95;cron 등 널리 사�
 
 ### PgBouncer를 통해 `prepared statement does not exist` 오류가 발생하는 이유는 무엇입니까? {#prepared-statement-errors}
 
-ClickHouse Managed Postgres는 **트랜잭션 풀링** 모드로 PgBouncer를 실행합니다. 이 모드에서는 단일 트랜잭션 동안에만 백엔드 Postgres 연결(connection)이 클라이언트에 할당된 후 풀로 반환됩니다. 따라서 동일한 클라이언트의 다음 트랜잭션은 다른 백엔드로 연결될 수 있습니다.
+ClickHouse Managed Postgres는 PgBouncer를 **트랜잭션 풀링(transaction pooling)** 모드로 실행합니다. 이 모드에서는 백엔드 Postgres 연결이 단일 트랜잭션 동안에만 클라이언트에 할당되었다가 풀로 반환됩니다. 따라서 같은 클라이언트에서 보낸 다음 트랜잭션이 다른 백엔드에서 실행될 수 있습니다.
 
-이로 인해 **서버 측 prepared statement**가 동작하지 않게 됩니다. 서버 측 prepared statement는 `PREPARE`(또는 확장 쿼리 `Parse`)를 실행한 특정 백엔드에 연결되어 있기 때문입니다. 해당 `EXECUTE`가 다른 백엔드로 전달되면 다음과 같은 오류가 발생합니다:
+PgBouncer는 **프로토콜 수준 prepared statement**를 추적합니다. 대부분의 드라이버는 확장 쿼리 프로토콜(`Parse`, `Bind`, `Execute` 메시지)을 사용해 이를 전송합니다. 아직 해당 SQL 문을 받은 적이 없는 백엔드에서 SQL 문이 실행되면 PgBouncer가 먼저 그 백엔드에서 SQL 문을 준비합니다. 각 백엔드 연결은 prepared statement를 최대 `max_prepared_statements`개(기본값 `200`)까지 유지합니다. 따라서 이름이 있는 prepared statement와 이름이 없는 prepared statement 모두 드라이버를 변경하지 않고도 PgBouncer를 통해 정상적으로 동작합니다.
+
+다음 항목은 PgBouncer를 통해 동작하지 않습니다.
+
+* **SQL 수준 prepared statement.** PgBouncer는 SQL로 전송된 `PREPARE`와 `EXECUTE`를 추적하지 않으므로, `PREPARE`를 실행한 적이 없는 백엔드에서 `EXECUTE`가 실행될 수 있습니다.
+* **SQL `DEALLOCATE`를 사용한 SQL 문 해제.** PgBouncer는 백엔드에서 SQL 문의 이름을 바꾸므로, 클라이언트 측 SQL 문 이름으로 `DEALLOCATE`를 실행하면 실패합니다. 트랜잭션 안에서 이 오류가 발생하면 트랜잭션이 중단되고, 이후 SQL 문은 `current transaction is aborted` 오류와 함께 실패합니다. libpq 17 이상을 기반으로 하는 드라이버는 대신 프로토콜 수준 `Close` 메시지로 SQL 문을 해제하며, PgBouncer는 이 메시지를 처리할 수 있습니다.
+
+두 경우 모두 다음과 같은 오류가 발생합니다.
 
 ```text
 ERROR:  prepared statement "..." does not exist
 ERROR:  unnamed prepared statement does not exist
 ```
 
-같은 근본 원인에서 흔히 나타나는 증상은 다음과 같습니다.
+다음은 흔히 이와 동일한 근본 원인에서 비롯되는 증상입니다.
 
-* 특히 backfill이나 동시성이 높은 쓰기 작업 중에 `prepared statement does not exist` 오류가 급증합니다
-* &quot;조용히 실패하는&quot; 것처럼 보이는 삽입 — SQL 문에서 오류가 발생하고 드라이버가 재시도하면서, Batch가 일부만 적용되거나 아예 누락될 수 있습니다
-* 유형이 잘못된 반환 값(예: `BIGINT` 컬럼이 `float64` 비트 패턴으로 디코딩됨) — 캐시된 클라이언트 측 계획이, 해당 `Parse`를 전송받은 적이 없는 백엔드에 오래된 유형/포맷 코드를 재사용할 때 발생합니다
+* 특히 백필이나 동시성이 높은 쓰기 작업 중에 `prepared statement does not exist` 오류가 집중적으로 발생합니다
+* 삽입이 &quot;조용히 실패&quot;하는 것처럼 보입니다. SQL 문에서 오류가 발생하고 드라이버가 재시도하는 과정에서 배치가 일부만 적용되거나 누락될 수 있습니다
+* SQL 문이 해제된 후 트랜잭션이 `current transaction is aborted` 오류와 함께 실패합니다
 
-**해결 방법: 드라이버에서 서버 측 prepared statement를 비활성화하십시오.** 정확한 설정은 사용하는 클라이언트 라이브러리에 따라 다릅니다.
+**해결 방법: 드라이버를 업그레이드하거나, 드라이버에서 서버 측 prepared statement를 비활성화하십시오.** SQL `DEALLOCATE`로 SQL 문을 해제하는 드라이버로는 1.6 미만 버전의 `pg` gem 또는 17 미만 버전의 libpq를 사용하는 Ruby on Rails, 그리고 17 미만 버전의 libpq로 컴파일된 PHP `pdo_pgsql`이 있습니다. 업그레이드할 수 없다면 클라이언트 라이브러리에 따라 다음 설정을 적용하십시오.
 
-| 드라이버                             | 설정                                                                                     |
-| -------------------------------- | -------------------------------------------------------------------------------------- |
-| **pgx** (Go)                     | `statement_cache_capacity=0` and `default_query_exec_mode=exec` (or `simple_protocol`) |
-| **psycopg3** (Python)            | `prepare_threshold=None`                                                               |
-| **asyncpg** (Python)             | `statement_cache_size=0`                                                               |
-| **JDBC** (Java)                  | `prepareThreshold=0`                                                                   |
-| **node-postgres / pg** (Node.js) | `query()`에 `name`을 전달하지 마십시오 (`name`이 지정된 쿼리는 서버 측 prepared statement가 됩니다)            |
+| 드라이버                              | 설정                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------ |
+| **pgx** (Go)                      | `statement_cache_capacity=0` 및 `default_query_exec_mode=exec` (또는 `simple_protocol`) |
+| **psycopg3** (Python)             | `prepare_threshold=None`                                                             |
+| **asyncpg** (Python)              | `statement_cache_size=0`                                                             |
+| **JDBC** (Java)                   | `prepareThreshold=0`                                                                 |
+| **Active Record** (Ruby on Rails) | `config/database.yml`에 `prepared_statements: false` 설정                               |
+| **PDO** (PHP, Laravel)            | `PDO::ATTR_EMULATE_PREPARES => true`                                                 |
 
-워크로드가 prepared statement에 의존한다면, PgBouncer 풀러를 거치지 말고 **PostgreSQL에 직접**(포트 5432) 연결하십시오. 직접 연결은 prepared statement를 정상적으로 지원합니다. pooled 엔드포인트와 direct 엔드포인트 중 무엇을 선택할지에 대한 자세한 내용은 [Connection](/ko/products/managed-postgres/connection)을 참조하십시오.
+워크로드가 SQL 수준의 `PREPARE`에 의존한다면 PgBouncer 풀러를 거치지 말고 **PostgreSQL에 직접**(포트 5432) 연결하십시오. 풀링 엔드포인트와 직접 엔드포인트 중 무엇을 선택할지에 대한 자세한 내용은 [연결](/ko/products/managed-postgres/connection)을 참조하십시오.
 
 ### PgBouncer의 `max_client_conn` 설정은 무엇을 의미하며, Postgres의 `max_connections`와는 어떤 관련이 있습니까? {#pgbouncer-vs-pg-connections}
 
@@ -89,7 +97,13 @@ ERROR:  unnamed prepared statement does not exist
 * **Postgres `max_connections`**는 PostgreSQL 자체의 **백엔드(backend)** 연결 수 상한을 정합니다. 이 값은 비용이 큰 편입니다. 각 백엔드는 메모리와 프로세스 슬롯을 사용합니다.
 * **PgBouncer `max_client_conn`**는 풀러에 동시에 열 수 있는 **클라이언트(client)** 연결 수 상한을 정합니다. PgBouncer는 이렇게 많은 클라이언트 연결을 훨씬 더 적은 수의 백엔드 연결에 다중화합니다.
 
-일반적인 ClickHouse Managed Postgres 인스턴스는 PgBouncer가 **Postgres 백엔드 수보다 약 10배 많은 클라이언트 연결**을 허용하도록 구성됩니다(예: 클라이언트 5000개 / 백엔드 500개). 풀러에서 연결 오류가 발생한다면, 겉으로 드러나는 클라이언트 제한에 도달했다기보다 풀별 백엔드 제한(`default_pool_size`)에 걸렸을 가능성이 훨씬 높습니다.
+PgBouncer는 Postgres 백엔드 수보다 몇 배 많은 클라이언트 연결을 허용합니다. 예를 들어 `max_connections`가 `500`으로 설정된 인스턴스는 풀러에서 클라이언트 연결을 `2500`개까지 허용합니다. 풀러에서 연결 오류가 발생한다면, 겉으로 드러나는 클라이언트 제한에 도달했다기보다 풀별 백엔드 제한(`default_pool_size` 또는 데이터베이스별 `max_db_connections`)에 걸렸을 가능성이 훨씬 높습니다.
+
+인스턴스에 설정된 값을 확인하려면 PgBouncer(포트 `6432`)를 통해 특수 데이터베이스인 `pgbouncer`에 연결한 후 `SHOW CONFIG`를 실행하십시오.
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/pgbouncer?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "SHOW CONFIG;"
+```
 
 ## 데이터베이스 기능 {#database-capabilities}
 

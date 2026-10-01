@@ -1266,6 +1266,33 @@ Chaves das configurações de servidor/cliente:
 </openSSL>
 ```
 
+## placement {#placement}
+
+A zona de disponibilidade e a região de nuvem em que o servidor é executado. A zona de disponibilidade é usada pelo cliente do ZooKeeper para dar preferência a hosts na mesma zona (`prefer_local_availability_zone` na seção [zookeeper](#zookeeper)) e pelo ClickHouse Keeper, que a publica no nó `/keeper/availability_zone`.
+
+Se a seção `placement` não estiver presente, a zona de disponibilidade e a região ficam vazias.
+
+As seguintes configurações estão disponíveis:
+
+| Configuração                  | Descrição                                                                                                                                                                                                                    | Valor default                        |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `use_imds`                    | Obtém a zona de disponibilidade a partir do serviço de metadados de instância do provedor de nuvem: primeiro da AWS e, depois, do GCP. Quando habilitada, todas as outras configurações são ignoradas e a região fica vazia. | `false`                              |
+| `availability_zone`           | A zona de disponibilidade.                                                                                                                                                                                                   | Vazio                                |
+| `availability_zone_from_file` | O arquivo de onde a zona de disponibilidade é lida quando `availability_zone` está vazio. Se o arquivo não existir, a zona de disponibilidade fica vazia.                                                                    | `/run/instance-metadata/node-zone`   |
+| `region`                      | A região.                                                                                                                                                                                                                    | Vazio                                |
+| `region_from_file`            | O arquivo de onde a região é lida quando `region` está vazio. Se o arquivo não existir, a região fica vazia.                                                                                                                 | `/run/instance-metadata/node-region` |
+
+O placement é lido uma única vez, na inicialização do servidor.
+
+**Exemplo**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
+```
+
 ## part_log {#part_log}
 
 Eventos de log associados ao [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree). Por exemplo, adição ou mesclagem de dados. Você pode usar o log para simular algoritmos de mesclagem e comparar suas características. Também é possível visualizar o processo de mesclagem.

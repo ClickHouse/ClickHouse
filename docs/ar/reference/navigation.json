@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "المعاملات",
           "pages": [
-            "ar/reference/operators/index",
-            "ar/reference/operators/exists",
-            "ar/reference/operators/distributed-ddl"
+            "ar/reference/operators/index"
           ]
         }
       ]
@@ -420,6 +418,7 @@
             "ar/reference/engines/database-engines/index",
             "ar/reference/engines/database-engines/atomic",
             "ar/reference/engines/database-engines/backup",
+            "ar/reference/engines/database-engines/cluster",
             "ar/reference/engines/database-engines/datalake",
             "ar/reference/engines/database-engines/dictionary",
             "ar/reference/engines/database-engines/filesystem",
@@ -945,6 +944,7 @@
           ]
         },
         "ar/reference/formats/SQLInsert",
+        "ar/reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",

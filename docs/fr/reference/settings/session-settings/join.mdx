@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## join_algorithm
+## join_algorithm {#join_algorithm}
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
@@ -23,7 +23,7 @@ Spécifie quel algorithme de [JOIN](/fr/reference/statements/select/join) est ut
 
 Plusieurs algorithmes peuvent être spécifiés, et un algorithme disponible est choisi pour une requête donnée en fonction du type, de la strictness et du moteur de table.
 
-Le fait qu&#39;un algorithme fondé sur le hachage déverse sur disque ne fait pas partie de ce choix : [`max_bytes_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) constituent le seuil de déversement pour tous (et dès que l&#39;une des deux valeurs est non nulle, `enable_adaptive_memory_spill_scheduler` peut déverser la jointure encore plus tôt, en cas de memory pressure), et [`max_rows_in_join`](/fr/reference/settings/session-settings/max-rows#max_rows_in_join) / [`max_bytes_in_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_in_join) une limite stricte pour tous, à moins que `legacy_join_size_limits_trigger_spilling` ne retransforme ces deux limites en déclencheurs de déversement sur disque. La valeur que vous choisissez détermine la manière dont une jointure déverse : `grace_hash` partitionne la table de droite dès le premier bloc, tandis que `hash` et `parallel_hash` la collectent en mémoire et basculent une fois le seuil franchi.
+Le déversement sur disque des algorithmes fondés sur le hachage se configure indépendamment de `join_algorithm`. Tous les algorithmes fondés sur le hachage utilisent [`max_bytes_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) et [`max_bytes_ratio_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) comme seuils de déversement.
 
 La plupart des algorithmes n&#39;affectent une requête que lorsqu&#39;ils sont sélectionnés pour celle-ci. Certains, cependant, modifient la planification du simple fait d&#39;être répertoriés — même en tant que solution de repli de priorité inférieure qui n&#39;est finalement pas sélectionnée — car la décision est prise avant que l&#39;algorithme ne soit choisi. Il existe deux effets de ce type :
 
@@ -36,7 +36,8 @@ Valeurs possibles :
 
 * grace&#95;hash
 
-Le [grace jointure par hachage](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) est utilisé. Grace hash fournit une option d&#39;algorithme permettant d&#39;exécuter des jointures complexes de manière performante tout en limitant l&#39;utilisation de la mémoire.
+Le [grace jointure par hachage](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) est utilisé.  Grace hash fournit une option d&#39;algorithme permettant d&#39;exécuter des jointures complexes de manière performante tout en limitant l&#39;utilisation de la mémoire.
+La sélection explicite de `grace_hash` est principalement destinée au diagnostic. Pour activer le déversement sur disque des jointures, définissez plutôt [`max_bytes_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) ou [`max_bytes_ratio_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
 
 `grace_hash` est externe dès le premier bloc : la table de droite est partitionnée immédiatement, là où `hash` et `parallel_hash` la collectent d&#39;abord en mémoire et ne la partitionnent qu&#39;une fois le seuil de déversement franchi. Choisissez-le lorsque vous savez déjà que le côté droit ne tiendra pas en mémoire et que vous souhaitez éviter la phase en mémoire. Le seuil de déversement lui-même est celui qu&#39;utilisent tous les algorithmes de hachage, [`max_bytes_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join), et l&#39;une des deux valeurs doit être non nulle, sauf si `legacy_join_size_limits_trigger_spilling` est activé. Sans seuil, `grace_hash` est ignoré au profit de l&#39;algorithme suivant dans la liste, et rejeté s&#39;il est le seul.
 
@@ -110,7 +111,7 @@ ClickHouse essaie toujours d&#39;utiliser la jointure `partial_merge` si possibl
 Valeur legacy, à ne plus utiliser.
 Identique à `direct,hash`, c&#39;est-à-dire essayer d&#39;utiliser la jointure directe puis la jointure par hachage (dans cet ordre).
 
-## join_any_take_last_row
+## join_any_take_last_row {#join_any_take_last_row}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,7 +134,7 @@ Voir aussi :
 * [moteur de table Join](/fr/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/fr/reference/settings/session-settings/join#join_default_strictness)
 
-## join_default_strictness
+## join_default_strictness {#join_default_strictness}
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -146,7 +147,7 @@ Valeurs possibles :
 * `ASOF` — Pour joindre des séquences avec une correspondance incertaine.
 * `Chaîne vide` — Si `ALL` ou `ANY` n&#39;est pas spécifié dans la requête, ClickHouse lève une exception.
 
-## join_on_disk_max_files_to_merge
+## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -158,7 +159,7 @@ Valeurs possibles :
 
 * Tout entier positif à partir de 2.
 
-## join_output_by_rowlist_perkey_rows_threshold
+## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -166,7 +167,7 @@ Valeurs possibles :
 
 La limite inférieure de la moyenne de lignes par clé dans la table de droite, utilisée pour déterminer s’il faut produire la sortie sous forme de liste de lignes dans un hash join.
 
-## join_overflow_mode
+## join_overflow_mode {#join_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -196,7 +197,7 @@ Valeur par défaut : `THROW`.
 * [clause JOIN](/fr/reference/statements/select/join)
 * [moteur de table Join](/fr/reference/engines/table-engines/special/join)
 
-## join_use_nulls
+## join_use_nulls {#join_use_nulls}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

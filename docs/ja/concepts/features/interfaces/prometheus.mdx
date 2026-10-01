@@ -164,7 +164,7 @@ curl --user default:<password> --get \
   --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
 ```
 
-式はパース済みクエリからシリアライズされて返され、空白は正規化され、コメントは削除され、冗長な括弧は除去され、期間は秒数に変換されます: `sum by (job) (http_requests_total{code="200"}) / 2`。このエンドポイントは式を評価しないため、`database` および `table` パラメータは不要です。
+式はパース済みクエリからシリアライズされて返され、空白は正規化され、コメントは削除され、冗長な括弧は除去され、期間はパーサーが受け付ける単位で出力されます: `sum by (job) (http_requests_total{code="200"}) / 2`。期間は秒数に変換されず単位が保持されるため、`rate(x[5m])` は `rate(x[5m])` のまま返されます。また、単一の単位の整数倍で表せない期間は、必要な単位を組み合わせて表記されます。たとえば `rate(x[90s])` は `rate(x[1m30s])` として返されます。このエンドポイントは式を評価しないため、`database` および `table` パラメータは不要です。
 
 HTTP API、`promql` 方言、およびテーブル関数で使用される関数と集約演算子の一覧については、[サポートされている PromQL 機能](/ja/reference/functions/table-functions/prometheusQueryRange#supported-promql-features)を参照してください。
 

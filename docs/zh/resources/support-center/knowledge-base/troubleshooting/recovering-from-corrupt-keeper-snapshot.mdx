@@ -12,19 +12,13 @@ description: '本文介绍如何从损坏的 Keeper 快照中恢复：包括问�
 * [问题会如何表现](#symptoms)
 * [可能的恢复策略](#recovery-strategies) 及其各自的含义
 
-<div id="overview">
-  ## Keeper 快照概述
-</div>
+## Keeper 快照概述 {#overview}
 
-<div id="what-is-snapshot">
-  ### 什么是快照？
-</div>
+### 什么是快照？ {#what-is-snapshot}
 
 快照是 Keeper 在某一特定时间点内部数据的序列化状态 (例如有关集群、表协调路径和配置的元数据) 。快照对于重新同步集群中的 Keeper 节点、在发生故障时恢复元数据，以及依赖已知正常 Keeper 状态的启动或重启过程都至关重要。
 
-<div id="where-to-find-snapshots">
-  ### 在哪里可以找到快照？
-</div>
+### 在哪里可以找到快照？ {#where-to-find-snapshots}
 
 快照以文件形式存储在 Keeper 节点的本地文件系统中。默认情况下，它们位于 `/var/lib/clickhouse/coordination/snapshots/`；如果你在 `keeper_server.xml` 文件中通过 `snapshot_storage_path` 指定了自定义路径，则会存储在那里。快照名称按递增编号命名 (例如 `snapshot.23`) ，编号越大表示快照越新。
 
@@ -34,9 +28,7 @@ description: '本文介绍如何从损坏的 Keeper 快照中恢复：包括问�
   各节点上的快照保持一致性对于恢复至关重要。
 </Note>
 
-<div id="symptoms">
-  ## Keeper 损坏快照的关键症状和表现
-</div>
+## Keeper 损坏快照的关键症状和表现 {#symptoms}
 
 下表列出了一些 Keeper 快照损坏的常见症状和表现：
 
@@ -62,9 +54,7 @@ description: '本文介绍如何从损坏的 Keeper 快照中恢复：包括问�
 | **快照损坏错误**       | • `Aborting because of failure to load from latest snapshot with index`<br />• `Failure to load from latest snapshot with index {}: {}. Manual intervention is necessary for recovery`<br />• `Failed to preprocess stored log at index {}, aborting to avoid inconsistent state`<br />• 启动期间快照序列化/加载失败 |
 | **其他 Keeper 问题** | • `Coordination::Exception`<br />• `Zookeeper::Session Timeout`<br />• 同步或选举问题<br />• 日志合并整理中的竞态条件                                                                                                                                                                                                      |
 
-<div id="recovery-strategies">
-  ## 从损坏的 Keeper 快照中恢复
-</div>
+## 从损坏的 Keeper 快照中恢复 {#recovery-strategies}
 
 在操作任何文件之前，务必始终：
 
@@ -74,9 +64,7 @@ description: '本文介绍如何从损坏的 Keeper 快照中恢复：包括问�
 
 ***
 
-<div id="restore-from-existing-backup">
-  ### 1. 从现有备份中恢复
-</div>
+### 1. 从现有备份中恢复 {#restore-from-existing-backup}
 
 如果出现以下情况，应按此流程操作：
 
@@ -98,9 +86,7 @@ description: '本文介绍如何从损坏的 Keeper 快照中恢复：包括问�
 
 ***
 
-<div id="rollback-to-older-snapshot">
-  ### 2. 回滚到较早的快照
-</div>
+### 2. 回滚到较早的快照 {#rollback-to-older-snapshot}
 
 在以下情况下，应按此流程操作：
 
@@ -121,9 +107,7 @@ description: '本文介绍如何从损坏的 Keeper 快照中恢复：包括问�
 
 ***
 
-<div id="restore-metadata-with-system-restore-replica">
-  ### 3. 使用 `SYSTEM RESTORE REPLICA` 恢复元数据
-</div>
+### 3. 使用 `SYSTEM RESTORE REPLICA` 恢复元数据 {#restore-metadata-with-system-restore-replica}
 
 在以下情况下，应遵循此流程：
 
@@ -170,9 +154,7 @@ SYSTEM SYNC REPLICA [db.]table_name;
 
 ***
 
-<div id="drop-and-recreate-replica-metadata">
-  ### 4. 在 Keeper 中删除并重建副本元数据
-</div>
+### 4. 在 Keeper 中删除并重建副本元数据 {#drop-and-recreate-replica-metadata}
 
 在以下情况下，建议按此流程处理：
 
@@ -251,9 +233,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 ***
 
-<div id="rebuild-keeper-cluster">
-  ### 5. 重建 Keeper 集群
-</div>
+### 5. 重建 Keeper 集群 {#rebuild-keeper-cluster}
 
 在以下情况下，应按此流程操作：
 
@@ -272,3 +252,59 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
   此流程非常耗时，并且存在长时间中断的风险。需要重建全部数据。
 </Warning>
+
+***
+
+### 6. 在启动时从快照中移除孤立节点 {#remove-orphaned-nodes-on-startup}
+
+*孤立*节点是指父节点在快照中缺失的节点。Keeper 会拒绝加载此类
+快照，并在日志中记录 `Failure to load from latest snapshot with index`。
+
+在以下情况下，应采用此方法：
+
+* 快照恰好出现了这种结构性损坏，并且
+* 没有可用的有效备份或较旧的快照 (只要策略 1 和策略 2 适用，应优先采用) 。
+
+在 `<keeper_server>` 下同时设置以下两项，然后重启该节点：
+
+```xml
+<keeper_server>
+    <remove_orphaned_nodes_on_startup>true</remove_orphaned_nodes_on_startup>
+    <digest_enabled>false</digest_enabled>
+</keeper_server>
+```
+
+<Note>
+  **需要使用内存节点存储**
+
+  只有内存节点存储实现了该清理功能。如果在 `<coordination_settings>` 下启用了 `use_lsmt_storage`，
+  则设置 `remove_orphaned_nodes_on_startup` 后 Keeper 会拒绝启动：请在执行恢复性重启时禁用
+  `use_lsmt_storage`，待成功启动后再重新启用。
+</Note>
+
+随后，Keeper 会丢弃孤立子树并完成启动。删除情况会以 `WARNING` 级别在日志中输出为两行：
+一行给出已删除节点的总数以及被删除孤立子树的根节点，另一行给出快照中缺失的、划定损坏区域边界的路径。
+这些根节点之下的后代节点同样会被删除，但不会逐一列出。
+
+<Warning>
+  **仅修复本地状态**
+
+  此操作只会从*当前*节点的数据副本中删除节点。仍持有这些节点的对等节点将与其出现不一致，
+  而当 `digest_enabled` 设置为 `false` 时，此后将没有任何机制能检测到这种不一致。请仅将此操作用于单节点恢复，
+  或将其应用于集群中的所有节点。节点启动后，请将这两个设置恢复为默认值。
+</Warning>
+
+如果快照之后的某条本地日志条目引用了损坏区域 (即被删除的节点、其下的任何节点，或被删除子树的直接父节点) ，Keeper 会有意拒绝启动。
+直接父节点之所以算作冲突，是因为其子节点集合已与写入该日志时所依据的树不再一致，
+因此即便某条条目只涉及该父节点 (包括在其下创建或删除*兄弟*节点，这类操作会更新其已修复的子节点计数器) ，重放结果也可能不同。
+仅检查父节点是否存在、版本或修改 ID 的条目不受影响，也不会阻碍恢复，例如 `Check`、`CheckNotExists`、既不比较 `numChildren` 也不比较 `cversion` 的 `CheckStat`、
+仅重写父节点自身数据或 ACL 的 `Set` 或 `SetACL`，
+以及客户端重连后重新注册的 data、child 和 exist watch；客户端重新注册的持久 watch 从不访问树，因此也绝不会阻碍恢复。
+链路中更上层的节点不受影响：它们的数据、版本和子节点与健康对等节点上的完全一致，
+因此仅涉及此类节点的条目重放结果相同，不会阻碍恢复。例外情况是会遍历其路径下整个子树的条目，
+例如递归删除或递归列举：这类操作确实会读取到被删除的节点，因此无论位于哪一层级都会产生冲突，
+除非 Keeper 在访问树之前就拒绝了该请求 (例如对 `/` 的递归删除) 。
+日志尾部的会话关闭 (`Close`) 也是如此：如果该会话拥有某个已被删除的临时节点，或拥有直接位于此类父节点下且仍保留的临时节点，
+关闭会话时就会删除其临时节点并更新其父节点的计数器。基于修复后的树重放任何此类条目，
+都会在无声无息中产生不同的状态。遇到这种情况时，请改为从健康的对等节点恢复该节点：
+停止该节点，清空其协调目录，让其从 leader 重新同步；或者采用策略 1 或策略 2。

@@ -10,6 +10,8 @@ ClickHouse Cloud는 자체 클라우드 서비스 제공업체(CSP) 계정(AWS S
 &quot;전체&quot; 백업과 &quot;증분&quot; 백업의 차이를 포함해 ClickHouse Cloud 백업의 작동 방식에 관한 자세한 내용은 [백업](/ko/products/cloud/guides/backups/review-and-restore-backups) 문서를 참조하십시오. 한 가지 중요한 차이점은
 자체 클라우드 계정으로 내보내는 백업은 제자리 Cloud 백업과 다르게 동작한다는 점입니다. 즉, 네이티브 복사(아래 참고 참조)를 사용할 수 없습니다.
 
+자체 계정으로 백업을 내보내더라도 ClickHouse가 관리하는 백업은 일반적으로 비활성화되지 않습니다. ClickHouse가 관리하는 백업은 셀프 서비스 방식으로 비활성화할 수 없으며, 예외를 적용하려면 ClickHouse의 승인과 계약 변경이 필요합니다. 요구 사항은 [ClickHouse 지원팀](https://clickhouse.com/support/program)에 문의하여 논의하십시오.
+
 이 가이드에서는 AWS, GCP, Azure 객체 스토리지로 전체 및 증분 백업을 수행하는 방법과 해당 백업에서 복원하는 방법에 대한 예시를 보여드립니다.
 
 <Note>
@@ -27,17 +29,13 @@ ClickHouse Cloud는 자체 클라우드 서비스 제공업체(CSP) 계정(AWS S
   백업을 내보내는 작업은 표준 제자리 Cloud 백업보다 더 느리고 더 많은 리소스를 사용합니다.
 </Warning>
 
-<div id="requirements">
-  ## 요구 사항
-</div>
+## 요구 사항 {#requirements}
 
 `BACKUP` 명령을 실행하기 전에 ClickHouse 사용자에게 `BACKUP` privilege가 있는지 확인하십시오. ClickHouse Cloud의 `default_role`에는 이 privilege가 포함되어 있지 않습니다. 백업을 내보내기 전에 이 privilege가 필요하면 [ClickHouse 지원팀](https://clickhouse.com/support/program)에 문의하십시오.
 
 백업을 사용자의 CSP 스토리지 버킷으로 내보내거나 해당 버킷에서 복원하려면 다음 정보가 필요합니다.
 
-<div id="aws">
-  ### AWS
-</div>
+### AWS {#aws}
 
 1. AWS S3 엔드포인트(형식은 다음과 같음):
 
@@ -62,17 +60,13 @@ ClickHouse Cloud는 자체 클라우드 서비스 제공업체(CSP) 계정(AWS S
   역할 기반 인증을 사용하려면 Secure s3 [설정](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)을 따르십시오. 또한 [여기](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)에 설명된 IAM 정책에 `s3:PutObject` 및 `s3:DeleteObject` 권한을 추가해야 합니다.
 </Note>
 
-<div id="azure">
-  ### Azure
-</div>
+### Azure {#azure}
 
 1. Azure 스토리지 연결 문자열.
 2. 스토리지 계정의 Azure 컨테이너 이름.
 3. 컨테이너의 Azure Blob.
 
-<div id="google-cloud-storage-gcs">
-  ### Google Cloud Storage (GCS)
-</div>
+### Google Cloud Storage (GCS) {#google-cloud-storage-gcs}
 
 1. 다음 포맷의 GCS 엔드포인트:
 
@@ -83,17 +77,11 @@ ClickHouse Cloud는 자체 클라우드 서비스 제공업체(CSP) 계정(AWS S
 
 <hr />
 
-<div id="backup-restore">
-  ## 백업 / 복원
-</div>
+## 백업 / 복원 {#backup-restore}
 
-<div id="backup--restore-to-aws-s3-bucket">
-  ## AWS S3 버킷에 백업 / 복원
-</div>
+## AWS S3 버킷에 백업 / 복원 {#backup--restore-to-aws-s3-bucket}
 
-<div id="take-a-db-backup">
-  ### DB 백업 생성
-</div>
+### DB 백업 생성 {#take-a-db-backup}
 
 **전체 백업**
 
@@ -117,9 +105,7 @@ TO S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key
 SETTINGS base_backup = S3('https://testchbackups.s3.amazonaws.com/backups/<base-backup-uuid>', '<key id>', '<key secret>')
 ```
 
-<div id="restore-from-a-backup">
-  ### 백업에서 복원하기
-</div>
+### 백업에서 복원하기 {#restore-from-a-backup}
 
 ```sql
 RESTORE DATABASE test_backups 
@@ -129,13 +115,9 @@ FROM S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<k
 
 참고: 자세한 내용은 [S3 엔드포인트를 사용하도록 BACKUP/RESTORE 구성하기](/ko/concepts/features/backup-restore/s3-endpoint)를 참조하십시오.
 
-<div id="backup--restore-to-azure-blob-storage">
-  ## Azure Blob Storage로 백업 / 복원
-</div>
+## Azure Blob Storage로 백업 / 복원 {#backup--restore-to-azure-blob-storage}
 
-<div id="take-a-db-backup">
-  ### DB 백업 생성
-</div>
+### DB 백업 생성 {#take-a-db-backup-1}
 
 **전체 백업**
 
@@ -154,9 +136,7 @@ TO AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container
 SETTINGS base_backup = AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>')
 ```
 
-<div id="restore-from-a-backup-1">
-  ### 백업에서 복원
-</div>
+### 백업에서 복원 {#restore-from-a-backup-1}
 
 ```sql
 RESTORE DATABASE test_backups 
@@ -166,13 +146,9 @@ FROM AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<contain
 
 참조: 자세한 내용은 [AzureBlobStorage 엔드포인트를 사용하도록 BACKUP/RESTORE 구성하기](/ko/concepts/features/backup-restore/azure-blob-storage#configuring-backuprestore-to-use-an-azureblobstorage-endpoint) 문서를 참고하십시오.
 
-<div id="backup--restore-to-google-cloud-storage-gcs">
-  ## Google Cloud Storage (GCS)로 백업 / 복원하기
-</div>
+## Google Cloud Storage (GCS)로 백업 / 복원하기 {#backup--restore-to-google-cloud-storage-gcs}
 
-<div id="take-a-db-backup">
-  ### DB 백업 생성
-</div>
+### DB 백업 생성 {#take-a-db-backup-2}
 
 **전체 백업**
 
@@ -191,9 +167,7 @@ TO S3('https://storage.googleapis.com/test_gcs_backups/<uuid>/my_incremental', '
 SETTINGS base_backup = S3('https://storage.googleapis.com/test_gcs_backups/<uuid>', 'key', 'secret')
 ```
 
-<div id="restore-from-a-backup">
-  ### 백업에서 복원하기
-</div>
+### 백업에서 복원하기 {#restore-from-a-backup-2}
 
 ```sql
 RESTORE DATABASE test_backups 

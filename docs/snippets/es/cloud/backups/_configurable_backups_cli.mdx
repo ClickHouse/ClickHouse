@@ -70,6 +70,8 @@ clickhousectl cloud service backup-config update "$CH_ID" \
 }
 ```
 
+La frecuencia determina la antigüedad máxima que puede tener el punto de restauración más reciente (su RPO). La retención controla cuánto tiempo se conservan los datos de las copias de seguridad, pero no reduce la antigüedad del punto de restauración más reciente. Por ejemplo, con una retención de 24 horas y una frecuencia de 48 horas, el punto de restauración más reciente puede tener casi 48 horas de antigüedad.
+
 El cambio surte efecto de inmediato; vuelva a leer la configuración para confirmarlo:
 
 ```bash

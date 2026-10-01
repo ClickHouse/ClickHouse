@@ -43,6 +43,19 @@
       ]
     },
     {
+      "group": "Guias",
+      "pages": [
+        "pt-BR/products/managed-postgres/guides/bun",
+        "pt-BR/products/managed-postgres/guides/cloudflare-workers",
+        "pt-BR/products/managed-postgres/guides/drizzle",
+        "pt-BR/products/managed-postgres/guides/kysely",
+        "pt-BR/products/managed-postgres/guides/laravel",
+        "pt-BR/products/managed-postgres/guides/nodejs",
+        "pt-BR/products/managed-postgres/guides/prisma",
+        "pt-BR/products/managed-postgres/guides/ruby-on-rails"
+      ]
+    },
+    {
       "group": "Preços",
       "pages": [
         "pt-BR/products/managed-postgres/pricing"

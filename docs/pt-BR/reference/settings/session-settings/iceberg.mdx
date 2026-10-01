@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas com base no [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_delete_data_on_drop
+## iceberg_delete_data_on_drop {#iceberg_delete_data_on_drop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -22,7 +22,7 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Define se todos os arquivos do Iceberg devem ser excluídos ao executar drop.
 
-## iceberg_file_entries_queue_size
+## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -34,23 +34,48 @@ As tarefas de decodificação são pausadas quando a fila fica cheia e a consult
 
 Deve ser maior que zero.
 
-## iceberg_manifest_decode_concurrency
+## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
 
 **Aliases**: `iceberg_delete_manifest_decode_concurrency`
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4"},{"label": "Nova configuração que limita quantos arquivos de manifesto do Iceberg são decodificados de forma concorrente, tanto para manifests de exclusão quanto de dados. Substitui `iceberg_delete_manifest_decode_concurrency` (mantido como alias). O valor `2` aproxima o data path anterior à 26.9, que decodificava um manifest por vez com o fetch do próximo já in-flight; com `compatibility` igual ou inferior a 26.8, a decodificação de exclusões também roda com 2 em vez do padrão lançado de 4, preservando o envelope de memória do data path antigo ao custo de alguma sobreposição na decodificação de exclusões."}]}]} />
+<VersionHistory
+  rows={[
+{
+  id: "row-1",
+  items: [
+    { label: "26.9" },
+    { label: "4" },
+    {
+      label:
+        "Nova configuração que limita quantos arquivos de manifesto do Iceberg são decodificados de forma concorrente, tanto para manifestos de exclusão quanto de dados. Substitui `iceberg_delete_manifest_decode_concurrency` (mantido como alias). O valor `2` aproxima o data path anterior à 26.9, que decodificava um manifesto por vez com o fetch do próximo já in-flight; com `compatibility` igual ou inferior a 26.8, a decodificação de exclusões também roda com 2 em vez do padrão lançado de 4, preservando o envelope de memória do data path antigo ao custo de alguma sobreposição na decodificação de exclusões."
+    }
+  ]
+},
+{
+  id: "row-2",
+  items: [
+    { label: "26.8" },
+    { label: "4" },
+    {
+      label:
+        "Nova configuração que limita quantos arquivos de manifesto de exclusão do Iceberg são decodificados de forma concorrente antes da leitura da primeira linha. Antes da 26.8, os manifestos eram decodificados um por vez, com o fetch do próximo já em andamento; por isso, `2` é o equivalente mais próximo do comportamento anterior, que colocava a soma dos round-trips ao armazenamento de objetos no caminho crítico antes da primeira linha. Na época, a configuração se chamava `iceberg_delete_manifest_decode_concurrency`, nome que agora é um alias dela."
+    }
+  ]
+}
+]}
+/>
 
-Número máximo de arquivos de manifesto do Iceberg decodificados de forma concorrente durante a leitura de uma table.
+Número máximo de arquivos de manifesto do Iceberg decodificados de forma concorrente durante a leitura de uma tabela.
 
-Todos os manifests de exclusão são decodificados antes que qualquer arquivo de dados seja lido; os manifests de dados são decodificados enquanto a lista de arquivos de dados da consulta é produzida, e novos só são decodificados à medida que a consulta consome as entries já decodificadas. Decodificar vários manifests ao mesmo tempo sobrepõe os round-trips ao armazenamento de objetos ao trabalho de pruning por entry.
+Todos os manifestos de exclusão são decodificados antes que qualquer arquivo de dados seja lido; os manifestos de dados são decodificados enquanto a lista de arquivos de dados da consulta é produzida, e novos só são decodificados à medida que a consulta consome as entries já decodificadas. Decodificar vários manifestos ao mesmo tempo sobrepõe os round-trips ao armazenamento de objetos ao trabalho de pruning por entry.
 
-Valores mais altos elevam o pico de memória quando o cache de Iceberg metadata files está desabilitado ou cheio, já que cada manifest in-flight passa a manter seu próprio conteúdo decodificado.
+Valores mais altos elevam o pico de memória quando o cache de Iceberg metadata files está desabilitado ou cheio, já que cada manifesto in-flight passa a manter seu próprio conteúdo decodificado.
 
-Deve ser maior que zero; `1` decodifica os manifests um de cada vez.
+Deve ser maior que zero; `1` decodifica os manifestos um de cada vez.
 
-## iceberg_manifest_min_count_to_compact
+## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
 
 <ExperimentalBadge />
 
@@ -65,7 +90,7 @@ Exige que `allow_experimental_iceberg_compaction` esteja habilitado.
 O padrão espelha o padrão documentado da propriedade de tabela Iceberg `commit.manifest.min-count-to-merge` (100),
 consulte https://iceberg.apache.org/docs/1.5.2/configuration/.
 
-## iceberg_max_number_datafiles_to_compact
+## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -73,7 +98,7 @@ consulte https://iceberg.apache.org/docs/1.5.2/configuration/.
 
 Limite de arquivos de dados de compactação no Iceberg.
 
-## iceberg_orphan_files_older_than_seconds
+## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 
 <ExperimentalBadge />
 
@@ -83,7 +108,7 @@ Limite de arquivos de dados de compactação no Iceberg.
 
 Limite padrão de tempo, em segundos, para a remoção de arquivos órfãos em tabelas Iceberg. Arquivos mais recentes do que esse limite não são considerados órfãos. Usado quando o argumento older&#95;than é omitido da chamada do procedimento remove&#95;orphan&#95;files(). O padrão é 259200 (3 dias).
 
-## iceberg_snapshot_id
+## iceberg_snapshot_id {#iceberg_snapshot_id}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -91,7 +116,7 @@ Limite padrão de tempo, em segundos, para a remoção de arquivos órfãos em t
 
 Consulte a tabela Iceberg usando o ID do snapshot especificado.
 
-## iceberg_timestamp_ms
+## iceberg_timestamp_ms {#iceberg_timestamp_ms}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -99,14 +124,14 @@ Consulte a tabela Iceberg usando o ID do snapshot especificado.
 
 Consulte a tabela Iceberg usando o snapshot que estava vigente em um timestamp específico.
 
-## iceberg_tolerate_conflicting_manifest_schemas
+## iceberg_tolerate_conflicting_manifest_schemas {#iceberg_tolerate_conflicting_manifest_schemas}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração: quando o cabeçalho de um arquivo de manifesto do Iceberg contém um schema que conflita com o schema registrado para o mesmo schema-id no metadata.json, dá-se preferência ao schema do metadata.json e registra-se um aviso no log em vez de falhar a consulta, seguindo o comportamento de outras engines de consulta. `compatibility` abaixo de 26.10 restaura o comportamento estrito anterior."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração: quando o cabeçalho de um arquivo de manifesto do Iceberg contém um schema que conflita com o schema registrado para o mesmo schema-id no metadata.json, dá-se preferência ao schema do metadata.json em vez de falhar a consulta, seguindo o comportamento de outras engines de consulta. `compatibility` abaixo de 26.10 restaura o comportamento estrito anterior."}]}]} />
 
-Se habilitado e a chave `schema` do cabeçalho de um arquivo de manifesto do Iceberg contiver um schema diferente do já registrado para o mesmo schema-id no metadata.json, o schema do metadata.json é utilizado e a cópia presente no cabeçalho do manifest é ignorada, com a emissão de um aviso. Se desabilitado, esse conflito faz a consulta falhar com um erro ICEBERG&#95;SPECIFICATION&#95;VIOLATION.
+Se habilitado e o schema-id de um arquivo de manifesto do Iceberg já estiver registrado a partir do metadata.json, o schema do metadata.json é utilizado e a cópia presente na chave `schema` do cabeçalho do arquivo de manifesto é ignorada, sem nenhuma comparação. Se desabilitado, a cópia no cabeçalho do manifesto é comparada com o schema do metadata.json, e um conflito faz a consulta falhar com um erro ICEBERG&#95;SPECIFICATION&#95;VIOLATION.
 
-O schema do cabeçalho do manifest é apenas uma cópia do schema da tabela no momento em que o manifest foi gravado, e já se observou que alguns writers (por exemplo, jobs de manutenção do AWS S3 Tables) armazenam cópias degradadas ali. Outras engines de consulta resolvem os schemas a partir do metadata.json e ignoram cópias divergentes no cabeçalho, e o padrão segue essa mesma abordagem. Um conflito entre duas definições de schema do metadata.json continua sempre fazendo a consulta falhar.
+O schema do cabeçalho do manifesto é apenas uma cópia do schema da tabela no momento em que o manifesto foi gravado, e já se observou que alguns writers (por exemplo, jobs de manutenção do AWS S3 Tables) armazenam cópias degradadas ali. Outras engines de consulta resolvem os schemas a partir do metadata.json e ignoram cópias divergentes no cabeçalho, e o padrão segue essa mesma abordagem. Um conflito entre duas definições de schema do metadata.json continua sempre fazendo a consulta falhar.
 
 {/*AUTOGENERATED_END*/}

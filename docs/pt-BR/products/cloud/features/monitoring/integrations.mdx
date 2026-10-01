@@ -10,22 +10,18 @@ doc_type: 'guide'
 import CommunityMonitoring from '/snippets/pt-BR/_community_monitoring.mdx';
 import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-<div id="direct-datadog">
-  ## Integração com o Datadog
-</div>
+## Integração com o Datadog {#direct-datadog}
 
 Para monitorar sua implantação do ClickHouse no Datadog, o ClickHouse oferece várias integrações, adequadas a diferentes modos de implantação. Cada uma tem suas próprias vantagens e desvantagens, e algumas são mantidas pelo ClickHouse, enquanto outras são mantidas pelo Datadog. As integrações estão listadas na ordem recomendada.
 
-| Integração                                                                                                      | Documentação                                                                                   | Implantação | Sinais                         |
-| --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------- | ------------------------------ |
-| [Integração da API do Datadog com o ClickHouse Cloud](#clickhouse-cloud-datadog-api-integration) *(recomendada)* | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/)                | Cloud       | Métricas                       |
-| [Integração do Prometheus com o ClickHouse Cloud](#clickhouse-cloud-prometheus-integration)                      | [clickhouse.com/docs](/pt-BR/products/cloud/features/monitoring/prometheus)                          | Cloud       | Métricas                       |
-| [Integração do Datadog Agent com o ClickHouse](#clickhouse-datadog-agent-integration)                           | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse/?tab=host)             | OSS / Cloud | Logs, Métricas                 |
-| [ClickHouse Datadog DBM](#clickhouse-datadog-dbm)                                                               | [datadoghq.com](https://www.datadoghq.com/product-preview/database-monitoring-for-clickhouse/) | OSS / Cloud | Logs, Métricas, Query Insights |
+| Integração                                                                                                  | Documentação                                                                                   | Implantação | Sinais                         |
+| ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------- | ------------------------------ |
+| [Integração do Prometheus com o ClickHouse Cloud](#clickhouse-cloud-prometheus-integration) *(recomendada)* | [clickhouse.com/docs](/pt-BR/products/cloud/features/monitoring/prometheus)                          | Cloud       | Métricas                       |
+| [Integração da API do Datadog com o ClickHouse Cloud](#clickhouse-cloud-datadog-api-integration)            | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/)                | Cloud       | Métricas                       |
+| [Integração do Datadog Agent com o ClickHouse](#clickhouse-datadog-agent-integration)                       | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse/?tab=host)             | OSS / Cloud | Logs, Métricas                 |
+| [ClickHouse Datadog DBM](#clickhouse-datadog-dbm)                                                           | [datadoghq.com](https://www.datadoghq.com/product-preview/database-monitoring-for-clickhouse/) | OSS / Cloud | Logs, Métricas, Query Insights |
 
-<div id="clickhouse-cloud-datadog-api-integration">
-  ### Integração da API do Datadog com o ClickHouse Cloud
-</div>
+### Integração da API do Datadog com o ClickHouse Cloud {#clickhouse-cloud-datadog-api-integration}
 
 <PrivatePreviewBadge />
 
@@ -40,9 +36,7 @@ Você conecta sua conta do Datadog ao ClickHouse Cloud por meio de um handshake 
 
 Para as etapas de configuração inicial, consulte o [guia de integração do ClickHouse Cloud da Datadog](https://docs.datadoghq.com/integrations/clickhouse-cloud/).
 
-<div id="clickhouse-cloud-prometheus-integration">
-  ### Integração do Prometheus com o ClickHouse Cloud
-</div>
+### Integração do Prometheus com o ClickHouse Cloud {#clickhouse-cloud-prometheus-integration}
 
 A forma mais comum e universal de coletar telemetria no nível do serviço e da org no ClickHouse Cloud.
 
@@ -52,9 +46,7 @@ Você configura o Datadog Agent com a [integração OpenMetrics](https://docs.da
 * O Datadog trata as métricas como **métricas personalizadas**
 * **Não** impede que o serviço fique ocioso
 
-<div id="clickhouse-datadog-agent-integration">
-  ### Integração do Datadog Agent com o ClickHouse
-</div>
+### Integração do Datadog Agent com o ClickHouse {#clickhouse-datadog-agent-integration}
 
 A forma mais comum de enviar dados de serviços OSS do ClickHouse para o Datadog. Também funciona com o ClickHouse Cloud, com algumas ressalvas.
 
@@ -68,9 +60,7 @@ O Datadog Agent consulta periodicamente a instância do ClickHouse e coleta mét
 * Requer `datadog-cluster-agent` em vez de `datadog-agent`
 * **Impede que o serviço entre em estado ocioso**
 
-<div id="clickhouse-datadog-dbm">
-  ### ClickHouse Datadog DBM
-</div>
+### ClickHouse Datadog DBM {#clickhouse-datadog-dbm}
 
 O Database Monitoring (DBM) para ClickHouse é desenvolvido e mantido pela Datadog. Ele funciona configurando o Datadog Agent para coletar dados das tabelas de sistema da instância do ClickHouse, fornecendo insights de desempenho em nível de consulta semelhantes aos que o ClickHouse Cloud Console oferece nativamente. A ClickHouse não tem envolvimento com essa integração — encaminhe qualquer problema para a Datadog, não para a ClickHouse.
 
@@ -80,9 +70,7 @@ O Database Monitoring (DBM) para ClickHouse é desenvolvido e mantido pela Datad
 
 <CommunityMonitoring />
 
-<div id="billing-usage-api">
-  ## API de faturamento e uso
-</div>
+## API de faturamento e uso {#billing-usage-api}
 
 A API de faturamento e uso pode ser usada para acessar programaticamente os registros de faturamento e uso da sua organização no Cloud. Isso é útil para criar dashboards personalizados de monitoramento de custos ou integrar dados de faturamento aos fluxos de trabalho de relatórios financeiros já existentes.
 

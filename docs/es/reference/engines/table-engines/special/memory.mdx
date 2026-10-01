@@ -21,6 +21,8 @@ El motor Memory almacena los datos en RAM, sin comprimir. Los datos se almacenan
 El acceso concurrente a los datos está sincronizado. Los bloqueos son breves: las operaciones de lectura y escritura no se bloquean entre sí.
 No se admiten índices. La lectura se paraleliza.
 
+Las lecturas admiten `PREWHERE`, incluido el traslado automático de las condiciones `WHERE` controlado por la configuración [`optimize_move_to_prewhere`](/es/reference/settings/session-settings#optimize_move_to_prewhere): al principio solo se leen las columnas de las condiciones, y las columnas restantes se leen únicamente para los bloques en los que algunas filas cumplen las condiciones, y solo para esas filas. Esto resulta especialmente beneficioso junto con `compress = true`, porque, cuando una condición es selectiva, la mayoría de las columnas nunca se descomprimen. `SELECT count() FROM table` sin filtro se resuelve a partir de los metadatos, sin leer los datos.
+
 La productividad máxima (más de 10 GB/s) se alcanza en consultas simples, porque no hay lectura desde el disco, ni descompresión, ni deserialización de datos. (Cabe señalar que, en muchos casos, la productividad del motor MergeTree es casi igual de alta).
 Al reiniciar el servidor, los datos desaparecen de la tabla y esta queda vacía.
 Normalmente, no se justifica el uso de este motor de tabla. Sin embargo, puede utilizarse para pruebas y para tareas en las que se requiere la máxima velocidad con un número relativamente pequeño de filas (hasta aproximadamente 100.000.000).
@@ -29,9 +31,7 @@ El motor Memory es utilizado por el sistema para tablas temporales con datos ext
 
 Se pueden especificar límites superior e inferior para limitar el tamaño de la tabla del motor Memory, lo que le permite actuar de forma efectiva como un búfer circular (consulte [Parámetros del motor](#engine-parameters)).
 
-<div id="engine-parameters">
-  ## Parámetros del motor
-</div>
+## Parámetros del motor {#engine-parameters}
 
 * `min_bytes_to_keep` — Cantidad mínima de bytes que se deben conservar cuando la tabla en memoria tiene un límite de tamaño.
   * Valor predeterminado: `0`
@@ -46,9 +46,7 @@ Se pueden especificar límites superior e inferior para limitar el tamaño de la
 * `compress` - Si los datos en memoria deben comprimirse.
   * Valor predeterminado: `false`
 
-<div id="usage">
-  ## Uso
-</div>
+## Uso {#usage}
 
 **Inicializar la configuración**
 
@@ -64,9 +62,7 @@ ALTER TABLE memory MODIFY SETTING min_rows_to_keep = 100, max_rows_to_keep = 100
 
 **Nota:** Los parámetros de límite para `bytes` y `rows` pueden establecerse al mismo tiempo; sin embargo, se aplicarán los límites inferiores de `max` y `min`.
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples}
 
 ```sql
 CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_bytes_to_keep = 4096, max_bytes_to_keep = 16384;

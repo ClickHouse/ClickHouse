@@ -10,25 +10,19 @@ integration:
   - category: 'clickpipes'
 ---
 
-<div id="compression">
-  ## メッセージ圧縮
-</div>
+## メッセージ圧縮 {#compression}
 
 Kafka トピックでは圧縮の使用を強く推奨します。圧縮を使用すると、パフォーマンスへの影響をほとんど伴わずに、データ転送コストを大幅に削減できます。
 Kafka におけるメッセージ圧縮について詳しくは、まずはこちらの[ガイド](https://www.confluent.io/blog/apache-kafka-message-compression/)をご覧になることをお勧めします。
 
-<div id="limitations">
-  ## 制限事項
-</div>
+## 制限事項 {#limitations}
 
 * [`DEFAULT`](/ja/reference/statements/create/table#default) はサポートされていません。
 * 個々のメッセージのサイズは、最小の (XS) レプリカサイズで実行する場合、デフォルトで 16MB (非圧縮) まで、より大きいレプリカでは 32MB (非圧縮) までに制限されます。この上限を超えるメッセージは、エラーとなり拒否されます。より大きなメッセージが必要な場合は、サポートにお問い合わせください。
 
-<div id="delivery-semantics">
-  ## 配信セマンティクス
-</div>
+## 配信セマンティクス {#delivery-semantics}
 
-Kafka 向け ClickPipes は、デフォルトで at-least-once 配信を保証し、Kafka コンシューマグループのオフセットを使用してインジェストの進行状況を追跡します。また、ポッド の再起動、コンシューマのリバランス、挿入の失敗があっても、各 Kafka レコードが ClickHouse に正確に 1 回だけ挿入される exactly-once セマンティクスをオプションでサポートしています。
+Kafka 向け ClickPipes は、デフォルトで at-least-once 配信を保証し、Kafka コンシューマーグループのオフセットを使用してインジェストの進行状況を追跡します。また、ポッド の再起動、コンシューマーのリバランス、挿入の失敗があっても、各 Kafka レコードが ClickHouse に正確に 1 回だけ挿入される exactly-once セマンティクスをオプションでサポートしています。
 
 exactly-once を実現するため、ClickPipes は 2 つの値を使用して各パーティションの進行状況を内部状態ストアに記録します。
 
@@ -43,27 +37,29 @@ exactly-once を実現するため、ClickPipes は 2 つの値を使用して�
   トークンによる重複排除は、ターゲットテーブルの [`replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) (デフォルトでは直近 10,000 個の insert block) および [`replicated_deduplication_window_seconds`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) (デフォルトでは 1 時間) の範囲内でのみ行われます。高スループットのパイプでは block 数のウィンドウがすぐに消費される可能性があるため、最悪の場合の再生遅延をカバーできるよう、ターゲットテーブルでこれら両方の設定を確認し、必要に応じて増やすことを推奨します。トークンがウィンドウから外れた後に再生されたデータは再度挿入される可能性があるため、その場合は exactly-once を保証できません。
 </Note>
 
+<Note>
+  **コンシューマーグループにコミット済みオフセットがすでにある場合、`from_beginning` は何もしません**
+
+  オフセット戦略 (`from_beginning`、`from_latest`、`from_timestamp`) が適用されるのは、コンシューマーグループが対象のパーティションを初めて読み取るときだけです。ブローカーにそのコンシューマーグループのコミット済みオフセットがすでにある場合は効果がありません。同じコンシューマーグループ名を維持したまま ClickPipe を削除して再作成すると、まさにこの状態になります (名前が自動生成された場合も、Terraform などで明示的に固定された場合も同様です)。ブローカーは先頭から読み直す代わりに最後のコミット済みオフセットから再開するため、そのオフセットより前に生成または保持されていたメッセージは再度取り込まれず、スキップされます。
+
+  再作成時にトピック全体を最初から読み直す必要がある場合は、オフセット戦略だけに頼らず、新しいコンシューマーグループ名を使用するか、ブローカー側で古いコンシューマーグループのオフセットを明示的にリセットまたは削除してください。
+</Note>
+
 主なトレードオフはパーツサイズです。より大きな insert block を使用すると、ClickHouse 内で生成される[パーツ](/ja/concepts/core-concepts/parts)の数が減り、各パーツは大きくなるため、マージのオーバーヘッドを低く抑えられます。ClickPipes は block を構築している間、パーティションの行をメモリ内に保持するため、到達可能なパーツサイズはパイプで利用できるメモリに依存します。メモリが不足すると小さな block を構築するため、テーブルにはより多くのパーツが蓄積されます。パイプにより多くのメモリを割り当てると、より大きな block を構築でき、生成されるパーツを減らせます。
 
 パーティション数が内部 insert「worker」の数に近い場合、各 worker はおおむね 1 つのパーティションを処理でき、大きな block を構築するための十分なメモリのヘッドルームを確保できるため、パイプは最も効率よく動作します。worker 数と利用可能なメモリはいずれもレプリカサイズとレプリカ数に応じてスケールします。これらは **Settings** -&gt; **Advanced Settings** -&gt; **Scaling** で設定できます。
 
-<div id="authentication">
-  ## 認証
-</div>
+## 認証 {#authentication}
 
 Apache Kafka プロトコルのデータソースでは、ClickPipes は TLS 暗号化を使用する [SASL/PLAIN](https://docs.confluent.io/platform/current/kafka/authentication_sasl/authentication_sasl_plain.html) 認証に加え、`SASL/SCRAM-SHA-256` および `SASL/SCRAM-SHA-512` もサポートしています。ストリーミングソース (Redpanda、MSK など) によっては、互換性に応じて、これらの認証メカニズムのすべて、または一部のみが利用可能です。必要な認証方式が異なる場合は、[ぜひフィードバックをお寄せください](https://clickhouse.com/company/contact?loc=clickpipes)。
 
-<div id="warpstream-settings">
-  ## Warpstream フェッチサイズ
-</div>
+## Warpstream フェッチサイズ {#warpstream-settings}
 
 ClickPipes では、一度に 1 つの ClickPipes ノードで処理されるデータ量を制限するために、Kafka の設定 `max.fetch_bytes` を使用します。一部の状況では、
 Warpstream がこの設定に従わないことがあり、その結果、予期しないパイプ障害が発生する可能性があります。ClickPipes の障害を防ぐため、WarpStream エージェントを設定する際は、Warpstream 固有の設定 `kafkaMaxFetchPartitionBytesUncompressedOverride`
 を 8MB (またはそれ以下) に設定することを強く推奨します。
 
-<div id="iam">
-  ### IAM
-</div>
+### IAM {#iam}
 
 ClickPipes は、AWS MSK の以下の認証方式をサポートしています。
 
@@ -110,9 +106,7 @@ IAM 認証を使用して MSK ブローカーに接続する場合、IAM ロー�
 }
 ```
 
-<div id="configuring-a-trusted-relationship">
-  #### 信頼関係の設定
-</div>
+#### 信頼関係の設定 {#configuring-a-trusted-relationship}
 
 IAM ロール ARN を使用して MSK に認証する場合は、ロールを引き受けられるように、ClickHouse Cloud インスタンスとの信頼関係を追加する必要があります。
 
@@ -136,20 +130,14 @@ IAM ロール ARN を使用して MSK に認証する場合は、ロールを引
 }
 ```
 
-<div id="custom-certificates">
-  ### カスタム証明書
-</div>
+### カスタム証明書 {#custom-certificates}
 
 Kafka 向け ClickPipes では、公開されていないサーバー証明書を使用する Kafka ブローカー向けに、カスタム証明書をアップロードできます。
 相互 TLS (mTLS) ベースの認証では、クライアント証明書と秘密鍵のアップロードにも対応しています。
 
-<div id="performance">
-  ## パフォーマンス
-</div>
+## パフォーマンス {#performance}
 
-<div id="batching">
-  ### バッチ処理
-</div>
+### バッチ処理 {#batching}
 
 ClickPipes はデータをバッチ単位で ClickHouse に挿入します。これは、データベース内に過剰なパーツが作成されるのを防ぐためです。パーツが増えすぎると、クラスターのパフォーマンス低下につながる可能性があります。
 
@@ -158,17 +146,13 @@ ClickPipes はデータをバッチ単位で ClickHouse に挿入します。こ
 * バッチサイズが上限に達した場合 (100,000行、またはポッドメモリ 1GB あたり 28MB)
 * バッチの保持時間が上限に達した場合 (5秒)
 
-<div id="latency">
-  ### レイテンシー
-</div>
+### レイテンシー {#latency}
 
 レイテンシー (Kafka メッセージが生成されてから、そのメッセージを ClickHouse で利用できるようになるまでの時間) は、さまざまな要因 (例: ブローカーのレイテンシー、ネットワークレイテンシー、メッセージのサイズ/フォーマット) に左右されます。上のセクションで説明した[バッチ処理](#batching)も、レイテンシーに影響します。想定されるレイテンシーを把握するため、通常の負荷条件でご自身のユースケースを必ずテストすることをお勧めします。
 
 ClickPipes は、レイテンシーについて一切保証していません。低レイテンシーに関する特別な要件がある場合は、[お問い合わせください](https://clickhouse.com/company/contact?loc=clickpipes)。
 
-<div id="scaling">
-  ### スケーリング
-</div>
+### スケーリング {#scaling}
 
 Kafka 向け ClickPipes は、水平および垂直の両方向にスケールできるよう設計されています。デフォルトでは、1 つのコンシューマーを含むコンシューマグループが作成されます。これは ClickPipe の作成時、またはそれ以外の任意のタイミングで **Settings** -&gt; **Advanced Settings** -&gt; **Scaling** から設定できます。
 
@@ -179,9 +163,7 @@ ClickPipes は、可用性ゾーンに分散したアーキテクチャにより
 コンシューマーまたはその基盤となるインフラストラクチャに障害が発生した場合でも、
 ClickPipe は自動的にコンシューマーを再起動し、メッセージ処理を継続します。
 
-<div id="benchmarks">
-  ### ベンチマーク
-</div>
+### ベンチマーク {#benchmarks}
 
 以下は、Kafka 向け ClickPipes のおおよそのベースライン性能を把握するための参考用ベンチマークです。パフォーマンスは、メッセージサイズ、データ型、データフォーマットなど、さまざまな要因の影響を受ける点にご注意ください。実際の結果は環境によって異なる可能性があり、ここで示す内容は実際の性能を保証するものではありません。
 

@@ -37,7 +37,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد يتيح القراءة من جدول `Merge` باستخدام النسخ المتماثلة المتوازية القائمة على الخطة، وذلك بتوسيع القراءة من `Merge` إلى اتحاد للقراءات من جداول `MergeTree` الأساسية. ولا يسري مفعوله إلا مع `parallel_replicas_plan_based`."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد يتيح القراءة من جدول `Merge` باستخدام النسخ المتماثلة المتوازية القائمة على الخطة، وذلك بتوسيع القراءة من `Merge` إلى اتحاد للقراءات من جداول `MergeTree` الأساسية. ولا يسري مفعوله إلا مع `parallel_replicas_plan_based`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد يتيح القراءة من جدول `Merge` باستخدام النسخ المتماثلة المتوازية القائمة على الخطة، وذلك بتوسيع القراءة من `Merge` إلى اتحاد للقراءات من جداول `MergeTree` الأساسية. ولا يسري مفعوله إلا مع `parallel_replicas_plan_based`."}]}]} />
 
 يتيح القراءة من جدول `Merge` باستخدام النسخ المتماثلة المتوازية. ولا يسري مفعوله إلا مع [parallel&#95;replicas&#95;plan&#95;based](/ar/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based)، إذ تُوسَّع القراءة من جدول `Merge` إلى اتحاد للقراءات من جداول `MergeTree` الأساسية، ثم يُوزَّع هذا الاتحاد كأي اتحاد آخر. ويُترك جدول `Merge` على نسخة متماثلة واحدة عند تعذّر قراءة أي من جداوله الأساسية بهذه الطريقة (جدول ليس من نوع `MergeTree`، أو قراءة بـ `FINAL`). اضبطه على `false` لقراءة كل جدول `Merge` على نسخة متماثلة واحدة، كما كان الحال قبل إضافة هذا الدعم. تجريبي.
 
@@ -133,6 +133,18 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 إذا كانت القيمة true، فسيستخدم ClickHouse خوارزمية النسخ المتماثلة المتوازية أيضًا مع جداول MergeTree غير المُكرَّرة
 
+## parallel_replicas_for_queries_with_multiple_tables {#parallel_replicas_for_queries_with_multiple_tables}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد يتحكم في ما إذا كانت النسخ المتماثلة المتوازية (parallel replicas) تُستخدم في الاستعلامات التي تربط عدة جداول (الاستعلامات التي تحتوي على JOIN). لا يؤثر في استعلام UNION الخالي من JOIN، ولا في ARRAY JOIN."}]}]} />
+
+عند تفعيل هذا الإعداد، يمكن استخدام النسخ المتماثلة المتوازية (parallel replicas) في الاستعلامات التي تربط عدة جداول (الاستعلامات التي تحتوي على `JOIN`). أما عند تعطيله، فلا تُستخدم النسخ المتماثلة المتوازية في هذه الاستعلامات، بل تُنفَّذ من دونها.
+
+يقتصر تأثير هذا الإعداد على الاستعلامات التي تحتوي على `JOIN`، إذ يُقرأ فيها الجانب غير الأيسر بالكامل على كل نسخة متماثلة. أما استعلام `UNION` الخالي من `JOIN` فلا يتأثر به، لأن كل فرع من فروع `UNION` يمثّل عملية قراءة مستقلة من جدول واحد، ومن ثم يظل استخدام النسخ المتماثلة المتوازية ممكنًا فيه. في المقابل، يُعدّ `UNION` المستخدم بوصفه تعبير جدول في `JOIN` جزءًا من استعلام يربط عدة جداول، ولذلك يتأثر بهذا الإعداد. ولا يُعدّ `ARRAY JOIN` عملية ربط بين جداول.
+
 ## parallel_replicas_index_analysis_only_on_coordinator {#parallel_replicas_index_analysis_only_on_coordinator}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -140,14 +152,6 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "يُجرى تحليل الفهرس فقط على replica-coordinator، ويُتخطى على النسخ المتماثلة الأخرى. ولا يسري ذلك إلا عند تمكين parallel_replicas_local_plan"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "يُجرى تحليل الفهرس فقط على replica-coordinator، ويُتخطى على النسخ المتماثلة الأخرى. ولا يسري ذلك إلا عند تمكين parallel_replicas_local_plan"}]}]} />
 
 يُجرى تحليل الفهرس فقط على replica-coordinator، ويُتخطى على النسخ المتماثلة الأخرى. ولا يسري ذلك إلا عند تمكين parallel&#95;replicas&#95;local&#95;plan
-
-## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "استخدم مسار المعالجة المحلي أثناء عملية INSERT SELECT الموزعة مع النسخ المتماثلة المتوازية. وهو معطّل حاليًا بسبب مشكلات في الأداء"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "استخدم مسار المعالجة المحلي أثناء عملية INSERT SELECT الموزعة مع النسخ المتماثلة المتوازية. وهو معطّل حاليًا بسبب مشكلات في الأداء"}]}]} />
-
-استخدم مسار المعالجة المحلي أثناء عملية INSERT SELECT الموزعة مع النسخ المتماثلة المتوازية
 
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
@@ -188,6 +192,8 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
 تحديد ما إذا كانت النسخ المتماثلة المتوازية ستُستخدم وأين، وذلك بتحليل خطة الاستعلام بدلًا من التحليل المستند إلى شجرة الاستعلام. ونتيجةً لذلك، يُرسَل جزء من الخطة إلى النسخ المتماثلة البعيدة بدلًا من استعلام SQL. تجريبي.
+
+لا يؤثر هذا الإعداد في عملية `INSERT SELECT` الموزَّعة ([parallel&#95;distributed&#95;insert&#95;select](/ar/reference/settings/session-settings/parallel#parallel_distributed_insert_select) = 2)، التي تُرسِل عملية `INSERT` بأكملها كاستعلام إلى كل نسخة متماثلة: فالنسخة المتماثلة التي تنفّذ ذلك الاستعلام تقرأ البيانات باستخدام التنفيذ المستند إلى شجرة الاستعلام، ولذا يستخدمه المُبادِر أيضًا لأنه يشارك بوصفه نسخة متماثلة إضافية.
 
 ## parallel_replicas_prefer_local_join {#parallel_replicas_prefer_local_join}
 

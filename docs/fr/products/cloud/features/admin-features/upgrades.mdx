@@ -17,14 +17,10 @@ Avec ClickHouse Cloud, vous n’avez jamais à vous soucier de l’application d
 * Pour le calendrier de publication des versions, consultez la page [release status](/fr/resources/changelogs/cloud/release-status)
 
 <Note>
-  Nous introduisons un nouveau mécanisme de mise à niveau, un concept que nous appelons « make before break » (ou MBB). Avec cette nouvelle approche, nous ajoutons des répliques mises à jour avant de supprimer les anciennes pendant l’opération de mise à niveau. Cela permet des mises à niveau plus transparentes et moins perturbatrices pour les workloads en cours d’exécution.
-
-  Dans le cadre de ce changement, les données historiques des tables système seront conservées jusqu’à 30 jours dans le cadre des événements de mise à niveau. En outre, les données des tables système antérieures au 19 décembre 2024 pour les services sur AWS ou GCP, et antérieures au 14 janvier 2025 pour les services sur Azure, ne seront pas conservées dans le cadre de la migration vers les nouveaux niveaux d’organisation.
+  Avec [MBB](/fr/products/cloud/features/autoscaling/make-before-break) dans ClickHouse Cloud, les données historiques des tables système sont conservées jusqu’à 30 jours maximum dans le cadre des événements de mise à niveau.
 </Note>
 
-<div id="version-compatibility">
-  ## Compatibilité des versions
-</div>
+## Compatibilité des versions {#version-compatibility}
 
 Lorsque vous créez un service, le paramètre [`compatibility`](/fr/reference/settings/session-settings/compatibility#compatibility) est défini sur la version de ClickHouse la plus récente proposée dans ClickHouse Cloud au moment du provisionnement initial de votre service.
 
@@ -33,7 +29,7 @@ Le paramètre `compatibility` vous permet d&#39;utiliser les valeurs par défaut
 Vous ne pouvez pas gérer le paramètre `compatibility` par défaut au niveau du service. Vous devez [contacter l’assistance](https://clickhouse.com/support/program) si vous souhaitez modifier la version définie pour le paramètre `compatibility` par défaut de votre service. En revanche, vous pouvez surcharger le paramètre `compatibility` au niveau de l&#39;utilisateur, du rôle, du profil, de la requête ou de la session à l&#39;aide des mécanismes standard de configuration de ClickHouse, par exemple `SET compatibility = '22.3'` dans une session ou `SETTINGS compatibility = '22.3'` dans une requête.
 
 <div id="maintenance-mode">
-  ## Mode de maintenance
+  ## Mode de maintenance {#maintenance-mode}
 </div>
 
 Il peut arriver que nous devions mettre à jour votre service, ce qui peut nécessiter la désactivation de certaines fonctionnalités, comme la mise à l&#39;échelle ou la mise en veille. Dans de rares cas, nous pouvons aussi devoir intervenir sur un service qui rencontre des problèmes afin de le rétablir dans un état de fonctionnement normal. Pendant cette maintenance, une bannière *« Maintenance en cours »* s&#39;affichera sur la page du service. Il est possible que vous puissiez tout de même utiliser le service pour exécuter des requêtes pendant cette période.
@@ -41,7 +37,7 @@ Il peut arriver que nous devions mettre à jour votre service, ce qui peut néce
 Le temps pendant lequel le service est en maintenance ne vous sera pas facturé. Le *mode de maintenance* est rare et ne doit pas être confondu avec les mises à niveau habituelles du service.
 
 <div id="release-channels-upgrade-schedule">
-  ## Canaux de mise à niveau (calendrier des mises à niveau)
+  ## Canaux de mise à niveau (calendrier des mises à niveau) {#release-channels-upgrade-schedule}
 </div>
 
 Les utilisateurs peuvent définir le calendrier des mises à niveau de leur service ClickHouse Cloud en s’abonnant à un canal de mise à niveau spécifique. Il existe trois canaux de mise à niveau, et l’utilisateur peut configurer le jour et l’heure des mises à niveau dans la semaine à l’aide de la fonctionnalité **mises à niveau planifiées**.
@@ -56,9 +52,7 @@ Les trois canaux de mise à niveau sont les suivants :
   Les services du niveau Basic sont automatiquement inscrits au canal de mise à niveau rapide
 </Note>
 
-<div id="fast-release-channel-early-upgrades">
-  ### Canal de mise à niveau rapide (mises à niveau anticipées)
-</div>
+### Canal de mise à niveau rapide (mises à niveau anticipées) {#fast-release-channel-early-upgrades}
 
 <ScalePlanFeatureBadge feature="Le canal de mise à niveau rapide" />
 
@@ -80,7 +74,7 @@ Vous pouvez modifier le calendrier de release du service dans la console Cloud, 
 Ce **canal de mise à niveau rapide** convient pour tester de nouvelles fonctionnalités dans des environnements non critiques. **Il n&#39;est pas recommandé pour les workloads de production ayant des exigences strictes en matière de disponibilité et de fiabilité.**
 
 <div id="regular-release-channel">
-  ### Canal de mise à niveau standard
+  ### Canal de mise à niveau standard {#regular-release-channel}
 </div>
 
 Pour tous les services des niveaux Scale et Enterprise qui n&#39;ont pas de canal de mise à niveau ni de calendrier de mise à niveau configurés, les mises à niveau seront effectuées dans le cadre du canal de mise à niveau standard. Cette option est recommandée pour les environnements de production.
@@ -92,7 +86,7 @@ Les mises à niveau du canal de mise à niveau standard sont généralement effe
 </Note>
 
 <div id="slow-release-channel-deferred-upgrades">
-  ### Canal de mise à niveau lent (mises à niveau différées)
+  ### Canal de mise à niveau lent (mises à niveau différées) {#slow-release-channel-deferred-upgrades}
 </div>
 
 <EnterprisePlanFeatureBadge feature="The slow release channel" />
@@ -113,9 +107,7 @@ Plus précisément, les services vont :
   * Passer à un canal plus lent ne rétrogradera pas votre service et le maintiendra sur sa version actuelle jusqu&#39;à ce qu&#39;une version plus récente soit disponible dans ce canal. Ex. : de Régulier à Lent, de Rapide à Régulier ou Lent
 </Note>
 
-<div id="scheduled-upgrades">
-  ## Mises à niveau planifiées
-</div>
+## Mises à niveau planifiées {#scheduled-upgrades}
 
 <EnterprisePlanFeatureBadge feature="Mises à niveau planifiées" linking_verb_are="true" />
 

@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 Existem dois tipos de instruções KILL: para encerrar uma consulta e uma mutação
 
-<div id="kill-query">
-  ## KILL QUERY
-</div>
+## KILL QUERY {#kill-query}
 
 ```sql
 KILL QUERY [ON CLUSTER cluster]
@@ -59,10 +57,10 @@ SELECT
 Interrompa a consulta:
 
 ```sql
--- Encerra forçosamente todas as consultas com o query_id especificado:
+-- Forcibly terminates all queries with the specified query_id:
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
 
--- Encerra de forma síncrona todas as consultas executadas pelo 'username':
+-- Synchronously terminates all queries run by 'username':
 KILL QUERY WHERE user='username' SYNC
 ```
 
@@ -71,6 +69,12 @@ KILL QUERY WHERE user='username' SYNC
 </Tip>
 
 Usuários com acesso somente leitura só podem interromper as próprias consultas.
+
+Um usuário sem a concessão `SELECT` em `system.processes` ainda pode cancelar a própria consulta informando seu identificador:
+`KILL QUERY WHERE query_id = '<id>'`. Se o usuário não tiver essa concessão nem `KILL QUERY`, informar um identificador de consulta
+que não esteja em execução em seu nome não cancela nenhuma consulta nem retorna linhas, em vez de gerar um erro. Já um usuário com
+`KILL QUERY` recebe o erro habitual ao informar o identificador de uma consulta que não seja sua. Qualquer outra condição `WHERE`, assim como
+`ON CLUSTER`, continua exigindo as concessões descritas acima.
 
 Por padrão, é usada a versão assíncrona das consultas (`ASYNC`), que não espera a confirmação de que as consultas foram interrompidas.
 
@@ -83,9 +87,7 @@ A resposta contém a coluna `kill_status`, que pode assumir os seguintes valores
 
 Uma consulta de teste (`TEST`) apenas verifica as permissões do usuário e exibe uma lista de consultas a serem interrompidas.
 
-<div id="kill-mutation">
-  ## KILL MUTATION
-</div>
+## KILL MUTATION {#kill-mutation}
 
 A presença de mutações longas ou incompletas geralmente indica que um serviço do ClickHouse está com baixo desempenho. A natureza assíncrona das mutações pode fazer com que elas consumam todos os recursos disponíveis de um sistema. Pode ser necessário:
 

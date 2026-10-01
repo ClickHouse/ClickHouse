@@ -693,7 +693,7 @@ cache には `LRU` cache ポリシーが使用されます。
 | `cache_hits_threshold`                | Integer | `0`        | 非推奨。効果はありません。                                                                                                                   |
 | `enable_bypass_cache_with_threshold`  | Boolean | `false`    | 読み取り範囲が大きい場合はcacheをスキップします。                                                                                                     |
 | `bypass_cache_threshold`              | Size    | `256Mi`    | cacheのバイパスをトリガーする読み取り範囲サイズ (`enable_bypass_cache_with_threshold` が必要) 。                                                         |
-| `max_file_segment_size`               | Size    | `8Mi`      | 単一のcacheファイルの最大サイズ (バイト、または人間が読みやすい形式) 。                                                                                        |
+| `max_file_segment_size`               | Size    | `32Mi`     | 単一のcacheファイルの最大サイズ (バイト、または人間が読みやすい形式) 。                                                                                        |
 | `max_elements`                        | Integer | `10000000` | cacheファイルの最大数。                                                                                                                  |
 | `load_metadata_threads`               | Integer | `16`       | 起動時にcacheメタデータを読み込むためのスレッド数。                                                                                                    |
 | `use_split_cache`                     | Boolean | `false`    | ファイルをシステム用とデータ用に分離して使用します。                                                                                                      |

@@ -14,15 +14,15 @@ import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSuppo
 
 Essas configurações se aplicam ao servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-## abort_on_logical_error
+## abort_on_logical_error {#abort_on_logical_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Sim" />Provoca falha no servidor em caso de exceções LOGICAL&#95;ERROR. Somente para especialistas.
 
-## allowed_disks_for_table_engines
+## allowed_disks_for_table_engines {#allowed_disks_for_table_engines}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Lista de discos permitidos para uso com Iceberg
 
-## auth_use_forwarded_address
+## auth_use_forwarded_address {#auth_use_forwarded_address}
 
 Use o endereço de origem para autenticar clientes conectados por meio de proxy.
 
@@ -32,7 +32,7 @@ Use o endereço de origem para autenticar clientes conectados por meio de proxy.
   Esta configuração deve ser usada com cautela redobrada, já que endereços encaminhados podem ser facilmente falsificados — servidores que aceitam esse tipo de autenticação não devem ser acessados diretamente, mas sim exclusivamente por meio de um proxy confiável.
 </Note>
 
-## bcrypt_workfactor
+## bcrypt_workfactor {#bcrypt_workfactor}
 
 Fator de trabalho para o tipo de autenticação `bcrypt_password`, que usa o [algoritmo Bcrypt](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 O fator de trabalho define a quantidade de processamento e o tempo necessários para calcular o hash e verificar a senha.
@@ -49,7 +49,7 @@ O fator de trabalho define a quantidade de processamento e o tempo necessários 
   sobrecarga computacional do bcrypt com fatores de trabalho mais altos.
 </Warning>
 
-## blob_storage_log
+## blob_storage_log {#blob_storage_log}
 
 Configurações da tabela de sistema [`blob_storage_log`](/pt-BR/reference/system-tables/blob_storage_log).
 
@@ -67,7 +67,7 @@ Exemplo:
 </blob_storage_log>
 ```
 
-## builtin_dictionaries_reload_interval
+## builtin_dictionaries_reload_interval {#builtin_dictionaries_reload_interval}
 
 O intervalo, em segundos, até recarregar os dicionários internos.
 
@@ -79,15 +79,15 @@ O ClickHouse recarrega os dicionários internos a cada x segundos. Isso permite 
 <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
-## cache_size_to_ram_max_ratio
+## cache_size_to_ram_max_ratio {#cache_size_to_ram_max_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />Define a razão máxima entre o tamanho do cache e a RAM. Permite reduzir o tamanho do cache em sistemas com pouca memória.
 
-## cannot_allocate_thread_fault_injection_probability
+## cannot_allocate_thread_fault_injection_probability {#cannot_allocate_thread_fault_injection_probability}
 
 <SettingsInfoBlock type="Double" default_value="0" changeable_without_restart="No" />Para fins de teste.
 
-## cgroups_memory_usage_observer_wait_time
+## cgroups_memory_usage_observer_wait_time {#cgroups_memory_usage_observer_wait_time}
 
 <SettingsInfoBlock type="UInt64" default_value="15" changeable_without_restart="No" />
 
@@ -95,7 +95,7 @@ Intervalo, em segundos, durante o qual o consumo máximo de memória permitido d
 
 Para desativar o observador de cgroups, defina este valor como `0`.
 
-## compressão
+## compressão {#compression}
 
 Configurações de compressão de dados para tabelas com o motor [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -150,17 +150,17 @@ Configurações de compressão de dados para tabelas com o motor [MergeTree](/pt
 </compression>
 ```
 
-## config-file
+## config-file {#config-file}
 
 <SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />Indica o arquivo de configuração do servidor.
 
-## config_reload_interval_ms
+## config_reload_interval_ms {#config_reload_interval_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="2000" changeable_without_restart="Sim" />
 
 Com que frequência o ClickHouse recarrega a config e verifica se há novas alterações
 
-## core_dump
+## core_dump {#core_dump}
 
 Configura o limite flexível do tamanho do arquivo de core dump.
 
@@ -176,7 +176,7 @@ Configura o limite flexível do tamanho do arquivo de core dump.
 </core_dump>
 ```
 
-## crash_log
+## crash_log {#crash_log}
 
 Configurações para a operação da tabela de sistema [crash&#95;log](/pt-BR/reference/system-tables/crash_log).
 
@@ -213,7 +213,7 @@ O arquivo de configuração padrão do servidor `config.xml` contém a seguinte 
 </crash_log>
 ```
 
-## create_union_system_log_tables
+## create_union_system_log_tables {#create_union_system_log_tables}
 
 Solicita a criação de tabelas `all_...` junto às tabelas de log do sistema (`system.all_query_log` para `system.query_log`, `system.all_text_log` para `system.text_log` e assim por diante). Essa tabela é uma união da tabela de log correspondente, de suas versões rotacionadas (`query_log_0`, `query_log_1`, ...) e/ou das mesmas tabelas em todas as réplicas de um cluster, permitindo consultá-las de uma só vez sem precisar se lembrar de construções como `clusterAllReplicas(default, merge(system, '^query_log'))`.
 
@@ -232,6 +232,10 @@ A opção se aplica a todas as tabelas de log do sistema; ela não permite confi
   Quando a configuração `cluster` é usada, a definição da tabela faz referência ao cluster, que deve existir para que a tabela seja carregada. Se você remover o cluster da configuração, remova também as tabelas `all_...` (elas serão recriadas de acordo com a nova configuração na próxima gravação).
 </Note>
 
+<Warning>
+  Após habilitar esta seção, os nomes `all_...` no banco de dados `system` ficam reservados para este recurso. Não mantenha tabelas próprias com esses nomes: renomeie qualquer tabela nessa situação antes de habilitar a seção.
+</Warning>
+
 **Exemplo**
 
 ```xml
@@ -241,14 +245,14 @@ A opção se aplica a todas as tabelas de log do sistema; ela não permite confi
 </create_union_system_log_tables>
 ```
 
-## database_atomic_delay_before_drop_table_sec
+## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
 
 <SettingsInfoBlock type="UInt64" default_value="480" changeable_without_restart="No" />
 
 O intervalo durante o qual uma tabela removida pode ser restaurada usando a instrução [`UNDROP`](/pt-BR/reference/statements/undrop). Se `DROP TABLE` for executado com o modificador `SYNC`, essa configuração será ignorada.
 O valor padrão dessa configuração é `480` (8 minutos).
 
-## dead_letter_queue
+## dead_letter_queue {#dead_letter_queue}
 
 Configuração da tabela de sistema &#39;dead&#95;letter&#95;queue&#39;.
 
@@ -265,18 +269,18 @@ As configurações padrão são:
 </dead_letter_queue>
 ```
 
-## dictionary_background_reconnect_interval
+## dictionary_background_reconnect_interval {#dictionary_background_reconnect_interval}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />Intervalo, em milissegundos, entre tentativas de reconexão de dicionários MySQL e Postgres que falharam e têm `background_reconnect` habilitado.
 
-## disk_transaction_wait_for_blob_removal
+## disk_transaction_wait_for_blob_removal {#disk_transaction_wait_for_blob_removal}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
 Valor padrão da configuração `wait_for_blob_removal` por disco.
 Quando habilitada, o servidor aguarda a conclusão da remoção de blob em segundo plano antes de confirmar a operação.
 
-## display_secrets_in_show_and_select
+## display_secrets_in_show_and_select {#display_secrets_in_show_and_select}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
@@ -292,7 +296,7 @@ Valores possíveis:
 * `0` — Desativado.
 * `1` — Ativado.
 
-## dns_max_consecutive_failures
+## dns_max_consecutive_failures {#dns_max_consecutive_failures}
 
 <SettingsInfoBlock type="UInt32" default_value="5" changeable_without_restart="No" />
 
@@ -302,7 +306,7 @@ Interrompe novas tentativas de atualizar o cache DNS de um hostname após esse n
 
 * [`SYSTEM DROP DNS CACHE`](/pt-BR/reference/statements/system#drop-dns-cache)
 
-## dynamic_user_defined_executable_functions_path
+## dynamic_user_defined_executable_functions_path {#dynamic_user_defined_executable_functions_path}
 
 <SettingsInfoBlock type="String" default_value="/var/lib/clickhouse/dynamic_user_defined_executable_functions/" changeable_without_restart="No" />
 
@@ -315,7 +319,7 @@ Ao reiniciar o servidor, o diretório é verificado em busca de arquivos de conf
 <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
 ```
 
-## criptografia
+## criptografia {#encryption}
 
 Configura um comando para obter uma chave a ser usada pelos [codecs de criptografia](/pt-BR/reference/statements/create/table/codec#encryption-codecs). A chave (ou as chaves) deve ser armazenada em variáveis de ambiente ou definida no arquivo de configuração.
 
@@ -397,13 +401,13 @@ Ou também pode ser definido em hexadecimal:
   Tudo o que foi mencionado acima pode ser aplicado a `aes_256_gcm_siv` (mas a chave deve ter 32 bytes de comprimento).
 </Note>
 
-## enforce_keeper_component_tracking
+## enforce_keeper_component_tracking {#enforce_keeper_component_tracking}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
 Se habilitada, toda solicitação ao ZooKeeper deve ter um nome de componente definido por meio de `Coordination::setCurrentComponent`. Lança uma exceção `LOGICAL_ERROR` se o componente não estiver definido.
 
-## error_log
+## error_log {#error_log}
 
 Ele vem desativado por padrão.
 
@@ -438,7 +442,7 @@ Para desativar a configuração `error_log`, crie o arquivo `/etc/clickhouse-ser
 
 <SystemLogParameters />
 
-## filesystem_caches_path
+## filesystem_caches_path {#filesystem_caches_path}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
 
@@ -450,7 +454,7 @@ Esta configuração define o caminho do cache.
 <filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>
 ```
 
-## google_protos_path
+## google_protos_path {#google_protos_path}
 
 <SettingsInfoBlock type="String" default_value="/usr/share/clickhouse/protos/" changeable_without_restart="No" />
 
@@ -462,15 +466,15 @@ Define um diretório que contém arquivos proto para os tipos Protobuf.
 <google_protos_path>/usr/share/clickhouse/protos/</google_protos_path>
 ```
 
-## handshake_timeout_milliseconds
+## handshake_timeout_milliseconds {#handshake_timeout_milliseconds}
 
-<SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />Tempo limite, em milissegundos, medido pelo relógio local para toda a fase de handshake TCP (Hello + Addendum). Limita por quanto tempo uma conexão não autenticada pode manter uma thread ocupada. Defina como 0 para desabilitar.
+<SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />Tempo limite, em milissegundos, medido pelo relógio local para toda a fase de handshake de uma conexão via protocolo nativo (Hello e Addendum), MySQL ou PostgreSQL, incluindo a negociação TLS. Limita por quanto tempo uma conexão não autenticada pode manter uma thread ocupada: o prazo é verificado a cada leitura, e o tempo limite de recebimento do socket é limitado a esse prazo, de modo que um cliente que não envia nada também não consegue ultrapassar o tempo disponível. Essa limitação mantém um mínimo de 100 milissegundos, de modo que um valor pequeno ultrapassa ligeiramente o tempo disponível em vez de encurtar demais as leituras. Defina como 0 para desabilitar.
 
-## hdfs.libhdfs3_conf
+## hdfs.libhdfs3_conf {#hdfs.libhdfs3_conf}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Aponta o libhdfs3 para o local correto da sua configuração.
 
-## hsts_max_age
+## hsts_max_age {#hsts_max_age}
 
 Tempo de expiração do HSTS, em segundos.
 
@@ -484,17 +488,17 @@ Tempo de expiração do HSTS, em segundos.
 <hsts_max_age>600000</hsts_max_age>
 ```
 
-## iceberg_background_schedule_pool_size
+## iceberg_background_schedule_pool_size {#iceberg_background_schedule_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10" changeable_without_restart="No" />Tamanho do pool de threads para obter de forma assíncrona os metadados mais recentes de um catálogo Iceberg remoto; o pool é compartilhado por todas as tabelas ativas.
 
-## iceberg_manifest_decode_thread_pool_queue_size
+## iceberg_manifest_decode_thread_pool_queue_size {#iceberg_manifest_decode_thread_pool_queue_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
 
 O número máximo de jobs que podem ser agendados no pool de threads para decodificar Iceberg data manifest files.
 
-## ignore_empty_sql_security_in_create_view_query
+## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
@@ -508,7 +512,7 @@ Views materializadas atualizáveis sempre recebem os valores padrão, independen
   Alterar essa configuração afeta apenas as views criadas posteriormente; as definições armazenadas das views existentes permanecem inalteradas.
 </Note>
 
-## include_from
+## include_from {#include_from}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
 
@@ -525,11 +529,11 @@ Observe que os arquivos de configuração carregados separadamente da configura�
 <include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 ```
 
-## insert_deduplication_version
+## insert_deduplication_version {#insert_deduplication_version}
 
 <SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />Mecanismo obsoleto de proteção de migração. As versões 26.7 e posteriores do ClickHouse oferecem suporte apenas ao hash unificado de desduplicação de insert (`new_unified_hash`); o servidor se recusa a iniciar se essa configuração estiver presente com qualquer outro valor (como `old_separate_hashes` ou `compatible_double_hashes`). Conclua a migração de desduplicação na versão anterior antes de fazer o upgrade executando `compatible_double_hashes` (que grava tanto os hashes legados quanto os unificados). Para tabelas replicadas, execute isso por pelo menos `replicated_deduplication_window_seconds` (uma hora por padrão); as janelas padrão retêm os hashes unificados de todos os inserts durante essa janela, o que é considerado suficiente para cobrir um ciclo de nova tentativa de insert. Para tabelas não replicadas com `non_replicated_deduplication_window` &gt; 0, a janela é baseada em contagem, e não em tempo; portanto, execute `compatible_double_hashes` por pelo menos essa quantidade de inserts antes de fazer o upgrade.
 
-## io_thread_pool_queue_size
+## io_thread_pool_queue_size {#io_thread_pool_queue_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
 
@@ -539,7 +543,7 @@ O número máximo de jobs que podem ser programados no pool de threads de E/S.
   Um valor de `0` significa sem limite.
 </Note>
 
-## keep_alive_timeout
+## keep_alive_timeout {#keep_alive_timeout}
 
 <SettingsInfoBlock type="Segundos" default_value="30" changeable_without_restart="No" />
 
@@ -551,7 +555,7 @@ Número de segundos que o ClickHouse aguarda por solicitações recebidas pelo p
 <keep_alive_timeout>30</keep_alive_timeout>
 ```
 
-## ldap_servers
+## ldap_servers {#ldap_servers}
 
 Liste aqui os servidores LDAP com seus parâmetros de conexão para:
 
@@ -618,7 +622,7 @@ Exemplo (Active Directory típico com detecção de user DN configurada para map
 </my_ad_server>
 ```
 
-## logger
+## logger {#logger}
 
 A localização e o formato das mensagens de log.
 
@@ -811,55 +815,55 @@ Os nomes das chaves podem ser alterados modificando os valores das tags dentro d
 
 As propriedades do log podem ser omitidas comentando a propriedade correspondente. Por exemplo, se você não quiser que seu log exiba `query_id`, pode comentar a tag `<query_id>`.
 
-## logger.count
+## logger.count {#logger.count}
 
 <SettingsInfoBlock type="UInt64" default_value="1" changeable_without_restart="No" />Política de rotação: número máximo de arquivos de log históricos do ClickHouse mantidos.
 
-## logger.errorlog
+## logger.errorlog {#logger.errorlog}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />O caminho do arquivo de log de erros.
 
-## logger.formatting.type
+## logger.formatting.type {#logger.formatting.type}
 
 <SettingsInfoBlock type="String" default_value="json" changeable_without_restart="No" />Formato de log para saída no console. Atualmente, apenas `<json>` é compatível.
 
-## logger.level
+## logger.level {#logger.level}
 
 <SettingsInfoBlock type="String" default_value="trace" changeable_without_restart="No" />Nível de log. Valores aceitos: `<none>` (desativa os logs), `<fatal>`, `<critical>`, `<error>`, `<warning>`, `<notice>`, `<information>`, `<debug>`, `<trace>`, `<test>`.
 
-## logger.log
+## logger.log {#logger.log}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />O caminho do arquivo de log.
 
-## logger.rotation
+## logger.rotation {#logger.rotation}
 
 <SettingsInfoBlock type="String" default_value="100M" changeable_without_restart="No" />Política de rotação: controla quando os arquivos de log são rotacionados. A rotação pode ser baseada em tamanho, tempo ou em uma combinação de ambos. Exemplos: 100M, daily, 100M,daily. Quando o arquivo de log excede o tamanho especificado ou o intervalo de tempo definido é atingido, ele é renomeado e arquivado, e um novo arquivo de log é criado.
 
-## logger.shutdown_level
+## logger.shutdown_level {#logger.shutdown_level}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />O nível de desligamento é usado para definir o nível do logger raiz durante o desligamento do servidor.
 
-## logger.size
+## logger.size {#logger.size}
 
 <SettingsInfoBlock type="String" default_value="100M" changeable_without_restart="No" />Política de rotação: tamanho máximo dos arquivos de log em bytes. Quando o tamanho do arquivo de log excede esse limite, ele é renomeado e arquivado, e um novo arquivo de log é criado.
 
-## logger.startup_level
+## logger.startup_level {#logger.startup_level}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />O nível de inicialização é usado para definir o nível do logger raiz durante a inicialização do servidor. Após a inicialização, o nível de log volta para a configuração `<level>`.
 
-## logger.stream_compress
+## logger.stream_compress {#logger.stream_compress}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Compacta as mensagens de log usando LZ4. Defina como `<1>` ou `<true>` para ativar.
 
-## logger.syslog_level
+## logger.syslog_level {#logger.syslog_level}
 
 <SettingsInfoBlock type="String" default_value="trace" changeable_without_restart="No" />Nível de log para registro no syslog.
 
-## logger.use_syslog
+## logger.use_syslog {#logger.use_syslog}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Também encaminha a saída de log ao syslog.
 
-## macros
+## macros {#macros}
 
 Substituições de parâmetros para tabelas replicadas.
 
@@ -873,11 +877,11 @@ Para mais informações, consulte a seção [Criando tabelas replicadas](/pt-BR/
 <macros incl="macros" optional="true" />
 ```
 
-## message_queue_disable_insertion
+## message_queue_disable_insertion {#message_queue_disable_insertion}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Desabilita a inserção dos motores de fila de mensagens (Kafka, RabbitMQ, NATS) nas visões materializadas anexadas
 
-## metric_log
+## metric_log {#metric_log}
 
 Ele fica desabilitado por padrão.
 
@@ -912,7 +916,7 @@ Para desativar a configuração `metric_log`, crie o arquivo `/etc/clickhouse-se
 
 <SystemLogParameters />
 
-## mmap_cache_size
+## mmap_cache_size {#mmap_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" changeable_without_restart="Yes" />
 
@@ -929,7 +933,7 @@ A quantidade de dados em arquivos mapeados pode ser monitorada nas seguintes tab
   Esta configuração pode ser modificada em tempo de execução e passará a valer imediatamente.
 </Note>
 
-## mutation_workload
+## mutation_workload {#mutation_workload}
 
 <SettingsInfoBlock type="String" default_value="default" changeable_without_restart="Yes" />
 
@@ -939,7 +943,7 @@ Usado para controlar como os recursos são utilizados e compartilhados entre mut
 
 * [Agendamento de workloads](/pt-BR/concepts/features/configuration/server-config/workload-scheduling)
 
-## named_collections_storage.type
+## named_collections_storage.type {#named_collections_storage.type}
 
 <SettingsInfoBlock type="String" default_value="local" changeable_without_restart="No" />
 
@@ -947,11 +951,11 @@ O tipo de armazenamento das named collections. Os valores possíveis são `local
 `keeper_encrypted`, `zookeeper` e `zookeeper_encrypted`.
 Configurado como `named_collections_storage.type` (`<named_collections_storage><type>` em XML).
 
-## oom_score
+## oom_score {#oom_score}
 
 <SettingsInfoBlock type="Int32" default_value="0" changeable_without_restart="No" />Em sistemas Linux, isso pode controlar o comportamento do OOM killer.
 
-## openSSL
+## openSSL {#openssl}
 
 Configuração SSL de cliente e servidor.
 
@@ -1014,131 +1018,131 @@ Chaves das configurações de servidor/cliente:
 </openSSL>
 ```
 
-## openSSL.client.caConfig
+## openSSL.client.caConfig {#openssl.client.caconfig}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Caminho para o arquivo ou diretório que contém certificados de CA confiáveis. Se apontar para um arquivo, ele deverá estar no formato PEM e poderá conter vários certificados de CA. Se apontar para um diretório, ele deverá conter um arquivo .pem por certificado de CA. Os nomes dos arquivos são buscados com base no valor de hash do nome do assunto da CA. Mais detalhes podem ser encontrados na página de manual de [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/). Os certificados de CA são recarregados sem reinicialização quando o arquivo muda ou ao executar `SYSTEM RELOAD CONFIG`; novas conexões são verificadas com os certificados recarregados.
 
-## openSSL.client.cacheSessions
+## openSSL.client.cacheSessions {#openssl.client.cachesessions}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Ativa ou desativa o cache de sessões. Deve ser usado em conjunto com `<sessionIdContext>`. Valores aceitos: `<true>`, `<false>`.
 
-## openSSL.client.certificateFile
+## openSSL.client.certificateFile {#openssl.client.certificatefile}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Caminho para o arquivo de certificado de cliente/servidor no formato PEM. Você pode omiti-lo se `<privateKeyFile>` contiver o certificado.
 
-## openSSL.client.cipherList
+## openSSL.client.cipherList {#openssl.client.cipherlist}
 
 <SettingsInfoBlock type="String" default_value="ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" changeable_without_restart="No" />Cifras OpenSSL suportadas.
 
-## openSSL.client.disableProtocols
+## openSSL.client.disableProtocols {#openssl.client.disableprotocols}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Protocolos que não podem ser usados.
 
-## openSSL.client.extendedVerification
+## openSSL.client.extendedVerification {#openssl.client.extendedverification}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Se habilitado, verifica se o CN ou SAN do certificado corresponde ao hostname do peer.
 
-## openSSL.client.fips
+## openSSL.client.fips {#openssl.client.fips}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Ativa o modo FIPS do OpenSSL. Compatível se a versão do OpenSSL da biblioteca oferecer suporte a FIPS.
 
-## openSSL.client.invalidCertificateHandler.name
+## openSSL.client.invalidCertificateHandler.name {#openssl.client.invalidcertificatehandler.name}
 
 <SettingsInfoBlock type="String" default_value="RejectCertificateHandler" changeable_without_restart="No" />Classe (uma subclasse de CertificateHandler) usada para verificar certificados inválidos. Por exemplo: `<<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>>`.
 
-## openSSL.client.loadDefaultCAFile
+## openSSL.client.loadDefaultCAFile {#openssl.client.loaddefaultcafile}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Determina se os certificados de CA padrão serão usados. O ClickHouse os procura no arquivo `</etc/ssl/cert.pem>` (ou no diretório `</etc/ssl/certs>`), no arquivo (ou diretório) especificado pela variável de ambiente `<SSL_CERT_FILE>` (ou `<SSL_CERT_DIR>`) e em outros locais conhecidos das diversas distribuições. Se nenhum certificado de CA for encontrado no sistema de arquivos, nenhum `caConfig` explícito estiver configurado e o binary tiver sido compilado com certificados de CA embutidos (o padrão, controlado pela build option `ENABLE_EMBEDDED_CA_CERTIFICATES`), os certificados embutidos são usados em seu lugar, de modo que o TLS funcione mesmo em um ambiente mínimo, sem nenhum arquivo, como em um contêiner construído &quot;from scratch&quot;. Em compilações sem certificados de CA embutidos, um erro é lançado nesse caso.
 
-## openSSL.client.preferServerCiphers
+## openSSL.client.preferServerCiphers {#openssl.client.preferserverciphers}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Cifras de servidor preferidas pelo cliente.
 
-## openSSL.client.privateKeyFile
+## openSSL.client.privateKeyFile {#openssl.client.privatekeyfile}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Caminho para o arquivo que contém a chave privada do certificado PEM. O arquivo pode conter a chave e o certificado ao mesmo tempo.
 
-## openSSL.client.privateKeyPassphraseHandler.name
+## openSSL.client.privateKeyPassphraseHandler.name {#openssl.client.privatekeypassphrasehandler.name}
 
 <SettingsInfoBlock type="String" default_value="KeyConsoleHandler" changeable_without_restart="No" />Classe (subclasse de PrivateKeyPassphraseHandler) que solicita a passphrase para desbloquear a chave privada. Por exemplo: `<<privateKeyPassphraseHandler>>`, `<<name>KeyFileHandler</name>>`, `<<options><password>test</password></options>>`, `<</privateKeyPassphraseHandler>>`
 
-## openSSL.client.verificationDepth
+## openSSL.client.verificationDepth {#openssl.client.verificationdepth}
 
 <SettingsInfoBlock type="UInt64" default_value="9" changeable_without_restart="No" />O comprimento máximo da cadeia de verificação. A verificação falhará se o comprimento da cadeia de certificados exceder o valor configurado.
 
-## openSSL.client.verificationMode
+## openSSL.client.verificationMode {#openssl.client.verificationmode}
 
 <SettingsInfoBlock type="String" default_value="relaxed" changeable_without_restart="No" />Método de verificação dos certificados do nó. Os detalhes estão na descrição da classe [Context](https://github.com/ClickHouse/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). Possíveis valores: `<none>`, `<relaxed>`, `<strict>`, `<once>`.
 
-## openSSL.server.caConfig
+## openSSL.server.caConfig {#openssl.server.caconfig}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Caminho para o arquivo ou diretório que contém certificados de CA confiáveis. Se apontar para um arquivo, ele deve estar no formato PEM e pode conter vários certificados de CA. Se apontar para um diretório, ele deve conter um arquivo .pem por certificado de CA. Os nomes dos arquivos são pesquisados pelo valor de hash do nome do subject da CA. Mais detalhes podem ser encontrados na página de manual de [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/). Os certificados de CA são recarregados sem reinicialização quando o arquivo muda ou ao executar `SYSTEM RELOAD CONFIG`; novas conexões são verificadas com os certificados recarregados.
 
-## openSSL.server.cacheSessions
+## openSSL.server.cacheSessions {#openssl.server.cachesessions}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Ativa ou desativa o cache de sessões. Deve ser usado em conjunto com `<sessionIdContext>`. Valores aceitos: `<true>`, `<false>`.
 
-## openSSL.server.certificateFile
+## openSSL.server.certificateFile {#openssl.server.certificatefile}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Caminho para o arquivo de certificado do cliente/servidor em formato PEM. Você pode omiti-lo se `<privateKeyFile>` contiver o certificado.
 
-## openSSL.server.cipherList
+## openSSL.server.cipherList {#openssl.server.cipherlist}
 
 <SettingsInfoBlock type="String" default_value="ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" changeable_without_restart="No" />Cifras OpenSSL suportadas.
 
-## openSSL.server.disableProtocols
+## openSSL.server.disableProtocols {#openssl.server.disableprotocols}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Protocolos que não podem ser usados.
 
-## openSSL.server.extendedVerification
+## openSSL.server.extendedVerification {#openssl.server.extendedverification}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Quando habilitada, verifica se o CN ou SAN do certificado corresponde ao hostname do peer.
 
-## openSSL.server.fips
+## openSSL.server.fips {#openssl.server.fips}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Ativa o modo FIPS do OpenSSL. Compatível se a versão do OpenSSL da biblioteca oferecer suporte ao FIPS.
 
-## openSSL.server.invalidCertificateHandler.name
+## openSSL.server.invalidCertificateHandler.name {#openssl.server.invalidcertificatehandler.name}
 
 <SettingsInfoBlock type="String" default_value="RejectCertificateHandler" changeable_without_restart="No" />Classe (uma subclasse de CertificateHandler) usada para verificar certificados inválidos. Por exemplo: `<<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>>`.
 
-## openSSL.server.loadDefaultCAFile
+## openSSL.server.loadDefaultCAFile {#openssl.server.loaddefaultcafile}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Determina se os certificados de CA padrão serão usados. O ClickHouse os procura no arquivo `</etc/ssl/cert.pem>` (ou no diretório `</etc/ssl/certs>`), no arquivo (ou diretório) especificado pela variável de ambiente `<SSL_CERT_FILE>` (ou `<SSL_CERT_DIR>`) e em outros locais conhecidos das diversas distribuições. Se nenhum certificado de CA for encontrado no sistema de arquivos, nenhum `caConfig` explícito estiver configurado e o binary tiver sido compilado com certificados de CA embutidos (o padrão, controlado pela build option `ENABLE_EMBEDDED_CA_CERTIFICATES`), os certificados embutidos serão usados no lugar, de modo que o TLS funcione mesmo em um ambiente mínimo, sem nenhum arquivo, como em um contêiner criado &quot;from scratch&quot;. Em compilações sem certificados de CA embutidos, nesse caso um erro é lançado.
 
-## openSSL.server.preferServerCiphers
+## openSSL.server.preferServerCiphers {#openssl.server.preferserverciphers}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Cifras de servidor preferidas pelo cliente.
 
-## openSSL.server.privateKeyFile
+## openSSL.server.privateKeyFile {#openssl.server.privatekeyfile}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Caminho para o arquivo que contém a chave privada do certificado PEM. O arquivo pode conter a chave e o certificado ao mesmo tempo.
 
-## openSSL.server.privateKeyPassphraseHandler.name
+## openSSL.server.privateKeyPassphraseHandler.name {#openssl.server.privatekeypassphrasehandler.name}
 
 <SettingsInfoBlock type="String" default_value="KeyConsoleHandler" changeable_without_restart="No" />Classe (subclasse de PrivateKeyPassphraseHandler) que solicita a passphrase para acesso à chave privada. Por exemplo: `<<privateKeyPassphraseHandler>>`, `<<name>KeyFileHandler</name>>`, `<<options><password>test</password></options>>`, `<</privateKeyPassphraseHandler>>`
 
-## openSSL.server.sessionCacheSize
+## openSSL.server.sessionCacheSize {#openssl.server.sessioncachesize}
 
 <SettingsInfoBlock type="UInt64" default_value="20480" changeable_without_restart="No" />O número máximo de sessões que o servidor mantém em cache. Um valor de 0 significa sessões ilimitadas.
 
-## openSSL.server.sessionIdContext
+## openSSL.server.sessionIdContext {#openssl.server.sessionidcontext}
 
 <SettingsInfoBlock type="String" default_value="application.name" changeable_without_restart="No" />Um conjunto único de caracteres aleatórios que o servidor anexa a cada identificador gerado. O tamanho da string não deve exceder `<SSL_MAX_SSL_SESSION_ID_LENGTH>`. Este parâmetro é sempre recomendado, pois ajuda a evitar problemas tanto se o servidor armazena a sessão em cache quanto se o cliente solicitou o uso de cache.
 
-## openSSL.server.sessionTimeout
+## openSSL.server.sessionTimeout {#openssl.server.sessiontimeout}
 
 <SettingsInfoBlock type="UInt64" default_value="2" changeable_without_restart="No" />Tempo de cache da sessão no servidor, em horas.
 
-## openSSL.server.verificationDepth
+## openSSL.server.verificationDepth {#openssl.server.verificationdepth}
 
 <SettingsInfoBlock type="UInt64" default_value="9" changeable_without_restart="No" />O comprimento máximo da cadeia de verificação. A verificação falhará se o comprimento da cadeia de certificados exceder o valor configurado.
 
-## openSSL.server.verificationMode
+## openSSL.server.verificationMode {#openssl.server.verificationmode}
 
 <SettingsInfoBlock type="String" default_value="relaxed" changeable_without_restart="No" />Método de verificação dos certificados do nó. Os detalhes estão na descrição da classe [Context](https://github.com/ClickHouse/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). Valores possíveis: `<none>`, `<relaxed>`, `<strict>`, `<once>`.
 
-## opentelemetry_span_log
+## opentelemetry_span_log {#opentelemetry_span_log}
 
 Configurações da tabela de sistema [`opentelemetry_span_log`](/pt-BR/reference/system-tables/opentelemetry_span_log).
 
@@ -1163,7 +1167,7 @@ Exemplo:
 </opentelemetry_span_log>
 ```
 
-## part_log
+## part_log {#part_log}
 
 Registro de eventos associados ao [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree), como adição ou mesclagem de dados. Você pode usar o log para simular algoritmos de mesclagem e comparar suas características. Também é possível visualizar o processo de mesclagem.
 
@@ -1186,7 +1190,7 @@ As consultas são registradas na tabela [system.part&#95;log](/pt-BR/reference/s
 </part_log>
 ```
 
-## path
+## path {#path}
 
 <SettingsInfoBlock type="String" default_value="/var/lib/clickhouse/" changeable_without_restart="No" />
 
@@ -1202,13 +1206,40 @@ O caminho para o diretório que contém os dados.
 <path>/var/lib/clickhouse/</path>
 ```
 
-## per_cpu_untracked_memory_thread_buffer
+## per_cpu_untracked_memory_thread_buffer {#per_cpu_untracked_memory_thread_buffer}
 
 <SettingsInfoBlock type="UInt64" default_value="32768" changeable_without_restart="Yes" />
 
 Quantidade de memória não rastreada, em bytes, que cada thread pode manter sem acessar o orçamento compartilhado por CPU. Isso amortiza o custo da contabilidade compartilhada por CPU para pequenas alocações e corresponde à folga adicionada a `max_per_cpu_untracked_memory * number_of_cpus` no pior caso. Um valor de `0` remove essa folga: cada alocação atualiza o contador compartilhado por CPU (mais preciso, mas com maior contenção). Somente no Linux.
 
-## point_in_polygon_cache_size
+## placement {#placement}
+
+A zona de disponibilidade e a região da nuvem em que o servidor é executado. A zona de disponibilidade é usada pelo cliente ZooKeeper para dar preferência a hosts na mesma zona (`prefer_local_availability_zone` na seção [zookeeper](/pt-BR/reference/settings/server-settings/settings/zookeeper#zookeeper)) e pelo ClickHouse Keeper, que a publica no nó `/keeper/availability_zone`.
+
+Se a seção `placement` não estiver presente, a zona de disponibilidade e a região ficam vazias.
+
+As seguintes configurações estão disponíveis:
+
+| Configuração                  | Descrição                                                                                                                                                                                                           | valor default                        |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `use_imds`                    | Obtém a zona de disponibilidade a partir do serviço de metadados de instância do provedor de nuvem: primeiro AWS, depois GCP. Quando habilitado, todas as outras configurações são ignoradas e a região fica vazia. | `false`                              |
+| `availability_zone`           | A zona de disponibilidade.                                                                                                                                                                                          | Vazio                                |
+| `availability_zone_from_file` | O arquivo de onde a zona de disponibilidade é lida quando `availability_zone` está vazio. Se o arquivo não existir, a zona de disponibilidade fica vazia.                                                           | `/run/instance-metadata/node-zone`   |
+| `region`                      | A região.                                                                                                                                                                                                           | Vazio                                |
+| `region_from_file`            | O arquivo de onde a região é lida quando `region` está vazio. Se o arquivo não existir, a região fica vazia.                                                                                                        | `/run/instance-metadata/node-region` |
+
+A configuração de `placement` é lida uma única vez, na inicialização do servidor.
+
+**Exemplo**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
+```
+
+## point_in_polygon_cache_size {#point_in_polygon_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="Sim" />
 
@@ -1221,7 +1252,7 @@ O cache também pode ser limpo manualmente, sem alterar esse limite, com a consu
   Esta configuração pode ser modificada em tempo de execução e terá efeito imediatamente.
 </Note>
 
-## prefixes_deserialization_thread_pool_thread_pool_queue_size
+## prefixes_deserialization_thread_pool_thread_pool_queue_size {#prefixes_deserialization_thread_pool_thread_pool_queue_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
 
@@ -1231,13 +1262,13 @@ O número máximo de tarefas que podem ser agendadas no pool de threads de desse
   Um valor de `0` significa ilimitado.
 </Note>
 
-## prepare_system_log_tables_on_startup
+## prepare_system_log_tables_on_startup {#prepare_system_log_tables_on_startup}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
 Se true, o ClickHouse cria todas as tabelas `system.*_log` configuradas antes da inicialização. Isso pode ser útil se alguns scripts de inicialização dependerem dessas tabelas.
 
-## process_query_plan_packet
+## process_query_plan_packet {#process_query_plan_packet}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
@@ -1250,7 +1281,7 @@ Esse recurso fica desabilitado por padrão para evitar possíveis problemas de s
 <process_query_plan_packet>true</process_query_plan_packet>
 ```
 
-## processors_profile_log
+## processors_profile_log {#processors_profile_log}
 
 Configurações para a tabela de sistema [`processors_profile_log`](/pt-BR/reference/system-tables/processors_profile_log).
 
@@ -1271,7 +1302,7 @@ As configurações padrão são:
 </processors_profile_log>
 ```
 
-## prometheus
+## prometheus {#prometheus}
 
 Expondo dados de métricas para coleta pelo [Prometheus](https://prometheus.io).
 
@@ -1313,11 +1344,11 @@ Verifique (substitua `127.0.0.1` pelo endereço IP ou hostname do seu servidor C
 curl 127.0.0.1:9363/metrics
 ```
 
-## prometheus.keeper_metrics_only
+## prometheus.keeper_metrics_only {#prometheus.keeper_metrics_only}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Expõe as métricas relacionadas ao Keeper
 
-## proxy
+## proxy {#proxy}
 
 Defina servidores proxy para solicitações HTTP e HTTPS, atualmente com suporte em armazenamento S3, funções de tabela do S3 e funções de URL.
 
@@ -1455,7 +1486,7 @@ O ClickHouse verificará o tipo de resolvedor de maior prioridade para o protoco
 verificará o próximo tipo de resolvedor de maior prioridade, até chegar ao resolvedor de ambiente.
 Isso também permite usar uma combinação de tipos de resolvedor.
 
-## remap_executable
+## remap_executable {#remap_executable}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
@@ -1471,7 +1502,7 @@ Configuração que realoca memória de código de máquina (&quot;text&quot;) us
 <remap_executable>false</remap_executable>
 ```
 
-## replica_group_name
+## replica_group_name {#replica_group_name}
 
 Nome do grupo de réplicas do banco de dados Replicated.
 
@@ -1486,7 +1517,7 @@ As consultas DDL aguardarão apenas as réplicas do mesmo grupo.
 <replica_group_name>backups</replica_group_name>
 ```
 
-## replicated_merge_tree
+## replicated_merge_tree {#replicated_merge_tree}
 
 Ajuste fino para tabelas em [ReplicatedMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree). Essa configuração tem prioridade mais alta.
 
@@ -1500,11 +1531,45 @@ Para mais informações, consulte o arquivo de cabeçalho MergeTreeSettings.h.
 </replicated_merge_tree>
 ```
 
-## restore_threads
+## restore_threads {#restore_threads}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16" changeable_without_restart="No" />O número máximo de threads para executar requisições RESTORE.
 
-## send_crash_reports
+## seccomp {#seccomp}
+
+<SettingsInfoBlock type="SeccompMode" default_value="log" changeable_without_restart="No" />
+
+O que o kernel do Linux faz quando o servidor executa uma chamada de sistema que não deveria executar.
+
+Na inicialização, o servidor instala em si mesmo um filtro [`seccomp`](https://man7.org/linux/man-pages/man2/seccomp.2.html) que permite apenas as chamadas de sistema que o ClickHouse utiliza. Assim, um atacante que consiga executar código dentro do processo do servidor fica sem acesso às interfaces do kernel que transformariam a execução de código em algo pior: carregar módulos do kernel, reinicializar, montar sistemas de arquivos, `chroot`, alterar a identidade do processo, criar espaços de nomes, `ptrace` e leitura da memória de outro processo, eBPF, o keyring do kernel, `userfaultfd` e `vmsplice`, identificadores de arquivo, `fanotify`, controle de swap e de cotas, ajuste do relógio do sistema ou do nome do host e filas de mensagens System V e POSIX. As duas requisições de `ioctl` que permitem a um processo assumir o controle do terminal que ele mantém, `TIOCSTI` e `TIOCLINUX`, também são recusadas. As chamadas de sistema do `io_uring` são permitidas, pois `local_filesystem_read_method = io_uring` as utiliza, e o filtro não enxerga as operações submetidas por meio de um ring - portanto, as operações que o `io_uring` implementa, como as de atributos estendidos, continuam acessíveis por esse caminho, mesmo que suas chamadas de sistema sejam recusadas. Em todos os modos, exceto `disabled`, o servidor também define `PR_SET_NO_NEW_PRIVS`, de modo que nem ele nem qualquer coisa que ele inicie possa obter privilégios executando um programa setuid.
+
+A criação de espaços de nomes é recusada em todas as suas formas: `unshare` e `setns` não são permitidos de forma alguma, um `clone` que solicite um espaço de nomes entre suas flags é recusado, e `clone3` - cujos argumentos ficam em uma estrutura que um filtro não consegue ler, o que impede distinguir um espaço de nomes de uma thread - é recusado por completo, com `ENOSYS`. É assim que uma libc descobre que precisa usar `clone` no lugar dele, e por isso a criação de threads e processos continua funcionando; `docker` e `systemd` recusam `clone3` da mesma forma em suas próprias políticas.
+
+Valores possíveis:
+
+* `trap` - o kernel envia `SIGSYS` para a thread infratora. O ClickHouse o trata como qualquer outro sinal fatal: o número da chamada de sistema e um stack trace são gravados no log, e o servidor é encerrado.
+* `kill` - o kernel encerra o processo inteiro de uma só vez. Nada é gravado no log, pois nenhum manipulador de sinal chega a ser executado.
+* `errno` - a chamada de sistema falha com `EPERM` e o servidor continua em execução. O código que fez a chamada recebe um erro que provavelmente não espera.
+* `log` - a chamada de sistema é permitida e apenas registrada. Nenhuma chamada de sistema é recusada, portanto este modo não impõe política alguma; use-o para validar a política com a sua carga de trabalho antes de ativá-la. `PR_SET_NO_NEW_PRIVS` continua sendo definido neste modo, pois o kernel o exige antes de aceitar qualquer filtro; assim, nem mesmo aqui um programa setuid executado pelo servidor consegue elevar privilégios.
+* `disabled` - nenhum filtro é instalado.
+
+O padrão é `log`, para que a política não imponha nada até ser validada com uma carga de trabalho real: execute o servidor com ela, monitore o log de auditoria do kernel em busca de chamadas de sistema não cobertas pela política e só então altere a configuração para `trap`, `kill` ou `errno`.
+
+Quando o kernel não consegue instalar um filtro com a ação `log` - por ser anterior ao Linux 4.14, por ter sido compilado sem `CONFIG_SECCOMP_FILTER` ou porque um sandbox externo, como um runtime de contêiner, recusa a chamada de sistema `seccomp` - o modo `log` registra um aviso com o motivo e o servidor é executado sem filtro, já que o filtro não teria nada a impor. `PR_SET_NO_NEW_PRIVS` é definido mesmo assim. Os modos de imposição não se comportam assim: se o filtro não puder ser instalado, o servidor não inicia.
+
+Em todos os modos, exceto `disabled`, o kernel também registra a chamada de sistema infratora em seu log de auditoria, identificando o processo e o número da chamada de sistema - essa é a única evidência que resta no modo `kill`, em que o servidor não chega a gravar em seu próprio log.
+
+Um filtro não pode ser removido nem flexibilizado depois de instalado e é herdado tanto por `fork` quanto por `execve`; portanto, ele também se aplica a dicionários executáveis e a funções definidas pelo usuário executáveis, às pontes de biblioteca e ODBC e ao canário de OOM. Um script executado por qualquer um deles está sujeito à mesma política, o que vale ter em mente caso ele faça algo incomum.
+
+A política só está implementada para x86-64 e AArch64, pois consiste em uma lista de números de chamadas de sistema específicos de cada arquitetura. Em qualquer outra arquitetura, o servidor registra um aviso na inicialização e é executado sem filtro; ainda assim, `PR_SET_NO_NEW_PRIVS`, que não depende da arquitetura, continua sendo definido em todos os modos, exceto `disabled`.
+
+**Exemplo**
+
+```xml
+<seccomp>log</seccomp>
+```
+
+## send_crash_reports {#send_crash_reports}
 
 Configurações para o envio de relatórios de falha para a equipe de desenvolvimento do núcleo do ClickHouse.
 
@@ -1526,13 +1591,13 @@ Chaves:
 </send_crash_reports>
 ```
 
-## series_keeper_path
+## series_keeper_path {#series_keeper_path}
 
 <SettingsInfoBlock type="String" default_value="/clickhouse/series" changeable_without_restart="No" />
 
 Caminho no Keeper com números autoincrementais, gerados pela função `generateSerialID`. Cada série será um nó nesse caminho.
 
-## ssh_server
+## ssh_server {#ssh_server}
 
 A parte pública da chave do host será gravada no arquivo known&#95;hosts
 no cliente SSH na primeira conexão.
@@ -1550,7 +1615,7 @@ Exemplo:
 </ssh_server>
 ```
 
-## table_engines_require_grant
+## table_engines_require_grant {#table_engines_require_grant}
 
 <CloudNotSupportedBadge />
 
@@ -1562,7 +1627,7 @@ Se definido como true, os usuários precisam de um grant para criar uma tabela c
   Por padrão, por compatibilidade retroativa, a criação de uma tabela com um motor de tabela específico ignora o grant; no entanto, você pode alterar esse comportamento definindo esta opção como true.
 </Note>
 
-## tcp_ssh_port
+## tcp_ssh_port {#tcp_ssh_port}
 
 Porta do servidor SSH que permite ao usuário se conectar e executar consultas interativamente usando o cliente embutido via PTY.
 
@@ -1572,7 +1637,7 @@ Exemplo:
 <tcp_ssh_port>9022</tcp_ssh_port>
 ```
 
-## text_log
+## text_log {#text_log}
 
 Configurações da [tabela de sistema text&#95;log](/pt-BR/reference/system-tables/text_log) para registrar mensagens de texto.
 
@@ -1603,7 +1668,7 @@ Além disso:
 </clickhouse>
 ```
 
-## thread_pool_queue_size
+## thread_pool_queue_size {#thread_pool_queue_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />
 
@@ -1619,7 +1684,7 @@ O número máximo de jobs que podem ser agendados no Global Thread pool. Aumenta
 <thread_pool_queue_size>12000</thread_pool_queue_size>
 ```
 
-## throw_on_unknown_workload
+## throw_on_unknown_workload {#throw_on_unknown_workload}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />
 
@@ -1638,11 +1703,11 @@ Define o comportamento ao acessar um WORKLOAD desconhecido com a configuração 
 
 * [Agendamento de cargas de trabalho](/pt-BR/concepts/features/configuration/server-config/workload-scheduling)
 
-## timezone
+## timezone {#timezone}
 
 O fuso horário do servidor.
 
-Especificado como um identificador IANA para o fuso horário UTC ou uma localização geográfica (por exemplo, Africa/Abidjan).
+Especificado como um nome listado em `system.time_zones` — o [IANA Time Zone Database](https://www.iana.org/time-zones) que acompanha o servidor, por exemplo `Africa/Abidjan` — ou como um deslocamento fixo em relação ao UTC, no formato `Fixed/UTC±HH:MM:SS`, por exemplo `Fixed/UTC+05:30:00`. Nomes que existem apenas no banco de dados de fusos horários do sistema operacional são rejeitados, pois o ClickHouse inclui sua própria cópia desse banco de dados para que os resultados não dependam do host.
 
 O fuso horário é necessário para conversões entre os formatos String e DateTime quando campos DateTime são exibidos em formato de texto (na tela ou em um arquivo) e ao obter um DateTime a partir de uma string. Além disso, o fuso horário é usado em funções que trabalham com data e hora caso não tenham recebido o fuso horário nos parâmetros de entrada.
 
@@ -1656,7 +1721,7 @@ O fuso horário é necessário para conversões entre os formatos String e DateT
 
 * [session&#95;timezone](/pt-BR/reference/settings/session-settings/other#session_timezone)
 
-## trace_log
+## trace_log {#trace_log}
 
 Configurações para a operação da tabela de sistema [trace&#95;log](/pt-BR/reference/system-tables/trace_log).
 
@@ -1678,7 +1743,7 @@ O arquivo de configuração padrão do servidor `config.xml` contém a seguinte 
 </trace_log>
 ```
 
-## url_scheme_mappers
+## url_scheme_mappers {#url_scheme_mappers}
 
 Configuração para converter prefixos de URL abreviados ou simbólicos em URLs completas.
 
@@ -1698,7 +1763,7 @@ Exemplo:
 </url_scheme_mappers>
 ```
 
-## validate_tcp_client_information
+## validate_tcp_client_information {#validate_tcp_client_information}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Determina se a validação das informações do cliente está habilitada quando um pacote de consulta é recebido.
 
@@ -1708,7 +1773,7 @@ Por padrão, é `false`:
 <validate_tcp_client_information>false</validate_tcp_client_information>
 ```
 
-## wait_dictionaries_load_at_startup
+## wait_dictionaries_load_at_startup {#wait_dictionaries_load_at_startup}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
@@ -1730,11 +1795,11 @@ até que todos os dicionários concluam o carregamento (com sucesso ou não) ant
 <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
 ```
 
-## webassembly_udf_engine
+## webassembly_udf_engine {#webassembly_udf_engine}
 
 <SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />O motor usado para executar UDFs em WebAssembly. O único valor compatível é &#39;wasmtime&#39;.
 
-## webterminal_allowed_origins
+## webterminal_allowed_origins {#webterminal_allowed_origins}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Lista separada por vírgulas de origens completas (esquema + host + porta opcional) permitidas para abrir sessões WebSocket de `/webterminal`. Quando vazia, a política de mesma origem é aplicada de forma estrita (Origin deve corresponder ao esquema, host e porta da solicitação). Defina isso para implantações atrás de um reverse proxy com terminação TLS em que `request.isSecure()` é `false`, mesmo que o navegador use `https`. Exemplo: `https://example.com,https://app.example.com:8443`.
 

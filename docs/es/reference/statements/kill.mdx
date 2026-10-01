@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 Hay dos tipos de sentencias KILL: una para finalizar una consulta y otra para finalizar una mutación
 
-<div id="kill-query">
-  ## KILL QUERY
-</div>
+## KILL QUERY {#kill-query}
 
 ```sql
 KILL QUERY [ON CLUSTER cluster]
@@ -59,10 +57,10 @@ SELECT
 Cancele la consulta:
 
 ```sql
--- Termina forzosamente todas las consultas con el query_id especificado:
+-- Forcibly terminates all queries with the specified query_id:
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
 
--- Termina de forma síncrona todas las consultas ejecutadas por 'username':
+-- Synchronously terminates all queries run by 'username':
 KILL QUERY WHERE user='username' SYNC
 ```
 
@@ -71,6 +69,12 @@ KILL QUERY WHERE user='username' SYNC
 </Tip>
 
 Los usuarios de solo lectura solo pueden detener sus propias consultas.
+
+Un usuario al que no se le ha concedido `SELECT` sobre `system.processes` aún puede cancelar su propia consulta especificando su identificador:
+`KILL QUERY WHERE query_id = '<id>'`. Para un usuario que no tiene ni ese permiso ni `KILL QUERY`, un id que
+no se esté ejecutando con su identidad no cancela nada y no devuelve filas, en lugar de notificar un error; un usuario que tiene
+`KILL QUERY` recibe el error habitual para un id que no le pertenece. Cualquier otra condición `WHERE`, así como
+`ON CLUSTER`, siguen requiriendo los permisos descritos anteriormente.
 
 De forma predeterminada, se usa la versión asíncrona de las consultas (`ASYNC`), que no espera la confirmación de que las consultas se hayan detenido.
 
@@ -83,9 +87,7 @@ La respuesta contiene la columna `kill_status`, que puede tomar los siguientes v
 
 Una consulta de prueba (`TEST`) solo comprueba los permisos del usuario y muestra una lista de las consultas que se van a detener.
 
-<div id="kill-mutation">
-  ## KILL MUTATION
-</div>
+## KILL MUTATION {#kill-mutation}
 
 La presencia de mutaciones de larga duración o incompletas suele indicar que un servicio de ClickHouse funciona mal. La naturaleza asíncrona de las mutaciones puede hacer que consuman todos los recursos disponibles del sistema. Puede que necesite hacer una de estas dos cosas:
 

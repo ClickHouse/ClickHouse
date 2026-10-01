@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 提供用于访问存储在 Amazon S3、Azure、HDFS 或本地的 Apache [Paimon](https://paimon.apache.org/) 表的只读类表接口。
 
-<div id="syntax">
-  ## 语法
-</div>
+## 语法 {#syntax}
 
 ```sql
 paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
@@ -30,24 +28,24 @@ paimonHDFS(path_to_table, [,format] [,compression_method])
 paimonLocal(path_to_table, [,format] [,compression_method])
 ```
 
-<div id="arguments">
-  ## 参数
-</div>
+## 参数 {#arguments}
 
 这些参数的说明分别与表函数 `s3`、`azureBlobStorage`、`HDFS` 和 `file` 中对应参数的说明一致。
 `format` 表示 Paimon 表中数据文件的格式。
 
 对于 `paimonS3`，可使用可选参数 `extra_credentials` 传递 `role_arn`，以便在 ClickHouse Cloud 中实现基于角色的访问。有关配置步骤，请参见 [安全访问 S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。
 
-<div id="returned-value">
-  ### 返回值
-</div>
+### 返回值 {#returned-value}
 
 一个具有指定结构的表，用于读取指定 Paimon 表中的数据。
 
-<div id="defining-a-named-collection">
-  ## 定义命名集合
-</div>
+## 限制 {#limitations}
+
+尚未实现读取时合并，因此**无法读取主键表**：读取器会直接返回
+快照中所有数据文件的内容，其中仍包含已被后续 upsert 操作覆盖的旧行版本。因此，读取 schema
+中声明了 `primary-key` 的表会引发异常。
+
+## 定义命名集合 {#defining-a-named-collection}
 
 下面是一个用于存储 URL 和凭据的命名集合配置示例：
 
@@ -70,15 +68,11 @@ SELECT * FROM paimonS3(paimon_conf, filename = 'test_table')
 DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 ```
 
-<div id="aliases">
-  ## 别名
-</div>
+## 别名 {#aliases}
 
 表函数 `paimon` 现为 `paimonS3` 的别名。
 
-<div id="virtual-columns">
-  ## 虚拟列
-</div>
+## 虚拟列 {#virtual-columns}
 
 * `_path` — 文件路径。类型：`LowCardinality(String)`。
 * `_file` — 文件名。类型：`LowCardinality(String)`。
@@ -86,13 +80,11 @@ DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 * `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
 * `_etag` — 文件的 ETag。类型：`LowCardinality(String)`。如果 ETag 未知，则值为 `NULL`。
 
-<div id="data-types-supported">
-  ## 支持的数据类型
-</div>
+## 支持的数据类型 {#data-types-supported}
 
 | Paimon 数据类型                       | ClickHouse 数据类型           |
 | --------------------------------- | ------------------------- |
-| BOOLEAN                           | Int8                      |
+| BOOLEAN                           | Bool                      |
 | TINYINT                           | Int8                      |
 | SMALLINT                          | Int16                     |
 | INTEGER                           | Int32                     |
@@ -110,9 +102,7 @@ DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 | ARRAY                             | Array                     |
 | MAP                               | Map                       |
 
-<div id="partition-supported">
-  ## 支持的分区键
-</div>
+## 支持的分区键 {#partition-supported}
 
 Paimon 分区键支持的数据类型：
 
@@ -131,9 +121,7 @@ Paimon 分区键支持的数据类型：
 * `FLOAT`
 * `DOUBLE`
 
-<div id="see-also">
-  ## 另见
-</div>
+## 另见 {#see-also}
 
 * [Paimon cluster 表函数](/zh/reference/functions/table-functions/paimonCluster)
 

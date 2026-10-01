@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 Il existe deux types d’instructions KILL : l’une pour interrompre une requête et l’autre pour interrompre une mutation
 
-<div id="kill-query">
-  ## KILL QUERY
-</div>
+## KILL QUERY {#kill-query}
 
 ```sql
 KILL QUERY [ON CLUSTER cluster]
@@ -72,6 +70,12 @@ KILL QUERY WHERE user='username' SYNC
 
 Les utilisateurs en lecture seule ne peuvent arrêter que leurs propres requêtes.
 
+Un utilisateur qui ne dispose pas du privilège `SELECT` sur `system.processes` peut néanmoins annuler sa propre requête en indiquant son identifiant :
+`KILL QUERY WHERE query_id = '<id>'`. Pour un utilisateur qui ne dispose ni de ce privilège ni de `KILL QUERY`, un identifiant correspondant à une requête
+qui ne s’exécute pas sous son compte n’annule aucune requête et ne renvoie aucune ligne, sans signaler d’erreur ; un utilisateur qui dispose de
+`KILL QUERY` reçoit l’erreur habituelle pour un identifiant qui ne correspond pas à sa propre requête. Toute autre condition `WHERE`, ainsi que
+`ON CLUSTER`, nécessitent toujours les privilèges décrits ci-dessus.
+
 Par défaut, la version asynchrone des requêtes (`ASYNC`) est utilisée et n’attend pas la confirmation de leur arrêt.
 
 La version synchrone (`SYNC`) attend l’arrêt de toutes les requêtes et affiche des informations sur chaque processus à mesure qu’il s’arrête.
@@ -83,9 +87,7 @@ La réponse contient la colonne `kill_status`, qui peut prendre les valeurs suiv
 
 Une requête de test (`TEST`) vérifie uniquement les droits de l’utilisateur et affiche la liste des requêtes à arrêter.
 
-<div id="kill-mutation">
-  ## KILL MUTATION
-</div>
+## KILL MUTATION {#kill-mutation}
 
 La présence de mutations longues ou de mutations incomplètes indique souvent qu’un service ClickHouse fonctionne mal. La nature asynchrone des mutations peut les amener à consommer toutes les ressources disponibles du système. Vous devrez peut-être soit :
 

@@ -15,9 +15,7 @@ Cette page répertorie toutes les options configurables de `clickhouse-go` v2.x.
   Les options ajoutées dans `clickhouse-go` v2.35.0 ou une version ultérieure sont indiquées par *(Depuis vX.Y.Z)* à côté de leur description. Les options sans balise « Depuis » sont disponibles depuis la v2.0 et sont présentes dans toutes les versions prises en charge.
 </Info>
 
-<div id="how-options-are-set">
-  ## Définition des options
-</div>
+## Définition des options {#how-options-are-set}
 
 Les options existent à trois niveaux :
 
@@ -70,27 +68,21 @@ rows, err := conn.Query(ctx, "SELECT ...")
 
 ***
 
-<div id="connection-options">
-  ## Options de connexion
-</div>
+## Options de connexion {#connection-options}
 
-<div id="protocol-and-connection">
-  ### Protocole et connexion
-</div>
+### Protocole et connexion {#protocol-and-connection}
 
-| Option             | Type                       | Default                                                   | Paramètre DSN                                                        | Description                                                                                                                                     | Bonne pratique                                                                                                                                                                                                                                                                                                     | En cas de mauvaise configuration                                                                                                                                                                                               |
+| Option             | Type                       | Default                                                   | Paramètre DSN                                                    | Description                                                                                                                                     | Bonne pratique                                                                                                                                                                                                                                                                                                     | En cas de mauvaise configuration                                                                                                                                                                                               |
 | ------------------ | -------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Protocol`         | `Protocol` (int)           | `Native`                                                  | Schéma : `clickhouse://`=Native, `http://`=HTTP                  | Protocole de communication : `Native` (0) pour TCP, `HTTP` (1) pour HTTP                                                                        | Utilisez Native pour obtenir des performances supérieures d’environ 30 %. Utilisez HTTP pour la prise en charge d’un proxy, la traversée du pare-feu (port 80/443) ou la compression disponible uniquement en HTTP (`gzip`/`br`). Voir [TCP vs HTTP](/fr/integrations/language-clients/go/configuration#tcp-vs-http). | Schéma HTTP avec port Native (9000) : connexion refusée. Native bloqué par le pare-feu : timeouts.                                                                                                                             |
-| `Addr`             | `[]string`                 | `["localhost:9000"]` (Native) `["localhost:8123"]` (HTTP) | Hôtes séparés par des virgules dans l’URL                        | Liste des adresses `"host:port"` pour la connexion et le failover                                                                               | Indiquez plusieurs adresses en production pour la haute disponibilité. Ports corrects : 9000 (Native), 8123 (HTTP), 9440 (Native+TLS), 8443 (HTTP+TLS).                                                                                                                                                            | Adresse unique : pas de failover. Port incorrect : `"connection refused"`. Vide/nil : utilise localhost par défaut, ce qui échoue dans les déploiements distribués.                                                            |
-| `ConnOpenStrategy` | `ConnOpenStrategy` (uint8) | `ConnOpenInOrder` (0)                                     | `connection_open_strategy` (`in_order`, `round_robin`, `random`) | Stratégie de sélection d’un serveur à partir de `Addr`. `InOrder` (0)=failover, `RoundRobin` (1)=équilibrage de charge, `Random` (2)=aléatoire. | `InOrder` pour actif-standby. `RoundRobin` pour actif-actif/K8s. `Random` pour éviter l’effet de meute.                                                                                                                                                                                                            | `InOrder` avec actif-actif : le premier serveur reçoit toute la charge, les autres restent idle. Toutes les stratégies essaient tous les serveurs en cas d’échec -- cela affecte uniquement celui qui est essayé *en premier*. |
+| `Protocol`         | `Protocol` (int)           | `Native`                                                  | Schéma : `clickhouse://`=Native, `http://`=HTTP                  | Protocole de communication : `Native` (0) pour TCP, `HTTP` (1) pour HTTP                                                                        | Utilisez Native pour obtenir des performances supérieures d’environ 30 %. Utilisez HTTP pour la prise en charge d’un proxy, la traversée du pare-feu (port 80/443) ou la compression disponible uniquement en HTTP (`gzip`/`br`). Voir [TCP vs HTTP](/fr/integrations/language-clients/go/configuration#tcp-vs-http). | Schéma HTTP avec port Native (9000) : connexion refusée. Native bloqué par le pare-feu : timeouts.                                                                                                                             |
+| `Addr`             | `[]string`                 | `["localhost:9000"]` (Native) `["localhost:8123"]` (HTTP) | Hôtes séparés par des virgules dans l’URL                        | Liste des adresses `"host:port"` pour la connexion et le failover                                                                               | Indiquez plusieurs adresses en production pour la haute disponibilité. Ports corrects : 9000 (Native), 8123 (HTTP), 9440 (Native+TLS), 8443 (HTTP+TLS).                                                                                                                                                            | Adresse unique : pas de failover. Port incorrect : `"connection refused"`. Vide/nil : utilise localhost par défaut, ce qui échoue dans les déploiements distribués.                                                            |
+| `ConnOpenStrategy` | `ConnOpenStrategy` (uint8) | `ConnOpenInOrder` (0)                                     | `connection_open_strategy` (`in_order`, `round_robin`, `random`) | Stratégie de sélection d’un serveur à partir de `Addr`. `InOrder` (0)=failover, `RoundRobin` (1)=équilibrage de charge, `Random` (2)=aléatoire. | `InOrder` pour actif-standby. `RoundRobin` pour actif-actif/K8s. `Random` pour éviter l’effet de meute.                                                                                                                                                                                                            | `InOrder` avec actif-actif : le premier serveur reçoit toute la charge, les autres restent idle. Toutes les stratégies essaient tous les serveurs en cas d’échec -- cela affecte uniquement celui qui est essayé *en premier*. |
 
 ***
 
-<div id="authentication">
-  ### Authentification
-</div>
+### Authentification {#authentication}
 
-| Option          | Type                        | Par défaut                          | Paramètre DSN                                  | Description                                                                                                                                                     | Bonne pratique                                                                                                                                   | En cas de mauvaise configuration                                                                                                                                                                                                         |
+| Option          | Type                        | Par défaut                          | Paramètre DSN                              | Description                                                                                                                                                     | Bonne pratique                                                                                                                                   | En cas de mauvaise configuration                                                                                                                                                                                                         |
 | --------------- | --------------------------- | ----------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Auth.Username` | `string`                    | `"default"`                         | `username` ou partie utilisateur de l’URL  | Nom d’utilisateur pour l’authentification ClickHouse                                                                                                            | N’utilisez jamais `default` en production. Créez des utilisateurs dédiés avec des permissions minimales.                                         | Nom d’utilisateur incorrect : `"Code: 516. DB::Exception: Authentication failed"`. Chaîne vide : utilise silencieusement `"default"`.                                                                                                    |
 | `Auth.Password` | `string`                    | `""`                                | `password` ou partie mot de passe de l’URL | Mot de passe pour l’authentification ClickHouse                                                                                                                 | Utilisez des variables d’environnement ou des gestionnaires de secrets en production. Encodez les caractères spéciaux dans le DSN au format URL. | Mot de passe incorrect : `"Code: 516. DB::Exception: Authentication failed"`. Caractères spéciaux non encodés dans l’URL : erreurs d’analyse syntaxique.                                                                                 |
@@ -105,9 +97,7 @@ GetJWT: func(ctx context.Context) (string, error) {
 
 ***
 
-<div id="timeouts">
-  ### Délais d’expiration
-</div>
+### Délais d’expiration {#timeouts}
 
 | Option        | Type            | Par défaut  | Paramètre DSN  | Description                                                                                                                                                                | Bonne pratique                                                                                                                                                                     | En cas de mauvaise configuration                                                                                                                                                                                                |
 | ------------- | --------------- | ----------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -122,21 +112,19 @@ GetJWT: func(ctx context.Context) (string, error) {
 
 ***
 
-<div id="connection-pool">
-  ### Pool de connexions
-</div>
+### Pool de connexions {#connection-pool}
 
-| Option            | Type            | Default                              | Paramètre DSN           | API                       | Description                                                                                                                                                          | Bonne pratique                                                                                                                                                                        | En cas de mauvaise configuration                                                                                                                                                                                                                      |
+| Option            | Type            | Default                              | Paramètre DSN       | API                       | Description                                                                                                                                                          | Bonne pratique                                                                                                                                                                       | En cas de mauvaise configuration                                                                                                                                                                                                        |
 | ----------------- | --------------- | ------------------------------------ | ------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MaxIdleConns`    | `int`           | `5`                                  | `max_idle_conns`    | Les deux                  | Nombre maximal de connexions inactives (non utilisées mais ouvertes) dans le pool                                                                                    | 50 à 80 % du nombre attendu de requêtes concurrentes. Faible : 2-5, moyen : 10-20, élevé : 20-50.                                                                                    | Trop faible : renouvellement fréquent des connexions, latence plus élevée. Trop élevé : mémoire gaspillée. Limité automatiquement à `MaxOpenConns`.                                                                                     |
-| `MaxOpenConns`    | `int`           | `MaxIdleConns + 5` (par défaut : 10) | `max_open_conns`    | Les deux                  | Nombre total maximal de connexions (inactives + actives)                                                                                                             | Faible : 10-20, moyen : 20-50, élevé : 50-100. Formule : requêtes concurrentes + pic de charge + buffer. À surveiller : `SELECT * FROM system.metrics WHERE metric='TCPConnection'`. | Trop faible : `"clickhouse: acquire conn timeout"`. Trop élevé : `"Too many connections"` côté serveur, dépassement de la limite de descripteurs de fichiers. Valeur par défaut de `max_connections` dans ClickHouse : 1024 (partagée). |
-| `ConnMaxLifetime` | `time.Duration` | `1h`                                 | `conn_max_lifetime` | Les deux                  | Durée maximale de réutilisation d&#39;une connexion. Vérifiée lors de son retour dans le pool.                                                                       | 1-5 h pour les environnements stables. 5-15 min pour les déploiements K8s/rolling. Jamais infini.                                                                                    | Trop court (&lt; 1m) : renouvellement fréquent, latence plus élevée. Trop long/infini : connexions obsolètes, changements DNS non pris en compte, trafic jamais rééquilibré.                                                            |
-| `ConnMaxIdleTime` | `time.Duration` | `0` (aucun)                          | —                   | `database/sql` uniquement | Temps maximal pendant lequel une connexion peut rester *inactive* avant d&#39;être fermée. Absent de la struct `Options` -- à définir via `db.SetConnMaxIdleTime()`. | 5-10 min pour les workloads K8s/irréguliers afin de libérer les connexions inactives après des pics de trafic.                                                                       | Non défini : les connexions inactives persistent jusqu&#39;à `ConnMaxLifetime`. Trop court (&lt; 30s) : connexions recréées pendant les intervalles normaux.                                                                            |
+| `MaxIdleConns`    | `int`           | `5`                                  | `max_idle_conns`    | Les deux                  | Nombre maximal de connexions inactives (non utilisées mais ouvertes) dans le pool                                                                                    | 50 à 80 % du nombre attendu de requêtes concurrentes. Faible : 2-5, moyen : 10-20, élevé : 20-50.                                                                                    | Trop faible : renouvellement fréquent des connexions, latence plus élevée. Trop élevé : mémoire gaspillée. Limité automatiquement à `MaxOpenConns`.                                                                                     |
+| `MaxOpenConns`    | `int`           | `MaxIdleConns + 5` (par défaut : 10) | `max_open_conns`    | Les deux                  | Nombre total maximal de connexions (inactives + actives)                                                                                                             | Faible : 10-20, moyen : 20-50, élevé : 50-100. Formule : requêtes concurrentes + pic de charge + tampon. À surveiller : `SELECT * FROM system.metrics WHERE metric='TCPConnection'`. | Trop faible : `"clickhouse: acquire conn timeout"`. Trop élevé : `"Too many connections"` côté serveur, dépassement de la limite de descripteurs de fichiers. Valeur par défaut de `max_connections` dans ClickHouse : 1024 (partagée). |
+| `ConnMaxLifetime` | `time.Duration` | `1h`                                 | `conn_max_lifetime` | Les deux                  | Durée maximale de réutilisation d&#39;une connexion. Vérifiée lors de son retour dans le pool.                                                                       | 1-5 h pour les environnements stables. 5-15 min pour les déploiements K8s/rolling. Jamais infini.                                                                                    | Trop court (&lt; 1m) : renouvellement fréquent, latence plus élevée. Trop long/infini : connexions obsolètes, changements DNS non pris en compte, trafic jamais rééquilibré.                                                            |
+| `ConnMaxIdleTime` | `time.Duration` | `0` (aucun)                          | —                   | `database/sql` uniquement | Temps maximal pendant lequel une connexion peut rester *inactive* avant d&#39;être fermée. Absent de la struct `Options` -- à définir via `db.SetConnMaxIdleTime()`. | 5-10 min pour les charges de travail K8s/irrégulières afin de libérer les connexions inactives après des pics de trafic.                                                                       | Non défini : les connexions inactives persistent jusqu&#39;à `ConnMaxLifetime`. Trop court (&lt; 30s) : connexions recréées pendant les intervalles normaux.                                                                            |
 
 <Info>
   **database/sql uniquement**
 
-  `ConnMaxIdleTime` est un paramètre standard du pool Go `database/sql`. Il n&#39;est pas disponible dans la struct `clickhouse.Options` ni via `clickhouse.Open()`. Définissez-le après `OpenDB()` :
+  `ConnMaxIdleTime` est un paramètre standard du pool Go `database/sql`. Il n&#39;est pas disponible dans la struct `clickhouse.Options` ni via `clickhouse.Open()`. Définissez-le après `OpenDB()` :
 
   ```go
   db := clickhouse.OpenDB(&clickhouse.Options{...})
@@ -148,9 +136,7 @@ Voir [le pool de connexions](/fr/integrations/language-clients/go/configuration#
 
 ***
 
-<div id="sql-db-settings">
-  ### Paramètres standard du pool database/sql
-</div>
+### Paramètres standard du pool database/sql {#sql-db-settings}
 
 Lorsque vous utilisez `clickhouse.OpenDB()` ou `sql.Open("clickhouse", dsn)`, le `*sql.DB` renvoyé prend en charge les méthodes standard de gestion du pool de Go. `OpenDB()` applique automatiquement les trois premières à partir de `Options` :
 
@@ -169,9 +155,7 @@ Lorsque vous utilisez `clickhouse.OpenDB()` ou `sql.Open("clickhouse", dsn)`, le
 
 ***
 
-<div id="compression">
-  ### Compression
-</div>
+### Compression {#compression}
 
 | Option                 | Type                       | Par défaut          | Paramètre DSN                                                                    | Description                                                                                                           | Bonne pratique                                                                                                                                        | En cas de mauvaise configuration                                                                                                                                         |
 | ---------------------- | -------------------------- | ------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -192,9 +176,7 @@ Lorsque vous utilisez `clickhouse.OpenDB()` ou `sql.Open("clickhouse", dsn)`, le
 
 ***
 
-<div id="tls">
-  ### TLS
-</div>
+### TLS {#tls}
 
 | Option | Type          | Par défaut             | Paramètre DSN                         | Description                                                                                       | Bonne pratique                                                                                                                                                    | En cas de mauvaise configuration                                                                                                                                                                                                                                                                                                                                        |
 | ------ | ------------- | ---------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -204,15 +186,13 @@ Voir [TLS](/fr/integrations/language-clients/go/configuration#using-tls) pour de
 
 ***
 
-<div id="logging">
-  ### Journalisation
-</div>
+### Journalisation {#logging}
 
-| Option              | Type                   | Default                       | Paramètre DSN | Description                                                                                                                   | Bonne pratique                                                                                                         | En cas de mauvaise configuration                                                                             |
-| ------------------- | ---------------------- | ----------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `Logger`            | `*slog.Logger`         | `nil` (aucune journalisation) | —         | Logger structuré via le package `log/slog` de Go. Priorité : `Debug`+`Debugf` &gt; `Logger` &gt; no-op. *(Depuis la v2.43.0)* | Utilisez `slog` avec un handler JSON en production. Ajoutez le contexte de l&#39;application avec `logger.With(...)`. | —                                                                                              |
-| `Debug` (obsolète)  | `bool`                 | `false`                       | `debug`   | Ancien commutateur de débogage. Utilisez `Logger` à la place. Écrit les logs sur stdout sauf si `Debugf` est défini.          | —                                                                                                                     | Activé en production : surcoût de performance, logs verbeux, données sensibles dans la sortie. |
-| `Debugf` (obsolète) | `func(string, ...any)` | `nil`                         | —         | Fonction de log de débogage personnalisée. Utilisez `Logger` à la place. Nécessite `Debug: true`.                             | —                                                                                                                     | —                                                                                              |
+| Option              | Type                   | Default                       | Paramètre DSN | Description                                                                                                                   | Bonne pratique                                                                                                        | En cas de mauvaise configuration                                                               |
+| ------------------- | ---------------------- | ----------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `Logger`            | `*slog.Logger`         | `nil` (aucune journalisation) | —             | Logger structuré via le package `log/slog` de Go. Priorité : `Debug`+`Debugf` &gt; `Logger` &gt; no-op. *(Depuis la v2.43.0)* | Utilisez `slog` avec un handler JSON en production. Ajoutez le contexte de l&#39;application avec `logger.With(...)`. | —                                                                                              |
+| `Debug` (obsolète)  | `bool`                 | `false`                       | `debug`       | Ancien commutateur de débogage. Utilisez `Logger` à la place. Écrit les logs sur stdout sauf si `Debugf` est défini.          | —                                                                                                                     | Activé en production : surcoût de performance, logs verbeux, données sensibles dans la sortie. |
+| `Debugf` (obsolète) | `func(string, ...any)` | `nil`                         | —             | Fonction de log de débogage personnalisée. Utilisez `Logger` à la place. Nécessite `Debug: true`.                             | —                                                                                                                     | —                                                                                              |
 
 ```go
 logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -226,20 +206,16 @@ Consultez [Journalisation](/fr/integrations/language-clients/go/configuration#lo
 
 ***
 
-<div id="buffers-and-memory">
-  ### Tampons et mémoire
-</div>
+### Tampons et mémoire {#buffers-and-memory}
 
 | Option                 | Type    | Par défaut | paramètre DSN       | Par requête                 | Description                                                                                                                 | Bonne pratique                                                                                                                                    | En cas de mauvaise configuration                                                                                                                                      |
 | ---------------------- | ------- | ---------- | ------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BlockBufferSize`      | `uint8` | `2`        | `block_buffer_size` | Oui (`WithBlockBufferSize`) | Nombre de blocs décodés à mettre en tampon lors de la lecture des résultats. Permet la lecture et le décodage en parallèle. | La valeur par défaut de 2 convient. 5 à 10 pour les résultats en streaming volumineux. Mémoire = tampon x taille de bloc x requêtes concurrentes. | Trop petit (1) : bloque le lecteur de blocs, latence plus élevée. Trop grand (&gt; 50) : forte consommation mémoire, gains marginaux.                                 |
-| `FreeBufOnConnRelease` | `bool`  | `false`    | —                   | Non                         | Libère le tampon mémoire de la connexion après chaque requête au lieu de le réutiliser.                                     | `false` pour des taux de requêtes élevés. `true` dans des conteneurs à mémoire limitée ou pour de grands lots peu fréquents.                      | `false` + mémoire limitée : les tampons s&#39;accumulent (mémoire = tampon x connexions inactives). `true` + taux élevé : pression sur le GC, utilisation CPU accrue. |
+| `BlockBufferSize`      | `uint8` | `2`        | `block_buffer_size` | Oui (`WithBlockBufferSize`) | Nombre de blocs décodés à mettre en tampon lors de la lecture des résultats. Permet la lecture et le décodage en parallèle. | La valeur par défaut de 2 convient. 5 à 10 pour les résultats en streaming volumineux. Mémoire = tampon x taille de bloc x requêtes concurrentes. | Trop petit (1) : bloque le lecteur de blocs, latence plus élevée. Trop grand (&gt; 50) : forte consommation mémoire, gains marginaux.                                 |
+| `FreeBufOnConnRelease` | `bool`  | `false`    | —                   | Non                         | Libère le tampon mémoire de la connexion après chaque requête au lieu de le réutiliser.                                     | `false` pour des taux de requêtes élevés. `true` dans des conteneurs à mémoire limitée ou pour de grands batchs peu fréquents.                      | `false` + mémoire limitée : les tampons s&#39;accumulent (mémoire = tampon x connexions inactives). `true` + taux élevé : pression sur le GC, utilisation CPU accrue. |
 
 ***
 
-<div id="http-specific">
-  ### Spécifique à HTTP
-</div>
+### Spécifique à HTTP {#http-specific}
 
 <Warning>
   **Ignoré silencieusement avec Native**
@@ -247,7 +223,7 @@ Consultez [Journalisation](/fr/integrations/language-clients/go/configuration#lo
   Ces options n’affectent que `Protocol: clickhouse.HTTP`. Elles sont silencieusement ignorées lors de l’utilisation du protocole Native, sans émettre d’erreur ni d’avertissement.
 </Warning>
 
-| Option                | Type                                               | Par défaut                          | Paramètre DSN                  | Description                                                                                                    | Bonne pratique                                                                                                                               | En cas de mauvaise configuration                                                                                                                            |
+| Option                | Type                                               | Par défaut                          | Paramètre DSN              | Description                                                                                                    | Bonne pratique                                                                                                                               | En cas de mauvaise configuration                                                                                                                            |
 | --------------------- | -------------------------------------------------- | ----------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `HttpHeaders`         | `map[string]string`                                | `nil`                               | —                          | En-têtes HTTP supplémentaires ajoutés à chaque requête                                                         | À utiliser pour l’observability (`X-Request-ID`) et les en-têtes de proxy d’authentification. Limitez-vous au strict nécessaire.             | Remplacement d’en-têtes internes (`Content-Type`, `Authorization`) : comportement imprévisible.                                                             |
 | `HttpUrlPath`         | `string`                                           | `""`                                | `http_path`                | Chemin d’URL ajouté aux requêtes. Le `/` initial est ajouté automatiquement.                                   | À utiliser derrière un reverse proxy avec routage par chemin.                                                                                | Chemin incorrect : HTTP 404 renvoyé par le proxy/LB.                                                                                                        |
@@ -274,9 +250,7 @@ TransportFunc: func(t *http.Transport) (http.RoundTripper, error) {
 
 ***
 
-<div id="advanced-connection">
-  ### Connexion avancée
-</div>
+### Connexion avancée {#advanced-connection}
 
 | Option         | Type                                                   | Par défaut              | Paramètre DSN | Description                                                                                   | Bonne pratique                                                                                                                                                 | En cas de mauvaise configuration                                                                                                                                                                      |
 | -------------- | ------------------------------------------------------ | ----------------------- | ------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -285,9 +259,7 @@ TransportFunc: func(t *http.Transport) (http.RoundTripper, error) {
 
 ***
 
-<div id="client-information">
-  ### Informations sur le client
-</div>
+### Informations sur le client {#client-information}
 
 | Option       | Type                | Par défaut                                     | Paramètre DSN                   | Par requête                      | Description                                                                                                                                               | Bonne pratique                                                                                                                                                  | En cas de mauvaise configuration                                                                                                |
 | ------------ | ------------------- | ---------------------------------------------- | ------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -304,9 +276,7 @@ ClientInfo: clickhouse.ClientInfo{
 
 ***
 
-<div id="server-settings">
-  ### Paramètres du serveur ClickHouse
-</div>
+### Paramètres du serveur ClickHouse {#server-settings}
 
 | Option          | Type                          | Par défaut | Paramètre DSN                                                 | Par requête                                                 | Description                                                                                                                                                                                                                | Bonne pratique                                                                                                | En cas de mauvaise configuration                                                                                                                                                                                        |
 | --------------- | ----------------------------- | ---------- | ------------------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -331,9 +301,7 @@ Settings: clickhouse.Settings{
 
 ***
 
-<div id="context-options">
-  ## Options de requête au niveau du contexte
-</div>
+## Options de requête au niveau du contexte {#context-options}
 
 Définissez-les pour chaque requête à l’aide de `clickhouse.Context()` :
 
@@ -350,25 +318,25 @@ ctx := clickhouse.Context(context.Background(),
   Si le contexte a une date limite &gt; 1s, `max_execution_time` est automatiquement fixé à `seconds_remaining + 5`. Cela remplace toute valeur définie manuellement.
 </Info>
 
-| Option                    | Type                               | Par défaut                    | Protocole         | Description                                                                                                                                                                                                              | Bonne pratique                                                                                                     | En cas de mauvaise configuration                                                                                                                                            |
-| ------------------------- | ---------------------------------- | ----------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WithQueryID`             | `string`                           | Généré automatiquement        | Les deux          | Identifiant de requête personnalisé. Visible dans `system.query_log` et `system.processes`.                                                                                                                              | Utilisez des UUID. Pratique pour `KILL QUERY WHERE query_id='...'`.                                                | Identifiants en double : confusion dans `system.query_log`.                                                                                                                 |
-| `WithQuotaKey`            | `string`                           | `""`                          | Les deux          | Quota key pour les limites de ressources en environnement multi-tenant. Nécessite une config de quota côté serveur.                                                                                                      | À utiliser pour des limites par client/par utilisateur.                                                            | Quota non configuré : ignoré sans avertissement.                                                                                                                            |
-| `WithJWT`                 | `string`                           | `""`                          | HTTPS uniquement  | Redéfinition du JWT par requête pour ClickHouse Cloud. *(Depuis la version 2.35.0)*                                                                                                                                      | À utiliser pour l’authentification à chaque requête dans les proxys multilocataires.                               | Sans TLS : ignoré, revient à l’authentification de la connexion. Expiré : `"Token has expired"`.                                                                            |
-| `WithSettings`            | `Settings`                         | Hérite de la connexion        | Les deux          | Paramètres du serveur par requête. Fusionnés avec les paramètres de connexion ; le contexte prévaut en cas de conflit.                                                                                                   | Redéfinissez `max_execution_time` ou `max_rows_to_read` par type de requête.                                       | Comme pour les `Settings` au niveau de la connexion.                                                                                                                        |
-| `WithParameters`          | `Paramètres` (`map[string]string`) | `nil`                         | Les deux          | Valeurs de requête paramétrée côté serveur. Syntaxe de requête : `{param_name:Type}`.                                                                                                                                    | À utiliser de préférence à la concaténation de chaînes afin de prévenir les injections SQL.                        | Paramètre manquant : `"La substitution {param_name:Type} n’est pas définie"`. Type incorrect : `"Impossible d’analyser la chaîne 'abc' en UInt64"`.                         |
-| `WithAsync`               | `bool` (`wait`)                    | Synchrone                     | Les deux          | Mode d’insertion asynchrone. Définit `async_insert=1`. `wait=true` ajoute `wait_for_async_insert=1`. Nécessite ClickHouse 21.11 ou version ultérieure. *(Depuis la version v2.41.0 ; remplace l’ancien `WithStdAsync`.)* | À utiliser pour les insertions à haut débit.                                                                       | `wait=false` : les erreurs peuvent être asynchrones -- consultez `system.asynchronous_insert_log`. Avec SELECT : ignoré. Ancien serveur : `"Unknown setting async_insert"`. |
-| `WithLogs`                | `func(*Log)`                       | `nil`                         | Natif uniquement  | Fonction de rappel pour les entrées du journal du serveur lors de l’exécution de la requête.                                                                                                                             | Veillez à ce qu’elle reste rapide -- elle bloque l’exécution. Utilisez des goroutines pour les traitements lourds. | En HTTP : jamais appelé, sans avertissement.                                                                                                                                |
-| `WithProgress`            | `func(*Progress)`                  | `nil`                         | Native uniquement | Mises à jour de la progression de la requête (lignes/octets traités).                                                                                                                                                    | Doit être rapide -- bloque l&#39;exécution.                                                                        | En HTTP : jamais appelé, sans avertissement.                                                                                                                                |
-| `WithProfileInfo`         | `func(*ProfileInfo)`               | `nil`                         | Native uniquement | Callback des statistiques d’exécution de la requête.                                                                                                                                                                     | À garder rapide -- bloque l’exécution.                                                                             | En HTTP : n’est jamais appelée, sans avertissement.                                                                                                                         |
-| `WithProfileEvents`       | `func([]ProfileEvent)`             | `nil`                         | Native uniquement | Callback des compteurs de performance.                                                                                                                                                                                   | Doit rester rapide -- bloque l’exécution.                                                                          | En HTTP : jamais appelée, sans avertissement.                                                                                                                               |
-| `WithoutProfileEvents`    | —                                  | Événements envoyés            | Native uniquement | Désactive les événements de profilage. Optimisation des performances pour les serveurs ≥ 25.11. *(À partir de la v2.44.0)*                                                                                               | À utiliser si vous n’avez pas besoin des événements de profilage.                                                  | Sur les anciens serveurs : erreur « paramètre inconnu ».                                                                                                                    |
-| `WithExternalTable`       | `...*ext.Table`                    | `nil`                         | Les deux          | Joindre des tables de correspondance temporaires à la requête. Données transférées à chaque requête.                                                                                                                     | Limiter les tables à &lt; 10 MB. Le protocole natif est plus efficace que HTTP (multipart).                        | Grandes tables : surcoût réseau à chaque requête.                                                                                                                           |
-| `WithUserLocation`        | `*time.Location`                   | Fuseau horaire du serveur     | Les deux          | Remplace le fuseau horaire pour l’analyse des DateTime.                                                                                                                                                                  | À définir explicitement lorsque les fuseaux horaires du client et du serveur diffèrent.                            | Fuseau horaire incorrect : valeurs DateTime décalées de plusieurs heures sans avertissement, avec risque de corruption des données.                                         |
-| `WithColumnNamesAndTypes` | `[]ColumnNameAndType`              | `nil` (exécute DESCRIBE)      | HTTP uniquement   | Évitez l’aller-retour `DESCRIBE TABLE` pour les insertions HTTP en fournissant à l’avance les informations sur les colonnes. *(Depuis la v2.37.0)*                                                                       | À utiliser lorsque le schéma est connu et stable.                                                                  | Types erronés : `"Cannot convert String to UInt64"`. Dérive du schéma après migration : informations obsolètes.                                                             |
-| `WithBlockBufferSize`     | `uint8`                            | Au niveau de la connexion (2) | Les deux          | Remplace `BlockBufferSize` défini au niveau de la connexion pour une seule requête.                                                                                                                                      | À augmenter pour les result sets volumineux sur des requêtes spécifiques.                                          | —                                                                                                                                                                           |
-| `WithClientInfo`          | `ClientInfo`                       | Au niveau de la connexion     | Les deux          | Ajoute des informations client supplémentaires pour une requête donnée. Ne remplace pas les informations existantes, les complète. *(Depuis la v2.42.0)*                                                                 | Ajoutez des informations de contexte par requête (par ex. le nom de l’endpoint).                                   | —                                                                                                                                                                           |
-| `WithSpan`                | `trace.SpanContext`                | Vide                          | Natif uniquement  | Contexte de span OpenTelemetry pour le suivi distribué.                                                                                                                                                                  | Voir [OpenTelemetry](/fr/integrations/language-clients/go/clickhouse-api#open-telemetry).                             | —                                                                                                                                                                           |
+| Option                    | Type                               | Par défaut                    | Protocole         | Description                                                                                                                                                                                                              | Bonne pratique                                                                                                     | En cas de mauvaise configuration                                                                                                                                                                                                                  |
+| ------------------------- | ---------------------------------- | ----------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WithQueryID`             | `string`                           | Généré automatiquement        | Les deux          | Identifiant de requête personnalisé. Visible dans `system.query_log` et `system.processes`.                                                                                                                              | Utilisez des UUID. Pratique pour `KILL QUERY WHERE query_id='...'`.                                                | Identifiants en double : confusion dans `system.query_log`.                                                                                                                                                                                       |
+| `WithQuotaKey`            | `string`                           | `""`                          | Les deux          | Quota key pour les limites de ressources en environnement multi-tenant. Nécessite une config de quota côté serveur.                                                                                                      | À utiliser pour des limites par client/par utilisateur.                                                            | Quota non configuré : ignoré sans avertissement.                                                                                                                                                                                                  |
+| `WithJWT`                 | `string`                           | `""`                          | HTTPS uniquement  | Redéfinition du JWT par requête pour ClickHouse Cloud. *(Depuis la version 2.35.0)*                                                                                                                                      | À utiliser pour l’authentification à chaque requête dans les proxys multilocataires.                               | Sans TLS : ignoré, revient à l’authentification de la connexion. Expiré : `"Token has expired"`.                                                                                                                                                  |
+| `WithSettings`            | `Settings`                         | Hérite de la connexion        | Les deux          | Paramètres du serveur par requête. Fusionnés avec les paramètres de connexion ; le contexte prévaut en cas de conflit.                                                                                                   | Redéfinissez `max_execution_time` ou `max_rows_to_read` par type de requête.                                       | Comme pour les `Settings` au niveau de la connexion.                                                                                                                                                                                              |
+| `WithParameters`          | `Parameters` (`map[string]string`) | `nil`                         | Les deux          | Valeurs de requête paramétrée côté serveur. Syntaxe de requête : `{param_name:Type}`.                                                                                                                                    | À utiliser de préférence à la concaténation de chaînes afin de prévenir les injections SQL.                        | Paramètre manquant : `"La substitution {param_name:Type} n’est pas définie"`. Type incorrect : `"Impossible d’analyser la chaîne 'abc' en UInt64"`.                                                                                               |
+| `WithAsync`               | `bool` (`wait`)                    | Synchrone                     | Les deux          | Mode d’insertion asynchrone. Définit `async_insert=1`. `wait=true` ajoute `wait_for_async_insert=1`. Nécessite ClickHouse 21.11 ou version ultérieure. *(Depuis la version v2.41.0 ; remplace l’ancien `WithStdAsync`.)* | À utiliser pour les insertions à haut débit.                                                                       | `wait=false` : les erreurs peuvent être asynchrones -- consultez `system.asynchronous_insert_log`. Avec SELECT : voir les [détails](/fr/concepts/features/operations/insert/async-insert-select). Ancien serveur : `"Unknown setting async_insert"`. |
+| `WithLogs`                | `func(*Log)`                       | `nil`                         | Natif uniquement  | Fonction de rappel pour les entrées du journal du serveur lors de l’exécution de la requête.                                                                                                                             | Veillez à ce qu’elle reste rapide -- elle bloque l’exécution. Utilisez des goroutines pour les traitements lourds. | En HTTP : jamais appelé, sans avertissement.                                                                                                                                                                                                      |
+| `WithProgress`            | `func(*Progress)`                  | `nil`                         | Native uniquement | Mises à jour de la progression de la requête (lignes/octets traités).                                                                                                                                                    | Doit être rapide -- bloque l&#39;exécution.                                                                        | En HTTP : jamais appelé, sans avertissement.                                                                                                                                                                                                      |
+| `WithProfileInfo`         | `func(*ProfileInfo)`               | `nil`                         | Native uniquement | Callback des statistiques d’exécution de la requête.                                                                                                                                                                     | À garder rapide -- bloque l’exécution.                                                                             | En HTTP : n’est jamais appelée, sans avertissement.                                                                                                                                                                                               |
+| `WithProfileEvents`       | `func([]ProfileEvent)`             | `nil`                         | Native uniquement | Callback des compteurs de performance.                                                                                                                                                                                   | Doit rester rapide -- bloque l’exécution.                                                                          | En HTTP : jamais appelée, sans avertissement.                                                                                                                                                                                                     |
+| `WithoutProfileEvents`    | —                                  | Événements envoyés            | Native uniquement | Désactive les événements de profilage. Optimisation des performances pour les serveurs ≥ 25.11. *(À partir de la v2.44.0)*                                                                                               | À utiliser si vous n’avez pas besoin des événements de profilage.                                                  | Sur les anciens serveurs : erreur « paramètre inconnu ».                                                                                                                                                                                          |
+| `WithExternalTable`       | `...*ext.Table`                    | `nil`                         | Les deux          | Joindre des tables de correspondance temporaires à la requête. Données transférées à chaque requête.                                                                                                                     | Limiter les tables à &lt; 10 MB. Le protocole natif est plus efficace que HTTP (multipart).                        | Grandes tables : surcoût réseau à chaque requête.                                                                                                                                                                                                 |
+| `WithUserLocation`        | `*time.Location`                   | Fuseau horaire du serveur     | Les deux          | Remplace le fuseau horaire pour l’analyse des DateTime.                                                                                                                                                                  | À définir explicitement lorsque les fuseaux horaires du client et du serveur diffèrent.                            | Fuseau horaire incorrect : valeurs DateTime décalées de plusieurs heures sans avertissement, avec risque de corruption des données.                                                                                                               |
+| `WithColumnNamesAndTypes` | `[]ColumnNameAndType`              | `nil` (exécute DESCRIBE)      | HTTP uniquement   | Évitez l’aller-retour `DESCRIBE TABLE` pour les insertions HTTP en fournissant à l’avance les informations sur les colonnes. *(Depuis la v2.37.0)*                                                                       | À utiliser lorsque le schéma est connu et stable.                                                                  | Types erronés : `"Cannot convert String to UInt64"`. Dérive du schéma après migration : informations obsolètes.                                                                                                                                   |
+| `WithBlockBufferSize`     | `uint8`                            | Au niveau de la connexion (2) | Les deux          | Remplace `BlockBufferSize` défini au niveau de la connexion pour une seule requête.                                                                                                                                      | À augmenter pour les result sets volumineux sur des requêtes spécifiques.                                          | —                                                                                                                                                                                                                                                 |
+| `WithClientInfo`          | `ClientInfo`                       | Au niveau de la connexion     | Les deux          | Ajoute des informations client supplémentaires pour une requête donnée. Ne remplace pas les informations existantes, les complète. *(Depuis la v2.42.0)*                                                                 | Ajoutez des informations de contexte par requête (par ex. le nom de l’endpoint).                                   | —                                                                                                                                                                                                                                                 |
+| `WithSpan`                | `trace.SpanContext`                | Vide                          | Natif uniquement  | Contexte de span OpenTelemetry pour le suivi distribué.                                                                                                                                                                  | Voir [OpenTelemetry](/fr/integrations/language-clients/go/clickhouse-api#open-telemetry).                             | —                                                                                                                                                                                                                                                 |
 
 ```go
 ctx := clickhouse.Context(ctx,
@@ -385,9 +353,7 @@ rows, err := conn.Query(ctx, "SELECT * FROM users WHERE id = {user_id:String}")
 
 ***
 
-<div id="batch-options">
-  ## Options de batch
-</div>
+## Options de batch {#batch-options}
 
 Passées à `PrepareBatch()`. Import : `github.com/ClickHouse/clickhouse-go/v2/lib/driver`.
 
@@ -405,13 +371,9 @@ batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
 
 ***
 
-<div id="quick-reference-tables">
-  ## Tableaux récapitulatifs
-</div>
+## Tableaux récapitulatifs {#quick-reference-tables}
 
-<div id="pool-sizing">
-  ### Recommandations de dimensionnement du pool de connexions
-</div>
+### Recommandations de dimensionnement du pool de connexions {#pool-sizing}
 
 | Type d’application                   | MaxIdleConns | MaxOpenConns | ConnMaxLifetime |
 | ------------------------------------ | ------------ | ------------ | --------------- |
@@ -422,9 +384,7 @@ batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
 | Déploiement Kubernetes               | 10           | 20           | 10m             |
 | Serverless (Lambda)                  | 1            | 5            | 5m              |
 
-<div id="timeout-recommendations">
-  ### Recommandations relatives aux timeouts
-</div>
+### Recommandations relatives aux timeouts {#timeout-recommendations}
 
 | Environnement            | DialTimeout | ReadTimeout |
 | ------------------------ | ----------- | ----------- |
@@ -434,9 +394,7 @@ batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
 | Charge de travail OLAP   | 10s         | 30m         |
 | Temps réel / OLTP        | 5s          | 10s         |
 
-<div id="dsn-parameters">
-  ### Référence rapide des paramètres DSN
-</div>
+### Référence rapide des paramètres DSN {#dsn-parameters}
 
 | Paramètre DSN              | Champ des options        | Exemple                                    |
 | -------------------------- | ------------------------ | ------------------------------------------ |
@@ -463,13 +421,9 @@ batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
 
 ***
 
-<div id="troubleshooting">
-  ## Dépannage
-</div>
+## Dépannage {#troubleshooting}
 
-<div id="acquire-conn-timeout">
-  ### Pool de connexions épuisé : &quot;acquire conn timeout&quot;
-</div>
+### Pool de connexions épuisé : &quot;acquire conn timeout&quot; {#acquire-conn-timeout}
 
 **Cause :** Pool de connexions épuisé : toutes les connexions `MaxOpenConns` sont utilisées et aucune n’est redevenue disponible avant l’expiration de `DialTimeout`.
 
@@ -482,9 +436,7 @@ Essayez les étapes suivantes dans l’ordre et identifiez la cause sous-jacente
 3. Augmentez `MaxOpenConns` pour l’aligner sur la concurrence observée.
 4. Augmentez `DialTimeout` uniquement si des pics de charge sont attendus et que le temps d’attente pour obtenir une connexion est le véritable goulot d’étranglement.
 
-<div id="io-timeout">
-  ### Erreurs de délai de lecture et de réinitialisation de connexion
-</div>
+### Erreurs de délai de lecture et de réinitialisation de connexion {#io-timeout}
 
 **Cause :** `ReadTimeout` a été dépassé pendant l’attente d’une réponse du serveur, ou la connexion a été fermée par le serveur ou le réseau.
 
@@ -494,9 +446,7 @@ Essayez les étapes suivantes dans l’ordre et identifiez la cause sous-jacente
 * Utilisez des délais d’expiration du contexte pour contrôler le timeout de chaque requête
 * Vérifiez les limites `max_execution_time` côté serveur dans ClickHouse
 
-<div id="auth-failed">
-  ### &quot;Code: 516. Authentication failed&quot;
-</div>
+### &quot;Code: 516. Authentication failed&quot; {#auth-failed}
 
 **Cause :** Nom d’utilisateur ou mot de passe incorrect, ou utilisateur inexistant.
 
@@ -506,9 +456,7 @@ Essayez les étapes suivantes dans l’ordre et identifiez la cause sous-jacente
 * Vérifiez qu’il n’y a pas de problème d’encodage d’URL des caractères spéciaux dans les mots de passe du DSN
 * Confirmez que l’utilisateur a accès à la base de données spécifiée
 
-<div id="tls-errors">
-  ### Erreurs de certificat TLS
-</div>
+### Erreurs de certificat TLS {#tls-errors}
 
 | Erreur                                          | Cause                                | Correctif                                              |
 | ----------------------------------------------- | ------------------------------------ | ------------------------------------------------------ |
@@ -517,9 +465,7 @@ Essayez les étapes suivantes dans l’ordre et identifiez la cause sous-jacente
 | `x509: certificate signed by unknown authority` | CA non approuvée                     | Ajoutez la CA à `tls.Config.RootCAs`                   |
 | `connection reset by peer`                      | Incompatibilité entre TLS et le port | Utilisez le port 9440 (Native) ou 8443 (HTTP) pour TLS |
 
-<div id="memory-growth">
-  ### Augmentation progressive de la mémoire
-</div>
+### Augmentation progressive de la mémoire {#memory-growth}
 
 **Cause :** accumulation de buffers de connexions inactives de grande taille.
 

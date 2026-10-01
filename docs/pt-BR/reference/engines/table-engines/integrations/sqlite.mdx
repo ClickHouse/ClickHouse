@@ -32,14 +32,14 @@ O motor permite importar e exportar dados para o SQLite e oferece suporte a cons
 
 ## Passando uma consulta em vez de um nome de tabela {#passing-a-query}
 
-Em vez de um nome de tabela, o argumento `table` pode ser uma consulta `SELECT` passada ao SQLite como está. A estrutura da tabela é inferida a partir do resultado da consulta. A consulta pode ser escrita como uma subconsulta ou envolvida na função `query`:
+Em vez de um nome de tabela, o argumento `table` pode ser uma consulta `SELECT`, repassada ao SQLite sem alterações. A estrutura da tabela é inferida a partir do resultado da consulta. O SQLite informa um tipo declarado apenas quando a coluna do resultado corresponde diretamente a uma coluna de uma tabela; para uma expressão, um literal ou uma agregação, ele não informa nada. Um tipo declarado que é mapeado para `String` (consulte o [mapeamento de tipos](/pt-BR/reference/engines/database-engines/sqlite#data_types-support)) é usado sem alterações. Uma coluna sem tipo declarado tem seu tipo definido pela classe de armazenamento do seu valor na primeira linha do resultado da consulta: um valor `INTEGER` resulta em `Int64`, um valor `REAL` resulta em `Float64`, e qualquer outro valor (`TEXT`, `BLOB`, `NULL`), bem como um resultado vazio, resulta em `String`. Um tipo numérico declarado também é verificado com base nessa primeira linha, pois o SQLite também informa um tipo declarado para um `SELECT` composto, obtido de um de seus ramos, embora as linhas venham de todos eles. Esse tipo é mantido quando a classe de armazenamento do valor é compatível com ele (`INTEGER` para um tipo inteiro, `INTEGER` ou `REAL` para um tipo de ponto flutuante) e também quando o valor é `NULL` ou o resultado está vazio, já que nenhum desses casos traz informação de tipo capaz de contradizê-lo; caso contrário, a coluna tem seu tipo definido pela classe de armazenamento, como ocorre com uma coluna sem tipo declarado. Portanto, o tipo inferido só pode ser ampliado, nunca reduzido. A inferência de uma coluna desse tipo inicia a execução da consulta no SQLite. A primeira linha não é representativa das demais: o SQLite pode retornar uma classe de armazenamento diferente em cada linha (por exemplo, `CASE WHEN id = 1 THEN 1 ELSE 1.5 END`), de modo que uma leitura baseada em consulta é fail-closed para toda coluna lida por meio de um tipo numérico - e não apenas para as que não têm tipo declarado. Um valor cuja classe de armazenamento não corresponda a esse tipo, ou que não possa ser representado exatamente nele (uma célula `INTEGER` com `300` em uma coluna `UInt8`, uma célula `REAL` com `16777217` em uma coluna `Float32`), faz a leitura falhar em vez de ser convertido silenciosamente. Para ler uma coluna com valores de classes de armazenamento diferentes, declare-a como `String` ou converta-a para texto na consulta do SQLite. Toda coluna inferida é `Nullable`. A consulta pode ser escrita como uma subconsulta ou encapsulada na função `query`:
 
 ```sql
 CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1));
 CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col2 > 1'));
 ```
 
-Essa tabela é somente leitura: `INSERT` nela não é permitido. A mesma sintaxe também é compatível com a função de tabela [`sqlite`](/pt-BR/reference/functions/table-functions/sqlite).
+Essa tabela é read-only: não é permitido executar `INSERT` nela. A mesma sintaxe também é compatível com a função de tabela [`sqlite`](/pt-BR/reference/functions/table-functions/sqlite).
 
 <Note>
   A forma de subconsulta `(SELECT ...)` é convertida pelo ClickHouse e reserializada antes de ser enviada ao SQLite. Portanto, ela deve ser um ClickHouse SQL válido. Para passar uma sintaxe específica do SQLite que o ClickHouse não interpreta, use a forma `query('...')`, cujo texto é enviado ao SQLite literalmente.
@@ -49,7 +49,7 @@ Essa tabela é somente leitura: `INSERT` nela não é permitido. A mesma sintaxe
 
 ## Suporte a tipos de dados {#data-types-support}
 
-Ao especificar explicitamente os tipos de coluna do ClickHouse na definição da tabela, os tipos a seguir do ClickHouse podem ser interpretados a partir de colunas TEXT do SQLite:
+Ao especificar explicitamente os tipos de coluna do ClickHouse na definição da tabela, os tipos a seguir do ClickHouse podem ser convertidos a partir de colunas TEXT do SQLite:
 
 * [Date](/pt-BR/reference/data-types/date), [Date32](/pt-BR/reference/data-types/date32)
 * [DateTime](/pt-BR/reference/data-types/datetime), [DateTime64](/pt-BR/reference/data-types/datetime64)
@@ -57,10 +57,12 @@ Ao especificar explicitamente os tipos de coluna do ClickHouse na definição da
 * [Enum8, Enum16](/pt-BR/reference/data-types/enum)
 * [Decimal32, Decimal64, Decimal128, Decimal256](/pt-BR/reference/data-types/decimal)
 * [FixedString](/pt-BR/reference/data-types/fixedstring)
-* Todos os tipos inteiros ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/pt-BR/reference/data-types/int-uint))
+* Todos os tipos inteiros ([UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](/pt-BR/reference/data-types/int-uint))
 * [Float32, Float64](/pt-BR/reference/data-types/float)
 
 Consulte o [motor de banco de dados SQLite](/pt-BR/reference/engines/database-engines/sqlite#data_types-support) para ver o mapeamento de tipos padrão.
+
+Um `NULL` do SQLite lido em uma coluna do ClickHouse explicitamente declarada como não `Nullable` gera a exceção `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN`. Declare a coluna como [Nullable](/pt-BR/reference/data-types/nullable) para ler valores `NULL`. Um schema inferido segue os metadados do SQLite: uma coluna é `Nullable`, a menos que seja declarada como `NOT NULL`.
 
 ## Exemplo de uso {#usage-example}
 
@@ -73,7 +75,7 @@ SHOW CREATE TABLE sqlite_db.table2;
 ```text
 CREATE TABLE SQLite.table2
 (
-    `col1` Nullable(Int32),
+    `col1` Nullable(Int64),
     `col2` Nullable(String)
 )
 ENGINE = SQLite('sqlite.db','table2');

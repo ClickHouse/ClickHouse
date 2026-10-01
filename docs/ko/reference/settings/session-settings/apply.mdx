@@ -13,25 +13,19 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
-<div id="apply_deleted_mask">
-  ## apply_deleted_mask
-</div>
+## apply_deleted_mask {#apply_deleted_mask}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 경량한 DELETE로 삭제된 행을 필터링해 제외합니다. 비활성화하면 쿼리에서 해당 행을 읽을 수 있습니다. 이는 디버깅이나 &quot;삭제 취소&quot; 시나리오에 유용합니다
 
-<div id="apply_mutations_on_fly">
-  ## apply_mutations_on_fly
-</div>
+## apply_mutations_on_fly {#apply_mutations_on_fly}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 true로 설정하면 데이터 파트(data part)에 아직 구체화되지 않은 뮤테이션(UPDATE 및 DELETE)이 SELECT 시 적용됩니다.
 
-<div id="apply_prewhere_after_final">
-  ## apply_prewhere_after_final
-</div>
+## apply_prewhere_after_final {#apply_prewhere_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -40,32 +34,38 @@ true로 설정하면 데이터 파트(data part)에 아직 구체화되지 않�
 활성화하면 ReplacingMergeTree 및 유사한 엔진에서 PREWHERE 조건이 FINAL 처리 후에 적용됩니다.
 이는 PREWHERE가 중복된 행마다 값이 다를 수 있는 컬럼을 참조하고,
 필터링 전에 FINAL이 최종적으로 남을 행을 먼저 선택하도록 하려는 경우에 유용합니다. 비활성화하면 PREWHERE는 읽는 동안 적용됩니다.
-참고: apply&#95;row&#95;level&#95;security&#95;after&#95;final이 활성화되어 있고 행 정책이 정렬 키가 아닌 컬럼을 사용하는 경우, PREWHERE도
-올바른 실행 순서를 유지하기 위해 나중에 적용됩니다(행 정책은 PREWHERE보다 먼저 적용되어야 합니다).
+참고: 행 정책이 `apply_row_policy_after_final`에 의해 지연되면 이 설정과 관계없이 PREWHERE도
+지연됩니다. 행 정책은 PREWHERE보다 먼저 적용되어야 하기 때문입니다. 이러한 지연은 정책 표현식이 비결정적이거나,
+ORDER BY에 포함되지 않은 컬럼을 읽거나, 부동소수점 타입이거나 이를 포함하는 타입의 ORDER BY 컬럼을 읽을 때 발생합니다.
 
-<div id="apply_row_policy_after_final">
-  ## apply_row_policy_after_final
-</div>
+가능한 값:
+
+* 0 — PREWHERE는 FINAL 이전에 적용됩니다. 단, 지연된 행 정책으로 인해 함께 지연되는 경우는 예외입니다(기본값).
+* 1 — PREWHERE는 FINAL 이후에 적용됩니다.
+
+## apply_row_policy_after_final {#apply_row_policy_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "1"},{"label": "행 정책과 PREWHERE가 FINAL 전에 적용되던 post-#87303 회귀 문제를 수정하기 위해 이 설정이 추가되었습니다. PR #91065에서 이 설정이 도입되었고, PR #97279에서 정확성을 보장하는 true가 기본값으로 설정되었습니다. compatibility가 수정 이전의 false 동작으로 되돌아가지 않도록 {true, true}로 기록되었습니다."}]}]} />
 
-활성화하면 행 정책과 PREWHERE가 *MergeTree 테이블에서 FINAL 처리 후에 적용됩니다. (특히 ReplacingMergeTree에서 중요합니다.)
+활성화하면 행 정책이 *MergeTree 테이블에서 FINAL 처리 후에 적용됩니다. (특히 ReplacingMergeTree에서 중요합니다.)
+이와 같이 정책 적용이 지연되면, 정책이 계속 먼저 적용되도록 PREWHERE도 함께 지연됩니다
+(PREWHERE를 조건 없이 항상 지연하려면 `apply_prewhere_after_final`을 참조하십시오).
 비활성화하면 행 정책이 FINAL 전에 적용되므로, 정책이 ReplacingMergeTree 또는 유사한 엔진에서
 중복 제거에 사용되어야 하는 행을 필터링하는 경우 결과가 달라질 수 있습니다.
 
-행 정책 표현식이 ORDER BY의 컬럼에만 의존하는 경우에는 최적화를 위해 여전히 FINAL 전에 적용됩니다.
-이러한 필터링은 중복 제거 결과에 영향을 주지 않기 때문입니다.
+행 정책 표현식이 결정적(deterministic)이고 ORDER BY에 포함된 부동소수점이 아닌 컬럼에만 의존하는 경우에는 최적화를 위해 여전히
+FINAL 전에 적용됩니다. 이러한 필터링은 중복 제거 결과에 영향을 주지 않기 때문입니다. 부동소수점 컬럼
+또는 부동소수점 값을 포함하는 컬럼(예: `Tuple(Float64, ...)`, `Array(Float64)`, `Nullable(Float64)` 등)은
+이 최적화에서 제외됩니다. `-0.0`과 `0.0`은 중복 제거 시 하나의 키로 취급되지만, 정책 조건에서는 두 값을 구분할 수 있기 때문입니다.
 
 가능한 값:
 
-* 0 — 행 정책과 PREWHERE가 FINAL 전에 적용됩니다(기본값).
-* 1 — 행 정책과 PREWHERE가 FINAL 후에 적용됩니다.
+* 0 — 행 정책이 FINAL 전에 적용됩니다.
+* 1 — 행 정책이 FINAL 후에 적용됩니다(기본값).
 
-<div id="apply_settings_from_server">
-  ## apply_settings_from_server
-</div>
+## apply_settings_from_server {#apply_settings_from_server}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

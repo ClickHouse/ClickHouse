@@ -13,25 +13,19 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويجري توليدها تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="apply_deleted_mask">
-  ## apply_deleted_mask
-</div>
+## apply_deleted_mask {#apply_deleted_mask}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 يُفعّل تصفية الصفوف المحذوفة باستخدام DELETE الخفيف. وإذا كان معطّلًا، فسيتمكّن الاستعلام من قراءة تلك الصفوف. ويكون ذلك مفيدًا في سيناريوهات تصحيح الأخطاء و&quot;إلغاء الحذف&quot;
 
-<div id="apply_mutations_on_fly">
-  ## apply_mutations_on_fly
-</div>
+## apply_mutations_on_fly {#apply_mutations_on_fly}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 إذا كانت القيمة true، فستُطبَّق عمليات mutations ‏(UPDATEs وDELETEs) التي لم تُطبَّق فعليًا بعد في data part عند تنفيذ استعلامات SELECT.
 
-<div id="apply_prewhere_after_final">
-  ## apply_prewhere_after_final
-</div>
+## apply_prewhere_after_final {#apply_prewhere_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -40,32 +34,39 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 عند التمكين، تُطبَّق شروط PREWHERE بعد معالجة FINAL في ReplacingMergeTree والمحركات المشابهة.
 وقد يكون ذلك مفيدًا عندما يشير PREWHERE إلى أعمدة قد تختلف قيمها بين الصفوف المكررة،
 وتريد أن يحدِّد FINAL الصف المعتمد قبل التصفية. وعند التعطيل، يُطبَّق PREWHERE أثناء القراءة.
-ملاحظة: إذا كان apply&#95;row&#95;level&#95;security&#95;after&#95;final ممكّنًا وكانت سياسة الصف تستخدم أعمدة ليست ضمن مفتاح الفرز، فسيُؤجَّل أيضًا
-تطبيق PREWHERE للحفاظ على ترتيب التنفيذ الصحيح (يجب تطبيق سياسة الصف قبل PREWHERE).
+ملاحظة: يُؤجَّل تطبيق PREWHERE أيضًا، بغض النظر عن هذا الإعداد، كلما أُجِّل تطبيق سياسة الصف بسبب
+`apply_row_policy_after_final`، لأن سياسة الصف يجب أن تُطبَّق قبل PREWHERE. ويحدث ذلك عندما يكون
+تعبير السياسة غير حتمي، أو يقرأ عمودًا غير موجود في ORDER BY، أو يقرأ عمودًا في ORDER BY
+يكون نوعه من أنواع الفاصلة العائمة أو يحتوي على نوع منها.
 
-<div id="apply_row_policy_after_final">
-  ## apply_row_policy_after_final
-</div>
+القيم الممكنة:
+
+* 0 — يُطبَّق PREWHERE قبل FINAL، ما لم تؤدِّ سياسة صف مؤجَّلة إلى تأجيله أيضًا (الافتراضي).
+* 1 — يُطبَّق PREWHERE بعد FINAL.
+
+## apply_row_policy_after_final {#apply_row_policy_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "1"},{"label": "أُضيف هذا الإعداد كإصلاح للتراجع الذي أعقب #87303، حيث كانت سياسات الصف وPREWHERE تُطبَّق قبل FINAL. قدّم PR #91065 هذا الإعداد، وجعل PR #97279 القيمة true الآمنة من حيث صحة النتائج هي القيمة الافتراضية. وسُجِّل كـ {true, true} حتى لا تعيد compatibility السلوك السابق للإصلاح، وهو false."}]}]} />
 
-عند التمكين، تُطبَّق سياسات الصف وPREWHERE بعد معالجة FINAL في جداول *MergeTree. (وخاصة ReplacingMergeTree)
+عند التمكين، تُطبَّق سياسات الصف بعد معالجة FINAL في جداول *MergeTree. (وخاصة ReplacingMergeTree)
+عندما يُؤجَّل تطبيق السياسة بهذه الطريقة، يُؤجَّل تطبيق PREWHERE معها حتى تظل السياسة تُطبَّق أولًا
+(انظر `apply_prewhere_after_final` لتأجيل تطبيق PREWHERE دون شروط).
 عند التعطيل، تُطبَّق سياسات الصف قبل FINAL، مما قد يؤدي إلى نتائج مختلفة عندما تقوم السياسة
 بتصفية صفوف يُفترض استخدامها لإزالة التكرار في ReplacingMergeTree أو محركات مشابهة.
 
-إذا كان تعبير سياسة الصف يعتمد فقط على الأعمدة الموجودة في ORDER BY، فسيظل يُطبَّق قبل FINAL كتحسين،
-لأن هذا النوع من التصفية لا يمكن أن يؤثر في نتيجة إزالة التكرار.
+إذا كان تعبير سياسة الصف حتميًا ويعتمد فقط على أعمدة لا تحتوي على قيم بفاصلة عائمة في ORDER BY، فسيظل
+يُطبَّق قبل FINAL كتحسين، لأن هذا النوع من التصفية لا يمكن أن يؤثر في نتيجة إزالة التكرار. وتُستثنى الأعمدة ذات الفاصلة العائمة
+أو الأعمدة التي تحتوي على قيم ذات فاصلة عائمة (مثل `Tuple(Float64, ...)` و`Array(Float64)` و`Nullable(Float64)` وغيرها)
+لأن `-0.0` و`0.0` يُعدّان مفتاحًا واحدًا عند إزالة التكرار، بينما يمكن لشرط السياسة التمييز بينهما.
 
 القيم الممكنة:
 
-* 0 — تُطبَّق سياسة الصف وPREWHERE قبل FINAL (افتراضيًا).
-* 1 — تُطبَّق سياسة الصف وPREWHERE بعد FINAL.
+* 0 — تُطبَّق سياسة الصف قبل FINAL.
+* 1 — تُطبَّق سياسة الصف بعد FINAL (افتراضيًا).
 
-<div id="apply_settings_from_server">
-  ## apply_settings_from_server
-</div>
+## apply_settings_from_server {#apply_settings_from_server}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

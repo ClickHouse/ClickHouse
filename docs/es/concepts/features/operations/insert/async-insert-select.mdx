@@ -1,0 +1,62 @@
+---
+slug: /concepts/features/operations/insert/async-insert-select
+sidebarTitle: 'INSERT ... SELECT asíncrono'
+title: 'INSERT ... SELECT asíncrono'
+description: 'Cómo INSERT ... SELECT pasa por la cola de inserciones asíncronas, y las reglas de enrutamiento, contabilización y cancelación que se le aplican.'
+keywords: ['inserciones asíncronas', 'async_insert', 'insert select', 'async_insert_select_as_async_insert']
+doc_type: 'guide'
+---
+
+No solo un `INSERT ... VALUES` simple puede pasar por la cola de [inserción asíncrona](/es/optimize/asynchronous-inserts): `INSERT ... SELECT` también puede hacerlo. En esta página se describe cuándo ocurre, cómo se contabiliza la parte de escritura y qué sucede cuando la consulta se cancela o supera el tiempo de espera.
+
+## Elegibilidad y enrutamiento {#eligibility-and-routing}
+
+Un `INSERT ... SELECT` sigue la ruta de la cola asíncrona solo cuando se cumplen todas estas condiciones:
+
+* `async_insert = 1`.
+* `async_insert_select_as_async_insert = 1` (el valor predeterminado). Este es el interruptor principal: si está desactivado, `INSERT ... SELECT` siempre es síncrono, independientemente de `async_insert`. Si se establece `compatibility` en una versión anterior a la 26.10, su valor predeterminado pasa a ser `0`; para volver a habilitarlo, basta con establecer explícitamente `async_insert_select_as_async_insert = 1`.
+* Todo el resultado del `SELECT` cabe en un único bloque que no supera `async_insert_max_data_size`.
+* El destino es una tabla de la familia `MergeTree` (para esta comprobación, un alias se resuelve hasta su destino).
+
+Aunque se cumplan todas las condiciones anteriores, la inserción recurre a la ruta síncrona en cualquiera de estos casos:
+
+* El resultado ocupa más de un bloque, supera `async_insert_max_data_size` o está vacío.
+* Se utiliza quorum no paralelo: `insert_quorum` está establecido e `insert_quorum_parallel = 0`.
+* El destino tiene vistas materializadas dependientes.
+* El destino es una vista materializada. La comprobación de `MergeTree` se aplica a la vista, no a su tabla de destino, por lo que no es elegible.
+* El destino es una función de tabla o un motor de tabla remoto como `Distributed`.
+* El `SELECT` lee de su propia tabla de destino (`INSERT INTO t SELECT ... FROM t`).
+* `insert_null_as_default` tiene que sustituir por un valor predeterminado los valores de una columna `Nullable` del `SELECT` que alimenta una columna de destino no `Nullable`.
+* La inserción es interna (actualización de una vista materializada actualizable, `POPULATE` o `CREATE TABLE ... AS SELECT`). Estas inserciones son siempre síncronas e ignoran `async_insert_select_as_async_insert` y `async_insert`.
+
+Las transacciones se tratan de otra manera. Cuando la consulta se ejecuta dentro de una transacción (explícita o mediante `implicit_transaction = 1`), la ruta asíncrona no es compatible y, de forma predeterminada, ClickHouse lanza `NOT_IMPLEMENTED` en lugar de recurrir a la ruta síncrona. Solo con `throw_on_unsupported_query_inside_transaction = 0` la consulta recurre a una inserción síncrona.
+
+El enrutamiento decidido antes de llegar a la comprobación asíncrona tiene prioridad, por lo que el lado del `SELECT` puede descartar por sí solo la ruta asíncrona. Con `parallel_distributed_insert_select` (activado de forma predeterminada), un `INSERT ... SELECT` que lee de una fuente de cluster como `s3Cluster` y escribe en una tabla replicada se ejecuta por la ruta de inserción distribuida y nunca llega a la cola asíncrona. Lo mismo ocurre con las réplicas paralelas.
+
+## Modo de retorno y espera {#return-mode-and-waiting}
+
+`wait_for_async_insert` funciona igual que en cualquier inserción asíncrona: `1` (el valor predeterminado) espera a que se complete el vaciado; `0` retorna en cuanto el bloque se pone en cola.
+
+Para ayudar a que un `SELECT` genere el bloque único que exige la ruta asíncrona, [`optimize_trivial_insert_select`](/es/reference/settings/session-settings/optimize-trivial#optimize_trivial_insert_select) limita un `INSERT INTO dest SELECT ... FROM source` trivial entre tablas distintas a [`max_insert_threads`](/es/reference/settings/session-settings/max-insert#max_insert_threads) threads de lectura. Si establece `max_insert_threads = 1`, el `SELECT` suele generar un único bloque.
+
+## Contabilización de escrituras y observabilidad {#write-accounting-and-observability}
+
+La parte de escritura se atribuye a la consulta de vaciado, no al `INSERT ... SELECT` original:
+
+* La consulta de vaciado registra los `ProfileEvents` de escritura (`InsertedRows`, `InsertedBytes`) y genera su propia fila de escritura en `system.query_log`. En la fila del `INSERT ... SELECT` original, esos `ProfileEvents` aparecen con valor `0`. Para ver las cifras de escritura del propio vaciado, consulte su fila en `system.query_log` y `system.asynchronous_insert_log`.
+* Con `wait_for_async_insert = 1` (el valor predeterminado), los valores `written_rows` y `written_bytes` de la consulta (y el encabezado HTTP `X-ClickHouse-Summary`) reflejan las filas y los bytes aceptados desde el `SELECT`, no el total de la propia consulta de vaciado. Si el vaciado falla, el error se sigue notificando al client.
+* Con `wait_for_async_insert = 0`, esas cifras no se notifican, ya que la consulta termina antes de que exista el resultado del vaciado.
+* La cuota `WRITTEN_BYTES` se contabiliza una sola vez, en la ruta de vaciado, y no se revierte si el vaciado falla.
+
+## Cancelación y tiempos de espera {#cancellation-and-timeouts}
+
+El bloque se pone en cola antes de que empiece la espera del vaciado, por lo que cancelar la consulta hace que el client deje de esperar, pero no impide que la cola se vacíe.
+
+* `KILL QUERY`, o alcanzar `max_execution_time` durante la espera, devuelve un error al client, pero es posible que las filas se escriban igualmente. En esta ruta, una consulta cancelada o que ha agotado el tiempo de espera no es prueba de que no se haya escrito nada.
+* Con `timeout_overflow_mode = 'break'` no se produce ningún error ni retorno anticipado: la consulta espera el vaciado más allá de `max_execution_time`, hasta `wait_for_async_insert_timeout`. Interrumpir la espera antes de tiempo notificaría un resultado correcto antes de que se confirmara la escritura.
+
+## Cuándo se fijan las decisiones {#when-decisions-are-bound}
+
+La elegibilidad para la ruta asíncrona se decide una única vez al inicio de la consulta, antes de que el bloque se ponga en cola, y una comprobación de acceso previa rechaza de forma anticipada cualquier inserción no autorizada. Que un `INSERT ... SELECT` tome o no la ruta asíncrona depende de la forma del bloque resultante, no solo de `async_insert`.
+
+La búsqueda del destino y la autorización de la vinculación se ejecutan posteriormente, en el momento del vaciado, igual que en [cualquier inserción asíncrona](/es/optimize/asynchronous-inserts): si entre el encolado y el vaciado se asocia una vista materializada al destino o se revoca un privilegio, el vaciado se verá afectado.

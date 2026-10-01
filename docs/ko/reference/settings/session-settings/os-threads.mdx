@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-<div id="os_threads_nice_value_materialized_view">
-  ## os_threads_nice_value_materialized_view
-</div>
+## os_threads_nice_value_materialized_view {#os_threads_nice_value_materialized_view}
 
 <SettingsInfoBlock type="Int32" default_value="0" />
 
@@ -27,15 +25,13 @@ CAP&#95;SYS&#95;NICE capability가 필요하며, 없으면 no-op입니다.
 
 가능한 값: -20~19.
 
-<div id="os_threads_nice_value_query">
-  ## os_threads_nice_value_query
-</div>
+## os_threads_nice_value_query {#os_threads_nice_value_query}
 
 **별칭**: `os_thread_priority`
 
 <SettingsInfoBlock type="Int32" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "새 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "새로운 설정이며, `os_thread_priority`를 별칭으로 사용할 수 있습니다."}]}]} />
 
 쿼리 처리 스레드의 Linux nice 값입니다. 값이 낮을수록 CPU 우선순위가 높아집니다.
 

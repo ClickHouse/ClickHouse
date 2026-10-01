@@ -14,7 +14,7 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동으로 생성됩니다.
 
-## promql_database
+## promql_database {#promql_database}
 
 <PrivatePreviewBadge />
 
@@ -22,19 +22,19 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 
 &#39;promql&#39; 방언에서 사용할 데이터베이스 이름을 지정합니다. 빈 문자열은 현재 데이터베이스를 의미합니다.
 
-## promql_evaluation_time
+## promql_evaluation_time {#promql_evaluation_time}
 
 <PrivatePreviewBadge />
 
 **별칭**: `evaluation_time`
 
-<SettingsInfoBlock type="FloatAuto" default_value="auto" />
+<SettingsInfoBlock type="DoubleAuto" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "auto"},{"label": "설정 이름이 변경되었습니다. 이전 이름은 `evaluation_time`입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "auto"},{"label": "설정 이름이 변경되었습니다. 이전 이름은 `evaluation_time`입니다."}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "auto"},{"label": "새 실험적 설정입니다. 당시 설정 이름은 `evaluation_time`이었으며, 현재는 이 설정의 별칭입니다."}]}]} />
 
-promql 방언에서 사용할 평가 시간을 설정합니다. `auto`는 현재 시간을 의미합니다.
+promql 방언에서 사용할 평가 시간을 초 단위 Unix 타임스탬프(소수부 포함 가능)로 설정합니다. `auto`는 현재 시간을 의미합니다.
 
-## promql_table
+## promql_table {#promql_table}
 
 <PrivatePreviewBadge />
 

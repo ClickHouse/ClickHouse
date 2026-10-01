@@ -10,9 +10,9 @@ doc_type: 'reference'
 
 Las PROJECTIONS hipotéticas son PROJECTIONS virtuales, con alcance de sesión, que puede adjuntar a una tabla de la familia `MergeTree` sin necesidad de construirlas ni almacenarlas. Existen únicamente dentro de la sesión actual y se listan mediante [`EXPLAIN WHATIF`](/es/reference/statements/explain#explain-whatif).
 
-`EXPLAIN WHATIF` aún no estima el beneficio de una PROJECTION hipotética: informa cada una con `status: not_applicable`. Definirlas resulta útil actualmente para validar una definición frente a la tabla sin materializarla, y para herramientas que leen [`system.hypothetical_projections`](/es/reference/system-tables/hypothetical_projections).
+`EXPLAIN WHATIF` estima las PROJECTIONS hipotéticas normales (ordenadas): a cuántas marcas y filas accedería la lectura de la PROJECTION para una consulta y si el optimizador la elegiría en lugar de la tabla base. No se estiman todas las PROJECTIONS: las PROJECTIONS de agregación y las que tienen una cláusula `WHERE` son dos de esos casos. Los candidatos que no se estiman aparecen en la lista junto con el motivo. Consulte [`EXPLAIN WHATIF`](/es/reference/statements/explain#explain-whatif) para ver la lista completa. Las PROJECTIONS hipotéticas de la sesión también pueden consultarse en [`system.hypothetical_projections`](/es/reference/system-tables/hypothetical_projections).
 
-## CREATE HYPOTHETICAL PROJECTION
+## CREATE HYPOTHETICAL PROJECTION {#create-hypothetical-projection}
 
 ```sql
 CREATE HYPOTHETICAL PROJECTION [IF NOT EXISTS] name
@@ -37,7 +37,7 @@ CREATE HYPOTHETICAL PROJECTION p_by_b ON t (SELECT a, b ORDER BY b);
 CREATE HYPOTHETICAL PROJECTION p_idx ON t INDEX b TYPE basic;
 ```
 
-## DROP HYPOTHETICAL PROJECTION
+## DROP HYPOTHETICAL PROJECTION {#drop-hypothetical-projection}
 
 ```sql
 DROP HYPOTHETICAL PROJECTION [IF EXISTS] name ON [db.]table_name
@@ -45,7 +45,7 @@ DROP HYPOTHETICAL PROJECTION [IF EXISTS] name ON [db.]table_name
 
 Elimina una PROJECTION hipotética de la sesión actual.
 
-## DROP ALL HYPOTHETICAL PROJECTIONS
+## DROP ALL HYPOTHETICAL PROJECTIONS {#drop-all-hypothetical-projections}
 
 ```sql
 DROP ALL HYPOTHETICAL PROJECTIONS
@@ -53,19 +53,19 @@ DROP ALL HYPOTHETICAL PROJECTIONS
 
 Elimina todas las PROJECTIONS hipotéticas definidas en la sesión actual, sin importar la tabla. Los índices hipotéticos no se ven afectados; `DROP ALL HYPOTHETICAL INDEXES` hace lo contrario.
 
-## Alcance y ciclo de vida
+## Alcance y ciclo de vida {#scope-and-lifetime}
 
 * Las PROJECTIONS hipotéticas solo existen en la **sesión actual**: son invisibles para las demás sesiones y se descartan al finalizar la sesión.
 * Definir o eliminar una no construye ninguna PROJECTION ni afecta jamás a las consultas ordinarias sobre la tabla.
 * Consulte las PROJECTIONS hipotéticas de la sesión actual mediante [`system.hypothetical_projections`](/es/reference/system-tables/hypothetical_projections).
 
-## Privilegios requeridos
+## Privilegios requeridos {#required-privileges}
 
-`CREATE HYPOTHETICAL PROJECTION` requiere `ALTER ADD PROJECTION` sobre la tabla —el mismo privilegio que necesita el `ALTER TABLE ... ADD PROJECTION` real— porque valida la definición frente a las columnas de la tabla. No lee datos de la tabla, por lo que aún no se requiere `SELECT` sobre las columnas de la PROJECTION; cuando `EXPLAIN WHATIF` empiece a estimar PROJECTIONS, leerá esas columnas y entonces sí se requerirá `SELECT` a nivel de columna, tal como ya ocurre con [`CREATE HYPOTHETICAL INDEX`](/es/reference/statements/hypothetical-index#required-privileges).
+`CREATE HYPOTHETICAL PROJECTION` requiere `ALTER ADD PROJECTION` sobre la tabla —el mismo privilegio que necesita el `ALTER TABLE ... ADD PROJECTION` real— porque valida la definición frente a las columnas de la tabla. `EXPLAIN WHATIF` requiere `SELECT` a nivel de columna sobre las columnas de la PROJECTION para estimarla, tal como ya ocurre con [`CREATE HYPOTHETICAL INDEX`](/es/reference/statements/hypothetical-index#required-privileges).
 
-`DROP HYPOTHETICAL PROJECTION` requiere el mismo privilegio, de modo que nombrar una tabla en un `DROP` no pueda revelar si existe o si es apta. `DROP ALL HYPOTHETICAL PROJECTIONS` no nombra ninguna tabla y no requiere ningún privilegio.
+`DROP HYPOTHETICAL PROJECTION` requiere el mismo privilegio, de modo que nombrar una tabla en un `DROP` no pueda revelar si existe o si es apta, y `EXPLAIN WHATIF` vuelve a comprobar ese privilegio antes de validar una definición almacenada frente a la tabla. `DROP ALL HYPOTHETICAL PROJECTIONS` no nombra ninguna tabla y no requiere ningún privilegio.
 
-## Véase también
+## Véase también {#see-also}
 
 * [`CREATE HYPOTHETICAL INDEX`](/es/reference/statements/hypothetical-index)
 * [`EXPLAIN WHATIF`](/es/reference/statements/explain#explain-whatif)

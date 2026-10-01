@@ -13,25 +13,19 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются из [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="apply_deleted_mask">
-  ## apply_deleted_mask
-</div>
+## apply_deleted_mask {#apply_deleted_mask}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Включает фильтрацию строк, удалённых с помощью легковесного DELETE. Если параметр отключён, запрос сможет читать эти строки. Это полезно при отладке и в сценариях «отмены удаления».
 
-<div id="apply_mutations_on_fly">
-  ## apply_mutations_on_fly
-</div>
+## apply_mutations_on_fly {#apply_mutations_on_fly}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Если значение равно true, мутации (UPDATE и DELETE), которые не материализованы в части данных, будут применяться при выполнении SELECT-запросов.
 
-<div id="apply_prewhere_after_final">
-  ## apply_prewhere_after_final
-</div>
+## apply_prewhere_after_final {#apply_prewhere_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -40,32 +34,39 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Если включено, условия PREWHERE для ReplacingMergeTree и похожих движков применяются после обработки FINAL.
 Это может быть полезно, если PREWHERE ссылается на столбцы, значения которых могут различаться в дублирующихся строках,
 и нужно, чтобы FINAL сначала выбрал строку, которая должна остаться, а уже потом применялась фильтрация. Если отключено, PREWHERE применяется при чтении.
-Note: Если включен apply&#95;row&#95;level&#95;security&#95;after&#95;final и ROW POLICY использует столбцы, не входящие в ключ сортировки, PREWHERE также
-будет отложен, чтобы сохранить правильный порядок выполнения (ROW POLICY должна применяться до PREWHERE).
+Note: независимо от этой настройки, PREWHERE также откладывается всякий раз, когда ROW POLICY откладывается настройкой
+`apply_row_policy_after_final`, поскольку ROW POLICY должна применяться до PREWHERE. Это происходит, если
+выражение политики недетерминировано, читает столбец, не входящий в ORDER BY, либо читает столбец из ORDER BY,
+тип которого является типом с плавающей запятой или содержит его.
 
-<div id="apply_row_policy_after_final">
-  ## apply_row_policy_after_final
-</div>
+Возможные значения:
+
+* 0 — PREWHERE применяется до FINAL, если только отложенная ROW POLICY не вынуждает отложить и его (по умолчанию).
+* 1 — PREWHERE применяется после FINAL.
+
+## apply_row_policy_after_final {#apply_row_policy_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "1"},{"label": "Параметр был добавлен как исправление регрессии после #87303, при которой ROW POLICY и PREWHERE применялись до FINAL. В PR #91065 был добавлен этот параметр, а PR #97279 сделал безопасное с точки зрения корректности значение true значением по умолчанию. Зафиксировано как {true, true}, чтобы compatibility никогда не возвращалась к прежнему поведению false, существовавшему до исправления."}]}]} />
 
-Когда включено, ROW POLICY и PREWHERE применяются после обработки FINAL для таблиц семейства *MergeTree. (Особенно для ReplacingMergeTree)
+Когда включено, ROW POLICY применяются после обработки FINAL для таблиц семейства *MergeTree. (Особенно для ReplacingMergeTree)
+Если применение политики откладывается таким образом, PREWHERE откладывается вместе с ней, чтобы политика по-прежнему применялась первой
+(для безусловного откладывания PREWHERE см. `apply_prewhere_after_final`).
 Когда отключено, ROW POLICY применяются до FINAL, что может приводить к другим результатам, если политика
 отфильтровывает строки, которые должны использоваться для дедупликации в ReplacingMergeTree или аналогичных движках.
 
-Если выражение ROW POLICY зависит только от столбцов в ORDER BY, оно все равно будет применяться до FINAL в качестве оптимизации,
-поскольку такая фильтрация не может повлиять на результат дедупликации.
+Если выражение ROW POLICY детерминировано и зависит только от столбцов в ORDER BY, не имеющих типов с плавающей запятой, оно все равно будет
+применяться до FINAL в качестве оптимизации, поскольку такая фильтрация не может повлиять на результат дедупликации. Столбцы с плавающей запятой
+или столбцы, содержащие значения с плавающей запятой (например, `Tuple(Float64, ...)`, `Array(Float64)`, `Nullable(Float64)` и т. д.),
+исключаются, поскольку при дедупликации `-0.0` и `0.0` считаются одним ключом, тогда как условие политики может их различать.
 
 Возможные значения:
 
-* 0 — ROW POLICY и PREWHERE применяются до FINAL (по умолчанию).
-* 1 — ROW POLICY и PREWHERE применяются после FINAL.
+* 0 — ROW POLICY применяется до FINAL.
+* 1 — ROW POLICY применяется после FINAL (по умолчанию).
 
-<div id="apply_settings_from_server">
-  ## apply_settings_from_server
-</div>
+## apply_settings_from_server {#apply_settings_from_server}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

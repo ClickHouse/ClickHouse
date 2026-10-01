@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "运算符",
           "pages": [
-            "zh/reference/operators/index",
-            "zh/reference/operators/exists",
-            "zh/reference/operators/distributed-ddl"
+            "zh/reference/operators/index"
           ]
         }
       ]
@@ -420,6 +418,7 @@
             "zh/reference/engines/database-engines/index",
             "zh/reference/engines/database-engines/atomic",
             "zh/reference/engines/database-engines/backup",
+            "zh/reference/engines/database-engines/cluster",
             "zh/reference/engines/database-engines/datalake",
             "zh/reference/engines/database-engines/dictionary",
             "zh/reference/engines/database-engines/filesystem",
@@ -945,6 +944,7 @@
           ]
         },
         "zh/reference/formats/SQLInsert",
+        "zh/reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",

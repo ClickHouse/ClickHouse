@@ -344,13 +344,13 @@ SETTINGS allow_introspection_functions=1
 
 ### Пример: построение флеймграфа фрагментации {#example-fragmentation-flamegraph}
 
-Тот же запрос может распределить потери каждого size class между его стеками вызовов пропорционально количеству старых выделений и вывести результат в формате `collapsed` для `flamegraph.pl`. Те size class, у которых есть потери, но нет достаточно старых образцов, попадают во фрейм `[unattributed]`, так что итог флеймграфа равен суммарным потерям. Обращайтесь к `system.jemalloc_sampled_allocations` только один раз за запрос: при каждом чтении сбрасывается новый profile, поэтому два подзапроса увидят разные данные.
+Тот же запрос может распределить потери каждого класса размеров между его стеками вызовов пропорционально количеству старых выделений и вывести результат в формате `collapsed` для `flamegraph.pl`. Те классы размеров, у которых есть потери, но нет достаточно старых образцов, попадают во фрейм `[unattributed]`, так что итог флеймграфа равен суммарным потерям. Обращайтесь к `system.jemalloc_sampled_allocations` только один раз за запрос: при каждом чтении сбрасывается новый профиль, поэтому два подзапроса увидят разные данные.
 
 ```sql
 WITH 60e9 AS min_age_ns
 SELECT format('{} {}',
     if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))),
-    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste))))
+    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), toFloat64(b.waste)))))
 FROM system.jemalloc_arena_bins AS b
 LEFT JOIN
 (

@@ -13,17 +13,13 @@ doc_type: 'مرجع'
 يعيد الرموز مع البيانات الوصفية لقوائم الترحيل الخاصة بها.
 ويمكن استخدامه للفحص الداخلي.
 
-<div id="syntax">
-  ## الصيغة
-</div>
+## الصيغة {#syntax}
 
 ```sql
 mergeTreeTextIndex(database, table, index_name)
 ```
 
-<div id="arguments">
-  ## الوسيطات
-</div>
+## الوسيطات {#arguments}
 
 | الوسيطة      | الوصف                                             |
 | ------------ | ------------------------------------------------- |
@@ -31,15 +27,13 @@ mergeTreeTextIndex(database, table, index_name)
 | `table`      | اسم الجدول الذي سيُقرأ منه الفهرس النصي.          |
 | `index_name` | الفهرس النصي الذي ستتم القراءة منه.               |
 
-<div id="returned-value">
-  ## القيمة المعادة
-</div>
+## القيمة المعادة {#returned-value}
 
 كائن من نوع جدول يحتوي على الرموز والبيانات الوصفية لقوائم الترحيل الخاصة بها.
 
-<div id="usage-example">
-  ## مثال للاستخدام
-</div>
+إذا كان الفهرس يستخدم مُقسِّم الرموز `keyValuePairs`، فإن كل رمز يكون زوجًا `(key, value)` من عمود من نوع `Map`، ويتضمن الناتج عمودين إضافيين هما `token_key` و`token_value` يحتويان على جزأي الرمز بعد فك ترميزهما.
+
+## مثال للاستخدام {#usage-example}
 
 ```sql title="Query"
 CREATE TABLE tab

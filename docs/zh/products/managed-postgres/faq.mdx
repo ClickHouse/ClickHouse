@@ -53,43 +53,57 @@ ClickHouse Managed Postgres 提供超过 90 个 PostgreSQL 扩展，包括 PostG
 
 ## 连接池 {#connection-pooling}
 
-### 为什么我通过 PgBouncer 会看到 `prepared statement does not exist` 错误？ {#prepared-statement-errors}
+### 为什么通过 PgBouncer 连接时会出现 `prepared statement does not exist` 错误？ {#prepared-statement-errors}
 
-ClickHouse Managed Postgres 以 **transaction pooling** 模式运行 PgBouncer。在这种模式下，后端 Postgres 连接只会在单个事务期间分配给客户端，随后就会返回连接池——同一客户端的下一笔事务可能会落到不同的后端上。
+ClickHouse Managed Postgres 以 **事务池化** (transaction pooling) 模式运行 PgBouncer。在此模式下，后端 Postgres 连接仅在单个事务期间分配给您的客户端，事务结束后即归还连接池——同一客户端的下一个事务可能会被分配到另一个后端连接上。
 
-这会导致**服务器端预处理语句**失效，因为它们绑定在执行 `PREPARE` (或扩展查询 `Parse`) 的特定后端上。当对应的 `EXECUTE` 落到另一个后端时，就会出现如下错误：
+PgBouncer 会跟踪 **协议级预处理语句**，大多数驱动程序通过扩展查询协议 (`Parse`、`Bind` 和 `Execute` 消息) 发送这类语句。当某条语句在尚未准备过它的后端上执行时，PgBouncer 会先在该后端上完成预处理。每个后端连接最多保留 `max_prepared_statements` 条此类语句，默认值为 `200`。因此，无论是命名还是未命名的预处理语句，都可以通过 PgBouncer 正常使用，无需修改驱动程序。
+
+以下情况无法通过 PgBouncer 正常工作：
+
+* **SQL 级预处理语句。** PgBouncer 不会跟踪以 SQL 形式发送的 `PREPARE` 和 `EXECUTE`，因此 `EXECUTE` 可能会被发送到从未执行过相应 `PREPARE` 的后端上。
+* **使用 SQL `DEALLOCATE` 释放语句。** PgBouncer 会在后端对语句进行重命名，因此按客户端语句名称执行的 `DEALLOCATE` 会失败。如果在事务内执行，该操作会导致事务中止，后续语句将报错 `current transaction is aborted`。基于 libpq 17 或更高版本构建的驱动程序改用协议级 `Close` 消息释放语句，PgBouncer 可以正确处理这种方式。
+
+上述任一情况都会产生类似以下的错误：
 
 ```text
 ERROR:  prepared statement "..." does not exist
 ERROR:  unnamed prepared statement does not exist
 ```
 
-通常可追溯到这一根本原因的症状包括：
+以下症状通常都源于同一根本原因：
 
-* `prepared statement does not exist` 错误突然增多，尤其是在回填期间或高并发写入时
-* 看似“静默失败”的插入 —— 语句报错后，driver 会重试，结果一个批次最终可能只部分生效，甚至被丢弃
-* 返回值类型错误 (例如，把 `BIGINT` 列解码成 `float64` 位模式) —— 当缓存的客户端执行计划在某个后端上复用了过期的类型/format 代码时，就会发生这种情况，而该后端从未收到与之匹配的 `Parse`
+* 突发大量 `prepared statement does not exist` 错误，尤其是在回填数据或高并发写入期间
+* 插入操作看似“静默失败”——语句报错后驱动程序进行重试，最终某个批次可能只被部分写入，甚至被丢弃
+* 某条语句被释放后，事务失败并报 `current transaction is aborted` 错误
 
-**修复方法：在你的 driver 中禁用服务器端预处理语句。** 具体开关取决于你使用的客户端库：
+**解决方法：升级驱动程序，或在驱动程序中禁用服务器端预处理语句。** 使用 SQL `DEALLOCATE` 释放语句的驱动程序包括：搭配 1.6 以下版本 `pg` gem 或 17 以下版本 libpq 的 Ruby on Rails，以及基于 17 以下版本 libpq 编译的 PHP `pdo_pgsql`。如果无法升级，具体的配置项取决于您使用的客户端库：
 
-| Driver                           | Setting                                                                                |
-| -------------------------------- | -------------------------------------------------------------------------------------- |
-| **pgx** (Go)                     | `statement_cache_capacity=0` and `default_query_exec_mode=exec` (or `simple_protocol`) |
-| **psycopg3** (Python)            | `prepare_threshold=None`                                                               |
-| **asyncpg** (Python)             | `statement_cache_size=0`                                                               |
-| **JDBC** (Java)                  | `prepareThreshold=0`                                                                   |
-| **node-postgres / pg** (Node.js) | 不要向 `query()` 传入 `name` (命名查询会变成服务端预处理语句)                                              |
+| 驱动程序                              | 设置                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------ |
+| **pgx** (Go)                      | `statement_cache_capacity=0` 和 `default_query_exec_mode=exec` (或 `simple_protocol`)  |
+| **psycopg3** (Python)             | `prepare_threshold=None`                                                             |
+| **asyncpg** (Python)              | `statement_cache_size=0`                                                             |
+| **JDBC** (Java)                   | `prepareThreshold=0`                                                                 |
+| **Active Record** (Ruby on Rails) | 在 `config/database.yml` 中设置 `prepared_statements: false`                             |
+| **PDO** (PHP, Laravel)            | `PDO::ATTR_EMULATE_PREPARES => true`                                                 |
 
-如果你的工作负载依赖预处理语句，请**直接连接到 PostgreSQL** (端口 5432) ，而不要通过 PgBouncer 连接池器 —— 直连可以正常支持预处理语句。关于如何在池化端点和直连端点之间进行选择的详细信息，请参阅 [Connection](/zh/products/managed-postgres/connection)。
+如果您的工作负载依赖 SQL 级别的 `PREPARE`，请**直接连接 PostgreSQL** (端口 5432) ，而不要通过 PgBouncer 连接池器。关于如何在连接池端点与直连端点之间进行选择，请参阅[连接](/zh/products/managed-postgres/connection)。
 
 ### PgBouncer 中的 `max_client_conn` 设置是什么意思？它与 Postgres 中的 `max_connections` 有什么关系？ {#pgbouncer-vs-pg-connections}
 
 它们控制的是不同的对象：
 
 * **Postgres `max_connections`** 限制的是 PostgreSQL 自身的 **后端** 连接数。这才是成本较高的那个限制——每个 后端 都会占用内存和一个进程槽位。
-* **PgBouncer `max_client_conn`** 限制的是连接池器中可同时打开的 **client** 连接数。PgBouncer 会将大量客户端连接复用到一组小得多的 后端 连接上。
+* **PgBouncer `max_client_conn`** 限制的是连接池器中可同时打开的 **客户端** 连接数。PgBouncer 会将大量客户端连接复用到一组小得多的 后端 连接上。
 
-典型的 ClickHouse Managed Postgres instance 通常会配置为：PgBouncer 可接受的客户端连接数大约是 Postgres 后端 数量的 **10 倍** (例如 5000 个 client / 500 个 后端) 。如果你在连接池器这一层看到连接错误，那么相比达到醒目的客户端连接上限，更有可能是触及了每个连接池的 后端 限制 (`default_pool_size`) 。
+PgBouncer 可接受的客户端连接数是 Postgres 后端数量的数倍。例如，`max_connections` 设置为 `500` 的实例，在连接池器处可接受 `2500` 个客户端连接。如果你在连接池器这一层看到连接错误，那么相比达到醒目的客户端连接上限，更有可能是触及了每个连接池的 后端 限制 (`default_pool_size`，或每个数据库的 `max_db_connections`) 。
+
+要查看你的实例的配置值，请通过 PgBouncer (端口 `6432`) 连接到特殊的 `pgbouncer` 数据库，并运行 `SHOW CONFIG`：
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/pgbouncer?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "SHOW CONFIG;"
+```
 
 ## 数据库功能 {#database-capabilities}
 

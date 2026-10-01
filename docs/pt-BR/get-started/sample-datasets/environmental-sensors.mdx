@@ -13,8 +13,12 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 [Sensor.Community](https://sensor.community/en/) é uma rede global de sensores movida por colaboradores que cria Dados Ambientais Abertos. Os dados são coletados por sensores em todo o mundo. Qualquer pessoa pode comprar um sensor e instalá-lo onde quiser. As APIs para baixar os dados estão no [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs), e os dados estão disponíveis gratuitamente sob a [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/).
 
 <Warning>
-  O conjunto de dados tem mais de 20 bilhões de registros, portanto tenha cuidado ao simplesmente copiar e colar os comandos abaixo, a menos que seus recursos consigam lidar com esse volume. Os comandos abaixo foram executados em uma instância de **Production** do [ClickHouse Cloud](https://clickhouse.cloud).
+  O conjunto de dados tem mais de 20 bilhões de registros, portanto tenha cuidado ao simplesmente copiar e colar os comandos abaixo, a menos que seus recursos consigam lidar com esse volume. Esses comandos foram executados em um serviço do [ClickHouse Cloud](/pt-BR/products/cloud/getting-started/intro) com dimensionamento adequado.
 </Warning>
+
+<Tip>
+  Para testar esses comandos por conta própria, você pode se inscrever em um [teste gratuito do ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-environmental-sensors) ou configurar um [ClickHouse auto-hospedado](/pt-BR/get-started/setup/install).
+</Tip>
 
 1. Os dados estão no S3, então podemos usar a table function `s3` para criar uma tabela a partir dos arquivos. Também podemos consultar os dados no local. Vamos ver algumas linhas antes de tentar inseri-los no ClickHouse:
 
@@ -74,7 +78,7 @@ ENGINE = MergeTree
 ORDER BY (timestamp, sensor_id);
 ```
 
-3. Os serviços do ClickHouse Cloud têm um cluster chamado `default`. Usaremos a table function `s3Cluster`, que lê arquivos do S3 em paralelo a partir dos nós do seu cluster. (Se você não tiver um cluster, basta usar a função `s3` e remover o nome do cluster.)
+3. Usaremos a função de tabela [`s3Cluster`](/pt-BR/reference/functions/table-functions/s3Cluster), que distribui os arquivos do S3 entre os nós do seu cluster para que sejam lidos em paralelo. No ClickHouse Cloud, seu cluster se chama `default`, e você pode executar a consulta exatamente como mostrado. Em um servidor autogerenciado, substitua `default` pelo nome do seu cluster — ou, se estiver executando um único servidor, use a função de tabela [`s3`](/pt-BR/reference/functions/table-functions/s3), removendo o primeiro argumento para que a chamada comece pela URL.
 
 Esta consulta vai demorar um pouco — são cerca de 1,67 T de dados não comprimidos:
 
@@ -114,7 +118,7 @@ SETTINGS
     parallel_distributed_insert_select = 1;
 ```
 
-Aqui está a resposta — mostrando o número de linhas e a velocidade de processamento. Os dados são inseridos a uma taxa de mais de 6 milhões de linhas por segundo!
+Aqui está a resposta - mostrando o número de linhas e a velocidade de processamento. Os dados são inseridos a uma taxa de mais de 6M de linhas por segundo!
 
 ```response
 0 rows in set. Elapsed: 3419.330 sec. Processed 20.69 billion rows, 1.67 TB (6.05 million rows/s., 488.52 MB/s.)

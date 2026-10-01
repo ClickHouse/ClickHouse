@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "Операторы",
           "pages": [
-            "ru/reference/operators/index",
-            "ru/reference/operators/exists",
-            "ru/reference/operators/distributed-ddl"
+            "ru/reference/operators/index"
           ]
         }
       ]
@@ -420,6 +418,7 @@
             "ru/reference/engines/database-engines/index",
             "ru/reference/engines/database-engines/atomic",
             "ru/reference/engines/database-engines/backup",
+            "ru/reference/engines/database-engines/cluster",
             "ru/reference/engines/database-engines/datalake",
             "ru/reference/engines/database-engines/dictionary",
             "ru/reference/engines/database-engines/filesystem",
@@ -945,6 +944,7 @@
           ]
         },
         "ru/reference/formats/SQLInsert",
+        "ru/reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -1178,7 +1178,7 @@
       ]
     },
     {
-      "group": "Озёра данных",
+      "group": "Озера данных",
       "pages": [
         "ru/reference/datalakes"
       ]

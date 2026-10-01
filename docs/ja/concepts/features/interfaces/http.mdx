@@ -9,7 +9,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 <div id="prerequisites">
-  ## 前提条件
+  ## 前提条件 {#prerequisites}
 </div>
 
 この記事の例では、以下が必要です。
@@ -17,9 +17,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 * 稼働中の ClickHouse server インスタンス
 * `curl` がインストールされていること。Ubuntu または Debian では、`sudo apt install curl` を実行するか、インストール方法についてはこの[ドキュメント](https://curl.se/download.html)を参照してください。
 
-<div id="overview">
-  ## 概要
-</div>
+## 概要 {#overview}
 
 HTTPインターフェイスを使用すると、任意のプラットフォーム上で、任意のプログラミング言語から、REST API の形式で ClickHouse を利用できます。HTTPインターフェイスはネイティブインターフェイスより機能が制限されていますが、より幅広い言語をサポートしています。
 
@@ -39,9 +37,7 @@ Ok.
 
 あわせて参照してください: [HTTPレスポンスコードに関する注意点](#http_response_codes_caveats)。
 
-<div id="web-ui">
-  ## Webユーザーインターフェイス
-</div>
+## Webユーザーインターフェイス {#web-ui}
 
 ClickHouse には Webユーザーインターフェイスが含まれており、次のアドレスからアクセスできます。
 
@@ -68,7 +64,7 @@ Ok.
 ```
 
 <div id="querying">
-  ## HTTP/HTTPS 経由でのクエリ
+  ## HTTP/HTTPS 経由でのクエリ {#querying}
 </div>
 
 HTTP/HTTPS 経由でクエリを実行する方法は 3 つあります。
@@ -200,7 +196,7 @@ wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
 }
 ```
 
-`TabSeparated` 以外のデフォルトフォーマットを指定するには、`default_format` URL パラメータを使用できます。`X-ClickHouse-Format` ヘッダーを使用すると、レスポンスのフォーマットを明示的に指定できます。これは `output_format` 設定のエイリアスであるため、クエリ内の `FORMAT` 句もオーバーライドします。`INSERT` のリクエストボディの解析方法が変更されることはありません。その場合は `input_format` または `format` を使用してください。
+`TabSeparated` 以外のデフォルトフォーマットを指定するには、`default_format` URL パラメータを使用できます。`X-ClickHouse-Format` ヘッダーを使用すると、レスポンスのフォーマットを明示的に指定できます。これは `output_format` 設定のエイリアスであるため、クエリ内の `FORMAT` 句もオーバーライドします。`INSERT` のリクエストボディの解析方法が変更されることはありません。その場合は `input_format` または `format` を使用してください。26.8より前のバージョンでは、このヘッダーは `default_format` のエイリアスであり、`FORMAT` 句をオーバーライドしませんでした。この動作に戻すには、`http_x_clickhouse_format_overrides_output_format` 設定を無効にしてください (ユーザープロファイルまたは URL パラメータで指定できます。フォーマット設定と同様に、読み取り専用モードでも変更できます) 。
 
 ```bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -219,46 +215,44 @@ $ curl -X POST -F 'query=select {p1:UInt8} + {p2:UInt8}' -F "param_p1=3" -F "par
 7
 ```
 
-<div id="tables-as-files">
-  ## URL パス経由でテーブルにアクセスし、クエリを構築する
-</div>
+## URL パス経由でテーブルにアクセスし、クエリを構築する {#tables-as-files}
 
 ClickHouse 26.8 以降で利用できます。
 
-HTTP インターフェイスでは、URL パスをデータベース、テーブル、出力フォーマット、圧縮方式として解釈できます。URL パラメータで結果を指定できるため、単純な読み取りリクエストに SQL は必要ありません。これらの機能はデフォルトで無効になっているため、明示的に有効化する必要があります。
+HTTP インターフェイスでは、URL パスをデータベース、テーブル、出力フォーマット、圧縮方式として解釈できます。URL パラメータで結果を指定できるため、単純な読み取りリクエストに SQL は必要ありません。これらの機能は ClickHouse 26.10 以降、デフォルトで有効になっています。26.8 と 26.9 では明示的に有効化する必要がありました。
 
-<div id="enabling-path-routing">
-  ### パスルーティングを有効にする
-</div>
+### パスルーティングの設定 {#enabling-path-routing}
 
 パスの解釈は、次の 2 つのレベルで有効化されます。
 
-1. HTTP インターフェイスがパス形式のリクエストをクエリハンドラーにルーティングできるようにする、サーバーレベルの `http_allow_path_requests` 構成設定を有効にします。
+1. サーバーレベルの `http_allow_path_requests` 設定により、HTTP インターフェイスはパス形式のリクエストをクエリハンドラーにルーティングできます。この設定はデフォルトで有効です。`0` に設定すると、設定済みのハンドラーに該当しないすべてのパスで、再び `404` が返されます。
 
 ```xml
 <clickhouse>
-    <http_allow_path_requests>1</http_allow_path_requests>
+    <http_allow_path_requests>0</http_allow_path_requests>
 </clickhouse>
 ```
 
-2. 必要なユーザーごとの設定を有効にします。
+2. 以下のユーザーごとの設定によって、ルーティングされたパスの解釈方法が決まります。`http_allow_filters_as_unrecognized_url_parameters`を除くすべての設定はデフォルトで有効であり、それぞれユーザー、ロール、またはプロファイル単位で有効または無効にできます。
 
 | 設定                                                  | 効果                                                                    |
 | --------------------------------------------------- | --------------------------------------------------------------------- |
 | `http_allow_table_as_file`                          | 最後のパス要素を`table`、`table.format`、または`table.format.compression`として解釈します。 |
 | `http_allow_database_as_path`                       | 先頭の`/database/`パス要素を現在のデータベースとして解釈します。                                |
 | `http_allow_filters_as_path`                        | Hive形式の`/name=value/`パス要素を`WHERE`フィルターとして解釈します。                       |
-| `http_allow_filters_as_unrecognized_url_parameters` | 認識されないURLパラメータを`WHERE`フィルターとして解釈します。                                  |
+| `http_allow_filters_as_unrecognized_url_parameters` | 認識されないURLパラメータを`WHERE`フィルターとして解釈します。デフォルトでは無効です。                      |
 
 <Note>
-  ルーティングは認証前に行われるため、ユーザーごとの設定に依存できません。`http_allow_path_requests`が無効な場合、不明なパスには認証前に`404`が返されます。ルーティングと認証の後は、ユーザーごとの設定によってパスの解釈方法が決まるため、ユーザー、ロール、またはプロファイル単位でこの機能を選択的に有効にできます。
+  ルーティングは認証前に行われるため、ユーザーごとの設定に依存できません。`http_allow_path_requests`が無効な場合、不明なパスには認証前に`404`が返されます。ルーティングと認証の後は、ユーザーごとの設定によってパスの解釈方法が決まるため、ユーザー、ロール、またはプロファイル単位でこの機能を選択的に有効または無効にできます。
 </Note>
 
-<div id="table-as-file-examples">
-  ### ファイルとしてテーブルにアクセスする
-</div>
+<Note>
+  `http_allow_filters_as_unrecognized_url_parameters`は、`/?query=...`エンドポイントを含むHTTP インターフェイスのすべてのリクエストに適用されるため、デフォルトでは無効になっています。有効にすると、クライアントが追加した認識されないURLパラメータはすべてクエリのフィルターとして扱われます。その結果、設定名に入力ミスがあっても`UNKNOWN_SETTING`は報告されず、代わりに`UNKNOWN_IDENTIFIER`で失敗します。その名前がクエリ対象のテーブルのカラムと一致した場合は、エラーにならずに結果がフィルタリングされます。
+</Note>
 
-`http_allow_table_as_file` を有効にすると、`/table.format.compression` へのリクエストは `SELECT * FROM table` として処理されます。`/database/table.format.compression` を使用するには、`http_allow_database_as_path` を有効にします。
+### ファイルとしてテーブルにアクセスする {#table-as-file-examples}
+
+`http_allow_table_as_file` を有効にすると、`/table.format.compression` へのリクエストは `SELECT * FROM table` として処理されます。さらに、`http_allow_database_as_path` を有効にすると、`/database/table.format.compression` も使用できます。
 
 ```bash
 # SELECT * FROM my_db.hits, formatted as CSV
@@ -272,9 +266,7 @@ curl 'http://localhost:8123/my_db/hits.csv.gz' | gzip -d
 
 明示的に指定した `format` または `output_format` URL パラメータは、パス内のフォーマットを上書きします。一方、`default_format` は上書きしません。これは、他の指定でフォーマットが選択されていない場合にのみ使用するフォーマットを指定するものであり、パスの拡張子のほうが優先されるためです。明示的に指定した `compression` パラメータは、パス内の圧縮と一致している必要があります。値が競合する場合は例外が発生します。
 
-<div id="query-construction">
-  ### クエリを構築する
-</div>
+### クエリを構築する {#query-construction}
 
 以下の設定では、ベースクエリを派生テーブルとしてラップします。これらは互いに、また既存のクエリと組み合わせて使用できます。HTTP URL パラメータ、クエリ内の `SETTINGS` 句、またはユーザープロファイルで指定できます。
 
@@ -295,9 +287,7 @@ curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
 curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
 ```
 
-<div id="modify-an-existing-query">
-  #### 既存のクエリを変更する
-</div>
+#### 既存のクエリを変更する {#modify-an-existing-query}
 
 構築設定はパスリクエストだけに適用されるものではなく、自分で記述したクエリにも影響します。クエリは派生テーブルになるため、設定はクエリにマージされるのではなく、その結果に適用されます。たとえば、`?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10` は次のように実行されます。
 
@@ -332,17 +322,15 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
   `filter` はアクセス制御のための仕組みではありません。ラップするサブクエリに `WHERE` 句を追加するため、フィルターが適用される前に基になるデータが読み取られ、処理される可能性があります。ユーザーがアクセスできる行を制限するには、[行ポリシー](/ja/concepts/features/security/access-rights#row-policy-management) または [`additional_table_filters`](/ja/reference/settings/session-settings/additional#additional_table_filters) を使用してください。
 </Warning>
 
-<div id="format-and-compression-overrides">
-  ### フォーマットと圧縮のオーバーライド
-</div>
+### フォーマットと圧縮のオーバーライド {#format-and-compression-overrides}
 
-| 設定               | 効果                                                                                                                     |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `output_format`  | 出力フォーマットをオーバーライドします。クエリの `FORMAT` 句、パス拡張子、`format`、`default_format` よりも優先されます。`X-ClickHouse-Format` ヘッダーでも設定できます。      |
-| `input_format`   | `INSERT` の入力フォーマットをオーバーライドします。クエリの `FORMAT` 句および `format` よりも優先されます。                                                   |
-| `format`         | 方向固有の設定が指定されていない場合、入出力両方のフォーマットをオーバーライドします。                                                                            |
-| `default_format` | クエリに `FORMAT` 句やパス拡張子がなく、他のフォーマットのオーバーライドもない場合に、出力フォーマットを設定します。                                                        |
-| `compression`    | たとえば `compression=gz` を指定して、レスポンスボディを圧縮します。これは HTTP `Content-Encoding` および ClickHouse ネイティブの `compress` パラメータとは別のものです。 |
+| 設定               | 効果                                                                                                                                                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `output_format`  | 出力フォーマットをオーバーライドします。クエリの `FORMAT` 句、パス拡張子、`format`、`default_format` よりも優先されます。`X-ClickHouse-Format` ヘッダーでも設定できます。`http_x_clickhouse_format_overrides_output_format = 0` の場合、このヘッダーは 26.8 より前のバージョンと同様に、代わりに `default_format` を設定します。 |
+| `input_format`   | `INSERT` の入力フォーマットをオーバーライドします。クエリの `FORMAT` 句および `format` よりも優先されます。                                                                                                                                                                 |
+| `format`         | 方向固有の設定が指定されていない場合、入出力両方のフォーマットをオーバーライドします。                                                                                                                                                                                          |
+| `default_format` | クエリに `FORMAT` 句やパス拡張子がなく、他のフォーマットのオーバーライドもない場合に、出力フォーマットを設定します。                                                                                                                                                                      |
+| `compression`    | たとえば `compression=gz` を指定して、レスポンスボディを圧縮します。これは HTTP `Content-Encoding` および ClickHouse ネイティブの `compress` パラメータとは別のものです。                                                                                                               |
 
 フォーマット設定は、ネイティブクライアントや `clickhouse-local` など、他のプロトコルでも使用できます。`input_format` と `output_format` は、それぞれ `--input-format` および `--output-format` オプションに対応します。`--format` オプションは、`clickhouse-local` では双方向の `format` 設定に対応しますが、`clickhouse-client` では従来どおり出力専用として扱われ、`output_format` に対応します。
 
@@ -350,9 +338,7 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
 
 バイナリまたは圧縮された HTTP レスポンスには、`Content-Disposition: attachment; filename=…` ヘッダーが含まれます。ファイル名は URL パスから導出され、パスから取得できない場合は `result.<format>.<compression>` が使用されます。
 
-<div id="implicit-table">
-  ### クエリでパステーブルを使用する
-</div>
+### クエリでパステーブルを使用する {#implicit-table}
 
 パスがテーブルを示し、`query` パラメータも指定した場合、パステーブルは [`implicit_table_at_top_level`](/ja/reference/settings/session-settings/implicit#implicit_table_at_top_level) を介して公開されます。`FROM` 句のない `SELECT` はパステーブルから読み取ります。
 
@@ -364,13 +350,13 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 クエリにすでに `FROM` 句が含まれている場合、パス部分ではダウンロードするファイル名のみを指定します。
 
 <div id="insert-queries">
-  ## HTTP/HTTPS 経由の INSERT クエリ
+  ## HTTP/HTTPS 経由の INSERT クエリ {#insert-queries}
 </div>
 
 `INSERT` クエリでは、データの送信に `POST` メソッドを使用する必要があります。この場合、クエリの先頭部分を URL パラメーターに記述し、挿入するデータは `POST` で渡せます。挿入するデータとしては、たとえば MySQL のタブ区切りの dump を使用できます。このように、`INSERT` クエリは MySQL の `LOAD DATA LOCAL INFILE` の代替として使用できます。
 
 <div id="examples">
-  ### 例
+  ### 例 {#examples}
 </div>
 
 テーブルを作成するには：
@@ -434,7 +420,7 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 データテーブルを返さない正常なリクエストでは、レスポンスボディは空になります。
 
 <div id="compression">
-  ## 圧縮
+  ## 圧縮 {#compression}
 </div>
 
 圧縮は、大量のデータを送信する際のネットワークトラフィックを削減したり、圧縮済みのダンプを直接作成したりする場合に利用できます。
@@ -467,7 +453,7 @@ ClickHouse にレスポンスを圧縮させるには、リクエストに `Acce
 </Info>
 
 <div id="examples-compression">
-  ## 例
+  ## 例 {#examples-compression}
 </div>
 
 圧縮データをサーバーへ送信するには:
@@ -500,7 +486,7 @@ curl -sS "http://localhost:8123/?enable_http_compression=1" \
 ```
 
 <div id="default-database">
-  ## デフォルトデータベース
+  ## デフォルトデータベース {#default-database}
 </div>
 
 `database` URL パラメータまたは `X-ClickHouse-Database` ヘッダーで、デフォルトのデータベースを指定できます。
@@ -522,7 +508,7 @@ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?databa
 デフォルトでは、サーバー設定に登録されているデータベースが既定のデータベースとして使用されます。初期状態では、これは `default` という名前のデータベースです。別の方法として、テーブル名の前にドット区切りでデータベース名を付けて、いつでもデータベースを指定できます。
 
 <div id="authentication">
-  ## 認証
+  ## 認証 {#authentication}
 </div>
 
 ユーザー名とパスワードは、次の3つの方法のいずれかで指定できます。
@@ -583,9 +569,7 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 * [設定](/ja/reference/settings/session-settings)
 * [SET](/ja/reference/statements/set)
 
-<div id="using-clickhouse-sessions-in-the-http-protocol">
-  ## HTTPプロトコルでClickHouseセッションを使用する
-</div>
+## HTTPプロトコルでClickHouseセッションを使用する {#using-clickhouse-sessions-in-the-http-protocol}
 
 HTTPプロトコルでもClickHouseセッションを使用できます。これを行うには、リクエストに `session_id` `GET` パラメータを追加する必要があります。セッションIDには任意の文字列を使用できます。
 
@@ -626,9 +610,7 @@ X-ClickHouse-Progress: {"read_rows":"1000000","read_bytes":"8000000","total_rows
 
 HTTP インターフェイスでは、クエリのために外部データ (外部一時テーブル) を渡すこともできます。詳細については、[&quot;クエリ処理用の外部データ&quot;](/ja/reference/engines/table-engines/special/external-data) を参照してください。
 
-<div id="response-buffering">
-  ## レスポンスのバッファリング
-</div>
+## レスポンスのバッファリング {#response-buffering}
 
 レスポンスのバッファリングはサーバー側で有効にできます。このために、次のURLパラメータが用意されています。
 
@@ -655,7 +637,7 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 </Tip>
 
 <div id="setting-role-with-query-parameters">
-  ## クエリパラメータでロールを設定する
+  ## クエリパラメータでロールを設定する {#setting-role-with-query-parameters}
 </div>
 
 この機能は ClickHouse 24.4 で追加されました。
@@ -689,9 +671,7 @@ curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "
 
 この場合、`?role=my_role&role=my_other_role` は、ステートメントの前に `SET ROLE my_role, my_other_role` を実行するのと同じように機能します。
 
-<div id="http_response_codes_caveats">
-  ## HTTPレスポンスコードに関する注意点
-</div>
+## HTTPレスポンスコードに関する注意点 {#http_response_codes_caveats}
 
 HTTPプロトコルの制約上、HTTP 200のレスポンスコードでも、クエリが成功したとは限りません。
 
@@ -783,13 +763,13 @@ __exception__
 ```
 
 <div id="cli-queries-with-parameters">
-  ## パラメータ付きクエリ
+  ## パラメータ付きクエリ {#cli-queries-with-parameters}
 </div>
 
 パラメータ付きのクエリを作成し、対応する HTTP リクエストパラメータから値を渡せます。詳しくは、[CLI のパラメータ付きクエリ](/ja/concepts/features/interfaces/client#cli-queries-with-parameters)を参照してください。
 
 <div id="examples">
-  ### 例
+  ### 例 {#example-3}
 </div>
 
 ```bash
@@ -797,7 +777,7 @@ $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHER
 ```
 
 <div id="tabs-in-url-parameters">
-  ### URL パラメータ内のタブ
+  ### URL パラメータ内のタブ {#tabs-in-url-parameters}
 </div>
 
 クエリパラメータは `escaped` フォーマットとして解析されます。これには、たとえば NULL を `\N` として曖昧さなく解析できるといった利点があります。つまり、タブ文字は `\t` (または `\` とタブ文字) としてエンコードする必要があります。たとえば、次の例では `abc` と `123` の間に実際のタブが含まれており、入力文字列は 2 つの値に分割されます。
@@ -828,7 +808,7 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 ```
 
 <div id="predefined_http_interface">
-  ## 事前定義済み HTTP インターフェイス
+  ## 事前定義済み HTTP インターフェイス {#predefined_http_interface}
 </div>
 
 ClickHouse は、HTTP インターフェイス経由で特定のクエリをサポートしています。たとえば、次のようにテーブルにデータを書き込むことができます。
@@ -956,9 +936,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 異なる `type` の設定方法については、次で説明します。
 
-<div id="predefined_query_handler">
-  ### predefined_query_handler
-</div>
+### predefined_query_handler {#predefined_query_handler}
 
 `predefined_query_handler` では、`Settings` と `query_params` の値を設定できます。`predefined_query_handler` 型では `query` を設定できます。
 
@@ -1000,7 +978,7 @@ max_threads    1
 ```
 
 <div id="virtual-param-request-body">
-  #### 仮想パラメータ `_request_body`
+  #### 仮想パラメータ `_request_body` {#virtual-param-request-body}
 </div>
 
 URLパラメータ、ヘッダー、クエリパラメータに加えて、`predefined_query_handler` は特殊な仮想パラメータ `_request_body` もサポートしています。
@@ -1038,9 +1016,7 @@ curl -X POST 'http://localhost:8123/api/events?id=123' \
   1 つの `predefined_query_handler` でサポートされる `query` は 1 つだけです。
 </Note>
 
-<div id="dynamic_query_handler">
-  ### dynamic_query_handler
-</div>
+### dynamic_query_handler {#dynamic_query_handler}
 
 `dynamic_query_handler` では、クエリを HTTP リクエストのパラメータとして記述します。`predefined_query_handler` との違いは、`predefined_query_handler` ではクエリを設定ファイルに記述する点です。`query_param_name` は `dynamic_query_handler` で設定できます。
 
@@ -1071,7 +1047,7 @@ max_final_threads   2
 ```
 
 <div id="static">
-  ### static
+  ### static {#static}
 </div>
 
 `static` では、[`content_type`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type)、[status](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)、および `response_content` を返せます。`response_content` では、指定した内容を返せます。
@@ -1264,7 +1240,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="redirect">
-  ### redirect
+  ### redirect {#redirect}
 </div>
 
 `redirect` は `location` に `302` リダイレクトします
@@ -1287,7 +1263,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="http-response-headers">
-  ## HTTP レスポンスヘッダー
+  ## HTTP レスポンスヘッダー {#http-response-headers}
 </div>
 
 ClickHouse では、設定可能なあらゆる種類のハンドラーに適用できるカスタム HTTP レスポンスヘッダーを設定できます。これらのヘッダーは `http_response_headers` 設定で指定でき、ヘッダー名とその値を表すキー・バリューのペアを受け付けます。この機能は、カスタムのセキュリティヘッダーや CORS ポリシー、その他 ClickHouse HTTP インターフェイス全体で必要となる HTTP ヘッダー要件に対応する際に特に便利です。
@@ -1324,9 +1300,7 @@ ClickHouse では、設定可能なあらゆる種類のハンドラーに適用
 </clickhouse>
 ```
 
-<div id="valid-output-on-exception-http-streaming">
-  ## HTTP streaming 中の例外発生時に有効な JSON/XML レスポンス
-</div>
+## HTTP streaming 中の例外発生時に有効な JSON/XML レスポンス {#valid-output-on-exception-http-streaming}
 
 HTTP 経由でクエリを実行している際、データの一部がすでに送信された後で例外が発生することがあります。通常、例外はプレーンテキストでクライアントに送信されます。
 データの出力に特定のデータフォーマットを使用していた場合、その出力は指定したデータフォーマットとしては無効になる可能性があります。

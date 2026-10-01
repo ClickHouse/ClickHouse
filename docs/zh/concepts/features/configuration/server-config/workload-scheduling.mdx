@@ -52,7 +52,7 @@ CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
 
 ## 工作负载层级结构 {#workloads}
 
-ClickHouse 提供了便捷的 SQL 语法来定义调度层级结构。所有资源都分布在统一的 WORKLOAD 层级结构中。对于特定资源，分配规则的某些细节可以调整，但层级结构本身保持一致。每个 WORKLOAD 都会为每种资源维护必要的调度节点。可以在任意工作负载内创建子工作负载，从而构建出整个层级结构。ClickHouse 不会对工作负载层级结构强制规定任何特定或预定义的结构。
+ClickHouse 提供了便捷的 SQL 语法来定义调度层级结构。所有资源都分布在统一的 WORKLOAD 层级结构中。对于特定资源，分配规则的某些细节可以调整，但层级结构本身保持一致。每个 WORKLOAD 都会为每种资源维护必要的调度节点。可以在任意工作负载内创建子工作负载，从而构建出整个层级结构。ClickHouse 不会对工作负载层级结构强制规定任何特定或预定义的结构。没有父级 (即没有 `IN` 子句) 的工作负载即为根工作负载，层级结构中可以包含任意数量的根工作负载——例如，一棵树通过 SQL 定义，另一棵则从配置中加载。所有根工作负载都是一个隐式匿名根 (在 `system.scheduler` 中显示为路径 `/`) 的子级，因此它们之间会像同一棵树中的同级工作负载一样，依据各自的 `weight`、`priority` 和 `precedence` 设置进行调度。
 
 下面是一个层级结构示例，它将所有资源分别分配给 &quot;user&quot; 和 &quot;system&quot; 工作负载，并分别保证 90% 和 10% 的资源份额。请注意，为工作负载定义的权重用于实现 最大最小公平原则，因此只能尽力提供下限保障 (而不是上限限制或配额) 。所有调度都是在每台主机上独立进行的，因此由 `max_*` 设置定义的限制都是按主机生效的。工作负载 &quot;user&quot; 会将其资源进一步细分给 &quot;development&quot; 和 &quot;production&quot; 工作负载，其中 &quot;production&quot; 获得的资源是 &quot;development&quot; 的 3 倍：
 
@@ -102,7 +102,7 @@ graph LR
   oth --> all
 ```
 
-无子级的叶子工作负载名称可在查询设置 `SETTINGS workload = 'name'` 中使用。详情请参阅 [Workload markup](#workload-markup)。
+无子级的叶子工作负载名称可在查询设置 `SETTINGS workload = 'name'` 中使用。详情请参阅 [工作负载标记](#workload-markup)。
 
 如需自定义工作负载，可以使用以下设置：
 
@@ -120,9 +120,9 @@ graph LR
 * `max_burst_cpu_seconds` - 该工作负载在不因 `max_cpus` 而被限流的情况下可消耗的最大 CPU 秒数。
 * `max_memory` - 为此工作负载保留的总内存上限。
 
-通过工作负载设置指定的所有限制，对每种资源都是相互独立的。例如，若某个工作负载设置了 `max_bytes_per_second = '10Mi'`，则对每个读取和写入资源都会分别施加 10 MB/s 的带宽限制。如果需要对读取和写入施加统一限制，请考虑让 READ 和 WRITE 访问使用同一资源。
+通过工作负载设置指定的所有限制，对每个资源都是相互独立的。例如，设置了 `max_bytes_per_second = '10Mi'` 的工作负载，会对每个读取资源和写入资源分别施加 10 MB/s 的带宽限制。如果需要对读取和写入施加统一的限制，可以考虑让 READ 和 WRITE 访问使用同一个资源。
 
-无法为不同资源指定不同的工作负载层级结构。但可以为特定资源指定不同的工作负载设置值：
+目前无法为不同的资源指定不同的工作负载层级结构，但可以为特定资源指定不同的工作负载设置值：
 
 ```sql
 CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_second = '1Mi' FOR network_read, max_bytes_per_second = '2Mi' FOR network_write
