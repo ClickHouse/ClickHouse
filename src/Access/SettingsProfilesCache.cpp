@@ -187,6 +187,10 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
     info->settings = merged_settings.toSettingsChanges();
     info->constraints = merged_settings.toSettingsConstraints(access_control);
 
+    /// `merged_settings` above starts from the default profile and accumulates every profile which
+    /// targets this user or its roles, so this is the whole set of profiles applying to the principal.
+    info->composition = SettingsProfilesInfo::Composition::Complete;
+
     enabled.setInfo(std::move(info));
 }
 
@@ -282,7 +286,9 @@ std::shared_ptr<const SettingsProfilesInfo> SettingsProfilesCache::getSettingsPr
 
     substituteProfiles(elements, info->profiles, info->profiles_with_implicit, info->names_of_profiles);
     info->settings = elements.toSettingsChanges();
-    info->constraints.merge(elements.toSettingsConstraints(access_control));
+    /// This describes a single profile, to be applied on top of the profiles which are already in
+    /// effect, so it keeps the default `Composition::Layer`.
+    info->constraints = elements.toSettingsConstraints(access_control);
 
     profile_infos_cache.add(profile_id, info);
     return info;
