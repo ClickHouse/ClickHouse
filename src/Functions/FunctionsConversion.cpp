@@ -665,14 +665,15 @@ FunctionCast::WrapperType FunctionCast::createIntervalWrapper(const DataTypePtr 
 namespace
 {
 
-/** Conversion of a number to Nullable(DateTime64) or Nullable(Time64) with the accurate-cast contract:
-  * a value outside the representable range of the result type produces NULL instead of saturation or
-  * an exception, regardless of the `date_time_overflow_behavior` setting. `ConvertImpl` cannot be reused
-  * here: its DateTime64/Time64 transforms saturate or throw according to the overflow behavior even with
-  * the accurate conversion additions (see `convertIntegerToDateTime64OrNull` in FunctionsConversion.h).
+/** Conversion of a number to `DateTime64` or `Time64` with the accurate-cast contract: a value that is not
+  * representable in the result type - outside of its range, or with a fractional part finer than its scale
+  * (e.g. `1.1` for `DateTime64(0)`, like `1.1` for `DateTime`) - yields NULL (`accurateCastOrNull`) or throws
+  * (`accurateCast`), regardless of the `date_time_overflow_behavior` setting. `ConvertImpl` cannot be reused
+  * here: its DateTime64/Time64 transforms saturate or throw according to the overflow behavior and truncate
+  * the fractional part toward the scale.
   */
-template <typename FromDataType, typename ToDataType>
-ColumnPtr convertNumberToDateTime64OrTime64OrNull(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, UInt32 scale)
+template <typename FromDataType, typename ToDataType, bool null_on_error>
+ColumnPtr convertNumberToDateTime64OrTime64Accurate(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, UInt32 scale)
 {
     using FromFieldType = typename FromDataType::FieldType;
     using ToFieldType = typename ToDataType::FieldType;
@@ -715,19 +716,32 @@ ColumnPtr convertNumberToDateTime64OrTime64OrNull(const ColumnsWithTypeAndName &
         const FromFieldType from = vec_from[i];
 
         bool is_out_of_range = false;
+        bool is_exact = true;
         Int64 ticks = 0;
         if constexpr (is_floating_point<FromFieldType>)
             /// A non-finite value is not representable in the result type either.
-            is_out_of_range = !isFinite(from) || !floatSecondsToTicks(from, scale_multiplier, min_ticks, max_ticks, ticks);
+            is_out_of_range = !isFinite(from) || !floatSecondsToTicks(from, scale_multiplier, min_ticks, max_ticks, ticks, &is_exact);
         else if constexpr (is_signed_v<FromFieldType>)
             is_out_of_range = from < min_whole || from > max_whole;
         else
             is_out_of_range = from > static_cast<UInt64>(max_whole);
 
-        if (is_out_of_range)
+        if (is_out_of_range || !is_exact)
         {
-            vec_to[i] = ToFieldType(0);
-            vec_null_map_to[i] = true;
+            if constexpr (!null_on_error)
+            {
+                /// Format through `Float64`: `fmt` cannot format `BFloat16`, `char8_t` (`UInt8`) or the wide integers.
+                if (is_out_of_range)
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of range of type {}",
+                        static_cast<Float64>(from), TypeName<typename ToDataType::FieldType>);
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}",
+                    static_cast<Float64>(from), TypeName<typename ToDataType::FieldType>);
+            }
+            else
+            {
+                vec_to[i] = ToFieldType(0);
+                vec_null_map_to[i] = true;
+            }
         }
         else if constexpr (is_floating_point<FromFieldType>)
             vec_to[i] = ToFieldType(ticks);
@@ -735,13 +749,16 @@ ColumnPtr convertNumberToDateTime64OrTime64OrNull(const ColumnsWithTypeAndName &
             vec_to[i] = DecimalUtils::decimalFromComponentsWithMultiplier<ToFieldType>(static_cast<Int64>(from), 0, scale_multiplier);
     }
 
-    return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+    if constexpr (null_on_error)
+        return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+    else
+        return col_to;
 }
 
-/** Conversion of a decimal (including `DateTime64` and `Time64`, which are decimals too) to `DateTime64` or
-  * `Time64` with the accurate-cast contract: a value that is not representable in the result type yields NULL
-  * (`accurateCastOrNull`) or throws `VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE` (`accurateCast`), regardless of the
-  * `date_time_overflow_behavior` setting. The plain decimal path of `ConvertImpl` cannot be reused here: it
+/** Conversion of a decimal (including `DateTime64`, which is a decimal too) to `DateTime64` or `Time64` with the
+  * accurate-cast contract: a value that is not representable in the result type - outside of its range, or with
+  * more fractional digits than its scale keeps - yields NULL (`accurateCastOrNull`) or throws (`accurateCast`),
+  * regardless of the `date_time_overflow_behavior` setting. The plain decimal path of `ConvertImpl` cannot be reused here: it
   * rescales with `convertDecimals`, which raises `DECIMAL_OVERFLOW` when the scaled-up ticks do not fit the
   * result, and it does not range-check the value against the representable range of the date/time type at all.
   */
@@ -784,8 +801,30 @@ ColumnPtr convertDecimalToDateTime64OrTime64Accurate(const ColumnsWithTypeAndNam
         min_ticks = -max_ticks;
     }
 
+    /// `tryConvertDecimals` reports only an overflow: when the source has more fractional digits than the result, it
+    /// silently divides them away. The same exactness gate as the generic accurate decimal-to-decimal conversion.
+    using FromNativeType = typename FromDataType::FieldType::NativeType;
+    const FromNativeType precision_divisor = from_scale > scale
+        ? DecimalUtils::scaleMultiplier<FromNativeType>(from_scale - scale)
+        : FromNativeType(1);
+
     for (size_t i = 0; i < input_rows_count; ++i)
     {
+        if (vec_from[i].value % precision_divisor != 0)
+        {
+            if constexpr (null_on_error)
+            {
+                vec_to[i] = ToFieldType(0);
+                vec_null_map_to[i] = true;
+                continue;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}",
+                    DecimalUtils::convertTo<Float64>(vec_from[i], from_scale), TypeName<typename ToDataType::FieldType>);
+            }
+        }
+
         ToFieldType converted;
         const bool ok = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], from_scale, scale, converted)
             && converted.value >= min_ticks && converted.value <= max_ticks;
@@ -903,8 +942,12 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                     return true;
                 }
             }
-            else if constexpr (std::is_same_v<LeftDataType, DataTypeTime64>
-                && (std::is_same_v<RightDataType, DataTypeTime64> || std::is_same_v<RightDataType, DataTypeDateTime64>))
+            /// `DateTime64 -> Time64` is not a plain decimal rescale either: it takes the local seconds-of-day of the source,
+            /// so the accurate casts must go through its dedicated `ConvertImpl` branch, not through a range check of the
+            /// raw epoch ticks.
+            else if constexpr ((std::is_same_v<LeftDataType, DataTypeTime64>
+                    && (std::is_same_v<RightDataType, DataTypeTime64> || std::is_same_v<RightDataType, DataTypeDateTime64>))
+                || (std::is_same_v<LeftDataType, DataTypeDateTime64> && std::is_same_v<RightDataType, DataTypeTime64>))
             {
                 if (cast_type == CastType::accurate)
                 {
@@ -987,20 +1030,19 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                     /// NULL. The `date_time_overflow_behavior` setting governs only plain `CAST`.
                     if (cast_type == CastType::accurate)
                     {
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(
-                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+                        result_column = convertNumberToDateTime64OrTime64Accurate<LeftDataType, RightDataType, false>(arguments, input_rows_count, scale);
                         return true;
                     }
                     if (cast_type == CastType::accurateOrNull)
                     {
-                        result_column = convertNumberToDateTime64OrTime64OrNull<LeftDataType, RightDataType>(arguments, input_rows_count, scale);
+                        result_column = convertNumberToDateTime64OrTime64Accurate<LeftDataType, RightDataType, true>(arguments, input_rows_count, scale);
                         return true;
                     }
                 }
                 else if constexpr (IsDataTypeDecimal<LeftDataType>)
                 {
-                    /// Same contract for decimal sources (`Decimal32`/`Decimal64`/`Decimal128`/`Decimal256` and the
-                    /// `DateTime64`/`Time64` decimals themselves): rescaling with `convertDecimals` would raise
+                    /// Same contract for decimal sources (`Decimal32`/`Decimal64`/`Decimal128`/`Decimal256` and
+                    /// `DateTime64 -> DateTime64`; `Time64` sources and `DateTime64 -> Time64` are handled above): rescaling with `convertDecimals` would raise
                     /// `DECIMAL_OVERFLOW` instead of throwing an out-of-range error or returning NULL.
                     if (cast_type == CastType::accurate)
                     {

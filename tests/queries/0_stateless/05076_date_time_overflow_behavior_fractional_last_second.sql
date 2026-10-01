@@ -40,7 +40,7 @@ SELECT '-- accurate casts accept the last fractional second, including the same-
 SET date_time_overflow_behavior = 'throw';
 SELECT accurateCast(toDateTime64('9999-12-31 23:59:59.999', 3, 'UTC'), 'DateTime64(3)'), accurateCastOrNull(toDateTime64('9999-12-31 23:59:59.999', 3, 'UTC'), 'DateTime64(3)');
 SELECT accurateCast(toTime64('999:59:59.999', 3), 'Time64(3)'), accurateCastOrNull(toTime64('-999:59:59.999', 3), 'Time64(3)');
-SELECT accurateCast(toDateTime64('9999-12-31 23:59:59.999', 3, 'UTC'), 'DateTime64(6)'), accurateCastOrNull(toDateTime64('9999-12-31 23:59:59.999', 3, 'UTC'), 'DateTime64(1)');
+SELECT accurateCast(toDateTime64('9999-12-31 23:59:59.999', 3, 'UTC'), 'DateTime64(6)'), accurateCastOrNull(toDateTime64('9999-12-31 23:59:59.900', 3, 'UTC'), 'DateTime64(1)');
 SELECT accurateCast(253402300799.5::Float64, 'DateTime64(1)'), accurateCastOrNull(253402300799.5::Float64, 'DateTime64(1)');
 SELECT accurateCast(-3599999.5::Float64, 'Time64(1)'), accurateCastOrNull(3599999.875::Float64, 'Time64(3)');
 SELECT accurateCast(toDecimal64(253402300799.5, 1), 'DateTime64(1)'), accurateCastOrNull(toDecimal64(-3599999.5, 1), 'Time64(1)');
