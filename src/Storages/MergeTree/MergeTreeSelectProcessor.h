@@ -185,6 +185,10 @@ private:
     const MergeTreeReaderSettings reader_settings;
     const MergeTreeReadTask::BlockSizeParams block_size_params;
 
+    /// Whether the PREWHERE holds the top-K `__topKFilter` as a conjunct and its query condition cache entry is
+    /// salted with the top-K plan, see `MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere`.
+    const bool prewhere_filters_by_top_k_threshold;
+
     /// Current task to read from.
     MergeTreeReadTaskPtr task;
     /// A result of getHeader(). A chunk which this header is returned from read().

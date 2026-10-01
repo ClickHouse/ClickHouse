@@ -34,6 +34,10 @@ struct SkipIndexReadResult
 
     /// Whether every row of the granule lies beyond the running top-K threshold according to the primary index.
     bool isGranuleBeyondTopKThreshold(size_t mark) const;
+
+    /// Whether granules may be dropped by something other than the primary-key top-K check above: skip indexes
+    /// (the `minmax` top-K one included) or JOIN runtime filters.
+    bool may_skip_granules_besides_top_k_primary_key = true;
     /// Pre-computed index granules for indexes created for the whole part.
     IndexGranulesMap index_granules;
 };
@@ -215,6 +219,9 @@ struct MergeTreeIndexReadResult
 
     /// Whether index read result is useful and marks can be skipped.
     bool canSkipAnyMark() const;
+
+    /// Like `canSkipAnyMark`, but leaving out the granules skipped by the primary key against a top-K threshold.
+    bool canSkipAnyMarkBesidesTopKPrimaryKey() const;
 
     /// Whether all rows of the granule are filtered out by the present index read results.
     bool canSkipMark(size_t mark, const MergeTreeIndexGranularity & index_granularity) const;

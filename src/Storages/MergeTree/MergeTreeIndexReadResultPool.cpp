@@ -264,6 +264,9 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         res->threshold_tracker = skip_indexes.threshold_tracker;
     }
 
+    res->may_skip_granules_besides_top_k_primary_key
+        = !skip_indexes.useful_indices.empty() || use_for_disjunctions || hasRuntimeFilters() || res->min_max_index_for_top_k;
+
     /// Projection parts have a primary key of their own, which the position was not computed for.
     if (top_k_primary_key_column_position && top_k_threshold_tracker && !part_info->isProjectionPart())
     {
@@ -652,6 +655,11 @@ void MergeTreeProjectionIndexReader::cancel() noexcept
 bool MergeTreeIndexReadResult::canSkipAnyMark() const
 {
     return skip_index_read_result || projection_index_read_result;
+}
+
+bool MergeTreeIndexReadResult::canSkipAnyMarkBesidesTopKPrimaryKey() const
+{
+    return (skip_index_read_result && skip_index_read_result->may_skip_granules_besides_top_k_primary_key) || projection_index_read_result;
 }
 
 bool MergeTreeIndexReadResult::canSkipMark(size_t mark, const MergeTreeIndexGranularity & index_granularity) const

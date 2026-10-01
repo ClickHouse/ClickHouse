@@ -34,6 +34,8 @@ public:
 
     bool canSkipAnyMark() const override;
 
+    bool canSkipAnyMarkBesidesTopKPrimaryKey() const override;
+
     size_t getResultColumnCount() const override { return 1; }
 
     bool producesFilterOnly() const override { return true; }
