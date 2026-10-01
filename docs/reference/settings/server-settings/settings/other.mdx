@@ -457,7 +457,7 @@ Defines a directory containing proto files for Protobuf types.
 
 ## handshake_timeout_milliseconds {#handshake_timeout_milliseconds}
 
-<SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />Wall-clock timeout in milliseconds for the entire TCP handshake phase (Hello + Addendum). Limits how long an unauthenticated connection can hold a thread. Set to 0 to disable.
+<SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />Wall-clock timeout in milliseconds for the entire handshake phase of a native protocol (Hello and Addendum), MySQL or PostgreSQL connection, including the TLS negotiation. Limits how long an unauthenticated connection can hold a thread: the deadline is checked on every read, and the socket receive timeout is clamped to it, so a client that sends nothing cannot outlast the budget either. That clamp keeps a floor of 100 milliseconds, so a small value overdraws the budget slightly rather than cutting reads too short. Set to 0 to disable.
 
 ## hdfs.libhdfs3_conf {#hdfs.libhdfs3_conf}
 
