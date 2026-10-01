@@ -18,6 +18,15 @@ namespace
 /// `external_id` and `role_session_name` are the secrets of the assume-role triple; the third key
 /// (`role_arn`) is a non-secret identifier passed inside `extra_credentials` and stays visible
 /// (see isNonSecretExtraCredentialsKey).
+/// The keys of the `extra_credentials(..)` nested map whose value stays visible when the map is masked.
+/// Only `role_arn` qualifies: it names the role to assume, like `access_key_id` names a key. The other two
+/// keys of the assume-role triple are secrets: `external_id` is its shared secret, and `role_session_name`
+/// can be one too, because a trust policy can require a specific value through the `sts:RoleSessionName`
+/// condition (the ClickHouse Cloud guide documents exactly this use). Any other key fails closed.
+/// The `.backup` metadata is a different matter: its `<base_backup>` locator keeps `role_session_name`
+/// on purpose, so that a role-authenticated backup chain stays restorable (see `BackupInfo.cpp`).
+constexpr std::string_view extra_credentials_visible_keys[] = {"role_arn"};
+
 constexpr std::string_view s3_secret_keys[]
     = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "external_id",
        "role_session_name"};
@@ -35,7 +44,10 @@ constexpr std::string_view s3_secret_keys[]
 /// overrides; it passes `positionals_allowed_after_named` to collect them in order.
 std::vector<size_t> classifyS3Arguments(FunctionSecretArgumentsFinder & finder, size_t start = 0, bool positionals_allowed_after_named = false)
 {
-    finder.maskNestedSecretMaps();
+    /// `headers(..)` and `extra_credentials(..)` carry secret auth material at any position; the parsers
+    /// strip them before positional slots are assigned.
+    finder.maskNestedSecretMap("headers");
+    finder.maskNestedSecretMap("extra_credentials", {std::begin(extra_credentials_visible_keys), std::end(extra_credentials_visible_keys)});
 
     const auto & function = finder.function;
     std::vector<size_t> positional;
@@ -301,6 +313,11 @@ void findS3BackupSecretArguments(FunctionSecretArgumentsFinder & finder)
     maskS3PositionalsFrom(finder, positional, positional.size() == 3 ? 2 : 1);
 }
 
+}
+
+bool isNonSecretExtraCredentialsKey(std::string_view key)
+{
+    return std::ranges::contains(extra_credentials_visible_keys, key);
 }
 
 bool isS3SecretKey(std::string_view key)

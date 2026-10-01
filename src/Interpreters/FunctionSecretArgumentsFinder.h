@@ -31,13 +31,9 @@ public:
     /// Hides every argument, for a shape whose valid slots cannot be established.
     void maskEveryArgument();
 
-    /// `headers(..)` and `extra_credentials(..)` are nested maps whose values are secret auth material
-    /// (`extra_credentials` carries the assume-role secrets `external_id` and `role_session_name`; its
-    /// non-secret identifier `role_arn` stays visible, see isNonSecretExtraCredentialsKey). The parsers
-    /// accept them at any position, not just at the tail. Record them so their values are hidden with
-    /// the keys kept.
-    /// Idempotent: each map is recorded at most once.
-    void maskNestedSecretMaps();
+    /// Records the nested map `name(..)` (e.g. `headers(..)`), written at any position, so its values are
+    /// hidden with the keys kept, except the values of `visible_keys`.
+    void maskNestedSecretMap(std::string_view name, std::vector<std::string> visible_keys = {});
 
     /// The raw indexes of the arguments from `start` on that are not `key = value` pairs, in order. A
     /// positional argument after the first named one is hidden instead of listed: its slot is unknowable.

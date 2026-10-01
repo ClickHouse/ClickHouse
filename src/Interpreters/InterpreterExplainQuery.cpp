@@ -443,7 +443,7 @@ namespace
             for (size_t i = 0; i < arguments.size(); ++i)
             {
                 if (auto * map = arguments[i]->as<ASTFunction>();
-                    map && map->arguments && std::ranges::contains(secret_arguments.nested_maps, map->name))
+                    map && map->arguments && secret_arguments.nested_maps.contains(map->name))
                 {
                     for (auto & entry : map->arguments->children)
                         hideWholeNode(secretValueSlot(entry));

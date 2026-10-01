@@ -2951,7 +2951,7 @@ SecretArgumentsSpec urlSecretArguments(size_t url_offset)
         /// `headers(...)` can appear at any position in every url form (function, cluster function, engine,
         /// and the named-collection variant); mask its values regardless of the url offset or a leading
         /// collection/cluster argument.
-        finder.maskNestedSecretMaps();
+        finder.maskNestedSecretMap("headers");
 
         if (finder.isNamedCollectionName(url_offset))
         {

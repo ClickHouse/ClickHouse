@@ -57,8 +57,9 @@ struct SecretArgumentsResult
     size_t count = 0; /// Mostly it's either 0 or 1. There are only a few cases where `count` can be greater than 1 (e.g. see `encrypt`).
                         /// In all known cases secret arguments are consecutive
     bool are_named = false; /// Arguments like `password = 'password'` are considered as named arguments.
-    /// E.g. "headers" in `url('..', headers('foo' = '[HIDDEN]'))`
-    std::vector<std::string> nested_maps;
+    /// Nested maps whose values are hidden with their keys kept, e.g. "headers" in
+    /// `url('..', headers('foo' = '[HIDDEN]'))`, each with the keys whose value stays visible.
+    std::map<std::string, std::vector<std::string>> nested_maps;
     /// Full replacement of an argument. Only supported when count is 1, otherwise all arguments will be replaced with this string.
     /// It's needed in cases when we don't want to hide the entire parameter, but some part of it, e.g. "connection_string" in
     /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=secretkey;...', ...)` should be replaced with
@@ -83,20 +84,6 @@ struct SecretArgumentsResult
         return count != 0 || !nested_maps.empty() || !replaced_arguments.empty() || !masked_arguments.empty();
     }
 };
-
-/// Whether a key of the `extra_credentials(..)` nested map carries a non-secret identifier whose
-/// value stays visible when the map is masked. Only `role_arn` qualifies: it names the role to
-/// assume, like `access_key_id` names a key. The other two keys of the assume-role triple are
-/// secrets: `external_id` is its shared secret, and `role_session_name` can be one too, because a
-/// trust policy can require a specific value through the `sts:RoleSessionName` condition (the
-/// ClickHouse Cloud guide documents exactly this use). Any other key - unknown, malformed or an
-/// expression - fails closed.
-/// The `.backup` metadata is a different matter: its `<base_backup>` locator keeps `role_session_name`
-/// on purpose, so that a role-authenticated backup chain stays restorable (see `BackupInfo.cpp`).
-inline bool isNonSecretExtraCredentialsKey(std::string_view key)
-{
-    return key == "role_arn";
-}
 
 /// Knows what is secret in the arguments of every table function, engine, backup locator and dictionary source.
 /// The parser only declares it: the knowledge lives with the engines, outside the parser library.

@@ -19,6 +19,9 @@ SecretArgumentsSpec s3BackupSecretArguments();
 /// Named arguments carrying S3 secrets, shared by every S3 form.
 bool isS3SecretKey(std::string_view key);
 
+/// Whether the value of this key of an `extra_credentials(..)` map stays visible when the map is masked.
+bool isNonSecretExtraCredentialsKey(std::string_view key);
+
 /// Masks credential material embedded in an S3 URL itself: the userinfo part and the values of
 /// presigned-URL query parameters. Returns true if anything was masked.
 bool maskS3URICredentials(String & url);

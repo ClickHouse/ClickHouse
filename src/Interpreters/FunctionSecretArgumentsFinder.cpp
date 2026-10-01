@@ -84,17 +84,15 @@ void FunctionSecretArgumentsFinder::markSecretArgument(size_t index, bool argume
         it->second &= argument_is_named;
 }
 
-void FunctionSecretArgumentsFinder::maskNestedSecretMaps()
+void FunctionSecretArgumentsFinder::maskNestedSecretMap(std::string_view name, std::vector<std::string> visible_keys)
 {
     for (size_t i = 0, size = function->arguments->size(); i < size; ++i)
     {
-        const auto f = function->arguments->at(i)->getFunction();
-        if (!f)
-            continue;
-        const auto name = f->name();
-        if ((name == "headers" || name == "extra_credentials")
-            && std::find(result.nested_maps.begin(), result.nested_maps.end(), name) == result.nested_maps.end())
-            result.nested_maps.push_back(name);
+        if (const auto f = function->arguments->at(i)->getFunction(); f && f->name() == name)
+        {
+            result.nested_maps.emplace(name, std::move(visible_keys));
+            return;
+        }
     }
 }
 
