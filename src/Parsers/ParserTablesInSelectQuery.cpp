@@ -618,13 +618,17 @@ Only the following subset is supported so far; anything else is rejected with an
   non-correlated subquery.
 - The lateral subquery is evaluated once per distinct value of the left-side columns it references, not
   once per left row, so it must not contain functions that are non-deterministic within a query, such as
-  `rand` or `generateUUIDv4`. Functions that are constant within a query, such as `now`, are allowed.
+  `rand` or `generateUUIDv4`, or table functions that generate random rows, such as `generateRandom`.
+  Functions that are constant within a query, such as `now`, are allowed.
 - Only a subquery is supported as the lateral table expression. The PostgreSQL table-source forms
   `LATERAL unnest(...)` and `CROSS JOIN UNNEST(...)` are not supported - use the
   [`ARRAY JOIN`](/reference/statements/select/array-join) clause instead.
 - The `GROUP BY` and `ORDER BY` of the lateral subquery run once over all evaluations together, so the
   `max_rows_to_group_by`, `max_rows_to_sort` and `max_bytes_to_sort` limits count the rows of all evaluations,
   not of one. They are only supported with the `throw` overflow mode; `any` and `break` are rejected.
+- The rows of all evaluations are matched to the left rows by a single join, so `max_rows_in_join` and
+  `max_bytes_in_join` count the rows of all evaluations together, and they are always enforced as if
+  `join_overflow_mode` were `throw`: with `break`, the join would silently drop unrelated left rows.
 
 **Example**
 
