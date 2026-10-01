@@ -350,7 +350,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
     };
-    factory.registerSource("http", create_table_source, Documentation{
+    factory.registerSource("http", create_table_source, SecretArgumentsSpec{.secret_keys = {"headers", "header"}}, Documentation{
         .description = R"DOCS_MD(
 # HTTP(S) dictionary source
 

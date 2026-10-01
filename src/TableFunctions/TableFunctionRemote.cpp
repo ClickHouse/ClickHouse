@@ -8,6 +8,9 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Access/Common/AccessFlags.h>
+#include <Common/KnownObjectNames.h>
+#include <Core/QualifiedTableName.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 
 
 namespace DB
@@ -107,6 +110,114 @@ TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_
         is_cluster_function ? 4 : 6,
         is_cluster_function ? "[<cluster name or default if not specified>, [<database.table> | [<name of remote database>, <name of remote table>] | <table function>]] [, sharding_key]"
                             : "<addresses pattern> [, <name of remote database>, <name of remote table>] [, username[, password], sharding_key]");
+}
+
+namespace
+{
+
+bool tryGetDatabaseNameOrQualifiedTableName(
+    const FunctionSecretArgumentsFinder & finder,
+    size_t arg_idx,
+    std::optional<String> & res_database,
+    std::optional<QualifiedTableName> & res_qualified_table_name)
+{
+    res_database.reset();
+    res_qualified_table_name.reset();
+
+    String str;
+    if (!finder.tryGetStringFromArgument(arg_idx, &str, /* allow_identifier= */ true))
+        return false;
+
+    if (str.empty())
+    {
+        res_database = "";
+        return true;
+    }
+
+    auto qualified_table_name = QualifiedTableName::tryParseFromString(str);
+    if (!qualified_table_name)
+        return false;
+
+    if (qualified_table_name->database.empty())
+        res_database = std::move(qualified_table_name->table);
+    else
+        res_qualified_table_name = std::move(qualified_table_name);
+    return true;
+}
+
+void findRemoteFunctionSecretArguments(FunctionSecretArgumentsFinder & finder)
+{
+    /// We're going to replace 'password' with '[HIDDEN'] for the following signatures:
+    /// remote('addresses_expr', db.table, 'user' [, 'password'] [, sharding_key])
+    /// remote('addresses_expr', 'db', 'table', 'user' [, 'password'] [, sharding_key])
+    /// remote('addresses_expr', table_function(), 'user' [, 'password'] [, sharding_key])
+
+    /// But we should check the number of arguments first because we don't need to do any replacements in case of
+    /// remote('addresses_expr', db.table)
+    if (finder.function->arguments->size() < 3)
+        return;
+
+    size_t arg_num = 1;
+
+    /// Skip 1 or 2 arguments with table_function() or db.table or 'db', 'table'.
+    auto table_function = finder.function->arguments->at(arg_num)->getFunction();
+    if (table_function && KnownTableFunctionNames::instance().exists(table_function->name()))
+    {
+        ++arg_num;
+    }
+    else
+    {
+        std::optional<String> database;
+        std::optional<QualifiedTableName> qualified_table_name;
+        if (!tryGetDatabaseNameOrQualifiedTableName(finder, arg_num, database, qualified_table_name))
+        {
+            /// We couldn't evaluate the argument so we don't know whether it is 'db.table' or just 'db'.
+            /// Hence we can't figure out whether we should skip one argument 'user' or two arguments 'table', 'user'
+            /// before the argument 'password'. So it's safer to wipe two arguments just in case.
+            /// The last argument can be also a `sharding_key`, so we need to check that argument is a literal string
+            /// before wiping it (because the `password` argument is always a literal string).
+            if (finder.tryGetStringFromArgument(arg_num + 2, nullptr, /* allow_identifier= */ false))
+            {
+                /// Wipe either `password` or `user`.
+                finder.markSecretArgument(arg_num + 2);
+            }
+            if (finder.tryGetStringFromArgument(arg_num + 3, nullptr, /* allow_identifier= */ false))
+            {
+                /// Wipe either `password` or `sharding_key`.
+                finder.markSecretArgument(arg_num + 3);
+            }
+            return;
+        }
+
+        /// Skip the current argument (which is either a database name or a qualified table name).
+        ++arg_num;
+        if (database)
+        {
+            /// Skip the 'table' argument if the previous argument was a database name.
+            ++arg_num;
+        }
+    }
+
+    /// Skip username.
+    ++arg_num;
+
+    /// Do our replacement:
+    /// remote('addresses_expr', db.table, 'user', 'password', ...) -> remote('addresses_expr', db.table, 'user', '[HIDDEN]', ...)
+    /// The last argument can be also a `sharding_key`, so we need to check that argument is a literal string
+    /// before wiping it (because the `password` argument is always a literal string).
+    bool can_be_password = finder.tryGetStringFromArgument(arg_num, nullptr, /* allow_identifier= */ false);
+    if (can_be_password)
+        finder.markSecretArgument(arg_num);
+}
+
+}
+
+SecretArgumentsSpec remoteSecretArguments()
+{
+    /// remote(named_collection, ..., password = 'password', ...), and a `password` written before the
+    /// positionals. An identifier is also a cluster name when no such collection exists, and that form
+    /// keeps the password in a positional slot, so the walk in `custom` has to run for it too.
+    return {.secret_keys = {"password"}, .custom = findRemoteFunctionSecretArguments};
 }
 
 void registerTableFunctionRemote(TableFunctionFactory & factory)
@@ -280,8 +391,8 @@ The following pattern types are supported.
 
 The query will be sent to the first healthy replica. However, for `remote` the replicas are iterated in the order currently set in the [load_balancing](/reference/settings/session-settings/load-balancing#load_balancing) setting.
 The number of generated addresses is limited by [table_function_remote_max_addresses](/reference/settings/session-settings/table#table_function_remote_max_addresses) setting.
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}});
-    factory.registerFunction("remoteSecure", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); }, {.description = R"DOC(Like the remote table function, but establishes a TLS-encrypted (secure) connection to the remote server.)DOC", .category = FunctionDocumentation::Category::TableFunction}});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, remoteSecretArguments()});
+    factory.registerFunction("remoteSecure", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); }, {.description = R"DOC(Like the remote table function, but establishes a TLS-encrypted (secure) connection to the remote server.)DOC", .category = FunctionDocumentation::Category::TableFunction}, remoteSecretArguments()});
     factory.registerFunction("cluster", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); }, {.description = R"DOCS_MD(
 Allows accessing all shards (configured in the `remote_servers` section) of a cluster without creating a [Distributed](/reference/engines/table-engines/special/distributed) table. Only one replica of each shard is queried.
 
@@ -338,8 +449,8 @@ Connection settings like `host`, `port`, `user`, `password`, `compression`, `sec
 
 - [skip_unavailable_shards](/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 - [load_balancing](/reference/settings/session-settings/load-balancing#load_balancing)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true}});
-    factory.registerFunction("clusterAllReplicas", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, {.description = R"DOC(Like the cluster table function, but queries all replicas of every shard in the cluster instead of a single replica per shard.)DOC", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true}});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true}});
+    factory.registerFunction("clusterAllReplicas", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, {.description = R"DOC(Like the cluster table function, but queries all replicas of every shard in the cluster instead of a single replica per shard.)DOC", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true}});
 }
 
 }

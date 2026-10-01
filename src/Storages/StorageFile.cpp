@@ -3357,6 +3357,7 @@ void registerStorageFile(StorageFactory & factory)
             /// User's file
             return std::make_shared<StorageFile>(*file_source, storage_args);
         },
+        SecretArgumentsSpec{},
         storage_features,
         Documentation{
             .description = R"DOCS_MD(

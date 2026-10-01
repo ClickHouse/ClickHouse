@@ -293,4 +293,12 @@ HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collecti
     return headers;
 }
 
+SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot)
+{
+    return {
+        .positional_secret_slots = {password_slot},
+        .secret_keys = {"password", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"},
+    };
+}
+
 }

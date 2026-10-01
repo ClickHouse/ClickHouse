@@ -279,7 +279,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 
         return std::make_unique<XDBCDictionarySource>(dict_struct, configuration, sample_block, global_context, bridge);
     };
-    factory.registerSource("odbc", create_table_source, Documentation{
+    factory.registerSource("odbc", create_table_source, SecretArgumentsSpec{}, Documentation{
         .description = R"DOCS_MD(
 # ODBC dictionary source
 
@@ -584,7 +584,7 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Dictionary source of type `jdbc` is disabled until consistent support for nullable fields.");
     };
-    factory.registerSource("jdbc", create_table_source, Documentation{
+    factory.registerSource("jdbc", create_table_source, SecretArgumentsSpec{}, Documentation{
         .description = "Reads dictionary data from an external database over JDBC, via the `clickhouse-jdbc-bridge` program. Currently disabled, pending consistent support for nullable fields.",
         .syntax = "SOURCE(JDBC(datasource '...' table 'table'))",
         .related = {"odbc"}});

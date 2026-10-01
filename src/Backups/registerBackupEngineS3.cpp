@@ -3,6 +3,7 @@
 #include <Backups/BackupFactory.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 
 #if USE_AWS_S3
 #include <Backups/BackupIO_S3.h>
@@ -452,7 +453,7 @@ void registerBackupEngineS3(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("S3", creator_fn, destination_identity_fn, source_access_fn);
+    factory.registerBackupEngine("S3", creator_fn, destination_identity_fn, source_access_fn, s3BackupSecretArguments());
 }
 
 }

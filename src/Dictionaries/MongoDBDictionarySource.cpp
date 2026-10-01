@@ -15,6 +15,7 @@
 #include <Poco/URI.h>
 
 #include <bsoncxx/builder/basic/array.hpp>
+#include <Common/maskURIPassword.h>
 
 using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::make_document;
@@ -120,7 +121,11 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
     };
     #endif
 
-    factory.registerSource("mongodb", create_dictionary_source, Documentation{
+    factory.registerSource("mongodb", create_dictionary_source,
+        SecretArgumentsSpec{
+            .secret_keys = {"password"},
+            .partial = {{"uri", [](String & value) { return maskURIPassword(&value); }}}},
+        Documentation{
         .description = R"DOCS_MD(
 # MongoDB dictionary source
 

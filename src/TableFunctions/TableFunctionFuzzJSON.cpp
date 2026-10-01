@@ -147,7 +147,7 @@ U"name":"FuzzJSON*"SpByjZKtr2VAyHCO"falseh
 {"name"keFuzzJSON, "g6vVO7TCIk":jTt^
 {"DBhz":YFuzzJSON5}
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
         {.allow_readonly = true});
 }
 

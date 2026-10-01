@@ -29,8 +29,8 @@
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
-#include <Parsers/FunctionSecretArgumentsFinder.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
 #include <Parsers/parseQuery.h>
 
 #include <Access/Common/SQLSecurityDefs.h>
@@ -302,7 +302,7 @@ namespace
         {
             if (auto * table_function_node = query_tree_node->as<TableFunctionNode>())
             {
-                auto secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node).getResult();
+                auto secret_arguments = findSecretArguments(*table_function_node);
                 if (!secret_arguments.hasSecrets())
                     return;
 
@@ -322,7 +322,7 @@ namespace
             }
             else if (auto * function_node = query_tree_node->as<FunctionNode>())
             {
-                auto secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node).getResult();
+                auto secret_arguments = findSecretArguments(*function_node);
                 if (!secret_arguments.hasSecrets())
                     return;
 
@@ -360,8 +360,8 @@ namespace
             hideLiteralsInSubtree(child);
     }
 
-    /// Keep in sync with the names `FunctionSecretArgumentsFinder` sends to `findEncryptionFunctionSecretArguments`
-    /// and `findHMACSecretArguments`. A name missing here only makes the dump stricter: its span is hidden whole.
+    /// Keep in sync with the functions registered with a `SecretArgumentsSpec`. A name missing here only makes
+    /// the dump stricter: its span is hidden whole.
     bool isEncryptionOrHMACFunction(const ASTFunction & function)
     {
         return function.name == "encrypt" || function.name == "decrypt" || function.name == "aes_encrypt_mysql"
@@ -435,7 +435,7 @@ namespace
             if (!function || !function->arguments)
                 return;
 
-            auto secret_arguments = FunctionSecretArgumentsFinderAST(*function).getResult();
+            auto secret_arguments = SecretArgumentsRegistry::instance().find(function->getKind(), FunctionAST(*function));
             if (!secret_arguments.hasSecrets())
                 return;
 

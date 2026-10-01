@@ -984,6 +984,7 @@ void registerStorageQueryRunner(StorageFactory & factory)
             settings,
             args.getContext());
     },
+    SecretArgumentsSpec{},
     {
         .supports_settings = true,
         .supports_parallel_insert = true,

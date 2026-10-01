@@ -1,4 +1,5 @@
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
 
 #include <algorithm>
 
@@ -34,16 +35,26 @@ namespace
         const auto & key_node = function_node->getArguments().getNodes()[0];
         if (const auto * key_constant = key_node->as<ConstantNode>())
             return key_constant->getValue().getType() == Field::Types::String
-                && FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_constant->getValue().safeGet<String>());
+                && isNonSecretExtraCredentialsKey(key_constant->getValue().safeGet<String>());
         if (const auto * key_identifier = key_node->as<IdentifierNode>())
-            return FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_identifier->getIdentifier().getFullName());
+            return isNonSecretExtraCredentialsKey(key_identifier->getIdentifier().getFullName());
         return false;
     }
 }
 
+SecretArgumentsResult findSecretArguments(const FunctionNode & function)
+{
+    return SecretArgumentsRegistry::instance().find(ASTFunction::Kind::ORDINARY_FUNCTION, FunctionTreeNodeImpl<FunctionNode>(function));
+}
+
+SecretArgumentsResult findSecretArguments(const TableFunctionNode & function)
+{
+    return SecretArgumentsRegistry::instance().find(ASTFunction::Kind::ORDINARY_FUNCTION, FunctionTreeNodeImpl<TableFunctionNode>(function));
+}
+
 void forEachSecretArgumentNode(
     QueryTreeNodes & arguments,
-    const FunctionSecretArgumentsFinder::Result & secret_arguments,
+    const SecretArgumentsResult & secret_arguments,
     const std::function<void(size_t, QueryTreeNodePtr &)> & on_secret)
 {
     for (size_t n = 0; n < arguments.size(); ++n)

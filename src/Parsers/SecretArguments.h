@@ -1,0 +1,119 @@
+#pragma once
+
+#include <map>
+#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include <base/types.h>
+#include <Parsers/ASTFunction.h>
+
+namespace DB
+{
+
+class Field;
+
+/// A function call as the secret arguments finder reads it, implemented over the AST (`FunctionAST`), the
+/// query tree (`FunctionTreeNodeImpl`) and `ActionsDAG` nodes (`FunctionActionsDAG`).
+class AbstractFunction
+{
+public:
+    class Argument
+    {
+    public:
+        virtual ~Argument() = default;
+        virtual std::unique_ptr<AbstractFunction> getFunction() const = 0;
+        virtual bool isIdentifier() const = 0;
+        virtual bool tryGetString(String * res, bool allow_identifier) const = 0;
+        /// The exact literal text of any scalar literal (`1`, `true`, `1.5`), with strings quoted.
+        /// Lets a reconstructor keep non-string values like `use_environment_credentials = 1` visible.
+        virtual bool tryGetLiteralText(String * res) const = 0;
+        /// A `SETTINGS` clause among the arguments (`remote(..., SETTINGS ...)`): not a positional
+        /// argument, and it hides its own secret values when formatted.
+        virtual bool isSettings() const { return false; }
+    };
+    class Arguments
+    {
+    public:
+        virtual ~Arguments() = default;
+        virtual size_t size() const = 0;
+        virtual std::unique_ptr<Argument> at(size_t n) const = 0;
+    };
+
+    virtual ~AbstractFunction() = default;
+    virtual String name() const = 0;
+    bool hasArguments() const { return !!arguments; }
+
+    std::unique_ptr<Arguments> arguments;
+};
+
+/// Which arguments of a function are secret.
+struct SecretArgumentsResult
+{
+    /// Result constructed by default means no arguments will be hidden.
+    size_t start = static_cast<size_t>(-1);
+    size_t count = 0; /// Mostly it's either 0 or 1. There are only a few cases where `count` can be greater than 1 (e.g. see `encrypt`).
+                        /// In all known cases secret arguments are consecutive
+    bool are_named = false; /// Arguments like `password = 'password'` are considered as named arguments.
+    /// E.g. "headers" in `url('..', headers('foo' = '[HIDDEN]'))`
+    std::vector<std::string> nested_maps;
+    /// Full replacement of an argument. Only supported when count is 1, otherwise all arguments will be replaced with this string.
+    /// It's needed in cases when we don't want to hide the entire parameter, but some part of it, e.g. "connection_string" in
+    /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=secretkey;...', ...)` should be replaced with
+    /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=[HIDDEN];...', ...)`.
+    std::string replacement;
+    /// Whether to wrap a result using full argument replacement in quotes.
+    bool quote_replacement = true;
+    /// Per-argument replacements by raw argument index; the text is emitted verbatim (it must carry
+    /// its own quoting). Used when only a part of an argument is secret, e.g. a presigned S3 URL
+    /// keeps its host and path while the credential query parameters are hidden. Unlike
+    /// `replacement`, this composes with the other masking (span, nested maps).
+    std::map<size_t, std::string> replaced_arguments;
+    /// Individually masked arguments by raw argument index; the value tells whether the argument
+    /// is a named `key = value` (the key stays visible and only the value is hidden). Valid S3
+    /// syntax can interleave secrets with non-secret arguments (e.g. a named `session_token`
+    /// after `format`), which a single contiguous span cannot represent without hiding the
+    /// non-secret arguments in between.
+    std::map<size_t, bool> masked_arguments;
+
+    bool hasSecrets() const
+    {
+        return count != 0 || !nested_maps.empty() || !replaced_arguments.empty() || !masked_arguments.empty();
+    }
+};
+
+/// Whether a key of the `extra_credentials(..)` nested map carries a non-secret identifier whose
+/// value stays visible when the map is masked. Only `role_arn` qualifies: it names the role to
+/// assume, like `access_key_id` names a key. The other two keys of the assume-role triple are
+/// secrets: `external_id` is its shared secret, and `role_session_name` can be one too, because a
+/// trust policy can require a specific value through the `sts:RoleSessionName` condition (the
+/// ClickHouse Cloud guide documents exactly this use). Any other key - unknown, malformed or an
+/// expression - fails closed.
+/// The `.backup` metadata is a different matter: its `<base_backup>` locator keeps `role_session_name`
+/// on purpose, so that a role-authenticated backup chain stays restorable (see `BackupInfo.cpp`).
+inline bool isNonSecretExtraCredentialsKey(std::string_view key)
+{
+    return key == "role_arn";
+}
+
+/// Knows what is secret in the arguments of every table function, engine, backup locator and dictionary source.
+/// The parser only declares it: the knowledge lives with the engines, outside the parser library.
+class ISecretArgumentsFinder
+{
+public:
+    virtual ~ISecretArgumentsFinder() = default;
+    virtual SecretArgumentsResult find(ASTFunction::Kind kind, const AbstractFunction & function) const = 0;
+    /// The SQL text hiding the value of a secret engine setting, or `nullopt` when there is nothing to hide.
+    virtual std::optional<String> renderSecretSetting(const String & name, const Field & value) const = 0;
+    /// Masks the formatted value of a key of a dictionary `SOURCE(...)` in place. Returns whether it is secret.
+    virtual bool maskDictionarySourceValue(const String & key, String & value) const = 0;
+};
+
+/// Installed once at startup by the programs that hide secrets (`server`, `local`, `format`). Without it,
+/// the secrets of engine arguments are shown: the client and the WebAssembly parser always show them.
+void setSecretArgumentsFinder(const ISecretArgumentsFinder * finder);
+const ISecretArgumentsFinder * getSecretArgumentsFinder();
+
+}

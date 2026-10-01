@@ -458,9 +458,9 @@ static bool isNonSecretMapChild(const String & map_name, const IAST * arg)
     const auto & key_ast = equals_func->arguments->children[0];
     if (const auto * key_literal = key_ast->as<ASTLiteral>())
         return key_literal->value.getType() == Field::Types::String
-            && FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_literal->value.safeGet<String>());
+            && isNonSecretExtraCredentialsKey(key_literal->value.safeGet<String>());
     if (const auto * key_identifier = key_ast->as<ASTIdentifier>())
-        return FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_identifier->name());
+        return isNonSecretExtraCredentialsKey(key_identifier->name());
     return false;
 }
 
@@ -1047,9 +1047,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     if (arguments)
     {
-        FunctionSecretArgumentsFinder::Result secret_arguments;
+        SecretArgumentsResult secret_arguments;
         if (!settings.show_secrets)
-            secret_arguments = FunctionSecretArgumentsFinderAST(*this).getResult();
+            secret_arguments = findSecretArguments(*this);
 
         for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
         {
@@ -1173,7 +1173,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
 bool ASTFunction::hasSecretParts() const
 {
-    return (FunctionSecretArgumentsFinderAST(*this).getResult().hasSecrets()) || childrenHaveSecretParts();
+    return findSecretArguments(*this).hasSecrets() || childrenHaveSecretParts();
 }
 
 String getFunctionName(const IAST * ast)

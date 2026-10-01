@@ -264,7 +264,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         return std::make_unique<ExecutablePoolDictionarySource>(dict_struct, configuration, sample_block, std::move(coordinator), context);
     };
 
-    factory.registerSource("executable_pool", create_table_source, Documentation{
+    factory.registerSource("executable_pool", create_table_source, SecretArgumentsSpec{}, Documentation{
         .description = R"DOCS_MD(
 # Executable Pool dictionary source
 

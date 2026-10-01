@@ -10,6 +10,8 @@ static constexpr auto TABLE_ENGINE_NAME = "NATS";
 static constexpr auto DEFAULT_MASKING_RULE = [](const DB::Field &){ return "'[HIDDEN]'"; };
 
 using ValueMaskingFunc = std::function<std::optional<std::string>(const DB::Field &)>;
+/// Masks the `SETTINGS` clause of the `NATS` engine, as its `SecretArgumentsSpec::secret_settings`.
+/// Keep in sync with `nats_secret_keys` in `StorageNATS.cpp`.
 static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
     {"nats_password", DEFAULT_MASKING_RULE},

@@ -72,6 +72,12 @@ void FunctionFactory::registerFunction(
 }
 
 
+const SecretArgumentsSpec * FunctionFactory::tryGetSecretArgumentsSpec(const std::string & name) const
+{
+    auto it = secret_arguments.find(getCanonicalNameIfAny(getAliasToOrName(name)));
+    return it == secret_arguments.end() ? nullptr : &it->second;
+}
+
 FunctionOverloadResolverPtr FunctionFactory::getImpl(
     const std::string & name,
     ContextPtr context) const

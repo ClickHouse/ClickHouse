@@ -173,7 +173,9 @@ INSERT INTO TABLE FUNCTION redis(
 
 - [The `Redis` table engine](/reference/engines/table-engines/integrations/redis)
 - [Using redis as a dictionary source](/reference/statements/create/dictionary/sources/redis)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        /// redis('host:port', 'key', 'structure', 'db_index', 'password', 'pool_size')
+        SecretArgumentsSpec{.positional_secret_slots = {4}, .secret_keys = {"password"}});
 }
 
 }

@@ -94,6 +94,7 @@
 
 #include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/TableFunctionRemote.h>
 #include <Storages/Distributed/parseRemoteFunctionArguments.h>
 
 #include <Storages/buildQueryTreeForShard.h>
@@ -2234,6 +2235,7 @@ void registerStorageDistributed(StorageFactory & factory)
             args.mode,
             isFreshTableDefinition(args.mode, args.query.attach_short_syntax));
     },
+    SecretArgumentsSpec{},
     {
         .supports_settings = true,
         .supports_parallel_insert = true,
@@ -2718,7 +2720,7 @@ The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`
     factory.registerStorage("Remote", [create](const StorageFactory::Arguments & args)
     {
         return create(args, /* secure = */ false);
-    }, features,
+    }, remoteSecretArguments(), features,
     Documentation{
         .description = common_description + R"DOCS_MD(
 `Remote` connects over the plain TCP port (`tcp_port`, `9000` by default) when the port is omitted.
@@ -2729,7 +2731,7 @@ The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`
     factory.registerStorage("RemoteSecure", [create](const StorageFactory::Arguments & args)
     {
         return create(args, /* secure = */ true);
-    }, features,
+    }, remoteSecretArguments(), features,
     Documentation{
         .description = common_description + R"DOCS_MD(
 `RemoteSecure` connects over a secure TLS connection using the secure TCP port (`tcp_port_secure`, `9440` by default) when the port is omitted.

@@ -939,6 +939,7 @@ void registerStorageTimeSeries(StorageFactory & factory)
             args.query, args.columns, args.comment);
     }
     ,
+    SecretArgumentsSpec{},
     {
         .supports_settings = true,
         .supports_schema_inference = true,

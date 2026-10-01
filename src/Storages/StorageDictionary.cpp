@@ -413,6 +413,7 @@ void registerStorageDictionary(StorageFactory & factory)
         return std::make_shared<StorageDictionary>(
             args.table_id, dictionary_name, args.columns, args.comment, StorageDictionary::Location::Custom, local_context);
     },
+    SecretArgumentsSpec{},
     {},
     Documentation{
         .description = R"DOCS_MD(

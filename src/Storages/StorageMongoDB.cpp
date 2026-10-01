@@ -13,6 +13,8 @@
 #include <Common/BSONCXXHelper.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
+#include <Common/quoteString.h>
 #include <Common/parseAddress.h>
 #include <Common/FieldVisitorToString.h>
 #include <Core/Joins.h>
@@ -22,6 +24,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
@@ -631,6 +634,52 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 }
 
 
+SecretArgumentsSpec mongoDBSecretArguments()
+{
+    /// MongoDB('host:port', 'database', 'collection', 'user', 'password', ...)
+    /// MongoDB(named_collection, ..., password = 'password', ...)
+    return {.positional_secret_slots = {4}, .secret_keys = {"password"}, .custom = [](FunctionSecretArgumentsFinder & finder)
+    {
+        /// Hides the password of a uri, or the whole value when it is not a plain string literal.
+        auto mask_uri = [&finder](size_t index, const AbstractFunction::Argument & value, std::string_view prefix, bool argument_is_named)
+        {
+            String uri;
+            if (!value.tryGetString(&uri, /* allow_identifier= */ false))
+                finder.markSecretArgument(index, argument_is_named);
+            else if (maskURIPassword(&uri))
+                finder.result.replaced_arguments[index] = String(prefix) + quoteString(uri);
+        };
+
+        /// MongoDB('mongodb://username:password@127.0.0.1:27017/database', 'collection'[, ...]). Not gated
+        /// on the argument count, which a rejected named argument changes; a `host:port` has no password.
+        if (finder.function->arguments->size() != 0)
+        {
+            const auto first = finder.function->arguments->at(0);
+            const auto first_function = first->getFunction();
+            if (first->isIdentifier())
+            {
+                String name;
+                /// A collection name has no password; a backquoted uri, rejected as an unknown collection, can.
+                if (first->tryGetString(&name, /* allow_identifier= */ true) && maskURIPassword(&name))
+                    finder.result.replaced_arguments[0] = backQuoteIfNeed(name);
+            }
+            else if (!first_function || first_function->name() != "equals")
+            {
+                mask_uri(0, *first, "", /* argument_is_named= */ false);
+            }
+        }
+
+        /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
+        /// Every occurrence: a duplicated or conflicting override is logged before validation rejects it.
+        for (ssize_t i = finder.findNamedArgument(nullptr, "uri"); i >= 0;
+             i = finder.findNamedArgument(nullptr, "uri", static_cast<size_t>(i) + 1))
+        {
+            const auto index = static_cast<size_t>(i);
+            mask_uri(index, *finder.function->arguments->at(index)->getFunction()->arguments->at(1), "uri = ", /* argument_is_named= */ true);
+        }
+    }};
+}
+
 void registerStorageMongoDB(StorageFactory & factory);
 void registerStorageMongoDB(StorageFactory & factory)
 {
@@ -647,6 +696,7 @@ void registerStorageMongoDB(StorageFactory & factory)
             args.constraints,
             args.comment);
     },
+    mongoDBSecretArguments(),
     {
         .source_access_type = AccessTypeObjects::Source::MONGO,
     },

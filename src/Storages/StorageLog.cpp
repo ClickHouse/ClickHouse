@@ -1471,7 +1471,7 @@ void registerStorageLog(StorageFactory & factory)
             args.getContext());
     };
 
-    factory.registerStorage("Log", create_fn, features, Documentation{
+    factory.registerStorage("Log", create_fn, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
@@ -1573,7 +1573,7 @@ SELECT * FROM log_table ORDER BY timestamp
         .syntax = "ENGINE = Log",
         .related = {"TinyLog", "StripeLog"}});
 
-    factory.registerStorage("TinyLog", create_fn, features, Documentation{
+    factory.registerStorage("TinyLog", create_fn, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 

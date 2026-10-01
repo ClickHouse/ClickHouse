@@ -87,7 +87,7 @@ aes-256-cbc no IV	FC552E5096F1455997B2732FB31DCFEB
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encryption;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDecrypt<DecryptImpl>>(documentation);
+    factory.registerFunction<FunctionDecrypt<DecryptImpl>>(documentation, FunctionFactory::Case::Sensitive, encryptionFunctionSecretArguments());
 }
 
 }

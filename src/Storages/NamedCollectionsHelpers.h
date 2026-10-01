@@ -2,6 +2,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Interpreters/StorageID.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -21,6 +22,11 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+/// The `SecretArgumentsSpec` of the MySQL and PostgreSQL families (and `Remote` databases): `password` at
+/// `password_slot` of the explicit form, and as an override with the TLS credentials given as the contents
+/// of a certificate or a key file (see `credentialsPathKeyFor`).
+SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot);
 
 /// Helper function to get named collection for table engine.
 /// Table engines have collection name as first argument of ast and other arguments are key-value overrides.

@@ -389,7 +389,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource("postgresql", create_table_source, Documentation{
+    factory.registerSource("postgresql", create_table_source, SecretArgumentsSpec{.secret_keys = {"password", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"}}, Documentation{
         .description = R"DOCS_MD(
 # PostgreSQL dictionary source
 

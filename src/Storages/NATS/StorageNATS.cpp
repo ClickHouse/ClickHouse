@@ -8,12 +8,14 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/NATS/NATS_fwd.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -1286,6 +1288,19 @@ bool resolveCredentialSource(
 
 }
 
+namespace
+{
+
+/// Named arguments carrying NATS credentials. They are the setting names, because the `NATS` engine
+/// takes its arguments as overrides of a named collection (`NATS(collection, nats_token = '...')`).
+/// `nats_server_list` is a destination and can carry URI userinfo credentials, so hide it whole.
+/// `nats_url` is not here: it is hidden only when its value carries an '@'.
+/// Keep in sync with `NATS::SETTINGS_TO_HIDE`, which masks the same secrets in the `SETTINGS` clause.
+constexpr std::string_view nats_secret_keys[]
+    = {"nats_password", "nats_token", "nats_credential_file", "nats_credentials", "nats_server_list"};
+
+}
+
 void registerStorageNATS(StorageFactory & factory);
 void registerStorageNATS(StorageFactory & factory)
 {
@@ -1418,6 +1433,14 @@ void registerStorageNATS(StorageFactory & factory)
     factory.registerStorage(
         "NATS",
         creator_fn,
+        SecretArgumentsSpec{
+            .secret_settings = NATS::SETTINGS_TO_HIDE,
+            /// NATS(named_collection, nats_password = 'password', nats_credentials = '...', ...)
+            .custom = [](FunctionSecretArgumentsFinder & finder)
+            {
+                finder.findBrokerSecretArguments(nats_secret_keys, "nats_url");
+            },
+        },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::NATS,

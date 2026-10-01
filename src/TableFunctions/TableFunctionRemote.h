@@ -3,6 +3,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/Distributed/parseRemoteFunctionArguments.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Interpreters/StorageID.h>
 
 
@@ -48,5 +49,8 @@ private:
     /// of the created `StorageDistributed`, e.g. SETTINGS skip_unavailable_shards = 1.
     SettingsChanges settings_changes;
 };
+
+/// The `SecretArgumentsSpec` of `remote`, `remoteSecure` and the `Remote`/`RemoteSecure` table engines.
+SecretArgumentsSpec remoteSecretArguments();
 
 }
