@@ -182,6 +182,11 @@ public:
         }
     }
 
+    /// Every sum here is over weights straight from the caller's column, so `topKWeighted(k)(x, -2)`
+    /// contributes 2^64-2 and all of them are modular, as `merge` below already states. The attribute
+    /// is on the function rather than its individual sums because there are three of them - the two
+    /// below and the alpha-map one at the end - and annotating them one at a time kept missing one.
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void insert(const TKey & key, UInt64 increment = 1, UInt64 error = 0)
     {
         // Increase weight of a key that already exists
@@ -189,10 +194,8 @@ public:
 
         if (auto * counter = findCounter(key, hash))
         {
-            /// The increment is a weight straight from the caller's column, so `topKWeighted(k)(x, -2)`
-            /// contributes 2^64-2 and the sum is modular, as `merge` below already assumes.
-            counter->count = common::addIgnoreOverflow(counter->count, increment);
-            counter->error = common::addIgnoreOverflow(counter->error, error);
+            counter->count += increment;
+            counter->error += error;
             return;
         }
 

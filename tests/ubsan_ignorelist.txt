@@ -38,3 +38,10 @@ src:*/pcg-random/*
 src:*/glibc-compatibility/*
 src:*/darwin-compatibility/*
 src:*/widechar_width/*
+
+# BuzzHouse's own 128-bit integer implementation: two's-complement negation, carry propagation,
+# long multiplication and restoring division all wrap by construction, in every function of both
+# files. Excluded wholesale rather than annotated function by function, which would be ~20
+# attributes and one more chance to miss a sibling.
+src:*/Client/BuzzHouse/Utils/HugeInt.cpp
+src:*/Client/BuzzHouse/Utils/UHugeInt.cpp
