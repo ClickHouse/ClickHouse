@@ -2455,9 +2455,19 @@ void IMergeTreeDataPart::loadRowsCount()
         assertEOF(*buf);
     };
 
+    const bool verify = parent_part ? parent_part->verify_rows_against_marks : verify_rows_against_marks;
+
     if (index_granularity->empty())
     {
         rows_count = 0;
+        if (verify)
+        {
+            if (auto buf = readFileIfExists("count.txt"))
+                read_rows_count(buf);
+            if (rows_count != 0)
+                throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                    "Data part {} has {} rows, but no marks", name, rows_count);
+        }
     }
     else if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::Compact || parent_part)
     {
@@ -2466,7 +2476,6 @@ void IMergeTreeDataPart::loadRowsCount()
         else
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No count.txt in part {}", name);
 
-        const bool verify = parent_part ? parent_part->verify_rows_against_marks : verify_rows_against_marks;
 #ifdef NDEBUG
         const bool check_rows_against_marks = verify;
 #else

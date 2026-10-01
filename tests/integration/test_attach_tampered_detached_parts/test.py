@@ -1,9 +1,9 @@
 # Detached part directories manipulated on disk before ATTACH / DROP DETACHED:
 # fabricated `_tryN` leftovers, injected canned old-version parts, legacy
 # index file renames (`.idx` vs `.idx2`, `checksums.txt` removal), parts
-# copied from a table with another `index_granularity`, and an edited
-# `count.txt`. These tests tamper with the server's on-disk data and
-# therefore live here rather than in stateless tests.
+# copied from a table with another `index_granularity`, an edited
+# `count.txt` and emptied marks. These tests tamper with the server's
+# on-disk data and therefore live here rather than in stateless tests.
 #
 # Converted from the stateless tests:
 #   04063_drop_detached_part_with_try_n_suffix.sh
@@ -713,3 +713,33 @@ def test_attach_part_with_row_count_not_matching_adaptive_marks(started_cluster)
     assert node.query("SELECT count() FROM t_adaptive_count") == "18\n"
 
     node.query("DROP TABLE t_adaptive_count SYNC")
+
+
+def test_attach_part_with_rows_but_empty_marks(started_cluster):
+    # A part with rows must have marks.
+    node.query("DROP TABLE IF EXISTS t_empty_marks SYNC")
+    node.query(
+        """
+        CREATE TABLE t_empty_marks (s String)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS index_granularity = 8, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, storage_policy = 'default'
+        """
+    )
+    node.query("INSERT INTO t_empty_marks SELECT toString(number) FROM numbers(18)")
+    part = node.query(
+        "SELECT name FROM system.parts WHERE database = 'default' AND table = 't_empty_marks' AND active"
+    ).strip()
+    node.query(f"ALTER TABLE t_empty_marks DETACH PART '{part}'")
+    part_dir = f"{table_data_path('t_empty_marks')}detached/{part}"
+    exec_root(f"rm -rf /tmp/{part}.orig && cp -a {part_dir} /tmp/{part}.orig")
+
+    exec_root(f"for f in {part_dir}/*mrk*; do truncate -s 0 $f; done && rm {part_dir}/checksums.txt")
+    error = node.query_and_get_error(f"ALTER TABLE t_empty_marks ATTACH PART '{part}'")
+    assert "BAD_SIZE_OF_FILE_IN_DATA_PART" in error, error
+
+    # Control: the original files attach.
+    exec_root(f"rm -rf {part_dir} && cp -a /tmp/{part}.orig {part_dir} && rm -rf /tmp/{part}.orig")
+    node.query(f"ALTER TABLE t_empty_marks ATTACH PART '{part}'")
+    assert node.query("SELECT count() FROM t_empty_marks") == "18\n"
+
+    node.query("DROP TABLE t_empty_marks SYNC")
