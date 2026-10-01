@@ -1992,3 +1992,35 @@ TEST(PromQLParser, RejectUnicodeSurrogateEscapes)
     EXPECT_EQ(parseStringLiteral(R"("\U00010000")"), "\xF0\x90\x80\x80");
     EXPECT_EQ(parseStringLiteral(R"("\U0010FFFF")"), "\xF4\x8F\xBF\xBF");
 }
+
+
+TEST(PromQLParser, StandaloneStepRangeFunctions)
+{
+    for (const auto * query : {"step()", "range()", "range() - step()", "step # comment\n()"})
+    {
+        PrometheusQueryTree tree{query};
+        EXPECT_EQ(tree.getResultType(), PrometheusQueryTree::ResultType::SCALAR) << query;
+        expectRoundTrip(query, tree.toString());
+    }
+
+    /// These names remain valid metric names when they are not called as functions.
+    for (const auto * query : {"step", "range", R"(step{job="x"})", R"(range{job="x"})", R"(up{step="x",range="y"})"})
+    {
+        PrometheusQueryTree tree{query};
+        EXPECT_EQ(tree.getResultType(), PrometheusQueryTree::ResultType::INSTANT_VECTOR) << query;
+        expectRoundTrip(query, tree.toString());
+    }
+}
+
+
+TEST(PromQLParser, InvalidStandaloneStepRangeFunctions)
+{
+    for (const auto * query : {"step(1)", "range(1)", "step(1, 2)", "STEP()", "RANGE()"})
+    {
+        PrometheusQueryTree tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_FALSE(error_message.empty()) << query;
+    }
+}

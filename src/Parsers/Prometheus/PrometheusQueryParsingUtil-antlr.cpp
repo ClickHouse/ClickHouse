@@ -150,7 +150,8 @@ namespace
             if (next_token->getType() == METRIC_NAME)
             {
                 const auto token_text = next_token->getText();
-                if (token_text == "min_of" || token_text == "max_of")
+                if (token_text == "min_of" || token_text == "max_of"
+                    || ((token_text == "step" || token_text == "range") && isFollowedByLeftParen()))
                     static_cast<antlr4::WritableToken *>(next_token.get())->setType(FUNCTION);
             }
 
@@ -186,6 +187,25 @@ namespace
             antlr4::CharStream * stream = getInputStream();
             stream->seek(stream->size());
             hitEOF = true;
+        }
+
+        /// Returns whether the next character after whitespace and comments is '('.
+        bool isFollowedByLeftParen()
+        {
+            antlr4::CharStream * stream = getInputStream();
+            bool in_comment = false;
+            for (ssize_t i = 1;; ++i)
+            {
+                size_t c = stream->LA(i);
+                if (c == antlr4::IntStream::EOF)
+                    return false;
+                if (c == '#')
+                    in_comment = true;
+                else if (c == '\n')
+                    in_comment = false;
+                else if (!in_comment && c != ' ' && c != '\t' && c != '\r')
+                    return c == '(';
+            }
         }
 
         std::string_view promql_query;
@@ -871,6 +891,13 @@ namespace
                 throwInconsistentSchema("Function", ctx->getText());
 
             auto function_name = getText(function_name_ctx);
+            if ((function_name == "step" || function_name == "range") && !arguments.empty())
+            {
+                error_listener.setError(
+                    fmt::format("Function '{}' expects no arguments", function_name),
+                    getStartPos(function_name_ctx));
+                return nullptr;
+            }
             return makeFunction(function_name, arguments);
         }
 
@@ -878,6 +905,7 @@ namespace
         ResultType getFunctionResultType(std::string_view function_name)
         {
             if (function_name == "scalar" || function_name == "time" || function_name == "pi"
+                || function_name == "step" || function_name == "range"
                 || function_name == "min_of" || function_name == "max_of")
                 return ResultType::SCALAR;
             else
