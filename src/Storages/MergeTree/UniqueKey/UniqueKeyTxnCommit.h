@@ -56,8 +56,7 @@ public:
         MergeTreeTransactionHolder & transaction;
         /// `snapshot_bitmaps` and `merged_part_offsets` are indexed like this.
         const MergeTreeData::DataPartsVector & source_parts;
-        /// Reset when the commit rolls the part back.
-        MergeTreeMutableDataPartPtr & merged_part;
+        MergeTreeMutableDataPartPtr merged_part;
         /// The bitmaps the merge's input filter dropped rows by.
         const std::vector<ConstDeleteBitmapPtr> & snapshot_bitmaps;
         /// Where each row the input filter let through landed in `merged_part`.

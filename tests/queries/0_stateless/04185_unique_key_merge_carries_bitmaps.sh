@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree
+# Tags: no-fasttest, no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree
 # UNIQUE KEY: a background merge that retires bitmap holders without their target carries the kills.
 #   1. one version: merging the DELETE marker away carries its kills and frees the marker
 #   2. three versions: a merge of three holders carries one file per version and frees all three
 # The manual merge selector is what picks the holders without the target.
+# no-parallel: an outdated part is removed only once every running transaction on the server started
+# after its removal, so another test's transaction holds the wait back.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

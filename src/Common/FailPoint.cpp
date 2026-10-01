@@ -378,7 +378,6 @@ static struct InitFiu
     PAUSEABLE_ONCE(unique_key_delete_pause_before_commit) \
     PAUSEABLE_ONCE(unique_key_insert_pause_before_commit) \
     PAUSEABLE_ONCE(unique_key_merge_pause_before_commit) \
-    ONCE(unique_key_merge_fail_after_publish) \
     ONCE(attach_to_group_failure) \
     ONCE(thread_group_switcher_post_attach_failure) \
     REGULAR(tx_log_abort_cleanup_multi) \
