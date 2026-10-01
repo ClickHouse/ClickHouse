@@ -51,7 +51,32 @@ class time_zone;
 /// NOLINTEND(modernize-macro-to-enum)
 
 
-/// Flags for toYearWeek() function.
+/** Bits of the MySQL-compatible `mode` argument of `toWeek`, `toYearWeek`, `toStartOfWeek` and `toLastDayOfWeek`.
+  * `WeekSpec::fromMode` translates them into a `WeekSpec`.
+  *
+  *   MONDAY_FIRST (bit 0)   If not set, Sunday is the first day of the week.
+  *                          If set, Monday is the first day of the week.
+  *
+  *   YEAR (bit 1)           If not set, the week is in range 0-53.
+  *                            Week 0 is returned for the last week of the previous year (for a date at the start
+  *                            of January). In this case one can get 53 for the first week of the next year.
+  *                            This keeps the week relevant for the given year.
+  *                          If set, the week is in range 1-53.
+  *                            One may get week 53 for a date in January (when the week is the last week of the
+  *                            previous year) and week 1 for a date in December.
+  *                          Ignored if NEWYEAR_DAY is set.
+  *
+  *   FIRST_WEEKDAY (bit 2)  If not set, weeks are numbered according to ISO 8601:1988.
+  *                          If set, the week that contains the first 'first-day-of-week' is week 1.
+  *                          The bit is inverted when MONDAY_FIRST is not set: mode 0 (Sunday) numbers weeks from
+  *                          the first Sunday, and mode 4 (Sunday) follows ISO 8601:1988.
+  *                          Ignored if NEWYEAR_DAY is set.
+  *
+  *   NEWYEAR_DAY (bit 3)    If set, the week that contains January 1 is week 1, and the week is in range 1-53.
+  *
+  * ISO 8601:1988 means that if the week containing January 1 has four or more days in the new year, then it is
+  * week 1; otherwise it is the last week of the previous year, and the next week is week 1.
+  */
 enum class WeekModeFlag : UInt8
 {
     MONDAY_FIRST = 1,
@@ -60,6 +85,50 @@ enum class WeekModeFlag : UInt8
     NEWYEAR_DAY = 8
 };
 using YearWeek = std::pair<UInt16, UInt8>;
+
+/// Which week of the year is week 1.
+enum class FirstWeekRule : UInt8
+{
+    /// The first week that starts in this year (the first week with the first day of the week in this year).
+    FirstFullWeek,
+    /// The first week that has 4 or more days in this year (ISO 8601).
+    FourOrMoreDays,
+    /// The week that contains January 1. Weeks are numbered 1-53 regardless of `week_year`.
+    ContainsJanuary1,
+};
+
+/// How week functions number weeks: the day a week starts on, the week number range, and which week is week 1.
+struct WeekSpec
+{
+    /// The day the week starts on, 1 = Monday ... 7 = Sunday, as `toDayOfWeek` numbers the days.
+    UInt8 first_weekday;
+    /// true: weeks 1-53, a week at a year boundary belongs to the previous or the next year.
+    /// false: weeks 0-53, a week at a year boundary is numbered within the year of the date.
+    bool week_year;
+    FirstWeekRule first_week_rule;
+
+    /// The MySQL-compatible `mode` argument of `toWeek`, see the flags in `WeekModeFlag`.
+    static constexpr WeekSpec fromMode(UInt8 mode)
+    {
+        const bool monday_first = mode & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST);
+        const UInt8 first_weekday = monday_first ? 1 : 7;
+        if (mode & static_cast<UInt8>(WeekModeFlag::NEWYEAR_DAY))
+            return {first_weekday, true, FirstWeekRule::ContainsJanuary1};
+
+        /// The meaning of `FIRST_WEEKDAY` is inverted when the week starts on Sunday.
+        const bool first_weekday_flag = static_cast<bool>(mode & static_cast<UInt8>(WeekModeFlag::FIRST_WEEKDAY)) != !monday_first;
+        return {
+            first_weekday,
+            static_cast<bool>(mode & static_cast<UInt8>(WeekModeFlag::YEAR)),
+            first_weekday_flag ? FirstWeekRule::FirstFullWeek : FirstWeekRule::FourOrMoreDays};
+    }
+
+    /// The number of days from the first day of the week to `day_of_week` (1 = Monday ... 7 = Sunday), 0-6.
+    constexpr UInt8 daysSinceStartOfWeek(UInt8 day_of_week) const
+    {
+        return static_cast<UInt8>((day_of_week + 7 - first_weekday) % 7);
+    }
+};
 
 /// Modes for toDayOfWeek() function.
 enum class WeekDayMode : uint8_t
@@ -1185,7 +1254,7 @@ public:
     /// last days of 9999 can belong to the week-year 10000, and 0000-01-01 is a Saturday belonging to the
     /// week-year -1. See `toYearWeek` and `toYearWeekPacked` for how each of them handles that.
     template <typename DateOrTime>
-    std::pair<Int32, UInt8> toSignedYearWeek(DateOrTime v, UInt8 week_mode) const
+    std::pair<Int32, UInt8> toSignedYearWeek(DateOrTime v, WeekSpec spec) const
     {
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
@@ -1202,11 +1271,11 @@ public:
                 /// Year/week numbering is timezone-independent and repeats every 400 years.
                 Int32 cycles = 0;
                 const ExtendedDayNum shifted = shiftIntoLUTRange(saturated, cycles);
-                const YearWeek yw = toYearWeek(shifted, week_mode);
+                const YearWeek yw = toYearWeek(shifted, spec);
                 return {static_cast<Int32>(yw.first) - cycles * 400, yw.second};
             }
 
-        const YearWeek yw = toYearWeek(v, week_mode);
+        const YearWeek yw = toYearWeek(v, spec);
         return {static_cast<Int32>(yw.first), yw.second};
     }
 
@@ -1215,54 +1284,43 @@ public:
     /// representable range saturates to zero - the value that sorts before every other one - instead of
     /// wrapping around. The week-year 10000 of the last days of 9999 fits `UInt32` and is kept as is.
     template <typename DateOrTime>
-    UInt32 toYearWeekPacked(DateOrTime v, UInt8 week_mode) const
+    UInt32 toYearWeekPacked(DateOrTime v, WeekSpec spec) const
     {
-        const auto [year, week] = toSignedYearWeek(v, week_mode);
+        const auto [year, week] = toSignedYearWeek(v, spec);
         if (year < DATE_LUT_MIN_REPRESENTABLE_YEAR)
             return 0;
         return static_cast<UInt32>(year) * 100 + week;
     }
 
-    /*
-      The bits in week_mode has the following meaning:
-       WeekModeFlag::MONDAY_FIRST (0)  If not set Sunday is first day of week
-                      If set Monday is first day of week
-       WeekModeFlag::YEAR (1) If not set Week is in range 0-53
-
-        Week 0 is returned for the the last week of the previous year (for
-        a date at start of january) In this case one can get 53 for the
-        first week of next year.  This flag ensures that the week is
-        relevant for the given year. Note that this flag is only
-        relevant if WeekModeFlag::JANUARY is not set.
-
-                  If set Week is in range 1-53.
-
-        In this case one may get week 53 for a date in January (when
-        the week is that last week of previous year) and week 1 for a
-        date in December.
-
-      WeekModeFlag::FIRST_WEEKDAY (2) If not set Weeks are numbered according
-                        to ISO 8601:1988
-                  If set The week that contains the first
-                        'first-day-of-week' is week 1.
-
-      WeekModeFlag::NEWYEAR_DAY (3) If not set no meaning
-                  If set The week that contains the January 1 is week 1.
-                            Week is in range 1-53.
-                            And ignore WeekModeFlag::YEAR, WeekModeFlag::FIRST_WEEKDAY
-
-        ISO 8601:1988 means that if the week containing January 1 has
-        four or more days in the new year, then it is week 1;
-        Otherwise it is the last week of the previous year, and the
-        next week is week 1.
-    */
+    /** The week number and the year it belongs to, following MySQL's algorithm for `WEEK` and `YEARWEEK`.
+      * The fields of `spec` have the following meaning (`WeekSpec::fromMode` derives them from the MySQL `mode`,
+      * see `WeekModeFlag`):
+      *
+      *   first_weekday    The day the week starts on, 1 = Monday ... 7 = Sunday.
+      *
+      *   week_year        If false, the week is in range 0-53, and the returned year is the year of the date.
+      *                      Week 0 is returned for the last week of the previous year (for a date at the start
+      *                      of January). In this case one can get 53 for the first week of the next year.
+      *                      This keeps the week relevant for the given year.
+      *                    If true, the week is in range 1-53, and the returned year is the year the week belongs to.
+      *                      One may get week 53 for a date in January (when the week is the last week of the
+      *                      previous year) and week 1 for a date in December.
+      *                    Ignored by `FirstWeekRule::ContainsJanuary1`.
+      *
+      *   first_week_rule  Which week is week 1:
+      *                    `FirstFullWeek`: the week that contains the first `first_weekday` of the year.
+      *                    `FourOrMoreDays`: ISO 8601:1988. If the week containing January 1 has four or more days
+      *                      in the new year, then it is week 1; otherwise it is the last week of the previous year,
+      *                      and the next week is week 1.
+      *                    `ContainsJanuary1`: the week that contains January 1. The week is in range 1-53.
+      */
     template <typename DateOrTime>
-    YearWeek toYearWeek(DateOrTime v, UInt8 week_mode) const
+    YearWeek toYearWeek(DateOrTime v, WeekSpec spec) const
     {
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
             {
-                const auto [year, week] = toSignedYearWeek(v, week_mode);
+                const auto [year, week] = toSignedYearWeek(v, spec);
                 /// Only the week-year can be unrepresentable here, the week number itself is always
                 /// correct, and it is shared with `toWeek`, so it must be returned as is: mode 3 is
                 /// documented to return a number in the `1-53` range, and `toWeek(date, 3)` has to agree
@@ -1271,28 +1329,21 @@ public:
                 return YearWeek(static_cast<UInt16>(std::max<Int32>(year, DATE_LUT_MIN_REPRESENTABLE_YEAR)), week);
             }
 
-        const bool newyear_day_mode = week_mode & static_cast<UInt8>(WeekModeFlag::NEWYEAR_DAY);
-        week_mode = check_week_mode(week_mode);
-        const bool monday_first_mode = week_mode & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST);
-        bool week_year_mode = week_mode & static_cast<UInt8>(WeekModeFlag::YEAR);
-        const bool first_weekday_mode = week_mode & static_cast<UInt8>(WeekModeFlag::FIRST_WEEKDAY);
-
         const LUTIndex i = toLUTIndex(v);
 
-        // Calculate week number of WeekModeFlag::NEWYEAR_DAY mode
-        if (newyear_day_mode)
-        {
-            return toYearWeekOfNewyearMode(i, monday_first_mode);
-        }
+        if (spec.first_week_rule == FirstWeekRule::ContainsJanuary1)
+            return toYearWeekOfNewyearMode(i, spec.first_weekday);
+
+        bool week_year_mode = spec.week_year;
+        const bool first_weekday_mode = spec.first_week_rule == FirstWeekRule::FirstFullWeek;
 
         YearWeek yw(toYear(i), 0);
         UInt16 days = 0;
         const auto day_number = makeDayNum(yw.first, toMonth(i), toDayOfMonth(i));
         auto first_day_number = makeDayNum(yw.first, 1, 1);
 
-        // 0 for monday, 1 for tuesday ...
-        // get weekday from first day in year.
-        UInt8 weekday = calc_weekday(first_day_number, !monday_first_mode);
+        /// The number of days from the first day of the week to January 1, 0-6.
+        UInt8 weekday = spec.daysSinceStartOfWeek(toDayOfWeek(toLUTIndex(first_day_number)));
 
         if (toMonth(i) == 1 && toDayOfMonth(i) <= static_cast<UInt32>(7 - weekday))
         {
@@ -1325,10 +1376,9 @@ public:
         return yw;
     }
 
-    /// Calculate week number of WeekModeFlag::NEWYEAR_DAY mode
-    /// The week number 1 is the first week in year that contains January 1,
+    /// The week number for `FirstWeekRule::ContainsJanuary1`: week 1 is the week that contains January 1.
     template <typename DateOrTime>
-    YearWeek toYearWeekOfNewyearMode(DateOrTime v, bool monday_first_mode) const
+    YearWeek toYearWeekOfNewyearMode(DateOrTime v, UInt8 first_weekday) const
     {
         YearWeek yw(0, 0);
 
@@ -1339,10 +1389,9 @@ public:
         /// both ends of a week can lie outside of it: the Sunday that starts the first week of 1900 is
         /// 1899-12-31, and the Saturday that ends the week of 2299-12-31 is 2300-01-06.
         /// `toDayOfWeek` numbers the days 1 for Monday to 7 for Sunday.
-        auto days_since_start_of_week = [this, monday_first_mode](LUTIndex index) -> Int64
+        auto days_since_start_of_week = [this, first_weekday](LUTIndex index) -> Int64
         {
-            const UInt8 day_of_week = toDayOfWeek(index);
-            return monday_first_mode ? day_of_week - 1 : day_of_week % 7;
+            return (toDayOfWeek(index) + 7 - first_weekday) % 7;
         };
 
         /// The day the week of the queried day starts on, and the day it ends on.
@@ -1366,78 +1415,51 @@ public:
         return yw;
     }
 
-    /// Get first day of week with week_mode, return Sunday or Monday
+    /// The first day of the week that starts on `spec.first_weekday`.
     template <typename DateOrTime>
-    auto toFirstDayNumOfWeek(DateOrTime v, UInt8 week_mode) const
+    auto toFirstDayNumOfWeek(DateOrTime v, WeekSpec spec) const
     {
-        bool monday_first_mode = week_mode & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST);
-        if (monday_first_mode)
-        {
+        if (spec.first_weekday == 1)
             return toFirstDayNumOfWeek(v);
-        }
 
         /// Out of LUT range the day number must be clamped before any arithmetic, otherwise the subtraction below
-        /// overflows a signed day number. day_of_week % 7 maps Sunday (7) to 0, since the week starts on Sunday here.
+        /// overflows a signed day number.
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
-                return dayNumOfDayIndex(outOfRangeDayIndex(v) - (outOfRangeValues(v).day_of_week % 7));
+                return dayNumOfDayIndex(outOfRangeDayIndex(v) - spec.daysSinceStartOfWeek(outOfRangeValues(v).day_of_week));
 
-        const auto day_of_week = toDayOfWeek(v);
+        const UInt8 days_since_start = spec.daysSinceStartOfWeek(toDayOfWeek(v));
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return (day_of_week != 7) ? DayNum(static_cast<UInt16>(saturateMinus(v, day_of_week))) : toDayNum(v);
+            return (days_since_start != 0) ? DayNum(static_cast<UInt16>(saturateMinus(v, days_since_start))) : toDayNum(v);
         else
-            return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
+            return (days_since_start != 0) ? ExtendedDayNum(v - days_since_start) : toDayNum(v);
     }
 
-    /// Get last day of week with week_mode, return Saturday or Sunday
+    /// The last day of the week that starts on `spec.first_weekday`.
     template <typename DateOrTime>
-    auto toLastDayNumOfWeek(DateOrTime v, UInt8 week_mode) const
+    auto toLastDayNumOfWeek(DateOrTime v, WeekSpec spec) const
     {
-        bool monday_first_mode = week_mode & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST);
-        if (monday_first_mode)
-        {
+        if (spec.first_weekday == 1)
             return toLastDayNumOfWeek(v);
-        }
 
         /// Out of LUT range the day number must be clamped before any arithmetic, otherwise `v += 6` below
-        /// overflows a signed day number. day_of_week % 7 maps Sunday (7) to 0, since the week starts on Sunday here.
+        /// overflows a signed day number.
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
-                return dayNumOfDayIndex(outOfRangeDayIndex(v) + 6 - (outOfRangeValues(v).day_of_week % 7));
+                return dayNumOfDayIndex(outOfRangeDayIndex(v) + 6 - spec.daysSinceStartOfWeek(outOfRangeValues(v).day_of_week));
 
-        const auto day_of_week = toDayOfWeek(v);
+        const UInt8 days_since_start = spec.daysSinceStartOfWeek(toDayOfWeek(v));
         v += 6;
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return (day_of_week != 7) ? DayNum(static_cast<UInt16>(saturateMinus(v, day_of_week))) : toDayNum(v);
+            return (days_since_start != 0) ? DayNum(static_cast<UInt16>(saturateMinus(v, days_since_start))) : toDayNum(v);
         else
-            return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
-    }
-
-    /// Check and change mode to effective.
-    UInt8 check_week_mode(UInt8 mode) const /// NOLINT
-    {
-        UInt8 week_format = (mode & 7);
-        if (!(week_format & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST)))
-            week_format ^= static_cast<UInt8>(WeekModeFlag::FIRST_WEEKDAY);
-        return week_format;
+            return (days_since_start != 0) ? ExtendedDayNum(v - days_since_start) : toDayNum(v);
     }
 
     /// Check and change mode to effective.
     WeekDayMode check_week_day_mode(UInt8 mode) const /// NOLINT
     {
         return static_cast<WeekDayMode>(mode & 3);
-    }
-
-    /** Calculate weekday from d.
-      * Returns 0 for monday, 1 for tuesday...
-      */
-    template <typename DateOrTime>
-    UInt8 calc_weekday(DateOrTime v, bool sunday_first_day_of_week) const /// NOLINT
-    {
-        const LUTIndex i = toLUTIndex(v);
-        if (!sunday_first_day_of_week)
-            return toDayOfWeek(i) - 1;
-        return toDayOfWeek(i + 1) - 1;
     }
 
     /// Calculate days in one year.

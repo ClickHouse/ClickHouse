@@ -822,23 +822,32 @@ struct ToYearWeekImpl
     static constexpr auto name = "toYearWeek";
     static constexpr bool value_may_be_string = true;
 
+    /// `toYearWeek` returns the week together with the year it belongs to, so it always numbers weeks in a
+    /// week-year (1-53), whatever the `YEAR` bit of the mode says: 2026-01-01 with mode 0 is 202552, not 202600.
+    static WeekSpec weekSpec(UInt8 week_mode)
+    {
+        WeekSpec spec = WeekSpec::fromMode(week_mode);
+        spec.week_year = true;
+        return spec;
+    }
+
     static UInt32 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         // TODO: ditch toDayNum()
-        return time_zone.toYearWeekPacked(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        return time_zone.toYearWeekPacked(time_zone.toDayNum(t), weekSpec(week_mode));
     }
 
     static UInt32 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toYearWeekPacked(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        return time_zone.toYearWeekPacked(time_zone.toDayNum(t), weekSpec(week_mode));
     }
     static UInt32 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toYearWeekPacked(ExtendedDayNum(d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        return time_zone.toYearWeekPacked(ExtendedDayNum(d), weekSpec(week_mode));
     }
     static UInt32 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toYearWeekPacked(DayNum(d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        return time_zone.toYearWeekPacked(DayNum(d), weekSpec(week_mode));
     }
 
     static constexpr bool hasMonotonicity() { return true; }
@@ -852,30 +861,30 @@ struct ToStartOfWeekImpl
 
     static UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        const int res = time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        const int res = time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), WeekSpec::fromMode(week_mode));
         return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        const int res = time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        const int res = time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), WeekSpec::fromMode(week_mode));
         return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        const int res = time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
+        const int res = time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), WeekSpec::fromMode(week_mode));
         return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfWeek(DayNum(d), week_mode);
+        return time_zone.toFirstDayNumOfWeek(DayNum(d), WeekSpec::fromMode(week_mode));
     }
     static Int64 executeExtendedResult(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), WeekSpec::fromMode(week_mode));
     }
     static Int32 executeExtendedResult(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
+        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), WeekSpec::fromMode(week_mode));
     }
 
     static constexpr bool hasMonotonicity() { return true; }
@@ -889,32 +898,32 @@ struct ToLastDayOfWeekImpl
 
     static UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        const int res = time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        const int res = time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), WeekSpec::fromMode(week_mode));
         return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        return time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), WeekSpec::fromMode(week_mode));
     }
     static UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        const int res = time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
+        const int res = time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), WeekSpec::fromMode(week_mode));
         return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         /// Computed in the extended range and clamped: the last day of the week can be past the
         /// `Date` maximum (2149-06-06), and a `DayNum` result wraps around it instead of saturating.
-        const int res = time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
+        const int res = time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), WeekSpec::fromMode(week_mode));
         return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static Int64 executeExtendedResult(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        return time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), WeekSpec::fromMode(week_mode));
     }
     static Int32 executeExtendedResult(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
+        return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), WeekSpec::fromMode(week_mode));
     }
 
     static constexpr bool hasMonotonicity() { return true; }
@@ -929,22 +938,22 @@ struct ToWeekImpl
     static UInt8 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         // TODO: ditch conversion to DayNum, since it doesn't support extended range.
-        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode);
+        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), WeekSpec::fromMode(week_mode));
         return yw.second;
     }
     static UInt8 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode);
+        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), WeekSpec::fromMode(week_mode));
         return yw.second;
     }
     static UInt8 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        YearWeek yw = time_zone.toYearWeek(ExtendedDayNum(d), week_mode);
+        YearWeek yw = time_zone.toYearWeek(ExtendedDayNum(d), WeekSpec::fromMode(week_mode));
         return yw.second;
     }
     static UInt8 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        YearWeek yw = time_zone.toYearWeek(DayNum(d), week_mode);
+        YearWeek yw = time_zone.toYearWeek(DayNum(d), WeekSpec::fromMode(week_mode));
         return yw.second;
     }
 
@@ -1944,26 +1953,26 @@ struct ToWeekYearImpl
 {
     static constexpr auto name = "toWeekYear";
 
-    static constexpr Int8 week_mode = 3;
+    static constexpr WeekSpec week_spec = WeekSpec::fromMode(3);
     static UInt16 execute(UInt64 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toYearWeek(t, week_mode).first;
+        return time_zone.toYearWeek(t, week_spec).first;
     }
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toYearWeek(t, week_mode).first;
+        return time_zone.toYearWeek(t, week_spec).first;
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toYearWeek(t, week_mode).first;
+        return time_zone.toYearWeek(t, week_spec).first;
     }
     static UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toYearWeek(ExtendedDayNum(d), week_mode).first;
+        return time_zone.toYearWeek(ExtendedDayNum(d), week_spec).first;
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toYearWeek(DayNum(d), week_mode).first;
+        return time_zone.toYearWeek(DayNum(d), week_spec).first;
     }
 
     using FactorTransform = ZeroTransform;
