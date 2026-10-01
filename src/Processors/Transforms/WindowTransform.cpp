@@ -46,6 +46,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 WindowTransform::WindowTransform(SharedHeader input_header_,
