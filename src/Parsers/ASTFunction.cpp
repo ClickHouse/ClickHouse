@@ -7,6 +7,7 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 
 
+#include <Common/HiddenSecret.h>
 #include <Common/quoteString.h>
 #include <Common/checkStackSize.h>
 #include <Common/FieldVisitorToString.h>
@@ -476,7 +477,7 @@ static bool formatNamedArgWithHiddenValue(IAST * arg, WriteBuffer & ostr, const 
 
     equal_args[0]->format(ostr, settings, state, frame);
     ostr << " = ";
-    ostr << "'[HIDDEN]'";
+    ostr << HIDDEN_SECRET_LITERAL;
 
     return true;
 }
@@ -1081,7 +1082,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         if (isNonSecretMapChild(nested_map->second, inner_arg.get()))
                             inner_arg->format(ostr, settings, state, nested_dont_need_parens);
                         else if (!formatNamedArgWithHiddenValue(inner_arg.get(), ostr, settings, state, nested_dont_need_parens))
-                            ostr << "'[HIDDEN]'";
+                            ostr << HIDDEN_SECRET_LITERAL;
                     }
                     ostr << ")";
                     continue;
@@ -1098,7 +1099,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         func_ast->arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);
                         ostr << " = ";
                     }
-                    ostr << "'[HIDDEN]'";
+                    ostr << HIDDEN_SECRET_LITERAL;
                     continue;
                 }
 
@@ -1139,7 +1140,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     }
                     else
                     {
-                        ostr << "'[HIDDEN]'";
+                        ostr << HIDDEN_SECRET_LITERAL;
                     }
                     if (size <= secret_arguments.start + secret_arguments.count && !secret_arguments.are_named)
                         break; /// All other arguments should also be hidden.

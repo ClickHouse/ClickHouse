@@ -6,6 +6,7 @@
 
 #include <Poco/Util/LayeredConfiguration.h>
 
+#include <Common/HiddenSecret.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
@@ -602,7 +603,7 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
     {
         result.start = 1;
         result.count = 1;
-        result.replacement = "'[HIDDEN]'";
+        result.replacement = HIDDEN_SECRET_LITERAL;
         result.quote_replacement = false;
         return;
     }
@@ -621,7 +622,11 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
 
         std::string replacement = backQuoteIfNeed(storage_function->name()) + "(";
         for (size_t i = 0, size = storage_function->hasArguments() ? storage_function->arguments->size() : 0; i < size; ++i)
-            replacement += i > 0 ? ", '[HIDDEN]'" : "'[HIDDEN]'";
+        {
+            if (i > 0)
+                replacement += ", ";
+            replacement += HIDDEN_SECRET_LITERAL;
+        }
         replacement += ")";
 
         result.start = 1;
@@ -679,7 +684,7 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
                 String value;
                 if (is_secret)
                 {
-                    replacement += "'[HIDDEN]'";
+                    replacement += HIDDEN_SECRET_LITERAL;
                     has_secret = true;
                 }
                 else if (key_value->arguments->at(1)->tryGetString(&value, /* allow_identifier= */ true))
@@ -702,7 +707,7 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
                     /// evaluate it, so hide it rather than leak. This counts as a secret: otherwise a
                     /// replacement whose only hidden part is this value would be discarded below and the
                     /// original expression formatted verbatim.
-                    replacement += "'[HIDDEN]'";
+                    replacement += HIDDEN_SECRET_LITERAL;
                     has_secret = true;
                 }
             }
@@ -710,7 +715,7 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
             {
                 /// The key is a constant expression the parser would evaluate, so it can name any
                 /// secret key; fail closed and hide the whole argument.
-                replacement += "'[HIDDEN]'";
+                replacement += HIDDEN_SECRET_LITERAL;
                 has_secret = true;
             }
             continue;
@@ -739,7 +744,10 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
                         && cred_kv->arguments->at(1)->tryGetString(&cred_value, /* allow_identifier= */ true))
                         masked_map += cred_key + " = " + quoteString(cred_value);
                     else
-                        masked_map += cred_key + " = '[HIDDEN]'";
+                    {
+                        masked_map += cred_key + " = ";
+                        masked_map += HIDDEN_SECRET_LITERAL;
+                    }
                 }
                 else
                 {
@@ -748,7 +756,7 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
                 }
             }
             masked_map += ")";
-            replacement += reconstructed ? masked_map : "'[HIDDEN]'";
+            replacement += reconstructed ? std::string_view(masked_map) : HIDDEN_SECRET_LITERAL;
             has_secret = true;
             continue;
         }
@@ -758,7 +766,7 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
         const size_t slot = positional_slot++;
         if (slot >= first_hidden_slot)
         {
-            replacement += "'[HIDDEN]'";
+            replacement += HIDDEN_SECRET_LITERAL;
             has_secret = true;
             continue;
         }
@@ -776,7 +784,7 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
         {
             /// Fail closed: an argument we cannot reconstruct safely (e.g. an unsupported tail like
             /// `headers(..)`, or a non-literal expression) must not be emitted verbatim. Hide it.
-            replacement += "'[HIDDEN]'";
+            replacement += HIDDEN_SECRET_LITERAL;
             has_secret = true;
         }
     }

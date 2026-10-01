@@ -62,6 +62,7 @@
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/HiddenSecret.h>
 #include <Common/JSONBuilder.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils.h>
@@ -317,7 +318,7 @@ namespace
                         if (auto * constant = node->as<ConstantNode>())
                             constant->setMaskId();
                         else
-                            node = std::make_shared<ConstantNode>(Field("[HIDDEN]"));
+                            node = std::make_shared<ConstantNode>(Field(String(HIDDEN_SECRET)));
                     });
             }
             else if (auto * function_node = query_tree_node->as<FunctionNode>())
@@ -341,7 +342,7 @@ namespace
     /// Replace a node with a single `'[HIDDEN]'` literal, keeping its alias.
     void hideWholeNode(ASTPtr & node)
     {
-        auto hidden = make_intrusive<ASTLiteral>(Field("[HIDDEN]"));
+        auto hidden = make_intrusive<ASTLiteral>(Field(String(HIDDEN_SECRET)));
         hidden->setAlias(node->tryGetAlias());
         node = std::move(hidden);
     }

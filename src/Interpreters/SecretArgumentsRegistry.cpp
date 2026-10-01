@@ -1,6 +1,7 @@
 #include <Interpreters/SecretArgumentsRegistry.h>
 
 #include <Backups/BackupFactory.h>
+#include <Common/HiddenSecret.h>
 #include <Databases/DatabaseFactory.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Functions/FunctionFactory.h>
@@ -87,7 +88,7 @@ bool SecretArgumentsRegistry::maskDictionarySourceValue(const String & key, Stri
     {
         if (std::ranges::contains(spec.secret_keys, key))
         {
-            value = "'[HIDDEN]'";
+            value = HIDDEN_SECRET_LITERAL;
             return true;
         }
         if (auto it = spec.partial.find(key); it != spec.partial.end() && it->second(value))

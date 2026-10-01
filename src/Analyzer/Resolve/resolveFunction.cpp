@@ -23,6 +23,7 @@
 #include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/HiddenSecret.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
 #include <Core/Settings.h>
@@ -2288,7 +2289,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     if (auto * constant = secret_node->as<ConstantNode>())
                         arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(assign_mask(*constant)) + "]";
                     else if (mask_secret_constants(secret_node))
-                        arguments_projection_names[n] = "[HIDDEN]";
+                        arguments_projection_names[n] = HIDDEN_SECRET;
                 });
         }
     }
