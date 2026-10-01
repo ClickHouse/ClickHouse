@@ -574,6 +574,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
+    /// The full traversal leaves the table name in the first argument of `joinGet` alone, while a
+    /// mutation is executed later in a context whose current database is unrelated to the query's.
+    /// Qualify it with the database of the altered table, under the same `WITH` scoping, as
+    /// `CREATE` does for a stored definition.
+    visitor.visitTableExpressions(*command_list_ptr);
 
     auto segments = parseAlterCommandSegments(alter, table, getContext());
     validateSegmentsCombination(segments);

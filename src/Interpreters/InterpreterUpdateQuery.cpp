@@ -210,18 +210,21 @@ BlockIO InterpreterUpdateQuery::execute()
 
     /// Add default database to table identifiers that we can encounter in the update expression.
     /// A separate visitor per expression: it remembers the `WITH` aliases it walked, and the two
-    /// expressions have separate scopes.
+    /// expressions have separate scopes. The narrow pass after the full traversal qualifies the table
+    /// name in the first argument of `joinGet`, which the full traversal leaves alone, as `CREATE` does.
     if (update_query.predicate)
     {
         AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
         ASTPtr predicate = update_query.predicate->ptr();
         visitor.visit(predicate);
+        visitor.visitTableExpressions(*predicate);
     }
     if (update_query.assignments)
     {
         AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
         ASTPtr assignments = update_query.assignments->ptr();
         visitor.visit(assignments);
+        visitor.visitTableExpressions(*assignments);
     }
 
     MutationCommands commands;
