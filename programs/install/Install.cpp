@@ -736,17 +736,17 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             /// The first one is where the password for the default user is written to.
             /// Like `AccessControl`, a relative path is resolved against the config directory only if the file exists there.
             /// Otherwise the server resolves it against its working directory, which is not known here.
-            auto resolve_users_config_path = [&](fs::path path)
+            auto resolve_users_config_path = [&](fs::path users_config_path)
             {
-                if (path.is_relative() && fs::exists(config_dir / path))
-                    path = (config_dir / path).lexically_normal();
-                return path;
+                if (users_config_path.is_relative() && fs::exists(config_dir / users_config_path))
+                    users_config_path = (config_dir / users_config_path).lexically_normal();
+                return users_config_path;
             };
 
-            auto add_users_config = [&](const fs::path & path)
+            auto add_users_config = [&](const fs::path & users_config_path)
             {
-                if (std::find(users_config_files.begin(), users_config_files.end(), path) == users_config_files.end())
-                    users_config_files.push_back(path);
+                if (std::find(users_config_files.begin(), users_config_files.end(), users_config_path) == users_config_files.end())
+                    users_config_files.push_back(users_config_path);
             };
 
             bool has_user_directories = configuration->has("user_directories");
@@ -829,13 +829,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             /// The server looks up the default user in the XML users configs in order and uses the first one that defines it,
             /// so check whether it is defined anywhere and whether its first definition has a password.
             is_default_user_removed = true;
-            for (const auto & path : users_config_files)
+            for (const auto & users_config_path : users_config_files)
             {
                 /// A relative path here is resolved against the working directory of the server, which is not known.
-                if (path.is_relative() || !fs::exists(path))
+                if (users_config_path.is_relative() || !fs::exists(users_config_path))
                     continue;
 
-                ConfigProcessor processor(path.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+                ConfigProcessor processor(users_config_path.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
                 ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
 
                 /// The default user may be explicitly removed, e.g. via `<default remove="1" />` in users.d.
@@ -1059,9 +1059,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         /// The users config may live outside the config directory, the server needs to read it as well.
         if (has_users_xml_config)
         {
-            auto is_outside_config_dir = [&](const fs::path & path)
+            auto is_outside_config_dir = [&](const fs::path & checked_path)
             {
-                auto relative = path.lexically_normal().lexically_relative(config_dir.lexically_normal());
+                auto relative = checked_path.lexically_normal().lexically_relative(config_dir.lexically_normal());
                 return relative.empty() || *relative.begin() == "..";
             };
 
