@@ -11,6 +11,7 @@ later startup. That is the state a server upgrade leaves behind.
 """
 
 import os
+import re
 import uuid
 
 import pytest
@@ -28,7 +29,7 @@ node = cluster.add_instance(
     "node",
     stay_alive=True,
     with_zookeeper=True,
-    main_configs=["configs/backups_disk.xml"],
+    main_configs=["configs/backups_disk.xml", "configs/remote_servers.xml"],
     external_dirs=["/backups/"],
 )
 
@@ -789,8 +790,8 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
 
     old_format = {
         "distributed_ddl_entry_format_version": 1,
-        "distributed_ddl_task_timeout": 0,
-        "distributed_ddl_output_mode": "none",
+        "distributed_ddl_task_timeout": 60,
+        "distributed_ddl_output_mode": "throw",
     }
     error = node.query_and_get_error(
         "CREATE TABLE dl.t6_cluster_list_copy ON CLUSTER test_shard_localhost AS dl.t6 "
@@ -804,6 +805,9 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
         "ENGINE = MergeTree ORDER BY a",
         settings={
             **old_format,
+            # Format 1 does not carry settings to the worker; format 2 does, but still expands
+            # `AS dl.t6` there, where the unavailable declaration must be rejected.
+            "distributed_ddl_entry_format_version": 2,
             "allow_projection_column_list_in_replicated_metadata": 1,
             "allow_suspicious_codecs": 1,
         },
@@ -961,7 +965,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     for definition in temporary_creates:
         assert "PROJECTION pp" in definition, definition
         assert "CODEC(Delta, Delta)" in definition, definition
-        assert "GROUP BY 1, 2" in definition, definition
+        assert re.search(r"GROUP BY\s+1,\s+2\b", definition.replace("\\n", " ")), definition
     assert temporary_creates[0].replace("tmp_plain", "tmp_replaced") == temporary_creates[1]
 
     node.query(

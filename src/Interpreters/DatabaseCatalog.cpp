@@ -167,6 +167,14 @@ TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryT
     }
     auto table_id = StorageID(DatabaseCatalog::TEMPORARY_DATABASE, global_name, id);
     auto table = creator(table_id);
+    if (create && create->columns_list)
+    {
+        /// The creator may finalize copied declarations after the user-visible `CREATE` query
+        /// was saved above. Keep its original name and storage spelling, but persist the final
+        /// columns and projections that were installed in the storage metadata.
+        auto & saved = original_create->as<ASTCreateQuery &>();
+        saved.setOrReplace(saved.columns_list, create->columns_list->clone());
+    }
     DatabaseCatalog::instance().addUUIDMapping(id);
     getDatabase()->createTable(getContext(), global_name, table, original_create);
     table->startup();

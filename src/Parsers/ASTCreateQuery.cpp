@@ -1118,14 +1118,23 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         ostr << " CLONE";
     };
 
-    if (!as_table.empty())
+    /// For a full `ATTACH` with a source table and an explicit engine, the parser accepts the
+    /// storage clause before `AS`. Emit that order so the formatted query parses back.
+    const bool format_as_table_after_storage = attach && storage && !as_table.empty();
+    auto format_as_table = [&]
     {
-        add_empty_if_needed();
-        add_clone_if_needed();
-        ostr
-            << " AS "
-            << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
-    }
+        if (!as_table.empty())
+        {
+            add_empty_if_needed();
+            add_clone_if_needed();
+            ostr
+                << " AS "
+                << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
+        }
+    };
+
+    if (!format_as_table_after_storage)
+        format_as_table();
 
     if (as_table_function)
     {
@@ -1176,6 +1185,9 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     if (storage)
         storage->format(ostr, settings, state, frame);
+
+    if (format_as_table_after_storage)
+        format_as_table();
 
     if (auto * inner_storage = getTargetInnerEngine(ViewTarget::Inner))
     {

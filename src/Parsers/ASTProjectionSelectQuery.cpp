@@ -113,11 +113,11 @@ void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
 
     if (orderBy())
     {
-        /// Let's convert tuple ASTFunction into ASTExpressionList, which generates consistent format
-        /// between GROUP BY and ORDER BY projection definition.
+        /// Format multiple sorting keys as a list. A one-argument `tuple` is an expression in its
+        /// own right: unwrapping it would change the AST when the formatted query is parsed back.
         ostr << s.nl_or_ws << indent_str << "ORDER BY";
         ASTPtr order_by;
-        if (auto * func = orderBy()->as<ASTFunction>(); func && func->name == "tuple" && func->arguments && !func->arguments->children.empty())
+        if (auto * func = orderBy()->as<ASTFunction>(); func && func->name == "tuple" && func->arguments && func->arguments->children.size() > 1)
             order_by = func->arguments;
         else
         {
