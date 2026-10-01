@@ -49,7 +49,7 @@
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <base/defines.h>
 
-#include <Processors/Executors/Runtime/v1/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>

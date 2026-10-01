@@ -4,11 +4,12 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Executors/Runtime/v1/ExecutingGraph.h>
+#include <Processors/Executors/Runtime/V1/ExecutingGraph.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Sinks/NullSink.h>
 
 using namespace DB;
+using namespace DB::Runtime::V1;
 
 namespace DB::ErrorCodes
 {

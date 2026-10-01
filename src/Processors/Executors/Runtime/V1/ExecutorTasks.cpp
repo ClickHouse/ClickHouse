@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/v1/ExecutorTasks.h>
+#include <Processors/Executors/Runtime/V1/ExecutorTasks.h>
 #include <Processors/IProcessor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -11,6 +11,9 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+namespace Runtime::V1
+{
 
 void ExecutorTasks::finish()
 {
@@ -402,6 +405,8 @@ String ExecutorTasks::dump()
     buffer << "  threads_queue size: " << threads_queue.size() << "\n";
 
     return buffer.str();
+}
+
 }
 
 }

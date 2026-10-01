@@ -31,6 +31,12 @@ using Processors = std::list<ProcessorPtr>;
 
 class StepWallClock;
 
+namespace Runtime::V1
+{
+class ExecutionThreadContext;
+class ExecutingGraph;
+}
+
 
 using StepWallClockPtr = std::shared_ptr<StepWallClock>;
 
@@ -401,11 +407,11 @@ private:
     /// - elapsed_ns
     /// - num_executed_jobs
     /// - query_plan_step_wall_clock_ptr
-    friend class ExecutionThreadContext;
+    friend class Runtime::V1::ExecutionThreadContext;
     /// For
     /// - input_wait_elapsed_ns
     /// - output_wait_elapsed_ns
-    friend class ExecutingGraph;
+    friend class Runtime::V1::ExecutingGraph;
 
     std::string processor_description;
 

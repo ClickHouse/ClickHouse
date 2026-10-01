@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/Executors/Runtime/IExecutor.h>
-#include <Processors/Executors/Runtime/v1/ExecutorTasks.h>
+#include <Processors/Executors/Runtime/V1/ExecutorTasks.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ISlotControl.h>
@@ -18,15 +18,12 @@ namespace DB
 
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
+namespace Runtime::V1
+{
+
 class ExecutingGraph;
 using ExecutingGraphPtr = std::unique_ptr<ExecutingGraph>;
-
-class ReadProgressCallback;
-using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
-
-class StepProfiler;
-using StepProfilerPtr = std::shared_ptr<StepProfiler>;
-
 struct WorkloadResources;
 
 /// Executes query pipeline.
@@ -114,5 +111,7 @@ private:
     SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation);
     void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
 };
+
+}
 
 }

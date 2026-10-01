@@ -2,12 +2,13 @@
 
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Sinks/NullSink.h>
-#include <Processors/Executors/Runtime/v1/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 
 using namespace DB;
+using namespace DB::Runtime::V1;
 
 TEST(Processors, PortsConnected)
 {

@@ -16,6 +16,9 @@
 namespace DB
 {
 
+namespace Runtime::V1
+{
+
 /// Graph of executing pipeline.
 class ExecutingGraph
 {
@@ -207,5 +210,7 @@ private:
     const bool profile_processors;
     IProcessor::CancelReason cancel_reason = IProcessor::CancelReason::NotCancelled;
 };
+
+}
 
 }

@@ -10,6 +10,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace Runtime::V1
+{
+
 /// A set of task queues for multithreaded processing.
 /// Every threads has its dedicated queue and uses it preferably.
 /// When there are no tasks left in dedicated queue it steals tasks from other threads
@@ -74,5 +77,7 @@ private:
     size_t num_tasks = 0;
     size_t use_queues = 0; // For optimization, to avoid searching for empty queue every time
 };
+
+}
 
 }
