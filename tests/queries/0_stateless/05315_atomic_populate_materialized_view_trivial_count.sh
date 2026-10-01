@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database
+# Tags: no-parallel, no-fasttest, no-replicated-database
 # - no-parallel - due to usage of fail points, and `materialized_views_populate_atomically` is on by
 #   default, so a concurrent `CREATE MATERIALIZED VIEW ... POPULATE` of another test would hit them too.
+# - no-fasttest - a test that must run alone is kept out of the fast test.
 # - no-replicated-database - the CREATE would go through the replicated DDL log, where the population is
 #   always the legacy one, so the atomic path (and its fail point) is not exercised there.
 
