@@ -213,7 +213,7 @@ Done.
 
 `dotnet ef migrations add` writes the migration to the `Migrations` folder, and `dotnet ef database update` applies it and records it in the `__EFMigrationsHistory` table. On the first run, EF Core logs a failed `SELECT` from `__EFMigrationsHistory` before it creates the table; you can ignore it.
 
-Before applying migrations, EF Core takes a lock so that two deployments can't migrate the same database at the same time. With Npgsql, the lock is a `LOCK TABLE` on `__EFMigrationsHistory` inside the migration transaction, not a session-level advisory lock, so it's released when the transaction ends.
+Before applying each migration, EF Core takes a lock. With Npgsql, the lock is a `LOCK TABLE` on `__EFMigrationsHistory` inside the migration transaction, not a session-level advisory lock, so it's released when the transaction ends, and it works through PgBouncer. The lock serializes each migration, but EF Core doesn't read the history table again between migrations, so two `dotnet ef database update` runs with several pending migrations can still interleave and fail, for example with `42701: column ... already exists`. Run migrations from one deploy step.
 
 ## Run and verify {#verify}
 

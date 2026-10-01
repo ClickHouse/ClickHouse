@@ -92,7 +92,7 @@ Symptoms that often trace back to the same root cause:
 | **pgjdbc** (Java) | No change needed. Use pgjdbc 42.7.5 or later; older versions can't connect through PgBouncer. See [`unsupported startup parameter`](#unsupported-startup-parameter). |
 | **Npgsql** (.NET) | No change needed: automatic preparation is off by default. Don't enable `Max Auto Prepare` or call `Prepare` through PgBouncer; if you must, also set `No Reset On Close=true`. |
 | **pgx** (Go) | Set `default_query_exec_mode=cache_describe` (or `exec`). Never use `describe_exec`, which splits unnamed statements across round trips. |
-| **Postgrex / Ecto** (Elixir) | Set `prepare: :unnamed` in your repo config. With named statements, a query of about 4 KB can hang through PgBouncer. |
+| **Postgrex / Ecto** (Elixir) | Set `prepare: :unnamed` in your repo config. With named statements, a query of about 4 KB can hang through PgBouncer over TLS. |
 | **sqlx** (Rust) | No prepared statement setting is needed. Don't use `.persistent(false)` or `statement_cache_capacity(0)`. To connect at all, set `extra_float_digits(None)`; see [`unsupported startup parameter`](#unsupported-startup-parameter). |
 | **Active Record** (Ruby on Rails) | No change needed with a `pg` gem of 1.6 or later and libpq 17 or later. Otherwise, set `prepared_statements: false` in `config/database.yml`. |
 | **PDO** (PHP, Laravel) | No change needed when `pdo_pgsql` is compiled against libpq 17 or later. Otherwise, set `PDO::ATTR_EMULATE_PREPARES => true`. |
@@ -101,7 +101,7 @@ If your workload depends on SQL-level `PREPARE`, connect **directly to PostgreSQ
 
 ### Why do queries fail with `cached plan must not change result type` after a migration? {#cached-plan-result-type}
 
-PgBouncer keeps prepared statements on its Postgres connections and reuses them for the same SQL text. After a schema change that changes the type of a column a query returns, for example `integer` to `bigint`, that query keeps failing through PgBouncer with `cached plan must not change result type`. It fails even from new client connections, until PgBouncer replaces its Postgres connections. Some drivers decode the stale result types instead and return wrong values without an error. Over the direct connection, each connection fails at most once and then recovers.
+PgBouncer keeps prepared statements on its Postgres connections and reuses them for the same SQL text. After a schema change that changes the result columns of a query, that query keeps failing through PgBouncer with `cached plan must not change result type`. This happens when a column the query returns changes type, for example `integer` to `bigint`, and when a column is added to a table queried with `SELECT *` or `RETURNING *`. It fails even from new client connections, until PgBouncer replaces its Postgres connections. Some drivers decode the stale result types instead and return wrong values without an error. Over the direct connection, drivers that handle this error, such as pgx, fail at most once per connection and then recover; others, such as sqlx, keep failing on their pooled connections until the app restarts. Listing columns explicitly instead of `SELECT *` avoids the added-column case, but not type changes.
 
 To recover, close PgBouncer's Postgres connections for that database, and PgBouncer opens new ones. PgBouncer connects to Postgres locally, so its connections have no `client_addr`. Run this over the direct connection (port `5432`), as the same user your app connects as. It ends only PgBouncer's connections for your app's user, so transactions that are running through PgBouncer at that moment fail, while direct connections aren't affected:
 
@@ -111,6 +111,8 @@ WHERE datname = '<your_database>' AND usename = current_user
   AND client_addr IS NULL AND backend_type = 'client backend'
   AND pid <> pg_backend_pid();
 ```
+
+Then restart your app processes. Drivers keep their own cache of result types per connection, and a connection that hasn't hit the error yet can decode the new rows with the old types: pgx 5.9 and later returns wrong values without an error, and asyncpg fails on every request with errors such as `BufferError: unexpected trailing 4 bytes in buffer` and never recovers.
 
 Drivers that use unnamed statements, such as Npgsql with its defaults, Postgrex with `prepare: :unnamed`, and pgx with `cache_describe`, aren't affected.
 
@@ -131,12 +133,15 @@ In transaction pooling mode, a session-level `SET` applies to the Postgres conne
 
 Many migration tools take a session-level advisory lock so that only one migration runs at a time, and release it with a separate statement. Through PgBouncer, the release can run on a different Postgres connection, and the lock stays on a pooled connection. Later migrations then wait or fail with errors such as `failed to release advisory lock`, even over the direct connection. Tools that use session advisory locks include golang-migrate, sqlx, Kysely's `Migrator`, Rails, Flyway with `transactional-lock=false`, and Ecto with `migration_lock: :pg_advisory_lock`.
 
-Run migrations over the direct connection (port `5432`). A leaked lock is held by a session that's idle, while a migration that's still running holds its lock from an active session. To clear leaked locks, terminate only the idle sessions that hold advisory locks in your database, also over the direct connection:
+Run migrations over the direct connection (port `5432`). To clear a leaked lock, first stop every migration run, because a migration that's still running can look idle between statements: golang-migrate, for example, is `idle` between every statement it sends. Then terminate the PgBouncer connections that hold advisory locks in your database and have been idle for a while. Run this over the direct connection, as the same user your app connects as. PgBouncer connects to Postgres locally, so its connections have no `client_addr`, and direct connections aren't affected:
 
 ```sql
 SELECT pg_terminate_backend(l.pid) FROM pg_locks l
 JOIN pg_stat_activity a ON a.pid = l.pid
 WHERE l.locktype = 'advisory' AND a.state = 'idle'
+  AND a.usename = current_user AND a.client_addr IS NULL
+  AND a.backend_type = 'client backend'
+  AND now() - a.state_change > interval '1 minute'
   AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database());
 ```
 

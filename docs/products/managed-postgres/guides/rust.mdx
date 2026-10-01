@@ -175,7 +175,7 @@ fn db_error(err: sqlx::Error) -> (StatusCode, String) {
 
 // Read
 async fn list_todos(State(pool): State<PgPool>) -> ApiResult<Vec<Todo>> {
-    let todos = sqlx::query_as::<_, Todo>("SELECT * FROM todos ORDER BY id")
+    let todos = sqlx::query_as::<_, Todo>("SELECT id, title, done, created_at FROM todos ORDER BY id")
         .fetch_all(&pool)
         .await
         .map_err(db_error)?;
@@ -184,7 +184,7 @@ async fn list_todos(State(pool): State<PgPool>) -> ApiResult<Vec<Todo>> {
 
 // Create
 async fn create_todo(State(pool): State<PgPool>, Json(new): Json<NewTodo>) -> ApiResult<Todo> {
-    let todo = sqlx::query_as::<_, Todo>("INSERT INTO todos (title) VALUES ($1) RETURNING *")
+    let todo = sqlx::query_as::<_, Todo>("INSERT INTO todos (title) VALUES ($1) RETURNING id, title, done, created_at")
         .bind(new.title)
         .fetch_one(&pool)
         .await
@@ -194,7 +194,7 @@ async fn create_todo(State(pool): State<PgPool>, Json(new): Json<NewTodo>) -> Ap
 
 // Update: toggle the done flag
 async fn toggle_todo(State(pool): State<PgPool>, Path(id): Path<i64>) -> ApiResult<Todo> {
-    let todo = sqlx::query_as::<_, Todo>("UPDATE todos SET done = NOT done WHERE id = $1 RETURNING *")
+    let todo = sqlx::query_as::<_, Todo>("UPDATE todos SET done = NOT done WHERE id = $1 RETURNING id, title, done, created_at")
         .bind(id)
         .fetch_one(&pool)
         .await
@@ -204,7 +204,7 @@ async fn toggle_todo(State(pool): State<PgPool>, Path(id): Path<i64>) -> ApiResu
 
 // Delete
 async fn delete_todo(State(pool): State<PgPool>, Path(id): Path<i64>) -> ApiResult<Todo> {
-    let todo = sqlx::query_as::<_, Todo>("DELETE FROM todos WHERE id = $1 RETURNING *")
+    let todo = sqlx::query_as::<_, Todo>("DELETE FROM todos WHERE id = $1 RETURNING id, title, done, created_at")
         .bind(id)
         .fetch_one(&pool)
         .await
@@ -314,10 +314,10 @@ Through PgBouncer, `pg_stat_ssl` reports PgBouncer's own connection to Postgres,
 PgBouncer runs in transaction pooling mode, so each transaction can run on a different Postgres connection. With sqlx:
 
 - **Connecting** requires `.extra_float_digits(None)`, as in `main.rs`. By default, sqlx sends `extra_float_digits` as a startup parameter, and PgBouncer rejects the connection with `unsupported startup parameter: extra_float_digits`. For the same reason, `PgConnectOptions::options` fails with `unsupported startup parameter in options`.
-- **Prepared statements** work with the default settings. sqlx frees statements that it evicts from its cache with a protocol-level `Close` message, which PgBouncer handles, also inside transactions. Don't set `statement_cache_capacity(0)`: it isn't needed, and with the cache turned off, sqlx still prepares named statements but never closes them.
+- **Prepared statements** work with the default settings. sqlx frees statements that it evicts from its cache with a protocol-level `Close` message, which PgBouncer handles, also inside transactions. Don't set `statement_cache_capacity(0)`: it isn't needed, and with the cache turned off, sqlx still prepares named statements but never closes them. After a migration that changes a column's type, or adds a column to a table queried with `SELECT *` or `RETURNING *`, queries through PgBouncer fail with `cached plan must not change result type`, even after you restart the app, until PgBouncer replaces its Postgres connections. That's why the handlers list their columns explicitly, which avoids the added-column case; for type changes, see the [FAQ](/products/managed-postgres/faq#cached-plan-result-type).
 - **Don't use `.persistent(false)`** on queries that run outside a transaction. sqlx then prepares an unnamed statement and executes it in a second round trip, which PgBouncer can send to a different Postgres connection. The query can fail with `unnamed prepared statement does not exist`, or silently run another client's statement and return wrong results.
 - **Session settings** made with `SET`, including in a pool's `after_connect` hook, don't stay on your connection, and can leak to other clients. Use `SET LOCAL` inside a transaction instead.
-- **Migrations** must use the direct connection. `sqlx-cli` and the `query!` macros can't connect through PgBouncer, because they always send `extra_float_digits`. `sqlx::migrate!` takes a session-level advisory lock (`pg_advisory_lock`), and through PgBouncer the unlock can reach a different Postgres connection. The lock then stays held on a pooled connection, and later migrations, including over the direct connection, hang until PgBouncer closes that connection.
+- **Migrations** must use the direct connection. `sqlx-cli` and the `query!` macros can't connect through PgBouncer, because they always send `extra_float_digits`. `sqlx::migrate!` takes a session-level advisory lock (`pg_advisory_lock`), and through PgBouncer the unlock can reach a different Postgres connection. A failed migration also leaves the lock held, because `sqlx::migrate!` returns before it unlocks. The lock then stays held on a pooled connection, and later `sqlx::migrate!` runs, including over the direct connection, hang until PgBouncer closes that connection. `sqlx migrate run` takes no advisory lock at all, so it doesn't wait for a leaked lock, but it also doesn't stop two runs at the same time: run it from a single deploy step.
 
 ## Next steps {#next-steps}
 

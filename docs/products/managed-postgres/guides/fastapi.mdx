@@ -416,7 +416,7 @@ The app works through PgBouncer with the default asyncpg and SQLAlchemy settings
 <Warning>
 **Changing a column's type**
 
-PgBouncer keeps the prepared statements on its Postgres connections. After a migration changes the type of a column that a query returns, such as `integer` to `bigint`, that query fails through PgBouncer with `InvalidCachedStatementError: cached statement plan is invalid due to a database schema or configuration change`, even from new connections, until PgBouncer replaces its Postgres connections. To recover, close PgBouncer's Postgres connections for the database over the direct connection, as the same user the app connects as. PgBouncer connects to Postgres locally, so its connections have no `client_addr`; the query leaves direct connections alone. PgBouncer opens new connections, and each pooled app connection may fail one more time before SQLAlchemy refreshes its cache:
+PgBouncer keeps the prepared statements on its Postgres connections. After a migration changes the type of a column that a query returns, such as `integer` to `bigint`, that query fails through PgBouncer with `InvalidCachedStatementError: cached statement plan is invalid due to a database schema or configuration change`, even from new connections, until PgBouncer replaces its Postgres connections. To recover, close PgBouncer's Postgres connections for the database over the direct connection, as the same user the app connects as. PgBouncer connects to Postgres locally, so its connections have no `client_addr`; the query leaves direct connections alone. PgBouncer opens new connections:
 
 ```sql
 SELECT pg_terminate_backend(pid) FROM pg_stat_activity
@@ -424,6 +424,8 @@ WHERE datname = 'guide_fastapi' AND usename = current_user
   AND client_addr IS NULL AND backend_type = 'client backend'
   AND pid <> pg_backend_pid();
 ```
+
+Then restart the app. Connections that hadn't hit the error yet keep asyncpg's old column types and fail on every request with `BufferError` or `AssertionError` from asyncpg's decoder, which SQLAlchemy doesn't treat as a reason to refresh its cache.
 
 Adding a column doesn't cause this, because SQLAlchemy lists the columns it selects.
 </Warning>

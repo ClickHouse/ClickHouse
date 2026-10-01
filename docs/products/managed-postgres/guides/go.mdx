@@ -248,7 +248,7 @@ func writeJSON(w http.ResponseWriter, status int, body any, err error) {
 
 Passing values as arguments (`$1`) rather than formatting them into the SQL string prevents SQL injection. pgx sends them separately from the query text. You don't need to check the error from `pool.Query` separately: `pgx.CollectRows` and `pgx.CollectExactlyOneRow` return it.
 
-Create `main.go`. It creates one pool for the whole process, serves the routes on port `3114`, and closes the pool on <kbd>Ctrl</kbd>+<kbd>C</kbd>. In an existing app, call `newPool` once at startup and `registerTodoRoutes` on your `http.ServeMux` instead:
+Create `main.go`. It creates one pool for the whole process, serves the routes on port `3114`, and on <kbd>Ctrl</kbd>+<kbd>C</kbd> waits for running requests to finish and then closes the pool. In an existing app, call `newPool` once at startup and `registerTodoRoutes` on your `http.ServeMux` instead:
 
 ```go title="main.go"
 package main
@@ -277,16 +277,21 @@ func main() {
 	registerTodoRoutes(mux, pool)
 	srv := &http.Server{Addr: ":3114", Handler: mux}
 
+	shutdownDone := make(chan struct{})
 	go func() {
 		<-ctx.Done()
+		log.Println("Shutting down")
 		srv.Shutdown(context.Background())
+		close(shutdownDone)
 	}()
 
 	log.Println("Listening on http://localhost:3114/todos")
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
-	log.Println("Shutting down")
+	// ListenAndServe returns as soon as Shutdown starts; wait for running
+	// requests to finish before the deferred pool.Close runs.
+	<-shutdownDone
 }
 ```
 
@@ -339,7 +344,7 @@ Open `http://localhost:3114/todos` in your browser to list the remaining todos. 
 ]
 ```
 
-Stop the server with <kbd>Ctrl</kbd>+<kbd>C</kbd>. It logs `Shutting down` and closes the pool.
+Stop the server with <kbd>Ctrl</kbd>+<kbd>C</kbd>. It logs `Shutting down`, waits for running requests, and closes the pool.
 
 To see the data in the console, open **SQL console** in the left sidebar of your service, expand `guide_go` and then `public`, and click the `todos` table. The `schema_migrations` table next to it holds the migration version. The `todos` table contains the remaining row:
 
@@ -361,6 +366,8 @@ pgx reads `default_query_exec_mode` from the URL and doesn't send it to the serv
 **Don't use pgx's default query mode through PgBouncer**
 
 By default, pgx prepares each query as a named statement once per connection and reuses the column types it got back. PgBouncer prepares these statements on whichever Postgres connection runs the query and shares them between clients. After a migration changes a column's type, or adds a column to a table queried with `SELECT *`, queries through PgBouncer can keep failing with `cached plan must not change result type`, even after you restart the app, or, with pgx 5.9 and later, return wrong values without an error. For example, a `bigint` column changed to `double precision` comes back as the raw bits of the `float64` value, such as `4631178160564600832` for `42.5`.
+
+If this has already happened, close PgBouncer's Postgres connections as shown in the [FAQ](/products/managed-postgres/faq#cached-plan-result-type), then restart your app processes so that pgx drops the column types it cached.
 
 `cache_describe` caches only the parameter and column types, runs every query as an unnamed statement in one round trip, and decodes rows using the column types that the server returns with each result, so it isn't affected. `exec` also works. Don't use `describe_exec` through PgBouncer: it splits each query across two round trips, which PgBouncer can send to different Postgres connections. You don't need `statement_cache_capacity=0`.
 </Warning>

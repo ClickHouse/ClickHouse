@@ -220,14 +220,22 @@ config :hello, Hello.Repo,
   pool_size: 10
 ```
 
+```elixir title="config/runtime.exs"
+  config :hello, Hello.Repo,
+    url: System.fetch_env!("DATABASE_URL"),
+    ssl: [cacertfile: Application.app_dir(:hello, "priv/ca-certificate.pem")],
+    prepare: :unnamed,
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
+```
+
 PgBouncer runs in transaction pooling mode:
 
 - **Prepared statements**: by default, Ecto runs every query as a named prepared statement, and the bundled PgBouncer supports named statements. Postgrex frees statements with a protocol-level `Close` message, never with SQL `DEALLOCATE`. Still, with the default `prepare: :named`, two problems show up through PgBouncer:
-  - A query whose SQL text is about 4 KB long can hang until it times out. The caller gets `DBConnection.ConnectionError` after about a minute.
+  - Over TLS, which the managed service uses, a query whose SQL text falls in a narrow size window of about 4 KB can hang until it times out. The caller gets `DBConnection.ConnectionError` after about a minute.
   - After a migration changes a column's type, queries that read the column keep failing with `cached plan must not change result type`, even after you restart the app, because PgBouncer reuses its prepared statement on the server.
 
   With `prepare: :unnamed`, Postgrex prepares each query again on every run, and both problems go away. Each query takes one extra network round trip.
-- **Migrations**: `mix ecto.migrate` works through PgBouncer with Ecto's default migration lock, which locks the `schema_migrations` table inside a transaction. Don't set `migration_lock: :pg_advisory_lock` for a PgBouncer connection. The session-level advisory lock can be released on a different Postgres connection, which fails with `failed to release advisory lock` and leaves the lock held, so later runs, including runs on port `5432`, wait for it. To run migrations over the direct connection, set a `5432` `DATABASE_URL` for the `mix ecto.migrate` command.
+- **Migrations**: `mix ecto.migrate` works through PgBouncer with Ecto's default migration lock, which locks the `schema_migrations` table inside a transaction. Don't set `migration_lock: :pg_advisory_lock` for a PgBouncer connection. The session-level advisory lock can be released on a different Postgres connection, which fails with `failed to release advisory lock` and leaves the lock held. This happens even when a run fails with no migrations pending. Later runs that also use `migration_lock: :pg_advisory_lock`, including runs on port `5432`, then wait for it; runs with the default table lock don't, so they aren't kept from running at the same time as a migration that holds the advisory lock. To run migrations over the direct connection, set a `5432` `DATABASE_URL` for the `mix ecto.migrate` command.
 - **Session state**: `SET` statements, such as a `SET search_path` in an `after_connect` callback, only apply to the current transaction's Postgres connection. A `search_path` in the Postgrex `parameters` option fails with `unsupported startup parameter: search_path`. `LISTEN` and `NOTIFY`, which `Postgrex.Notifications` uses, need a direct connection.
 
 See the [FAQ](/products/managed-postgres/faq#prepared-statement-errors) for more about prepared statements and PgBouncer.
