@@ -10134,6 +10134,7 @@ Maximal selectivity of the filter to use the hint built from the inverted text i
 Enable evaluation of LIKE/ILIKE queries by scanning the inverted text index dictionary.
 
 The accelerated patterns are `%value%`, `value%` and `%value`, as well as the `startsWith` and `endsWith` calls that `optimize_rewrite_like_perfect_affix` rewrites into `value%` and `%value`.
+With the `splitByNonAlpha` tokenizer, a phrase of several words such as `%java heap%` is searched by one of its words, which only skips granules.
 )", 0, \
         {"26.4", true, true, "New setting"}) \
     DECLARE(UInt64, text_index_like_min_pattern_length, 4, R"(

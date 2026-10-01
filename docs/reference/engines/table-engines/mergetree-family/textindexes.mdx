@@ -1459,7 +1459,8 @@ How the result of the dictionary scan is used depends on where the needle is anc
 
 The same dictionary scan serves `startsWith(col, 'value')` and `endsWith(col, 'value')` when the needle has no complete token to search.
 This is the path most `value%` and `%value` patterns actually take, because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (enabled by default) rewrites `col LIKE 'value%'` into `startsWith(col, 'value')` and `col LIKE '%value'` into `endsWith(col, 'value')`.
-Needles that span several tokens keep using the complete tokens of the needle and do not need a dictionary scan.
+A `like` needle that spans several tokens uses its complete tokens, without a dictionary scan.
+With the `splitByNonAlpha` tokenizer, a phrase without a complete token such as `%java heap%`, and every such `ilike` phrase, is searched by one of its words instead (for `like` the last one, as `heap%`); this only skips granules, and the original predicate is still evaluated for every row read.
 
 As a special case, if the index tokenizer is `array`, then _any_ pattern qualifies for the optimization: anchors, punctuation, `_` wildcards, several `%`-separated needles and escaped metacharacters.
 
@@ -1481,6 +1482,8 @@ For `ilike`, the search falls back to full-table scan in two special cases, for 
 
 - The needle contains the letter `k`. `ilike` treats `U+212A KELVIN SIGN` as a `k`, but the dictionary scan compares bytes and would miss a row spelled that way. `U+212A` is the only character that `ilike` folds onto an ASCII letter or digit, so `k` is the only affected needle character.
 - The index preprocessor expression contains `lowerUTF8` or `upperUTF8`. These rewrite non-ASCII characters into ASCII letters (`ß` into `SS`, `ſ` into `S`), which would make the index report rows that `ilike` does not match.
+
+An `ilike` prefix such as `java%` reads only the dictionary blocks of the ASCII case variants of its first four letters, which stop before the first `s` or `k` (`ilike` may treat `U+017F` as `s`).
 
 ### Trivial count queries {#count-queries-perf}
 
