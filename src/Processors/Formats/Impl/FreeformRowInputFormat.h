@@ -14,6 +14,9 @@
 namespace DB
 {
 
+class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
 // Base class for FieldMatcher, inheriting classes needs to implement readFieldsByEscapingRule() and getName()
 class FieldMatcher
 {
@@ -191,9 +194,14 @@ private:
     /// The search branches on every field that several matchers read alike (a word in a tab-separated row
     /// is read the same by `Raw` and `Escaped`), so the number of candidates grows exponentially with the
     /// number of such fields. `search_steps` counts the calls, and the search gives up after `max_search_steps`
-    /// (the `input_format_freeform_max_search_steps` setting, 0 means unlimited).
+    /// (the `input_format_freeform_max_search_steps` setting, 0 means unlimited) and stops at the limits of the query.
     void buildSolutions(
-        Solution current_solution, std::vector<Solution> & solutions, bool one_string, size_t offset, size_t & search_steps) const;
+        Solution current_solution,
+        std::vector<Solution> & solutions,
+        bool one_string,
+        size_t offset,
+        size_t & search_steps,
+        const QueryStatusPtr & query_status) const;
     // validateSolution iterates over the current row and try to parse and infer the types of the parsed fields. A solution is valid when the parsed types are valid.
     /// validateSolution also widens the types of `solution` to the union of the types seen in the checked rows.
     bool validateSolution(Solution & solution);

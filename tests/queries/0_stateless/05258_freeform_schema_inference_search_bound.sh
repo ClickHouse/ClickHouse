@@ -57,6 +57,17 @@ echo "A wide row of tab-separated strings is refused"
 strings_row 24
 describe | grep -oE 'BAD_ARGUMENTS|MEMORY_LIMIT_EXCEEDED' | head -1
 
+echo "An unbounded search stops at the memory limit"
+strings_row 24
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Freeform') settings max_memory_usage = 50000000, schema_inference_use_cache_for_file = 0, input_format_freeform_max_search_steps = 0" 2>&1 | grep -oE 'BAD_ARGUMENTS|MEMORY_LIMIT_EXCEEDED|TIMEOUT_EXCEEDED' | head -1
+
+echo "An unbounded search stops at the time limit"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Freeform') settings max_memory_usage = 1000000000, schema_inference_use_cache_for_file = 0, input_format_freeform_max_search_steps = 0, max_execution_time = 0.1" 2>&1 | grep -oE 'BAD_ARGUMENTS|MEMORY_LIMIT_EXCEEDED|TIMEOUT_EXCEEDED' | head -1
+
+echo "An unbounded search for reading rows stops at the time limit"
+STRUCTURE=$(seq -f 'c%g String' 0 23 | paste -sd, -)
+$CLICKHOUSE_CLIENT -q "select count() from file('$FILE_NAME', 'Freeform', '$STRUCTURE') settings max_memory_usage = 1000000000, input_format_freeform_max_search_steps = 0, max_execution_time = 0.1" 2>&1 | grep -oE 'BAD_ARGUMENTS|MEMORY_LIMIT_EXCEEDED|TIMEOUT_EXCEEDED' | head -1
+
 echo "A wide row of quoted strings is refused"
 for _ in 1 2; do for i in $(seq 1 24); do printf "'s%d' " "$i"; done; echo; done > "$DATA_FILE"
 describe | grep -oE 'BAD_ARGUMENTS|MEMORY_LIMIT_EXCEEDED' | head -1

@@ -1,6 +1,10 @@
 #include <Processors/Formats/Impl/FreeformRowInputFormat.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
@@ -34,6 +38,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
+    extern const int TIMEOUT_EXCEEDED;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -50,6 +55,14 @@ static inline void skipWhitespacesAndDelimiters(ReadBuffer & in)
 static inline bool atRowEnd(ReadBuffer & in)
 {
     return in.eof() || *in.position() == '\n' || *in.position() == '\r';
+}
+
+/// The candidates are kept in standard containers, whose allocations do not throw on the memory limit.
+static void checkSearchLimits(const QueryStatusPtr & query_status)
+{
+    CurrentMemoryTracker::check();
+    if (query_status && !query_status->checkTimeLimit())
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while searching for the structure of a `Freeform` row");
 }
 
 // Returns the score of the given type. This doesn't take nullable into account.
@@ -391,7 +404,8 @@ void FreeformFieldMatcher::buildSolutions(
     std::vector<Solution> & solutions,
     bool parse_till_newline_as_one_string,
     size_t offset,
-    size_t & search_steps) const
+    size_t & search_steps,
+    const QueryStatusPtr & query_status) const
 {
     /// Every candidate is kept in memory and then validated against the sample rows, so an unbounded
     /// search over a wide row of strings exhausts memory and time long before it ends.
@@ -401,6 +415,7 @@ void FreeformFieldMatcher::buildSolutions(
             "Cannot infer the structure of the row: it can be split into fields in too many ways (the search exceeded {} steps). "
             "Use a format with a fixed structure, such as `TSV` or `CSV`, or raise `input_format_freeform_max_search_steps`",
             max_search_steps);
+    checkSearchLimits(query_status);
 
     seekInRow(offset);
     skipWhitespacesAndDelimiters(in);
@@ -428,7 +443,8 @@ void FreeformFieldMatcher::buildSolutions(
         next.score += fields.parse_result.score;
         next.size += fields.parse_result.names_and_types.size();
 
-        buildSolutions(next, solutions, fields.parse_result.parse_till_newline_as_one_string, fields.parse_result.offset, search_steps);
+        buildSolutions(
+            next, solutions, fields.parse_result.parse_till_newline_as_one_string, fields.parse_result.offset, search_steps, query_status);
     }
 }
 
@@ -597,12 +613,21 @@ bool FreeformFieldMatcher::buildSolutionsAndPickBest()
     if (in.eof())
         return false;
 
+    QueryStatusPtr query_status;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        query_status = query_context->getProcessListElementSafe();
+
     in.setCheckpoint();
 
     std::vector<Solution> solutions;
     size_t search_steps = 0;
     buildSolutions(
-        Solution{.columns = {}, .matchers_order = {}, .first_columns = {}, .score = 0, .size = 0}, solutions, false, 0, search_steps);
+        Solution{.columns = {}, .matchers_order = {}, .first_columns = {}, .score = 0, .size = 0},
+        solutions,
+        false,
+        0,
+        search_steps,
+        query_status);
     in.rollbackToCheckpoint();
     if (solutions.empty())
     {
@@ -620,6 +645,8 @@ bool FreeformFieldMatcher::buildSolutionsAndPickBest()
     // Validation also widens the types of the solution to the union of the types seen in the checked rows (the first row alone
     // does not tell whether a column of integers is nullable), so the validated solution is the one that becomes final.
     for (auto & solution : solutions)
+    {
+        checkSearchLimits(query_status);
         if (validateSolution(solution))
         {
             setFinalSolution(solution);
@@ -627,6 +654,7 @@ bool FreeformFieldMatcher::buildSolutionsAndPickBest()
             LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "Found solution");
             return true;
         }
+    }
 
     in.rollbackToCheckpoint(true);
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "None of the {} candidate solutions parses every checked row", solutions.size());
