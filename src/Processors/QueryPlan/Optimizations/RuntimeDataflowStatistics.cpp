@@ -4,10 +4,12 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Core/SortDescription.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/sortBlock.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -20,6 +22,8 @@ namespace ProfileEvents
 {
 extern const Event RuntimeDataflowStatisticsInputBytes;
 extern const Event RuntimeDataflowStatisticsOutputBytes;
+extern const Event RuntimeDataflowStatisticsInputNanoseconds;
+extern const Event RuntimeDataflowStatisticsOutputNanoseconds;
 }
 
 namespace DB
@@ -39,8 +43,23 @@ void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistic
     stats_cache->set(key, std::make_shared<RuntimeDataflowStatistics>(stats));
 }
 
+std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>
+RuntimeDataflowStatisticsCacheUpdater::makeReplicatedBytesSatellite(
+    const std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater> & primary)
+{
+    chassert(primary);
+    chassert(!primary->replicated_bytes_primary); /// A satellite of a satellite would record nowhere.
+    auto satellite = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(primary->cache_key, primary->total_rows_to_read);
+    satellite->replicated_bytes_primary = primary;
+    return satellite;
+}
+
 RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 {
+    /// A satellite has already recorded into its primary, which owns the cache entry.
+    if (replicated_bytes_primary)
+        return;
+
     if (unsupported_case)
     {
         LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "Unsupported case encountered, skipping statistics update.");
@@ -71,6 +90,16 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             res.input_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
         }
     }
+    for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
+    {
+        const auto & stats = replicated_bytes_statistics[i];
+        if (stats.compressed_bytes)
+        {
+            log_stats(stats, toString(static_cast<InputStatisticsType>(i)));
+            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes);
+            res.replicated_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
+        }
+    }
     for (size_t i = 0; i < OutputStatisticsType::MaxOutputType; ++i)
     {
         const auto & stats = output_bytes_statistics[i];
@@ -84,8 +113,9 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 
     LOG_DEBUG(
         getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-        "Collected statistics: input bytes={}, output bytes={}",
+        "Collected statistics: input bytes={}, replicated bytes={}, output bytes={}",
         res.input_bytes,
+        res.replicated_bytes,
         res.output_bytes);
 
     if (res.input_bytes == 0 && res.output_bytes == 0)
@@ -137,6 +167,34 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
     return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
+/// The replicas merge their aggregation output with memory-bound merging, which sorts it by the group
+/// by keys; the single-node merge this sample is taken from leaves it in hash-table order. So what a
+/// replica puts on the wire is a sorted block, and pricing an unsorted sample of the very same rows
+/// misses by the whole difference between the two - a monotonic `UInt64` key column compresses 7.8x
+/// sorted and 3.0-3.9x in hash order.
+///
+/// The description is rebuilt ascending here instead of carrying the replica's own
+/// `group_by_sort_description` down: what the ratio responds to is equal and neighbouring keys
+/// ending up adjacent, which every direction and null placement gives equally.
+static IColumn::Permutation keyOrderPermutation(
+    const Columns & columns, const ColumnNumbers & keys_positions, const DataTypes & key_types)
+{
+    ColumnsWithTypeAndName key_columns;
+    SortDescription description;
+    key_columns.reserve(keys_positions.size());
+    description.reserve(keys_positions.size());
+    for (size_t i = 0; i < keys_positions.size(); ++i)
+    {
+        auto name = "__key_" + toString(i);
+        key_columns.emplace_back(columns[keys_positions[i]], key_types[i], name);
+        description.emplace_back(std::move(name), 1);
+    }
+
+    IColumn::Permutation permutation;
+    stableGetPermutation(Block(key_columns), description, permutation);
+    return permutation;
+}
+
 bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & statistics, size_t block_rows)
 {
     // Empty blocks produced during planning, when we calculate output headers. Skip them.
@@ -147,7 +205,11 @@ bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & stati
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
-    Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols, std::optional<size_t> full_bytes)
+    Statistics & statistics,
+    size_t num_rows,
+    const ColumnsWithTypeAndName & cols,
+    std::optional<size_t> full_bytes,
+    const KeyOrderProvider & key_order)
 {
     Stopwatch watch;
 
@@ -171,7 +233,16 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         /// The transfer codec is `network_compression_method`, whose default the default codec matches.
         /// It is generic, so it applies to any serialization layout.
         const ColumnCodecs codecs{.generic = CompressionCodecFactory::instance().getDefaultCodec()};
-        for (const auto & col : cols)
+        /// Built only for a block that is actually sampled - one in five, and at most five per query.
+        ColumnsWithTypeAndName sorted;
+        if (key_order)
+        {
+            const auto permutation = key_order();
+            sorted = cols;
+            for (auto & col : sorted)
+                col.column = col.column->permute(permutation, 0);
+        }
+        for (const auto & col : (key_order ? sorted : cols))
         {
             auto [sample, compressed] = estimateCompressedColumnSize(col, codecs);
             sample_bytes += sample;
@@ -186,7 +257,28 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         statistics.sample_bytes += sample_bytes;
         statistics.compressed_bytes += compressed_bytes;
     }
-    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
+    /// Reported in nanoseconds: a call often takes well under a microsecond, and rounding each one down would add up to nothing.
+    const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
+    statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
+    /// Only output columns get here, see above.
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsOutputNanoseconds, elapsed_nanoseconds);
+}
+
+static DataTypes getKeyTypesFrom(const Block & header, const ColumnNumbers & keys_positions)
+{
+    DataTypes types;
+    types.reserve(keys_positions.size());
+    for (auto pos : keys_positions)
+        types.push_back(header.getByPosition(pos).type);
+    return types;
+}
+
+RuntimeDataflowStatisticsCacheUpdater::KeyOrderProvider RuntimeDataflowStatisticsCacheUpdater::keyOrderProviderFor(
+    const Columns & columns, const ColumnNumbers & keys_positions, const DataTypes & key_types) const
+{
+    if (!replicas_send_output_in_key_order || keys_positions.empty())
+        return {};
+    return [&columns, &keys_positions, key_types] { return keyOrderPermutation(columns, keys_positions, key_types); };
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
@@ -221,7 +313,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
     statistics.bytes += res;
     statistics.sample_bytes += res;
     statistics.compressed_bytes += res;
-    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
+    const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
+    statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsOutputNanoseconds, elapsed_nanoseconds);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
@@ -232,7 +326,12 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
     cols.reserve(keys_positions.size());
     for (size_t i = 0; i < keys_positions.size(); ++i)
         cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
-    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols);
+    recordColumns(
+        output_bytes_statistics[OutputStatisticsType::AggregationKeys],
+        chunk.getNumRows(),
+        cols,
+        /*full_bytes=*/{},
+        keyOrderProviderFor(columns, keys_positions, key_types));
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
@@ -243,7 +342,12 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
     cols.reserve(keys_positions.size());
     for (size_t i = 0; i < keys_positions.size(); ++i)
         cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
-    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols, full_key_bytes);
+    recordColumns(
+        output_bytes_statistics[OutputStatisticsType::AggregationKeys],
+        chunk.getNumRows(),
+        cols,
+        full_key_bytes,
+        keyOrderProviderFor(columns, keys_positions, key_types));
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
@@ -264,7 +368,12 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
             continue;
         cols.emplace_back(columns[i], header.getByPosition(i).type, "");
     }
-    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationState], chunk.getNumRows(), cols);
+    recordColumns(
+        output_bytes_statistics[OutputStatisticsType::AggregationState],
+        chunk.getNumRows(),
+        cols,
+        /*full_bytes=*/{},
+        keyOrderProviderFor(columns, keys_positions, getKeyTypesFrom(header, keys_positions)));
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
@@ -288,7 +397,10 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
 
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
-    auto & statistics = input_bytes_statistics[type];
+    /// A satellite records a read parallel replicas would not coordinate, so its bytes belong to the
+    /// primary's replicated bucket rather than to anybody's `input_bytes`.
+    auto & statistics
+        = replicated_bytes_primary ? replicated_bytes_primary->replicated_bytes_statistics[type] : input_bytes_statistics[type];
     if (read_bytes && !input_columns.empty())
     {
         if (!column_sizes.empty())
@@ -352,7 +464,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
         statistics.sample_bytes += sample_bytes;
         statistics.compressed_bytes += compressed_bytes;
     }
-    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
+    const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
+    statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, elapsed_nanoseconds);
 }
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()

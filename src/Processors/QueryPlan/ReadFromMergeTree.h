@@ -657,6 +657,14 @@ public:
     bool isSerializable() const override { return true; }
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    /// Hold read-in-order to these columns when it looks for what a filter fixes. A pushed condition
+    /// the replicas never saw may prune this read, but it must not order it: the coordination mode the
+    /// initiator announces has to follow only from what both sides know, or it announces `WithOrder`
+    /// against the replicas' `Default` and the read fails. Kept in `query_info` so that a rewrite
+    /// rebuilding this read carries it along with everything else it takes from there.
+    void restrictFixedColumns(NameSet columns) { query_info.fixed_columns_the_replicas_also_have = std::move(columns); }
+    const std::optional<NameSet> & getFixedColumnRestriction() const { return query_info.fixed_columns_the_replicas_also_have; }
+
 private:
     static void buildPartitionPruningIndexes(
         Indexes & indexes,
@@ -695,12 +703,12 @@ private:
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
-    /// optimization. Carried over to a projection read by copyJoinRuntimeFilterIndexAnalysisDescriptors,
-    /// but not by clone()/serialize()/deserialize(), so the pruning is intentionally skipped when the step
-    /// is rebuilt for distributed or parallel-replicas reads (results stay correct, only the optimization
-    /// is lost); propagating it there is a follow-up. This is part of the setting's documented contract
-    /// (see its description in `Settings.cpp`) and is pinned by
-    /// `05153_join_runtime_filters_index_analysis_distributed_noop`.
+    /// optimization, and carried over by copyJoinRuntimeFilterIndexAnalysisDescriptors whenever the step
+    /// is rebuilt - a projection read, a clone, a parallel-replicas read - because a rebuilt step is not
+    /// always optimized again afterwards. Not serialized: a replica that receives a plan packet attaches
+    /// its own while optimizing it. A read that ends up without them reads its share unpruned, which is
+    /// what still happens with `make_distributed_plan`, and is pinned by
+    /// `05153_join_runtime_filters_index_analysis_modes`.
     std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
@@ -837,6 +845,7 @@ private:
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
+
     bool allow_query_condition_cache = true;
     bool allow_top_k_prewhere_query_condition_cache = true;
 

@@ -63,7 +63,7 @@ WITH refused AS
 (
     SELECT DISTINCT query_id
     FROM system.text_log
-    WHERE (event_date >= yesterday()) AND (logger_name = 'optimizeTree')
+    WHERE (event_date >= yesterday()) AND (logger_name = 'AutoParallelReplicas')
       AND (message LIKE '%The plan builds a set, its root must be preserved%')
 )
 SELECT log_comment, query_id IN (SELECT query_id FROM refused) AS set_plan_left_alone

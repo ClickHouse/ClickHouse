@@ -2,6 +2,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
+#include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
@@ -184,6 +185,19 @@ struct SelectQueryInfo
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage
     InputOrderInfoPtr input_order_info;
+
+    /// The columns read-in-order may treat as fixed, when something has restricted them. Set on the
+    /// read of a parallel-replicas local fragment once a condition the replicas do not have is pushed
+    /// into it, and holding the columns the fragment's own filters had already fixed - the ones the
+    /// replicas fix too, from their copy of the same fragment. Without it the pushed condition could
+    /// fix a sort key column here and nowhere else, and the initiator would announce `WithOrder` to
+    /// the shared coordinator against the replicas' `Default`.
+    ///
+    /// It lives next to `input_order_info` - the thing it exists to constrain - rather than on the
+    /// read step, so that every rewrite rebuilding a read from this `query_info` carries it along:
+    /// `clone`, `createLocalParallelReplicasReadingStep` and both projection rewrites already copy
+    /// the whole struct, and none of them can drop this without dropping the prewhere with it.
+    std::optional<NameSet> fixed_columns_the_replicas_also_have;
 
     /// Prepared sets are used for indices by storage engine.
     /// The analyzer stores prepared sets in planner_context and hashes computed of QueryTree instead of AST.

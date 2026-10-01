@@ -18,6 +18,7 @@
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -613,8 +614,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     counter++,
                     limit_hint,
                     limit_hint_prefix_columns,
-                    nullptr // `dataflow_cache_updater` will be passed to `MergingAggregatedBucketTransform` below
-                );
+                    /// With `skip_merging` the `MergingAggregatedBucketTransform` below is never created,
+                    /// so these transforms are the last producers of this step's output and have to record
+                    /// it themselves. Otherwise the merging transform records it, and recording here too
+                    /// would count the same rows twice.
+                    skip_merging ? dataflow_cache_updater : nullptr);
             });
 
             if (skip_merging)
@@ -643,6 +647,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             pipeline.resize(new_merge_threads);
 
             const auto & required_sort_description = memoryBoundMergingWillBeUsed() ? group_by_sort_description : SortDescription{};
+            /// When this merge does not sort but the replicas' does, the sample it feeds to the updater is
+            /// priced in the replicas' row order all the same - see `setReplicasSendOutputInKeyOrder`,
+            /// which `considerEnablingParallelReplicas` sets from the plan the replicas will run.
             pipeline.addSimpleTransform(
                 [&](const SharedHeader &)
                 { return std::make_shared<MergingAggregatedBucketTransform>(transform_params, required_sort_description, dataflow_cache_updater); });
@@ -1129,13 +1136,13 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     if (!sort_description_for_merging.empty())
     {
-        serializeSortDescription(sort_description_for_merging, ctx.out, ctx.version);
-        serializeSortDescription(group_by_sort_description, ctx.out, ctx.version);
+        serializeSortDescription(sort_description_for_merging, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+        serializeSortDescription(group_by_sort_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
     }
 
     writeVarUInt(params.keys.size(), ctx.out);
     for (const auto & key : params.keys)
-        writeStringBinary(key, ctx.out);
+        ctx.writeColumnName(key);
 
     if (!grouping_sets_params.empty())
     {
@@ -1145,11 +1152,11 @@ void AggregatingStep::serialize(Serialization & ctx) const
             /// Only used keys are needed.
             writeVarUInt(grouping_set.used_keys.size(), ctx.out);
             for (const auto & used_key : grouping_set.used_keys)
-                writeStringBinary(used_key, ctx.out);
+                ctx.writeColumnName(used_key);
         }
     }
 
-    serializeAggregateDescriptions(params.aggregates, ctx.out);
+    serializeAggregateDescriptions(params.aggregates, ctx.out, ctx.for_cache_key, ctx.input_header);
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.for_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);

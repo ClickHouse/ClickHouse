@@ -9118,10 +9118,23 @@ Use up to `max_parallel_replicas` the number of replicas from each shard for SEL
 )", 0, enable_parallel_replicas, \
         {"24.10", false, false, "Parallel replicas with read tasks became the Beta tier feature. The setting is also known by its alias `enable_parallel_replicas`."}) \
     DECLARE(UInt64, automatic_parallel_replicas_mode, 0, R"(
-Enable automatic switching to execution with parallel replicas based on collected statistics. Requires `enable_parallel_replicas != 0`, `parallel_replicas_local_plan = 1` and providing `cluster_for_parallel_replicas`.
+Enable automatic switching to execution with parallel replicas based on collected statistics. Requires `enable_parallel_replicas = 1`, `parallel_replicas_local_plan = 1` and providing `cluster_for_parallel_replicas`. With `enable_parallel_replicas = 2` parallel replicas are forced and the automatic mode is not applied.
 0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
 )", EXPERIMENTAL, \
         {"25.12", 0, 0, "New setting"}) \
+    DECLARE(Float, automatic_parallel_replicas_max_replicated_read_ratio, 0.5, R"(
+How much of a query's read volume may be read by every replica instead of being split between them, as a
+fraction of the whole, before automatic parallel replicas declines the query.
+
+Only the read parallel replicas coordinate is split; every other read of the same subtree runs on each
+replica in full. Those reads take the same wall-clock time either way, so the cost-model comparison is blind
+to them, but the cluster performs `max_parallel_replicas` times as much work for them. This setting is the
+limit on that waste: at the default 0.5 a query whose coordinated read is less than half of what it reads
+keeps running on one node, however the time comparison turns out.
+
+Set to 1 to accept any amount of replicated reading, which restores the behaviour of only comparing times.
+)", 0, \
+        {"26.10", 0.5, 0.5, "New setting: the share of a query's read volume that may be repeated on every replica before automatic parallel replicas declines the query. 1 accepts any amount, which is how the cost model behaved before."}) \
     DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 1_MiB, R"(
 Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
 The total number of bytes to read is estimated based on the collected statistics.
@@ -9238,6 +9251,8 @@ This allows queries with `max_parallel_replicas = 1` to be directed to another h
         {"26.5", true, true, "New setting. When disabled, replicas for parallel reading are selected purely by the load balancing algorithm without forcing the local replica into the set."}) \
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
+
+This concerns the index analysis that selects the mark ranges a read announces, which is what the coordinator assigns from. It does not cover pruning that happens while the data is read, such as the granule pruning of `enable_join_runtime_filters_index_analysis`: a JOIN runtime filter only exists once the build side has been read, so every replica evaluates its own and prunes its own share, and no coordinator could do it for them.
 )", 0, \
         {"24.12", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, \
         {"24.10", false, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}) \
@@ -9263,9 +9278,12 @@ Replace table function engines with their -Cluster alternatives
 Allow usage of materialized views with parallel replicas
 )", 0, \
         {"25.12", false, true, "Allow usage of materialized views with parallel replicas"}) \
-    DECLARE(Bool, parallel_replicas_filter_pushdown, false, R"(
-Allow pushing down filters to part of query which parallel replicas choose to execute
-)", BETA, \
+    DECLARE(Bool, parallel_replicas_filter_pushdown, true, R"(
+Push a condition standing above the part of the query parallel replicas execute into that part, and into the query the replicas are sent, so that they filter by it as well.
+
+Turn it off to keep the condition above the read on the initiator, as versions before 26.10 did. It is the way out if the push-down misbehaves: the answer does not change either way, only how much work the replicas do and how early they do it.
+)", 0, \
+        {"26.10", false, true, "A condition standing above the part of the query parallel replicas execute is now pushed into it and spliced into the query the replicas are sent, the way the distributed path has always done it. The read-mode disagreement the setting was added to avoid is prevented directly now, by withholding the ordering rather than the condition. The setting stays as the way out if the push-down misbehaves in production."}, \
         {"26.2", false, false, "New setting"}) \
     DECLARE(Bool, parallel_replicas_allow_view_over_mergetree, false, R"(
 Allow parallel replicas to execute the outer query of a simple view over `MergeTree` tables (instead of the view's inner query), improving parallelization across nodes. Also applies to `UNION ALL` views whose branches all read from different `MergeTree` tables.
@@ -10470,7 +10488,9 @@ Only has an effect if `use_skip_indexes_on_data_read = 1`.
 Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, can be pruned.
 If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
 
-Takes effect only when the probe side of the join is read locally. The descriptors that drive the pruning are attached to the read step while the query plan is optimized, and they are not carried over when that step is rebuilt for remote execution, so the granule pruning does not happen with parallel replicas (`enable_parallel_replicas = 1`) or with a distributed query plan (`make_distributed_plan = 1`). In those modes the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost.
+Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prunes its own assigned granules with its own filter, which is built from the whole build side, so a granule it drops cannot hold a row that should have matched.
+
+The granule pruning does not happen with a distributed query plan (`make_distributed_plan = 1`). There the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost.
 
 The granule pruning is also skipped for a probe side read with `FINAL` (the pruning is not implemented for `FINAL` reads, and `optimizeLazyFinal` rebuilds such a read without the descriptors), and for a table with pending data or `ALTER` mutations or patch parts. These cases are a no-op in the same sense.
 )", 0, \

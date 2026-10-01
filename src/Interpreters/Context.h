@@ -2083,7 +2083,21 @@ public:
     WriteSettings getWriteSettings() const;
 
     /** There are multiple conditions that have to be met to be able to use parallel replicas */
+    /// Whether parallel replicas are enabled, in any `parallel_replicas_mode`. Use it rather than reading
+    /// `enable_parallel_replicas`: in `read_tasks` mode `automatic_parallel_replicas_mode` decides instead, so they do
+    /// not count as enabled there, although the setting stays on for cluster engines.
+    bool isParallelReplicasEnabled() const;
+    /// `automatic_parallel_replicas_mode`, except that forcing parallel replicas (`enable_parallel_replicas = 2`) turns the
+    /// automatic mode off. Read the mode through it rather than from the setting.
+    static UInt64 getAutomaticParallelReplicasMode(const Settings & settings_ref);
     bool canUseTaskBasedParallelReplicas() const;
+    /// Unlike `canUseTaskBasedParallelReplicas`, ignores `automatic_parallel_replicas_mode`: the automatic mode
+    /// only decides for `MergeTree` reads, so a cluster engine (`s3`, `url`, a table of a data lake catalog, ...)
+    /// uses parallel replicas whenever they are enabled.
+    bool canUseTaskBasedParallelReplicasForClusterEngines() const;
+    /// Whether a cluster engine (`s3`, `url`, a table of a data lake catalog, ...) may be replaced by its `*Cluster`
+    /// variant over `cluster_for_parallel_replicas`, which ships the query text to the replicas.
+    bool canReplaceClusterEngineWithClusterVariant() const;
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
     bool canUseParallelReplicasCustomKey() const;

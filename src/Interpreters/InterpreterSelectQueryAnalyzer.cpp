@@ -33,6 +33,8 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Planner/findQueryForParallelReplicas.h>
+
 #include <Core/Settings.h>
 
 #include <Interpreters/Context.h>
@@ -49,6 +51,7 @@ namespace ProfileEvents
 {
     extern const Event QueryAnalysisMicroseconds;
     extern const Event QueryPipelineBuildMicroseconds;
+    extern const Event AutomaticParallelReplicasProbePlansBuilt;
 }
 
 namespace DB
@@ -143,25 +146,18 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             Block{{DataTypeUInt32().createColumnConst(1, *select_query_options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
 
     const auto & settings = result_context->getSettingsRef();
-    if (settings[Setting::automatic_parallel_replicas_mode] != 0)
-    {
-        // If `automatic_parallel_replicas_mode` is not zero, it means that the heuristic for automatic parallel replicas is enabled.
-        // In this case, we should disable `allow_experimental_parallel_reading_from_replicas`, since it is interpreted as an enforcement to use parallel replicas.
-        // If `allow_experimental_parallel_reading_from_replicas` was zero, then we have to skip applying the heuristic.
-        if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
-            && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS)
-        {
-            LOG_DEBUG(
-                getLogger("InterpreterSelectQueryAnalyzer"),
-                "Setting 'enable_parallel_replicas' is enabled but 'automatic_parallel_replicas_mode' is not zero."
-                " To enforce use of parallel replicas, please disable 'automatic_parallel_replicas_mode'.");
-            result_context->setSetting("enable_parallel_replicas", Field(0));
-        }
-        else
-        {
-            result_context->setSetting("automatic_parallel_replicas_mode", Field(0));
-        }
-    }
+    // If `automatic_parallel_replicas_mode` is not zero, the heuristic for automatic parallel replicas decides whether
+    // `MergeTree` reads use parallel replicas: `canUseTaskBasedParallelReplicas` is false while it is set, so
+    // `enable_parallel_replicas` is not an enforcement for them. It is kept as is, because cluster engines are not
+    // covered by the heuristic and still follow it (see `canUseTaskBasedParallelReplicasForClusterEngines`). Code that asks
+    // whether parallel replicas are enabled uses `Context::isParallelReplicasEnabled`, which accounts for the automatic mode.
+    // If parallel replicas are not enabled, the heuristic has nothing to switch to and is skipped. If they are forced, the
+    // heuristic is skipped as well (see `Context::getAutomaticParallelReplicasMode`).
+    if (settings[Setting::automatic_parallel_replicas_mode] != 0
+        && (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 0
+            || Context::getAutomaticParallelReplicasMode(settings) == 0
+            || settings[Setting::parallel_replicas_mode] != ParallelReplicasMode::READ_TASKS))
+        result_context->setSetting("automatic_parallel_replicas_mode", Field(0));
 
     /// Injecting `ORDER BY rand()` (the setting `inject_random_order_for_select_without_order_by`) is only valid
     /// for a query processed up to the stage `Complete`: the injection wraps the query into
@@ -182,10 +178,13 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     const ASTPtr & ast,
     const ContextMutablePtr & ctx,
     const SelectQueryOptions & select_options,
+    const QueryTreeNodePtr & single_node_query_tree,
     const BuiltSetsByHashPtr & built_sets,
+    const LoggerPtr & logger,
     Args &&... interpreter_args)
 {
-    const auto & logger = getLogger("InterpreterSelectQueryAnalyzer");
+    /// Every early return is logged: the caller counts it as the plan being unsuitable and relies on
+    /// this to tell a query shape from a setting that rules parallel replicas out.
     if (!ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
     {
         LOG_TRACE(
@@ -201,16 +200,43 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     }
     if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
     {
-        LOG_DEBUG(logger, "Cluster for parallel replicas is not set, can't build plan with parallel replicas");
+        LOG_TRACE(logger, "Setting 'cluster_for_parallel_replicas' is empty. Skipping building query plan with parallel replicas.");
         return QueryPlanPtr{};
     }
     /// If the query is executed by remote*/cluster* function, the following attempt to build a plan with parallel replicas may result in exceptions
     if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        LOG_TRACE(logger, "The query is a secondary query. Skipping building query plan with parallel replicas.");
         return QueryPlanPtr{};
+    }
     // We shouldn't apply heuristic since this plan is meant to be a plan with enforced parallel replicas usage
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
     ctx->setSetting("force_primary_key", false);
+
+    /// Building the plan below re-analyzes and re-plans the query from scratch, and for a query parallel
+    /// replicas cannot read at all the result is the single-node plan again, recognized as such only
+    /// after the fact (no read from the other replicas in it) and thrown away. Nothing about that verdict
+    /// is remembered, so every execution of such a query pays for it. Ask up front instead: the
+    /// eligibility rules are a walk over the query tree, and the tree is already built.
+    const auto * root_query = single_node_query_tree ? single_node_query_tree->as<QueryNode>() : nullptr;
+    if (root_query || (single_node_query_tree && single_node_query_tree->as<UnionNode>()))
+    {
+        auto eligibility_context = Context::createCopy(
+            root_query ? root_query->getContext() : single_node_query_tree->as<UnionNode &>().getContext());
+        /// `buildContext` cleared `enable_parallel_replicas` in this context because the automatic mode
+        /// is on, and `canUseTaskBasedParallelReplicas` needs both settings back. The exact value does not
+        /// matter: everything on this path only tests it against zero, and the outer one is known non-zero.
+        eligibility_context->setSetting("automatic_parallel_replicas_mode", Field{0});
+        eligibility_context->setSetting("enable_parallel_replicas", Field{1});
+
+        if (!canQueryPossiblyUseParallelReplicas(single_node_query_tree, eligibility_context))
+        {
+            LOG_TRACE(logger, "Parallel replicas cannot read anything for this query. Skipping building query plan with parallel replicas.");
+            return QueryPlanPtr{};
+        }
+    }
+
     /// Setting them on the context is not enough: the nested interpreter re-applies the query's own
     /// `SETTINGS` clause on top of the context it is handed (`QueryTreeBuilder::buildSelectExpression`),
     /// which would put `automatic_parallel_replicas_mode` back and make `buildContext` clear
@@ -251,9 +277,13 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// and could answer no for a query that does materialize.
     if (shippingQueryMaterializesSubqueries(interpreter.getQueryTree(), ctx))
     {
-        LOG_DEBUG(logger, "Shipping this query would materialize its subqueries. Skipping building a plan to cost");
+        LOG_TRACE(logger, "Shipping this query would materialize its subqueries. Skipping building a plan to cost");
         return QueryPlanPtr{};
     }
+
+    /// Counted here rather than on return: everything below is the cost the eligibility check above
+    /// exists to avoid, and the plan is built whether or not it ends up being used.
+    ProfileEvents::increment(ProfileEvents::AutomaticParallelReplicasProbePlansBuilt);
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);
     // We should build sets and create `CreatingSetsStep` only in the original plan. The automatic parallel replicas optimization happens before building sets,
@@ -392,10 +422,13 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
     , planner(query_tree, select_query_options, post_filter_)
     , query_plan_with_parallel_replicas_builder(
-          // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
-          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names](
-              const BuiltSetsByHashPtr & built_sets)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, built_sets, column_names); })
+          // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
+          [ast = query_->clone(),
+           ctx = Context::createCopy(context_),
+           select_options = select_query_options_,
+           single_node_tree = query_tree,
+           column_names](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, logger, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -412,13 +445,14 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
     , planner(query_tree, select_query_options)
     , query_plan_with_parallel_replicas_builder(
-          // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
+          // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
           [ast = query_->clone(),
            ctx = Context::createCopy(context_),
            storage = storage_,
            select_options = select_query_options_,
-           column_names](const BuiltSetsByHashPtr & built_sets)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, built_sets, storage, column_names); })
+           single_node_tree = query_tree,
+           column_names](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, logger, storage, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -431,10 +465,15 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(query_tree_)
     , planner(query_tree_, select_query_options)
     , query_plan_with_parallel_replicas_builder(
-          // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
-          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_](
-              const BuiltSetsByHashPtr & built_sets)
-          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, built_sets); })
+          // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
+          // `tree` is cloned because `toAST` below feeds a separate interpreter, while
+          // `single_node_tree` must stay the very tree the single-node plan was built from: it is the
+          // one carrying the query's own `SETTINGS` clause, which is what the eligibility check reads.
+          [tree = query_tree_->clone(),
+           ctx = Context::createCopy(context_),
+           select_options = select_query_options_,
+           single_node_tree = query_tree](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
+          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, single_node_tree, built_sets, logger); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
