@@ -65,6 +65,10 @@ EXCLUDE=(
     # malformed on purpose, so loading it here would print an exception.
     05035_delta_byte_array_zero_values.parquet
     05035_delta_byte_array_decimal.parquet
+    # Hand-crafted files for the 05316 short-page test; two are malformed on purpose.
+    05316_parquet_short_page_ok.parquet
+    05316_parquet_short_page_zstd_truncated.parquet
+    05316_parquet_short_page_brotli_oversized.parquet
 )
 
 for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parquet.gz' \) -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do
