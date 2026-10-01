@@ -1,18 +1,18 @@
 ---
 slug: /clickstack/self-configured/migration/elastic/migrating-data
-title: 'Migrating data to ClickStack from Elastic'
+title: 'Migrating data to Self Configured ClickHouse Observability from Elastic'
 sidebarTitle: 'Migrating data'
-description: 'Migrating data to ClickHouse Observability Stack from Elastic'
+description: 'Migrating data to Self Configured ClickHouse Observability from Elastic'
 show_related_blogs: true
-keywords: ['ClickStack']
+keywords: ['Self Configured ClickHouse Observability']
 doc_type: 'guide'
 ---
 
 ## Parallel operation strategy {#parallel-operation-strategy}
 
-When migrating from Elastic to ClickStack for observability use cases, we recommend a **parallel operation** approach rather than attempting to migrate historical data. This strategy offers several advantages:
+When migrating from Elastic to Self Configured ClickHouse Observability for observability use cases, we recommend a **parallel operation** approach rather than attempting to migrate historical data. This strategy offers several advantages:
 
-1. **Minimal risk**: by running both systems concurrently, you maintain access to existing data and dashboards while validating ClickStack and familiarizing your users with the new system.
+1. **Minimal risk**: by running both systems concurrently, you maintain access to existing data and dashboards while validating Self Configured ClickHouse Observability and familiarizing your users with the new system.
 2. **Natural data expiration**: most observability data has a limited retention period (typically 30 days or less), allowing for a natural transition as data expires from Elastic.
 3. **Simplified migration**: no need for complex data transfer tools or processes to move historical data between systems.
 <br/>
@@ -27,25 +27,25 @@ We demonstrate an approach for migrating essential data from Elasticsearch to Cl
 <Steps>
 <Step title="Configure dual ingestion" id="configure-dual-ingestion">
 
-Set up your data collection pipeline to send data to both Elastic and ClickStack simultaneously. 
+Set up your data collection pipeline to send data to both Elastic and Self Configured ClickHouse Observability simultaneously.
 
-How this is achieved depends on your current agents for collection - see ["Migrating Agents"](/clickstack/migration/elastic/migrating-agents).
+How this is achieved depends on your current agents for collection - see ["Migrating Agents"](/clickstack/self-configured/migration/elastic/migrating-agents).
 </Step>
 <Step title="Adjust retention periods" id="adjust-retention-period">
 
-Configure Elastic's TTL settings to match your desired retention period. Set up the ClickStack [TTL](/clickstack/managing/production#configure-ttl) to maintain data for the same duration.
+Configure Elastic's TTL settings to match your desired retention period. Set up the Self Configured ClickHouse Observability [TTL](/clickstack/self-configured/managing/production#configure-ttl-managed) to maintain data for the same duration.
 </Step>
 <Step title="Validate and compare" id="validate-and-compare">
 
 - Run queries against both systems to ensure data consistency
 - Compare query performance and results
-- Migrate dashboards and alerts to ClickStack. This is currently a manual process.
-- Verify that all critical dashboards and alerts work as expected in ClickStack
+- Migrate dashboards and alerts to Self Configured ClickHouse Observability. This is currently a manual process.
+- Verify that all critical dashboards and alerts work as expected in Self Configured ClickHouse Observability
 </Step>
 <Step title="Gradual transition" id="graudal-transition">
 
-- As data naturally expires from Elastic, you will increasingly rely on ClickStack
-- Once confidence in ClickStack is established, you can begin redirecting queries and dashboards
+- As data naturally expires from Elastic, you will increasingly rely on Self Configured ClickHouse Observability
+- Once confidence in Self Configured ClickHouse Observability is established, you can begin redirecting queries and dashboards
 </Step>
 </Steps>
 
@@ -54,7 +54,6 @@ Configure Elastic's TTL settings to match your desired retention period. Set up 
 For organizations requiring longer retention periods:
 
 - Continue running both systems in parallel until all data has expired from Elastic
-- ClickStack [tiered storage](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes) capabilities can help manage long-term data efficiently.
 - Consider using [materialized views](/concepts/features/materialized-views/incremental-materialized-view) to maintain aggregated or filtered historical data while allowing raw data to expire.
 
 ### Migration timeline {#migration-timeline}
@@ -67,41 +66,19 @@ The migration timeline will depend on your data retention requirements:
 
 ## Migrating settings {#migration-settings}
 
-When migrating from Elastic to ClickStack, your indexing and storage settings will need to be adapted to fit ClickHouse's architecture. While Elasticsearch relies on horizontal scaling and sharding for performance and fault tolerance and thus has multiple shards by default, ClickHouse is optimized for vertical scaling and typically performs best with fewer shards.
-
-### Recommended settings {#recommended-settings}
-
-We recommend starting with a **single shard** and scaling vertically. This configuration is suitable for most observability workloads and simplifies both management and query performance tuning.
-
-- **[ClickHouse Cloud](https://clickhouse.com/cloud)**: Uses a single-shard, multi-replica architecture by default. Storage and compute scale independently, making it ideal for observability use cases with unpredictable ingest patterns and read-heavy workloads.
-- **ClickHouse OSS**: In self-managed deployments, we recommend:
-  - Starting with a single shard
-  - Scaling vertically with additional CPU and RAM
-  - Using [tiered storage](/guides/use-cases/observability/build-your-own/managing-data#storage-tiers) to extend local disk with S3-compatible object storage
-  - Using [`ReplicatedMergeTree`](/reference/engines/table-engines/mergetree-family/replication) if high availability is required
-  - For fault tolerance, [1 replica of your shard](/reference/engines/table-engines/mergetree-family/replication) is typically sufficient in Observability workloads.
-
-### When to shard {#when-to-shard}
-
-Sharding may be necessary if:
-
-- Your ingest rate exceeds the capacity of a single node (typically >500K rows/sec)
-- You need tenant isolation or regional data separation
-- Your total dataset is too large for a single server, even with object storage
-
-If you do need to shard, refer to [Horizontal scaling](/guides/oss/deployment-and-scaling/examples/2-shards-1-replica) for guidance on shard keys and distributed table setup.
+Self Configured ClickHouse Observability uses ClickHouse Cloud for storage and querying. Storage and compute scale independently.
 
 ### Retention and TTL {#retention-and-ttl}
 
-ClickHouse uses [TTL clauses](/clickstack/managing/production#configure-ttl) on MergeTree tables to manage data expiration. TTL policies can:
+ClickHouse uses [TTL clauses](/clickstack/self-configured/managing/production#configure-ttl-managed) on `MergeTree` tables to automatically delete expired data.
 
-- Automatically delete expired data
-- Move older data to cold object storage
-- Retain only recent, frequently queried logs on fast disk
-
-We recommend aligning your ClickHouse TTL configuration with your existing Elastic retention policies to maintain a consistent data lifecycle during the migration. For examples, see [ClickStack production TTL setup](/clickstack/managing/production#configure-ttl).
+We recommend aligning your ClickHouse TTL configuration with your existing Elastic retention policies to maintain a consistent data lifecycle during the migration. For examples, see [Self Configured ClickHouse Observability production TTL setup](/clickstack/self-configured/managing/production#configure-ttl-managed).
 
 ## Migrating data {#migrating-data}
+
+<Warning>
+The historical-data import examples below require review before use. The destination database/table names and JSON format descriptions contain inconsistencies that still need to be resolved and verified.
+</Warning>
 
 While we recommend parallel operation for most observability data, there are specific cases where direct data migration from Elasticsearch to ClickHouse may be necessary:
 
@@ -116,7 +93,7 @@ The following steps allow the migration of a single Elasticsearch index from Cli
 <Steps>
 <Step title="Migrate schema" id="migrate-scheme">
 
-Create a table in ClickHouse for the index being migrated from Elasticsearch. You can map [Elasticsearch types to their ClickHouse](/clickstack/migration/elastic/types) equivalent. Alternatively, you can simply rely on the JSON data type in ClickHouse, which will dynamically create columns of the appropriate type as data is inserted.
+Create a table in ClickHouse for the index being migrated from Elasticsearch. You can map [Elasticsearch types to their ClickHouse](/clickstack/self-configured/migration/elastic/types) equivalent. Alternatively, you can simply rely on the JSON data type in ClickHouse, which will dynamically create columns of the appropriate type as data is inserted.
 
 Consider the following Elasticsearch mapping for an index containing `syslog` data:
 

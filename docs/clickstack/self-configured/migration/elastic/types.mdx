@@ -58,7 +58,7 @@ Elasticsearch and ClickHouse support a wide variety of data types, but their und
   - **Performance cost**: accessing any key in a [`Map`](/reference/data-types/map) requires loading the entire map into memory, which can be suboptimal for performance.
   - **No subcolumns**: unlike JSON, keys in a [`Map`](/reference/data-types/map) aren't represented as true subcolumns, which limits ClickHouse’s ability to index, compress, and query efficiently.
 
-  Because of these limitations, ClickStack is migrating away from [`Map`](/reference/data-types/map) in favor of ClickHouse's enhanced [`JSON`](/reference/data-types/newjson) type. The [`JSON`](/reference/data-types/newjson) type addresses many of the shortcomings of `Map`:
+  ClickHouse's [`JSON`](/reference/data-types/newjson) type offers an alternative to [`Map`](/reference/data-types/map) for dynamic attributes and addresses several of these limitations:
 
   - **True columnar storage**: each JSON path is stored as a subcolumn, allowing efficient compression, filtering, and vectorized query execution.
   - **Mixed-type support**: different data types (e.g., integers, strings, arrays) can coexist under the same path without coercion or type unification.

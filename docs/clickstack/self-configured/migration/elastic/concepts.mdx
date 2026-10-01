@@ -1,8 +1,8 @@
 ---
 slug: /clickstack/self-configured/migration/elastic/concepts
-title: 'Equivalent concepts in ClickStack and Elastic'
+title: 'Equivalent concepts'
 sidebarTitle: 'Equivalent concepts'
-description: 'Equivalent concepts - ClickStack and Elastic'
+description: 'Equivalent concepts - Self Configured ClickHouse Observability and Elastic'
 show_related_blogs: true
 keywords: ['Elasticsearch']
 doc_type: 'reference'
@@ -10,9 +10,9 @@ doc_type: 'reference'
 
 import { Image } from "/snippets/components/Image.jsx";
 
-## Elastic Stack vs ClickStack {#elastic-vs-clickstack}
+## Elastic Stack vs Self Configured ClickHouse Observability {#elastic-vs-clickstack}
 
-Both Elastic Stack and ClickStack cover the core roles of an observability platform, but they approach these roles with different design philosophies. These roles include:
+Both Elastic Stack and Self Configured ClickHouse Observability cover the core roles of an observability platform, but they approach these roles with different design philosophies. These roles include:
 
 - **UI and Alerting**: tools for querying data, building dashboards, and managing alerts.
 - **Storage and Query Engine**: the backend systems responsible for storing observability data and serving analytical queries.
@@ -20,22 +20,22 @@ Both Elastic Stack and ClickStack cover the core roles of an observability platf
 
 The table below outlines how each stack maps its components to these roles:
 
-| **Role** | **Elastic Stack** | **ClickStack** | **Comments** |
+| **Role** | **Elastic Stack** | **Self Configured ClickHouse Observability** | **Comments** |
 |--------------------------|--------------------------------------------------|--------------------------------------------------|--------------|
-| **UI & Alerting** | **Kibana** — dashboards, search, and alerts      | **ClickStack UI (HyperDX)** — real-time UI, search, and alerts   | Both serve as the primary interface for users, including visualizations and alert management. The ClickStack UI is purpose-built for observability and tightly coupled to OpenTelemetry semantics. |
+| **UI & Alerting** | **Kibana** — dashboards, search, and alerts      | **Observability UI** — real-time UI, search, and alerts   | Both serve as the primary interface for users, including visualizations and alert management. The observability UI is purpose-built for observability and tightly coupled to OpenTelemetry semantics. |
 | **Storage & Query Engine** | **Elasticsearch** — JSON document store with inverted index | **ClickHouse** — column-oriented database with vectorized engine | Elasticsearch uses an inverted index optimized for search; ClickHouse uses columnar storage and SQL for high-speed analytics over structured and semi-structured data. |
-| **Data Collection** | **Elastic Agent**, **Beats** (e.g. Filebeat, Metricbeat) | **OpenTelemetry Collector** (edge + gateway)     | Elastic supports custom shippers and a unified agent managed by Fleet. ClickStack relies on OpenTelemetry, allowing vendor-neutral data collection and processing. |
-| **Instrumentation SDKs** | **Elastic APM agents** (proprietary)             | **OpenTelemetry SDKs** (distributed by ClickStack) | Elastic SDKs are tied to the Elastic stack. ClickStack builds on OpenTelemetry SDKs for logs, metrics, and traces in major languages. |
-| **ETL / Data Processing** | **Logstash**, ingest pipelines                   | **OpenTelemetry Collector** + ClickHouse materialized views | Elastic uses ingest pipelines and Logstash for transformation. ClickStack shifts compute to insert time via materialized views and OTel collector processors, which transform data efficiently and incrementally. |
-| **Architecture Philosophy** | Vertically integrated, proprietary agents and formats | Open standard–based, loosely coupled components   | Elastic builds a tightly integrated ecosystem. ClickStack emphasizes modularity and standards (OpenTelemetry, SQL, object storage) for flexibility and cost-efficiency. |
+| **Data Collection** | **Elastic Agent**, **Beats** (e.g. Filebeat, Metricbeat) | **ClickHouse Observability Collector** (edge + gateway)     | Elastic supports custom shippers and a unified agent managed by Fleet. Self Configured ClickHouse Observability relies on OpenTelemetry, allowing vendor-neutral data collection and processing. |
+| **Instrumentation SDKs** | **Elastic APM agents** (proprietary)             | **OpenTelemetry SDKs** (distributed by Self Configured ClickHouse Observability) | Elastic SDKs are tied to the Elastic stack. Self Configured ClickHouse Observability builds on OpenTelemetry SDKs for logs, metrics, and traces in major languages. |
+| **ETL / Data Processing** | **Logstash**, ingest pipelines                   | **ClickHouse Observability Collector** + ClickHouse materialized views | Elastic uses ingest pipelines and Logstash for transformation. Self Configured ClickHouse Observability shifts compute to insert time via materialized views and OTel collector processors, which transform data efficiently and incrementally. |
+| **Architecture Philosophy** | Vertically integrated, proprietary agents and formats | Open standard–based, loosely coupled components   | Elastic builds a tightly integrated ecosystem. Self Configured ClickHouse Observability emphasizes modularity and standards (OpenTelemetry, SQL, object storage) for flexibility and cost-efficiency. |
 
-ClickStack emphasizes open standards and interoperability, being fully OpenTelemetry-native from collection to UI. In contrast, Elastic provides a tightly coupled but more vertically integrated ecosystem with proprietary agents and formats.
+Self Configured ClickHouse Observability emphasizes open standards and interoperability, being fully OpenTelemetry-native from collection to UI. In contrast, Elastic provides a tightly coupled but more vertically integrated ecosystem with proprietary agents and formats.
 
 Given that **Elasticsearch** and **ClickHouse** are the core engines responsible for data storage, processing, and querying in their respective stacks, understanding how they differ is essential. These systems underpin the performance, scalability, and flexibility of the entire observability architecture. The following section explores the key differences between Elasticsearch and ClickHouse - including how they model data, handle ingestion, execute queries, and manage storage.
 
 ## Elasticsearch vs ClickHouse {#elasticsearch-vs-clickhouse}
 
-ClickHouse and Elasticsearch organize and query data using different underlying models, but many core concepts serve similar purposes. This section outlines key equivalences for those familiar with Elastic, mapping them to their ClickHouse counterparts. While the terminology differs, most observability workflows can be reproduced - often more efficiently - in ClickStack.
+ClickHouse and Elasticsearch organize and query data using different underlying models, but many core concepts serve similar purposes. This section outlines key equivalences for those familiar with Elastic, mapping them to their ClickHouse counterparts. While the terminology differs, most observability workflows can be reproduced - often more efficiently - in Self Configured ClickHouse Observability.
 
 ### Core structural concepts {#core-structural-concepts}
 
@@ -53,7 +53,7 @@ Elasticsearch is known for its schema flexibility through [dynamic mappings](htt
 
 ClickHouse's approach to type flexibility is more transparent and controlled. Unlike Elasticsearch, where type conflicts can cause ingestion errors, ClickHouse allows mixed-type data in [`Variant`](/reference/data-types/variant) columns and supports schema evolution through the use of the [`JSON`](/guides/clickhouse/data-formats/json/intro) type.
 
-If not using [`JSON`](/guides/clickhouse/data-formats/json/intro), the schema is statically-defined. If values aren't provided for a row, they will either be defined as [`Nullable`](/reference/data-types/nullable) (not used in ClickStack) or revert to the default value for the type e.g. empty value for `String`.
+If not using [`JSON`](/guides/clickhouse/data-formats/json/intro), the schema is statically-defined. If values aren't provided for a row, they will either be defined as [`Nullable`](/reference/data-types/nullable) (not used in Self Configured ClickHouse Observability) or revert to the default value for the type e.g. empty value for `String`.
 
 ### Ingestion and transformation {#ingestion-and-transformation}
 
@@ -65,7 +65,7 @@ For enrichment, Elasticsearch supports dedicated [enrich processors](https://www
 
 Elasticsearch supports a [number of query languages](https://www.elastic.co/docs/explore-analyze/query-filter/languages) including [DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl), [ES|QL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/esql), [EQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/eql) and [KQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/kql) (Lucene style) queries, but has limited support for joins — only **left outer joins** are available via [`ES|QL`](https://www.elastic.co/docs/reference/query-languages/esql/commands/lookup-join). ClickHouse supports **full SQL syntax**, including [all join types](/reference/statements/select/join#supported-types-of-join), [window functions](/reference/functions/window-functions/index), subqueries (and correlated), and CTEs. This is a major advantage if you need to correlate between observability signals and business or infrastructure data.
 
-In ClickStack, [the UI provides a Lucene-compatible search interface](/clickstack/features/search) for ease of transition, alongside full SQL support via the ClickHouse backend. This syntax is comparable to the [Elastic query string](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) syntax. For an exact comparison of this syntax, see ["Searching in ClickStack and Elastic"](/clickstack/migration/elastic/search).
+In Self Configured ClickHouse Observability, [the UI provides a Lucene-compatible search interface](/clickstack/self-configured/features/search) for ease of transition, alongside full SQL support via the ClickHouse backend. This syntax is comparable to the [Elastic query string](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) syntax. For an exact comparison of this syntax, see ["Searching in Self Configured ClickHouse Observability and Elastic"](/clickstack/self-configured/migration/elastic/search).
 
 ### File formats and interfaces {#file-formats-and-interfaces}
 
