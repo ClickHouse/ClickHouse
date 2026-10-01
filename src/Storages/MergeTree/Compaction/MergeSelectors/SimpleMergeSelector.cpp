@@ -287,7 +287,7 @@ void selectWithinPartsRange(
         size_t sum_size = parts[begin].size;
         size_t sum_rows = parts[begin].rows;
         size_t max_size = parts[begin].size;
-        size_t min_age = parts[begin].age;
+        time_t min_age = parts[begin].age;
 
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
@@ -296,7 +296,7 @@ void selectWithinPartsRange(
                 break;
 
             size_t cur_size = parts[end - 1].size;
-            size_t cur_age = parts[end - 1].age;
+            time_t cur_age = parts[end - 1].age;
             size_t cur_rows = parts[end - 1].rows;
 
             sum_size += cur_size;
