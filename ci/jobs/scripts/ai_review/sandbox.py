@@ -120,8 +120,15 @@ class Workspace:
                     strict=True, verbose=True)
         # The context and output directories keep their relative paths, so the
         # prompt's `./ci/tmp/ai_review/...` paths hold inside the copy. The PR
-        # could ship `ci/tmp` itself, even as a link out of the tree: replace it.
-        Shell.check(f"rm -rf {shlex.quote(os.path.join(self.tree, 'ci', 'tmp'))}", strict=True, verbose=False)
+        # could ship `ci` or `ci/tmp` as a link out of the tree, and anything
+        # done through it would land outside: `ci` must be a real directory
+        # (a link or file there is removed itself, not followed), and `ci/tmp`
+        # is replaced.
+        ci_dir = os.path.join(self.tree, "ci")
+        if os.path.islink(ci_dir) or (os.path.lexists(ci_dir) and not os.path.isdir(ci_dir)):
+            os.unlink(ci_dir)
+        os.makedirs(ci_dir, exist_ok=True)
+        Shell.check(f"rm -rf {shlex.quote(os.path.join(ci_dir, 'tmp'))}", strict=True, verbose=False)
         self.work_dir = os.path.join(self.tree, work_dir)
         target = os.path.join(self.tree, context_dir)
         shutil.copytree(context_dir, target, symlinks=True)

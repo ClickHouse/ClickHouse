@@ -307,17 +307,22 @@ def _sanitized_threads(threads):
     return out
 
 
-def discussion_fingerprint(threads, issue_comments, reviews):
-    """A digest of what people have said and decided on the PR: the text of
-    every comment and review by a person (so an edit counts), and which threads
-    a person resolved (so a silent resolution counts). Resolutions by the
-    review itself are left out, or every run that resolves a thread would make
-    the next one look like new discussion."""
-    items = []
+_CI_BLOCK_RE = re.compile(r"<!-- CI automatic block start.*?(<!-- CI automatic block end[^>]*-->|$)", re.S)
+
+
+def discussion_fingerprint(pr, threads, issue_comments, reviews):
+    """A digest of what the review was asked to check and what people have
+    said and decided: the PR title and description (without the block CI
+    keeps updating), the text of every comment and review by a person (so an
+    edit counts), and the threads a person resolved (so a silent resolution
+    counts). The review's own threads and resolutions are left out, or every
+    run would make the next one look like new discussion."""
+    body = _CI_BLOCK_RE.sub("", (pr or {}).get("body") or "")
+    items = [f"p {(pr or {}).get('title') or ''}\n{body}"]
     for t in threads or []:
         resolver = (t.get("resolvedBy") or {}).get("login") or ""
-        by_person = bool(t.get("isResolved")) and not is_automation(resolver)
-        items.append(f"t {t.get('id')} {int(by_person)}")
+        if t.get("isResolved") and not is_automation(resolver):
+            items.append(f"t {t.get('id')} resolved")
         for c in (t.get("comments") or {}).get("nodes") or []:
             if not (c.get("viewerDidAuthor") or is_automation((c.get("author") or {}).get("login"))):
                 items.append(f"c {c.get('databaseId')} {c.get('body') or ''}")
@@ -413,7 +418,7 @@ def fetch(directory, repo, pr_number):
         if since:
             _write(os.path.join(directory, "since_last_review.md"), since)
     return Context(directory, repo, pr, files, threads, previous, units, previous_state,
-                   discussion_fingerprint(threads, issue_comments, reviews))
+                   discussion_fingerprint(pr, threads, issue_comments, reviews))
 
 
 def index_markdown(directory):
