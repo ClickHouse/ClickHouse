@@ -28,6 +28,7 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <Poco/Logger.h>
+#include <Common/StringUtils.h>
 
 
 namespace DB
@@ -550,7 +551,7 @@ Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & t
     if (isFixedString(inner_type) && field.getType() == Field::Types::String)
     {
         String value = field.safeGet<String>();
-        value.resize(value.find_last_not_of('\0') + 1);
+        trimRight(value, '\0');
         return Field(std::move(value));
     }
 
@@ -1024,7 +1025,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
                 /// `FixedString` element carries its padding, which the comparison ignores but the tokenizer would not.
                 element = column->getDataAt(row);
                 if (is_fixed_string_element)
-                    element = element.substr(0, element.find_last_not_of('\0') + 1);
+                    trimRight(element, '\0');
             }
 
             forEachTokenToBloomFilter(*tokenizer, element.data(), element.size(), bloom_filters.back().back());

@@ -109,7 +109,9 @@ void MergeSortingTransform::consume(Chunk chunk)
       */
     if ((chunks.size() > 1
         && limit
-        && limit * 2 < sum_rows_in_blocks   /// 2 is just a guess.
+        /// Equivalent to `limit * 2 < sum_rows_in_blocks`, which wraps for the huge limits that
+        /// mean "no limit" and then spuriously asks for a remerge. 2 is just a guess.
+        && limit < (sum_rows_in_blocks + 1) / 2
         && remerge_is_useful
         && max_bytes_before_remerge
         && sum_bytes_in_blocks > max_bytes_before_remerge) || (threshold_tracker && (static_cast<double>(sum_rows_in_blocks) > static_cast<double>(limit) * 1.5)))
