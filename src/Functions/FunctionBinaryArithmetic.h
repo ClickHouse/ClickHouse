@@ -296,6 +296,12 @@ struct BinaryOperation
         /// and re-inserting, bloating the loop ~3-5x for no benefit. Operations
         /// that use div/mod set `no_vectorize = true` to opt out; `Op` types that
         /// don't define the member are treated as opting in to vectorization.
+        ///
+        /// This is a workaround for the LLVM cost model, which was fixed upstream
+        /// on 2026-09-11. On clang 24+ the vectorized integer division becomes
+        /// faster than the scalar loop (`intDivOrZero` on `Int8` is 8.6x faster
+        /// on trunk), so the opt-out becomes harmful and should be removed once
+        /// the minimum supported compiler is clang 24.
         static constexpr bool disable_vectorization = []
         {
             if constexpr (requires { Op::no_vectorize; })
@@ -2037,7 +2043,8 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             ? array_element_function->executeImpl(new_arguments, result_array_type, rows_count)
             : executeImpl(new_arguments, result_array_type, rows_count);
 
-        return ColumnArray::create(res, typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
+        /// The element-wise result can be a constant (for example a NULL), the data of an array cannot.
+        return ColumnArray::create(res->convertToFullColumnIfConst(), typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
     }
 
     ColumnPtr executeArrayWithNumericImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
