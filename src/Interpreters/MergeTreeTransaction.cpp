@@ -603,6 +603,8 @@ MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
         }
         catch (...)
         {
+            /// `removePartsFromWorkingSet` writes no removal stamp only for a part known to be rolled back.
+            part->version->markCreationRolledBackInMemory();
             tryLogCurrentException(part->version->getLogger(),
                 fmt::format("Failed to persist RolledBackCSN for part {}", part->name));
             any_failed = true;
