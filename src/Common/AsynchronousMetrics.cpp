@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <base/cgroupsv2.h>
 #include <base/find_symbols.h>
+#include <base/EnumReflection.h>
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
@@ -2808,97 +2809,74 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     {
-        /// Metric names per protocol. Matching on `ServerType::Type` instead of on the config
-        /// key means a protocol declared under `<protocols>` is reported under the same metrics
-        /// as the equivalent built-in port.
-        struct ProtocolMetricNames
+        /// Metric name and description per protocol. Keyed by the `ServerType::Type` name rather than
+        /// by the config key, so a protocol declared under `<protocols>` is reported under the same
+        /// metrics as the equivalent built-in port. Keeper listeners are not part of `ServerType`; they
+        /// are keyed by their config key. Each entry pairs one key with one metric name and its
+        /// description, which is the shape `utils/generate-async-metrics-docs` extracts the docs from.
+        using MetricNameDoc = std::pair<const char *, const char *>;
+
+        static const std::unordered_map<String, MetricNameDoc> threads_metric_by_protocol =
         {
-            const char * threads;
-            const char * threads_doc;
-            const char * rejected_connections;
-            const char * rejected_connections_doc;
+            {"TCP", {"TCPThreads", "Number of threads in the server of the TCP protocol (without TLS)."}},
+            {"TCP_SECURE", {"TCPSecureThreads", "Number of threads in the server of the TCP protocol (with TLS)."}},
+            {"TCP_WITH_PROXY", {"TCPWithProxyThreads", "Number of threads in the server of the TCP protocol behind a PROXY protocol handler."}},
+            {"TCP_SSH", {"TCPSSHThreads", "Number of threads in the server of the SSH protocol."}},
+            {"HTTP", {"HTTPThreads", "Number of threads in the server of the HTTP interface (without TLS)."}},
+            {"HTTPS", {"HTTPSecureThreads", "Number of threads in the server of the HTTPS interface."}},
+            {"INTERSERVER_HTTP", {"InterserverThreads", "Number of threads in the server of the replicas communication protocol (without TLS)."}},
+            {"INTERSERVER HTTPS", {"InterserverSecureThreads", "Number of threads in the server of the replicas communication protocol (with TLS)."}},
+            {"MYSQL", {"MySQLThreads", "Number of threads in the server of the MySQL compatibility protocol."}},
+            {"POSTGRESQL", {"PostgreSQLThreads", "Number of threads in the server of the PostgreSQL compatibility protocol."}},
+            {"GRPC", {"GRPCThreads", "Number of threads in the server of the GRPC protocol."}},
+            {"ARROW_FLIGHT", {"ArrowFlightThreads", "Number of threads in the server of the Arrow Flight compatibility protocol."}},
+            {"PROMETHEUS", {"PrometheusThreads", "Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
+            {"keeper_server.tcp_port", {"KeeperTCPThreads", "Number of threads in the server of the Keeper TCP protocol (without TLS)."}},
+            {"keeper_server.tcp_port_secure", {"KeeperTCPSecureThreads", "Number of threads in the server of the Keeper TCP protocol (with TLS)."}}
         };
 
-        static const std::unordered_map<ServerType::Type, ProtocolMetricNames> metric_names_by_type =
+        static const std::unordered_map<String, MetricNameDoc> rejected_connections_metric_by_protocol =
         {
-            {ServerType::Type::TCP, {
-                "TCPThreads", "Number of threads in the server of the TCP protocol (without TLS).",
-                "TCPRejectedConnections", "Number of rejected connections for the TCP protocol (without TLS)."}},
-            {ServerType::Type::TCP_SECURE, {
-                "TCPSecureThreads", "Number of threads in the server of the TCP protocol (with TLS).",
-                "TCPSecureRejectedConnections", "Number of rejected connections for the TCP protocol (with TLS)."}},
-            {ServerType::Type::TCP_WITH_PROXY, {
-                "TCPWithProxyThreads", "Number of threads in the server of the TCP protocol behind a PROXY protocol handler.",
-                "TCPWithProxyRejectedConnections", "Number of rejected connections for the TCP protocol behind a PROXY protocol handler."}},
-            {ServerType::Type::TCP_SSH, {
-                "TCPSSHThreads", "Number of threads in the server of the SSH protocol.",
-                "TCPSSHRejectedConnections", "Number of rejected connections for the SSH protocol."}},
-            {ServerType::Type::HTTP, {
-                "HTTPThreads", "Number of threads in the server of the HTTP interface (without TLS).",
-                "HTTPRejectedConnections", "Number of rejected connections for the HTTP interface (without TLS)."}},
-            {ServerType::Type::HTTPS, {
-                "HTTPSecureThreads", "Number of threads in the server of the HTTPS interface.",
-                "HTTPSecureRejectedConnections", "Number of rejected connections for the HTTPS interface."}},
-            {ServerType::Type::INTERSERVER_HTTP, {
-                "InterserverThreads", "Number of threads in the server of the replicas communication protocol (without TLS).",
-                "InterserverRejectedConnections", "Number of rejected connections for the replicas communication protocol (without TLS)."}},
-            {ServerType::Type::INTERSERVER_HTTPS, {
-                "InterserverSecureThreads", "Number of threads in the server of the replicas communication protocol (with TLS).",
-                "InterserverSecureRejectedConnections", "Number of rejected connections for the replicas communication protocol (with TLS)."}},
-            {ServerType::Type::MYSQL, {
-                "MySQLThreads", "Number of threads in the server of the MySQL compatibility protocol.",
-                "MySQLRejectedConnections", "Number of rejected connections for the MySQL compatibility protocol."}},
-            {ServerType::Type::POSTGRESQL, {
-                "PostgreSQLThreads", "Number of threads in the server of the PostgreSQL compatibility protocol.",
-                "PostgreSQLRejectedConnections", "Number of rejected connections for the PostgreSQL compatibility protocol."}},
-            {ServerType::Type::GRPC, {
-                "GRPCThreads", "Number of threads in the server of the GRPC protocol.",
-                "GRPCRejectedConnections", "Number of rejected connections for the GRPC protocol."}},
-            {ServerType::Type::ARROW_FLIGHT, {
-                "ArrowFlightThreads", "Number of threads in the server of the Arrow Flight compatibility protocol.",
-                "ArrowFlightRejectedConnections", "Number of rejected connections for the Arrow Flight compatibility protocol."}},
-            {ServerType::Type::PROMETHEUS, {
-                "PrometheusThreads", "Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports.",
-                "PrometheusRejectedConnections", "Number of rejected connections for the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
-        };
-
-        /// Keeper listeners are not part of `ServerType`, they are still matched by the config key.
-        static const std::unordered_map<String, ProtocolMetricNames> metric_names_by_port_name =
-        {
-            {"keeper_server.tcp_port", {
-                "KeeperTCPThreads", "Number of threads in the server of the Keeper TCP protocol (without TLS).",
-                "KeeperTCPRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (without TLS)."}},
-            {"keeper_server.tcp_port_secure", {
-                "KeeperTCPSecureThreads", "Number of threads in the server of the Keeper TCP protocol (with TLS).",
-                "KeeperTCPSecureRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (with TLS)."}},
+            {"TCP", {"TCPRejectedConnections", "Number of rejected connections for the TCP protocol (without TLS)."}},
+            {"TCP_SECURE", {"TCPSecureRejectedConnections", "Number of rejected connections for the TCP protocol (with TLS)."}},
+            {"TCP_WITH_PROXY", {"TCPWithProxyRejectedConnections", "Number of rejected connections for the TCP protocol behind a PROXY protocol handler."}},
+            {"TCP_SSH", {"TCPSSHRejectedConnections", "Number of rejected connections for the SSH protocol."}},
+            {"HTTP", {"HTTPRejectedConnections", "Number of rejected connections for the HTTP interface (without TLS)."}},
+            {"HTTPS", {"HTTPSecureRejectedConnections", "Number of rejected connections for the HTTPS interface."}},
+            {"INTERSERVER_HTTP", {"InterserverRejectedConnections", "Number of rejected connections for the replicas communication protocol (without TLS)."}},
+            {"INTERSERVER HTTPS", {"InterserverSecureRejectedConnections", "Number of rejected connections for the replicas communication protocol (with TLS)."}},
+            {"MYSQL", {"MySQLRejectedConnections", "Number of rejected connections for the MySQL compatibility protocol."}},
+            {"POSTGRESQL", {"PostgreSQLRejectedConnections", "Number of rejected connections for the PostgreSQL compatibility protocol."}},
+            {"GRPC", {"GRPCRejectedConnections", "Number of rejected connections for the GRPC protocol."}},
+            {"ARROW_FLIGHT", {"ArrowFlightRejectedConnections", "Number of rejected connections for the Arrow Flight compatibility protocol."}},
+            {"PROMETHEUS", {"PrometheusRejectedConnections", "Number of rejected connections for the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
+            {"keeper_server.tcp_port", {"KeeperTCPRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (without TLS)."}},
+            {"keeper_server.tcp_port_secure", {"KeeperTCPSecureRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (with TLS)."}}
         };
 
         /// Several servers can share a protocol - one per listen host, or a built-in port and a
         /// `<protocols>` endpoint of the same type - so the values are summed before being reported.
-        std::unordered_map<const ProtocolMetricNames *, std::pair<size_t, size_t>> totals;
+        std::unordered_map<String, std::pair<size_t, size_t>> totals;
 
         for (const auto & server_metric : protocol_server_metrics_func())
         {
-            const ProtocolMetricNames * names = nullptr;
-
-            if (auto it = metric_names_by_type.find(server_metric.protocol_type); it != metric_names_by_type.end())
-                names = &it->second;
-            else if (auto it_by_port_name = metric_names_by_port_name.find(server_metric.port_name);
-                     it_by_port_name != metric_names_by_port_name.end())
-                names = &it_by_port_name->second;
-
-            if (!names)
+            String key{magic_enum::enum_name(server_metric.protocol_type)};
+            if (!threads_metric_by_protocol.contains(key))
+                key = server_metric.port_name;
+            if (!threads_metric_by_protocol.contains(key))
                 continue;
 
-            auto & total = totals[names];
+            auto & total = totals[key];
             total.first += server_metric.current_threads;
             total.second += server_metric.rejected_connections;
         }
 
-        for (const auto & [names, total] : totals)
+        for (const auto & [key, total] : totals)
         {
-            new_values[names->threads] = { total.first, names->threads_doc };
-            new_values[names->rejected_connections] = { total.second, names->rejected_connections_doc };
+            const auto & [threads_name, threads_doc] = threads_metric_by_protocol.at(key);
+            new_values[threads_name] = { total.first, threads_doc };
+            const auto & [rejected_name, rejected_doc] = rejected_connections_metric_by_protocol.at(key);
+            new_values[rejected_name] = { total.second, rejected_doc };
         }
     }
 

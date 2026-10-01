@@ -4668,6 +4668,7 @@ void Server::createServers(
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::ICEBERG_REST_CATALOG,
                         "Iceberg REST catalog: http://" + address.toString(),
                         std::make_unique<HTTPServer>(
                             httpContext(), createIcebergRESTCatalogHandlerFactory(*this, warehouse), server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));

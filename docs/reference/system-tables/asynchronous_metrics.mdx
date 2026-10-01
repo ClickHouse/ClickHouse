@@ -25,6 +25,14 @@ Before version 26.8 every key was a separate scalar metric with the key mangled 
 
 The descriptions below are generated from the C++ source by `utils/generate-async-metrics-docs`. The single source of truth is the string literal next to each metric registration in `src/Common/AsynchronousMetrics.cpp`, `src/Interpreters/ServerAsynchronousMetrics.cpp`, and `src/Coordination/KeeperAsynchronousMetrics.cpp`. Metric names that include a variable part (currently only the HTTP connection pool group) are shown with a `*name*` placeholder; the running server reports them with the concrete name substituted in.
 
+### ArrowFlightRejectedConnections {#arrowflightrejectedconnections}
+
+Number of rejected connections for the Arrow Flight compatibility protocol.
+
+### ArrowFlightThreads {#arrowflightthreads}
+
+Number of threads in the server of the Arrow Flight compatibility protocol.
+
 ### AsynchronousHeavyMetricsCalculationTimeSpent {#asynchronousheavymetricscalculationtimespent}
 
 Time in seconds spent for calculation of asynchronous heavy (tables related) metrics (this is the overhead of asynchronous metrics).
@@ -1053,9 +1061,25 @@ Number of rejected connections for the TCP protocol (with TLS).
 
 Number of threads in the server of the TCP protocol (with TLS).
 
+### TCPSSHRejectedConnections {#tcpsshrejectedconnections}
+
+Number of rejected connections for the SSH protocol.
+
+### TCPSSHThreads {#tcpsshthreads}
+
+Number of threads in the server of the SSH protocol.
+
 ### TCPThreads {#tcpthreads}
 
 Number of threads in the server of the TCP protocol (without TLS).
+
+### TCPWithProxyRejectedConnections {#tcpwithproxyrejectedconnections}
+
+Number of rejected connections for the TCP protocol behind a PROXY protocol handler.
+
+### TCPWithProxyThreads {#tcpwithproxythreads}
+
+Number of threads in the server of the TCP protocol behind a PROXY protocol handler.
 
 ### Temperature {#temperature}
 
