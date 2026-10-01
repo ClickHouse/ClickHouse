@@ -429,7 +429,7 @@ ExecutableFunctionPtr FunctionCast::prepare(const ColumnsWithTypeAndName & /*sam
             {
                 auto result = nested(arguments, result_type, nullable, input_rows_count);
                 validateExponentialTimeDecayingFloat64Column(
-                    *result, result_type, "conversion to ExponentialTimeDecayingFloat64");
+                    *result, result_type, "conversion to ExponentialTimeDecaying");
                 return result;
             };
         }
@@ -3197,7 +3197,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
     if (from_decay_length && to_decay_length && *from_decay_length != *to_decay_length)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Cannot convert ExponentialTimeDecayingFloat64 values between different decay lengths: {} and {}",
+            "Cannot convert ExponentialTimeDecaying values between different decay lengths: {} and {}",
             *from_decay_length,
             *to_decay_length);
 

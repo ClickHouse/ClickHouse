@@ -2375,7 +2375,7 @@ public:
                 if (left_decay_length != right_decay_length)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot add ExponentialTimeDecayingFloat64 values with different decay lengths: {} and {}",
+                        "Cannot add ExponentialTimeDecaying values with different decay lengths: {} and {}",
                         left_decay_length,
                         right_decay_length);
                 return createDataTypeExponentialTimeDecayingFloat64(left_decay_length);

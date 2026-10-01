@@ -157,7 +157,7 @@ void validateConvertedColumn(const IColumn & column, const DataTypePtr & type)
 {
     if (containsExponentialTimeDecayingFloat64(type))
         validateExponentialTimeDecayingFloat64Column(
-            column, type, "conversion to ExponentialTimeDecayingFloat64");
+            column, type, "conversion to ExponentialTimeDecaying");
 }
 
 }
