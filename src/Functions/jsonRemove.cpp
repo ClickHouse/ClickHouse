@@ -27,7 +27,6 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
-#include <vector>
 
 namespace DB
 {
@@ -69,7 +68,8 @@ struct PathStep
     UInt32 index = 0;
 };
 
-using ParsedPath = std::vector<PathStep>;
+using ParsedPath = VectorWithMemoryTracking<PathStep>;
+using ParsedPaths = VectorWithMemoryTracking<ParsedPath>;
 
 using JSONMetadataRef = UInt32;
 constexpr JSONMetadataRef json_number_ref_flag = JSONMetadataRef{1} << 31;
@@ -89,19 +89,33 @@ bool isContainerMetadataRef(JSONMetadataRef ref, const JSONMetadata & metadata)
     return ref && !(ref & json_number_ref_flag) && ref <= metadata.containers.size();
 }
 
+struct NumberLexeme
+{
+    size_t offset;
+    rapidjson::SizeType length;
+};
+
+struct NumberLexemes
+{
+    VectorWithMemoryTracking<char> data;
+    VectorWithMemoryTracking<NumberLexeme> entries;
+};
+
 class NumberCollector : public rapidjson::BaseReaderHandler<rapidjson::UTF8<char>, NumberCollector>
 {
 public:
-    VectorWithMemoryTracking<String> number_lexemes;
+    NumberLexemes number_lexemes;
 
     bool RawNumber(const char * value, rapidjson::SizeType length, bool)
     {
-        number_lexemes.emplace_back(value, length);
+        const size_t offset = number_lexemes.data.size();
+        number_lexemes.data.insert(number_lexemes.data.end(), value, value + length);
+        number_lexemes.entries.push_back({offset, length});
         return true;
     }
 };
 
-VectorWithMemoryTracking<String> collectNumberLexemes(const StringRef & json)
+NumberLexemes collectNumberLexemes(const StringRef & json)
 {
     NumberCollector collector;
     TrackedReader reader;
@@ -120,7 +134,7 @@ VectorWithMemoryTracking<String> collectNumberLexemes(const StringRef & json)
 void buildJSONMetadata(
     const TrackedValue & value,
     JSONMetadata & metadata,
-    const VectorWithMemoryTracking<String> & number_lexemes,
+    const NumberLexemes & number_lexemes,
     size_t & number_index,
     JSONMetadataRef & metadata_ref)
 {
@@ -147,7 +161,7 @@ void buildJSONMetadata(
         metadata.containers.emplace_back();
         metadata_ref = static_cast<JSONMetadataRef>(metadata.containers.size());
         metadata.containers.back().children.reserve(value.Size());
-        for (auto it = value.Begin(); it != value.End(); ++it)
+        for (const auto * it = value.Begin(); it != value.End(); ++it)
         {
             JSONMetadataRef child_ref = 0;
             buildJSONMetadata(*it, metadata, number_lexemes, number_index, child_ref);
@@ -156,7 +170,7 @@ void buildJSONMetadata(
     }
     else if (value.IsNumber())
     {
-        if (number_index >= number_lexemes.size())
+        if (number_index >= number_lexemes.entries.size())
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unable to track JSON numbers in function JSONRemove");
         if (number_index >= json_number_ref_flag - 1)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Too many JSON numbers in function JSONRemove");
@@ -189,7 +203,7 @@ void checkJSONDepth(const TrackedValue & root)
         }
         else if (value->IsArray())
         {
-            for (auto it = value->Begin(); it != value->End(); ++it)
+            for (const auto * it = value->Begin(); it != value->End(); ++it)
                 to_visit.emplace_back(&*it, depth + 1);
         }
     }
@@ -250,7 +264,7 @@ ParsedPath parseJSONPath(const String & path, uint32_t parse_depth, uint32_t par
     return result;
 }
 
-bool removeAtPath(TrackedValue & document, JSONMetadata & metadata, JSONMetadataRef & root_metadata_ref, const ParsedPath & path)
+bool removeAtPath(TrackedValue & document, JSONMetadata & metadata, JSONMetadataRef root_metadata_ref, const ParsedPath & path)
 {
     TrackedValue * parent = &document;
     JSONMetadataRef parent_metadata_ref = root_metadata_ref;
@@ -270,9 +284,7 @@ bool removeAtPath(TrackedValue & document, JSONMetadata & metadata, JSONMetadata
             if (member == parent->MemberEnd())
                 return false;
 
-            size_t child_index = 0;
-            for (auto it = parent->MemberBegin(); it != member; ++it)
-                ++child_index;
+            const size_t child_index = static_cast<size_t>(member - parent->MemberBegin());
 
             parent = &member->value;
             parent_metadata_ref = metadata.containers[parent_metadata_ref - 1].children[child_index];
@@ -290,7 +302,6 @@ bool removeAtPath(TrackedValue & document, JSONMetadata & metadata, JSONMetadata
     }
 
     const auto & target = path.back();
-    size_t child_index = 0;
 
     if (target.type == PathStep::Type::Member)
     {
@@ -304,8 +315,7 @@ bool removeAtPath(TrackedValue & document, JSONMetadata & metadata, JSONMetadata
         if (member == parent->MemberEnd())
             return false;
 
-        for (auto it = parent->MemberBegin(); it != member; ++it)
-            ++child_index;
+        const size_t child_index = static_cast<size_t>(member - parent->MemberBegin());
 
         parent->EraseMember(member);
         metadata.containers[parent_metadata_ref - 1].children.erase(
@@ -328,7 +338,7 @@ bool serializeJSON(
     const TrackedValue & value,
     JSONMetadataRef metadata_ref,
     const JSONMetadata & metadata,
-    const VectorWithMemoryTracking<String> & number_lexemes,
+    const NumberLexemes & number_lexemes,
     TrackedWriter & writer)
 {
     if (metadata_ref & json_number_ref_flag)
@@ -337,15 +347,15 @@ bool serializeJSON(
             return false;
 
         const auto number_index = (metadata_ref & ~json_number_ref_flag) - 1;
-        if (number_index >= number_lexemes.size())
+        if (number_index >= number_lexemes.entries.size())
             return false;
 
-        const auto & number = number_lexemes[number_index];
-        return writer.RawValue(number.data(), static_cast<rapidjson::SizeType>(number.size()), rapidjson::kNumberType);
-    }
+        const auto & number = number_lexemes.entries[number_index];
+        if (number.offset > number_lexemes.data.size() || number.length > number_lexemes.data.size() - number.offset)
+            return false;
 
-    if (value.IsNumber() || metadata_ref)
-        return false;
+        return writer.RawValue(number_lexemes.data.data() + number.offset, number.length, rapidjson::kNumberType);
+    }
 
     if (value.IsObject())
     {
@@ -353,7 +363,7 @@ bool serializeJSON(
             return false;
 
         const auto & node = metadata.containers[metadata_ref - 1];
-        if (!writer.StartObject())
+        if (node.children.size() != value.MemberCount() || !writer.StartObject())
             return false;
 
         size_t child_index = 0;
@@ -373,11 +383,11 @@ bool serializeJSON(
             return false;
 
         const auto & node = metadata.containers[metadata_ref - 1];
-        if (!writer.StartArray())
+        if (node.children.size() != value.Size() || !writer.StartArray())
             return false;
 
         size_t child_index = 0;
-        for (auto it = value.Begin(); it != value.End(); ++it, ++child_index)
+        for (const auto * it = value.Begin(); it != value.End(); ++it, ++child_index)
         {
             if (!serializeJSON(*it, node.children[child_index], metadata, number_lexemes, writer))
                 return false;
@@ -385,6 +395,9 @@ bool serializeJSON(
 
         return writer.EndArray(value.Size());
     }
+
+    if (value.IsNumber() || metadata_ref)
+        return false;
 
     return value.Accept(writer);
 }
@@ -422,7 +435,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        std::vector<ParsedPath> paths;
+        ParsedPaths paths;
         paths.reserve(arguments.size() - 1);
 
         const auto parse_depth = static_cast<uint32_t>(max_parser_depth);
@@ -472,7 +485,7 @@ public:
             JSONMetadataRef root_metadata_ref = 0;
             buildJSONMetadata(document, metadata, number_lexemes, number_index, root_metadata_ref);
 
-            if (number_index != number_lexemes.size())
+            if (number_index != number_lexemes.entries.size())
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unable to track JSON numbers in function JSONRemove");
 
             for (const auto & path : paths)

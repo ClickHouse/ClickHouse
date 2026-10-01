@@ -1,4 +1,9 @@
+-- Tags: no-fasttest
+-- Reason: needs RapidJSON, which is not enabled in the fast test build.
+
 SELECT JSONRemove('{"a":1,"b":2}', '$.a') FORMAT TSV;
+SELECT JSONRemove('{"a":1}', '$.a') FORMAT TSV;
+SELECT JSONRemove('[1]', '$[0]') FORMAT TSV;
 SELECT JSONRemove('{"a":{"b":1,"c":2},"d":3}', '$.a.b') FORMAT TSV;
 SELECT JSONRemove('{"items":[{"secret":1},{"secret":2}]}', '$.items[1].secret') FORMAT TSV;
 SELECT JSONRemove('[0,1,2]', '$[0]', '$[1]') FORMAT TSV;
@@ -10,6 +15,8 @@ SELECT JSON_REMOVE('[0,1,2]', '$[1]') FORMAT TSV;
 SELECT JSONRemove('42', '$.a') FORMAT TSV;
 SELECT JSONRemove(' { "a" : 1 } ', '$.missing') FORMAT TSV;
 SELECT JSONRemove('{"big":18446744073709551617,"a":1,"exp":1e+308,"text":"18446744073709551617"}', '$.a') FORMAT TSV;
+SELECT JSONRemove('{"drop":2,"neg_zero":-0,"decimal":1.00,"exp":1e-2}', '$.drop') FORMAT TSV;
+SELECT JSONRemove('{"a":0,"nested":[1.00,{"keep":1e-2,"drop":2}]}', '$.nested[1].drop') FORMAT TSV;
 SELECT JSONRemove('{"drop":{"n":18446744073709551617},"keep":18446744073709551618}', '$.drop') FORMAT TSV;
 SELECT JSONRemove('[18446744073709551617,18446744073709551618,3]', '$[0]') FORMAT TSV;
 SELECT JSONRemove('[{"n":18446744073709551617},18446744073709551618,18446744073709551619]', '$[0]', '$[1]') FORMAT TSV;
