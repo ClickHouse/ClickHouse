@@ -27,9 +27,6 @@ class LogFrequencyLimiterImpl;
 namespace DB
 {
 
-/// TODO: remove. A no-op to invalidate the clang-tidy cache for measuring cold clang-tidy runs.
-static_assert(true);
-
 class AtomicLogger;
 
 /// This flag can be set for testing purposes - to check that no exceptions are thrown.

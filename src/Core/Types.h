@@ -16,9 +16,6 @@
 namespace DB
 {
 
-/// TODO: remove. A no-op to invalidate the clang-tidy cache for measuring cold clang-tidy runs.
-static_assert(true);
-
 /// Data types for representing elementary values from a database in RAM.
 
 /// Hold a null value for untyped calculation. It can also store infinities to handle nullable
