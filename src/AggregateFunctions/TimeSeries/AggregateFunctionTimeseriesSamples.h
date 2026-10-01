@@ -100,9 +100,10 @@ public:
             return;
         }
 
-        if constexpr (compacting)
+        /// A whole state merges at once only when the buffer is not much bigger than the incoming samples.
+        /// Smaller inputs are appended and sorted later, so many small merges do not copy the whole buffer each time.
+        if (compacting && buffer.size() > MAX_EAGER_MERGE_RATIO * other.buffer.size())
         {
-            /// A whole state appends the samples and sorts them later, so a merge does not copy the whole buffer every time.
             compactIfFull(other.buffer.size());
             const size_t old_size = buffer.size();
             const bool in_order = other.isSorted() && buffer.back().first < other.buffer.front().first;
@@ -235,6 +236,8 @@ public:
 private:
     /// How many samples `deserialize` reserves before reading the data. Bigger buffers grow while they are read.
     static constexpr size_t MAX_SAMPLES_TO_RESERVE = compacting ? 65536 : 4096;
+    /// A whole state merges eagerly while its buffer is at most this many times bigger than the incoming samples.
+    static constexpr size_t MAX_EAGER_MERGE_RATIO = 16;
 
     /// Some buckets hold a single sample - the inline capacity of 1 keeps it in the state itself with no heap allocation.
     using Buffer = absl::InlinedVector<
