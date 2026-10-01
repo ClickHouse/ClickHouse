@@ -306,12 +306,11 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     StorageID storage_id(database_name, table_name);
     storage_id = context->resolveStorageID(storage_id);
 
-    /// The view source carries the inserted block and its types. Resolving the catalog table
-    /// instead and swapping the storage after the passes (`replaceStorageInQueryTree`) types the
-    /// tree by the table's current metadata, which differs from the block after a concurrent
-    /// `ALTER ... MODIFY COLUMN`.
-    /// The inner query of an ordinary view referenced by the view query reads the table itself,
-    /// not the inserted block, so it must keep resolving the catalog table.
+    /// The view source carries the inserted block and its types. For a MV, return this source
+    /// directly as a table node instead of swapping it later for the storage from the catalog
+    /// which may have been changed by a concurrent ALTER (the MV types must match the
+    /// snapshot at the start of the INSERT, not the current types).
+    /// For an inner query of an ordinary view, keep the normal flow that resolves from the catalog.
     if (auto view_source = context->getViewSource();
         view_source && !context->isViewInnerQuery()
         && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
