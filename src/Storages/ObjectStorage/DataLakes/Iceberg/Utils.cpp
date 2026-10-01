@@ -415,46 +415,43 @@ VersionHintState readVersionHint(const DB::ObjectStoragePtr & object_storage, co
 void takeBackVersionHintWithoutETag(
     const DB::ObjectStoragePtr & object_storage,
     const std::string & storage_version_hint_path,
+    Int32 version,
     const std::vector<std::string> & files_to_take_back,
     const DB::ContextPtr & context)
 {
-    auto take_back = [&]
-    {
-        std::vector<std::string> paths{storage_version_hint_path};
-        paths.insert(paths.end(), files_to_take_back.begin(), files_to_take_back.end());
-        for (const auto & path : paths)
-        {
-            try
-            {
-                object_storage->removeObjectIfExists(StoredObject(path));
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-    };
-
     /// Read the tag back the same way `readVersionHint` does for the next commit. A metadata-only
     /// request may legitimately disagree with a read about whether the optional header is there,
     /// and only the tag the next commit will see decides whether it can advance the hint.
-    /// The hint is already published at this point, so a failed check must take it back too:
-    /// otherwise the command would fail while leaving a hint that may be impossible to advance.
-    std::string etag;
-    try
-    {
-        etag = readVersionHint(object_storage, storage_version_hint_path, context).etag;
-    }
-    catch (...)
-    {
-        take_back();
-        throw;
-    }
+    ///
+    /// Taking the files back is destructive, so do it only once the check proves that the hint is
+    /// still the one this operation created. If the read fails, nothing is proven: another writer
+    /// may already have advanced the hint and published a metadata file on top of ours, and
+    /// removing either would break the table for every reader. The error propagates and both
+    /// files stay; a later commit that cannot advance the hint fails with its own error.
+    const auto hint = readVersionHint(object_storage, storage_version_hint_path, context);
 
-    if (!etag.empty())
+    /// Another writer has replaced the hint since it was created (that takes a compare-and-swap
+    /// under a tag it has read, so the tag is evidently there), and its metadata file builds on
+    /// the one published here. Neither file is ours to take back anymore.
+    if (!hint.exists || hint.version != version)
         return;
 
-    take_back();
+    if (!hint.etag.empty())
+        return;
+
+    std::vector<std::string> paths{storage_version_hint_path};
+    paths.insert(paths.end(), files_to_take_back.begin(), files_to_take_back.end());
+    for (const auto & path : paths)
+    {
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(path));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 
     throw Exception(
         ErrorCodes::UNSUPPORTED_METHOD,
@@ -581,7 +578,8 @@ bool writeMetadataFileAndVersionHint(
                 /// same rule the pre-check above applies to an existing hint. If it is not, take
                 /// back both files, so the refused commit leaves nothing published.
                 if (!version_hint->exists)
-                    takeBackVersionHintWithoutETag(object_storage, storage_version_hint_path, {storage_metadata_path}, context);
+                    takeBackVersionHintWithoutETag(
+                        object_storage, storage_version_hint_path, metadata_file_info.version, {storage_metadata_path}, context);
                 break;
             }
         }

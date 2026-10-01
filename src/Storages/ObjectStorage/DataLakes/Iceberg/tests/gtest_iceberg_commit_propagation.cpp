@@ -190,6 +190,9 @@ public:
     std::vector<std::string> removed;
     /// Every read of the hint fails, as a transient network error would.
     bool read_fails = false;
+    /// With `Race::CreatedByThisCommit`: another writer advances the hint this commit has created to
+    /// this content before the commit reads it back.
+    std::optional<std::string> advanced_by_another_writer_to;
 
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const StoredObject & object,
@@ -206,6 +209,8 @@ public:
         if (object.remote_path.ends_with(version_hint_name) && race == Race::CreatedByThisCommit)
         {
             hint_present = true;
+            /// The version `CommitOverExistingVersionHint::run` commits.
+            hint_content = advanced_by_another_writer_to.value_or("2");
             return std::make_unique<DiscardingWriteBuffer>(object.remote_path);
         }
 
@@ -240,7 +245,7 @@ public:
             throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot read {}", object.remote_path);
 
         SmallObjectDataWithMetadata result;
-        result.data = "1";
+        result.data = hint_content;
         result.metadata.etag = hint_etag;
         return result;
     }
@@ -302,6 +307,7 @@ private:
     std::string head_etag;
     Race race;
     bool hint_present;
+    std::string hint_content = "1";
 };
 
 /// Drives the real commit against a backend whose existing version hint carries `hint_etag`. The
@@ -512,12 +518,12 @@ TEST(IcebergCommitPropagation, CreatedVersionHintIsJudgedByTheTagTheNextCommitRe
     EXPECT_TRUE(commit.removed().empty());
 }
 
-TEST(IcebergCommitPropagation, CreatedVersionHintIsTakenBackWhenItsCheckFails)
+TEST(IcebergCommitPropagation, CreatedVersionHintIsKeptWhenItsCheckFails)
 {
-    /// The exclusive create of the hint succeeds, but reading it back for its tag fails. The hint is
-    /// published by then, so the commit must take it back together with the metadata file before
-    /// the error propagates: otherwise the command fails while leaving behind a hint that may be
-    /// impossible to advance.
+    /// The exclusive create of the hint succeeds, but reading it back for its tag fails. Nothing is
+    /// known about the hint then: another writer may already have advanced it and published a
+    /// metadata file on top of this one. Removing either would break the table, so the error
+    /// propagates and both files stay.
     CommitOverExistingVersionHint commit("\"abc\"", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
     commit.object_storage->read_fails = true;
 
@@ -534,11 +540,24 @@ TEST(IcebergCommitPropagation, CreatedVersionHintIsTakenBackWhenItsCheckFails)
     const auto & writes = commit.writes();
     ASSERT_EQ(writes.size(), 2u);
     EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
+    EXPECT_TRUE(commit.removed().empty());
+}
 
-    const auto & removed = commit.removed();
-    ASSERT_EQ(removed.size(), 2u);
-    EXPECT_EQ(removed[0], writes[1].path);
-    EXPECT_EQ(removed[1], writes[0].path);
+TEST(IcebergCommitPropagation, CreatedVersionHintAdvancedByAnotherWriterIsLeftAlone)
+{
+    /// The exclusive create of the hint succeeds, and another writer advances it before this commit
+    /// reads it back - the read reports no tag only because this endpoint omits it now and then.
+    /// The hint is no longer the one this commit created, and the metadata file of the other writer
+    /// builds on the one published here, so taking either back would break the table. The commit
+    /// has succeeded.
+    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
+    commit.object_storage->advanced_by_another_writer_to = "3";
+    EXPECT_TRUE(commit.run());
+
+    const auto & writes = commit.writes();
+    ASSERT_EQ(writes.size(), 2u);
+    EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
+    EXPECT_TRUE(commit.removed().empty());
 }
 
 TEST(IcebergCommitPropagation, RefusedConditionalWriteIsNotReportedAsALostRace)
