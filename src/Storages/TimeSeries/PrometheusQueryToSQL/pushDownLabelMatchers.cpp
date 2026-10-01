@@ -5,6 +5,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorAnd.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorOr.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorUnless.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyComparisonOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionPredictLinear.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionQuantileOverTime.h>
@@ -227,8 +228,14 @@ namespace
 
         if (const auto * argument = getLabelPreservingArgument(node))
         {
-            /// Functions and operators drop the metric name, and Prometheus fails if two series become the same then.
-            bool can_drop_metric_name = (node->node_type == NodeType::Function) || (node->node_type == NodeType::BinaryOperator);
+            /// Functions and operators drop the metric name, except a comparison without `bool`,
+            /// and Prometheus fails if two series become the same then.
+            bool can_drop_metric_name = (node->node_type == NodeType::Function);
+            if (node->node_type == NodeType::BinaryOperator)
+            {
+                const auto & binary_operator = static_cast<const BinaryOperatorNode &>(*node);
+                can_drop_metric_name = !isComparisonOperator(binary_operator.operator_name) || binary_operator.bool_modifier;
+            }
             if (!can_drop_metric_name || hasSingleMetricName(argument))
                 addMatchers(argument, matchers);
         }

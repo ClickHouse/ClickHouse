@@ -77,6 +77,7 @@ check scalar '100 * rate(req{job="api"}[30s]) / on(job, instance) rate(lim[30s])
 check quantile_over_time 'quantile_over_time(0.5, req{job="api"}[30s]) / on(job, instance) quantile_over_time(0.5, lim[30s])' "$(b 'quantile_over_time(0.5, req{job="api"}[30s])') / on(job, instance) $(b 'quantile_over_time(0.5, lim[30s])')"
 check predict_linear 'predict_linear(req{job="api"}[30s], 10) / on(job, instance) predict_linear(lim[30s], 10)' "$(b 'predict_linear(req{job="api"}[30s], 10)') / on(job, instance) $(b 'predict_linear(lim[30s], 10)')"
 check comparison 'req{job="api"} > bool on(job, instance) lim' "$(b 'req{job="api"}') > bool on(job, instance) $(b 'lim')"
+check comparison_several_metrics '({__name__=~"req|opt"} > 0) and on(job, instance) lim{job="api"}' "$(b '{__name__=~"req|opt"} > 0') and on(job, instance) $(b 'lim{job="api"}')"
 check contradiction 'req{job="api"} / on(job, instance) lim{job="db"}' "$(b 'req{job="api"}') / on(job, instance) $(b 'lim{job="db"}')"
 check label_replace 'label_replace(req{job="db"}, "job", "api", "", "") / on(job, instance) lim' "$(b 'label_replace(req{job="db"}, "job", "api", "", "")') / on(job, instance) $(b 'lim')"
 check nested '(req{job="api"} - ignoring(team) lim) / ignoring(team) lim' "($(b 'req{job="api"}') - ignoring(team) $(b 'lim')) / ignoring(team) $(b 'lim')"
@@ -107,7 +108,7 @@ function selectors()
     $CLIENT -q "
         SELECT DISTINCT arrayStringConcat(extractAll(explain, '= \'([a-z0-9]+)\''), ' ') AS filter
         FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus_empty', '$1', 100, 130, 10))
-        WHERE explain LIKE '%metric_name = %'
+        WHERE explain LIKE '%metric_name%'
         ORDER BY filter"
 }
 
@@ -129,6 +130,8 @@ selectors 'absent(req{instance="i3"}) / ignoring(team) lim{job="api"}'
 selectors 'lim / on(job) group_left sum by (job) (req{job="api"})'
 selectors '(-lim) / on(job) group_left sum by (job) (req{job="api"})'
 selectors 'abs(lim) / on(job) group_left sum by (job) (req{job="api"})'
+selectors '({__name__=~"req|opt"} > 0) and on(job) lim{job="api"}'
+selectors '({__name__=~"req|opt"} > bool 0) and on(job) lim{job="api"}'
 
 # Prints $1 `lim` selectors joined by `and` as a balanced tree, to keep the SQL nesting shallow.
 function and_of_lim()

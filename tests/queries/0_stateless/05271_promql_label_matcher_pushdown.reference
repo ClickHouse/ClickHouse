@@ -25,6 +25,7 @@ scalar	1	2
 quantile_over_time	1	2
 predict_linear	1	2
 comparison	1	2
+comparison_several_metrics	1	3
 contradiction	1	0
 label_replace	1	1
 nested	1	2
@@ -90,6 +91,12 @@ req api
 abs(lim) / on(job) group_left sum by (job) (req{job="api"})
 lim
 req api
+({__name__=~"req|opt"} > 0) and on(job) lim{job="api"}
+api
+lim api
+({__name__=~"req|opt"} > bool 0) and on(job) lim{job="api"}
+
+lim api
 -- more than 20 binary operators turn the pushdown off
 ((((lim and lim) and (lim and (lim and lim))) and ((lim and lim) and (lim and (lim and lim)))) and (((lim and lim) and (lim and (lim and lim))) and ((lim and lim) and (lim and (lim and lim))))) / on(job) req{job="api"}
 lim api
