@@ -25,6 +25,11 @@ class IKeyValueEntity;
 struct JoinAlgorithmParams;
 struct StorageID;
 
+namespace QueryPlanOptimizations
+{
+class RelationStatsCache;
+}
+
 struct PreparedJoinStorage
 {
     std::unordered_map<String, String> column_mapping;
@@ -136,7 +141,8 @@ public:
     static void buildPhysicalJoin(
         QueryPlan::Node & node,
         const QueryPlanOptimizationSettings & optimization_settings,
-        QueryPlan::Nodes & nodes);
+        QueryPlan::Nodes & nodes,
+        QueryPlanOptimizations::RelationStatsCache * relation_stats_cache);
 
     std::unordered_set<JoinTableSide> typeChangingSides() const;
 

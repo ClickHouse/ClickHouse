@@ -114,11 +114,174 @@ void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_sta
     }
 }
 
+QueryPlan::Node * resolveSubplanReference(const QueryPlan::Node & node)
+{
+    if (const auto * reference = typeid_cast<const CommonSubplanReferenceStep *>(node.step.get()))
+        return reference->getSubplanReferenceRoot();
+    return nullptr;
+}
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
+void RelationStatsCache::invalidate(const QueryPlan::Node & node)
+{
+    for (auto & entries : entries_by_mode)
+        entries.erase(&node);
+}
+
+void RelationStatsCache::rebindNode(const QueryPlan::Node & old_node, const QueryPlan::Node & new_node)
+{
+    for (auto & entries : entries_by_mode)
+    {
+        auto entry = entries.extract(&old_node);
+        if (entry.empty())
+            continue;
+
+        entries.erase(&new_node);
+        entry.key() = &new_node;
+        entries.insert(std::move(entry));
+    }
+}
+
+class RelationStatsCacheSession;
+
+namespace
+{
+
+RelationStats estimateReadRowsCountUncached(
+    RelationStatsCacheSession & context,
+    QueryPlan::Node & node,
+    const ActionsDAG::Node * filter);
+
+}
+
+class RelationStatsCacheSession
+{
+public:
+    RelationStatsCacheSession(RelationStatsCache & cache_, RelationStatsOptions options_)
+        : cache(cache_)
+        , options(options_)
+        , invocation(++cache.next_invocation)
+    {
+        if (invocation == 0)
+        {
+            /// Keep zero reserved for persistent entries if the pass somehow performs 2^64 estimations.
+            for (auto & entries : cache.entries_by_mode)
+                std::erase_if(entries, [](const auto & entry) { return entry.second.invocation != 0; });
+            invocation = ++cache.next_invocation;
+        }
+    }
+
+    RelationStats estimate(QueryPlan::Node & node, const ActionsDAG::Node * filter)
+    {
+        if (const auto * entry = findCached(node, filter))
+        {
+            inherit(entry->options_independent, entry->invocation == 0);
+            return entry->stats;
+        }
+
+        /// Recursive calls fold their cacheability into this node through `active_derivation`, keeping
+        /// the existing estimator body free to return RelationStats directly.
+        Derivation derivation;
+        Derivation * parent_derivation = active_derivation;
+        active_derivation = &derivation;
+        RelationStats stats = estimateReadRowsCountUncached(*this, node, filter);
+        active_derivation = parent_derivation;
+
+        store(node, filter, stats, derivation);
+        inherit(derivation.options_independent, derivation.persistent);
+        return stats;
+    }
+
+    const RelationStatsOptions & getOptions() const { return options; }
+
+    void markOptionsDependent() { active_derivation->options_independent = false; }
+    void markRequestLocal() { active_derivation->persistent = false; }
+
+private:
+    struct Derivation
+    {
+        bool options_independent = true;
+        bool persistent = true;
+    };
+
+    size_t modeIndex() const { return options.propagate_join_estimates ? 1 : 0; }
+
+    const RelationStatsCache::Entry * findCached(const QueryPlan::Node & node, const ActionsDAG::Node * filter)
+    {
+        auto & entries = cache.entries_by_mode[modeIndex()];
+        auto it = entries.find(&node);
+        if (it == entries.end())
+            return nullptr;
+
+        const auto * referenced_subplan = resolveSubplanReference(node);
+        const bool children_match = referenced_subplan
+            ? it->second.children.size() == 1 && it->second.children.front() == referenced_subplan
+            : it->second.children.size() == node.children.size() && std::ranges::equal(it->second.children, node.children);
+        if (it->second.step != node.step.get() || !children_match)
+        {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+            chassert(false, "RelationStatsCache entry was not invalidated after replacing a plan step or child");
+#endif
+            entries.erase(it);
+            return nullptr;
+        }
+
+        if (it->second.filter != filter || (it->second.invocation != 0 && it->second.invocation != invocation))
+            return nullptr;
+        return &it->second;
+    }
+
+    void store(const QueryPlan::Node & node, const ActionsDAG::Node * filter, const RelationStats & stats, const Derivation & derivation)
+    {
+        RelationStatsCache::Entry entry{
+            .stats = stats,
+            .filter = filter,
+            .step = node.step.get(),
+            .children = {},
+            .options_independent = derivation.options_independent,
+            .invocation = derivation.persistent ? 0 : invocation,
+        };
+        if (const auto * referenced_subplan = resolveSubplanReference(node))
+            entry.children.push_back(referenced_subplan);
+        else
+            entry.children.assign(node.children.begin(), node.children.end());
+
+        cache.entries_by_mode[modeIndex()].insert_or_assign(&node, entry);
+        if (derivation.options_independent)
+        {
+            const size_t other_mode = 1 - modeIndex();
+            cache.entries_by_mode[other_mode].insert_or_assign(&node, std::move(entry));
+        }
+    }
+
+    /// Fold a child's cacheability into the node currently being derived.
+    void inherit(bool options_independent, bool persistent)
+    {
+        if (!active_derivation)
+            return;
+        active_derivation->options_independent &= options_independent;
+        active_derivation->persistent &= persistent;
+    }
+
+    RelationStatsCache & cache;
+    RelationStatsOptions options;
+    UInt64 invocation;
+    Derivation * active_derivation = nullptr;
+};
+
+namespace
+{
+
+RelationStats estimateReadRowsCountUncached(
+    RelationStatsCacheSession & context,
+    QueryPlan::Node & node,
+    const ActionsDAG::Node * filter)
 {
     IQueryPlanStep * step = node.step.get();
+    const auto * logical_join = typeid_cast<const JoinStepLogical *>(step);
+    QueryPlan::Node * referenced_subplan = resolveSubplanReference(node);
+    if (logical_join || referenced_subplan)
+        context.markRequestLocal();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
         String table_display_name = reading->getStorageID().getTableName();
@@ -245,17 +408,30 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
     }
 
-    if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
+    if (logical_join && logical_join->isOptimized())
     {
-        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
+        context.markOptionsDependent();
+        if (!context.getOptions().propagate_join_estimates)
+            return {};
+
+        /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
+        /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
+        return RelationStats{
+            .estimated_rows = logical_join->getResultRowsEstimation(),
+            .column_stats = logical_join->getResultColumnStats(),
+            .table_name = logical_join->getReadableRelationName(),
+            .imprecise_estimate = logical_join->hasImpreciseEstimate()};
     }
+
+    if (referenced_subplan)
+        return context.estimate(*referenced_subplan, filter);
 
     if (node.children.size() != 1)
         return {};
 
     if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
     {
-        auto estimated = estimateReadRowsCount(*node.children.front(), filter);
+        auto estimated = context.estimate(*node.children.front(), filter);
         auto limit = limit_step->getLimit();
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
@@ -266,7 +442,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step);
         expression_step && !expression_step->getExpression().hasArrayJoin())
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = context.estimate(*node.children.front(), filter);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
         return stats;
     }
@@ -275,32 +451,21 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         const auto & dag = filter_step->getExpression();
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        auto stats = estimateReadRowsCount(*node.children.front(), predicate);
+        auto stats = context.estimate(*node.children.front(), predicate);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
 
     if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = context.estimate(*node.children.front(), filter);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
     }
 
-    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
-    {
-        /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
-        /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
-        return RelationStats{
-            .estimated_rows = join_step->getResultRowsEstimation(),
-            .column_stats = join_step->getResultColumnStats(),
-            .table_name = join_step->getReadableRelationName(),
-            .imprecise_estimate = join_step->hasImpreciseEstimate()};
-    }
-
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = context.estimate(*node.children.front(), filter);
         if (sorting_step->getLimit())
         {
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
@@ -314,13 +479,23 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     /// already-distributed subtree would otherwise report unknown cardinality, degrading
     /// broadcast-vs-shuffle and join order decisions.
     if (dynamic_cast<LogicalExchangeStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), filter);
+        return context.estimate(*node.children.front(), filter);
 
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter);
+        return context.estimate(*node.children.front(), filter);
 
     return {};
+}
+
+}
+
+RelationStats
+estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, RelationStatsOptions options, RelationStatsCache * cache)
+{
+    RelationStatsCache local_cache;
+    RelationStatsCacheSession session(cache ? *cache : local_cache, options);
+    return session.estimate(node, filter);
 }
 
 }

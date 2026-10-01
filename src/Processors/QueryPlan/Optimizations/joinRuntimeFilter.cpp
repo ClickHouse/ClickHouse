@@ -19,6 +19,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <fmt/format.h>
 #include <Common/Exception.h>
@@ -268,7 +269,11 @@ static std::optional<UInt64> getBuildSideDistinctKeys(const JoinStepLogical & jo
     return hint->ht_size;
 }
 
-bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+bool tryAddJoinRuntimeFilter(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    RelationStatsCache & relation_stats_cache)
 {
     /// Is this a join step?
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
@@ -388,6 +393,16 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
+    /// Wrapping moves the old subtree out of `target` and installs the new step at the same
+    /// address. Rebind any cached estimate to the old subtree's new address so statistics are not
+    /// loaded again, while ensuring the wrapper itself is derived from its step.
+    const auto make_cached_expression_node_on_top = [&](QueryPlan::Node & target, ActionsDAG actions_dag, DescriptionHolderPtr description)
+    {
+        makeExpressionNodeOnTopOf(target, std::move(actions_dag), nodes, std::move(description));
+        chassert(target.children.size() == 1);
+        relation_stats_cache.rebindNode(target, *target.children.front());
+    };
+
     ColumnsWithTypeAndName join_keys_probe_side;
     ColumnsWithTypeAndName join_keys_build_side;
 
@@ -431,13 +446,16 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         auto key_dags = join_step->preCalculateKeys(apply_filter_node->step->getOutputHeader(), build_filter_node->step->getOutputHeader());
         if (key_dags)
         {
+            relation_stats_cache.invalidate(node);
             auto get_node_column_with_type_and_name = [](const auto * e) { return ColumnWithTypeAndName(e->result_type, e->result_name); };
             join_keys_probe_side = std::ranges::to<ColumnsWithTypeAndName>(key_dags->first.keys | std::views::transform(get_node_column_with_type_and_name));
             join_keys_build_side = std::ranges::to<ColumnsWithTypeAndName>(key_dags->second.keys | std::views::transform(get_node_column_with_type_and_name));
             if (!isPassthroughActions(key_dags->first.actions_dag))
-                makeExpressionNodeOnTopOf(*apply_filter_node, std::move(key_dags->first.actions_dag), nodes, makeDescription("Calculate left join keys"));
+                make_cached_expression_node_on_top(
+                    *apply_filter_node, std::move(key_dags->first.actions_dag), makeDescription("Calculate left join keys"));
             if (!isPassthroughActions(key_dags->second.actions_dag))
-                makeExpressionNodeOnTopOf(*build_filter_node, std::move(key_dags->second.actions_dag), nodes, makeDescription("Calculate right join keys"));
+                make_cached_expression_node_on_top(
+                    *build_filter_node, std::move(key_dags->second.actions_dag), makeDescription("Calculate right join keys"));
         }
     }
 
@@ -535,7 +553,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             const String tuple_column_name = tuple_node.result_name;
             build_tuple_dag.addOrReplaceInOutputs(tuple_node);
 
-            makeExpressionNodeOnTopOf(*build_filter_node, std::move(build_tuple_dag), nodes, makeDescription("Calculate right join key tuple"));
+            make_cached_expression_node_on_top(
+                *build_filter_node, std::move(build_tuple_dag), makeDescription("Calculate right join key tuple"));
 
             LOG_TRACE(getLogger("joinRuntimeFilter"), "Runtime filter '{}' will be built from tuple of right keys and applied to tuple of left keys", filter_name);
 
@@ -565,7 +584,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             /// Strip the temporary tuple column so the join step sees only the original columns
             ActionsDAG strip_tuple_dag(build_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName(), false);
             strip_tuple_dag.removeUnusedActions(original_build_header->getNames(), /*allow_remove_inputs=*/false);
-            makeExpressionNodeOnTopOf(*build_filter_node, std::move(strip_tuple_dag), nodes, makeDescription("Remove temporary tuple column"));
+            make_cached_expression_node_on_top(
+                *build_filter_node, std::move(strip_tuple_dag), makeDescription("Remove temporary tuple column"));
         }
 
         /// Apply side: compute tuple(key1, key2, ...) and apply the filter
@@ -637,6 +657,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     apply_filter_node = new_apply_filter_node;
 
     node.children = {apply_filter_node, build_filter_node};
+    relation_stats_cache.invalidate(node);
 
     /// Remove algorithms that are not compatible with runtime filters
     std::erase_if(join_algorithms, [](auto join_algorithm) { return !supportsRuntimeFilter(join_algorithm); });
