@@ -2915,9 +2915,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             result_projection_names.push_back(column_name);
 
         String apply_column_name_prefix;
-        /// Short-based accumulator for `APPLY (expr, 'prefix')`: the prefix must attach to the
-        /// short column name (`f_a`), not the qualified projection name (`f_t1.a`).
-        String apply_prefixed_projection_name = column_name;
+        /// Prefix the projection name: it carries the qualifier (`f_t2.a`) that tells same-named columns apart.
+        String apply_prefixed_projection_name = result_projection_names.back();
 
         const auto & column_transformers = matcher_node_typed.getColumnTransformers().getNodes();
         for (const auto & transformer : column_transformers)
@@ -3029,6 +3028,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                         scope.scope_node->formatASTForErrorMessage());
 
                 replace_transformer_was_used = true;
+                apply_prefixed_projection_name = column_name;
 
                 if (replace_transformer->isStrict())
                     strict_transformer_to_used_column_names[replace_transformer].insert(column_name);
@@ -3121,10 +3121,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                 if (execute_apply_transformer && !apply_column_name_prefix.empty())
                 {
-                    /// `APPLY (expr, 'prefix')` names the result `prefix` + the short column name
-                    /// before this transformer, mirroring the legacy path (which prefixes
-                    /// ASTIdentifier::shortName(), not a qualified name). Chained prefixes
-                    /// accumulate: `q_` + `p_` + `a`.
+                    /// `APPLY (expr, 'prefix')` names the result `prefix` + the column's name before this
+                    /// transformer, so chained prefixes accumulate: `q_` + `p_` + `a`.
                     apply_prefixed_projection_name = apply_column_name_prefix + apply_prefixed_projection_name;
                     result_projection_names.back() = apply_prefixed_projection_name;
                 }

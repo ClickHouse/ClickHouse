@@ -36,7 +36,7 @@ namespace Setting
 {
     /// There are way too many format settings to handle extern declarations manually.
 #define DECLARE_FORMAT_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    extern Settings ## TYPE NAME;
+    extern const Settings ## TYPE NAME;
 FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
 #undef DECLARE_FORMAT_EXTERN
 
@@ -56,12 +56,6 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
     extern const SettingsBool enable_nullable_tuple_type;
-
-    extern SettingsGeoJSONUnsupportedGeometryHandling input_format_geojson_unsupported_geometry_handling;
-    extern SettingsBool format_geojson_validate_geometry;
-    extern SettingsBool input_format_parallel_parsing;
-    extern SettingsBool output_format_parallel_formatting;
-    extern SettingsUInt64 output_format_compression_level;
 }
 
 namespace ErrorCodes
