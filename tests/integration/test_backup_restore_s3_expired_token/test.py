@@ -1,6 +1,9 @@
+import hashlib
+import logging
 import os
 import uuid
 
+import boto3
 import pytest
 import requests
 
@@ -84,6 +87,53 @@ def started_cluster():
             ],
         )
 
+        minio_url = f"http://{cluster.minio_ip}:{cluster.minio_port}"
+        botocore_logger = logging.getLogger("botocore")
+        previous_log_level = botocore_logger.level
+        botocore_logger.setLevel(logging.INFO)
+        try:
+            sts_client = boto3.client(
+                "sts",
+                endpoint_url=minio_url,
+                region_name="us-east-1",
+                aws_access_key_id="minio_rotated",
+                aws_secret_access_key="Rotated_Minio_Test_Secret_123",
+            )
+            credential_sets = []
+            for index in range(2):
+                issued = sts_client.assume_role(
+                    RoleArn="arn:aws:iam::123456789012:role/expired-token-test",
+                    RoleSessionName=f"expired-token-test-{index}",
+                    DurationSeconds=3600,
+                )["Credentials"]
+                credentials = {
+                    key: issued[key]
+                    for key in ("AccessKeyId", "SecretAccessKey", "SessionToken")
+                }
+                credentials["Expiration"] = issued["Expiration"].strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                )
+                boto3.client(
+                    "s3",
+                    endpoint_url=minio_url,
+                    region_name="us-east-1",
+                    aws_access_key_id=credentials["AccessKeyId"],
+                    aws_secret_access_key=credentials["SecretAccessKey"],
+                    aws_session_token=credentials["SessionToken"],
+                ).head_bucket(Bucket="root")
+                credential_sets.append(credentials)
+        finally:
+            botocore_logger.setLevel(previous_log_level)
+
+        if (
+            not all(credentials["SessionToken"] for credentials in credential_sets)
+            or credential_sets[0]["AccessKeyId"] == credential_sets[1]["AccessKeyId"]
+            or credential_sets[0]["SessionToken"] == credential_sets[1]["SessionToken"]
+        ):
+            raise AssertionError(
+                "MinIO STS did not return two distinct credential sets"
+            )
+
         script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
         start_mock_servers(
             cluster,
@@ -93,7 +143,13 @@ def started_cluster():
                 ("s3_proxy.py", "s3-proxy", "8080", []),
             ],
         )
-        yield cluster
+        response = requests.post(
+            f"http://{cluster.get_instance_ip('sts.amazonaws.com')}:80/set",
+            json={"credentials": credential_sets},
+            timeout=10,
+        )
+        response.raise_for_status()
+        yield cluster, credential_sets
     finally:
         cluster.shutdown()
 
@@ -134,21 +190,31 @@ def backup(node, path, settings):
     )
 
 
-def matching_retry(events_, access_key):
+def credential_identity(credentials):
+    return (
+        credentials["AccessKeyId"],
+        hashlib.sha256(credentials["SessionToken"].encode()).hexdigest(),
+    )
+
+
+def matching_retry(events_, old_credentials, new_credentials):
     injected_events = [event for event in events_ if event["injected"]]
     assert injected_events, events_
     injected = injected_events[0]
-    assert injected["access_key"] != access_key, events_
+    assert (injected["access_key"], injected["token_digest"]) == credential_identity(
+        old_credentials
+    ), events_
     assert any(
         event["path"] == injected["path"]
         and not event["injected"]
-        and event["access_key"] == access_key
+        and (event["access_key"], event["token_digest"])
+        == credential_identity(new_credentials)
         for event in events_
     ), events_
 
 
 def test_backup_restore_refreshes_expired_s3_credentials(started_cluster):
-    cluster = started_cluster
+    cluster, (credentials_a, credentials_b) = started_cluster
     node = cluster.instances["node"]
     node.query(
         "CREATE TABLE expired_token_data (value String) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy = 's3_source'"
@@ -158,7 +224,7 @@ def test_backup_restore_refreshes_expired_s3_credentials(started_cluster):
     path = f"backups/expired_token_{uuid.uuid4().hex}"
     arm(cluster, "UploadPartCopy", f"/root/{path}/", rotate=True)
     assert "BACKUP_CREATED" in backup(node, path, BACKUP_SETTINGS)
-    matching_retry(events(cluster), "minio_rotated")
+    matching_retry(events(cluster), credentials_a, credentials_b)
 
     arm(cluster, "GetObject", f"/root/{path}/", rotate=True)
     result = node.query(
@@ -166,7 +232,7 @@ def test_backup_restore_refreshes_expired_s3_credentials(started_cluster):
         settings=BACKUP_SETTINGS,
     )
     assert "RESTORED" in result
-    matching_retry(events(cluster), "minio")
+    matching_retry(events(cluster), credentials_b, credentials_a)
     assert node.query("SELECT cityHash64(value) FROM restored_data") == node.query(
         "SELECT cityHash64(value) FROM expired_token_data"
     )
@@ -183,7 +249,7 @@ def test_backup_restore_refreshes_expired_s3_credentials(started_cluster):
     )
     assert "BACKUP_CREATED" in result
     upload_events = events(cluster)
-    matching_retry(upload_events, "minio_rotated")
+    matching_retry(upload_events, credentials_a, credentials_b)
     assert next(event for event in upload_events if event["injected"])["body_size"] > 0
     assert "RESTORED" in node.query(
         f"RESTORE TABLE local_data AS restored_local FROM {backup_destination(upload_path)}",

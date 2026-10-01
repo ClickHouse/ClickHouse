@@ -1,9 +1,9 @@
 import sys
-from datetime import datetime, timedelta, timezone
 
 from bottle import request, response, route, run
 
-access_key = "minio"
+credential_sets = None
+credential_index = 0
 
 
 @route("/")
@@ -13,30 +13,40 @@ def ping():
 
 @route("/toggle", method="POST")
 def toggle():
-    global access_key
-    access_key = "minio_rotated" if access_key == "minio" else "minio"
+    global credential_index
+    if credential_sets is None:
+        response.status = 503
+        return "Credentials are not configured"
+    credential_index = 1 - credential_index
+    return "OK"
+
+
+@route("/set", method="POST")
+def set_credentials():
+    global credential_sets, credential_index
+    configured = request.json["credentials"]
+    assert len(configured) == 2
+    credential_sets = configured
+    credential_index = 0
     return "OK"
 
 
 @route("/", method="POST")
 def assume_role():
     assert request.query.get("RoleArn") == "arn::role"
-    secret = (
-        "ClickHouse_Minio_P@ssw0rd"
-        if access_key == "minio"
-        else "Rotated_Minio_Test_Secret_123"
-    )
-    expiration = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
+    if credential_sets is None:
+        response.status = 503
+        return "Credentials are not configured"
+    credentials = credential_sets[credential_index]
     response.content_type = "text/xml"
     return f"""
 <AssumeRoleResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
     <AssumeRoleResult>
         <Credentials>
-            <AccessKeyId>{access_key}</AccessKeyId>
-            <SecretAccessKey>{secret}</SecretAccessKey>
-            <Expiration>{expiration}</Expiration>
+            <AccessKeyId>{credentials['AccessKeyId']}</AccessKeyId>
+            <SecretAccessKey>{credentials['SecretAccessKey']}</SecretAccessKey>
+            <SessionToken>{credentials['SessionToken']}</SessionToken>
+            <Expiration>{credentials['Expiration']}</Expiration>
         </Credentials>
     </AssumeRoleResult>
 </AssumeRoleResponse>

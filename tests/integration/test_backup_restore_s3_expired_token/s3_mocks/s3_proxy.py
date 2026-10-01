@@ -1,4 +1,5 @@
 import http.client
+import hashlib
 import json
 import re
 import sys
@@ -96,6 +97,8 @@ class Handler(BaseHTTPRequestHandler):
         current_operation = operation(self.command, self.path, self.headers)
         match = re.search(r"Credential=([^/]+)", self.headers.get("Authorization", ""))
         access_key = match.group(1) if match else ""
+        token = self.headers.get("x-amz-security-token", "")
+        token_digest = hashlib.sha256(token.encode()).hexdigest() if token else ""
 
         inject = False
         rotate = False
@@ -117,6 +120,7 @@ class Handler(BaseHTTPRequestHandler):
                         "operation": current_operation,
                         "path": self.path,
                         "access_key": access_key,
+                        "token_digest": token_digest,
                         "body_size": len(body),
                         "injected": inject,
                     }
