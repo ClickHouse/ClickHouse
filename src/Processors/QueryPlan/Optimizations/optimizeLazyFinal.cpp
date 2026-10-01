@@ -488,7 +488,8 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
     /// The lazy true branch reads without the sampling filter, so it would return out-of-sample rows
     /// with `_sample_factor` = 1. The full non-intersecting replacement keeps `SAMPLE` and is still allowed.
-    const bool has_sampling = reading_step->isQueryWithSampling();
+    /// Use the analyzed sampling state: `SAMPLE 1` or an absolute size covering all rows reads without sampling.
+    const bool has_sampling = analyzed_result ? analyzed_result->sampling.use_sampling : reading_step->isQueryWithSampling();
 
     /// Split parts into non-intersecting (unique key ranges, no FINAL needed) and
     /// intersecting (overlapping, need FINAL). This avoids running the expensive
