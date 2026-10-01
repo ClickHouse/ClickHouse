@@ -12,15 +12,42 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int CANNOT_PARSE_DATETIME;
 }
 
 namespace
 {
 
+/// The `timestamp` function accepts a single whole DateTime value in the documented format
+/// 'yyyy-mm-dd[ hh:mm:ss[.mmmmmm]]'. The DateTime parser stops at the first character that cannot
+/// continue the value (such as a field delimiter in row-based input), so a malformed argument like
+/// '2024 April 4' would otherwise be silently truncated to the Unix timestamp 2024. Reject any
+/// characters left after the value. The `Time64` parser also pads a fractional part that consists of a
+/// bare '.' with zeros, so reject a value that ends with '.', like '12:00:00.'.
+/// `value_begin` is the start of the argument: it cannot be taken from `buf.buffer()`, because
+/// `ReadBuffer::next` resets the working buffer to an empty one at the end of the data.
+void assertDateTimeFullyParsed(ReadBufferFromMemory & buf, const char * value_begin, bool skip_zero_padding)
+{
+    const char * value_end = buf.position();
+
+    /// FixedString values are right-padded with zero bytes.
+    if (skip_zero_padding)
+        while (!buf.eof() && *buf.position() == 0)
+            ++buf.position();
+
+    if (!buf.eof())
+        throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Argument of function timestamp has trailing characters after the value");
+
+    if (value_end != value_begin && value_end[-1] == '.')
+        throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Argument of function timestamp has no digits after the fractional separator");
+}
+
 /** timestamp(expr[, expr_time])
  *
  * Emulates MySQL's TIMESTAMP() but supports only input format 'yyyy-mm-dd[ hh:mm:ss[.mmmmmm]]' instead of
  * MySQLs possible input formats (https://dev.mysql.com/doc/refman/8.0/en/date-and-time-literals.html).
+ * The value is read by the basic `DateTime64` text parser, so, as everywhere that parser is used, a numeric
+ * string with an optional fractional part (e.g. '1234567890', '1234.5', '-0.5') is a unix timestamp.
   */
 class FunctionTimestamp final : public IFunction
 {
@@ -72,10 +99,12 @@ public:
                 const size_t next_offset = (*offsets)[i];
                 const size_t string_size = next_offset - current_offset;
 
-                ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
+                const char * value_begin = reinterpret_cast<const char *>(&(*chars)[current_offset]);
+                ReadBufferFromMemory read_buffer(value_begin, string_size);
 
                 DateTime64 value = 0;
                 readDateTime64Text(value, col_result->getScale(), read_buffer, *local_time_zone);
+                assertDateTimeFullyParsed(read_buffer, value_begin, /*skip_zero_padding=*/false);
                 vec_result[i] = value;
 
                 current_offset = next_offset;
@@ -92,10 +121,12 @@ public:
             {
                 const size_t next_offset = current_offset + fixed_string_size;
 
-                ReadBufferFromMemory read_buffer(&(*chars)[current_offset], fixed_string_size);
+                const char * value_begin = reinterpret_cast<const char *>(&(*chars)[current_offset]);
+                ReadBufferFromMemory read_buffer(value_begin, fixed_string_size);
 
                 DateTime64 value = 0;
                 readDateTime64Text(value, col_result->getScale(), read_buffer, *local_time_zone);
+                assertDateTimeFullyParsed(read_buffer, value_begin, /*skip_zero_padding=*/true);
                 vec_result[i] = value;
 
                 current_offset = next_offset;
@@ -126,10 +157,12 @@ public:
                 const size_t next_offset = (*offsets)[i];
                 const size_t string_size = next_offset - current_offset;
 
-                ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
+                const char * value_begin = reinterpret_cast<const char *>(&(*chars)[current_offset]);
+                ReadBufferFromMemory read_buffer(value_begin, string_size);
 
                 Decimal64 value = 0;
                 readTime64Text(value, col_result->getScale(), read_buffer);
+                assertDateTimeFullyParsed(read_buffer, value_begin, /*skip_zero_padding=*/false);
                 vec_result[i].addOverflow(value);
 
                 current_offset = next_offset;
@@ -146,10 +179,12 @@ public:
             {
                 const size_t next_offset = current_offset + fixed_string_size;
 
-                ReadBufferFromMemory read_buffer(&(*chars)[current_offset], fixed_string_size);
+                const char * value_begin = reinterpret_cast<const char *>(&(*chars)[current_offset]);
+                ReadBufferFromMemory read_buffer(value_begin, fixed_string_size);
 
                 Decimal64 value = 0;
                 readTime64Text(value, col_result->getScale(), read_buffer);
+                assertDateTimeFullyParsed(read_buffer, value_begin, /*skip_zero_padding=*/true);
                 vec_result[i].addOverflow(value);
 
                 current_offset = next_offset;
@@ -174,13 +209,16 @@ REGISTER_FUNCTION(Timestamp)
     FunctionDocumentation::Description description = R"(
 Converts the first argument `expr` to type [`DateTime64(6)`](/reference/data-types/datetime64).
 If a second argument `expr_time` is provided, it adds the specified time to the converted value.
+
+The value is parsed in the same way as a `DateTime64` string in the basic format: a date `YYYY-MM-DD`, a date with time `YYYY-MM-DD hh:mm:ss[.ffffff]`,
+or a Unix timestamp with an optional fractional part, such as `1234567890.123456`, `1234.5`, or `-0.5`. The whole argument must be consumed, so trailing characters are rejected.
     )";
     FunctionDocumentation::Syntax syntax = R"(
     timestamp(expr[, expr_time])
     )";
     FunctionDocumentation::Arguments arguments =
     {
-        {"expr", "Date or date with time.", {"String"}},
+        {"expr", "Date, date with time, or a Unix timestamp with an optional fractional part.", {"String"}},
         {"expr_time", "Optional. Time to add to the converted value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the converted value of `expr`, or `expr` with added time", {"DateTime64(6)"}};
@@ -191,6 +229,14 @@ SELECT timestamp('2023-12-31') AS ts;
         R"(
 ┌─────────────────────────ts─┐
 │ 2023-12-31 00:00:00.000000 │
+└────────────────────────────┘
+    )"},
+        {"Convert a Unix timestamp string to DateTime64(6)", R"(
+SELECT timestamp('1234.5') AS ts SETTINGS session_timezone = 'UTC';
+    )",
+        R"(
+┌─────────────────────────ts─┐
+│ 1970-01-01 00:20:34.500000 │
 └────────────────────────────┘
     )"},
         {"Add time to date string", R"(
