@@ -142,13 +142,6 @@ endif ()
 target_link_libraries (clickhouse PRIVATE clickhouse_common_io ${HARMFUL_LIB})
 target_include_directories (clickhouse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
-# wasmtime defines the GDB JIT interface hook __jit_debug_register_code, an empty function on which
-# lldb puts a breakpoint (plugin.jit-loader.gdb.enable, default ON). ICF folds it with every other
-# empty function, so the breakpoint fires on each of their calls and the server crawls under lldb.
-if (TARGET ch_rust::wasmtime AND OS_LINUX AND LINKER_NAME MATCHES "lld")
-    target_link_options (clickhouse PRIVATE "-Wl,--keep-unique=__jit_debug_register_code")
-endif ()
-
 if (ENABLE_CLICKHOUSE_KEEPER)
     clickhouse_target_link_split_lib(clickhouse keeper)
 endif()
