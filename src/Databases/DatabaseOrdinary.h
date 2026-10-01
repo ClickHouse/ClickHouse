@@ -4,6 +4,7 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Storages/TableZnodeInfo.h>
 
+#include <Common/Stopwatch.h>
 
 namespace DB
 {
