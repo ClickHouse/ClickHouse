@@ -1,4 +1,7 @@
 #include <Storages/System/StorageSystemOne.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <Core/ProtocolDefines.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/ColumnConst.h>
@@ -15,6 +18,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 
 StorageSystemOne::StorageSystemOne(const StorageID & table_id_)
@@ -62,6 +70,35 @@ ReadFromSystemOneStep::ReadFromSystemOneStep(
 }
 
 
+ReadFromSystemOneStep::ReadFromSystemOneStep(SharedHeader header_)
+    : ISourceStep(std::move(header_))
+{
+}
+
+
+void ReadFromSystemOneStep::serialize(Serialization & ctx) const
+{
+    /// The step name is only registered since this version; an older peer would not know it and
+    /// would fail on the stream, so fail closed rather than write bytes it cannot parse.
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Serializing a ReadFromSystemOne step requires query plan serialization version >= {}; "
+            "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS);
+}
+
+
+QueryPlanStepPtr ReadFromSystemOneStep::deserialize(Deserialization & ctx)
+{
+    /// Mirrors the guard in `serialize`: a peer below this version cannot have written this step.
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Deserializing a ReadFromSystemOne step requires query plan serialization version >= {}; "
+            "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS);
+
+    return std::make_unique<ReadFromSystemOneStep>(ctx.output_header);
+}
+
+
 void ReadFromSystemOneStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto column = DataTypeUInt8().createColumnConst(1, 0u)->convertToFullColumnIfConst();
@@ -77,3 +114,14 @@ void ReadFromSystemOneStep::initializePipeline(QueryPipelineBuilder & pipeline, 
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemOne) }
+
+namespace DB
+{
+
+void registerReadFromSystemOneStep(QueryPlanStepRegistry & registry);
+void registerReadFromSystemOneStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("ReadFromSystemOne", &ReadFromSystemOneStep::deserialize);
+}
+
+}
