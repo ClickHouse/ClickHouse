@@ -1,0 +1,15 @@
+part types	['Wide','Compact']
+infix	1	43
+last granule only	1	7
+every row	1	303
+no row	0
+ilike	1	43
+two granules per block, prewhere	1	28
+four threads	1	43
+compact part	1	49
+nullable	1	49
+low cardinality	1	49
+phrase	1	122
+phrase, last granule	1	4
+every pattern query fell back	1	1
+every phrase query fell back	1	1

@@ -9,6 +9,8 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -149,6 +151,14 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
 
     if (std::ranges::none_of(search_queries, needs_fallback_for_query))
         return;
+
+    /// For an index on a plain column without a preprocessor or postprocessor, a fallback expression is the
+    /// search function applied to that column with constant arguments, so it is evaluated once per read.
+    const auto preprocessor = condition_text->getPreprocessor();
+    const auto postprocessor = condition_text->getPostprocessor();
+    evaluate_fallback_per_read = index.index->index.isSimpleSingleColumnIndex()
+        && !(preprocessor && preprocessor->hasActions())
+        && !(postprocessor && postprocessor->hasActions());
 
     /// Build a fallback evaluation path. Compile each virtual column's default expression
     /// (the original search predicate) and determine the required physical columns from it.
@@ -476,6 +486,14 @@ size_t MergeTreeReaderTextIndex::readRows(
         size_t col_idx = 0;
         for (const auto & col_name_type : fallback_columns_list)
             fallback_block.insert({std::move(fallback_cols[col_idx++]), col_name_type.type, col_name_type.name});
+
+        /// The fallback reader's row count is not checked anywhere else: its return value is discarded,
+        /// a column absent from the part is left null, and a Wide part reports the maximum over its columns.
+        fallback_block.checkNumberOfRows();
+        if (fallback_block.rows() != max_rows_to_read)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Text index fallback reader returned {} rows, expected {}",
+                fallback_block.rows(), max_rows_to_read);
     }
 
     size_t fallback_offset = 0;
@@ -505,12 +523,13 @@ size_t MergeTreeReaderTextIndex::readRows(
             }
             else if (use_fallback[i] && !fallback_block.empty())
             {
-                fillColumnFallback(
-                    column_mutable,
-                    columns_to_read[i].name,
-                    fallback_block,
-                    fallback_offset,
-                    rows_to_read);
+                if (!evaluate_fallback_per_read)
+                    fillColumnFallback(
+                        column_mutable,
+                        columns_to_read[i].name,
+                        fallback_block,
+                        fallback_offset,
+                        rows_to_read);
             }
             else if (const auto & search_query = search_queries[i];
                      search_query && search_query->getSearchMode() == TextSearchMode::Phrase)
@@ -532,6 +551,20 @@ size_t MergeTreeReaderTextIndex::readRows(
         from_row += rows_to_read;
         read_rows += rows_to_read;
         fallback_offset += rows_to_read;
+    }
+
+    if (evaluate_fallback_per_read && !fallback_block.empty())
+    {
+        for (size_t i = 0; i < res_columns.size(); ++i)
+        {
+            if (!use_fallback[i])
+                continue;
+
+            auto result = evaluateFallback(columns_to_read[i].name, fallback_block);
+            const auto & result_data = assert_cast<const ColumnUInt8 &>(*result).getData();
+            auto & column_data = assert_cast<ColumnUInt8 &>(*res_columns[i]).getData();
+            column_data.insert(result_data.begin(), result_data.begin() + read_rows);
+        }
     }
 
     /// Remove blocks that are no longer needed.
@@ -1150,6 +1183,19 @@ void MergeTreeReaderTextIndex::fillColumnFallback(
     const size_t old_size = column_data.size();
     column_data.resize(old_size + num_rows);
     memcpy(&column_data[old_size], result_data.data(), num_rows);
+}
+
+ColumnPtr MergeTreeReaderTextIndex::evaluateFallback(const String & column_name, const Block & physical_block) const
+{
+    auto it = fallback_expressions.find(column_name);
+    chassert(it != fallback_expressions.end());
+
+    /// `execute` rebinds only the slots of the block it is given, so the physical columns stay shared.
+    Block block = physical_block;
+    it->second->execute(block);
+
+    /// The predicate result can be sparse/const (inputs may be sparse), so make it full before the dense cast.
+    return block.getByName(column_name).column->convertToFullIfWrapped();
 }
 
 void MergeTreeReaderTextIndex::setPrecomputedGranule(const IndexGranulesMap & granules)
