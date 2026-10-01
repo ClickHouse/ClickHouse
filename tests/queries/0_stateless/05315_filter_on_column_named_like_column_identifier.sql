@@ -21,11 +21,17 @@ DROP TABLE IF EXISTS t_part;
 CREATE TABLE t_part (k UInt64, `__table1.k` UInt64) ENGINE = MergeTree PARTITION BY intDiv(k, 1000) ORDER BY tuple();
 INSERT INTO t_part SELECT number, 2000 - number FROM numbers(2000);
 SELECT count(), sum(k) FROM t_part WHERE `__table1.k` IN (1, 2);
+-- The partition key is not used for `__table1.k`, and is still used for `k`.
+SELECT count(), sum(k) FROM t_part WHERE `__table1.k` IN (1, 2) SETTINGS force_index_by_date = 1; -- { serverError INDEX_NOT_USED }
+SELECT count(), sum(k) FROM t_part WHERE k IN (1, 2) SETTINGS force_index_by_date = 1;
 
 DROP TABLE IF EXISTS t_skip;
 CREATE TABLE t_skip (k UInt64, `__table1.k` UInt64, INDEX ik k TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 128;
 INSERT INTO t_skip SELECT number, 2000 - number FROM numbers(2000);
 SELECT count(), sum(k) FROM t_skip WHERE `__table1.k` IN (1, 2);
+-- The skip index is not used for `__table1.k`, and is still used for `k`.
+SELECT count(), sum(k) FROM t_skip WHERE `__table1.k` IN (1, 2) SETTINGS force_data_skipping_indices = 'ik'; -- { serverError INDEX_NOT_USED }
+SELECT count(), sum(k) FROM t_skip WHERE k IN (1, 2) SETTINGS force_data_skipping_indices = 'ik';
 
 DROP TABLE IF EXISTS t_final;
 CREATE TABLE t_final (k UInt64, `__table1.k` UInt64) ENGINE = ReplacingMergeTree ORDER BY k SETTINGS index_granularity = 128;
@@ -52,8 +58,12 @@ INSERT INTO t_qcc SELECT number, 20000 - number, repeat('x', 16) FROM numbers(20
 CREATE TABLE t_qcc_build (k UInt64) ENGINE = Memory;
 INSERT INTO t_qcc_build VALUES (1), (2), (19998), (19999);
 -- A JOIN filter on `__table1.k` must not write a query condition cache entry that a later filter on `k` reads.
-SELECT count() FROM t_qcc AS a INNER JOIN t_qcc_build AS b ON a.k = b.k WHERE a.`__table1.k` IN (1, 2) AND b.k IN (1, 2) SETTINGS use_query_condition_cache = 1, enable_join_runtime_filters = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, join_algorithm = 'hash', query_plan_join_swap_table = 0, enable_parallel_replicas = 0;
+SELECT count() FROM t_qcc AS a INNER JOIN t_qcc_build AS b ON a.k = b.k WHERE a.`__table1.k` IN (1, 2) AND b.k IN (1, 2) SETTINGS use_query_condition_cache = 1, enable_join_runtime_filters = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, join_algorithm = 'hash', query_plan_join_swap_table = 0, enable_parallel_replicas = 0 FORMAT Null;
+-- The same JOIN again finds that entry, so the cache is in use.
+SELECT count() FROM t_qcc AS a INNER JOIN t_qcc_build AS b ON a.k = b.k WHERE a.`__table1.k` IN (1, 2) AND b.k IN (1, 2) SETTINGS use_query_condition_cache = 1, enable_join_runtime_filters = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, join_algorithm = 'hash', query_plan_join_swap_table = 0, enable_parallel_replicas = 0, log_comment = '05315_qcc_writer_again' FORMAT Null;
 SELECT count() FROM t_qcc WHERE k IN (1, 2) AND k IN (1, 2) SETTINGS use_query_condition_cache = 1, enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_join_runtime_filters_index_analysis = 0, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, enable_multiple_prewhere_read_steps = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, enable_parallel_replicas = 0;
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['QueryConditionCacheHits'] > 0 FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05315_qcc_writer_again';
 
 DROP TABLE t_dotted;
 DROP TABLE t_part;
