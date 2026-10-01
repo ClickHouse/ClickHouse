@@ -1,0 +1,23 @@
+-- EXPLAIN AST keeps its own trailing FORMAT and SETTINGS when the explained query is formatted and parsed back.
+-- A debug build checks the format and parse round trip of every query below.
+
+EXPLAIN AST INSERT INTO t (SELECT 1) SETTINGS max_threads = 1 FORMAT TSV;
+EXPLAIN AST (INSERT INTO t SELECT 1) FORMAT TSV;
+EXPLAIN AST (INSERT INTO t FROM INFILE 'f') FORMAT TSV;
+EXPLAIN AST (INSERT INTO t SELECT * FROM input('x Int32')) FORMAT TSV;
+EXPLAIN AST (DELETE FROM t WHERE 1) SETTINGS max_threads = 1;
+EXPLAIN AST (CREATE TABLE t (x UInt8) ENGINE = Memory) FORMAT TSV;
+
+SET allow_settings_after_format_in_insert = 1;
+EXPLAIN AST INSERT INTO t (SELECT 1) SETTINGS max_threads = 1 FORMAT TSV;
+EXPLAIN AST (INSERT INTO t SELECT 1) SETTINGS max_threads = 1;
+SET allow_settings_after_format_in_insert = 0;
+
+SELECT formatQuerySingleLine(q) AS f, formatQuerySingleLine(f) = f FROM (SELECT arrayJoin([
+    'EXPLAIN AST INSERT INTO t (SELECT 1) SETTINGS max_threads = 1 FORMAT Values',
+    'EXPLAIN AST (INSERT INTO t SELECT 1) FORMAT TSV',
+    'EXPLAIN AST (INSERT INTO t FROM INFILE \'f\') FORMAT TSV',
+    'EXPLAIN AST (DELETE FROM t WHERE 1) SETTINGS max_threads = 1',
+    'EXPLAIN AST (CREATE TABLE t (x UInt8) ENGINE = Memory) FORMAT TSV',
+    'EXPLAIN AST (SELECT 1) FORMAT TSV',
+    'EXPLAIN AST INSERT INTO t SELECT 1 FORMAT Null']) AS q);
