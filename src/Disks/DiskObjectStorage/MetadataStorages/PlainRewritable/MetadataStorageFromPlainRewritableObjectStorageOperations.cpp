@@ -672,6 +672,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
             if (object_storage->exists(StoredObject(remote_path_from)))
                 return;
 
+            /// Stops the reversal: with both keys gone, `remote_path_to` may hold the last copy of the source, which the
+            /// stages below would overwrite or remove.
             if (!object_storage->exists(StoredObject(tmp_remote_path_from)))
                 throw Exception(
                     ErrorCodes::CORRUPTED_DATA,
