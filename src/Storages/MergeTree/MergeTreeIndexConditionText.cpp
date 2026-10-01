@@ -146,7 +146,7 @@ static DataTypePtr removeArrayNullableLowCardinality(const DataTypePtr & type)
     return inner_type;
 }
 
-/// Token positions of an `Array` column restart per element, unless a postprocessor renumbers them densely.
+/// The token stream an `Array` column stores differs from the one the row-level function sees, per element.
 static bool isIndexedColumnArray(const Block & header)
 {
     if (header.columns() != 1)
@@ -353,7 +353,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     }
 
     if (function_name == "hasPhrase")
-        return has_positions && (!indexed_column_is_array || has_postprocessor) ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+        return has_positions && !indexed_column_is_array ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
 
     /// Exact mode requires array tokenizer with neither pre- nor postprocessor.
     const bool can_be_exact_read_mode = is_array_tokenizer && !has_preprocessor && !has_postprocessor;
@@ -1524,8 +1524,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
             return false;
 
-        /// Positions restart per element, so the granule token test plus the row-level function decide instead.
-        const bool use_positions = has_positions && (!indexed_column_is_array || has_postprocessor);
+        /// The two sides number an element's tokens differently, so the row-level function decides alone.
+        const bool use_positions = has_positions && !indexed_column_is_array;
 
         /// An Array phrase carries the tokens verbatim: neither the tokenizer nor the preprocessor applies.
         if (value_field.getType() == Field::Types::Array)
