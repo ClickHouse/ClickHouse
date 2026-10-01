@@ -4594,14 +4594,24 @@ void Server::createServers(
         if (server_type.shouldStart(ServerType::Type::ICEBERG_REST_CATALOG) && !config.getString("iceberg_rest_catalog.port", "").empty())
         {
             port_name = "iceberg_rest_catalog.port";
+
+            /// If we already have an active server for this listen_host/port_name, don't create the factory.
+            const bool already_listening = std::any_of(servers.begin(), servers.end(), [&](const auto & server)
+            {
+                return !server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == port_name;
+            });
+
             HTTPRequestHandlerFactoryPtr handler_factory;
-            try
+            if (!already_listening)
             {
-                handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
-            }
-            catch (...)
-            {
-                LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: {}", getCurrentExceptionMessage(/*with_stacktrace*/ false));
+                try
+                {
+                    handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
+                }
+                catch (...)
+                {
+                    LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: {}", getCurrentExceptionMessage(/*with_stacktrace*/ false));
+                }
             }
 
             if (handler_factory)
