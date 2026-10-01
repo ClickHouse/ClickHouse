@@ -1333,6 +1333,12 @@ index serialization path cannot handle heterogeneous Field values that JSON colu
 Reject TTL expressions that don't depend on any of table's columns. It indicates a user error most of the time.
 )", 0, \
         {"23.12", true, false, "It is a new setting, and in previous versions the behavior was equivalent to allowing."}) \
+    DECLARE(Bool, allow_suspicious_row_policies_with_blending_engines, false, R"(
+Allow `CREATE ROW POLICY` and `ALTER ROW POLICY` for a `SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree` or `GraphiteMergeTree` table, and `CREATE TABLE` with one of these engines when a row policy for it already exists.
+
+A merge on these engines produces one row out of all the rows with the same sorting key, taking column values from all of them. A row policy cannot hide a row from that merge, only from its result, which by then holds the values of the hidden rows as well - so the policy is not a security boundary. Define the policy on the table which stores the raw rows instead.
+)", 0, \
+        {"26.10", true, false, "New setting that rejects a row policy on a `SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree` or `GraphiteMergeTree` table, because a merge puts the values of the hidden rows into the row the policy shows. previous_value=true so `compatibility` with versions before 26.10 keeps the old behavior."}) \
     DECLARE(Bool, allow_suspicious_variant_types, false, R"(
 In CREATE TABLE statement allows specifying Variant type with similar variant types (for example, with different numeric or date types). Enabling this setting may introduce some ambiguity when working with values with similar types.
 )", 0, \
@@ -1931,6 +1937,10 @@ If the row policy expression is deterministic and depends only on non-floating-p
 applied before FINAL as an optimization, since such filtering cannot affect the deduplication result. Floating-point columns
 or columns containing floating-point (such as `Tuple(Float64, ...)`, `Array(Float64)`, `Nullable(Float64)`, etc.)
 are excluded because `-0.0` and `0.0` deduplicate as one key while a policy condition can tell them apart.
+
+On `SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree` and `GraphiteMergeTree` the row policy is always applied
+before FINAL, regardless of this setting: FINAL takes the values of the merged row from all the rows with the same sorting key,
+so a policy applied afterwards would show values of the rows it is supposed to hide.
 
 Possible values:
 

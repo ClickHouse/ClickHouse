@@ -3166,6 +3166,10 @@ bool ReadFromMergeTree::isRowPolicyDeferredAfterFinal() const
     if (!context->getSettingsRef()[Setting::apply_row_policy_after_final])
         return false;
 
+    /// Here FINAL mixes the values of the rows it merges, so hidden rows have to go before it, not after
+    if (data.isBlendingEngine())
+        return false;
+
     NameSet sorting_key_set = sortingKeyNamesSafeBeforeFinal(storage_snapshot->metadata->getSortingKey());
 
     const auto * filter_output = &query_info.row_level_filter->actions.findInOutputs(
