@@ -3,6 +3,10 @@
 #include <IO/ReadPipeline.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Common/PageCache.h>
@@ -135,6 +139,34 @@ StoredObject testObject(size_t size = 100)
     return StoredObject("test/object", "local/object", size);
 }
 
+std::unique_ptr<Poco::TemporaryFile> createLocalFileWithContent(const String & content)
+{
+    auto tmp_file = createTemporaryFile((fs::current_path() / "tmp").string());
+    {
+        WriteBufferFromFile out(tmp_file->path());
+        writeString(content, out);
+        out.finalize();
+    }
+    return tmp_file;
+}
+
+/// Build a legacy local read pipeline. The reader executor and Direct I/O are
+/// disabled so the test exercises the shared EOF guard on any kernel.
+std::unique_ptr<ReadBufferFromFileBase> buildLocalPipeline(const String & path, size_t reported_size)
+{
+    ReadSettings settings;
+    settings.reader_executor.enabled = false;
+    settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    settings.local_fs_settings.direct_io_threshold = 0;
+
+    ReadPipeline pipeline;
+    pipeline.setLocalFileSource(
+        path,
+        StoredObjects{testObject(path, reported_size)},
+        settings);
+    return pipeline.build();
+}
+
 FileCachePtr createTestFileCache(const String & name)
 {
     const auto cache_path = fs::current_path() / (name + "_cache");
@@ -177,6 +209,47 @@ try
 catch (...)
 {
     FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+/// -- Local source: preserve the known size and its EOF guard --
+
+TEST(ReadPipeline, LocalFileSourceKnownSizeBoundsEOF)
+{
+    auto tmp_file = createLocalFileWithContent("hello");
+
+    /// The file is 5 bytes, but the reported size is 3. Using the real size would
+    /// make the fixed and unfixed paths indistinguishable on modern kernels, where
+    /// a read at EOF returns 0 instead of EINVAL.
+    auto buf = buildLocalPipeline(tmp_file->path(), 3);
+    ASSERT_NE(buf, nullptr);
+
+    buf->seek(3, SEEK_SET);
+    EXPECT_TRUE(buf->eof());
+}
+
+TEST(ReadPipeline, LocalFileSourceUnknownSizeDoesNotBoundEOF)
+{
+    /// An unknown size must not impose an EOF boundary at the reported offset.
+    auto tmp_file = createLocalFileWithContent("hello");
+    auto buf = buildLocalPipeline(tmp_file->path(), StoredObject::UnknownSize);
+    ASSERT_NE(buf, nullptr);
+
+    buf->seek(3, SEEK_SET);
+    EXPECT_FALSE(buf->eof());
+}
+
+TEST(ReadPipeline, LocalFileSourceZeroSizeStillOpensPath)
+{
+    auto tmp_file = createTemporaryFile((fs::current_path() / "tmp").string());
+    const String path = tmp_file->path();
+
+    /// Zero is treated as unknown, so the missing file is still opened and reports
+    /// an open-time error instead of being silently treated as an empty file.
+    fs::remove(path);
+    ASSERT_FALSE(fs::exists(path));
+
+    EXPECT_THROW(buildLocalPipeline(path, 0), DB::Exception);
 }
 
 
