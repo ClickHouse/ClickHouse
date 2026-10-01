@@ -1382,21 +1382,28 @@ void buildProjectionForLateralSubquery(
         correlated_subquery.correlated_column_identifiers.begin(),
         correlated_subquery.correlated_column_identifiers.end());
 
-    /// Build lookup from output node name to the DAG node
+    /// Build lookup from output node name to the DAG node.
+    /// For same-named outputs the first one wins, like everywhere else in the planner
+    /// (`TableExpressionData` and `projectOnlyUsedColumns` keep the first binding of a name).
     std::unordered_map<std::string, const ActionsDAG::Node *> name_to_output_node;
     for (const auto * output : outputs)
-        name_to_output_node[output->result_name] = output;
+        name_to_output_node.emplace(output->result_name, output);
 
     ActionsDAG::NodeRawConstPtrs new_outputs;
 
     /// Add projection columns, renamed to outer planner identifiers.
     /// The subquery planner produces output columns with bare projection names (e.g., `id`, `amount`).
     /// The outer planner expects them with qualified identifiers (e.g., `__table2.id`, `__table2.amount`).
+    /// A duplicate projection name maps to the same identifier, so it is added only once.
+    std::unordered_set<std::string_view> added_projection_names;
     for (const auto & col : projection_columns)
     {
         const auto * identifier = table_expression_data.getColumnIdentifierOrNull(col.name);
         if (!identifier)
             continue; /// Column not referenced by outer query, skip
+
+        if (!added_projection_names.insert(col.name).second)
+            continue;
 
         auto it = name_to_output_node.find(col.name);
         if (it != name_to_output_node.end())
