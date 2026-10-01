@@ -186,7 +186,7 @@ protected:
             if (frame.has_trailing_output_options)
             {
                 const auto inner_kind = query->getQueryKind();
-                const bool inner_has_output = dynamic_cast<const ASTQueryWithOutput *>(query.get()) != nullptr;
+                const auto * inner_output = dynamic_cast<const ASTQueryWithOutput *>(query.get());
                 if (kind == ParsedAST)
                 {
                     bool parsed_as_subquery = inner_kind == QueryKind::Select;
@@ -196,10 +196,20 @@ protected:
                         parsed_as_subquery = inner_explain->getKind() == ParsedAST || !explained
                             || explained->getQueryKind() == QueryKind::Select;
                     }
-                    need_parens = !inner_has_output || !parsed_as_subquery;
+                    need_parens = !inner_output || !parsed_as_subquery;
+                    /// A bare inner query takes INTO OUTFILE only if it has no output options, FORMAT or SETTINGS only if it lacks that clause.
+                    if (!need_parens)
+                    {
+                        if (out_file)
+                            need_parens = !inner_output->hasOutputOptions();
+                        else if (format_ast)
+                            need_parens = !inner_output->format_ast;
+                        else if (settings_ast)
+                            need_parens = !inner_output->settings_ast;
+                    }
                 }
                 else
-                    need_parens = !inner_has_output && inner_kind == QueryKind::Select;
+                    need_parens = !inner_output && inner_kind == QueryKind::Select;
             }
 
             if (need_parens)

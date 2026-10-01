@@ -57,6 +57,25 @@ Explain EXPLAIN SYNTAX (children 2)
       Literal UInt64_1
  Identifier JSON
 SYSTEM CLEAR MARK CACHE
+SelectWithUnionQuery (children 2)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Literal UInt64_1
+ Identifier TSV
+SelectWithUnionQuery (children 2)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Literal UInt64_1
+ Set
+Explain EXPLAIN SYNTAX (children 2)
+ SelectWithUnionQuery (children 1)
+  ExpressionList (children 1)
+   SelectQuery (children 1)
+    ExpressionList (children 1)
+     Literal UInt64_1
+ Identifier TSV
 InsertQuery   (children 3)
  Identifier t
  SelectWithUnionQuery (children 1)
@@ -83,3 +102,7 @@ EXPLAIN AST (EXPLAIN SYNTAX INSERT INTO t SELECT 1) FORMAT TSV	1
 EXPLAIN AST (EXPLAIN SYNTAX INSERT INTO t SELECT 1 FORMAT JSON) FORMAT TSV	1
 EXPLAIN AST SELECT * FROM viewExplain(\'EXPLAIN SYNTAX\', \'\', (SELECT 1)) FORMAT TSV	1
 EXPLAIN SYNTAX SYSTEM CLEAR MARK CACHE FORMAT TSV	1
+EXPLAIN AST (SELECT 1 FORMAT TSV) SETTINGS max_threads = 1	1
+EXPLAIN AST (SELECT 1 INTO OUTFILE \'f\') FORMAT TSV	1
+EXPLAIN AST (EXPLAIN SYNTAX SELECT 1 FORMAT TSV) SETTINGS max_threads = 1	1
+EXPLAIN AST SELECT 1 FORMAT TSV FORMAT TSV	1
