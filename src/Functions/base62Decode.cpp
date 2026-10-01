@@ -31,13 +31,13 @@ If the string is not valid Base62-encoded, an exception is thrown.
         "Usage example",
         "SELECT base62Decode('T8dgcjRGuYUueWht');",
         R"(
-┌─base62Decode⋯GuYUueWht')─┐
-│ Hello world!             │
-└──────────────────────────┘
+┌─base62Decode('T8dgcjRGuYUueWht')─┐
+│ Hello world!                     │
+└──────────────────────────────────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

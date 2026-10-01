@@ -35,7 +35,7 @@ Like [`base62Decode`](#base62Decode), but returns an empty string in case of err
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

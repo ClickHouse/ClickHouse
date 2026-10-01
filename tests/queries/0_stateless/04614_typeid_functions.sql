@@ -66,6 +66,9 @@ SELECT generateTypeID('PREFIX'); -- { serverError BAD_ARGUMENTS }
 SELECT UUIDToTypeID(typeIDToUUID('user_01h455vb4pex5vsknk084sn02q'), typeIDPrefix('user_01h455vb4pex5vsknk084sn02q'));
 SELECT typeIDToUUID(UUIDToTypeID(uuid, 'roundtrip')) = uuid FROM (SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') uuid);
 
+-- Constant UUID with a non-constant prefix
+SELECT UUIDToTypeID(toUUID('01890a5d-ac96-774b-bcce-b302099a8057'), prefix) FROM (SELECT arrayJoin(['user', 'ord']) AS prefix);
+
 -- Non-constant columns
 SELECT UUIDToTypeID(typeIDToUUID(t), typeIDPrefix(t)) = t FROM (SELECT arrayJoin([
     'prefix_01h455vb4pex5vsknk084sn02q',

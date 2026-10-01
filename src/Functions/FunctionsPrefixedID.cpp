@@ -389,7 +389,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const IColumn & col_string = getStringOrFixedStringColumn(arguments[0].column, name, "first");
+        ColumnPtr full_id_column = arguments[0].column->convertToFullColumnIfConst();
+        const IColumn & col_string = getStringOrFixedStringColumn(full_id_column, name, "first");
 
         const ColumnString * col_expected_prefix = nullptr;
         ColumnPtr full_prefix_column;
@@ -460,7 +461,7 @@ The prefix must be non-empty and consist of underscore-separated segments matchi
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
@@ -484,13 +485,13 @@ The split is purely positional and never fails; use [`isValidPrefixedID`](#isVal
         "Usage example",
         "SELECT prefixedIDPrefix('ch_test_51TpZvW');",
         R"(
-┌─prefixedIDP⋯_51TpZvW')─┐
-│ ch_test                │
-└────────────────────────┘
+┌─prefixedIDPrefix('ch_test_51TpZvW')─┐
+│ ch_test                             │
+└─────────────────────────────────────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
@@ -514,13 +515,13 @@ The split is purely positional and never fails; use [`isValidPrefixedID`](#isVal
         "Usage example",
         "SELECT prefixedIDBody('user_NffrFeUfNV2Hib');",
         R"(
-┌─prefixedIDB⋯fNV2Hib')─┐
-│ NffrFeUfNV2Hib        │
-└───────────────────────┘
+┌─prefixedIDBody('user_NffrFeUfNV2Hib')─┐
+│ NffrFeUfNV2Hib                        │
+└───────────────────────────────────────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
@@ -544,13 +545,13 @@ The split is purely positional and never fails; use [`isValidPrefixedID`](#isVal
         "Usage example",
         "SELECT splitPrefixedID('ch_test_51TpZvW');",
         R"(
-┌─splitPrefix⋯_51TpZvW')─┐
-│ ('ch_test','51TpZvW')  │
-└────────────────────────┘
+┌─splitPrefixedID('ch_test_51TpZvW')─┐
+│ ('ch_test','51TpZvW')              │
+└────────────────────────────────────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
@@ -582,7 +583,7 @@ An empty `prefix` argument is ambiguous and throws an exception.
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

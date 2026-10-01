@@ -220,7 +220,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_uuid = checkAndGetColumn<ColumnUUID>(arguments[0].column.get());
+        ColumnPtr full_uuid_column = arguments[0].column->convertToFullColumnIfConst();
+        const auto * col_uuid = checkAndGetColumn<ColumnUUID>(full_uuid_column.get());
         if (!col_uuid)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -397,13 +398,13 @@ If the string is not a valid TypeID, an exception is thrown.
         "Usage example",
         "SELECT typeIDToUUID('user_01h455vb4pex5vsknk084sn02q');",
         R"(
-┌─typeIDToUUID⋯4sn02q')────────────────┐
-│ 01890a5d-ac96-774b-bcce-b302099a8057 │
-└──────────────────────────────────────┘
+┌─typeIDToUUID('user_01h455vb4pex5vsknk084sn02q')─┐
+│ 01890a5d-ac96-774b-bcce-b302099a8057            │
+└─────────────────────────────────────────────────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
@@ -431,7 +432,7 @@ Like [`typeIDToUUID`](#typeIDToUUID), but returns `NULL` instead of throwing an 
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
@@ -455,13 +456,13 @@ If the string is not a valid TypeID, an exception is thrown.
         "Usage example",
         "SELECT typeIDPrefix('user_01h455vb4pex5vsknk084sn02q');",
         R"(
-┌─typeIDPrefi⋯84sn02q')─┐
-│ user                  │
-└───────────────────────┘
+┌─typeIDPrefix('user_01h455vb4pex5vsknk084sn02q')─┐
+│ user                                            │
+└─────────────────────────────────────────────────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
@@ -486,13 +487,13 @@ An exception is thrown for invalid prefixes.
         "Usage example",
         "SELECT UUIDToTypeID(toUUID('01890a5d-ac96-774b-bcce-b302099a8057'), 'user');",
         R"(
-┌─UUIDToTypeI⋯), 'user')──────────┐
-│ user_01h455vb4pex5vsknk084sn02q │
-└─────────────────────────────────┘
+┌─UUIDToTypeID(toUUID('01890a5d-ac96-774b-bcce-b302099a8057'), 'user')─┐
+│ user_01h455vb4pex5vsknk084sn02q                                      │
+└──────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
@@ -522,7 +523,7 @@ The prefix must contain at most 63 characters from `[a-z_]` and must start and e
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
