@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Regression test: a distributed read (make_distributed_plan) over a table with a normal projection
 -- threw `LOGICAL_ERROR` 'Different list of shards in child plans'. The projection
 -- optimization replaced the single read with a Union of (surviving-parts read, projection read), but
@@ -40,13 +37,12 @@ SET optimize_use_projections = 1;
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3,
     distributed_plan_max_rows_to_broadcast = 10;
-SET automatic_parallel_replicas_mode = 0;
 
 -- t2's read is sharded; the projection match would split it into a Union. t1 is broadcast.
 SELECT '-- distributed read over a projected table does not abort';
 SELECT count() FROM (
     SELECT s FROM t1 AS lhs LEFT JOIN (SELECT * FROM t2 PREWHERE id2 = 2 WHERE id2 = 2) AS rhs ON lhs.id = rhs.id2
-);
+) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- Same query single-node, for an explicit value to compare against.
 SELECT '-- matches the single-node result';

@@ -39,9 +39,7 @@ Materialized views are automatically used by ClickStack for alerts where applica
 ## Dashboards and drill-downs {#dashboards-and-drill-downs}
 
 <Accordion title="Does ClickStack support parameterized dashboards or dashboard variables?">
-ClickStack supports custom dropdown filters on dashboards, populated by data queried from ClickHouse. These filters allow you to dynamically scope all tiles on a dashboard to a specific value (e.g., a service name, environment, or host).
-
-ClickStack does not currently support reusable dashboard variables in the style of Grafana template variables. Because ClickStack works exclusively with ClickHouse as its data source, drill-down and filtering capabilities can be provided natively without requiring a variable abstraction layer.
+Yes, ClickStack supports dashboards parameterized by custom filters and variables, populated by data queried from ClickHouse. These filters allow you to dynamically scope some or all of the tiles on a dashboard to a specific value (e.g., a service name, environment, or host).
 
 For details on creating dashboards and applying filters, see [Dashboards](/clickstack/features/dashboards/overview).
 </Accordion>

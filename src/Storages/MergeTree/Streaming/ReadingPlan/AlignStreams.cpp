@@ -1,25 +1,29 @@
 #include <Storages/MergeTree/Streaming/ReadingPlan/AlignStreams.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
+#include <Storages/MergeTree/Streaming/Cursors/CursorUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
-#include <Columns/ColumnsNumber.h>
+#include <Columns/IColumn.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+#include <Processors/Streaming/CalculateWatermarksTransform.h>
 #include <Processors/Streaming/Markers.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Core/Block.h>
-#include <Core/Defines.h>
+#include <Core/Field.h>
 
 #include <Common/Exception.h>
-#include <Common/assert_cast.h>
 
-#include <base/defines.h>
-
+#include <algorithm>
+#include <deque>
+#include <iterator>
 #include <optional>
 #include <queue>
+#include <ranges>
 #include <utility>
 
 namespace DB
@@ -33,11 +37,11 @@ namespace ErrorCodes
 namespace
 {
 
-InputPorts buildInputPorts(SharedHeader left_header, SharedHeader right_header)
+InputPorts buildInputPorts(SharedHeader metadata_header, SharedHeader data_header)
 {
     InputPorts ports;
-    ports.emplace_back(std::move(left_header));
-    ports.emplace_back(std::move(right_header));
+    ports.emplace_back(std::move(metadata_header));
+    ports.emplace_back(std::move(data_header));
     return ports;
 }
 
@@ -48,203 +52,171 @@ OutputPorts buildOutputPorts(SharedHeader header)
     return ports;
 }
 
-Block buildOutputHeader(const Block & left_header, const Block & right_header)
+PartitionCursor cursorAt(const Chunk & chunk, size_t row, size_t block_number_pos, size_t block_offset_pos)
 {
-    Block header = right_header;
-    for (const auto & column : left_header)
-        if (!header.has(column.name))
-            header.insert(column);
-
-    return header;
+    const auto & columns = chunk.getColumns();
+    return {columns[block_number_pos]->getInt(row), columns[block_offset_pos]->getInt(row)};
 }
 
-std::vector<size_t> collectAttachedPositions(const Block & left_header, const Block & right_header)
+Field watermarkAt(const Chunk & chunk, size_t row, size_t pos)
 {
-    std::vector<size_t> positions;
-    for (size_t position = 0; position < left_header.columns(); ++position)
-        if (!right_header.has(left_header.getByPosition(position).name))
-            positions.push_back(position);
-
-    return positions;
+    Field value;
+    chunk.getColumns()[pos]->get(row, value);
+    return value;
 }
 
-const ColumnUInt64 * keyColumn(const IColumn & column)
+std::shared_ptr<PartitionWatermarkInfo> makePartitionWatermarkInfo(const String & partition_id, const Field & watermark)
 {
-    return assert_cast<const ColumnUInt64 *>(&column);
+    auto info = std::make_shared<PartitionWatermarkInfo>();
+    info->partition_id = partition_id;
+    info->watermark = watermark;
+    return info;
 }
-
-MutableColumnPtr exchangeWithEmpty(MutableColumnPtr & column)
-{
-    return std::exchange(column, column->cloneEmpty());
-}
-
-class StreamAligner
-{
-    void matchPending()
-    {
-        if (left_columns.empty())
-            return;
-
-        const auto * left_block_numbers = keyColumn(*left_columns[left_block_number_pos]);
-        const auto * left_block_offsets = keyColumn(*left_columns[left_block_offset_pos]);
-        const auto * right_block_numbers = keyColumn(*data_columns[right_block_number_pos]);
-        const auto * right_block_offsets = keyColumn(*data_columns[right_block_offset_pos]);
-        const size_t left_rows = left_columns.front()->size();
-
-        while (left_row < left_rows && hasPendingRightRows())
-        {
-            const std::pair left_key{left_block_numbers->getElement(left_row), left_block_offsets->getElement(left_row)};
-            const std::pair right_key{right_block_numbers->getElement(matched), right_block_offsets->getElement(matched)};
-
-            if (left_key > right_key)
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "A data stream row of AlignStreams has no matching metadata stream row (block number {}, block offset {})",
-                    right_key.first, right_key.second);
-            }
-            else if (left_key == right_key)
-            {
-                for (size_t i = 0; i < attached_positions.size(); ++i)
-                    attached_columns[i]->insertFrom(*left_columns[attached_positions[i]], left_row);
-
-                ++matched;
-            }
-            else
-            {
-                ++left_row;
-            }
-        }
-
-        if (left_row == left_rows)
-            dropPendingLeftRows();
-    }
-
-public:
-    StreamAligner(const Block & left_header, const Block & right_header)
-        : right_block_number_pos(right_header.getPositionByName(BlockNumberColumn::name))
-        , right_block_offset_pos(right_header.getPositionByName(BlockOffsetColumn::name))
-        , left_block_number_pos(left_header.getPositionByName(BlockNumberColumn::name))
-        , left_block_offset_pos(left_header.getPositionByName(BlockOffsetColumn::name))
-        , attached_positions(collectAttachedPositions(left_header, right_header))
-    {
-        for (const auto position : attached_positions)
-            attached_columns.push_back(left_header.getByPosition(position).type->createColumn());
-
-        for (const auto & type : right_header.getDataTypes())
-            data_columns.push_back(type->createColumn());
-    }
-
-    bool hasPendingLeftRows() const { return !left_columns.empty(); }
-    bool hasPendingRightRows() const { return matched < data_columns.front()->size(); }
-    bool hasMatchedRows() const { return matched > 0; }
-
-    void addRightChunk(Chunk chunk)
-    {
-        const size_t rows = chunk.getNumRows();
-        if (rows == 0)
-            return;
-
-        /// The rows are copied with insertRangeFrom, which requires plain full source columns.
-        convertToFullIfSparse(chunk);
-        convertToFullIfConst(chunk);
-
-        const auto & source_columns = chunk.getColumns();
-        for (size_t i = 0; i < data_columns.size(); ++i)
-            data_columns[i]->insertRangeFrom(*source_columns[i], 0, rows);
-
-        matchPending();
-    }
-
-    void addLeftChunk(Chunk chunk)
-    {
-        chassert(left_columns.empty());
-        if (chunk.getNumRows() == 0)
-            return;
-
-        /// The rows are read with getElement/insertFrom, which require plain full source columns.
-        convertToFullIfSparse(chunk);
-        convertToFullIfConst(chunk);
-
-        left_columns = chunk.detachColumns();
-        left_row = 0;
-
-        matchPending();
-    }
-
-    void dropPendingLeftRows()
-    {
-        left_columns.clear();
-        left_row = 0;
-    }
-
-    std::optional<Chunk> flushMatched(size_t min_rows = 0)
-    {
-        if (matched == 0 || matched < min_rows)
-            return std::nullopt;
-
-        const size_t total = data_columns.front()->size();
-        const size_t rows = std::exchange(matched, 0);
-
-        Columns columns;
-        columns.reserve(data_columns.size() + attached_columns.size());
-
-        for (auto & column : data_columns)
-        {
-            columns.push_back(column->cut(0, rows));
-            column = IColumn::mutate(column->cut(rows, total - rows));
-        }
-
-        for (auto & column : attached_columns)
-        {
-            chassert(column->size() == rows);
-            columns.push_back(exchangeWithEmpty(column));
-        }
-
-        return Chunk(std::move(columns), rows);
-    }
-
-private:
-    const size_t right_block_number_pos;
-    const size_t right_block_offset_pos;
-    const size_t left_block_number_pos;
-    const size_t left_block_offset_pos;
-    const std::vector<size_t> attached_positions;
-
-    /// Left stream data
-    Columns left_columns;
-    size_t left_row = 0;
-
-    /// Right stream data
-    MutableColumns data_columns;
-    MutableColumns attached_columns;
-    size_t matched = 0;
-};
 
 class AlignStreamsProcessor final : public IProcessor
 {
-    void enqueueChunk(std::optional<Chunk> chunk)
+    struct HeldChunk
     {
-        if (chunk.has_value())
-            ready_chunks.push(std::move(*chunk));
+        Chunk chunk;
+        PartitionCursor first;
+        PartitionCursor last;
+    };
+
+    std::optional<Field> lookupWatermark(const PartitionCursor & target) const
+    {
+        const auto chunk_it = std::ranges::upper_bound(held_metadata, target, {}, &HeldChunk::first);
+        if (chunk_it == held_metadata.begin())
+            return std::nullopt;
+
+        const auto & chunk = std::prev(chunk_it)->chunk;
+        const auto rows = std::views::iota(size_t{0}, chunk.getNumRows());
+        const auto row_it = std::ranges::upper_bound(rows, target, {}, [&](size_t row)
+        {
+            return cursorAt(chunk, row, metadata_block_number_pos, metadata_block_offset_pos);
+        });
+
+        const auto rows_not_above = static_cast<size_t>(std::ranges::distance(rows.begin(), row_it));
+        return watermarkAt(chunk, rows_not_above - 1, metadata_watermark_pos);
     }
 
-    void enqueueInfos(Chunk::ChunkInfoCollection && infos)
+    bool canReleaseData() const
     {
+        return metadata_input.isFinished() || metadata_progress >= held_data->last;
+    }
+
+    bool canReleaseMetadata() const
+    {
+        const auto & front = held_metadata.front();
+        if (held_data.has_value())
+            return front.last < held_data->last;
+
+        return data_input.isFinished() || data_progress > front.last;
+    }
+
+    void releaseData()
+    {
+        const auto watermark = lookupWatermark(held_data->last);
+        if (watermark)
+            held_data->chunk.getChunkInfos().add(makePartitionWatermarkInfo(partition_id, *watermark));
+
+        data_progress = held_data->last;
+        ready_chunks.push(std::move(held_data->chunk));
+        held_data.reset();
+
+        if (watermark && *watermark > last_watermark)
+        {
+            last_watermark = *watermark;
+            ready_chunks.push(WatermarkMarker::create(output.getHeader(), *watermark));
+        }
+    }
+
+    void releaseMetadata()
+    {
+        const auto front = std::move(held_metadata.front());
+        held_metadata.pop_front();
+
+        const bool overlaps_with_data = held_data.has_value() && held_data->first <= front.last;
+        if (overlaps_with_data)
+            return;
+
+        const auto watermark = watermarkAt(front.chunk, front.chunk.getNumRows() - 1, metadata_watermark_pos);
+        if (watermark <= last_watermark)
+            return;
+
         Chunk info_chunk(output.getHeader().cloneEmptyColumns(), 0);
-        info_chunk.setChunkInfos(std::move(infos));
-        enqueueChunk(std::move(info_chunk));
+        info_chunk.getChunkInfos().add(makePartitionWatermarkInfo(partition_id, watermark));
+        ready_chunks.push(std::move(info_chunk));
+
+        last_watermark = watermark;
+        ready_chunks.push(WatermarkMarker::create(output.getHeader(), watermark));
+    }
+
+    bool releaseChunks()
+    {
+        bool released = false;
+        while (true)
+        {
+            if (!held_metadata.empty() && canReleaseMetadata())
+            {
+                releaseMetadata();
+                released = true;
+                continue;
+            }
+
+            if (held_data.has_value() && canReleaseData())
+            {
+                releaseData();
+                released = true;
+                continue;
+            }
+
+            return released;
+        }
+    }
+
+    bool needMetadata() const
+    {
+        if (held_metadata.empty())
+            return true;
+
+        if (held_data.has_value())
+            return metadata_progress < held_data->last;
+
+        return data_input.isFinished();
+    }
+
+    bool needData() const
+    {
+        return !held_data.has_value();
+    }
+
+    void consumeMetadataChunk(Chunk chunk)
+    {
+        const auto cursor_info = chunk.getChunkInfos().getSafe<PartitionCursorInfo>();
+        metadata_progress = cursor_info->last;
+        held_metadata.push_back(HeldChunk{std::move(chunk), cursor_info->first, cursor_info->last});
+    }
+
+    void consumeDataChunk(Chunk chunk)
+    {
+        const auto cursor_info = chunk.getChunkInfos().getSafe<PartitionCursorInfo>();
+        held_data = HeldChunk{std::move(chunk), cursor_info->first, cursor_info->last};
     }
 
 public:
-    AlignStreamsProcessor(SharedHeader left_header, SharedHeader right_header)
-        : IProcessor(
-              buildInputPorts(left_header, right_header),
-              buildOutputPorts(std::make_shared<const Block>(buildOutputHeader(*left_header, *right_header))))
-        , left_input(inputs.front())
-        , right_input(inputs.back())
+    AlignStreamsProcessor(SharedHeader metadata_header, SharedHeader data_header, String partition_id_, Field initial_watermark_)
+        : IProcessor(buildInputPorts(metadata_header, data_header), buildOutputPorts(data_header))
+        , partition_id(std::move(partition_id_))
+        , metadata_block_number_pos(metadata_header->getPositionByName(BlockNumberColumn::name))
+        , metadata_block_offset_pos(metadata_header->getPositionByName(BlockOffsetColumn::name))
+        , metadata_watermark_pos(metadata_header->getPositionByName(WatermarkColumn::name))
+        , metadata_input(inputs.front())
+        , data_input(inputs.back())
         , output(outputs.front())
-        , aligner(*left_header, *right_header)
+        , last_watermark(std::move(initial_watermark_))
     {
+        if (!last_watermark.isNull())
+            ready_chunks.push(WatermarkMarker::create(output.getHeader(), last_watermark));
     }
 
     String getName() const override { return "AlignStreams"; }
@@ -253,16 +225,43 @@ public:
     {
         if (output.isFinished())
         {
-            left_input.close();
-            right_input.close();
+            metadata_input.close();
+            data_input.close();
             return Status::Finished;
         }
 
         if (!output.canPush())
-        {
-            left_input.setNotNeeded();
-            right_input.setNotNeeded();
             return Status::PortFull;
+
+        while (ready_chunks.empty())
+        {
+            bool progressed = false;
+
+            if (!metadata_input.isFinished() && needMetadata())
+            {
+                metadata_input.setNeeded();
+                if (metadata_input.hasData())
+                {
+                    consumeMetadataChunk(metadata_input.pull());
+                    progressed = true;
+                }
+            }
+
+            if (!data_input.isFinished() && needData())
+            {
+                data_input.setNeeded();
+                if (data_input.hasData())
+                {
+                    consumeDataChunk(data_input.pull());
+                    progressed = true;
+                }
+            }
+
+            if (releaseChunks())
+                progressed = true;
+
+            if (!progressed)
+                break;
         }
 
         if (!ready_chunks.empty())
@@ -272,107 +271,58 @@ public:
             return Status::PortFull;
         }
 
-        if (!left_chunk.has_value() && !aligner.hasPendingLeftRows() && !left_input.isFinished())
+        if (metadata_input.isFinished() && data_input.isFinished())
         {
-            left_input.setNeeded();
-            if (!left_input.hasData())
-                return Status::NeedData;
-
-            left_chunk = left_input.pull(/*set_not_needed=*/true);
-        }
-
-        /// An empty metadata chunk (infos) is processable without data-side progress.
-        const bool left_infos_only = left_chunk.has_value() && left_chunk->getNumRows() == 0;
-
-        if (!left_infos_only && !right_chunk.has_value() && !aligner.hasPendingRightRows() && !right_input.isFinished())
-        {
-            right_input.setNeeded();
-            if (!right_input.hasData())
-                return Status::NeedData;
-
-            right_chunk = right_input.pull(/*set_not_needed=*/true);
-        }
-
-        const bool has_work = left_chunk.has_value() || right_chunk.has_value() || aligner.hasPendingLeftRows() || aligner.hasPendingRightRows() || aligner.hasMatchedRows();
-
-        if (!has_work)
-        {
-            chassert(left_input.isFinished() && right_input.isFinished());
             output.finish();
             return Status::Finished;
         }
 
-        return Status::Ready;
-    }
-
-    void work() override
-    {
-        if (right_chunk.has_value())
-        {
-            aligner.addRightChunk(std::move(*right_chunk));
-            right_chunk.reset();
-        }
-
-        if (left_chunk.has_value())
-        {
-            if (isMarkerChunk(*left_chunk))
-            {
-                enqueueChunk(aligner.flushMatched());
-                enqueueInfos(std::move(left_chunk->getChunkInfos()));
-            }
-            else
-            {
-                aligner.addLeftChunk(std::move(*left_chunk));
-            }
-
-            left_chunk.reset();
-        }
-
-        /// Data rows left without metadata coverage - invariant is broken.
-        if (left_input.isFinished() && !aligner.hasPendingLeftRows() && aligner.hasPendingRightRows())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The metadata stream of AlignStreams ended before all data stream rows were matched");
-
-        /// The data stream ended - the pending metadata tail can never match.
-        if (right_input.isFinished() && !right_chunk.has_value() && !aligner.hasPendingRightRows())
-            aligner.dropPendingLeftRows();
-
-        const bool streams_done = left_input.isFinished() && right_input.isFinished();
-        enqueueChunk(aligner.flushMatched(streams_done ? 0 : DEFAULT_BLOCK_SIZE));
+        return Status::NeedData;
     }
 
 private:
-    InputPort & left_input;
-    InputPort & right_input;
+    const String partition_id;
+    const size_t metadata_block_number_pos;
+    const size_t metadata_block_offset_pos;
+    const size_t metadata_watermark_pos;
+
+    InputPort & metadata_input;
+    InputPort & data_input;
     OutputPort & output;
 
-    std::optional<Chunk> left_chunk;
-    std::optional<Chunk> right_chunk;
+    PartitionCursor metadata_progress;
+    std::deque<HeldChunk> held_metadata;
 
-    StreamAligner aligner;
+    PartitionCursor data_progress;
+    std::optional<HeldChunk> held_data;
+
+    Field last_watermark;
     std::queue<Chunk> ready_chunks;
 };
 
 }
 
-AlignStreamsStep::AlignStreamsStep(SharedHeader left_header_, SharedHeader right_header_)
+AlignStreamsStep::AlignStreamsStep(SharedHeader metadata_header_, SharedHeader data_header_, String partition_id_, Field initial_watermark_)
+    : partition_id(std::move(partition_id_))
+    , initial_watermark(std::move(initial_watermark_))
 {
-    updateInputHeaders({std::move(left_header_), std::move(right_header_)});
+    updateInputHeaders({std::move(metadata_header_), std::move(data_header_)});
 }
 
 void AlignStreamsStep::updateOutputHeader()
 {
-    output_header = std::make_shared<const Block>(buildOutputHeader(*input_headers.front(), *input_headers.back()));
+    output_header = input_headers.back();
 }
 
 QueryPipelineBuilderPtr AlignStreamsStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.size() != 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AlignStreamsStep must have two input pipelines");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AlignStreams must have two input pipelines");
 
     if (pipelines[0]->getNumStreams() != 1 || pipelines[1]->getNumStreams() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AlignStreamsStep requires single-stream inputs, got {} and {}", pipelines[0]->getNumStreams(), pipelines[1]->getNumStreams());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AlignStreams requires single-stream inputs, got {} and {}", pipelines[0]->getNumStreams(), pipelines[1]->getNumStreams());
 
-    auto processor = std::make_shared<AlignStreamsProcessor>(input_headers.front(), input_headers.back());
+    auto processor = std::make_shared<AlignStreamsProcessor>(input_headers.front(), input_headers.back(), partition_id, initial_watermark);
     return QueryPipelineBuilder::mergePipelines(std::move(pipelines[0]), std::move(pipelines[1]), std::move(processor), &processors);
 }
 

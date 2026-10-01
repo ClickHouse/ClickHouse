@@ -109,25 +109,34 @@ void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffe
 {
     ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
 
-    size_t initial_size = data.size();
-    size_t max_bytes = 0;
-    size_t new_data_size = 0;
+    /// The column is grown in steps of at most MAX_STRINGS_SIZE bytes, so a `limit` that the stream
+    /// cannot back does not preallocate an arbitrary amount of memory.
+    const size_t elements_per_step = MAX_STRINGS_SIZE / n;
 
-    if (unlikely(__builtin_mul_overflow(limit, n, &max_bytes)))
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
-    if (unlikely(max_bytes > MAX_STRINGS_SIZE))
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large sizes of FixedString to deserialize: {}", max_bytes);
-    if (unlikely(__builtin_add_overflow(initial_size, max_bytes, &new_data_size)))
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
+    size_t elements_left = limit;
+    while (elements_left)
+    {
+        const size_t bytes_to_read = std::min(elements_per_step, elements_left) * n;
 
-    data.resize(new_data_size);
-    size_t read_bytes = istr.readBig(reinterpret_cast<char *>(&data[initial_size]), max_bytes);
+        const size_t initial_size = data.size();
+        size_t new_data_size = 0;
+        if (unlikely(__builtin_add_overflow(initial_size, bytes_to_read, &new_data_size)))
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
 
-    if (read_bytes % n != 0)
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data of type FixedString. "
-            "Bytes read:{}. String size:{}.", read_bytes, toString(n));
+        data.resize(new_data_size);
+        const size_t read_bytes = istr.readBig(reinterpret_cast<char *>(&data[initial_size]), bytes_to_read);
 
-    data.resize(initial_size + read_bytes);
+        if (read_bytes % n != 0)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data of type FixedString. "
+                "Bytes read:{}. String size:{}.", read_bytes, toString(n));
+
+        data.resize(initial_size + read_bytes);
+
+        if (read_bytes < bytes_to_read)
+            break;      /// End of the stream.
+
+        elements_left -= bytes_to_read / n;
+    }
 }
 
 
