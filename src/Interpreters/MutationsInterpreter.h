@@ -188,6 +188,7 @@ public:
         bool hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const;
         bool hasProjection(const String & name) const;
         bool hasBrokenProjection(const String & name) const;
+        bool hasUnloadedProjection(const String & name) const;
         bool isCompactPart() const;
 
         void read(

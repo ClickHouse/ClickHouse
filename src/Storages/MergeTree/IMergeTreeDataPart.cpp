@@ -3723,6 +3723,11 @@ bool IMergeTreeDataPart::hasBrokenProjection(const String & projection_name) con
     return it->second->is_broken;
 }
 
+bool IMergeTreeDataPart::hasUnloadedProjection(const String & projection_name) const
+{
+    return !hasProjection(projection_name) && checksums.has(projection_name + ".proj");
+}
+
 void IMergeTreeDataPart::setBrokenReason(const String & message, int code) const
 {
     std::lock_guard lock(broken_reason_mutex);
