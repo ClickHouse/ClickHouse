@@ -7,8 +7,8 @@
 --
 -- The regression arms are the ones declaring an explicit `AggregateFunction(0, ...)`: a declaration that
 -- pins no version is stored with the function's default spelled out, so its header and payload agree on
--- their own. The remaining wrapper, engine and parameter cases are round-trip coverage for the header
--- renderer, not assertions that fail without it.
+-- their own, and the versionless cases are round-trip coverage, not assertions that fail without the
+-- renderer.
 
 DROP TABLE IF EXISTS sl_saf;
 DROP TABLE IF EXISTS sl_tuple_value;
@@ -55,36 +55,35 @@ SELECT sumMapMerge(CAST(arrayJoin(v), 'AggregateFunction(sumMap, Array(UInt64), 
 ([1,2],[10.5,20.25])
 -- The outer function's parameters are part of the rendered header too, and a dropped parameter is not
 -- cosmetic: `groupArrayLastArray` without one does not resolve at all, so the reader cannot rebuild the
--- value type. The value type is the same `Array(AggregateFunction(sumMap, ...))` carrier as above.
-CREATE TABLE sl_param_value (k UInt8, v SimpleAggregateFunction(groupArrayLastArray(5), Array(AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))) ENGINE = StripeLog;
-INSERT INTO sl_param_value SELECT 1, CAST([sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)])], 'SimpleAggregateFunction(groupArrayLastArray(5), Array(AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))');
+-- value type. The value type is the `Array` carrier above with an explicitly version-0 leaf, so the header
+-- is the renderer's rather than `getName()`'s.
+CREATE TABLE sl_param_value (k UInt8, v SimpleAggregateFunction(groupArrayLastArray(5), Array(AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2)))))) ENGINE = StripeLog;
+INSERT INTO sl_param_value SELECT 1, CAST([sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)])], 'SimpleAggregateFunction(groupArrayLastArray(5), Array(AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2)))))');
 SELECT length(v) FROM sl_param_value;
 1
 SELECT sumMapMerge(CAST(arrayJoin(v), 'AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))')) FROM sl_param_value;
 ([1,2],[10.5,20.25])
-CREATE TABLE sl_map_value (k UInt8, v SimpleAggregateFunction(anyLast, Map(UInt64, AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))) ENGINE = StripeLog;
-INSERT INTO sl_map_value SELECT 1, CAST(map(7::UInt64, sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)])), 'SimpleAggregateFunction(anyLast, Map(UInt64, AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))');
+CREATE TABLE sl_map_value (k UInt8, v SimpleAggregateFunction(anyLast, Map(UInt64, AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2)))))) ENGINE = StripeLog;
+INSERT INTO sl_map_value SELECT 1, CAST(map(7::UInt64, sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)])), 'SimpleAggregateFunction(anyLast, Map(UInt64, AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2)))))');
 SELECT sumMapMerge(CAST(v[7], 'AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))')) FROM sl_map_value;
 ([1,2],[10.5,20.25])
--- A `Map` key is walked by a recursion of its own, independent of the value's
--- (`transformTypesRecursively.cpp` descends the key list and the value list separately), so a
--- versioned leaf in the key position needs its own assertion: dropping the renderer's key
--- recursion leaves the value case above green.
-CREATE TABLE sl_map_key (k UInt8, v SimpleAggregateFunction(anyLast, Map(AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2))), UInt8))) ENGINE = StripeLog;
-INSERT INTO sl_map_key SELECT 1, CAST(map(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]), 7::UInt8), 'SimpleAggregateFunction(anyLast, Map(AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2))), UInt8))');
+-- A `Map` key is rendered by a recursion of its own, independent of the value's, so it needs its own
+-- explicitly version-0 leaf: dropping the renderer's key recursion leaves the value case above green.
+CREATE TABLE sl_map_key (k UInt8, v SimpleAggregateFunction(anyLast, Map(AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2))), UInt8))) ENGINE = StripeLog;
+INSERT INTO sl_map_key SELECT 1, CAST(map(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]), 7::UInt8), 'SimpleAggregateFunction(anyLast, Map(AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2))), UInt8))');
 SELECT length(mapKeys(v)) FROM sl_map_key;
 1
 SELECT sumMapMerge(CAST(mapKeys(v)[1], 'AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))')) FROM sl_map_key;
 ([1,2],[10.5,20.25])
--- A named tuple must keep its element names in the rendered header, which a value round trip alone
--- cannot observe. The element name needs backquoting, so the header also loses the name outright if the
--- renderer emits it raw: an unquoted `x.y` does not parse back as one identifier.
-CREATE TABLE sl_named_tuple_value (k UInt8, v SimpleAggregateFunction(anyLast, Tuple(`x.y` AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))) ENGINE = StripeLog;
-INSERT INTO sl_named_tuple_value SELECT 1, CAST(tuple(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)])), 'SimpleAggregateFunction(anyLast, Tuple(`x.y` AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))');
+-- A named tuple over an explicitly version-0 leaf must keep its element names in the rendered header, which
+-- a value round trip alone cannot observe. The element name needs backquoting, so the header also loses
+-- the name outright if the renderer emits it raw: an unquoted `x.y` does not parse back as one identifier.
+CREATE TABLE sl_named_tuple_value (k UInt8, v SimpleAggregateFunction(anyLast, Tuple(`x.y` AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2)))))) ENGINE = StripeLog;
+INSERT INTO sl_named_tuple_value SELECT 1, CAST(tuple(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)])), 'SimpleAggregateFunction(anyLast, Tuple(`x.y` AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2)))))');
 SELECT sumMapMerge(CAST(tupleElement(v, 'x.y'), 'AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))')) FROM sl_named_tuple_value;
 ([1,2],[10.5,20.25])
 SELECT toTypeName(v) FROM sl_named_tuple_value;
-SimpleAggregateFunction(anyLast, Tuple(`x.y` AggregateFunction(1, sumMap, Array(UInt64), Array(Decimal(9, 2)))))
+SimpleAggregateFunction(anyLast, Tuple(`x.y` AggregateFunction(sumMap, Array(UInt64), Array(Decimal(9, 2)))))
 -- Reading a written `Native` file back through `file()` takes the type from the header rather than from any
 -- stored declaration, so this is where a header that lost the element name becomes observable: the
 -- element would come back positional and the accessor on x.y would no longer resolve.
@@ -93,14 +92,14 @@ SimpleAggregateFunction(anyLast, Tuple(`x.y` AggregateFunction(1, sumMap, Array(
 -- by name on any storage, so the name assertion holds under both analyzers.
 INSERT INTO FUNCTION file(concat(currentDatabase(), '_04648_named_tuple.native'), Native) SELECT v FROM sl_named_tuple_value SETTINGS engine_file_truncate_on_insert = 1;
 SELECT toTypeName(v) FROM file(concat(currentDatabase(), '_04648_named_tuple.native'), Native);
-SimpleAggregateFunction(anyLast, Tuple(`x.y` AggregateFunction(1, sumMap, Array(UInt64), Array(Decimal(9, 2)))))
+SimpleAggregateFunction(anyLast, Tuple(`x.y` AggregateFunction(sumMap, Array(UInt64), Array(Decimal(9, 2)))))
 SELECT sumMapMerge(CAST(tupleElement(v, 'x.y'), 'AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))')) FROM file(concat(currentDatabase(), '_04648_named_tuple.native'), Native);
 ([1,2],[10.5,20.25])
 -- An `AggregateFunction` cannot sit directly inside a `Nullable`, but a `Tuple` can, so a `Nullable` can still
--- appear on the path down to the versioned leaf. The version walker descends through it, so the header
--- renderer has to as well.
-CREATE TABLE sl_nullable_value (k UInt8, v SimpleAggregateFunction(anyLast, Tuple(n Nullable(Tuple(x AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))))) ENGINE = StripeLog SETTINGS enable_nullable_tuple_type = 1;
-INSERT INTO sl_nullable_value SELECT 1, CAST(tuple(tuple(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]))), 'SimpleAggregateFunction(anyLast, Tuple(n Nullable(Tuple(x AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))))') SETTINGS enable_nullable_tuple_type = 1;
+-- appear on the path down to an explicitly version-0 leaf. The version walker descends through it, so the
+-- header renderer has to as well.
+CREATE TABLE sl_nullable_value (k UInt8, v SimpleAggregateFunction(anyLast, Tuple(n Nullable(Tuple(x AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2)))))))) ENGINE = StripeLog SETTINGS enable_nullable_tuple_type = 1;
+INSERT INTO sl_nullable_value SELECT 1, CAST(tuple(tuple(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]))), 'SimpleAggregateFunction(anyLast, Tuple(n Nullable(Tuple(x AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2)))))))') SETTINGS enable_nullable_tuple_type = 1;
 SELECT sumMapMerge(CAST(tupleElement(tupleElement(v, 'n'), 'x'), 'AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))')) FROM sl_nullable_value SETTINGS enable_nullable_tuple_type = 1;
 ([1,2],[10.5,20.25])
 -- A second versioned function, whose versions differ by a leading `init` byte rather than by a value
@@ -116,12 +115,14 @@ INSERT INTO sl_bitmap_value SELECT 1, CAST(s, 'SimpleAggregateFunction(anyLast, 
 -- fails to parse.
 SELECT arraySort(bitmapToArray(CAST(substring(CAST(v AS String), 2) AS AggregateFunction(groupBitmap, UInt64)))) FROM sl_bitmap_value;
 [42]
--- ... and the `SimpleAggregateFunction` itself may sit inside a container column type.
-CREATE TABLE sl_tuple_column (k UInt8, v Tuple(SimpleAggregateFunction(anyLast, AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))) ENGINE = StripeLog;
-INSERT INTO sl_tuple_column SELECT 1, tuple(CAST(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]), 'SimpleAggregateFunction(anyLast, AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2))))'));
+-- ... and the `SimpleAggregateFunction` itself may sit inside a container column type, which the renderer
+-- has to descend to reach it.
+CREATE TABLE sl_tuple_column (k UInt8, v Tuple(SimpleAggregateFunction(anyLast, AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2)))))) ENGINE = StripeLog;
+INSERT INTO sl_tuple_column SELECT 1, tuple(CAST(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]), 'SimpleAggregateFunction(anyLast, AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2))))'));
 SELECT sumMapMerge(CAST(v.1, 'AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))')) FROM sl_tuple_column;
 ([1,2],[10.5,20.25])
--- The other three engines that also persist `Native` at revision 0.
+-- The other three engines that also persist `Native` at revision 0; `Set` and `Join` hold an explicitly
+-- version-0 leaf, which a `Memory` backup cannot restore because its stored definition drops the `0`.
 -- `Memory` holds blocks in RAM, so only `BACKUP`/`RESTORE` runs them through the `Native` writer and reader.
 CREATE TABLE mem_saf (k UInt8, v SimpleAggregateFunction(anyLast, AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2))))) ENGINE = Memory;
 INSERT INTO mem_saf SELECT 1, CAST(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]), 'SimpleAggregateFunction(anyLast, AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2))))');
@@ -129,8 +130,8 @@ BACKUP TABLE mem_saf TO Memory('backup_04648') FORMAT Null;
 RESTORE TABLE mem_saf AS mem_saf_restored FROM Memory('backup_04648') FORMAT Null;
 SELECT sumMapMerge(CAST(v, 'AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))')) FROM mem_saf_restored;
 ([1,2],[10.5,20.25])
-CREATE TABLE set_saf (v SimpleAggregateFunction(anyLast, AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2))))) ENGINE = Set;
-INSERT INTO set_saf SELECT CAST(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]), 'SimpleAggregateFunction(anyLast, AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2))))');
+CREATE TABLE set_saf (v SimpleAggregateFunction(anyLast, AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2))))) ENGINE = Set;
+INSERT INTO set_saf SELECT CAST(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]), 'SimpleAggregateFunction(anyLast, AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2))))');
 -- `Set` and `Join` only read their persisted `Native` file back when the table is reloaded, so an in-process
 -- query alone would not exercise the writer's output at all.
 DETACH TABLE set_saf;
@@ -139,8 +140,8 @@ ATTACH TABLE set_saf;
 -- silently, so the reloaded cardinality is what proves the persisted state really came back.
 SELECT total_rows FROM system.tables WHERE database = currentDatabase() AND name = 'set_saf';
 1
-CREATE TABLE join_saf (k UInt8, v SimpleAggregateFunction(anyLast, AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2))))) ENGINE = Join(ANY, LEFT, k);
-INSERT INTO join_saf SELECT 1, CAST(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]), 'SimpleAggregateFunction(anyLast, AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2))))');
+CREATE TABLE join_saf (k UInt8, v SimpleAggregateFunction(anyLast, AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2))))) ENGINE = Join(ANY, LEFT, k);
+INSERT INTO join_saf SELECT 1, CAST(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]), 'SimpleAggregateFunction(anyLast, AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2))))');
 DETACH TABLE join_saf;
 ATTACH TABLE join_saf;
 SELECT sumMapMerge(CAST(join_saf.v, 'AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))')) FROM (SELECT 1::UInt8 AS k) AS l ANY LEFT JOIN join_saf USING (k);
@@ -184,26 +185,26 @@ SimpleAggregateFunction(groupArrayArray, Nested(a UInt64, b UInt64))
 SELECT toTypeName(v) FROM (SELECT CAST([(1::UInt64, sumMapState([1::UInt64], [1.5::Decimal32(2)]))], 'SimpleAggregateFunction(groupArrayArray, Nested(a UInt64, b AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))') AS v) ORDER BY 1;
 SimpleAggregateFunction(groupArrayArray, Nested(a UInt64, b AggregateFunction(1, sumMap, Array(UInt64), Array(Decimal(9, 2)))))
 -- ... and the `Nested` spelling must be rendered by the writer itself, not only printed by `getName()`: this
--- shape reaches the versioned leaf THROUGH the `Nested` customization, so it fails on master and it is the
--- only assertion here that a renderer ignoring `Nested` cannot satisfy.
+-- shape reaches an explicitly version-0 leaf THROUGH the `Nested` customization, so it fails on master and
+-- it is the only assertion here that a renderer ignoring `Nested` cannot satisfy.
 -- The first element's name needs backquoting, so the header also loses the name outright if the renderer
 -- emits it raw: an unquoted `a.x` does not parse back as one identifier.
 DROP TABLE IF EXISTS sl_nested_value;
-CREATE TABLE sl_nested_value (k UInt8, v SimpleAggregateFunction(groupArrayArray, Nested(`a.x` UInt64, b AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))) ENGINE = StripeLog;
-INSERT INTO sl_nested_value SELECT 1, CAST([(7::UInt64, sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]))], 'SimpleAggregateFunction(groupArrayArray, Nested(`a.x` UInt64, b AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))');
+CREATE TABLE sl_nested_value (k UInt8, v SimpleAggregateFunction(groupArrayArray, Nested(`a.x` UInt64, b AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2)))))) ENGINE = StripeLog;
+INSERT INTO sl_nested_value SELECT 1, CAST([(7::UInt64, sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]))], 'SimpleAggregateFunction(groupArrayArray, Nested(`a.x` UInt64, b AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2)))))');
 SELECT length(v) FROM sl_nested_value;
 1
 SELECT toTypeName(v) FROM sl_nested_value;
-SimpleAggregateFunction(groupArrayArray, Nested(`a.x` UInt64, b AggregateFunction(1, sumMap, Array(UInt64), Array(Decimal(9, 2)))))
+SimpleAggregateFunction(groupArrayArray, Nested(`a.x` UInt64, b AggregateFunction(sumMap, Array(UInt64), Array(Decimal(9, 2)))))
 SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'sl_nested_value' AND name = 'v';
-SimpleAggregateFunction(groupArrayArray, Nested(`a.x` UInt64, b AggregateFunction(1, sumMap, Array(UInt64), Array(Decimal(9, 2)))))
+SimpleAggregateFunction(groupArrayArray, Nested(`a.x` UInt64, b AggregateFunction(sumMap, Array(UInt64), Array(Decimal(9, 2)))))
 -- Both reads above report the stored declaration, not the wire header: `StripeLog` builds its output
 -- header from the table metadata and keeps only the column from the `Native` block. Reading a written
 -- `Native` file back is the only level at which the announced spelling is observable, so this is what
 -- catches a renderer that degrades `Nested` to `Array(Tuple(...))` or drops the backquotes.
 INSERT INTO FUNCTION file(concat(currentDatabase(), '_04648_nested.native'), Native) SELECT v FROM sl_nested_value SETTINGS engine_file_truncate_on_insert = 1;
 SELECT toTypeName(v) FROM file(concat(currentDatabase(), '_04648_nested.native'), Native);
-SimpleAggregateFunction(groupArrayArray, Nested(`a.x` UInt64, b AggregateFunction(1, sumMap, Array(UInt64), Array(Decimal(9, 2)))))
+SimpleAggregateFunction(groupArrayArray, Nested(`a.x` UInt64, b AggregateFunction(sumMap, Array(UInt64), Array(Decimal(9, 2)))))
 SELECT length(v) FROM file(concat(currentDatabase(), '_04648_nested.native'), Native);
 1
 DROP TABLE sl_nested_value;

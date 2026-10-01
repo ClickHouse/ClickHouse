@@ -41,11 +41,11 @@ namespace ErrorCodes
 namespace
 {
 
-/// Renders a type name taking syntax from `cached` and aggregate-function versions from `live`. Only
-/// `cached` remembers spellings such as `Nested(...)`; only `live` carries the negotiated versions.
-/// Returns nullopt when no version below `cached` needs correcting, leaving the caller on `getName()`.
-/// `inside_simple_aggregate_function`: a version-0 leaf must be printed explicitly there, since the alias
-/// rebuilds it by parsing the name back. `emit_version_token`: false for a peer with no version grammar.
+/// Renders a type name taking syntax from `cached` (only it remembers spellings such as `Nested(...)`)
+/// and aggregate-function versions from `live`. Returns nullopt when no version below `cached` needs
+/// correcting, leaving the caller on `getName()`. `inside_simple_aggregate_function`: the alias re-parses
+/// the name, so a version other than the function's default must be printed. `emit_version_token`:
+/// false for a peer with no version grammar.
 std::optional<String> renderTypeNameWithLiveVersions(
     const DataTypePtr & cached, const DataTypePtr & live, bool inside_simple_aggregate_function, bool emit_version_token);
 
@@ -187,9 +187,7 @@ std::optional<String> renderTypeNameWithLiveVersions(
         return stream.str();
     }
 
-    /// Descend the containers `setVersionToAggregateFunctions` itself descends, and only those.
-    /// `Variant` is deliberately excluded: its walker treats it as an opaque leaf, so a live leaf below a
-    /// `Variant` never receives a transport-assigned version and rendering it would invent a value.
+    /// Descend the containers the version walker descends, except `Variant`, which keeps its `getName()` spelling.
     if (const auto * cached_nullable = typeid_cast<const DataTypeNullable *>(cached.get()))
     {
         const auto * live_nullable = typeid_cast<const DataTypeNullable *>(live.get());

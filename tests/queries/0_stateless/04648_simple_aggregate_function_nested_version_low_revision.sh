@@ -17,12 +17,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DECL="SimpleAggregateFunction(anyLast, AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2))))"
 VALUE="sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)])"
 
-# The same leaf declared *versionless* and placed under a `Tuple`, which pins the composite case. Here the
-# token is announced at every revision, including the two below the threshold: a customized wrapper whose
-# custom name cannot be rebuilt is left unreplaced (`transformTypesRecursively.cpp`), so the leaf never
-# reaches the suppression above. That is the behaviour of the version walker rather than of this writer,
-# and it is recorded here to keep it visible: the direct arm above moves with the threshold, this one
-# does not, so a change to either walker or writer shows up as a diff in exactly one of them.
+# The same leaf declared *versionless* and placed under a `Tuple`, which pins the composite case. The
+# version walker rebuilds the alias's copy of a composite value type too, so this arm follows the threshold
+# exactly like the direct one: no token below it, and a version-0 payload there.
 TUPLE_DECL="SimpleAggregateFunction(anyLast, Tuple(AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))"
 TUPLE_VALUE="tuple(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]))"
 
@@ -58,14 +55,13 @@ for revision in 0 54450 54451 54452; do
         | LC_ALL=C grep -aoE "$TYPE_RUN" | head -1)"
 done
 
-# 25 again, measured rather than carried over: a one-element `Tuple` writes no framing of its own, so this
-# payload is exactly the direct arm's 25 bytes below the threshold.
-tuple_base=$(native_block 0 "$TUPLE_DECL" "$TUPLE_VALUE" | tail -c 25 | md5sum)
+# A one-element `Tuple` writes no framing of its own, so below the threshold this payload is exactly the
+# direct arm's version-0 payload, while at revision 0 the versionless declaration is written at version 1.
 for revision in 54450 54451; do
-    if [ "$(native_block "$revision" "$TUPLE_DECL" "$TUPLE_VALUE" | tail -c 25 | md5sum)" = "$tuple_base" ]; then
-        echo "tuple payload at $revision matches revision 0"
+    if [ "$(native_block "$revision" "$TUPLE_DECL" "$TUPLE_VALUE" | tail -c 25 | md5sum)" = "$base" ]; then
+        echo "tuple payload at $revision matches the direct version-0 payload"
     else
-        echo "tuple payload at $revision DIFFERS from revision 0"
+        echo "tuple payload at $revision DIFFERS from the direct version-0 payload"
     fi
 done
 
