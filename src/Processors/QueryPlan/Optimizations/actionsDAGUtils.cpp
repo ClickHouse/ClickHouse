@@ -261,16 +261,19 @@ MatchedTrees::Matches matchTrees(
                             monotonic_child = child;
                     }
 
-                    if (monotonic_child && num_const_args + 1 == frame.node->children.size())
+                    /// `toString(x, tz)` and the date functions keep or break the order of `x` in `tz`, not in the zone of its type,
+                    /// and the result is not ordered by `tz` at all.
+                    const auto * time_zone_arg = monotonic_child ? frame.node->children.back() : nullptr;
+                    const bool varies_in_time_zone = monotonic_child == time_zone_arg && frame.node->children.size() > 1
+                        && takesTimeZoneArgument(*frame.node->function_base);
+
+                    if (monotonic_child && !varies_in_time_zone && num_const_args + 1 == frame.node->children.size())
                     {
                         const auto & child_match = matches[monotonic_child];
                         if (child_match.node)
                         {
-                            /// `toString(x, tz)` and the date functions keep or break the order of `x` in `tz`, not in the zone of its type.
-                            const auto * time_zone_arg = frame.node->children.back();
-                            DataTypePtr type_in_time_zone = time_zone_arg == monotonic_child
-                                ? nullptr
-                                : getArgumentTypeWithTimeZone(*frame.node->function_base, *monotonic_child->result_type, time_zone_arg->column.get());
+                            DataTypePtr type_in_time_zone
+                                = getArgumentTypeWithTimeZone(*frame.node->function_base, *monotonic_child->result_type, time_zone_arg->column.get());
                             auto info = frame.node->function_base->getMonotonicityForRange(
                                 type_in_time_zone ? *type_in_time_zone : *monotonic_child->result_type, {}, {});
                             if (info.is_monotonic)
@@ -383,9 +386,10 @@ static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicCha
 
         const auto & type = node->children[pos]->result_type;
         const auto * time_zone_arg = node->children.back();
-        DataTypePtr type_in_time_zone = pos + 1 == node->children.size()
-            ? nullptr
-            : getArgumentTypeWithTimeZone(*node->function_base, *type, time_zone_arg->column.get());
+        if (pos + 1 == node->children.size() && node->children.size() > 1 && takesTimeZoneArgument(*node->function_base))
+            break;
+
+        DataTypePtr type_in_time_zone = getArgumentTypeWithTimeZone(*node->function_base, *type, time_zone_arg->column.get());
         const Field field{};
         auto monotonicity = node->function_base->getMonotonicityForRange(type_in_time_zone ? *type_in_time_zone : *type, field, field);
         if (!monotonicity.is_monotonic)

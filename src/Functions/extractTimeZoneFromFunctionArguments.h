@@ -31,6 +31,9 @@ std::string extractTimeZoneNameFromFunctionArguments(
 const DateLUTImpl & extractTimeZoneFromFunctionArguments(
     const ColumnsWithTypeAndName & arguments, size_t time_zone_arg_num, size_t datetime_arg_num);
 
+/// Whether `function` is a date function or `toString`, which take an optional trailing time zone argument.
+bool takesTimeZoneArgument(const IFunctionBase & function);
+
 /// For `f(x, tz)`, where `f` is a date function or `toString` and `tz` a constant time zone, the type of `x` as `f`
 /// sees it: with `tz` in place of its own. Whether `f` keeps the order of `x` depends on that zone. Null when `f`
 /// takes no time zone, `tz` is not a constant string or `x` is not a `DateTime` or `DateTime64`.

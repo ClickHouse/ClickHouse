@@ -85,12 +85,16 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAn
     return DateLUT::instance();
 }
 
-DataTypePtr getArgumentTypeWithTimeZone(const IFunctionBase & function, const IDataType & argument_type, const IColumn * time_zone_column)
+bool takesTimeZoneArgument(const IFunctionBase & function)
 {
     const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&function);
-    const bool takes_time_zone = (adaptor && dynamic_cast<const FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()))
+    return (adaptor && dynamic_cast<const FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()))
         || function.getName() == "toString";
-    if (!takes_time_zone || !time_zone_column)
+}
+
+DataTypePtr getArgumentTypeWithTimeZone(const IFunctionBase & function, const IDataType & argument_type, const IColumn * time_zone_column)
+{
+    if (!takesTimeZoneArgument(function) || !time_zone_column)
         return nullptr;
 
     const auto full_column = time_zone_column->convertToFullColumnIfLowCardinality();

@@ -15,5 +15,12 @@ SELECT toString(x, 'America/New_York') AS s, count() FROM tab GROUP BY s ORDER B
 
 -- A fixed offset keeps the order.
 SELECT trimLeft(explain) FROM (EXPLAIN PLAN actions = 1 SELECT toString(x, 'UTC') AS s FROM tab ORDER BY s) WHERE explain LIKE '%ReadType%';
+DROP TABLE tab;
 
+-- The result is not ordered by the time zone argument.
+CREATE TABLE tab (tz String) ENGINE = MergeTree ORDER BY tz;
+INSERT INTO tab VALUES ('Asia/Tokyo'), ('Europe/London'), ('Pacific/Honolulu');
+SELECT toString(toDateTime('2025-11-02 06:00:00', 'UTC'), tz) AS s FROM tab ORDER BY s;
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN actions = 1 SELECT toString(toDateTime('2025-11-02 06:00:00', 'UTC'), tz) AS s FROM tab ORDER BY s) WHERE explain LIKE '%ReadType%';
+SELECT toString(toDateTime('2025-11-02 06:00:00', 'UTC'), tz) AS s, count() FROM tab GROUP BY s ORDER BY s SETTINGS optimize_aggregation_in_order = 1;
 DROP TABLE tab;
