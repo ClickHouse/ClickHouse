@@ -3,6 +3,7 @@
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
 
+#include <Common/Stopwatch.h>
 
 namespace DB
 {
