@@ -86,8 +86,8 @@ public:
     FunctionIdentity() : FunctionIdentityBase("identity", true) {}
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIdentity>(); }
 
-    /// Only used as the internal impl of mapKeys/mapValues (FunctionMapToArrayAdapter), whose
-    /// array-subcolumn convention deliberately strips nested LowCardinality. Restore the default
+    /// Used as the internal impl of passthrough map functions (FunctionMapToArrayAdapter), whose
+    /// array-returning convention deliberately strips nested LowCardinality. Restore the default
     /// behavior so the base-class override applies only to user-facing identity()/__scalarSubqueryResult.
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
 };

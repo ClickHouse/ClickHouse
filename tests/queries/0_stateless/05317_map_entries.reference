@@ -1,0 +1,10 @@
+[('a',1),('b',2)]
+[('a',1),('a',2),('b',3)]
+[]
+Array(Tuple(keys String, values UInt64))
+0	[('a',0),('b',1)]
+1	[('a',1),('b',2)]
+[('a',NULL),('b',2)]
+[('a','x'),('b','y')]
+Array(Tuple(keys String, values String))
+[('a',[1,2]),('b',[3])]

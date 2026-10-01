@@ -625,6 +625,9 @@ using FunctionMapKeys = FunctionMapToArrayAdapter<FunctionIdentity, MapToSubcolu
 struct NameMapValues { static constexpr auto name = "mapValues"; };
 using FunctionMapValues = FunctionMapToArrayAdapter<FunctionIdentity, MapToSubcolumnAdapter<NameMapValues, 1>, NameMapValues>;
 
+struct NameMapEntries { static constexpr auto name = "mapEntries"; };
+using FunctionMapEntries = FunctionMapToArrayAdapter<FunctionIdentity, MapToNestedAdapter<NameMapEntries, false>, NameMapEntries>;
+
 struct NameMapContainsKey { static constexpr auto name = "mapContainsKey"; };
 using FunctionMapContainsKey = FunctionMapToArrayAdapter<FunctionArrayIndex<HasAction, NameMapContainsKey>, MapToSubcolumnAdapter<NameMapContainsKey, 0>, NameMapContainsKey>;
 
@@ -740,6 +743,28 @@ The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FR
     FunctionDocumentation::Category category_mapValues = FunctionDocumentation::Category::Map;
     FunctionDocumentation documentation_mapValues = {description_mapValues, syntax_mapValues, arguments_mapValues, {}, returned_value_mapValues, examples_mapValues, introduced_in_mapValues, category_mapValues};
     factory.registerFunction<FunctionMapValues>(documentation_mapValues);
+
+    /// mapEntries documentation
+    FunctionDocumentation::Description description_mapEntries = R"(
+Returns the key-value pairs of a map as an array of tuples.
+Duplicate keys are preserved.
+)";
+    FunctionDocumentation::Syntax syntax_mapEntries = "mapEntries(map)";
+    FunctionDocumentation::Arguments arguments_mapEntries = {
+        {"map", "Map to extract entries from.", {"Map(K, V)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapEntries = {"Returns an array containing the key-value pairs from the map.", {"Array(Tuple(K, V))"}};
+    FunctionDocumentation::Examples examples_mapEntries = {
+    {
+        "Usage example",
+        "SELECT mapEntries(map('k1', 'v1', 'k2', 'v2'))",
+        "[('k1','v1'),('k2','v2')]"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapEntries = {26, 10};
+    FunctionDocumentation::Category category_mapEntries = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapEntries = {description_mapEntries, syntax_mapEntries, arguments_mapEntries, {}, returned_value_mapEntries, examples_mapEntries, introduced_in_mapEntries, category_mapEntries};
+    factory.registerFunction<FunctionMapEntries>(documentation_mapEntries);
 
     /// mapContainsKey documentation
     FunctionDocumentation::Description description_mapContainsKey = R"(
