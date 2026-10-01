@@ -236,6 +236,13 @@ try
     /// (e.g. applying huge patch parts), to check that shutdown does not wait for it.
     fiu_do_on(FailPoints::merge_tree_sequential_source_sleep_before_read, { sleepForSeconds(10); });
 
+    /// past a gap between ranges the reader resumes at the next range, not at the next mark
+    if (readers_chain.isCurrentRangeFinished() && !mark_ranges.empty() && current_mark < mark_ranges.front().begin)
+    {
+        current_mark = mark_ranges.front().begin;
+        updateRowsToRead(current_mark);
+    }
+
     auto read_result = readers_chain.read(current_rows_to_read, mark_ranges, patch_ranges);
     if (!read_result.num_rows)
         return {};
@@ -464,6 +471,7 @@ public:
             const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
             ActionsDAGWithInversionPushDown filter_dag(filter->getOutputs().front(), context, /* boolean_context */ true);
             KeyCondition key_condition(filter_dag, context, primary_key);
+            key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(primary_key.data_types);
             LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
             if (!key_condition.alwaysFalse())

@@ -98,7 +98,7 @@ public:
 
     const SerializationInfoByName & getSerializationInfos() const override { return data_part->getSerializationInfos(); }
 
-    SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
+    SerializationPtr getSerialization(const NameAndTypePair & column) const override;
 
     SerializationPtr tryGetSerialization(const NameAndTypePair & column) const override { return data_part->tryGetSerialization(column.name); }
 

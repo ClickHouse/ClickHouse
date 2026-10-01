@@ -8,6 +8,24 @@ set -x -e
 DEST_SERVER_PATH="${1:-/etc/clickhouse-server}"
 DEST_CLIENT_PATH="${2:-/etc/clickhouse-client}"
 SRC_PATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+
+# Below we rm -rf config.d and write into config.d, users.d and the client config directory; refuse if any of them
+# is the same directory as the source tree or one of its subdirectories, since that would destroy or pollute the tracked test configs.
+# Compare directory identity (device + inode) with -ef, so that bind mounts are detected as well as symlinks.
+function refuse_if_dest_aliases_source()
+{
+    for dest_dir in "$@"; do
+        for src_dir in "$SRC_PATH" "$SRC_PATH/config.d" "$SRC_PATH/users.d" "$SRC_PATH/top_level_domains"; do
+            if [ "$dest_dir" -ef "$src_dir" ]; then
+                echo "Refusing to install: destination directory $dest_dir is the same directory as source directory $src_dir. This script deletes and repopulates the destination configs, which would destroy or pollute the tracked test configs." >&2
+                exit 1
+            fi
+        done
+    done
+}
+
+refuse_if_dest_aliases_source "$DEST_SERVER_PATH" "$DEST_SERVER_PATH/config.d" "$DEST_SERVER_PATH/users.d" "$DEST_CLIENT_PATH"
+
 if [ $# -ge 2 ]; then
     shift 2
 fi
@@ -23,11 +41,11 @@ KEEPER_INJECT_AUTH=1
 REMOTE_DATABASE_DISK=0
 LLVM_COVERAGE=0
 BUILD_TYPE_CONFIGS_ONLY=0
+DEFAULT_COMPRESSION_CODEC=""
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --fast-test) FAST_TEST=1 && EXPORT_S3_STORAGE_POLICIES=0 ;;
-        --analyzer) USE_OLD_ANALYZER=1 ;;
         --s3-storage) EXPORT_S3_STORAGE_POLICIES=1 && USE_S3_STORAGE_FOR_MERGE_TREE=1 && RANDOMIZE_OBJECT_KEY_TYPE=1 ;;
         --parallel-rep) USE_PARALLEL_REPLICAS=1 ;;
         --db-replicated) USE_DATABASE_REPLICATED=1 ;;
@@ -51,6 +69,9 @@ while [[ "$#" -gt 0 ]]; do
         --encrypted-storage) USE_ENCRYPTED_STORAGE=1 ;;
         --llvm-coverage) LLVM_COVERAGE=1 ;;
         --build-type-configs-only) BUILD_TYPE_CONFIGS_ONLY=1 ;;
+        --default-compression-codec)
+            [ -n "${2:-}" ] || { echo "Option $1 requires a value" ; exit 1 ; }
+            DEFAULT_COMPRESSION_CODEC="$2" && shift ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
@@ -261,7 +282,16 @@ sed "s|<async>[01]</async>|<async>$value</async>|" $SRC_PATH/config.d/logger_tra
 # .sql and .sh tests alike; a test that needs a specific codec pins it with
 # `SETTINGS default_compression_codec = '...'`, which overrides this server default.
 default_compression_codec_options=("LZ4" "ZSTD(1)" "ZSTD(3)")
-default_compression_codec="${default_compression_codec_options[$((RANDOM % ${#default_compression_codec_options[@]}))]}"
+# The codec is baked into a part's mark offsets and statistics.packed bytes, so two servers
+# writing into one data directory must be given the same one via --default-compression-codec.
+if [ -n "$DEFAULT_COMPRESSION_CODEC" ]; then
+    case " ${default_compression_codec_options[*]} " in
+        *" $DEFAULT_COMPRESSION_CODEC "*) default_compression_codec="$DEFAULT_COMPRESSION_CODEC" ;;
+        *) echo "Unknown default compression codec: $DEFAULT_COMPRESSION_CODEC" ; exit 1 ;;
+    esac
+else
+    default_compression_codec="${default_compression_codec_options[$((RANDOM % ${#default_compression_codec_options[@]}))]}"
+fi
 echo "Default compression codec: $default_compression_codec"
 {
     echo "<clickhouse>"
@@ -319,6 +349,7 @@ ln -sf $SRC_PATH/config.d/memory_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/storage_conf_03008.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/storage_conf_05212.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/memory_access.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/jemalloc_enable_global_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/jemalloc_flush_profile.yaml $DEST_SERVER_PATH/config.d/
@@ -369,12 +400,19 @@ ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
-# The http_allow_* settings are introduced by this feature and are not present in any
-# released version yet: 26.7 was released without them, so gate on 26.8 (the first version
-# that can contain them) to keep the previous-release server of the upgrade check bootable.
+# The `url_prefix` handler option is introduced by this feature and is not present in any
+# released version before 26.8, so gate on 26.8 (the first version that can contain it) to
+# keep the previous-release server of the upgrade check bootable.
 if check_clickhouse_version 26.8; then
-    ln -sf $SRC_PATH/users.d/http_paths.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/http_url_prefix.xml $DEST_SERVER_PATH/config.d/
+    # The path-as-URL features are enabled by default since 26.10. An older server - the
+    # previous-release one of the upgrade check - still needs them turned on explicitly,
+    # because that release's tests expect the feature to work. On 26.10 and newer the tests
+    # must exercise the defaults, so these files are deliberately not installed there.
+    if ! check_clickhouse_version 26.10; then
+        ln -sf $SRC_PATH/config.d/http_allow_path_requests.xml $DEST_SERVER_PATH/config.d/
+        ln -sf $SRC_PATH/users.d/http_paths.xml $DEST_SERVER_PATH/users.d/
+    fi
 fi
 if check_clickhouse_version 26.1; then
     ln -sf $SRC_PATH/users.d/distributed_index_analysis.yaml $DEST_SERVER_PATH/users.d/
@@ -384,10 +422,6 @@ fi
 # test there. Other jobs that satisfy is_fast_build run the long tests that Fast test skips.
 if [ "$FAST_TEST" == "1" ] && is_fast_build; then
     ln -sf $SRC_PATH/users.d/limits_fast.yaml $DEST_SERVER_PATH/users.d/
-fi
-
-if [[ -n "$USE_OLD_ANALYZER" ]] && [[ "$USE_OLD_ANALYZER" -eq 1 ]]; then
-    ln -sf $SRC_PATH/users.d/analyzer.xml $DEST_SERVER_PATH/users.d/
 fi
 
 if [[ -n "$USE_DISTRIBUTED_PLAN" ]] && [[ "$USE_DISTRIBUTED_PLAN" -eq 1 ]]; then
@@ -616,6 +650,10 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ch_server_2_path=$DEST_SERVER_PATH/../clickhouse-server2
     mkdir -p $ch_server_1_path
     mkdir -p $ch_server_2_path
+    # The configs are copied into and edited in these sibling directories; check them only now, when they exist,
+    # so that `..` is resolved the same way as by the commands below.
+    refuse_if_dest_aliases_source "$ch_server_1_path" "$ch_server_1_path/config.d" "$ch_server_1_path/users.d" \
+        "$ch_server_2_path" "$ch_server_2_path/config.d" "$ch_server_2_path/users.d"
 #    chown clickhouse $ch_server_1_path
 #    chown clickhouse $ch_server_2_path
 #    chgrp clickhouse $ch_server_1_path

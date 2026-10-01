@@ -1,6 +1,5 @@
--- Tags: no-fasttest, no-old-analyzer, no-parallel
+-- Tags: no-fasttest, no-parallel
 -- no-fasttest: a remote distributed plan needs the stateless worker configuration.
--- no-old-analyzer: make_distributed_plan requires the analyzer.
 -- no-parallel: enables a global failpoint that would delay other distributed-plan queries.
 
 -- A failing task makes every task connected to it fail too (their exchange sockets close), and the
@@ -14,7 +13,8 @@ INSERT INTO t_root_cause SELECT number FROM numbers(100000);
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 0,
     distributed_plan_force_exchange_kind = 'Streaming',
     distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3,
-    distributed_plan_max_rows_to_broadcast = 0, max_rows_to_group_by = 0;
+    distributed_plan_max_rows_to_broadcast = 0, max_rows_to_group_by = 0,
+    distributed_plan_fallback_to_local_execution = 0;
 
 -- The main task fails: rowNumberInAllBlocks() keeps the expression above the gather. The initiator's
 -- result reader sees the closed socket before any task status arrives.

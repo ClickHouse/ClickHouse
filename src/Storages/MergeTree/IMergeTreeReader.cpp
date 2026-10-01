@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
@@ -79,15 +80,20 @@ IMergeTreeReader::IMergeTreeReader(
     for (const auto & column : getColumns())
     {
         const auto & column_to_read = columns_to_read.emplace_back(getColumnInPart(column));
-        serializations.emplace_back(getSerializationInPart(column));
-
-        if (column.isSubcolumn()
-            && data_part_info_for_read->isCompactPart()
+        if (data_part_info_for_read->isCompactPart()
             && !data_part_info_for_read->getIndexGranularityInfo().mark_type.with_substreams)
         {
-            NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
-            serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage));
+            auto it = serializations_of_full_columns.find(column_to_read.getNameInStorage());
+            if (it == serializations_of_full_columns.end())
+            {
+                NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
+                it = serializations_of_full_columns.emplace(
+                    column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage)).first;
+            }
+            serializations.emplace_back(column.isSubcolumn() ? getSerializationInPart(column) : it->second);
         }
+        else
+            serializations.emplace_back(getSerializationInPart(column));
     }
 }
 
@@ -150,6 +156,9 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
 
         /// Virtual columns for text index are filled in another place.
         if (isTextIndexVirtualColumn(it->name))
+            continue;
+
+        if (virtual_columns.getDefault(it->name))
             continue;
 
         Field field;
@@ -262,7 +271,6 @@ ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
     /// Default/materialized expressions may contain experimental or suspicious types that can be
     /// disabled in the current context. We must not perform any checks during reads from existing tables.
     enableAllExperimentalSettings(context_copy);
-    context_copy->setSetting("enable_analyzer", settings.enable_analyzer);
     return context_copy;
 }
 
@@ -476,12 +484,20 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
         return serialization;
     }
 
-    /// `part_columns` may be the collected-Nested description (wide parts): a Nested member `{n, a}` has the full
-    /// name `n.a`, which the part cache resolves to the plain `n.a` column with a different offsets stream
-    /// (`n.a.size0` instead of the shared `n.size0`). Only trust the cache for columns physically in the part.
+    /// The part's cached serializations are keyed by the names of its physical columns. `part_columns` may be the
+    /// collected-Nested description (Wide parts): a flattened `Nested` member `n.a` becomes subcolumn `a` of `n`, which
+    /// the part cache would resolve to the plain `n.a` column with a different offsets stream (`n.a.size0` instead of
+    /// the shared `n.size0`). Only trust the cache when the storage column exists in the part as is.
     if (data_part_info_for_read->getColumnPosition(column_in_part->getNameInStorage()))
-        if (auto serialization = data_part_info_for_read->tryGetSerialization(*column_in_part))
+    {
+        /// `getSerialization` also derives the serializations of `JSON` subcolumns that are not enumerable.
+        auto serialization = containsObjectType(*column_in_part->getTypeInStorage())
+            ? data_part_info_for_read->getSerialization(*column_in_part)
+            : data_part_info_for_read->tryGetSerialization(*column_in_part);
+        /// Non-poolable serializations (e.g. `JSON`) carry mutable state, so they must stay reader-local.
+        if (serialization && serialization->supportsPooling())
             return serialization;
+    }
 
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
         return IDataType::getSerialization(*column_in_part, *it->second);
