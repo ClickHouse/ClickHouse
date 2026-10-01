@@ -1,4 +1,5 @@
 #include <Storages/StorageFactory.h>
+#include <Storages/KeyDescription.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Parsers/ASTFunction.h>
@@ -59,19 +60,6 @@ static bool isReplayedTableDefinition(
 #endif
     return !isFreshTableDefinition(mode, query.attach_short_syntax) || is_ddl_replay
         || local_context->isRecoveryFromStoredMetadata() || is_shared_catalog_replay;
-}
-
-
-static void checkNoAliasInKeyExpression(const IAST * ast, std::string_view clause)
-{
-    if (!ast)
-        return;
-
-    if (const String alias = ast->tryGetAlias(); !alias.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias '{}' is not allowed in {}", alias, clause);
-
-    for (const auto & child : ast->children)
-        checkNoAliasInKeyExpression(child.get(), clause);
 }
 
 
@@ -254,10 +242,10 @@ StoragePtr StorageFactory::get(
 
             if (!isReplayedTableDefinition(mode, query, local_context))
             {
-                checkNoAliasInKeyExpression(storage_def->partition_by, "PARTITION BY");
-                checkNoAliasInKeyExpression(storage_def->primary_key, "PRIMARY KEY");
-                checkNoAliasInKeyExpression(storage_def->order_by, "ORDER BY");
-                checkNoAliasInKeyExpression(storage_def->unique_key, "UNIQUE KEY");
+                KeyDescription::checkNoAlias(storage_def->partition_by, "PARTITION BY");
+                KeyDescription::checkNoAlias(storage_def->primary_key, "PRIMARY KEY");
+                KeyDescription::checkNoAlias(storage_def->order_by, "ORDER BY");
+                KeyDescription::checkNoAlias(storage_def->unique_key, "UNIQUE KEY");
             }
 
             if (storage_def->ttl_table)

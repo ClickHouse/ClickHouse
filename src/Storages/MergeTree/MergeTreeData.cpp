@@ -5768,14 +5768,19 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         bool is_initial_alter = true;
         if (auto txn = local_context->getZooKeeperMetadataTransaction())
             is_initial_alter = txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+        if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
+            is_initial_alter = false;
+#endif
 
         bool changes_order_by = false;
         for (const auto & command : commands)
         {
             if (command.type == AlterCommand::MODIFY_ORDER_BY)
             {
+                if (is_initial_alter)
+                    KeyDescription::checkNoAlias(command.order_by.get(), "ORDER BY");
                 changes_order_by = true;
-                break;
             }
         }
 

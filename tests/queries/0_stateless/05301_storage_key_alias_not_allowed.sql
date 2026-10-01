@@ -1,7 +1,7 @@
--- An alias is not allowed in PARTITION BY, PRIMARY KEY, ORDER BY or UNIQUE KEY of a new table.
+-- An alias is not allowed in PARTITION BY, PRIMARY KEY, ORDER BY or UNIQUE KEY of a new table,
+-- or in ALTER TABLE ... MODIFY ORDER BY.
 
 DROP TABLE IF EXISTS t_key_alias;
-DROP TABLE IF EXISTS t_key_alias_stored;
 DROP TABLE IF EXISTS t_sample_alias;
 DROP TABLE IF EXISTS mv_key_alias;
 DROP TABLE IF EXISTS t_src;
@@ -23,20 +23,18 @@ CREATE TABLE t_key_alias (c0 Int64, c1 Int64) ENGINE = MergeTree PARTITION BY c1
 INSERT INTO t_key_alias VALUES (1, 1), (2, 2);
 SELECT count() FROM t_key_alias;
 
--- A stored definition is not checked when it is loaded again. ALTER ... MODIFY ORDER BY
--- accepts an alias on a tuple element, which gives a stored definition with an alias.
-CREATE TABLE t_key_alias_stored (c0 Int64) ENGINE = MergeTree ORDER BY c0;
-ALTER TABLE t_key_alias_stored ADD COLUMN c1 Int64, MODIFY ORDER BY (c0, c1 AS x);
-INSERT INTO t_key_alias_stored VALUES (1, 1);
-DETACH TABLE t_key_alias_stored SYNC;
-ATTACH TABLE t_key_alias_stored;
-SELECT count() FROM t_key_alias_stored;
+ALTER TABLE t_key_alias MODIFY ORDER BY ((c0, c1) AS x); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_key_alias MODIFY ORDER BY (c0 AS x, c1); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_key_alias ADD COLUMN c2 Int64, MODIFY ORDER BY (c0, c1, c2 AS x); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_key_alias ADD COLUMN c2 Int64, MODIFY ORDER BY (c0, c1, (c2 AS x) + 1); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_key_alias ADD COLUMN c2 Int64, MODIFY ORDER BY (c0, c1, c2), MODIFY ORDER BY (c0, c1, c2 AS x); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_key_alias ADD COLUMN c2 Int64, MODIFY ORDER BY (c0, c1, c2);
+SELECT sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_key_alias';
 
 -- SAMPLE BY is not checked.
 CREATE TABLE t_sample_alias (c0 UInt64) ENGINE = MergeTree ORDER BY c0 SAMPLE BY (c0 AS s);
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't_sample_alias';
 
 DROP TABLE t_sample_alias;
-DROP TABLE t_key_alias_stored;
 DROP TABLE t_key_alias;
 DROP TABLE t_src;

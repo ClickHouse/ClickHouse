@@ -23,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
+    extern const int BAD_ARGUMENTS;
 }
 
 KeyDescription::KeyDescription(const KeyDescription & other)
@@ -257,6 +258,18 @@ KeyDescription KeyDescription::buildEmptyKey()
     result.expression_list_ast = make_intrusive<ASTExpressionList>();
     result.expression = std::make_shared<ExpressionActions>(ActionsDAG(), ExpressionActionsSettings{});
     return result;
+}
+
+void KeyDescription::checkNoAlias(const IAST * definition_ast, std::string_view clause)
+{
+    if (!definition_ast)
+        return;
+
+    if (const String alias = definition_ast->tryGetAlias(); !alias.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias '{}' is not allowed in {}", alias, clause);
+
+    for (const auto & child : definition_ast->children)
+        checkNoAlias(child.get(), clause);
 }
 
 KeyDescription KeyDescription::parse(
