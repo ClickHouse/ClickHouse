@@ -23,4 +23,9 @@ echo "-- A bare '#' at EOF is an error in both PromQL entry points"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 --query "up #" 2>&1 | grep -o -E "SYNTAX_ERROR|CANNOT_PARSE_PROMQL_QUERY" | head -n 1
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --query "SELECT * FROM prometheusQuery(ts, 'up #', 1700000000)" 2>&1 | grep -o -E "SYNTAX_ERROR|CANNOT_PARSE_PROMQL_QUERY" | head -n 1
 
+echo "-- A bare CR ends a PromQL comment, so the next statement is not swallowed"
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 -m --query $'up #comment\r; SET dialect = \'clickhouse\'; SELECT \'next statement\''
+# The SQL lexer reads `# comment\r; ...` as one comment up to the newline, so the end is ambiguous: an error, not a wrong split.
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 -m --query $'up # comment\r; SET dialect = \'clickhouse\'; SELECT \'next statement\'' 2>&1 | grep -o -m1 'Cannot find the end of the PromQL statement'
+
 $CLICKHOUSE_CLIENT --query "DROP TABLE ts"
