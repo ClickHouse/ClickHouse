@@ -1,8 +1,8 @@
 #include <Storages/MergeTree/TextIndexPostingsRankCursor.h>
 
-#include <Storages/MergeTree/IPostingListCodec.h>
-#include <Storages/MergeTree/MergeTreeReaderStream.h>
-#include <IO/ReadHelpers.h>
+#include <Storages/MergeTree/PostingListBlockCodec.h>
+
+#include <limits>
 
 namespace DB
 {
@@ -14,9 +14,7 @@ namespace ErrorCodes
 
 TextIndexPostingsRankCursor::TextIndexPostingsRankCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_)
     : cursor(std::make_shared<PostingListCursor>(stream_, info_))
-    , stream(&stream_)
     , info(&info_)
-    , segment_ranks(info_.offsets.size() + 1, 0)
 {
     if (!(info->header & PostingsSerialization::Flags::HasBlockIndex))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
@@ -24,6 +22,26 @@ TextIndexPostingsRankCursor::TextIndexPostingsRankCursor(MergeTreeReaderStream &
 
     /// A compressed cursor prepares no segment until it is first positioned.
     cursor->advance(0);
+
+    /// Writers seal segments at a fixed size, so a segment's first rank follows from its index.
+    const UInt64 num_segments = info->offsets.size();
+    const UInt64 cardinality = info->cardinality;
+    segment_size = cursor->position().segment_doc_count;
+
+    bool fits = segment_size == cardinality;
+    if (num_segments > 1)
+    {
+        /// Full segments are whole blocks; the last one holds the remaining 1..segment_size documents.
+        const UInt64 docs_in_full_segments = (num_segments - 1) * segment_size;
+        fits = segment_size % IPostingListBlockCodec::BLOCK_SIZE == 0
+            && docs_in_full_segments < cardinality
+            && cardinality - docs_in_full_segments <= segment_size;
+    }
+
+    if (!fits)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index: {} posting segments of {} documents cannot hold the token's {} documents",
+            num_segments, segment_size, cardinality);
 }
 
 TextIndexPostingsRankCursor::TextIndexPostingsRankCursor(FlatPostingsPtr docs)
@@ -37,48 +55,18 @@ UInt64 TextIndexPostingsRankCursor::rank()
     if (!info)
         return position.index_in_segment;
 
-    while (ranks_known <= position.segment)
-        setSegmentRank(ranks_known - 1, readSegmentDocCount(ranks_known - 1));
+    if (position.segment != checked_segment)
+    {
+        const bool is_last = position.segment + 1 == info->offsets.size();
+        const UInt64 expected = is_last ? info->cardinality - position.segment * segment_size : segment_size;
+        if (position.segment_doc_count != expected)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupt text index: posting segment {} holds {} documents instead of {}",
+                position.segment, position.segment_doc_count, expected);
+        checked_segment = position.segment;
+    }
 
-    /// The loaded segment's count is the next segment's rank, so a sequential walk reads no header.
-    if (ranks_known == position.segment + 1)
-        setSegmentRank(position.segment, position.segment_doc_count);
-
-    return segment_ranks[position.segment] + position.index_in_segment;
-}
-
-UInt64 TextIndexPostingsRankCursor::readSegmentDocCount(size_t segment_idx)
-{
-    stream->seekToMark({info->offsets[segment_idx], 0});
-    auto * data_buffer = stream->getDataBuffer();
-
-    UInt64 codec_type = 0;
-    UInt64 payload_bytes = 0;
-    UInt64 doc_count = 0;
-    readVarUInt(codec_type, *data_buffer);
-    readVarUInt(payload_bytes, *data_buffer);
-    readVarUInt(doc_count, *data_buffer);
-
-    const auto & range = info->ranges[segment_idx];
-    const UInt64 range_span = range.begin <= range.end ? static_cast<UInt64>(range.end) - range.begin + 1 : 0;
-    if (doc_count == 0 || doc_count > range_span)
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index: posting segment {} holds {} documents in a row range of {}", segment_idx, doc_count, range_span);
-
-    return doc_count;
-}
-
-void TextIndexPostingsRankCursor::setSegmentRank(size_t segment_idx, UInt64 doc_count)
-{
-    /// The segments partition the token's documents, so the ranks never pass the cardinality and the last segment ends on it.
-    const UInt64 rank_end = segment_ranks[segment_idx] + doc_count;
-    const bool is_last = segment_idx + 1 == info->offsets.size();
-    if (rank_end > info->cardinality || (is_last && rank_end != info->cardinality))
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index: posting segment {} ends at rank {} of the token's {} documents", segment_idx, rank_end, info->cardinality);
-
-    segment_ranks[segment_idx + 1] = rank_end;
-    ranks_known = segment_idx + 2;
+    return position.segment * segment_size + position.index_in_segment;
 }
 
 }

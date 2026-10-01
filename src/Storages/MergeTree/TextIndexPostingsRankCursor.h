@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 
-#include <vector>
+#include <limits>
 
 namespace DB
 {
@@ -27,17 +27,11 @@ public:
     void advance(UInt32 target) { cursor->advance(target); }
 
 private:
-    /// Reads the header of a segment `advance` skipped, to learn its document count.
-    UInt64 readSegmentDocCount(size_t segment_idx);
-    void setSegmentRank(size_t segment_idx, UInt64 doc_count);
-
     PostingListCursorPtr cursor;
-    MergeTreeReaderStream * stream = nullptr;
     const TokenPostingsInfo * info = nullptr;
-
-    /// segment_ranks[i] is the rank of segment i's first document; entries below `ranks_known` are filled.
-    std::vector<UInt64> segment_ranks;
-    size_t ranks_known = 1;
+    /// Documents in every segment but the last.
+    UInt64 segment_size = 0;
+    size_t checked_segment = std::numeric_limits<size_t>::max();
 };
 
 }

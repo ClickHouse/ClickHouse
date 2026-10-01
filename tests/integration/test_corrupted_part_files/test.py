@@ -493,9 +493,12 @@ def test_text_index_corrupted_postings_rank_cursor(started_cluster):
             pos = varint(pos)[1]
         return pos
 
+    segments = [0]
+    for _ in range(4):
+        segments.append(segment_end(segments[-1]))
     assert data[:5] == [1, 34, 128, 2, 0]
-    segment_1 = segment_end(0)
-    assert data[segment_1 : segment_1 + 5] == [1, 34, 128, 2, 128]
+    assert data[segments[1] : segments[1] + 4] == [1, 34, 128, 2]
+    assert data[segments[4] : segments[4] + 4] == [1, 34, 128, 2]
 
     backup = "/tmp/t_pst_postings.orig"
     bash(node1, f"cp {pst} {backup}")
@@ -539,9 +542,13 @@ def test_text_index_corrupted_postings_rank_cursor(started_cluster):
     corrupt(4, "\\x01")
     assert "segment 0 starts at row id 1 while its row range is [0, 255]" in phrase_error()
 
-    # Segment 1 is jumped over, so only its header is read, to count the ranks before the loaded segment.
-    corrupt(segment_1 + 2, "\\xff\\x02")
-    assert "posting segment 1 holds 383 documents in a row range of 256" in phrase_error()
+    # Segment 1 is skipped, so its header is never read.
+    corrupt(segments[1] + 2, "\\xff\\x02")
+    assert phrase_count() == expected
+
+    # Segment 4 is loaded, so a count off the segment size is rejected.
+    corrupt(segments[4] + 2, "\\xff\\x01")
+    assert "posting segment 4 holds 255 documents instead of 256" in phrase_error()
 
     bash(node1, f"cp {backup} {pst}")
     assert phrase_count() == expected
