@@ -350,8 +350,7 @@ ORDER BY id;
 INSERT INTO tab SELECT number, multiIf(number % 100 = 7, 'b a\xFF', number % 3 = 0, concat('b a', char(113 + number % 5)), 'b') FROM numbers(1000);
 
 SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^a[^b]+$');
-SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^a[^b]+$') SETTINGS text_index_like_max_matched_tokens = 2, min_count_to_compile_regular_expression = 0;
-SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^a[^b]+$') SETTINGS use_skip_indexes = 0, min_count_to_compile_regular_expression = 0;
-SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^a[^b]+$') SETTINGS use_skip_indexes = 0, compile_regular_expressions = 0;
+SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^a[^b]+$') SETTINGS text_index_like_max_matched_tokens = 2;
+SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^a[^b]+$') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;

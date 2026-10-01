@@ -5,9 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/FunctionDocumentation.h>
 #include <Common/StringSearcher.h>
-#include <Common/StringUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -15,9 +13,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
-#include <Interpreters/JIT/CompileRegexp.h>
 #include <Interpreters/TokenizerFactory.h>
 
 #include <mutex>
@@ -28,12 +24,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-}
-
-namespace Setting
-{
-    extern const SettingsBool compile_regular_expressions;
-    extern const SettingsUInt64 min_count_to_compile_regular_expression;
 }
 
 namespace
@@ -52,7 +42,7 @@ bool containsLiteral(std::string_view haystack, std::string_view literal)
 /// The patterns `abc`, `abc%`, `%abc` and `%abc%` are compared as bytes, the others use re2.
 struct TokenLikeMatcher
 {
-    TokenLikeMatcher(const String & pattern, size_t /*regexp_jit_min_count*/)
+    explicit TokenLikeMatcher(const String & pattern)
     {
         std::string_view rest = pattern;
         while (rest.starts_with('%'))
@@ -99,43 +89,22 @@ struct TokenLikeMatcher
     std::optional<OptimizedRegularExpression> regexp;
 };
 
-/// Uses the JIT-compiled matcher of `match` if the pattern supports it, and re2 otherwise.
+/// Matches with re2, as function `match` does.
 struct TokenRegexpMatcher
 {
-    TokenRegexpMatcher(const String & pattern, size_t regexp_jit_min_count)
+    explicit TokenRegexpMatcher(const String & pattern)
         : regexp(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(pattern))
-        , jit(getRegexpJITMatcher(pattern, /*case_insensitive*/ false, /*dot_all*/ true, regexp_jit_min_count))
-        , capture_starts(jit.num_captures)
-        , capture_ends(jit.num_captures)
     {
     }
 
     bool startValue(std::string_view value, bool check_literal) const
     {
-        if (check_literal && !containsLiteral(value, regexp.getRequiredSubstring()))
-            return false;
-
-        /// The JIT agrees with re2 only on valid UTF-8, and the text index uses re2, so other values use re2 too.
-        use_jit = jit && isAllASCII(reinterpret_cast<const UInt8 *>(value.data()), value.size());
-        return true;
+        return !check_literal || containsLiteral(value, regexp.getRequiredSubstring());
     }
 
-    bool operator()(std::string_view token) const
-    {
-        if (!use_jit)
-            return regexp.match(token.data(), token.size());
-
-        const auto * begin = reinterpret_cast<const uint8_t *>(token.data());
-        const bool matched = jit.func(begin, begin + token.size(), begin, capture_starts.data(), capture_ends.data()) == 1;
-        chassert(matched == regexp.match(token.data(), token.size()));
-        return matched;
-    }
+    bool operator()(std::string_view token) const { return regexp.match(token.data(), token.size()); }
 
     OptimizedRegularExpression regexp;
-    RegexpJITMatcher jit;
-    mutable bool use_jit = false;
-    mutable VectorWithMemoryTracking<const uint8_t *> capture_starts;
-    mutable VectorWithMemoryTracking<const uint8_t *> capture_ends;
 };
 
 struct HasAnyTokenLikeTraits
@@ -187,13 +156,7 @@ class FunctionHasAnyAllTokenPatterns : public IFunction
 public:
     static constexpr auto name = Traits::name;
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionHasAnyAllTokenPatterns>(context); }
-
-    explicit FunctionHasAnyAllTokenPatterns(ContextPtr context)
-    {
-        if (context && context->getSettingsRef()[Setting::compile_regular_expressions])
-            regexp_jit_min_count = context->getSettingsRef()[Setting::min_count_to_compile_regular_expression];
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionHasAnyAllTokenPatterns>(); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -250,7 +213,7 @@ public:
         VectorWithMemoryTracking<typename Traits::Matcher> matchers;
         matchers.reserve(patterns.size());
         for (const auto & pattern : patterns)
-            matchers.emplace_back(pattern, regexp_jit_min_count);
+            matchers.emplace_back(pattern);
 
         /// A stateful tokenizer is not thread-safe, so each call gets its own copy.
         const auto cloned_tokenizer = shared_tokenizer->isStateful() ? shared_tokenizer->clone() : nullptr;
@@ -360,9 +323,6 @@ private:
     {
         return checkAndGetColumn<ColumnString>(&column) || checkAndGetColumn<ColumnFixedString>(&column);
     }
-
-    /// As for `match`, the threshold to JIT-compile a regular expression, or the maximum to disable it.
-    size_t regexp_jit_min_count = std::numeric_limits<size_t>::max();
 
     mutable std::once_flag init_flag;
     mutable std::unique_ptr<ITokenizer> shared_tokenizer;

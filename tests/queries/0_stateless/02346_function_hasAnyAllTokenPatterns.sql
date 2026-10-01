@@ -120,18 +120,6 @@ SELECT
     countIf(hasAnyTokenLike(s, '%needle%', 'array'))
 FROM (SELECT concat(repeat('x', number % 97), if(number % 3 = 0, 'needle', 'needl'), repeat(' x', number % 13)) AS s FROM numbers(1000));
 
-SELECT '-- the JIT and re2 give the same result, also on invalid UTF-8';
-SELECT
-    countIf(hasAnyTokenRegexp(s, '^a[^b]+$')), countIf(hasAnyTokenRegexp(s, '^.+$')), countIf(hasAnyTokenRegexp(s, '^[^b]*b$')),
-    countIf(hasAnyTokenRegexp(s, '^a.*$')), countIf(hasAnyTokenRegexp(s, '^0x[0-9a-f]{2}$'))
-FROM (SELECT multiIf(number % 7 = 0, 'b a\xFF', number % 7 = 1, 'x\xFFb c', number % 3 = 0, concat('b a', char(113 + number % 5), ' 0x1f'), 'b') AS s FROM numbers(1000))
-SETTINGS compile_regular_expressions = 1, min_count_to_compile_regular_expression = 0;
-SELECT
-    countIf(hasAnyTokenRegexp(s, '^a[^b]+$')), countIf(hasAnyTokenRegexp(s, '^.+$')), countIf(hasAnyTokenRegexp(s, '^[^b]*b$')),
-    countIf(hasAnyTokenRegexp(s, '^a.*$')), countIf(hasAnyTokenRegexp(s, '^0x[0-9a-f]{2}$'))
-FROM (SELECT multiIf(number % 7 = 0, 'b a\xFF', number % 7 = 1, 'x\xFFb c', number % 3 = 0, concat('b a', char(113 + number % 5), ' 0x1f'), 'b') AS s FROM numbers(1000))
-SETTINGS compile_regular_expressions = 0;
-
 SELECT '-- many blocks and threads with a stateful tokenizer';
 SELECT
     countIf(hasAnyTokenLike(s, '12%', 'sparseGrams(3, 5)') != arrayExists(t -> startsWith(t, '12'), tokens(s, 'sparseGrams', 3, 5))),
