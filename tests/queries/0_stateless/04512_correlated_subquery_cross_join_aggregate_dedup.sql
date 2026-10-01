@@ -1,7 +1,7 @@
 -- Tags: no-parallel-replicas
 
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 
 DROP TABLE IF EXISTS outer_04512;
 DROP TABLE IF EXISTS inner_04512;

@@ -28,6 +28,44 @@ class MetaColumn:
     index: str = ""
 
 
+class LogClusterError(Exception):
+    """A read that did not produce a result."""
+
+
+class LogClusterUnavailable(LogClusterError):
+    """The cluster never answered about this query.
+
+    The endpoint or its credentials could not be resolved, every POST failed at
+    the transport level, the answer did not come from the server at all (a
+    gateway, a proxy, a closed connection), or the server reported one of the
+    exception codes that describe its own load rather than the query - the
+    shared cluster goes through minutes-long server-wide memory-pressure
+    windows that fail every query with Code 241. Nothing was read, so this says
+    nothing about the caller or about the commit it reports on.
+    """
+
+
+class LogClusterQueryError(LogClusterError):
+    """The cluster answered by rejecting the query.
+
+    Bad SQL, a missing table, denied access, a limit the query itself exceeded,
+    a timeout or a socket timeout on a query the server accepted: a defect no
+    retry can fix, and one that must stay visible. Note that the status alone
+    does not identify it - the server reports several of its own verdicts on a
+    query, among them 164, 158, 241 and 395, as a 500 - which is why the
+    classification keys on the exception code instead.
+    """
+
+
+class LogClusterNotReady(LogClusterError):
+    """The endpoint never became ready.
+
+    A readiness probe that never answers is indistinguishable from a rotated
+    password or a deleted SSM parameter, and completing green on that would
+    blank the check fleet-wide for as long as the condition lasts.
+    """
+
+
 class LogCluster:
     URL_SECRET = "clickhouse_ci_logs_host"
     PASSWD_SECRET = "clickhouse_ci_logs_password"
@@ -154,7 +192,7 @@ class LogCluster:
         values = cls.meta_values(check_start_time, check_name)
         return [c.literal.format(values[c.name]) for c in cls.meta_columns()]
 
-    def __init__(self, user, url="", password=None, readonly=False):
+    def __init__(self, user, url="", password=None, readonly=False, read_budget_s=None):
         # Explicit url/user/password skip the AWS SSM secret lookup - used for
         # running the consumers locally against the cluster.
         self.user = user
@@ -167,6 +205,10 @@ class LogCluster:
                 "X-ClickHouse-User": self.user,
                 "X-ClickHouse-Key": password,
             }
+        self._read_budget_s = read_budget_s
+        self._read_deadline = (
+            None if read_budget_s is None else time.monotonic() + read_budget_s
+        )
 
     def close_session(self):
         if self._session:
@@ -304,13 +346,60 @@ class LogCluster:
             print("ERROR: LogCluster not ready")
         return False
 
+    EXCEPTION_CODE_HEADER = "X-ClickHouse-Exception-Code"
+    # Codes the shared cluster returns about its own load rather than about the
+    # query: 202 for too many simultaneous queries, 241 for the server-wide
+    # memory-pressure windows. Anything else is its verdict on this very query
+    # - including the codes that merely look load-shaped, 159
+    # (`TIMEOUT_EXCEEDED`) and 209 (`SOCKET_TIMEOUT`), which the server reports
+    # about a query it accepted and would let a reporting `SELECT` that
+    # regressed into a timeout report the check green. Fail closed on all of
+    # them: an outage never answers at all, and that path does not reach here.
+    TRANSIENT_EXCEPTION_CODES = frozenset({202, 241})
+
+    def _classify(self, response):
+        """Tell an outage of the shared cluster from its verdict on the query.
+
+        The status is not the discriminator: the server reports several of its
+        own verdicts as a 500 (164 on a readonly profile, 158 for
+        `max_rows_to_read`, 241 for the memory limit, 395 for a `throwIf` after
+        the result started), so `status >= 500` would let a real defect in one
+        of these reads report the check green. The exception code header is
+        present on every answer the server produced and absent when the answer
+        did not come from it, whatever the status.
+        """
+        reason = f"code {response.status_code}: {response.text.strip()[:512]}"
+        code = response.headers.get(self.EXCEPTION_CODE_HEADER)
+        if code is None:
+            # Not the server answering: a gateway, a proxy, a closed connection.
+            return LogClusterUnavailable(reason)
+        try:
+            transient = int(code) in self.TRANSIENT_EXCEPTION_CODES
+        except ValueError:
+            transient = False
+        reason = f"exception {code}, {reason}"
+        return (LogClusterUnavailable if transient else LogClusterQueryError)(reason)
+
+    def _read_budget_spent(self):
+        return self._read_deadline is not None and time.monotonic() >= self._read_deadline
+
     def select(self, query, retries=8, timeout=60):
-        """Run a read-only query and return the response body, or None on failure.
+        """Run a read-only query and return the response body.
 
         Unlike do_query (INSERT transport, discards the body), this returns the
-        result text. Retries transient (>=500 and connection) errors with a
-        growing backoff: the shared cluster goes through minutes-long
-        server-wide memory-pressure spikes (Code 241 for every query).
+        result text. Retries transient (connection-level, and the exception
+        codes the cluster reports about its own load) errors with a growing
+        backoff: the shared cluster goes through minutes-long server-wide
+        memory-pressure spikes (Code 241 for every query). A read budget (see
+        `read_budget_s`) stops the POST retries when the caller's share of the
+        job's wall clock is spent; the first attempt is always made, so the
+        classification below is unchanged.
+
+        Raises LogClusterQueryError if the cluster rejected the query and
+        LogClusterUnavailable if it never answered it. The two are different
+        incidents - the first is a defect in the caller, the second is an
+        outage of a shared service - and a caller that reports a CI check has
+        to tell them apart rather than see one opaque "no result".
         """
         # The query goes in the body: queries with long IN lists exceed the
         # server's URI length limit as a parameter.
@@ -320,16 +409,42 @@ class LogCluster:
         params = {} if self.readonly else {"send_logs_level": "warning"}
 
         response = None
+        post_attempted = False
+        budget_spent = False
         for retry in range(retries):
+            # Only POST retries are cut: attempt 0 is always made, and a read
+            # that has not reached its POST yet still owes the readiness
+            # schedule below its full count, or a single transient probe failure
+            # would leave the loop with nothing attempted and classify as
+            # LogClusterNotReady while the cluster was answering.
+            if retry and post_attempted and self._read_budget_spent():
+                print(
+                    f"WARNING: LogCluster read budget of {self._read_budget_s} s spent,"
+                    " not retrying"
+                )
+                budget_spent = True
+                break
             # is_ready is a cheap `SELECT 1` and fails during the same pressure
             # spikes as the query itself, so it is retried on the same schedule.
-            if not self.is_ready():
+            # It raises rather than returns False when the AWS SSM lookup of
+            # the endpoint or the password fails - another way of not reaching
+            # the cluster, and one that is transient too (SSM rate limiting),
+            # so it joins the same retry schedule instead of escaping as an
+            # exception of its own that the caller cannot classify.
+            try:
+                ready = self.is_ready()
+            except Exception:
+                print("WARNING: LogCluster readiness check failed with exception")
+                traceback.print_exc()
+                ready = False
+            if not ready:
                 print("WARNING: LogCluster not ready")
                 time.sleep(5 * (retry + 1))
                 continue
             if not self._session:
                 self._session = requests.Session()
             try:
+                post_attempted = True
                 response = self._session.post(
                     url=self.url,
                     params=params,
@@ -342,10 +457,16 @@ class LogCluster:
                 print(
                     f"WARNING: LogCluster select failed with code {response.status_code}"
                 )
-                if response.status_code >= 500:
-                    time.sleep(5 * (retry + 1))
-                    continue
-                break
+                error = self._classify(response)
+                if isinstance(error, LogClusterQueryError):
+                    raise error  # the same verdict on every retry
+                time.sleep(5 * (retry + 1))
+                continue
+            except LogClusterError:
+                # The verdict raised just above, not a transport failure: it
+                # has to leave the loop rather than be retried by the handler
+                # below, which cannot tell the two apart.
+                raise
             except Exception:
                 print("WARNING: LogCluster select failed with exception")
                 traceback.print_exc()
@@ -354,7 +475,19 @@ class LogCluster:
             print(
                 f"ERROR: Failed to select from LogCluster, query:\n {query}\n    reason:\n {response.text}"
             )
-        return None
+            raise self._classify(response)
+        if post_attempted:
+            # The endpoint was ready but every POST raised before returning a
+            # response (timeout, connection reset, ...). Blaming readiness here
+            # would point the incident at the wrong subsystem; the tracebacks
+            # of the attempts are already in the log above.
+            reason = "every POST attempt failed with an exception"
+            if budget_spent:
+                reason += f"; stopped retrying after the {self._read_budget_s} s read budget"
+            raise LogClusterUnavailable(reason)
+        # Every attempt gave up before its POST: `is_ready()` was false for all
+        # of them (no secret, or `SELECT 1` never succeeded).
+        raise LogClusterNotReady("the endpoint never became ready")
 
 
 class LogClusterBuildProfileQueries:
