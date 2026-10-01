@@ -199,6 +199,9 @@ struct ReadSettings
     /// (sets threadpool method, disables prefetch, shrinks the buffer). Used by
     /// metadata-storage operations that fetch small per-object files.
     void useForSmallRemoteRead(size_t buffer_size);
+
+    /// Positional reads via `readBigAt`: used for reading a fixed size, uncompressed row.
+    void useForPositionalReadAt();
 };
 
 ReadSettings getReadSettings();

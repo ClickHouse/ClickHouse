@@ -41,7 +41,7 @@ public:
 
     void prefetchBeginOfRange(Priority priority) override;
 
-    void setLazyMaterializingRows(const PaddedPODArray<UInt64> * rows) override;
+    void prepareLazyMaterialization(const PaddedPODArray<UInt64> * rows) override;
 
     /// Return map (column to read) -> (list of all streams required to read this column).
     std::unordered_map<String, std::vector<String>> getAllColumnsSubstreams();
@@ -143,18 +143,18 @@ private:
 
     /// Lazy materialization of a `Quantized` column: the writer stores every vector as its own compressed block
     /// (see `MergeTreeDataPartWriterWide`), so only the requested rows are read, each with one positional read.
-    struct PointRead
+    struct FixedSizeLazyRead
     {
         std::unique_ptr<ReadBufferFromFileBase> buf;
         SerializationPtr element_serialization;
         size_t dimensions = 0;
         std::string block;
     };
-    void readPointRows(PointRead & point_read, IColumn & column, size_t from_row, size_t num_rows);
+    void readFixedSizeLazyRowsByPosition(FixedSizeLazyRead & fixed_size_lazy_read, IColumn & column, size_t from_row, size_t num_rows);
 
     const PaddedPODArray<UInt64> * lazy_rows = nullptr; /// Sorted part offsets requested by lazy materialization.
-    std::unordered_map<size_t, PointRead> point_reads;  /// Column position -> point read.
-    size_t point_read_row = 0;                          /// Part offset of the next row `readRows` returns.
+    std::unordered_map<size_t, FixedSizeLazyRead> fixed_size_lazy_reads; /// Column position -> positional read state.
+    size_t fixed_size_lazy_row = 0; /// Part row at the start of the slice for fixed-size lazy columns.
 };
 
 }

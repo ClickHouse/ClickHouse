@@ -5,6 +5,7 @@
 #include <Compression/CompressionCodecQuantized.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MarkCache.h>
@@ -243,14 +244,16 @@ void MergeTreeDataPartWriterWide::addStreams(
         /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.
         max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
 
-        /// Special handling for Quantized vector columns
-        if (substream_path.size() == 2 && substream_path[0].type == ISerialization::Substream::ArrayElements
-            && substream_path[1].type == ISerialization::Substream::Regular)
+        /// Special handling for Quantized vector columns: one full-precision vector per compressed block.
+        if (SerializationQuantizedVector::isVectorElementsSubstream(substream_path))
         {
             if (auto quantized_params = tryExtractQuantizedCodecParams(effective_codec_desc))
             {
                 if (const auto * array_type = typeid_cast<const DataTypeArray *>(name_and_type.type.get()))
-                    max_compress_block_size = quantized_params->dimensions * array_type->getNestedType()->getSizeOfValueInMemory();
+                {
+                    if (auto payload_bytes = getFullPrecisionVectorBytesPerRow(*array_type, *quantized_params))
+                        max_compress_block_size = *payload_bytes;
+                }
             }
         }
 

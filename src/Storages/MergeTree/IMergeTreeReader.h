@@ -88,7 +88,7 @@ public:
 
     virtual void prefetchBeginOfRange(Priority) {}
 
-    virtual void setLazyMaterializingRows(const PaddedPODArray<UInt64> *) {}
+    virtual void prepareLazyMaterialization(const PaddedPODArray<UInt64> *) {}
 
     MergeTreeReaderSettings & getMergeTreeReaderSettings() { return settings; }
 
