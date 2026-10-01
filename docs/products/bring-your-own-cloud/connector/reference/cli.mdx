@@ -68,7 +68,7 @@ Valid only with `--target helm`.
 | `--chart-version <ver>` | Chart version to deploy (default: this binary's release version). |
 | `--ch-pod <ref>` | ClickHouse pod for the in-pod provisioning steps, as a name or `k=v` label selector (default: a Running pod backing each instance's Service). |
 | `--api-private-ca` | Your connector endpoint serves a certificate issued by the enrollment bundle's CA: stages `api.tls.caFile` pointing at the mounted CA chain, which is appended to the system roots. |
-| `--egress-cidrs <cidrs>` | Comma-separated CIDRs of your connector endpoint for the chart's default-deny NetworkPolicy: stages it enabled with these as `networkPolicy.allowEgressCIDRs` (prompted on a terminal in managed mode). Without them the policy is staged disabled for you to enable later. |
+| `--egress-cidrs <cidrs>` | Comma-separated CIDRs the connector may reach. Sets `networkPolicy.allowEgressCIDRs` and stages the chart's default-deny NetworkPolicy enabled (prompted on a terminal in managed mode); without them the policy is staged disabled. With PrivateLink, pass the CIDRs of the private subnets holding the endpoint network interfaces; see [PrivateLink](/products/bring-your-own-cloud/connector/networking#verify). |
 
 ### VM-only flags {#init-vm-flags}
 
@@ -80,6 +80,7 @@ Valid only with `--target systemd`.
 | `--ca-data <base64>` | Base64 `certificate-authority-data` for `--server` (default: this host's kubeconfig, else prompted). |
 | `--cluster-name <name>` | Name of the EKS cluster managed mode drives (default: the single EKS cluster in this host's kubeconfig; prompted on a terminal). |
 | `--no-instance` | Starts with an empty instance registry and skips the instance prompts. |
+| `--skip-privatelink-check` | Skips the private DNS check `init` runs on a VM when `--from-terraform` outputs carry `connector_privatelink`, and enrolls even if the connector hostnames resolve publicly from this host; see [PrivateLink](/products/bring-your-own-cloud/connector/networking#verify). |
 
 ### Flag conflicts {#init-flag-conflicts}
 
