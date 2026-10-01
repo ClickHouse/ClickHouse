@@ -20,9 +20,12 @@ if (ENABLE_LLVM_LIBC_MATH)
     target_link_libraries(global-libs INTERFACE libllvmlibc)
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
 
-    if (ARCH_AARCH64)
+    if (ARCH_AARCH64 AND NOT SANITIZE)
         # AdvSIMD/MTE string routines from ARM's optimized-routines
-        # (see contrib/optimized-routines-cmake).
+        # (see contrib/optimized-routines-cmake). Not linked under sanitizers at all:
+        # the definitions are strong, so the interceptors would otherwise only stay
+        # in effect for as long as every routine here is intercepted and the
+        # sanitizer runtimes stay ahead of `-laor` on the link line.
         link_directories("${CMAKE_BINARY_DIR}/contrib/optimized-routines-cmake")
         target_link_libraries(global-libs INTERFACE aor)
         set (DEFAULT_LIBS "${DEFAULT_LIBS} -laor")
