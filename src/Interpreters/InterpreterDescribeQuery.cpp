@@ -264,7 +264,10 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
         alias && !alias->isTargetTableGranted(query_context, AccessType::SHOW_COLUMNS, {}))
         throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}", table_id.getNameForLogs());
 
-    if (auto * storage_view = table->as<StorageView>())
+    /// An `Alias` exposes the metadata of the final table of its chain, so the parameterized view
+    /// check below must look at that table as well.
+    const StoragePtr columns_owner = StorageAlias::tryResolveChain(table);
+    if (const auto * storage_view = columns_owner ? columns_owner->as<StorageView>() : nullptr)
     {
         /// A parameterized view normally has no schema of its own: it is only known after parameter
         /// substitution, so describing the view without parameters is not supported. The exception is
