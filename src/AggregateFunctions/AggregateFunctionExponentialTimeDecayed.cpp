@@ -182,6 +182,16 @@ public:
 
     String getName() const override { return name; }
 
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    {
+        const auto * other = typeid_cast<const AggregateFunctionExponentialTimeDecayed *>(&rhs);
+        return other
+            && getStateVariant() == other->getStateVariant()
+            && name == other->name
+            && decay_length == other->decay_length
+            && haveEqualArgumentTypes(rhs);
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         Float64 value = 1;
