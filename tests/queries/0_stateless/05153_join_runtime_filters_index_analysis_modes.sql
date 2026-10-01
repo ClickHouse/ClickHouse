@@ -71,6 +71,17 @@ WHERE d.tag = 'hot'
 SETTINGS log_comment = '05153_parallel_replicas_followers', enable_parallel_replicas = 1,
     parallel_replicas_plan_based = 0, serialize_query_plan = 0, parallel_replicas_local_plan = 0;
 
+-- The same follower-only read with `parallel_replicas_index_analysis_only_on_coordinator` turned off. That
+-- setting governs the index analysis that selects the mark ranges a read announces, so it has nothing to
+-- say about pruning done while the data is read - this row is here so that the follower rows are not
+-- resting on its default without showing it.
+SELECT 'parallel_replicas_followers_analysing_themselves', count(), sum(f.v)
+FROM rf_idx_fact AS f INNER JOIN rf_idx_dim AS d ON f.id = d.id
+WHERE d.tag = 'hot'
+SETTINGS log_comment = '05153_parallel_replicas_followers_analysing_themselves', enable_parallel_replicas = 1,
+    parallel_replicas_plan_based = 0, serialize_query_plan = 0, parallel_replicas_local_plan = 0,
+    parallel_replicas_index_analysis_only_on_coordinator = 0;
+
 -- Parallel replicas where the replicas receive a serialized plan instead of the query text: the
 -- descriptors are not serialized with it, but the replica's own optimization of that plan attaches them.
 -- The local plan is pinned OFF so that the initiator reads nothing: the counters below can then only come
@@ -125,7 +136,8 @@ INNER JOIN
     FROM system.query_log
     WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish'
         AND log_comment IN ('05153_local', '05153_distributed_plan', '05153_parallel_replicas',
-            '05153_parallel_replicas_followers', '05153_parallel_replicas_serialized_plan',
+            '05153_parallel_replicas_followers', '05153_parallel_replicas_followers_analysing_themselves',
+            '05153_parallel_replicas_serialized_plan',
             '05153_parallel_replicas_plan_based', '05153_parallel_replicas_plan_based_local_plan')
         AND event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR
 ) AS initiator ON part.initial_query_id = initiator.query_id

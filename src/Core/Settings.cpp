@@ -9232,6 +9232,8 @@ This allows queries with `max_parallel_replicas = 1` to be directed to another h
         {"26.5", true, true, "New setting. When disabled, replicas for parallel reading are selected purely by the load balancing algorithm without forcing the local replica into the set."}) \
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
+
+This concerns the index analysis that selects the mark ranges a read announces, which is what the coordinator assigns from. It does not cover pruning that happens while the data is read, such as the granule pruning of `enable_join_runtime_filters_index_analysis`: a JOIN runtime filter only exists once the build side has been read, so every replica evaluates its own and prunes its own share, and no coordinator could do it for them.
 )", 0, \
         {"24.12", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, \
         {"24.10", false, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}) \
