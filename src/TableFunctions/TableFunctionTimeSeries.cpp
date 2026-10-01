@@ -343,7 +343,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile`, `histogram_fraction`, `histogram_count`, `histogram_sum`, `histogram_avg`, `histogram_stddev`, `histogram_stdvar` |
-| Other | `time`, `pi`, `absent` |
+| Other | `time`, `pi`, `absent`, `timestamp` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label) and exponential interpolation on native histograms (linear interpolation for custom buckets and the zero bucket). `histogram_fraction`, `histogram_count`, `histogram_sum`, `histogram_avg`, `histogram_stddev` and `histogram_stdvar` work on native histograms only; float samples and classic buckets are skipped. The `phi` argument of `histogram_quantile` and the `lower`/`upper` arguments of `histogram_fraction` must be constant scalars. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
@@ -424,7 +424,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile`, `histogram_fraction`, `histogram_count`, `histogram_sum`, `histogram_avg`, `histogram_stddev`, `histogram_stdvar` |
-| Other | `time`, `pi`, `absent` |
+| Other | `time`, `pi`, `absent`, `timestamp` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label) and exponential interpolation on native histograms (linear interpolation for custom buckets and the zero bucket). `histogram_fraction`, `histogram_count`, `histogram_sum`, `histogram_avg`, `histogram_stddev` and `histogram_stdvar` work on native histograms only; float samples and classic buckets are skipped. The `phi` argument of `histogram_quantile` and the `lower`/`upper` arguments of `histogram_fraction` must be constant scalars. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
