@@ -81,7 +81,9 @@ void WriteBufferToFileSegment::nextImpl()
     /// In case of an error, we don't need to finalize the file segment
     /// because it will be deleted soon and completed in the holder's destructor.
     std::string failure_reason;
-    bool ok = file_segment->reserve(bytes_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason, &reserve_stat);
+    bool ok = file_segment->reserve(
+        bytes_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason,
+        &reserve_stat, /* reserve_hint */0, &reserve_ahead);
 
     if (!ok)
     {

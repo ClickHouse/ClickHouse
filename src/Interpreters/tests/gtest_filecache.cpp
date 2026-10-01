@@ -111,6 +111,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 max_elements;
     extern const FileCacheSettingsUInt64 max_file_segment_size;
     extern const FileCacheSettingsUInt64 boundary_alignment;
+    extern const FileCacheSettingsUInt64 reserve_granularity;
     extern const FileCacheSettingsFileCachePolicy cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
     extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
@@ -3927,6 +3928,96 @@ TEST_F(FileCacheTest, ReserveUndoneWhenKeyDirectoryCannotBeCreated)
     ASSERT_EQ(next_holder->size(), 1u);
     download(*next_holder->begin());
     ASSERT_EQ(cache->getUsedCacheSize(), 8u);
+}
+
+TEST(FileCacheReserveAhead, GrowsUpToLimitAndResets)
+{
+    DB::FileCacheReserveAhead reserve_ahead;
+
+    /// Starts from 0: the first reservation is exact.
+    ASSERT_EQ(reserve_ahead.getAndGrow(/* size_to_reserve */ 2, /* limit */ 16), 0u);
+    /// Then starts from the requested size and doubles with each further reservation, up to the limit.
+    ASSERT_EQ(reserve_ahead.getAndGrow(2, 16), 2u);
+    ASSERT_EQ(reserve_ahead.getAndGrow(2, 16), 4u);
+    ASSERT_EQ(reserve_ahead.getAndGrow(2, 16), 8u);
+    ASSERT_EQ(reserve_ahead.getAndGrow(2, 16), 16u);
+    ASSERT_EQ(reserve_ahead.getAndGrow(2, 16), 16u);
+
+    /// A lowered limit takes effect immediately.
+    ASSERT_EQ(reserve_ahead.getAndGrow(2, 4), 4u);
+
+    /// Limit 0 disables reserve-ahead.
+    ASSERT_EQ(reserve_ahead.getAndGrow(2, 0), 0u);
+
+    /// After a reset it starts again from 0 and then from the requested size.
+    reserve_ahead.reset();
+    ASSERT_EQ(reserve_ahead.getAndGrow(6, 16), 0u);
+    ASSERT_EQ(reserve_ahead.getAndGrow(6, 16), 6u);
+    ASSERT_EQ(reserve_ahead.getAndGrow(6, 16), 12u);
+
+    reserve_ahead.reset();
+    ASSERT_EQ(reserve_ahead.getAndGrow(2, 16), 0u);
+}
+
+TEST_F(FileCacheTest, DynamicReserveGranularity)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 1000;
+    settings[FileCacheSetting::max_elements] = 10;
+    settings[FileCacheSetting::max_file_segment_size] = 100;
+    settings[FileCacheSetting::boundary_alignment] = 100;
+    settings[FileCacheSetting::reserve_granularity] = 16;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("dynamic_reserve_granularity", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    std::string failure_reason;
+    std::string data(100, '0');
+
+    /// Reserve and write `size` bytes at the current write offset, return the reserved size after it.
+    auto reserve_and_write = [&](DB::FileSegment & segment, size_t size, DB::FileCacheReserveAhead * reserve_ahead)
+    {
+        EXPECT_TRUE(segment.reserve(size, 1000, failure_reason, nullptr, 0, reserve_ahead)) << failure_reason;
+        segment.write(data.data(), size, segment.getCurrentWriteOffset());
+        return segment.getReservedSize();
+    };
+
+    {
+        /// Without reserve-ahead state the requested size is reserved exactly.
+        auto holder = cache->getOrSet(DB::FileCacheKey::fromPath("no_reserve_ahead"), 0, 100, /*file_size=*/100, {}, 0, user);
+        auto segment = *holder->begin();
+        ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+        ASSERT_EQ(reserve_and_write(*segment, 2, nullptr), 2u);
+        ASSERT_EQ(reserve_and_write(*segment, 2, nullptr), 4u);
+        ASSERT_EQ(reserve_and_write(*segment, 2, nullptr), 6u);
+    }
+
+    {
+        /// The same downloader repeatedly reserving: exact first, then growing up to the limit.
+        auto holder = cache->getOrSet(DB::FileCacheKey::fromPath("reserve_ahead"), 0, 100, /*file_size=*/100, {}, 0, user);
+        auto segment = *holder->begin();
+        ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+
+        DB::FileCacheReserveAhead reserve_ahead;
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 2u);       /// downloaded 2, exact
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 2u + 2);   /// downloaded 4, +2 (requested size)
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 4u + 4);   /// downloaded 6, +4
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 8u);       /// downloaded 8, served from surplus
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 8u + 8);   /// downloaded 10, +8
+        for (size_t downloaded = 12; downloaded <= 16; downloaded += 2)
+            ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 16u);  /// served from surplus
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 16u + 16); /// downloaded 18, +16 (limit)
+        for (size_t downloaded = 20; downloaded <= 32; downloaded += 2)
+            ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 32u);
+        ASSERT_EQ(reserve_and_write(*segment, 2, &reserve_ahead), 32u + 16); /// stays at the limit
+    }
 }
 
 TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)

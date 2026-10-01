@@ -668,7 +668,8 @@ bool FileSegment::reserve(
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
     FileCacheReserveStat * reserve_stat,
-    size_t reserve_hint)
+    size_t reserve_hint,
+    FileCacheReserveAhead * reserve_ahead)
 {
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
@@ -708,9 +709,9 @@ bool FileSegment::reserve(
 
     const size_t minimum_reserve_size = size_to_reserve;
 
-    if (!is_unbound)
+    if (!is_unbound && reserve_ahead)
     {
-        const auto reserve_granularity = cache->getReserveGranularity();
+        const auto reserve_granularity = reserve_ahead->getAndGrow(size_to_reserve, cache->getReserveGranularity());
         if (reserve_granularity && reserve_granularity > size_to_reserve)
         {
             size_to_reserve = reserved_size + reserve_granularity > range().size()
@@ -747,7 +748,11 @@ bool FileSegment::reserve(
         *this, size_to_reserve, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
 
     if (!reserved)
+    {
+        if (reserve_ahead)
+            reserve_ahead->reset();
         setDownloadFailedUnlocked(lock());
+    }
 
     return reserved;
 }

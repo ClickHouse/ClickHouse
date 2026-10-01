@@ -1132,7 +1132,8 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                 info.cache_settings.reserve_space_wait_lock_timeout_milliseconds,
                 failure_reason,
                 /* reserve_stat */nullptr,
-                reserve_hint);
+                reserve_hint,
+                &info.reserve_ahead);
 
             if (continue_predownload)
             {
@@ -1636,7 +1637,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
                 info.cache_settings.reserve_space_wait_lock_timeout_milliseconds,
                 failure_reason,
                 /* reserve_stat */nullptr,
-                reserve_hint);
+                reserve_hint,
+                &info.reserve_ahead);
 
             if (success)
             {

@@ -24,6 +24,26 @@ namespace DB
 class ReadBufferFromFileBase;
 struct FileCacheReserveStat;
 
+/// Reserve-ahead state of one downloader (reader or writer), passed to `FileSegment::reserve`.
+/// Starts at 0 (the first reservation is exact), then `size_to_reserve`, then doubles, up to the
+/// cache's `reserve_granularity`, so a one-off small read does not hold a whole granule while a
+/// long download takes the cache lock rarely. Reset on a failed reservation.
+struct FileCacheReserveAhead
+{
+    /// Returns the reserve-ahead to use for the current reservation of `size_to_reserve` bytes
+    /// and grows it for the next one.
+    size_t getAndGrow(size_t size_to_reserve, size_t limit)
+    {
+        const size_t result = std::min(granularity, limit);
+        granularity = std::min(limit, granularity ? granularity * 2 : size_to_reserve);
+        return result;
+    }
+
+    void reset() { granularity = 0; }
+
+    size_t granularity = 0;
+};
+
 
 struct CreateFileSegmentSettings
 {
@@ -211,18 +231,17 @@ public:
      * ========== Methods for _only_ file segment's `downloader` ==================
      */
 
-    /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
-    /// Returns true if reservation was successful, false otherwise.
-    ///
-    /// `reserve_hint`, if non-zero, bounds the reserve-ahead to the bytes left to read from the
-    /// current download offset (e.g. up to read_until_position), so the segment is never reserved
-    /// ahead past what the read will consume.
+    /// Try to reserve `size` bytes on top of getDownloadedSize(), returns false on failure.
+    /// `reserve_ahead` (see `FileCacheReserveAhead`) enables reserving ahead; without it exactly `size`
+    /// is reserved. `reserve_hint`, if non-zero, is the number of bytes left to read from the current
+    /// download offset, the reserve-ahead never goes past it.
     bool reserve(
         size_t size_to_reserve,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason,
         FileCacheReserveStat * reserve_stat = nullptr,
-        size_t reserve_hint = 0);
+        size_t reserve_hint = 0,
+        FileCacheReserveAhead * reserve_ahead = nullptr);
 
     /// Write data into reserved space.
     void write(char * from, size_t size, size_t offset_in_file);
