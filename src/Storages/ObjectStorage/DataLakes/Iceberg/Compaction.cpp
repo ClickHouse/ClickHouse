@@ -41,6 +41,7 @@
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int FILE_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int NOT_IMPLEMENTED;
@@ -205,7 +206,10 @@ static Plan getPlan(
         context,
         log.get(),
         persistent_table_components.table_uuid,
-        persistent_table_components.metadata_compression_method);
+        persistent_table_components.metadata_compression_method,
+        /* force_fetch_latest_metadata */ true,
+        /* ignore_metadata_pointer_overrides */ true);
+    plan.generator.setVersion(metadata_version + 1);
 
     Poco::JSON::Object::Ptr initial_metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
@@ -1334,21 +1338,33 @@ static void writeMetadataFiles(
     {
         std::string json_representation = stringifyJSON(metadata_object, 4);
 
-        auto buffer_metadata = object_storage->writeObject(
-            StoredObject(path_resolver.resolve(generated_metadata_info.path)),
-            WriteMode::Rewrite,
-            std::nullopt,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            context->getWriteSettings());
-
-        buffer_metadata->write(json_representation.data(), json_representation.size());
-        buffer_metadata->finalize();
+        auto hint_path = plan.generator.generateVersionHint();
+        bool version_hint_confirmed = false;
+        if (!writeMetadataFileAndVersionHint(
+                path_resolver,
+                generated_metadata_info,
+                json_representation,
+                hint_path,
+                object_storage,
+                context,
+                /* try_write_version_hint */ true,
+                &version_hint_confirmed))
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Metadata file {} already exists", generated_metadata_info.path.serialize());
+        if (!version_hint_confirmed)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Metadata file {} was written but version-hint.text was not confirmed; old files were not removed",
+                generated_metadata_info.path.serialize());
     }
 }
 
 static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & table_path)
 {
     auto metadata_files = listFiles(*object_storage, table_path, "metadata", "");
+    std::erase_if(metadata_files, [](const String & file)
+    {
+        return file.ends_with("metadata/version-hint.text");
+    });
     auto data_files = listFiles(*object_storage, table_path, "data", "");
 
     for (auto && data_file : data_files)

@@ -52,8 +52,7 @@ void writeMessageToFile(
     DB::CompressionMethod compression_method = DB::CompressionMethod::None);
 
 /// Tries to write metadata file and version hint file. Uses If-None-Match header to avoid overwriting existing files.
-/// Maybe return false if failed to write metadata.json
-/// Will try to write hint multiple times, but will not report failure to write hint.
+/// Returns false if the metadata file could not be committed.
 bool writeMetadataFileAndVersionHint(
     const IcebergPathResolver & resolver,
     const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
@@ -61,7 +60,8 @@ bool writeMetadataFileAndVersionHint(
     const IcebergPathFromMetadata & version_hint_path,
     DB::ObjectStoragePtr object_storage,
     DB::ContextPtr context,
-    bool try_write_version_hint);
+    bool try_write_version_hint,
+    bool * version_hint_confirmed = nullptr);
 
 struct TransformAndArgument
 {

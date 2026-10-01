@@ -1,0 +1,4 @@
+before: [2,3]
+version-hint.text present
+metadata version advanced
+after: readable [2,3]
