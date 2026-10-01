@@ -38,7 +38,7 @@ EXPECTED_ATTACH_DOCUMENTATION_COUNT = 142
 EXPECTED_SYSTEM_LOG_DOCUMENTATION_COUNT = 30
 EXPECTED_FIELD_COUNTS = {
     "description": EXPECTED_DOCUMENTATION_COUNT,
-    "columns_notes": 11,
+    "columns_notes": 12,
     "examples": 107,
     "see_also": 62,
 }
@@ -207,15 +207,30 @@ def main():
     # Validate the section markers per document, not only in aggregate: an aggregate count stays
     # correct when one page loses `.description` while another gains a duplicate.
     field_counts = {field: 0 for field in EXPECTED_FIELD_COUNTS}
+    field_tables = {field: [] for field in EXPECTED_FIELD_COUNTS}
     for table_name, documentation in documents.items():
         for field in EXPECTED_FIELD_COUNTS:
             count = len(re.findall(rf"(?m)^\.{field}$", documentation))
             assert count <= 1, f"{table_name} declares .{field} {count} times"
             field_counts[field] += count
+            if count:
+                field_tables[field].append(table_name)
         assert re.search(r"(?m)^\.description$", documentation), (
             f"{table_name} has no .description section"
         )
-    assert field_counts == EXPECTED_FIELD_COUNTS
+    mismatched_fields = {
+        field: {
+            "expected": EXPECTED_FIELD_COUNTS[field],
+            "actual": field_counts[field],
+            "tables": field_tables[field],
+        }
+        for field in EXPECTED_FIELD_COUNTS
+        if field_counts[field] != EXPECTED_FIELD_COUNTS[field]
+    }
+    assert not mismatched_fields, (
+        "Structured system-table documentation field counts differ: "
+        f"{mismatched_fields}"
+    )
     assert ".see_also" in documents["asynchronous_metric_log"]
     assert "**See Also**" not in documents["asynchronous_metric_log"]
     assert ".additional_sections" not in structured_comments
