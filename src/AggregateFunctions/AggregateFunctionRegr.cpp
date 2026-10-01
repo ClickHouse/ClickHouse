@@ -5,6 +5,7 @@
 #include <AggregateFunctions/Moments.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -306,6 +307,12 @@ struct RegrMoments
 /// input, so they are clamped.
 struct RegrResult
 {
+    /// A comparison with a NaN is false, so `std::max(0.0, value)` would answer with the bound and
+    /// turn a NaN into a zero. A zero sum of squares is read below as a constant column, which is
+    /// something else entirely: a NaN or an infinity in the data leaves the fit undefined, and every
+    /// result has to say so rather than report a perfect one.
+    static Float64 clampToZero(Float64 value) { return isNaN(value) ? value : std::max(0.0, value); }
+
     Float64 n;
     Float64 x0;
     Float64 y0;
@@ -326,8 +333,8 @@ struct RegrResult
         , mean_dy(data.sy / n)
         , avg_x(x0 + mean_dx)
         , avg_y(y0 + mean_dy)
-        , sxx(std::max(0.0, data.sxx - data.sx * data.sx / n))
-        , syy(std::max(0.0, data.syy - data.sy * data.sy / n))
+        , sxx(clampToZero(data.sxx - data.sx * data.sx / n))
+        , syy(clampToZero(data.syy - data.sy * data.sy / n))
         , sxy(data.sxy - data.sx * data.sy / n)
     {
     }

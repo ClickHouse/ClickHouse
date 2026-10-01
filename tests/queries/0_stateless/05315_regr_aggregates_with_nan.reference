@@ -1,0 +1,13 @@
+a NaN in y
+nan	nan	2	nan	nan	nan
+a NaN in x
+nan	nan	2	nan
+an infinity in y
+nan	nan	nan
+the count is the number of rows, whatever they hold
+3
+a constant column is still a constant column, not a NaN
+1	0	2	0
+nan	0	nan
+a fit without either is unchanged
+1	2	0
