@@ -200,7 +200,7 @@ void registerStatementExplain(StatementFactory & factory)
 {
     factory.registerStatement("EXPLAIN",
     {
-        .description = R"DOCS_MD(
+        .description = String(R"DOCS_MD(
 Shows the execution plan of a statement.
 
 <div class='vimeo-container'>
@@ -893,7 +893,8 @@ ExpressionTransform
             (ReadFromStorage)
             NumbersRange × 2 0 → 1
 ```
-
+)DOCS_MD") +
+R"DOCS_MD(
 ### EXPLAIN ANALYZE {#explain-analyze}
 
 `EXPLAIN ANALYZE` actually runs the query, discards the result rows, and prints the same plan tree as `EXPLAIN PLAN` with each step annotated by what really happened at run time.
