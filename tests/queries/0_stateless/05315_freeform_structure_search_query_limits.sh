@@ -27,7 +27,8 @@ $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Freeform') settings max_memory_u
 
 echo "An unbounded search stops at the time limit"
 words_row 24
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Freeform') settings max_memory_usage = 1000000000, schema_inference_use_cache_for_file = 0, input_format_freeform_max_search_steps = 0, max_execution_time = 0.1" 2>&1 | grep -oE 'BAD_ARGUMENTS|MEMORY_LIMIT_EXCEEDED|TIMEOUT_EXCEEDED' | head -1
+# A search has no partial structure to return, so `timeout_overflow_mode = 'break'` ends it with an error too.
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Freeform') settings max_memory_usage = 1000000000, schema_inference_use_cache_for_file = 0, input_format_freeform_max_search_steps = 0, max_execution_time = 0.1, timeout_overflow_mode = 'break'" 2>&1 | grep -oE 'BAD_ARGUMENTS|MEMORY_LIMIT_EXCEEDED|TIMEOUT_EXCEEDED' | head -1
 
 echo "An unbounded search for reading rows stops at the time limit"
 STRUCTURE=$(seq -f 'c%g String' 0 23 | paste -sd, -)
