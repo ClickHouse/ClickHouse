@@ -1549,11 +1549,13 @@ li[data-title][id="/integrations/language-clients/c"] > button svg.transition-tr
 /* Light mode: the Ask AI button ships with a blue ring (rgba(147,197,253,0.5),
    ≈ Tailwind blue-300/50) that clashes with the search bar's grey ring. Match
    the search bar's ring color so the two controls look like a set. */
-html:not(.dark) #ch-ask-ai-btn {
+html:not(.dark) #ch-ask-ai-btn,
+html:not(.dark) #home-assistant-entry {
     --tw-ring-color: rgba(159, 159, 159, 0.3) !important;
     --tw-ring-shadow: 0 0 0 1px rgba(159, 159, 159, 0.3) !important;
 }
-html:not(.dark) #ch-ask-ai-btn:hover {
+html:not(.dark) #ch-ask-ai-btn:hover,
+html:not(.dark) #home-assistant-entry:hover {
     --tw-ring-color: rgba(75, 85, 99, 0.3) !important;
     --tw-ring-shadow: 0 0 0 1px rgba(75, 85, 99, 0.3) !important;
 }
@@ -1563,8 +1565,12 @@ html:not(.dark) #ch-ask-ai-btn:hover {
    visually disappear when focused. */
 #search-bar-entry:focus,
 #search-bar-entry:focus-visible,
+#home-search-entry:focus,
+#home-search-entry:focus-visible,
 #ch-ask-ai-btn:focus,
-#ch-ask-ai-btn:focus-visible {
+#ch-ask-ai-btn:focus-visible,
+#home-assistant-entry:focus,
+#home-assistant-entry:focus-visible {
     outline: none !important;
 }
 
@@ -1575,8 +1581,12 @@ html:not(.dark) #ch-ask-ai-btn:hover {
    clearly findable. */
 .dark #search-bar-entry,
 :is(.dark) #search-bar-entry,
+.dark #home-search-entry,
+:is(.dark) #home-search-entry,
 .dark #ch-ask-ai-btn,
-:is(.dark) #ch-ask-ai-btn {
+:is(.dark) #ch-ask-ai-btn,
+.dark #home-assistant-entry,
+:is(.dark) #home-assistant-entry {
     background-color: rgba(255, 255, 255, 0.06) !important;
     /* Replace Tailwind's box-shadow ring with a real border so it renders
        like the Copy page button. Also clear the brightness filter so the
@@ -1590,8 +1600,12 @@ html:not(.dark) #ch-ask-ai-btn:hover {
 
 .dark #search-bar-entry:hover,
 :is(.dark) #search-bar-entry:hover,
+.dark #home-search-entry:hover,
+:is(.dark) #home-search-entry:hover,
 .dark #ch-ask-ai-btn:hover,
-:is(.dark) #ch-ask-ai-btn:hover {
+:is(.dark) #ch-ask-ai-btn:hover,
+.dark #home-assistant-entry:hover,
+:is(.dark) #home-assistant-entry:hover {
     background-color: rgba(255, 255, 255, 0.1) !important;
     border-color: rgba(255, 255, 255, 0.14) !important;
     filter: none !important;
@@ -1601,13 +1615,19 @@ html:not(.dark) #ch-ask-ai-btn:hover {
 .dark #search-bar-entry,
 .dark #search-bar-entry *,
 :is(.dark) #search-bar-entry,
-:is(.dark) #search-bar-entry * {
+:is(.dark) #search-bar-entry *,
+.dark #home-search-entry,
+.dark #home-search-entry *,
+:is(.dark) #home-search-entry,
+:is(.dark) #home-search-entry * {
     color: rgb(206, 206, 206) !important;
 }
 
 /* Ask AI icon */
 .dark #ch-ask-ai-btn svg,
-:is(.dark) #ch-ask-ai-btn svg {
+:is(.dark) #ch-ask-ai-btn svg,
+.dark #home-assistant-entry svg,
+:is(.dark) #home-assistant-entry svg {
     color: #fdff75 !important;
 }
 
