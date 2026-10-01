@@ -29,7 +29,7 @@ Block LazyMaterializingTransform::transformHeader(const Block & main_header, con
     return Block(std::move(columns));
 }
 
-LazyMaterializingTransform::LazyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+LazyMaterializingTransform::LazyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, ILazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : IProcessor(
         InputPorts({main_header, lazy_header}),
         OutputPorts({OutputPort(std::make_shared<Block>(transformHeader(*main_header, *lazy_header)))}))
@@ -266,8 +266,7 @@ void LazyMaterializingTransform::prepareMainChunk()
     {
         Stopwatch squashing_watch;
 
-        /// call private method squash without handling ChunkInfos
-        result_chunk = Squashing::squash(std::move(chunks));
+        result_chunk = Squashing::squashWithoutChunkInfo(std::move(chunks));
         chunks.clear();
         squash_ms = squashing_watch.elapsedMilliseconds();
     }
@@ -369,8 +368,7 @@ void LazyMaterializingTransform::prepareLazyChunk()
     {
         Stopwatch squash_watch;
 
-        /// call private method squash without handling ChunkInfos
-        chunk = Squashing::squash(std::move(chunks));
+        chunk = Squashing::squashWithoutChunkInfo(std::move(chunks));
         chunks.clear();
 
         squash_ms = squash_watch.elapsedMilliseconds();

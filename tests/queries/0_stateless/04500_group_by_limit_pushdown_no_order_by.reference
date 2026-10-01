@@ -1,0 +1,56 @@
+single_key_row_count
+10
+single_key_aggregates
+0
+composite_two_key_row_count
+15
+composite_two_key_aggregates
+0
+composite_three_key_row_count
+20
+composite_three_key_aggregates
+0
+nullable_key_row_count
+10
+nullable_key_aggregates
+0
+string_key_row_count
+10
+string_key_aggregates
+0
+with_offset_row_count
+10
+limit_exceeds_groups
+500
+limit_one_row_count
+1
+two_level_row_count
+10
+two_level_aggregates
+0
+negative_with_totals
+10
+no ORDER BY: synthesized sort + Top-K annotation
+Sorting (Sorting for GROUP BY top-K)
+Top-K: limit=5, columns=1, directions=[1]
+explicit ORDER BY: same Top-K annotation
+Top-K: limit=5, columns=1, directions=[1]
+UInt32 key (erasable hash table, heap + pruning active)
+5	5
+Composite key (pruning of composite heaps)
+5	5
+String key (StringHashTable supports erase)
+5	5
+UInt8 key (FixedHashTable cannot erase, heap runs skip-only)
+5	5
+Date key (key16, FixedHashTable cannot erase, heap runs skip-only)
+5	5
+Multi-stream: every returned group complete
+3	3
+Heap active for multi-stream, single-stream, and skip-only methods
+1	1	1
+LowCardinality key under a memory limit (skip-only heap + spill)
+5
+1
+optimization_applied_guard
+1

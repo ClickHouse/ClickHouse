@@ -1,0 +1,12 @@
+--- the tab bar and the connection key are never hidden
+<div id="tab-bar">
+<button id="connection-key" type="button" title="Connection settings" aria-expanded="false">
+0
+--- the connection inputs are inside the drop-down in the markup, and never move
+<div id="connection-dropdown" hidden>
+<div id="inputs">
+0
+--- so the surface a connection edit is committed on is the one menu that always exists
+return document.getElementById('connection-menu');
+--- and a failed credential check always has a drop-down to open
+openConnectionDropdown();

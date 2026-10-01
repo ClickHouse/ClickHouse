@@ -6,7 +6,6 @@
 #include <Formats/NativeReader.h>
 #include <Core/ProtocolDefines.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/config_version.h>
 #include <Core/Settings.h>
 
 #include <Common/logger_useful.h>
@@ -104,6 +103,14 @@ DistributedAsyncInsertHeader readHeader(ReadBufferFromFile & in, LoggerPtr log)
         if (header_buf.hasPendingData())
             readBinary(distributed_header.client_info.is_internal, header_buf);
 
+        /// Trailing fields: the SQL-defined HTTP handler name and the request URL of the initiating query
+        /// (kept out of the embedded `ClientInfo` above for layout compatibility, like `client_agent`).
+        if (header_buf.hasPendingData())
+            readStringBinary(distributed_header.client_info.http_handler_name, header_buf);
+
+        if (header_buf.hasPendingData())
+            readStringBinary(distributed_header.client_info.http_request_url, header_buf);
+
         /// Add handling new data here, for example:
         ///
         /// if (header_buf.hasPendingData())
@@ -135,26 +142,14 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
 
     /// A batch file written by an older server from a server-initiated query context (a `Buffer` flush, a
     /// streaming consumer, an asynchronous insert flush) carries a zero client version, because such
-    /// contexts used to inherit the empty client info of the global context - see the comment in
-    /// `Context::makeQueryContext`. The two legacy header layouts handled above carry no client info at
-    /// all, so they leave it default-constructed, which is a zero version as well. In both cases
-    /// `RemoteInserter` replays the batch with exactly this client info - and the default interface is
-    /// `TCP`, which is the one interface whose version is serialized on the wire - so the receiving shard
-    /// would treat the initiator as an ancient server and apply legacy compatibility downgrades. This
-    /// server is the one that re-initiates the insert, so fill the version with its own, the same way a
-    /// freshly created query context does now.
+    /// contexts used to inherit the empty client info of the global context. The two legacy header layouts
+    /// handled above carry no client info at all, so they leave it default-constructed, which is a zero
+    /// version as well. In both cases `RemoteInserter` replays the batch with exactly this client info, and
+    /// this server is the one that re-initiates the insert.
     ///
     /// Normalizing rather than throwing: a stale batch file on disk is not a programming error, and
     /// rejecting it would wedge the queue permanently.
-    if (distributed_header.client_info.client_version_major == 0
-        && distributed_header.client_info.client_version_minor == 0
-        && distributed_header.client_info.client_version_patch == 0)
-    {
-        distributed_header.client_info.client_version_major = VERSION_MAJOR;
-        distributed_header.client_info.client_version_minor = VERSION_MINOR;
-        distributed_header.client_info.client_version_patch = VERSION_PATCH;
-        distributed_header.client_info.client_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
-    }
+    distributed_header.client_info.setInitiatorVersionIfUnset();
 
     return distributed_header;
 }
