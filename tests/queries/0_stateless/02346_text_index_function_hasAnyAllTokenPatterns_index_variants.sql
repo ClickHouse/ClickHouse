@@ -25,15 +25,11 @@ SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab SELECT number, multiIf(number < 8, 'Charged', number < 16, 'charged', 'other') FROM numbers(64);
 
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'Charg');
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'Charg') SETTINGS use_skip_indexes = 0;
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'charg');
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'charg') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, 'Charg%');
 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, 'Charg%') SETTINGS use_skip_indexes = 0;
-SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^C');
-SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^C') SETTINGS use_skip_indexes = 0;
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'Charg')) WHERE explain LIKE '%Granules:%';
+SELECT count() FROM tab WHERE hasAnyTokenLike(msg, 'charg%');
+SELECT count() FROM tab WHERE hasAnyTokenLike(msg, 'charg%') SETTINGS use_skip_indexes = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, 'Charg%')) WHERE explain LIKE '%Granules:%';
 
 DROP TABLE tab;
 
@@ -50,11 +46,11 @@ SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab SELECT number, multiIf(number < 8, 'env:Prod-eu', number < 16, 'env:prod-eu', 'env:dev') FROM numbers(64);
 
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(tag, 'env:prod');
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(tag, 'env:prod') SETTINGS use_skip_indexes = 0;
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(tag, 'prod');
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(tag, 'prod') SETTINGS use_skip_indexes = 0;
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(tag, 'prod', 'splitByNonAlpha');
+SELECT count() FROM tab WHERE hasAnyTokenLike(tag, 'env:prod%');
+SELECT count() FROM tab WHERE hasAnyTokenLike(tag, 'env:prod%') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasAnyTokenLike(tag, 'prod%');
+SELECT count() FROM tab WHERE hasAnyTokenLike(tag, 'prod%') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasAnyTokenLike(tag, 'prod%', 'splitByNonAlpha');
 
 DROP TABLE tab;
 
@@ -74,17 +70,13 @@ SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_pos
 
 INSERT INTO tab SELECT number, multiIf(number < 8, map('k', 'env-prod'), number < 16, map('k', 'production'), number < 24, map('x', 'prod'), map('k', 'dev')) FROM numbers(64);
 
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(m['k'], 'pro');
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(m['k'], 'pro') SETTINGS use_skip_indexes = 0;
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(m['k'], 'pro') SETTINGS query_plan_direct_read_from_text_index = 0;
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(m['k'], 'pro', 'array');
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(m['k'], 'pro', 'array') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasAnyTokenLike(m['k'], 'pro%');
 SELECT count() FROM tab WHERE hasAnyTokenLike(m['k'], 'pro%') SETTINGS use_skip_indexes = 0;
-SELECT count() FROM tab WHERE hasAnyTokenRegexp(m['k'], '^pro');
-SELECT count() FROM tab WHERE hasAnyTokenRegexp(m['k'], '^pro') SETTINGS use_skip_indexes = 0;
-SELECT countIf(hasAnyTokenPrefix(m['k'], 'pro')) FROM tab;
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenPrefix(m['k'], 'pro')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT count() FROM tab WHERE hasAnyTokenLike(m['k'], 'pro%') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasAnyTokenLike(m['k'], 'pro%', 'array');
+SELECT count() FROM tab WHERE hasAnyTokenLike(m['k'], 'pro%', 'array') SETTINGS use_skip_indexes = 0;
+SELECT countIf(hasAnyTokenLike(m['k'], 'pro%')) FROM tab;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenLike(m['k'], 'pro%')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 
 DROP TABLE tab;
 
@@ -104,14 +96,12 @@ SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_pos
 
 INSERT INTO tab SELECT number, multiIf(number < 8, '{"k": "env-prod"}', number < 16, '{"k": "production"}', number < 24, '{"x": "prod"}', '{"k": "dev"}') FROM numbers(64);
 
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(j.k::String, 'pro');
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(j.k::String, 'pro') SETTINGS use_skip_indexes = 0;
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(j.k::String, 'pro') SETTINGS query_plan_direct_read_from_text_index = 0;
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(j.k::String, 'pro', 'array');
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(j.k::String, 'pro', 'array') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasAnyTokenLike(j.k::String, 'pro%');
-SELECT count() FROM tab WHERE hasAnyTokenRegexp(j.k::String, '^pro');
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenPrefix(j.k::String, 'pro')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT count() FROM tab WHERE hasAnyTokenLike(j.k::String, 'pro%') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasAnyTokenLike(j.k::String, 'pro%') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasAnyTokenLike(j.k::String, 'pro%', 'array');
+SELECT count() FROM tab WHERE hasAnyTokenLike(j.k::String, 'pro%', 'array') SETTINGS use_skip_indexes = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenLike(j.k::String, 'pro%')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 
 DROP TABLE tab;
 
@@ -129,26 +119,22 @@ SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab SELECT number, multiIf(number < 8, 'Payment charged twice', number < 16, 'recharge failed for order 12345', number % 2 = 0, 'user login ok', 'user logout ok') FROM numbers(64);
 
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'charg');
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'charg') SETTINGS use_skip_indexes = 0;
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'charg') SETTINGS query_plan_direct_read_from_text_index = 0;
-SELECT count() FROM tab WHERE NOT hasAnyTokenPrefix(msg, 'charg');
-SELECT count() FROM tab WHERE NOT hasAnyTokenPrefix(msg, 'charg') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasAnyTokenLike(msg, 'charg%');
+SELECT count() FROM tab WHERE hasAnyTokenLike(msg, 'charg%') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasAnyTokenLike(msg, 'charg%') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE NOT hasAnyTokenLike(msg, 'charg%');
+SELECT count() FROM tab WHERE NOT hasAnyTokenLike(msg, 'charg%') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, '%harg%');
 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, '%harg%') SETTINGS use_skip_indexes = 0;
-SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^[0-9]{5}$');
-SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^[0-9]{5}$') SETTINGS use_skip_indexes = 0;
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, ['charg', 'rech']);
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, ['charg', 'rech']) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasAnyTokenLike(msg, ['charg%', 'rech%']);
+SELECT count() FROM tab WHERE hasAnyTokenLike(msg, ['charg%', 'rech%']) SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasAllTokenLike(msg, ['charg%', 'twice']);
 SELECT count() FROM tab WHERE hasAllTokenLike(msg, ['charg%', 'twice']) SETTINGS use_skip_indexes = 0;
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'charg')) WHERE explain LIKE '%Granules:%';
-SELECT 'hasAnyTokenPrefix', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasAnyTokenPrefix(%') > 0
-FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'charg'));
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, 'charg%')) WHERE explain LIKE '%Granules:%';
+SELECT 'hasAnyTokenLike', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasAnyTokenLike(%') > 0
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, 'charg%'));
 SELECT 'hasAnyTokenLike', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasAnyTokenLike(%') > 0
 FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, '%harg%'));
-SELECT 'hasAnyTokenRegexp', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasAnyTokenRegexp(%') > 0
-FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^[0-9]{5}$'));
 
 DROP TABLE tab;
 
@@ -183,74 +169,58 @@ FROM
     FROM numbers(64)
 );
 
-SELECT 'ngrams', count() FROM tab WHERE hasAnyTokenPrefix(s_ngrams, 'har');
-SELECT 'ngrams', count() FROM tab WHERE hasAnyTokenPrefix(s_ngrams, 'har') SETTINGS use_skip_indexes = 0;
-SELECT 'ngrams', count() FROM tab WHERE hasAnyTokenPrefix(s_ngrams, 'har') SETTINGS query_plan_direct_read_from_text_index = 0;
-SELECT 'ngrams', count() FROM tab WHERE hasAnyTokenPrefix(s_ngrams, 'charg');
-SELECT 'ngrams', count() FROM tab WHERE hasAnyTokenPrefix(s_ngrams, 'charg') SETTINGS use_skip_indexes = 0;
+SELECT 'ngrams', count() FROM tab WHERE hasAnyTokenLike(s_ngrams, 'har%');
+SELECT 'ngrams', count() FROM tab WHERE hasAnyTokenLike(s_ngrams, 'har%') SETTINGS use_skip_indexes = 0;
+SELECT 'ngrams', count() FROM tab WHERE hasAnyTokenLike(s_ngrams, 'har%') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'ngrams', count() FROM tab WHERE hasAnyTokenLike(s_ngrams, 'charg%');
+SELECT 'ngrams', count() FROM tab WHERE hasAnyTokenLike(s_ngrams, 'charg%') SETTINGS use_skip_indexes = 0;
 SELECT 'ngrams', count() FROM tab WHERE hasAnyTokenLike(s_ngrams, '_ar');
 SELECT 'ngrams', count() FROM tab WHERE hasAnyTokenLike(s_ngrams, '_ar') SETTINGS use_skip_indexes = 0;
 SELECT 'ngrams', count() FROM tab WHERE hasAnyTokenLike(s_ngrams, '_ar') SETTINGS query_plan_direct_read_from_text_index = 0;
-SELECT 'ngrams', count() FROM tab WHERE hasAnyTokenRegexp(s_ngrams, '^[0-9]{3}$');
-SELECT 'ngrams', count() FROM tab WHERE hasAnyTokenRegexp(s_ngrams, '^[0-9]{3}$') SETTINGS use_skip_indexes = 0;
-SELECT 'ngrams', count() FROM tab WHERE hasAnyTokenRegexp(s_ngrams, '^[0-9]{3}$') SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT 'ngrams', count() FROM tab WHERE hasAllTokenLike(s_ngrams, ['_ar', 'twi']);
 SELECT 'ngrams', count() FROM tab WHERE hasAllTokenLike(s_ngrams, ['_ar', 'twi']) SETTINGS use_skip_indexes = 0;
 SELECT 'ngrams', countIf(arrayExists(t -> like(t, '_ar'), tokens(s_ngrams, 'ngrams(3)')) AND arrayExists(t -> like(t, 'twi'), tokens(s_ngrams, 'ngrams(3)'))) FROM tab;
 SELECT 'ngrams', countIf(arrayExists(t -> startsWith(t, 'har'), tokens(s_ngrams, 'ngrams(3)'))), countIf(arrayExists(t -> startsWith(t, 'charg'), tokens(s_ngrams, 'ngrams(3)'))),
-    countIf(arrayExists(t -> like(t, '_ar'), tokens(s_ngrams, 'ngrams(3)'))), countIf(arrayExists(t -> match(t, '^[0-9]{3}$'), tokens(s_ngrams, 'ngrams(3)'))) FROM tab;
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenPrefix(s_ngrams, 'har')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+    countIf(arrayExists(t -> like(t, '_ar'), tokens(s_ngrams, 'ngrams(3)'))) FROM tab;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenLike(s_ngrams, 'har%')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenLike(s_ngrams, '_ar')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenRegexp(s_ngrams, '^[0-9]{3}$')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 
-SELECT 'sparseGrams', count() FROM tab WHERE hasAnyTokenPrefix(s_sparse, 'ged');
-SELECT 'sparseGrams', count() FROM tab WHERE hasAnyTokenPrefix(s_sparse, 'ged') SETTINGS use_skip_indexes = 0;
-SELECT 'sparseGrams', count() FROM tab WHERE hasAnyTokenPrefix(s_sparse, 'ged') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'sparseGrams', count() FROM tab WHERE hasAnyTokenLike(s_sparse, 'ged%');
+SELECT 'sparseGrams', count() FROM tab WHERE hasAnyTokenLike(s_sparse, 'ged%') SETTINGS use_skip_indexes = 0;
+SELECT 'sparseGrams', count() FROM tab WHERE hasAnyTokenLike(s_sparse, 'ged%') SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT 'sparseGrams', count() FROM tab WHERE hasAnyTokenLike(s_sparse, '%harg%');
 SELECT 'sparseGrams', count() FROM tab WHERE hasAnyTokenLike(s_sparse, '%harg%') SETTINGS use_skip_indexes = 0;
 SELECT 'sparseGrams', count() FROM tab WHERE hasAnyTokenLike(s_sparse, '%harg%') SETTINGS query_plan_direct_read_from_text_index = 0;
-SELECT 'sparseGrams', count() FROM tab WHERE hasAnyTokenRegexp(s_sparse, '^t c');
-SELECT 'sparseGrams', count() FROM tab WHERE hasAnyTokenRegexp(s_sparse, '^t c') SETTINGS use_skip_indexes = 0;
-SELECT 'sparseGrams', count() FROM tab WHERE hasAnyTokenRegexp(s_sparse, '^t c') SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT 'sparseGrams', countIf(arrayExists(t -> startsWith(t, 'ged'), tokens(s_sparse, 'sparseGrams(3, 100)'))),
-    countIf(arrayExists(t -> like(t, '%harg%'), tokens(s_sparse, 'sparseGrams(3, 100)'))), countIf(arrayExists(t -> match(t, '^t c'), tokens(s_sparse, 'sparseGrams(3, 100)'))) FROM tab;
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenPrefix(s_sparse, 'ged')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+    countIf(arrayExists(t -> like(t, '%harg%'), tokens(s_sparse, 'sparseGrams(3, 100)'))) FROM tab;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenLike(s_sparse, 'ged%')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenLike(s_sparse, '%harg%')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenRegexp(s_sparse, '^t c')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 
-SELECT 'splitByString', count() FROM tab WHERE hasAnyTokenPrefix(s_split, 'x:');
-SELECT 'splitByString', count() FROM tab WHERE hasAnyTokenPrefix(s_split, 'x:') SETTINGS use_skip_indexes = 0;
-SELECT 'splitByString', count() FROM tab WHERE hasAnyTokenPrefix(s_split, 'x:') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'splitByString', count() FROM tab WHERE hasAnyTokenLike(s_split, 'x:%');
+SELECT 'splitByString', count() FROM tab WHERE hasAnyTokenLike(s_split, 'x:%') SETTINGS use_skip_indexes = 0;
+SELECT 'splitByString', count() FROM tab WHERE hasAnyTokenLike(s_split, 'x:%') SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT 'splitByString', count() FROM tab WHERE hasAnyTokenLike(s_split, '%;');
 SELECT 'splitByString', count() FROM tab WHERE hasAnyTokenLike(s_split, '%;') SETTINGS use_skip_indexes = 0;
 SELECT 'splitByString', count() FROM tab WHERE hasAnyTokenLike(s_split, '%;') SETTINGS query_plan_direct_read_from_text_index = 0;
-SELECT 'splitByString', count() FROM tab WHERE hasAnyTokenRegexp(s_split, '^[a-z]+;$');
-SELECT 'splitByString', count() FROM tab WHERE hasAnyTokenRegexp(s_split, '^[a-z]+;$') SETTINGS use_skip_indexes = 0;
-SELECT 'splitByString', count() FROM tab WHERE hasAnyTokenRegexp(s_split, '^[a-z]+;$') SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT 'splitByString', countIf(arrayExists(t -> startsWith(t, 'x:'), tokens(s_split, 'splitByString([\', \', \' \'])'))),
-    countIf(arrayExists(t -> like(t, '%;'), tokens(s_split, 'splitByString([\', \', \' \'])'))), countIf(arrayExists(t -> match(t, '^[a-z]+;$'), tokens(s_split, 'splitByString([\', \', \' \'])'))) FROM tab;
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenPrefix(s_split, 'x:')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+    countIf(arrayExists(t -> like(t, '%;'), tokens(s_split, 'splitByString([\', \', \' \'])'))) FROM tab;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenLike(s_split, 'x:%')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenLike(s_split, '%;')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenRegexp(s_split, '^[a-z]+;$')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 
-SELECT 'asciiCJK', count() FROM tab WHERE hasAnyTokenPrefix(s_cjk, 'x:');
-SELECT 'asciiCJK', count() FROM tab WHERE hasAnyTokenPrefix(s_cjk, 'x:') SETTINGS use_skip_indexes = 0;
-SELECT 'asciiCJK', count() FROM tab WHERE hasAnyTokenPrefix(s_cjk, 'x:') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'asciiCJK', count() FROM tab WHERE hasAnyTokenLike(s_cjk, 'x:%');
+SELECT 'asciiCJK', count() FROM tab WHERE hasAnyTokenLike(s_cjk, 'x:%') SETTINGS use_skip_indexes = 0;
+SELECT 'asciiCJK', count() FROM tab WHERE hasAnyTokenLike(s_cjk, 'x:%') SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT 'asciiCJK', count() FROM tab WHERE hasAnyTokenLike(s_cjk, '支');
 SELECT 'asciiCJK', count() FROM tab WHERE hasAnyTokenLike(s_cjk, '支') SETTINGS use_skip_indexes = 0;
 SELECT 'asciiCJK', count() FROM tab WHERE hasAnyTokenLike(s_cjk, '支') SETTINGS query_plan_direct_read_from_text_index = 0;
-SELECT 'asciiCJK', count() FROM tab WHERE hasAnyTokenRegexp(s_cjk, '^.:.$');
-SELECT 'asciiCJK', count() FROM tab WHERE hasAnyTokenRegexp(s_cjk, '^.:.$') SETTINGS use_skip_indexes = 0;
-SELECT 'asciiCJK', count() FROM tab WHERE hasAnyTokenRegexp(s_cjk, '^.:.$') SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT 'asciiCJK', countIf(arrayExists(t -> startsWith(t, 'x:'), tokens(s_cjk, 'asciiCJK'))),
-    countIf(arrayExists(t -> like(t, '支'), tokens(s_cjk, 'asciiCJK'))), countIf(arrayExists(t -> match(t, '^.:.$'), tokens(s_cjk, 'asciiCJK'))) FROM tab;
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenPrefix(s_cjk, 'x:')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+    countIf(arrayExists(t -> like(t, '支'), tokens(s_cjk, 'asciiCJK'))) FROM tab;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenLike(s_cjk, 'x:%')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenLike(s_cjk, '支')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenRegexp(s_cjk, '^.:.$')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 
 SELECT 'direct read', countIf(explain LIKE '%\_\_text\_index\_idx\_ngrams\_%') > 0, countIf(explain LIKE '%\_\_text\_index\_idx\_sparse\_%') > 0,
     countIf(explain LIKE '%\_\_text\_index\_idx\_split\_%') > 0, countIf(explain LIKE '%\_\_text\_index\_idx\_cjk\_%') > 0
-FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAnyTokenPrefix(s_ngrams, 'har') AND hasAnyTokenLike(s_sparse, '%harg%') AND hasAnyTokenRegexp(s_split, '^[a-z]+;$') AND hasAnyTokenPrefix(s_cjk, 'x:'));
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAnyTokenLike(s_ngrams, 'har%') AND hasAnyTokenLike(s_sparse, '%harg%') AND hasAnyTokenLike(s_split, '%;') AND hasAnyTokenLike(s_cjk, 'x:%'));
 
 DROP TABLE tab;
 
@@ -272,7 +242,7 @@ SELECT count() FROM tab WHERE hasAnyTokenLike(s, 'abc%');
 SELECT count() FROM tab WHERE hasAnyTokenLike(s, 'abc%') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasAnyTokenLike(s, 'abc');
 SELECT count() FROM tab WHERE hasAnyTokenLike(s, 'abc') SETTINGS use_skip_indexes = 0;
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(s, ['abcd', 'x']);
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(s, ['abcd', 'x']) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasAnyTokenLike(s, ['abcd%', 'x%']);
+SELECT count() FROM tab WHERE hasAnyTokenLike(s, ['abcd%', 'x%']) SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;

@@ -27,10 +27,10 @@
   </fill_query>
   <fill_query>OPTIMIZE TABLE tab FINAL</fill_query>
 
-  <query>SELECT count() FROM tab WHERE hasAnyTokenPrefix(message, 'charg')</query>
+  <query>SELECT count() FROM tab WHERE hasAnyTokenLike(message, 'charg%')</query>
   <query>SELECT count() FROM tab WHERE arrayExists(t -> startsWith(t, 'charg'), tokens(message))</query>
 
-  <query>SELECT count() FROM tab WHERE hasAnyTokenPrefix(message, ['charg', 'refund'])</query>
+  <query>SELECT count() FROM tab WHERE hasAnyTokenLike(message, ['charg%', 'refund%'])</query>
   <query>SELECT count() FROM tab WHERE arrayExists(t -> startsWith(t, 'charg') OR startsWith(t, 'refund'), tokens(message))</query>
 
   <query>SELECT count() FROM tab WHERE hasAnyTokenLike(message, 'ch%ed')</query>
@@ -42,13 +42,6 @@
   <!-- Every row has 'user', so the index selects every row and the hint is dropped. -->
   <query>SELECT count() FROM tab WHERE hasAllTokenLike(message, ['user', 'charg%'])</query>
   <query>SELECT count() FROM tab WHERE hasAnyTokenLike(message, 'user') AND hasAnyTokenLike(message, 'charg%')</query>
-
-  <query>SELECT count() FROM tab WHERE hasAnyTokenRegexp(message, '^charg(ed|ing)$')</query>
-  <query>SELECT count() FROM tab WHERE arrayExists(t -> match(t, '^charg(ed|ing)$'), tokens(message))</query>
-
-  <!-- No literal: the regular expression is checked against every token of the dictionary. -->
-  <query>SELECT count() FROM tab WHERE hasAnyTokenRegexp(message, '^[a-c][a-z]+ed$')</query>
-  <query>SELECT count() FROM tab WHERE arrayExists(t -> match(t, '^[a-c][a-z]+ed$'), tokens(message))</query>
 
   <!-- An unanchored pattern with no literal of three characters runs re2 on every token, from several threads. -->
   <query>SELECT count() FROM tab WHERE hasAnyTokenLike(message, '%ed')</query>

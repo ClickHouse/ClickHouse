@@ -1,5 +1,5 @@
 -- Tags: no-parallel-replicas
--- Without a tokenizer argument, `hasAnyTokenPrefix` uses the index tokenizer only where the index is read,
+-- Without a tokenizer argument, `hasAnyTokenLike` uses the index tokenizer only where the index is read,
 -- and `splitByNonAlpha` elsewhere (e.g. after GROUP BY), like `hasAnyTokens`.
 
 SET enable_analyzer = 1;
@@ -26,22 +26,22 @@ SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
 INSERT INTO tab SELECT number, multiIf(number < 8, 'env:prod-eu', number < 16, 'prod', 'env:dev') FROM numbers(64);
 
 SELECT '-- filter and SELECT list: the index tokenizer';
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(tag, 'prod');
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(tag, 'prod') SETTINGS use_skip_indexes = 0;
-SELECT countIf(hasAnyTokenPrefix(tag, 'prod')) FROM tab;
+SELECT count() FROM tab WHERE hasAnyTokenLike(tag, 'prod%');
+SELECT count() FROM tab WHERE hasAnyTokenLike(tag, 'prod%') SETTINGS use_skip_indexes = 0;
+SELECT countIf(hasAnyTokenLike(tag, 'prod%')) FROM tab;
 
 SELECT '-- after GROUP BY: splitByNonAlpha, unless the tokenizer is explicit';
-SELECT tag, hasAnyTokenPrefix(tag, 'prod') FROM tab GROUP BY tag ORDER BY tag;
-SELECT tag, hasAnyTokenPrefix(tag, 'prod', 'array') FROM tab GROUP BY tag ORDER BY tag;
+SELECT tag, hasAnyTokenLike(tag, 'prod%') FROM tab GROUP BY tag ORDER BY tag;
+SELECT tag, hasAnyTokenLike(tag, 'prod%', 'array') FROM tab GROUP BY tag ORDER BY tag;
 SELECT tag, hasAllTokenLike(tag, ['prod%', '%eu']) FROM tab GROUP BY tag ORDER BY tag;
 
 SELECT '-- HAVING on the grouping key: the index tokenizer only if the condition is pushed down to the table';
-SELECT count() FROM (SELECT tag FROM tab GROUP BY tag HAVING hasAnyTokenPrefix(tag, 'prod')) SETTINGS query_plan_filter_push_down = 1;
-SELECT count() FROM (SELECT tag FROM tab GROUP BY tag HAVING hasAnyTokenPrefix(tag, 'prod')) SETTINGS query_plan_filter_push_down = 0;
-SELECT count() FROM (SELECT tag FROM tab GROUP BY tag HAVING hasAnyTokenPrefix(tag, 'prod', 'array')) SETTINGS query_plan_filter_push_down = 0;
+SELECT count() FROM (SELECT tag FROM tab GROUP BY tag HAVING hasAnyTokenLike(tag, 'prod%')) SETTINGS query_plan_filter_push_down = 1;
+SELECT count() FROM (SELECT tag FROM tab GROUP BY tag HAVING hasAnyTokenLike(tag, 'prod%')) SETTINGS query_plan_filter_push_down = 0;
+SELECT count() FROM (SELECT tag FROM tab GROUP BY tag HAVING hasAnyTokenLike(tag, 'prod%', 'array')) SETTINGS query_plan_filter_push_down = 0;
 
 SELECT '-- ALTER TABLE DELETE with the tokenizer argument';
-ALTER TABLE tab DELETE WHERE hasAnyTokenPrefix(tag, 'prod', 'array');
+ALTER TABLE tab DELETE WHERE hasAnyTokenLike(tag, 'prod%', 'array');
 SELECT count() FROM tab;
 ALTER TABLE tab DELETE WHERE hasAllTokenLike(tag, ['prod%', '%eu'], 'splitByNonAlpha');
 SELECT count() FROM tab;
@@ -62,12 +62,12 @@ SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab SELECT number, if(number < 8, 'Charged', 'other') FROM numbers(64);
 
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'charg');
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'Charg');
-SELECT msg, hasAnyTokenPrefix(msg, 'charg'), hasAnyTokenPrefix(msg, 'Charg') FROM tab GROUP BY msg ORDER BY msg;
-ALTER TABLE tab DELETE WHERE hasAnyTokenPrefix(msg, 'charg');
+SELECT count() FROM tab WHERE hasAnyTokenLike(msg, 'charg%');
+SELECT count() FROM tab WHERE hasAnyTokenLike(msg, 'Charg%');
+SELECT msg, hasAnyTokenLike(msg, 'charg%'), hasAnyTokenLike(msg, 'Charg%') FROM tab GROUP BY msg ORDER BY msg;
+ALTER TABLE tab DELETE WHERE hasAnyTokenLike(msg, 'charg%');
 SELECT count() FROM tab;
-ALTER TABLE tab DELETE WHERE hasAnyTokenPrefix(msg, 'Charg');
+ALTER TABLE tab DELETE WHERE hasAnyTokenLike(msg, 'Charg%');
 SELECT count() FROM tab;
 
 DROP TABLE tab;

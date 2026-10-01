@@ -91,7 +91,7 @@ public:
     /// Attaches a scan-discovered `token` to every pattern query whose regex matches it.
     /// Returns true if any pattern matched.
     bool addTokenToPatterns(std::string_view token);
-    /// Number of tokens that matched a hasAnyTokenPrefix/Like, hasAllTokenLike or hasAnyTokenRegexp pattern.
+    /// Number of tokens that matched a hasAnyTokenLike or hasAllTokenLike pattern.
     size_t getNumPerTokenPatternTokens() const { return num_per_token_pattern_tokens; }
     bool hasPerTokenPatterns() const { return !per_token_patterns.empty(); }
     /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
@@ -135,7 +135,7 @@ private:
     absl::flat_hash_map<String, QueryHashes> queries_by_token;
     /// Pattern queries grouped by their compiled regex; static for the analyzer's lifetime.
     absl::flat_hash_map<const OptimizedRegularExpression *, QueryHashes> queries_by_pattern;
-    /// Patterns of hasAnyTokenPrefix/Like, hasAllTokenLike and hasAnyTokenRegexp, the only ones that are capped.
+    /// Patterns of hasAnyTokenLike and hasAllTokenLike, the only ones that are capped.
     absl::flat_hash_set<const OptimizedRegularExpression *> per_token_patterns;
     /// This analyzer's own copies of the patterns that use re2, because threads that share one re2 object contend on its cache.
     std::deque<OptimizedRegularExpression> own_patterns;

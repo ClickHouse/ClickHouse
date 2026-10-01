@@ -283,10 +283,8 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens"
         || function_name == "hasPhrase"
-        || function_name == "hasAnyTokenPrefix"
         || function_name == "hasAnyTokenLike"
         || function_name == "hasAllTokenLike"
-        || function_name == "hasAnyTokenRegexp"
         || function_name == "equals"
         || function_name == "mapContainsKey"
         || function_name == "mapContainsKeyLike"
@@ -306,11 +304,10 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "multiMatchAny";
 }
 
-/// `hasAnyTokenPrefix`, `hasAnyTokenLike`, `hasAllTokenLike` and `hasAnyTokenRegexp` apply their patterns to each token separately.
+/// `hasAnyTokenLike` and `hasAllTokenLike` apply their patterns to each token separately.
 bool MergeTreeIndexConditionText::isPerTokenPatternFunction(const String & function_name)
 {
-    return function_name == "hasAnyTokenPrefix" || function_name == "hasAnyTokenLike" || function_name == "hasAllTokenLike"
-        || function_name == "hasAnyTokenRegexp";
+    return function_name == "hasAnyTokenLike" || function_name == "hasAllTokenLike";
 }
 
 bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const
@@ -1846,18 +1843,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             }
         }
 
-        /// Compile all patterns like the function does, so an invalid one always throws,
-        /// and turn a prefix into `prefix%`, so the dictionary scan can seek to it.
+        /// Compile all patterns like the function does, so an invalid one always throws.
         std::vector<OptimizedRegularExpression> patterns;
         for (const auto & needle : needles)
-        {
-            if (function_name == "hasAnyTokenPrefix")
-                patterns.emplace_back(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(escapeForLikePattern(needle) + "%"));
-            else if (function_name == "hasAnyTokenRegexp")
-                patterns.emplace_back(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
-            else
-                patterns.emplace_back(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
-        }
+            patterns.emplace_back(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
 
         /// The index is used only if the function sees the stored tokens (no preprocessor, no postprocessor)
         /// and no needle is empty, since an empty needle or array matches every token or none.
