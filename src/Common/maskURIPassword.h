@@ -88,12 +88,8 @@ inline bool maskURIPassword(std::string * uri)
     return true;
 }
 
-/** Hide the values of the MongoDB connection options that carry a secret (`tlsCertificateKeyFilePassword`,
-  * its alias `sslClientCertificateKeyPassword`, `authMechanismProperties`) in a connection string or an
-  * option list, and the password `maskURIPassword` hides. As the driver reads them, an option name is
-  * case-insensitive and not percent-decoded, and a value runs to the next '&'. Both are located in the
-  * original string, so neither can consume the delimiters of the other. Returns whether anything was hidden.
-  */
+/// Hides the secret option values and the URI password of a MongoDB connection string or option list; returns whether any was hidden.
+/// As the driver reads them, an option name is case-insensitive and not percent-decoded, and a value runs to the next '&'.
 inline bool maskMongoDBConnectionString(std::string & str)
 {
     static constexpr std::array<std::string_view, 3> secret_options
@@ -153,7 +149,6 @@ inline bool maskMongoDBConnectionString(std::string & str)
 
     std::sort(hidden.begin(), hidden.end());
 
-    /// Built in one pass, merging the ranges that overlap.
     std::string result;
     size_t copied = 0;
     for (size_t i = 0; i < hidden.size();)

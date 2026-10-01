@@ -495,15 +495,13 @@ void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
 
 void FunctionSecretArgumentsFinder::findMongoDBConnectionStringSecretArguments()
 {
-    /// Hides through `replaced_arguments`: `markSecretArgument` requires an empty `result.replacement`, which
-    /// the named-collection `uri` override above sets. An argument masked by the above is left as it is.
+    /// Uses `replaced_arguments`, since `markSecretArgument` asserts an empty `result.replacement`.
     auto is_masked = [&](size_t index)
     {
         return result.replaced_arguments.contains(index) || result.masked_arguments.contains(index)
             || (result.start <= index && index < result.start + result.count);
     };
 
-    /// A readable argument is replaced only if it carries a secret; an unreadable one is hidden whole.
     auto mask_argument = [&](size_t index, bool hide_unreadable)
     {
         const auto argument = function->arguments->at(index);

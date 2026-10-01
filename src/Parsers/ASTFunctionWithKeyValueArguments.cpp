@@ -91,7 +91,7 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
     }
     else if (!settings.show_secrets && (first == "uri" || first == "options"))
     {
-        /// A MongoDB connection string or option list, masked as a value and then quoted as the original.
+        /// A MongoDB connection string or option list.
         const auto * literal = second->as<ASTLiteral>();
         const auto * identifier = second->as<ASTIdentifier>();
         if (literal && literal->value.getType() == Field::Types::String)
