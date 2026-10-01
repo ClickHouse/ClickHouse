@@ -2492,6 +2492,12 @@ void IMergeTreeDataPart::loadRowsCount()
                     name, rows_count - index_granularity_without_last_mark, last_possibly_incomplete_mark_rows);
         }
 
+        /// Adaptive marks store the rows of every granule.
+        if (verify && index_granularity_info.mark_type.adaptive && rows_count != index_granularity->getTotalRows())
+            throw Exception(error_code,
+                "Data part {} has {} rows, but its marks have {} rows",
+                name, rows_count, index_granularity->getTotalRows());
+
         /// columns have to be loaded
         for (const auto & column : getColumns())
         {

@@ -1,9 +1,9 @@
 # Detached part directories manipulated on disk before ATTACH / DROP DETACHED:
 # fabricated `_tryN` leftovers, injected canned old-version parts, legacy
-# index file renames (`.idx` vs `.idx2`, `checksums.txt` removal), and parts
-# copied from a table with another `index_granularity`. These tests
-# emulate parts written by OLD ClickHouse versions, so they tamper with the
-# server's on-disk data and therefore live here rather than in stateless tests.
+# index file renames (`.idx` vs `.idx2`, `checksums.txt` removal), parts
+# copied from a table with another `index_granularity`, and an edited
+# `count.txt`. These tests tamper with the server's on-disk data and
+# therefore live here rather than in stateless tests.
 #
 # Converted from the stateless tests:
 #   04063_drop_detached_part_with_try_n_suffix.sh
@@ -684,3 +684,32 @@ def test_attach_part_written_with_other_index_granularity(started_cluster):
 
     for table in ("src_g8", "dst_g4", "dst_g8"):
         node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_attach_part_with_row_count_not_matching_adaptive_marks(started_cluster):
+    # Adaptive marks store the rows of every granule, so `count.txt` must match them exactly.
+    node.query("DROP TABLE IF EXISTS t_adaptive_count SYNC")
+    node.query(
+        """
+        CREATE TABLE t_adaptive_count (s String)
+        ENGINE = MergeTree ORDER BY s
+        SETTINGS index_granularity = 8, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, storage_policy = 'default'
+        """
+    )
+    node.query("INSERT INTO t_adaptive_count SELECT toString(number) FROM numbers(18)")
+    part = node.query(
+        "SELECT name FROM system.parts WHERE database = 'default' AND table = 't_adaptive_count' AND active"
+    ).strip()
+    node.query(f"ALTER TABLE t_adaptive_count DETACH PART '{part}'")
+    count_file = f"{table_data_path('t_adaptive_count')}detached/{part}/count.txt"
+
+    exec_root(f"printf 17 > {count_file}")
+    error = node.query_and_get_error(f"ALTER TABLE t_adaptive_count ATTACH PART '{part}'")
+    assert "BAD_SIZE_OF_FILE_IN_DATA_PART" in error, error
+
+    # Control: the original row count attaches.
+    exec_root(f"printf 18 > {count_file}")
+    node.query(f"ALTER TABLE t_adaptive_count ATTACH PART '{part}'")
+    assert node.query("SELECT count() FROM t_adaptive_count") == "18\n"
+
+    node.query("DROP TABLE t_adaptive_count SYNC")
