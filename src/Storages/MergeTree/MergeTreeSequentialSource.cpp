@@ -26,11 +26,6 @@
 #include <Common/ThrottlerArray.h>
 #include <base/sleep.h>
 
-namespace ProfileEvents
-{
-    extern const Event UniqueKeyMergeInputRowsSkipped;
-}
-
 namespace DB
 {
 
@@ -333,8 +328,6 @@ size_t MergeTreeSequentialSource::applyDeleteBitmapFilter(Columns & columns, UIn
 
     IColumn::Filter filter(num_rows);
     const size_t kept = delete_bitmap->buildKeepFilterRange(begin, num_rows, filter.data());
-
-    ProfileEvents::increment(ProfileEvents::UniqueKeyMergeInputRowsSkipped, num_rows - kept);
 
     for (auto & column : columns)
         column = column->filter(filter, kept);

@@ -97,6 +97,7 @@ namespace ProfileEvents
     extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
     extern const Event MergedProjections;
     extern const Event RebuiltProjections;
+    extern const Event UniqueKeyMergeInputRowsSkipped;
 }
 
 namespace CurrentMetrics
@@ -866,7 +867,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->deduplicate ||
         hasLightweightDelete(global_ctx->future_part) ||
         global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary ||
-        /// The UNIQUE KEY input filter drops bitmap-dead rows, so projections and
+        /// The UNIQUE KEY input filter skips bitmap-dead rows, so projections and
         /// minmax indexes must be rebuilt from the merge output, not inherited.
         global_ctx->is_unique_key_merge;
 
@@ -2109,12 +2110,17 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
     {
         auto plan_for_part = std::make_unique<QueryPlan>();
 
+        /// Skips the rows the horizontal stage skipped, so the column lines up with `rows_sources`.
+        RangesInDataPart part_ranges(global_ctx->future_part->parts[part_num], nullptr, part_num, part_starting_offset);
+        if (global_ctx->is_unique_key_merge)
+            part_ranges.delete_bitmap = global_ctx->unique_key_snapshot_bitmaps[part_num];
+
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Merge,
             *plan_for_part,
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            RangesInDataPart(global_ctx->future_part->parts[part_num], nullptr, part_num, part_starting_offset),
+            std::move(part_ranges),
             global_ctx->alter_conversions[part_num],
             global_ctx->merged_part_offsets,
             Names{column_name},
@@ -3479,7 +3485,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
         RangesInDataPart part_ranges(part, nullptr, i, part_starting_offset);
         if (global_ctx->is_unique_key_merge)
+        {
             part_ranges.delete_bitmap = global_ctx->unique_key_snapshot_bitmaps[i];
+            /// Counted here, once per merge: the vertical stage's reads skip the same rows again per column.
+            const size_t dead_at_snapshot = part_ranges.delete_bitmap->cardinality();
+            *global_ctx->input_rows_filtered += dead_at_snapshot;
+            ProfileEvents::increment(ProfileEvents::UniqueKeyMergeInputRowsSkipped, dead_at_snapshot);
+        }
 
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Merge,
@@ -3740,9 +3752,6 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
     if (global_ctx->future_part->part_format.storage_type != MergeTreeDataPartStorageType::Full)
         return MergeAlgorithm::Horizontal;
     if (global_ctx->cleanup)
-        return MergeAlgorithm::Horizontal;
-    /// TODO(unique-key): support vertical merges.
-    if (global_ctx->is_unique_key_merge)
         return MergeAlgorithm::Horizontal;
 
     if (!(*merge_tree_settings)[MergeTreeSetting::allow_vertical_merges_from_compact_to_wide_parts])
