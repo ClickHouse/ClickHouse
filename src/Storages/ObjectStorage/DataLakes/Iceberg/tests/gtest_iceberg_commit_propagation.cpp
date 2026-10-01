@@ -188,6 +188,8 @@ public:
 
     std::vector<Write> writes;
     std::vector<std::string> removed;
+    /// Every read of the hint fails, as a transient network error would.
+    bool read_fails = false;
 
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const StoredObject & object,
@@ -234,6 +236,8 @@ public:
         std::optional<size_t>) const override
     {
         EXPECT_TRUE(object.remote_path.ends_with(version_hint_name)) << object.remote_path;
+        if (read_fails)
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot read {}", object.remote_path);
 
         SmallObjectDataWithMetadata result;
         result.data = "1";
@@ -506,6 +510,35 @@ TEST(IcebergCommitPropagation, CreatedVersionHintIsJudgedByTheTagTheNextCommitRe
     ASSERT_EQ(writes.size(), 2u);
     EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
     EXPECT_TRUE(commit.removed().empty());
+}
+
+TEST(IcebergCommitPropagation, CreatedVersionHintIsTakenBackWhenItsCheckFails)
+{
+    /// The exclusive create of the hint succeeds, but reading it back for its tag fails. The hint is
+    /// published by then, so the commit must take it back together with the metadata file before
+    /// the error propagates: otherwise the command fails while leaving behind a hint that may be
+    /// impossible to advance.
+    CommitOverExistingVersionHint commit("\"abc\"", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
+    commit.object_storage->read_fails = true;
+
+    try
+    {
+        bool committed = commit.run();
+        FAIL() << "Expected the failed read to propagate, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::NETWORK_ERROR) << e.message();
+    }
+
+    const auto & writes = commit.writes();
+    ASSERT_EQ(writes.size(), 2u);
+    EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
+
+    const auto & removed = commit.removed();
+    ASSERT_EQ(removed.size(), 2u);
+    EXPECT_EQ(removed[0], writes[1].path);
+    EXPECT_EQ(removed[1], writes[0].path);
 }
 
 TEST(IcebergCommitPropagation, RefusedConditionalWriteIsNotReportedAsALostRace)

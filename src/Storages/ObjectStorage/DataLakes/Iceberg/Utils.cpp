@@ -418,25 +418,43 @@ void takeBackVersionHintWithoutETag(
     const std::vector<std::string> & files_to_take_back,
     const DB::ContextPtr & context)
 {
+    auto take_back = [&]
+    {
+        std::vector<std::string> paths{storage_version_hint_path};
+        paths.insert(paths.end(), files_to_take_back.begin(), files_to_take_back.end());
+        for (const auto & path : paths)
+        {
+            try
+            {
+                object_storage->removeObjectIfExists(StoredObject(path));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    };
+
     /// Read the tag back the same way `readVersionHint` does for the next commit. A metadata-only
     /// request may legitimately disagree with a read about whether the optional header is there,
     /// and only the tag the next commit will see decides whether it can advance the hint.
-    if (!readVersionHint(object_storage, storage_version_hint_path, context).etag.empty())
+    /// The hint is already published at this point, so a failed check must take it back too:
+    /// otherwise the command would fail while leaving a hint that may be impossible to advance.
+    std::string etag;
+    try
+    {
+        etag = readVersionHint(object_storage, storage_version_hint_path, context).etag;
+    }
+    catch (...)
+    {
+        take_back();
+        throw;
+    }
+
+    if (!etag.empty())
         return;
 
-    std::vector<std::string> paths{storage_version_hint_path};
-    paths.insert(paths.end(), files_to_take_back.begin(), files_to_take_back.end());
-    for (const auto & path : paths)
-    {
-        try
-        {
-            object_storage->removeObjectIfExists(StoredObject(path));
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
+    take_back();
 
     throw Exception(
         ErrorCodes::UNSUPPORTED_METHOD,
