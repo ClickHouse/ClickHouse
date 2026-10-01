@@ -29,7 +29,7 @@ const std::vector<IcebergRESTRoute> & getIcebergRESTRoutes()
         {HTTPRequest::HTTP_GET, {"v1", "{prefix}", "namespaces"}, IcebergRESTOperation::ListNamespaces, true},
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces"}, IcebergRESTOperation::CreateNamespace, true},
 
-        {HTTPRequest::HTTP_GET, {"v1", "{prefix}", "namespaces", "{namespace}"}, IcebergRESTOperation::LoadNamespace, false},
+        {HTTPRequest::HTTP_GET, {"v1", "{prefix}", "namespaces", "{namespace}"}, IcebergRESTOperation::LoadNamespace, true},
         {HTTPRequest::HTTP_HEAD, {"v1", "{prefix}", "namespaces", "{namespace}"}, IcebergRESTOperation::NamespaceExists, true},
         {HTTPRequest::HTTP_DELETE, {"v1", "{prefix}", "namespaces", "{namespace}"}, IcebergRESTOperation::DropNamespace, false},
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "properties"}, IcebergRESTOperation::UpdateNamespaceProperties, false},

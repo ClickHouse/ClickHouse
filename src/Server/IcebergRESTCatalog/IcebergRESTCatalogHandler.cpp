@@ -24,6 +24,7 @@
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/String.h>
 
 #include <base/unit.h>
 #include <boost/algorithm/string/split.hpp>
@@ -115,6 +116,20 @@ std::optional<String> getQueryParameter(const Poco::URI & uri, const String & na
             return value;
     }
     return std::nullopt;
+}
+
+/// Boolean query parameters arrive as `true`, `True` or `TRUE` depending on the client, so compare case-insensitively.
+/// Throws for a value that is not a boolean.
+bool getBooleanQueryParameter(const Poco::URI & uri, const String & name, bool default_value)
+{
+    const auto value = getQueryParameter(uri, name);
+    if (!value)
+        return default_value;
+    if (Poco::icompare(*value, "true") == 0)
+        return true;
+    if (Poco::icompare(*value, "false") == 0)
+        return false;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Query parameter '{}' must be 'true' or 'false', got '{}'", name, *value);
 }
 
 /// Returns nullptr for an absent or null key. `getObject` alone would also return nullptr for a wrong type.
@@ -302,6 +317,9 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
             case IcebergRESTOperation::CreateNamespace:
                 handleCreateNamespace(*warehouse, request, response, *context);
                 return;
+            case IcebergRESTOperation::LoadNamespace:
+                handleLoadNamespace(*warehouse, *match, response);
+                return;
             case IcebergRESTOperation::NamespaceExists:
                 handleNamespaceExists(*warehouse, *match, response);
                 return;
@@ -440,6 +458,27 @@ void IcebergRESTCatalogHandler::handleListNamespaces(const IcebergRESTCatalogWar
 
     Poco::JSON::Object result;
     result.set("namespaces", namespaces);
+    sendJSON(response, result, Poco::Net::HTTPResponse::HTTP_OK);
+}
+
+void IcebergRESTCatalogHandler::handleLoadNamespace(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const
+{
+    const auto ns = splitNamespace(match.path_params.at("namespace"));
+    /// The properties double as the existence check.
+    const auto properties = warehouse.store->getNamespaceProperties(ns);
+    if (!properties)
+    {
+        sendNoSuchNamespace(response, ns);
+        return;
+    }
+
+    Poco::JSON::Object properties_json;
+    for (const auto & [key, value] : *properties)
+        properties_json.set(key, value);
+
+    Poco::JSON::Object result;
+    result.set("namespace", namespaceToJSON(ns));
+    result.set("properties", properties_json);
     sendJSON(response, result, Poco::Net::HTTPResponse::HTTP_OK);
 }
 
@@ -773,7 +812,7 @@ void IcebergRESTCatalogHandler::handleDropTable(
     validateTableName(table);
 
     /// TODO: purge deletes every file the table owns: data files, manifests, manifest lists and metadata files.
-    if (const auto purge = getQueryParameter(uri, "purgeRequested"); purge && *purge == "true")
+    if (getBooleanQueryParameter(uri, "purgeRequested", /*default_value=*/ false))
     {
         sendError(response, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "BadRequestException", "purgeRequested is not supported yet");
         return;

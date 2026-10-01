@@ -189,6 +189,7 @@ def test_config(started_cluster):
         "GET /v1/config",
         "GET /v1/{prefix}/namespaces",
         "POST /v1/{prefix}/namespaces",
+        "GET /v1/{prefix}/namespaces/{namespace}",
         "HEAD /v1/{prefix}/namespaces/{namespace}",
         "GET /v1/{prefix}/namespaces/{namespace}/tables",
         "POST /v1/{prefix}/namespaces/{namespace}/tables",
@@ -281,6 +282,16 @@ def test_namespace_exists(started_cluster):
     response = requests.head(catalog_url("/v1/my_warehouse/namespaces/missing"))
     assert response.status_code == 404, response.text
     assert response.text == ""
+
+
+def test_load_namespace(started_cluster):
+    ns = f"load_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns], properties={"owner": "asya"})
+
+    response = catalog_request("GET", f"/v1/my_warehouse/namespaces/{ns}")
+    assert response.json() == {"namespace": [ns], "properties": {"owner": "asya"}}
+
+    catalog_request("GET", "/v1/my_warehouse/namespaces/missing", expected_code=404)
 
 
 def test_malformed_create_namespace(started_cluster):
@@ -510,6 +521,34 @@ def test_clickhouse_rest_catalog_client(started_cluster):
         ) == "id\tInt64\nname\tNullable(String)\n"
     finally:
         node.query("DROP DATABASE IF EXISTS rest_client_db")
+
+
+def test_clickhouse_rest_catalog_client_create_table(started_cluster):
+    ns = f"client_create_{uuid.uuid4().hex[:8]}"
+
+    node.query(f"""
+        DROP DATABASE IF EXISTS rest_client_create_db;
+        SET allow_experimental_database_iceberg = 1;
+        CREATE DATABASE rest_client_create_db
+        ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
+        SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
+            storage_endpoint = 'http://minio1:9001/{BUCKET}'
+        """)
+
+    # The client sends the table location to the server. The server accepts `s3://` locations only.
+    node.query(
+        f"""
+        CREATE TABLE rest_client_create_db.`{ns}.events` (id Int64, name String)
+        ENGINE = IcebergS3('http://minio1:9001/{BUCKET}/{ns}/events/', '{minio_access_key}', '{minio_secret_key}')
+        """,
+        settings={"write_full_path_in_iceberg_metadata": 1},
+    )
+
+    # INSERT is not tested here: it commits through UpdateTable, which the server does not support yet.
+    assert node.query(f"SELECT count() FROM rest_client_create_db.`{ns}.events`") == "0\n"
+    assert list_tables(ns) == ["events"]
+
+    node.query("DROP DATABASE IF EXISTS rest_client_create_db")
 
 
 def test_keeper_layout(started_cluster):
