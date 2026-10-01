@@ -253,6 +253,18 @@ def test_non_retryable_error_still_marks_part_broken(
     table = f"t_negative_{int(cancel_during_unwind)}"
     _create_table(table)
 
+    if cancel_during_unwind:
+        # Keep exactly one prefetched task so the query cannot observe an error from a sibling
+        # task before cancellation wins the intended race with this task's stored exception.
+        node.query(f"OPTIMIZE TABLE {table} FINAL")
+        assert (
+            node.query(
+                "SELECT count() FROM system.parts WHERE database=currentDatabase() "
+                f"AND table='{table}' AND active"
+            ).strip()
+            == "1"
+        )
+
     node.query("SYSTEM ENABLE FAILPOINT azure_inject_bad_request")
     pause_failpoint = "merge_tree_reader_pause_before_report_broken"
     executor = None
@@ -268,7 +280,9 @@ def test_non_retryable_error_still_marks_part_broken(
         executor = ThreadPoolExecutor(max_workers=1)
         query_future = executor.submit(
             node.query_and_get_error,
-            f"SELECT sum(k) FROM {table}",
+            f"SELECT sum(k) FROM {table} SETTINGS max_threads=1, "
+            "allow_prefetched_read_pool_for_remote_filesystem=1, "
+            "filesystem_prefetch_max_memory_usage='1Gi'",
             query_id=query_id,
         )
         node.query(f"SYSTEM WAIT FAILPOINT {pause_failpoint} PAUSE", timeout=60)

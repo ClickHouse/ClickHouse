@@ -331,7 +331,6 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
                 thread_task->read_info->data_part_info->getDataPart(), thread_task->read_info->patch_parts, thread_task->ranges);
         }
 
-        CurrentThread::checkIfNotCancelled();
         return createTask(*thread_task, previous_task);
     }
 }
@@ -434,9 +433,16 @@ MergeTreePrefetchedReadPool::ThreadTaskPtr MergeTreePrefetchedReadPool::stealTas
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::createTask(ThreadTask & task, MergeTreeReadTask * previous_task)
 {
     if (task.isValidReadersFuture())
-        return MergeTreeReadPoolBase::createTask(task.read_info, task.readers_future->get(), task.ranges, task.patches_ranges, updater);
-    else
-        return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task, updater);
+    {
+        auto readers = task.readers_future->get();
+        /// Preserve a real prefetch error if it raced with query cancellation: `get` must rethrow
+        /// the background exception before the mutable cancellation state is checked.
+        CurrentThread::checkIfNotCancelled();
+        return MergeTreeReadPoolBase::createTask(task.read_info, std::move(readers), task.ranges, task.patches_ranges, updater);
+    }
+
+    CurrentThread::checkIfNotCancelled();
+    return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task, updater);
 }
 
 void MergeTreePrefetchedReadPool::fillPerPartStatistics()
