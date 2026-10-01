@@ -7097,6 +7097,9 @@ void inlineAliasColumnsAfterAggregation(const QueryTreeNodePtr & query_node, con
     if (query_node_typed.hasOrderBy())
         visitor.visit(query_node_typed.getOrderByNode());
 
+    if (query_node_typed.hasInterpolate())
+        visitor.visit(query_node_typed.getInterpolate());
+
     if (query_node_typed.hasLimitBy())
         visitor.visit(query_node_typed.getLimitByNode());
 

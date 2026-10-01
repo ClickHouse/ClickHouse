@@ -58,6 +58,10 @@ SELECT k, sum(v) FROM t GROUP BY k ORDER BY k LIMIT 1 BY len_k;
 SELECT '-- window function over the aggregated result';
 SELECT k, sum(sum(v)) OVER (PARTITION BY len_k) AS s FROM t GROUP BY k ORDER BY k;
 
+SELECT '-- INTERPOLATE';
+SELECT n, sum(v) AS s, n_mod FROM t GROUP BY n ORDER BY n WITH FILL TO 7 INTERPOLATE (n_mod AS n_mod + 10);
+SELECT n, sum(v) AS s, n_mod FROM t GROUP BY n ORDER BY n WITH FILL TO 7 INTERPOLATE (s AS s + n_mod);
+
 SELECT '-- ALIAS column is a key or is under an aggregate function';
 SELECT upper_k, count() FROM t GROUP BY upper_k ORDER BY upper_k;
 SELECT k, max(upper_k), sum(n_mod) FROM t GROUP BY k ORDER BY k;

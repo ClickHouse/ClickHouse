@@ -30,6 +30,19 @@ bb	30
 a	70
 b	70
 bb	30
+-- INTERPOLATE
+1	10	1
+2	20	2
+3	30	0
+4	40	1
+5	0	11
+6	0	21
+1	10	1
+2	20	2
+3	30	0
+4	40	1
+5	41	0
+6	41	0
 -- ALIAS column is a key or is under an aggregate function
 A	2
 B	1
