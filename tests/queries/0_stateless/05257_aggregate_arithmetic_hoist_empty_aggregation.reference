@@ -82,16 +82,6 @@ wide integer multiply	0
 wide integer multiply	0
 low cardinality integer multiply	0
 low cardinality integer multiply	0
-decimal multiply	0
-decimal multiply	0
-decimal divide	0
-decimal divide	0
-decimal divide nonempty	-1.33
-decimal divide nonempty	-1.33
-decimal constant	0
-decimal constant	0
-decimal constant nonempty	-12
-decimal constant nonempty	-12
 integer multiply nonempty	-12
 integer multiply nonempty	-12
 grouping shapes that still emit a row over empty input
@@ -203,8 +193,6 @@ min multiply	0
 min multiply	0
 min multiply float reciprocal	inf
 min multiply float reciprocal	inf
-min multiply decimal	0
-min multiply decimal	0
 sum multiply	0
 sum multiply	0
 

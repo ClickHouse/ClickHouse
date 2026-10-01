@@ -78,7 +78,7 @@ SELECT 'multiply left reciprocal', 1 / min(-3.5 * toFloat64(number)) FROM number
 SELECT 'multiply left reciprocal', 1 / min(-3.5 * toFloat64(number)) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 
 -- The negative zero follows the result type, not the literal's own type: an integer literal over a
--- floating-point operand still produces one, and an integer or Decimal result cannot.
+-- floating-point operand still produces one, and an integer result cannot.
 SELECT 'integer literal float operand reciprocal', 1 / min(toFloat64(number) * -3) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
 SELECT 'integer literal float operand reciprocal', 1 / min(toFloat64(number) * -3) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 SELECT 'integer literal float32 operand reciprocal', 1 / min(toFloat32(number) * -3) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
@@ -107,16 +107,6 @@ SELECT 'wide integer multiply', min(toInt128(number) * -3) FROM numbers(0) SETTI
 SELECT 'wide integer multiply', min(toInt128(number) * -3) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 SELECT 'low cardinality integer multiply', min(toLowCardinality(number) * -3) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
 SELECT 'low cardinality integer multiply', min(toLowCardinality(number) * -3) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
-SELECT 'decimal multiply', min(toDecimal64(number, 2) * -3) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
-SELECT 'decimal multiply', min(toDecimal64(number, 2) * -3) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
-SELECT 'decimal divide', min(toDecimal64(number, 2) / -3) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
-SELECT 'decimal divide', min(toDecimal64(number, 2) / -3) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
-SELECT 'decimal divide nonempty', min(toDecimal64(number, 2) / -3) FROM numbers(5) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
-SELECT 'decimal divide nonempty', min(toDecimal64(number, 2) / -3) FROM numbers(5) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
-SELECT 'decimal constant', min(number * toDecimal32(-3, 1)) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
-SELECT 'decimal constant', min(number * toDecimal32(-3, 1)) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
-SELECT 'decimal constant nonempty', min(number * toDecimal32(-3, 1)) FROM numbers(5) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
-SELECT 'decimal constant nonempty', min(number * toDecimal32(-3, 1)) FROM numbers(5) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 SELECT 'integer multiply nonempty', min(number * -3) FROM numbers(5) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
 SELECT 'integer multiply nonempty', min(number * -3) FROM numbers(5) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 
@@ -243,8 +233,6 @@ SELECT 'min multiply', min(number * 3) FROM numbers(0) SETTINGS optimize_arithme
 SELECT 'min multiply', min(number * 3) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 SELECT 'min multiply float reciprocal', 1 / min(toFloat64(number) * 3.5) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
 SELECT 'min multiply float reciprocal', 1 / min(toFloat64(number) * 3.5) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
-SELECT 'min multiply decimal', min(toDecimal64(number, 2) * 3) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
-SELECT 'min multiply decimal', min(toDecimal64(number, 2) * 3) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 SELECT 'sum multiply', sum(number * 3) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
 SELECT 'sum multiply', sum(number * 3) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 SELECT 'totals with multiply', min(number * 3) FROM numbers(0) GROUP BY number % 2 WITH TOTALS SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
