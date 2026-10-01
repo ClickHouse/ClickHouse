@@ -4027,7 +4027,11 @@ private:
                         break;
                 }
             }
+            /// `Enum8`/`Enum16` are stored as `Int8`/`Int16` and take the same transforms in `ConvertImpl`,
+            /// so they must honour `date_time_overflow_behavior` the same way.
             else if constexpr ((IsDataTypeNumber<LeftDataType>
+                                || std::is_same_v<LeftDataType, DataTypeEnum8>
+                                || std::is_same_v<LeftDataType, DataTypeEnum16>
                                 || IsDataTypeDateOrDateTimeOrTime<LeftDataType>)&&IsDataTypeDateOrDateTimeOrTime<RightDataType>)
             {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE) \
