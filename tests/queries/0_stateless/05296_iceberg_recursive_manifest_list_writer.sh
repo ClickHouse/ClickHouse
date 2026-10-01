@@ -15,13 +15,14 @@ rm -rf "${WORK_DIR}"
 mkdir -p "${WORK_DIR}"
 trap 'rm -rf "${WORK_DIR}"' EXIT
 
-# Writes an Avro container file with the given schema and, if a datum is given (as hex), one block holding it.
+# Writes an Avro container file with the given schema and, if a datum is given, one block holding it. The datum is hex, or
+# `deep:N` for a row of the nullable recursive schema nested N levels deep.
 write_avro()
 {
     python3 - "$@" <<'PY'
 import sys
 
-path, schema, datum_hex = sys.argv[1], sys.argv[2].encode(), sys.argv[3]
+path, schema, datum_spec = sys.argv[1], sys.argv[2].encode(), sys.argv[3]
 
 
 def write_long(value):
@@ -48,8 +49,11 @@ for key, value in metadata:
     data += write_bytes(key) + write_bytes(value)
 data += write_long(0) + sync
 
-if datum_hex:
-    datum = bytes.fromhex(datum_hex)
+if datum_spec:
+    if datum_spec.startswith('deep:'):
+        datum = b'\x02' * int(datum_spec[5:]) + b'\x00'
+    else:
+        datum = bytes.fromhex(datum_spec)
     data += write_long(1) + write_long(len(datum)) + datum + sync
 
 with open(path, 'wb') as f:
@@ -59,7 +63,7 @@ PY
 
 run_case()
 {
-    local name=$1 schema=$2 datum_hex=$3
+    local name=$1 schema=$2 datum_spec=$3
     local case_dir="${WORK_DIR}/${name}"
     local table_root="${case_dir}/iceberg/t0"
     mkdir -p "${case_dir}/db" "${table_root}"
@@ -80,7 +84,7 @@ run_case()
         return
     fi
 
-    write_avro "${case_dir}/crafted.avro" "${schema}" "${datum_hex}"
+    write_avro "${case_dir}/crafted.avro" "${schema}" "${datum_spec}"
 
     # The SELECT caches the valid manifest list, so only the INSERT, which carries the list forward, reads the replaced file.
     local output status
@@ -99,14 +103,10 @@ run_case()
     )
     status=$?
 
-    if echo "${output}" | grep -qF 'ICEBERG_SPECIFICATION_VIOLATION'; then
-        if echo "${output}" | grep -qF 'Recursive Avro schema is not supported'; then
-            echo 'ICEBERG_SPECIFICATION_VIOLATION recursive schema'
-        elif echo "${output}" | grep -qF 'is missing required field'; then
-            echo 'ICEBERG_SPECIFICATION_VIOLATION missing required field'
-        else
-            echo "${output}" | grep -m1 -F 'Code:'
-        fi
+    if echo "${output}" | grep -qF 'nested deeper than 256 levels'; then
+        echo 'nested deeper than 256 levels'
+    elif echo "${output}" | grep -qF 'is missing required field'; then
+        echo 'missing required field'
     elif echo "${output}" | grep -qF 'Code:'; then
         echo "${output}" | grep -m1 -F 'Code:'
     else
@@ -124,6 +124,9 @@ run_case recursive '{"type":"record","name":"A","fields":[{"name":"b","type":{"t
 # The datum is one row whose `next` is null.
 echo '--- recursive record behind a nullable union ---'
 run_case nullable '{"type":"record","name":"A","fields":[{"name":"next","type":["null","A"]}]}' '00'
+
+echo '--- recursive record behind a nullable union, nested 1000000 levels deep ---'
+run_case deep '{"type":"record","name":"A","fields":[{"name":"next","type":["null","A"]}]}' 'deep:1000000'
 
 echo '--- stateless server is still alive ---'
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
