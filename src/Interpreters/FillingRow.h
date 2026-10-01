@@ -9,14 +9,10 @@ namespace DB
 bool less(const Field & lhs, const Field & rhs, int direction);
 bool equals(const Field & lhs, const Field & rhs);
 
-/// Whether `value` is a valid value of a fill column of type `type`: it fits the range of the storage type and,
-/// for the calendar-backed `Date32` and `DateTime64`, the representable calendar window as well. Types that
-/// saturate instead of wrapping around (`Float`, `Decimal`) are not checked and always pass.
-bool fillValueFitsColumnType(const Field & value, const IDataType & type);
-
-/// The inclusive `[min, max]` range that `fillValueFitsColumnType` checks against, as `Field`s comparable with
-/// the values the filling generates, so that the per-generated-value check does not have to redo the type
-/// dispatch. Null bounds mean the type is not checked and every value passes.
+/// The inclusive `[min, max]` range of the valid values of a fill column of type `type`, as `Field`s comparable
+/// with the values the filling generates: the range of the storage type and, for the calendar-backed `Date32` and
+/// `DateTime64`, the representable calendar window as well. Null bounds mean the type is not checked and every
+/// value passes - types that saturate instead of wrapping around (`Float`, `Decimal`).
 std::pair<Field, Field> fillRepresentableRangeOfColumnType(const IDataType & type);
 
 /** Helps to implement modifier WITH FILL for ORDER BY clause.

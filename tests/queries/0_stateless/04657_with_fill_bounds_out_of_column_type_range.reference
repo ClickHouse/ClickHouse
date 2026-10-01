@@ -7,17 +7,19 @@ a TO bound out of range is fine when STEP stops before it
 87	0	255
 87	-128	127
 [5,250]
-without FROM the bound is rejected only when every anchor wraps
+without FROM the query is rejected only when the fill actually wraps
 84	5	254
 25	-125	-5
 [5]
+0
+0
 STALENESS caps the sequence before TO, so the TO bound is not rejected
 20	5	24
 20	-24	-5
 7	5	23
 [250,251,252,253,254]
 [250]
-an INTERVAL step can never reach a TO out of range in the fill direction, so such a TO is rejected
+an INTERVAL step can never reach a TO out of range in the fill direction, so such a fill is rejected
 1	2020-01-01	2020-01-01
 1	2020-01-01	2020-01-01
 3	2026-03-05	2028-03-05

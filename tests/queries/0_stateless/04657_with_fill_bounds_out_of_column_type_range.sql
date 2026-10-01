@@ -1,6 +1,7 @@
 -- WITH FILL bound values that do not fit the type of the ORDER BY column used to be silently truncated when the
 -- generated values were written into the column, so the filled stream wrapped around and was not sorted anymore,
 -- while the query plan kept claiming it was. DISTINCT in order then deduplicated within wrong ranges.
+-- An out of range FROM is rejected up front; every generated value is checked when it is generated.
 
 SELECT 'out of range bounds are rejected';
 
@@ -26,18 +27,23 @@ SELECT count(), min(x), max(x) FROM (SELECT toInt8(5) AS x ORDER BY x DESC WITH 
 SELECT groupArray(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL FROM 250 TO 300 STEP 100);
 SELECT * FROM (SELECT toInt8(5) AS x ORDER BY x DESC WITH FILL FROM 127 TO -130 STEP -4) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 
-SELECT 'without FROM the bound is rejected only when every anchor wraps';
+SELECT 'without FROM the query is rejected only when the fill actually wraps';
 
 -- The sequence is anchored at a data value, so which values are generated is known only at execution time:
--- from 5 this fill stops at 254, while from 6 it would reach 256. The bound is accepted because some anchors fit.
+-- from 5 this fill stops at 254, while from 6 it would reach 256.
 SELECT count(), min(x), max(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL TO 257 STEP 3);
 SELECT count(), min(x), max(x) FROM (SELECT toInt8(-5) AS x ORDER BY x DESC WITH FILL TO -130 STEP -5);
 -- A step so large that filling generates nothing at all is fine too.
 SELECT groupArray(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL TO 1000 STEP 5000);
--- The last generated value always lands within one step before TO, so these wrap from every possible anchor.
+-- The last generated value always lands within one step before TO, so these wrap from every possible anchor...
 SELECT * FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL TO 1025) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT * FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL TO 1000 STEP 3) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT * FROM (SELECT toInt8(-5) AS x ORDER BY x DESC WITH FILL TO -300 STEP -5) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- ...but without any anchor nothing is generated at all, so nothing wraps and the bound is harmless.
+SELECT count() FROM (SELECT x FROM (SELECT toUInt8(1) AS x WHERE 0) ORDER BY x WITH FILL TO 1025);
+SELECT count() FROM (SELECT d FROM (SELECT toDate(0) AS d WHERE 0) ORDER BY d WITH FILL TO 70000 STEP INTERVAL 100 YEAR);
+-- With FROM the sequence is generated even without data, so an empty input does not help.
+SELECT count() FROM (SELECT x FROM (SELECT toUInt8(1) AS x WHERE 0) ORDER BY x WITH FILL FROM 0 TO 1025); -- { serverError INVALID_WITH_FILL_EXPRESSION }
 
 SELECT 'STALENESS caps the sequence before TO, so the TO bound is not rejected';
 
@@ -56,20 +62,20 @@ SELECT groupArray(x) FROM (SELECT toUInt8(250) AS x ORDER BY x ASC WITH FILL STA
 -- rejects the query before a wrapped bound could suppress the rows between the two input values.
 SELECT groupArray(x) FROM (SELECT arrayJoin([toUInt8(250), toUInt8(255)]) AS x ORDER BY x ASC WITH FILL STALENESS 20) SETTINGS max_block_size = 1; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 
-SELECT 'an INTERVAL step can never reach a TO out of range in the fill direction, so such a TO is rejected';
+SELECT 'an INTERVAL step can never reach a TO out of range in the fill direction, so such a fill is rejected';
 
 -- The calendar arithmetic of an INTERVAL step is performed in the column's own native type, so unlike a plain
 -- numeric step it wraps around within the column domain and never reaches a TO outside of it: without the check
--- these fills generate wrapped-around values forever.
+-- these fills generate wrapped-around values forever. The wraparound is detected as a step that turns back.
 SELECT * FROM (SELECT toDate(0) AS d ORDER BY d ASC WITH FILL FROM toDate(0) TO 70000 STEP INTERVAL 100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT * FROM (SELECT toDate('1970-03-05') AS d ORDER BY d ASC WITH FILL TO 70000 STEP INTERVAL 100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT * FROM (SELECT toDate('2020-01-01') AS d ORDER BY d DESC WITH FILL TO -5 STEP INTERVAL -1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT * FROM (SELECT toDateTime(0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime(0, 'UTC') TO 4294967297 STEP INTERVAL 50 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 -- A TO out of range against the fill direction can never make filling take a single step: every possible
--- anchor is already past it, so the query is a no-op and the bound is accepted.
+-- anchor is already past it, so the query is a no-op.
 SELECT count(), min(d), max(d) FROM (SELECT toDate('2020-01-01') AS d ORDER BY d DESC WITH FILL TO 70000 STEP INTERVAL -1 YEAR);
 SELECT count(), min(d), max(d) FROM (SELECT toDate('2020-01-01') AS d ORDER BY d ASC WITH FILL TO -5 STEP INTERVAL 1 YEAR);
--- STALENESS terminates the filling in-domain even with an INTERVAL step, so the TO bound is accepted.
+-- STALENESS terminates the filling in-domain even with an INTERVAL step, so the TO bound is never reached.
 SELECT count(), min(d), max(d) FROM (SELECT toDate('2026-03-05') AS d ORDER BY d ASC WITH FILL TO 70000 STEP INTERVAL 1 YEAR STALENESS INTERVAL 3 YEAR);
 
 SELECT 'an INTERVAL step clamps at the calendar boundary of Date32 and DateTime64, so any TO is accepted';
@@ -134,7 +140,7 @@ SELECT t FROM (SELECT toDateTime64('9999-12-31 23:59:58', 0, 'UTC') AS t ORDER B
 SELECT t FROM (SELECT toDateTime64('0000-01-01 00:00:01', 0, 'UTC') AS t ORDER BY t DESC WITH FILL FROM toDateTime64('0000-01-01 00:00:01', 0, 'UTC') TO -62167219202 STEP -2) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 -- The arithmetic is performed in raw ticks of the column's scale: at scale 3 the step 0.001 is one tick.
 SELECT t FROM (SELECT toDateTime64('9999-12-31 23:59:59.998', 3, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9999-12-31 23:59:59.998', 3, 'UTC') TO 253402300800.001 STEP 0.001) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
--- Without FROM the bound is rejected only when the last generated value wraps from every possible anchor.
+-- Without FROM the query is rejected when the fill reaches a tick beyond the calendar.
 SELECT t FROM (SELECT toDateTime64('9999-12-31 23:59:58', 0, 'UTC') AS t ORDER BY t ASC WITH FILL TO 253402300805 STEP 2) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 -- The exclusive TO bound may be one step beyond the calendar boundary: these stop at the last representable tick.
 SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9999-12-31 23:59:58', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9999-12-31 23:59:58', 0, 'UTC') TO 253402300800 STEP 2);

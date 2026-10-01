@@ -47,18 +47,6 @@ bool equals(const Field & lhs, const Field & rhs)
     return accurateEquals(lhs, rhs);
 }
 
-bool fillValueFitsColumnType(const Field & value, const IDataType & type)
-{
-    const auto [min, max] = fillRepresentableRangeOfColumnType(type);
-
-    /// Null bounds - a type whose every value is representable (or saturates instead of wrapping around,
-    /// like Float and Decimal), nothing to check.
-    if (min.isNull())
-        return true;
-
-    return !accurateLess(value, min) && !accurateLess(max, value);
-}
-
 std::pair<Field, Field> fillRepresentableRangeOfColumnType(const IDataType & type)
 {
     WhichDataType which(type);
@@ -241,10 +229,11 @@ static const Field & findBorder(const Field & constraint, const Field & next_ori
 
 /** The arithmetic of filling is performed in a carrier type wide enough for it - Int64 for every integer column
   * type - while the generated values are written into a column of the column's own type, which silently truncates
-  * whatever does not fit. Bounds known up front are checked when the transform is constructed, but a fill anchored
-  * at a data value only becomes known here: `WITH FILL TO 257 STEP 3` over a UInt8 column stops at 254 when the
-  * data ends at 11 and reaches 256 - which the column would store as 0 - when it ends at 13. Check every value
-  * that is about to be generated, so that no value the column cannot hold ever reaches it.
+  * whatever does not fit. Which values are generated generally becomes known only here: `WITH FILL TO 257 STEP 3`
+  * over a UInt8 column stops at 254 when the data ends at 11 and reaches 256 - which the column would store as 0 -
+  * when it ends at 13. Check every value that is about to be generated, so that no value the column cannot hold
+  * ever reaches it. This is the only check of the generated values: FROM is checked when the transform is
+  * constructed (it is written into the column without passing through here), and TO is never written at all.
   */
 void FillingRow::checkGeneratedValueFitsColumnType(const Field & value, size_t column_ind) const
 {
