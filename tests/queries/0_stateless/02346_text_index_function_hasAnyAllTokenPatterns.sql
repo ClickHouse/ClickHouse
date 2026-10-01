@@ -324,6 +324,8 @@ OPTIMIZE TABLE tab FINAL;
 
 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, '%2999%') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_any_all_token_patterns_scan_size_whole';
 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, 'a299%') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_any_all_token_patterns_scan_size_seek';
+-- One token per dictionary block: the seeks merge into the whole dictionary.
+SELECT count() FROM tab WHERE hasAnyTokenLike(msg, ['a100', 'a1112', 'a1228', 'a1343', 'a1459', 'a1574', 'a169', 'a1804', 'a192', 'a2034', 'a215', 'a2265', 'a2380', 'a2496', 'a2610', 'a2726', 'a2841', 'a2957', 'a372', 'a488', 'a602', 'a718', 'a833', 'a949', 'b1062', 'b1178', 'b1293', 'b1408', 'b1523', 'b1639', 'b1754', 'b187', 'b1985', 'b210', 'b2214', 'b233', 'b2445', 'b2560', 'b2676', 'b2791', 'b2906', 'b321', 'b437', 'b552', 'b668', 'b783', 'b899']) SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_any_all_token_patterns_scan_size_seeks';
 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, '%2999%') SETTINGS log_comment = 'has_any_all_token_patterns_scan_size_default';
 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, '%2999%') SETTINGS text_index_like_max_matched_tokens = 0, log_comment = 'has_any_all_token_patterns_scan_size_unlimited';
 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, '%2999%') SETTINGS use_skip_indexes = 0;

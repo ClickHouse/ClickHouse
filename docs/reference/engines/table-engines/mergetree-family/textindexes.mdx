@@ -852,7 +852,7 @@ SELECT count() FROM table WHERE hasPhrase(comment, 'clickhouse olap');
 
 Functions [`hasAnyTokenLike`, `hasAllTokenLike` and `hasAnyTokenRegexp`](/reference/functions/regular-functions/string-search-functions) return true if the tokens of the column match `LIKE` patterns or regular expressions.
 Their second argument is one pattern (a `String`, which is not split into tokens) or an `Array(String)` of patterns.
-`hasAnyTokenLike` and `hasAnyTokenRegexp` return true if some token matches any of the patterns, `hasAllTokenLike` if each pattern matches some token.
+`hasAnyTokenLike` and `hasAnyTokenRegexp` return true if some token matches any of the patterns, `hasAllTokenLike` if each pattern matches some token. All return false for an empty array.
 
 Unlike `LIKE` and `match`, which apply the pattern to the whole value, these functions apply it to each token separately.
 The tokens of the index dictionary that match the patterns are therefore exactly the tokens the function looks for:
