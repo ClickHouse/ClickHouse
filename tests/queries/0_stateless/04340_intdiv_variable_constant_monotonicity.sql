@@ -76,7 +76,7 @@ SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, 10.0) IN (5))
      = (SELECT countIf(intDiv(a, 10.0) IN (5)) FROM t_intdiv_mono);
 SELECT count()
        FROM (EXPLAIN actions = 1 SELECT a FROM t_intdiv_mono ORDER BY intDiv(a, 10.0)
-             SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1)
+             SETTINGS optimize_read_in_order = 1)
        WHERE explain LIKE '%Prefix sort description%';
 
 DROP TABLE t_intdiv_mono;
@@ -96,7 +96,7 @@ SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, toUInt8(200)) NOT IN (
 -- (exactly one Prefix sort description line).
 SELECT count()
        FROM (EXPLAIN actions = 1 SELECT a FROM t_intdiv_mono ORDER BY intDiv(a, toUInt8(200)) DESC
-             SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1)
+             SETTINGS optimize_read_in_order = 1)
        WHERE explain LIKE '%Prefix sort description%';
 -- High bit NOT set (toUInt8(100) stays positive): no flip, still prunes correctly.
 SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, toUInt8(100)) IN (0, 1))

@@ -296,6 +296,12 @@ struct BinaryOperation
         /// and re-inserting, bloating the loop ~3-5x for no benefit. Operations
         /// that use div/mod set `no_vectorize = true` to opt out; `Op` types that
         /// don't define the member are treated as opting in to vectorization.
+        ///
+        /// This is a workaround for the LLVM cost model, which was fixed upstream
+        /// on 2026-09-11. On clang 24+ the vectorized integer division becomes
+        /// faster than the scalar loop (`intDivOrZero` on `Int8` is 8.6x faster
+        /// on trunk), so the opt-out becomes harmful and should be removed once
+        /// the minimum supported compiler is clang 24.
         static constexpr bool disable_vectorization = []
         {
             if constexpr (requires { Op::no_vectorize; })
@@ -2064,7 +2070,8 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             ? array_element_function->executeImpl(new_arguments, result_array_type, rows_count)
             : executeImpl(new_arguments, result_array_type, rows_count);
 
-        return ColumnArray::create(res, typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
+        /// The element-wise result can be a constant (for example a NULL), the data of an array cannot.
+        return ColumnArray::create(res->convertToFullColumnIfConst(), typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
     }
 
     ColumnPtr executeArrayWithNumericImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
@@ -2379,9 +2386,12 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
+        /// Look through `LowCardinality` the same way `division_by_nullable` does in the resolver, so that
+        /// `canThrow` (which falls back to this method) agrees with the execution path.
         return ((IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo) && !arguments[1].is_const)
             || (IsOperation<Op>::div_floating
-                && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type)));
+                && (isDecimalOrNullableDecimal(recursiveRemoveLowCardinality(arguments[0].type))
+                    || isDecimalOrNullableDecimal(recursiveRemoveLowCardinality(arguments[1].type))));
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -3184,9 +3194,10 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             /// keys, so it is pruned via the plain wider-of-the-two-original-types rule below,
             /// unconditionally on width.
             /// A `UInt256` operand cannot be widened to a signed type that holds its full range (no
-            /// 512-bit integer type exists), so `modulo`/`moduloOrNull` are not pruned for it: the
-            /// direct kernel needs no such cast and stays exact for every width.
+            /// 512-bit integer type exists), so a mixed-sign `modulo`/`moduloOrNull` pair with it is not
+            /// pruned: the direct kernel needs no such cast and stays exact for every width.
             constexpr bool modulo_unsigned_operand_too_wide_to_prune = (is_modulo || IsOperation<Op>::modulo_or_null)
+                && (is_signed_v<T0> || is_signed_v<T1>)
                 && ((is_unsigned_v<T0> && sizeof(T0) == 32) || (is_unsigned_v<T1> && sizeof(T1) == 32));
             constexpr bool op_is_prunable_modulo = (is_modulo || IsOperation<Op>::modulo_or_null || IsOperation<Op>::modulo_legacy)
                 && is_integer<T0> && is_integer<T1>
@@ -3325,6 +3336,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     /// on that single type reproduces. This is deliberately not the `ModuloImpl`
                     /// (non-legacy) rule below: legacy must keep the historical, sometimes
                     /// unsigned-computed behaviour byte for byte.
+                    using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
+                    return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
+                }
+                else if constexpr (is_unsigned_v<T0> && is_unsigned_v<T1>)
+                {
+                    /// For two unsigned operands `ModuloImpl` takes the plain remainder in the wider type.
                     using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
                     return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
                 }
@@ -4390,10 +4407,18 @@ public:
         {
             /// Check the case when operation is divide, intDiv or modulo and denominator is Nullable(Something).
             /// For divide operation we should check only Nullable(Decimal), because only this case can throw division by zero error.
-            division_by_nullable = !arguments[0].type->onlyNull() && !arguments[1].type->onlyNull() && arguments[1].type->isNullable()
+            ///
+            /// A `LowCardinality` wrapper hides the nullability from `isNullable`, so strip it: with a
+            /// `LowCardinality(Nullable(...))` denominator the NULL-masking variant was not selected and
+            /// the NULL rows divided by the nested default `0`, throwing `Division by zero` on data
+            /// where the plain `Nullable(...)` denominator returns NULL.
+            const auto left_type = recursiveRemoveLowCardinality(arguments[0].type);
+            const auto right_type = recursiveRemoveLowCardinality(arguments[1].type);
+
+            division_by_nullable = !left_type->onlyNull() && !right_type->onlyNull() && right_type->isNullable()
                 && (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo
                     || (IsOperation<Op>::div_floating
-                        && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type))));
+                        && (isDecimalOrNullableDecimal(left_type) || isDecimalOrNullableDecimal(right_type))));
         }
 
         auto make_adaptor = [&](auto function)
