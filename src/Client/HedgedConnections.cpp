@@ -59,6 +59,7 @@ HedgedConnections::HedgedConnections(
           context_->getSettingsRef()[Setting::fallback_to_stale_replicas_for_distributed_queries].value,
           context_->getSettingsRef()[Setting::max_parallel_replicas].value,
           context_->getSettingsRef()[Setting::skip_unavailable_shards].value,
+          /*fail_if_replica_unprobed_=*/ true,
           table_to_check_,
           priority_func)
     , context(std::move(context_))
