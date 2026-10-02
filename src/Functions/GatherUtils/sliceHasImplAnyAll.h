@@ -3,12 +3,11 @@
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/sliceEqualElements.h>
+#include <base/defines.h>
 
-#include <Common/TargetSpecific.h>
-
-#if defined(__AVX2__)
-#include <immintrin.h>
-#endif
+#include <cstring>
+#include <type_traits>
+#include <utility>
 
 namespace DB::GatherUtils
 {
@@ -18,575 +17,237 @@ inline ALWAYS_INLINE bool hasNull(const UInt8 * null_map, size_t null_map_size)
     if (null_map == nullptr)
         return false;
 
+    /// Without an early exit the loop is a few vector ORs. With one it was a scalar loop over every byte, which took a
+    /// fifth of `hasAll` on a `Nullable` array that has no nulls.
+    UInt8 any_null = 0;
     for (size_t i = 0; i < null_map_size; ++i)
+        any_null |= null_map[i];
+
+    return any_null != 0;
+}
+
+template <typename T>
+constexpr bool is_integral_slice = false;
+
+template <typename T>
+requires std::is_integral_v<T>
+constexpr bool is_integral_slice<NumericArraySlice<T>> = true;
+
+/// Comparison results are accumulated in this view of the same bits, so that the tests below lower to a single `vptest`
+/// on x86. Other spellings were slower: `reduce_and` over 1-byte lanes is a shuffle tree, and `reduce_max` over 4-byte
+/// lanes narrows 8-byte masks with extra shuffles and blends in every test.
+template <size_t bytes>
+using SearchMask = UInt64 __attribute__((vector_size(bytes)));
+
+template <typename Mask>
+ALWAYS_INLINE bool anyLaneSet(Mask mask)
+{
+    return __builtin_reduce_or(mask) != 0;
+}
+
+template <typename Mask>
+ALWAYS_INLINE bool allLanesSet(Mask mask)
+{
+    return __builtin_reduce_and(mask) == ~0ULL;
+}
+
+/// Searches `value` in blocks of 128 bytes. A block is a few whole-vector comparisons and one test of the combined mask,
+/// so the search exits early without a branch per element. A 32-byte vector is one AVX2 register or two NEON registers.
+template <bool has_null_map, typename T>
+ALWAYS_INLINE bool sliceContains(const NumericArraySlice<T> & slice, const UInt8 * null_map, T value)
+{
+    using Vector = T __attribute__((vector_size(32)));
+    using NullBytes = UInt8 __attribute__((vector_size(32 / sizeof(T))));
+    static constexpr size_t lanes = 32 / sizeof(T);
+    static constexpr size_t block_size = 4 * lanes;
+
+    /// Filled lane by lane because comparing with the scalar directly is an implicit conversion that `-Wcharacter-conversion`
+    /// rejects for `char8_t`, which is `UInt8`. It compiles to the same broadcast.
+    Vector needle{};
+    for (size_t lane = 0; lane < lanes; ++lane)
+        needle[lane] = value;
+
+    /// Without `ALWAYS_INLINE` the lambda can stay a call in the probe of `sliceHasAllBytes`.
+    auto block_contains = [&](size_t begin) ALWAYS_INLINE
     {
-        if (null_map[i])
+        SearchMask<32> found{};
+        /// The loop counts from zero so that its trip count is a constant and it is fully unrolled. With `begin + block_size`
+        /// as the bound, the compiler cannot rule out an overflow and on AArch64 rebuilt the mask lane by lane.
+        for (size_t offset = 0; offset < block_size; offset += lanes)
+        {
+            Vector elements;
+            memcpy(&elements, slice.data + begin + offset, sizeof(elements));
+            auto equal = elements == needle;
+            if constexpr (has_null_map)
+            {
+                NullBytes nulls;
+                memcpy(&nulls, null_map + begin + offset, sizeof(nulls));
+                /// Subtracting one turns the flags into masks; comparing them with zero instead made x86 narrow the 8-byte
+                /// comparison results to 4 bytes with two extra shuffles per vector.
+                equal &= __builtin_convertvector(nulls, decltype(equal)) - 1;
+            }
+            found |= reinterpret_cast<SearchMask<32>>(equal);
+        }
+        return anyLaneSet(found);
+    };
+
+    size_t i = 0;
+    for (; i + block_size <= slice.size; i += block_size)
+    {
+        if (block_contains(i))
             return true;
     }
 
-    return false;
+    if (i == slice.size)
+        return false;
+
+    /// The last block overlaps the previous one; checking an element twice does not change the result.
+    if (slice.size >= block_size)
+        return block_contains(slice.size - block_size);
+
+    bool found = false;
+    for (; i < slice.size; ++i)
+        found |= (slice.data[i] == value) & (!has_null_map || !null_map[i]);
+    return found;
 }
 
-template<class T>
-inline ALWAYS_INLINE bool hasAllIntegralLoopRemainder(
-    size_t j, const NumericArraySlice<T> & first, const NumericArraySlice<T> & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
+template <ArraySearchType search_type, bool has_first_null_map, typename T>
+bool sliceHasIntegralImpl(const NumericArraySlice<T> & first, const NumericArraySlice<T> & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
-    const bool has_first_null_map = first_null_map != nullptr;
-    const bool has_second_null_map = second_null_map != nullptr;
-
-    for (; j < second.size; ++j)
+    for (size_t i = 0; i < second.size; ++i)
     {
-        // skip null elements since both have at least one - assuming it was checked earlier that at least one element in 'first' is null
-        if (has_second_null_map && second_null_map[j])
+        if (second_null_map && second_null_map[i])
             continue;
 
-        bool found = false;
+        const bool has = sliceContains<has_first_null_map>(first, first_null_map, second.data[i]);
 
-        for (size_t i = 0; i < first.size; ++i)
-        {
-            if (has_first_null_map && first_null_map[i])
-                continue;
+        if (has && search_type == ArraySearchType::Any)
+            return true;
 
-            if (first.data[i] == second.data[j])
-            {
-                found = true;
-                break;
-            }
-        }
-
-        if (!found)
+        if (!has && search_type == ArraySearchType::All)
             return false;
     }
-    return true;
+
+    return search_type == ArraySearchType::All;
 }
 
-#if defined(__AVX2__)
-
-// AVX2 Int64, UInt64 specialization
-template<bool with_null_maps, typename IntType>
-requires (std::is_same_v<IntType, Int64> || std::is_same_v<IntType, UInt64>)
-NO_INLINE bool sliceHasImplAnyAllImplInt64(
-    const NumericArraySlice<IntType> & first,
-    const NumericArraySlice<IntType> & second,
-    const UInt8 * first_null_map,
-    const UInt8 * second_null_map)
+template <size_t shift, typename Vector, size_t... lane>
+ALWAYS_INLINE Vector rotateLanes(Vector vector, std::index_sequence<lane...>)
 {
-    if (second.size == 0)
-        return true;
-
-    if constexpr (!with_null_maps)
-    {
-        first_null_map = nullptr;
-        second_null_map = nullptr;
-    }
-
-    if (!hasNull(first_null_map, first.size) && hasNull(second_null_map, second.size))
-        return false;
-
-    const bool has_first_null_map = first_null_map != nullptr;
-    const bool has_second_null_map = second_null_map  != nullptr;
-
-    size_t j = 0;
-    int has_mask = 1;
-    static constexpr Int64 full = -1;
-    static constexpr Int64 none = 0;
-    const __m256i ones = _mm256_set1_epi64x(full);
-    const __m256i zeros = _mm256_setzero_si256();
-
-    if (second.size > 3 && first.size > 3)
-    {
-        for (; j < second.size - 3 && has_mask; j += 4)
-        {
-            has_mask = 0;
-            const __m256i second_data = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(second.data + j));
-            // bits of the bitmask are set to one if considered as null in the corresponding null map, 0 otherwise;
-            __m256i bitmask = has_second_null_map ?
-                _mm256_set_epi64x(
-                    (second_null_map[j + 3])? full : none,
-                    (second_null_map[j + 2])? full : none,
-                    (second_null_map[j + 1])? full : none,
-                    (second_null_map[j]) ? full : none)
-                : zeros;
-
-            size_t i = 0;
-            for (; i < first.size - 3 && !has_mask; has_mask = _mm256_testc_si256(bitmask, ones), i += 4)
-            {
-                const __m256i first_data = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(first.data + i));
-                const __m256i first_nm_mask = has_first_null_map?
-                    _mm256_set_m128i(
-                        _mm_cvtepi8_epi64(_mm_loadu_si128(reinterpret_cast<const __m128i *>(first_null_map + i + 2))),
-                        _mm_cvtepi8_epi64(_mm_loadu_si128(reinterpret_cast<const __m128i *>(first_null_map + i))))
-                    : zeros;
-                bitmask =
-                    _mm256_or_si256(
-                        _mm256_or_si256(
-                            _mm256_or_si256(
-                                    _mm256_andnot_si256(
-                                        first_nm_mask,
-                                        _mm256_cmpeq_epi64(second_data, first_data)),
-                                    _mm256_andnot_si256(
-                                        _mm256_permutevar8x32_epi32(first_nm_mask, _mm256_set_epi32(5,4,3,2,1,0,7,6)),
-                                        _mm256_cmpeq_epi64(second_data, _mm256_permutevar8x32_epi32(first_data, _mm256_set_epi32(5,4,3,2,1,0,7,6))))),
-
-                            _mm256_or_si256(
-                                    _mm256_andnot_si256(
-                                        _mm256_permutevar8x32_epi32(first_nm_mask, _mm256_set_epi32(3,2,1,0,7,6,5,4)),
-                                        _mm256_cmpeq_epi64(second_data, _mm256_permutevar8x32_epi32(first_data, _mm256_set_epi32(3,2,1,0,7,6,5,4)))),
-                                    _mm256_andnot_si256(
-                                        _mm256_permutevar8x32_epi32(first_nm_mask, _mm256_set_epi32(1,0,7,6,5,4,3,2)),
-                                        _mm256_cmpeq_epi64(second_data, _mm256_permutevar8x32_epi32(first_data, _mm256_set_epi32(1,0,7,6,5,4,3,2)))))),
-                        bitmask);
-            }
-
-            if (i < first.size)
-            {
-                for (; i < first.size && !has_mask; ++i)
-                {
-                    if (has_first_null_map && first_null_map[i])
-                        continue;
-
-                    __m256i v_i = _mm256_set1_epi64x(first.data[i]);
-                    bitmask = _mm256_or_si256(bitmask, _mm256_cmpeq_epi64(second_data, v_i));
-                    has_mask = _mm256_testc_si256(bitmask, ones);
-                }
-            }
-        }
-    }
-
-    if (!has_mask && second.size > 3)
-        return false;
-
-    return hasAllIntegralLoopRemainder(j, first, second, first_null_map, second_null_map);
+    return __builtin_shufflevector(vector, vector, ((lane + shift) % sizeof...(lane))...);
 }
 
-// AVX2 Int32, UInt32 specialization
-template<bool with_null_maps, typename IntType>
-requires (std::is_same_v<IntType, Int32> || std::is_same_v<IntType, UInt32>)
-NO_INLINE bool sliceHasImplAnyAllImplInt32(
-    const NumericArraySlice<IntType> & first,
-    const NumericArraySlice<IntType> & second,
-    const UInt8 * first_null_map,
-    const UInt8 * second_null_map)
+/// `hasAll` for 1-byte elements. Values repeat often, so `sliceContains` finds each one within a few elements and its fixed
+/// cost per value dominates. Instead, compares 16 values of `second` at once with all 16 rotations of each 16 elements of
+/// `first`, and exits when all 16 are found. The vectors are 16 bytes because a rotation within one is a single instruction
+/// (`palignr` on x86, `ext` on NEON), while rotating a 32-byte AVX2 vector crosses its 128-bit halves.
+template <bool has_first_null_map, typename T>
+requires (sizeof(T) == 1)
+bool sliceHasAllBytes(const NumericArraySlice<T> & first, const NumericArraySlice<T> & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
-    if (second.size == 0)
-        return true;
+    using Vector = T __attribute__((vector_size(16)));
+    using NullBytes = UInt8 __attribute__((vector_size(16)));
+    static constexpr size_t lanes = 16;
+    static constexpr auto lane_indices = std::make_index_sequence<lanes>{};
 
-    if constexpr (!with_null_maps)
+    chassert(first.size >= lanes && second.size >= lanes);
+
+    /// Null elements of `first` are replaced with a non-null element of `first`, so they cannot match anything that is not
+    /// there anyway. That is one blend per vector instead of masking each of the 16 rotations.
+    Vector fillers{};
+    if constexpr (has_first_null_map)
     {
-        first_null_map = nullptr;
-        second_null_map = nullptr;
+        const UInt8 * non_null = static_cast<const UInt8 *>(memchr(first_null_map, 0, first.size));
+        if (!non_null)
+            return sliceHasIntegralImpl<ArraySearchType::All, true>(first, second, first_null_map, second_null_map);
+        for (size_t lane = 0; lane < lanes; ++lane)
+            fillers[lane] = first.data[non_null - first_null_map];
     }
 
-    if (!hasNull(first_null_map, first.size) && hasNull(second_null_map, second.size))
-        return false;
-
-    const bool has_first_null_map = first_null_map != nullptr;
-    const bool has_second_null_map = second_null_map != nullptr;
-
-    size_t j = 0;
-    int has_mask = 1;
-    static constexpr int full = -1;
-    static constexpr int none = 0;
-
-    const __m256i ones = _mm256_set1_epi32(full);
-    const __m256i zeros = _mm256_setzero_si256();
-
-    if (second.size > 7 && first.size > 7)
+    auto compare_with_rotations = [&](SearchMask<16> & found, const Vector & values, size_t begin) ALWAYS_INLINE
     {
-        for (; j < second.size - 7 && has_mask; j += 8)
+        Vector elements;
+        memcpy(&elements, first.data + begin, sizeof(elements));
+        if constexpr (has_first_null_map)
         {
-            has_mask = 0;
-            const __m256i second_data = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(second.data + j));
-            // bits of the bitmask are set to one if considered as null in the corresponding null map, 0 otherwise;
-            __m256i bitmask = has_second_null_map ?
-                _mm256_set_epi32(
-                    (second_null_map[j + 7]) ? full : none,
-                    (second_null_map[j + 6]) ? full : none,
-                    (second_null_map[j + 5]) ? full : none,
-                    (second_null_map[j + 4]) ? full : none,
-                    (second_null_map[j + 3]) ? full : none,
-                    (second_null_map[j + 2]) ? full : none,
-                    (second_null_map[j + 1]) ? full : none,
-                    (second_null_map[j]) ? full : none)
-                : zeros;
-
-            size_t i = 0;
-            for (; i < first.size - 7 && !has_mask; has_mask = _mm256_testc_si256(bitmask, ones), i += 8)
-            {
-                const __m256i first_data = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(first.data + i));
-                // Create a mask to avoid to compare null elements
-                // set_m128i takes two arguments: (high segment, low segment) that are two __m128i convert from 8bits to 32bits to match with next operations
-                const __m256i first_nm_mask = has_first_null_map?
-                    _mm256_set_m128i(
-                        _mm_cvtepi8_epi32(_mm_loadu_si128(reinterpret_cast<const __m128i *>(first_null_map + i + 4))),
-                        _mm_cvtepi8_epi32(_mm_loadu_si128(reinterpret_cast<const __m128i *>(first_null_map + i))))
-                    : zeros;
-                bitmask =
-                    _mm256_or_si256(
-                        _mm256_or_si256(
-                            _mm256_or_si256(
-                                _mm256_or_si256(
-                                    _mm256_andnot_si256(
-                                        first_nm_mask,
-                                        _mm256_cmpeq_epi32(second_data, first_data)),
-                                    _mm256_andnot_si256(
-                                        _mm256_permutevar8x32_epi32(first_nm_mask, _mm256_set_epi32(6,5,4,3,2,1,0,7)),
-                                        _mm256_cmpeq_epi32(second_data, _mm256_permutevar8x32_epi32(first_data, _mm256_set_epi32(6,5,4,3,2,1,0,7))))),
-                                _mm256_or_si256(
-                                    _mm256_andnot_si256(
-                                        _mm256_permutevar8x32_epi32(first_nm_mask, _mm256_set_epi32(5,4,3,2,1,0,7,6)),
-                                        _mm256_cmpeq_epi32(second_data, _mm256_permutevar8x32_epi32(first_data, _mm256_set_epi32(5,4,3,2,1,0,7,6)))),
-                                    _mm256_andnot_si256(
-                                        _mm256_permutevar8x32_epi32(first_nm_mask, _mm256_set_epi32(4,3,2,1,0,7,6,5)),
-                                        _mm256_cmpeq_epi32(second_data, _mm256_permutevar8x32_epi32(first_data, _mm256_set_epi32(4,3,2,1,0,7,6,5)))))
-                            ),
-                            _mm256_or_si256(
-                                _mm256_or_si256(
-                                    _mm256_andnot_si256(
-                                        _mm256_permutevar8x32_epi32(first_nm_mask, _mm256_set_epi32(3,2,1,0,7,6,5,4)),
-                                        _mm256_cmpeq_epi32(second_data, _mm256_permutevar8x32_epi32(first_data, _mm256_set_epi32(3,2,1,0,7,6,5,4)))),
-                                    _mm256_andnot_si256(
-                                        _mm256_permutevar8x32_epi32(first_nm_mask, _mm256_set_epi32(2,1,0,7,6,5,4,3)),
-                                        _mm256_cmpeq_epi32(second_data, _mm256_permutevar8x32_epi32(first_data, _mm256_set_epi32(2,1,0,7,6,5,4,3))))),
-                                _mm256_or_si256(
-                                    _mm256_andnot_si256(
-                                        _mm256_permutevar8x32_epi32(first_nm_mask, _mm256_set_epi32(1,0,7,6,5,4,3,2)),
-                                        _mm256_cmpeq_epi32(second_data, _mm256_permutevar8x32_epi32(first_data, _mm256_set_epi32(1,0,7,6,5,4,3,2)))),
-                                    _mm256_andnot_si256(
-                                        _mm256_permutevar8x32_epi32(first_nm_mask, _mm256_set_epi32(0,7,6,5,4,3,2,1)),
-                                        _mm256_cmpeq_epi32(second_data, _mm256_permutevar8x32_epi32(first_data, _mm256_set_epi32(0,7,6,5,4,3,2,1))))))),
-                        bitmask);
-            }
-
-            if (i < first.size)
-            {
-                for (; i < first.size && !has_mask; ++i)
-                {
-                    if (has_first_null_map && first_null_map[i])
-                        continue;
-
-                    __m256i v_i = _mm256_set1_epi32(first.data[i]);
-                    bitmask = _mm256_or_si256(bitmask, _mm256_cmpeq_epi32(second_data, v_i));
-                    has_mask = _mm256_testc_si256(bitmask, ones);
-                }
-            }
+            NullBytes nulls;
+            memcpy(&nulls, first_null_map + begin, sizeof(nulls));
+            elements = nulls == 0 ? elements : fillers;
         }
-    }
+        /// The comparison masks are combined with an unsigned maximum, which is an OR for lanes that are 0 or 0xFF. With
+        /// `|`, LLVM merged the 16 masks into booleans and rebuilt the bytes from them in every iteration (`psllw` and
+        /// `pcmpgtb` on x86).
+        using Bytes = UInt8 __attribute__((vector_size(16)));
+        auto hits = reinterpret_cast<Bytes>(found);
+        [&]<size_t... shift>(std::index_sequence<shift...>) ALWAYS_INLINE
+        {
+            ((hits = __builtin_elementwise_max(hits, reinterpret_cast<Bytes>(values == rotateLanes<shift>(elements, lane_indices)))), ...);
+        }(lane_indices);
+        found = reinterpret_cast<SearchMask<16>>(hits);
+    };
 
-    if (!has_mask && second.size > 7)
+    auto group_found = [&](size_t begin) ALWAYS_INLINE
+    {
+        Vector values;
+        memcpy(&values, second.data + begin, sizeof(values));
+
+        /// Null values of `second` count as found: the caller has checked that `first` has a null.
+        SearchMask<16> found{};
+        if (second_null_map)
+        {
+            NullBytes nulls;
+            memcpy(&nulls, second_null_map + begin, sizeof(nulls));
+            found = reinterpret_cast<SearchMask<16>>(nulls != 0);
+        }
+
+        size_t i = 0;
+        for (; i + lanes <= first.size; i += lanes)
+        {
+            compare_with_rotations(found, values, i);
+            if (allLanesSet(found))
+                return true;
+        }
+
+        /// The last vector overlaps the previous one; checking an element twice does not change the result.
+        if (i < first.size)
+            compare_with_rotations(found, values, first.size - lanes);
+
+        return allLanesSet(found);
+    };
+
+    /// When a value is missing, it is usually the first one, and `sliceContains` finds that faster than a group.
+    if (!(second_null_map && second_null_map[0]) && !sliceContains<has_first_null_map>(first, first_null_map, second.data[0]))
         return false;
 
-    return hasAllIntegralLoopRemainder(j, first, second, first_null_map, second_null_map);
+    size_t i = 0;
+    for (; i + lanes <= second.size; i += lanes)
+    {
+        if (!group_found(i))
+            return false;
+    }
+
+    /// The last group overlaps the previous one.
+    return i == second.size || group_found(second.size - lanes);
 }
 
-// AVX2 Int16, UInt16 specialization
-template<bool with_null_maps, typename IntType>
-requires (std::is_same_v<IntType, Int16> || std::is_same_v<IntType, UInt16>)
-NO_INLINE bool sliceHasImplAnyAllImplInt16(
-    const NumericArraySlice<IntType> & first,
-    const NumericArraySlice<IntType> & second,
-    const UInt8 * first_null_map,
-    const UInt8 * second_null_map)
+template <ArraySearchType search_type, bool has_first_null_map, typename T>
+bool sliceHasIntegral(const NumericArraySlice<T> & first, const NumericArraySlice<T> & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
-    if (second.size == 0)
-        return true;
-
-    if constexpr (!with_null_maps)
+    if constexpr (search_type == ArraySearchType::All && sizeof(T) == 1)
     {
-        first_null_map = nullptr;
-        second_null_map = nullptr;
+        if (first.size >= 16 && second.size >= 16)
+            return sliceHasAllBytes<has_first_null_map>(first, second, first_null_map, second_null_map);
     }
-
-    if (!hasNull(first_null_map, first.size) && hasNull(second_null_map, second.size))
-        return false;
-
-    const bool has_first_null_map = first_null_map != nullptr;
-    const bool has_second_null_map = second_null_map  != nullptr;
-
-    size_t j = 0;
-    int has_mask = 1;
-    static constexpr int16_t full = -1;
-    static constexpr int16_t none = 0;
-    const __m256i ones = _mm256_set1_epi16(full);
-    const __m256i zeros = _mm256_setzero_si256();
-    if (second.size > 15 && first.size > 15)
-    {
-        for (; j < second.size - 15 && has_mask; j += 16)
-        {
-            has_mask = 0;
-            const __m256i second_data = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(second.data + j));
-            __m256i bitmask = has_second_null_map ?
-                _mm256_set_epi16(
-                    (second_null_map[j + 15]) ? full : none, (second_null_map[j + 14]) ? full : none,
-                    (second_null_map[j + 13]) ? full : none, (second_null_map[j + 12]) ? full : none,
-                    (second_null_map[j + 11]) ? full : none, (second_null_map[j + 10]) ? full : none,
-                    (second_null_map[j + 9]) ? full : none, (second_null_map[j + 8])? full : none,
-                    (second_null_map[j + 7]) ? full : none, (second_null_map[j + 6])? full : none,
-                    (second_null_map[j + 5]) ? full : none, (second_null_map[j + 4])? full : none,
-                    (second_null_map[j + 3]) ? full : none, (second_null_map[j + 2])? full : none,
-                    (second_null_map[j + 1]) ? full : none, (second_null_map[j]) ? full : none)
-                : zeros;
-
-            size_t i = 0;
-            for (; i < first.size - 15 && !has_mask; has_mask = _mm256_testc_si256(bitmask, ones), i += 16)
-            {
-                const __m256i first_data = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(first.data + i));
-                const __m256i first_nm_mask = has_first_null_map?
-                    _mm256_set_m128i(
-                        _mm_cvtepi8_epi16(_mm_loadu_si128(reinterpret_cast<const __m128i *>(first_null_map + i + 8))),
-                        _mm_cvtepi8_epi16(_mm_loadu_si128(reinterpret_cast<const __m128i *>(first_null_map + i))))
-                    : zeros;
-
-                bitmask =
-                    _mm256_or_si256(
-                        _mm256_or_si256(
-                            _mm256_or_si256(
-                                _mm256_or_si256(
-                                    _mm256_or_si256(
-                                        _mm256_andnot_si256(
-                                            first_nm_mask,
-                                            _mm256_cmpeq_epi16(second_data, first_data)),
-                                        _mm256_andnot_si256(
-                                            _mm256_shuffle_epi8(first_nm_mask, _mm256_set_epi8(29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,31,30)),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(first_data, _mm256_set_epi8(29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,31,30))))),
-                                    _mm256_or_si256(
-                                        _mm256_andnot_si256(
-                                            _mm256_shuffle_epi8(first_nm_mask, _mm256_set_epi8(27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,31,30,29,28)),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(first_data, _mm256_set_epi8(27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,31,30,29,28)))),
-                                        _mm256_andnot_si256(
-                                            _mm256_shuffle_epi8(first_nm_mask, _mm256_set_epi8(25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,31,30,29,28,27,26)),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(first_data, _mm256_set_epi8(25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,31,30,29,28,27,26)))))
-                                ),
-                                _mm256_or_si256(
-                                    _mm256_or_si256(
-                                        _mm256_andnot_si256(
-                                            _mm256_shuffle_epi8(first_nm_mask, _mm256_set_epi8(23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24)),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(first_data, _mm256_set_epi8(23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24)))),
-                                        _mm256_andnot_si256(
-                                            _mm256_shuffle_epi8(first_nm_mask, _mm256_set_epi8(21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22)),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(first_data, _mm256_set_epi8(21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22))))),
-                                    _mm256_or_si256(
-                                        _mm256_andnot_si256(
-                                            _mm256_shuffle_epi8(first_nm_mask, _mm256_set_epi8(19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20)),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(first_data, _mm256_set_epi8(19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20)))),
-                                        _mm256_andnot_si256(
-                                            _mm256_shuffle_epi8(first_nm_mask, _mm256_set_epi8(17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18)),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(first_data, _mm256_set_epi8(17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18))))))
-                            ),
-                            _mm256_or_si256(
-                                _mm256_or_si256(
-                                    _mm256_or_si256(
-                                        _mm256_andnot_si256(
-                                            _mm256_permute2x128_si256(first_nm_mask, first_nm_mask,1),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_permute2x128_si256(first_data, first_data, 1))),
-                                        _mm256_andnot_si256(
-                                            _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_nm_mask, first_nm_mask, 1), _mm256_set_epi8(13,12,11,10,9,8,7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14)),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_data, first_data, 1), _mm256_set_epi8(13,12,11,10,9,8,7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14))))),
-                                    _mm256_or_si256(
-                                        _mm256_andnot_si256(
-                                            _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_nm_mask, first_nm_mask, 1), _mm256_set_epi8(11,10,9,8,7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12)),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_data, first_data, 1), _mm256_set_epi8(11,10,9,8,7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12)))),
-                                        _mm256_andnot_si256(
-                                            _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_nm_mask, first_nm_mask, 1), _mm256_set_epi8(9,8,7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10)),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_data, first_data, 1), _mm256_set_epi8(9,8,7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10)))))
-                                ),
-                                _mm256_or_si256(
-                                    _mm256_or_si256(
-                                        _mm256_andnot_si256(
-                                            _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_nm_mask, first_nm_mask, 1), _mm256_set_epi8(7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8)),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_data, first_data, 1), _mm256_set_epi8(7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8)))),
-                                        _mm256_andnot_si256(
-                                            _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_nm_mask, first_nm_mask, 1), _mm256_set_epi8(5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6)),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_data, first_data, 1), _mm256_set_epi8(5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6))))),
-                                    _mm256_or_si256(
-                                        _mm256_andnot_si256(
-                                            _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_nm_mask, first_nm_mask, 1), _mm256_set_epi8(3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4)),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_data, first_data, 1), _mm256_set_epi8(3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4)))),
-                                        _mm256_andnot_si256(
-                                            _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_nm_mask, first_nm_mask, 1), _mm256_set_epi8(1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2)),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_data, first_data, 1), _mm256_set_epi8(1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2))))))
-                        )
-                    ),
-                    bitmask);
-            }
-
-            if (i < first.size)
-            {
-                for (; i < first.size && !has_mask; ++i)
-                {
-                    if (has_first_null_map && first_null_map[i])
-                        continue;
-
-                    __m256i v_i = _mm256_set1_epi16(first.data[i]);
-                    bitmask = _mm256_or_si256(bitmask, _mm256_cmpeq_epi16(second_data, v_i));
-                    has_mask = _mm256_testc_si256(bitmask, ones);
-                }
-            }
-        }
-    }
-
-    if (!has_mask && second.size > 15)
-        return false;
-
-    return hasAllIntegralLoopRemainder(j, first, second, first_null_map, second_null_map);
+    return sliceHasIntegralImpl<search_type, has_first_null_map>(first, second, first_null_map, second_null_map);
 }
 
-// SSE Int8, UInt8 specialization
-// Int8 uses SSE rather than AVX2 because with 16 elements per register we need 16 shuffle rotations,
-// which already covers all combinations. AVX2 would need cross-lane shuffles for 32 elements,
-// making it more complex without clear benefit.
-template<bool with_null_maps, typename IntType>
-requires (std::is_same_v<IntType, Int8> || std::is_same_v<IntType, UInt8>)
-NO_INLINE bool sliceHasImplAnyAllImplInt8(
-    const NumericArraySlice<IntType> & first,
-    const NumericArraySlice<IntType> & second,
-    const UInt8 * first_null_map,
-    const UInt8 * second_null_map)
-{
-    if (second.size == 0)
-        return true;
-
-    if constexpr (!with_null_maps)
-    {
-        first_null_map = nullptr;
-        second_null_map = nullptr;
-    }
-
-    if (!hasNull(first_null_map, first.size) && hasNull(second_null_map, second.size))
-        return false;
-
-    const bool has_first_null_map = first_null_map != nullptr;
-    const bool has_second_null_map = second_null_map != nullptr;
-
-    size_t j = 0;
-    int has_mask = 1;
-    static constexpr int8_t full = -1;
-    static constexpr int8_t none = 0;
-    const __m128i zeros = _mm_setzero_si128();
-
-    if (second.size > 15 && first.size > 15)
-    {
-        for (; j < second.size - 15 && has_mask; j += 16)
-        {
-            has_mask = 0;
-            const __m128i second_data = _mm_loadu_si128(reinterpret_cast<const __m128i *>(second.data + j));
-            __m128i bitmask = has_second_null_map ?
-                _mm_set_epi8(
-                    (second_null_map[j + 15]) ? full : none, (second_null_map[j + 14]) ? full : none,
-                    (second_null_map[j + 13]) ? full : none, (second_null_map[j + 12]) ? full : none,
-                    (second_null_map[j + 11]) ? full : none, (second_null_map[j + 10]) ? full : none,
-                    (second_null_map[j + 9]) ? full : none, (second_null_map[j + 8]) ? full : none,
-                    (second_null_map[j + 7]) ? full : none, (second_null_map[j + 6]) ? full : none,
-                    (second_null_map[j + 5]) ? full : none, (second_null_map[j + 4]) ? full : none,
-                    (second_null_map[j + 3]) ? full : none, (second_null_map[j + 2]) ? full : none,
-                    (second_null_map[j + 1]) ? full : none, (second_null_map[j]) ? full : none)
-                : zeros;
-
-            size_t i = 0;
-            for (; i < first.size - 15 && !has_mask; has_mask = _mm_test_all_ones(bitmask), i += 16)
-            {
-                const __m128i first_data = _mm_loadu_si128(reinterpret_cast<const __m128i *>(first.data + i));
-                const __m128i first_nm_mask = has_first_null_map ?
-                    _mm_loadu_si128(reinterpret_cast<const __m128i *>(first_null_map + i))
-                    : zeros;
-                bitmask =
-                    _mm_or_si128(
-                        _mm_or_si128(
-                            _mm_or_si128(
-                                _mm_or_si128(
-                                    _mm_or_si128(
-                                        _mm_andnot_si128(
-                                            first_nm_mask,
-                                            _mm_cmpeq_epi8(second_data, first_data)),
-                                        _mm_andnot_si128(
-                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,15)),
-                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,15))))),
-                                    _mm_or_si128(
-                                        _mm_andnot_si128(
-                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(13,12,11,10,9,8,7,6,5,4,3,2,1,0,15,14)),
-                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(13,12,11,10,9,8,7,6,5,4,3,2,1,0,15,14)))),
-                                        _mm_andnot_si128(
-                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(12,11,10,9,8,7,6,5,4,3,2,1,0,15,14,13)),
-                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(12,11,10,9,8,7,6,5,4,3,2,1,0,15,14,13)))))
-                                ),
-                                _mm_or_si128(
-                                    _mm_or_si128(
-                                        _mm_andnot_si128(
-                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(11,10,9,8,7,6,5,4,3,2,1,0,15,14,13,12)),
-                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(11,10,9,8,7,6,5,4,3,2,1,0,15,14,13,12)))),
-                                        _mm_andnot_si128(
-                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(10,9,8,7,6,5,4,3,2,1,0,15,14,13,12,11)),
-                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(10,9,8,7,6,5,4,3,2,1,0,15,14,13,12,11))))),
-                                    _mm_or_si128(
-                                        _mm_andnot_si128(
-                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(9,8,7,6,5,4,3,2,1,0,15,14,13,12,11,10)),
-                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(9,8,7,6,5,4,3,2,1,0,15,14,13,12,11,10)))),
-                                        _mm_andnot_si128(
-                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(8,7,6,5,4,3,2,1,0,15,14,13,12,11,10,9)),
-                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(8,7,6,5,4,3,2,1,0,15,14,13,12,11,10,9))))))),
-                            _mm_or_si128(
-                                _mm_or_si128(
-                                    _mm_or_si128(
-                                        _mm_andnot_si128(
-                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(7,6,5,4,3,2,1,0,15,14,13,12,11,10,9,8)),
-                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(7,6,5,4,3,2,1,0,15,14,13,12,11,10,9,8)))),
-                                        _mm_andnot_si128(
-                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(6,5,4,3,2,1,0,15,14,13,12,11,10,9,8,7)),
-                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(6,5,4,3,2,1,0,15,14,13,12,11,10,9,8,7))))),
-                                    _mm_or_si128(
-                                        _mm_andnot_si128(
-                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(5,4,3,2,1,0,15,14,13,12,11,10,9,8,7,6)),
-                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(5,4,3,2,1,0,15,14,13,12,11,10,9,8,7,6)))),
-                                        _mm_andnot_si128(
-                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(4,3,2,1,0,15,14,13,12,11,10,9,8,7,6,5)),
-                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(4,3,2,1,0,15,14,13,12,11,10,9,8,7,6,5)))))),
-                                _mm_or_si128(
-                                    _mm_or_si128(
-                                        _mm_andnot_si128(
-                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(3,2,1,0,15,14,13,12,11,10,9,8,7,6,5,4)),
-                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(3,2,1,0,15,14,13,12,11,10,9,8,7,6,5,4)))),
-                                        _mm_andnot_si128(
-                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(2,1,0,15,14,13,12,11,10,9,8,7,6,5,4,3)),
-                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(2,1,0,15,14,13,12,11,10,9,8,7,6,5,4,3))))),
-                                    _mm_or_si128(
-                                        _mm_andnot_si128(
-                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(1,0,15,14,13,12,11,10,9,8,7,6,5,4,3,2)),
-                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(1,0,15,14,13,12,11,10,9,8,7,6,5,4,3,2)))),
-                                        _mm_andnot_si128(
-                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(0,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1)),
-                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(0,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1)))))))),
-                        bitmask);
-            }
-
-            if (i < first.size)
-            {
-                for (; i < first.size && !has_mask; ++i)
-                {
-                    if (has_first_null_map && first_null_map[i])
-                        continue;
-
-                    __m128i v_i = _mm_set1_epi8(first.data[i]);
-                    bitmask = _mm_or_si128(bitmask, _mm_cmpeq_epi8(second_data, v_i));
-                    has_mask = _mm_test_all_ones(bitmask);
-                }
-            }
-        }
-    }
-
-    if (!has_mask && second.size > 15)
-        return false;
-
-    return hasAllIntegralLoopRemainder(j, first, second, first_null_map, second_null_map);
-}
-
-#endif
-
+/// Methods to check if first array has elements from second array, overloaded for various combinations of types.
 template <
     ArraySearchType search_type,
     typename FirstSliceType,
     typename SecondSliceType,
     bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t)>
-bool sliceHasImplAnyAllGenericImpl(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
+bool sliceHasImplAnyAll(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
     const bool has_first_null_map = first_null_map != nullptr;
     const bool has_second_null_map = second_null_map != nullptr;
@@ -601,6 +262,13 @@ bool sliceHasImplAnyAllGenericImpl(const FirstSliceType & first, const SecondSli
 
         if (!has_first_null && search_type == ArraySearchType::All)
             return false;
+    }
+
+    if constexpr (std::is_same_v<FirstSliceType, SecondSliceType> && is_integral_slice<FirstSliceType>)
+    {
+        if (has_first_null_map)
+            return sliceHasIntegral<search_type, true>(first, second, first_null_map, second_null_map);
+        return sliceHasIntegral<search_type, false>(first, second, first_null_map, second_null_map);
     }
 
     for (size_t i = 0; i < second.size; ++i)
@@ -631,48 +299,5 @@ bool sliceHasImplAnyAllGenericImpl(const FirstSliceType & first, const SecondSli
 
     return search_type == ArraySearchType::All;
 }
-
-/// Methods to check if first array has elements from second array, overloaded for various combinations of types.
-template <
-    ArraySearchType search_type,
-    typename FirstSliceType,
-    typename SecondSliceType,
-    bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t)>
-inline ALWAYS_INLINE bool sliceHasImplAnyAll(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
-{
-#if defined(__AVX2__)
-    /// The kernels are NO_INLINE, so arrays without null maps get their own instantiation that has no null-map handling.
-    if constexpr (search_type == ArraySearchType::All && std::is_same_v<FirstSliceType, SecondSliceType>)
-    {
-        if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int8>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt8>>)
-        {
-            if (first_null_map == nullptr && second_null_map == nullptr)
-                return sliceHasImplAnyAllImplInt8<false>(first, second, nullptr, nullptr);
-            return sliceHasImplAnyAllImplInt8<true>(first, second, first_null_map, second_null_map);
-        }
-        else if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int16>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt16>>)
-        {
-            if (first_null_map == nullptr && second_null_map == nullptr)
-                return sliceHasImplAnyAllImplInt16<false>(first, second, nullptr, nullptr);
-            return sliceHasImplAnyAllImplInt16<true>(first, second, first_null_map, second_null_map);
-        }
-        else if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int32>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt32>>)
-        {
-            if (first_null_map == nullptr && second_null_map == nullptr)
-                return sliceHasImplAnyAllImplInt32<false>(first, second, nullptr, nullptr);
-            return sliceHasImplAnyAllImplInt32<true>(first, second, first_null_map, second_null_map);
-        }
-        else if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int64>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt64>>)
-        {
-            if (first_null_map == nullptr && second_null_map == nullptr)
-                return sliceHasImplAnyAllImplInt64<false>(first, second, nullptr, nullptr);
-            return sliceHasImplAnyAllImplInt64<true>(first, second, first_null_map, second_null_map);
-        }
-    }
-#endif
-
-    return sliceHasImplAnyAllGenericImpl<search_type, FirstSliceType, SecondSliceType, isEqual>(first, second, first_null_map, second_null_map);
-}
-
 
 }
