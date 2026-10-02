@@ -574,4 +574,12 @@ bool ExternalAuthenticators::checkHTTPBasicCredentials(
 
     return is_ok;
 }
+
+HTTPUserDirectoryResponseParser::Result ExternalAuthenticators::checkHTTPUserDirectoryCredentials(
+    const String & server, const BasicCredentials & credentials, const ClientInfo & client_info) const
+{
+    auto params = getHTTPAuthenticationParams(server);
+    HTTPBasicAuthClient<HTTPUserDirectoryResponseParser> client(params);
+    return client.authenticate(credentials.getUserName(), credentials.getPassword(), client_info.http_headers);
+}
 }
