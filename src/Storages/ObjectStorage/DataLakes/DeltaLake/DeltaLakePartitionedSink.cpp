@@ -5,6 +5,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ArenaUtils.h>
 #include <Common/Arena.h>
 #include <Common/PODArray.h>
@@ -450,7 +451,19 @@ void DeltaLakePartitionedSink::onFinish()
         for (auto & [_, partition_info] : partitions_data)
         {
             for (const auto & [sink, written_bytes, written_rows] : partition_info->data_files)
-                object_storage->removeObjectIfExists(StoredObject(sink->getPath()));
+            {
+                const auto & path = sink->getPath();
+                try
+                {
+                    object_storage->removeObjectIfExists(StoredObject(path));
+                }
+                catch (...)
+                {
+                    /// Building the message allocates, and the memory tracker can throw inside an active handler.
+                    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+                    tryLogCurrentException(log, "Failed to remove uncommitted data file after a failed commit: " + path);
+                }
+            }
         }
         throw;
     }

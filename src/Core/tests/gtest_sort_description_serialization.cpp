@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include <Core/ProtocolDefines.h>
 #include <Core/SortDescription.h>
 #include <IO/ReadBufferFromString.h>
@@ -47,7 +49,7 @@ SortDescription deserialize(const std::string & blob)
 
 /// The writer refuses nothing but the version, so an invalid description is built by serializing it and
 /// reading the bytes back - which is exactly the shape of a forged client plan.
-void expectRejected(const SortColumnDescription & column, const char * what)
+void expectRejected(const SortColumnDescription & column, const char * what, const char * message_part = nullptr)
 {
     try
     {
@@ -57,6 +59,8 @@ void expectRejected(const SortColumnDescription & column, const char * what)
     catch (const Exception & e)
     {
         ASSERT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << what << ": " << e.message();
+        if (message_part)
+            ASSERT_NE(e.message().find(message_part), std::string::npos) << what << ": " << e.message();
     }
 }
 
@@ -155,6 +159,42 @@ GTEST_TEST(SortDescriptionSerialization, RejectsInvalidFillDescription)
         column.fill_description.fill_from = Field();
         column.fill_description.staleness_kind = IntervalKind(IntervalKind::Kind::Second);
         expectRejected(column, "a staleness interval without a value");
+    }
+}
+
+/// `deserializeSortDescription` is a client-facing boundary of its own: a forged query plan reaches
+/// `checkFillDescription` without passing through the parser or either analyzer, so every non-finite
+/// bound has to be rejected here as well, and not only for the SQL entrypoint that
+/// `05227_with_fill_non_finite_bound` covers.
+GTEST_TEST(SortDescriptionSerialization, RejectsNonFiniteFillDescription)
+{
+    for (const auto [value, what] : std::initializer_list<std::pair<Float64, const char *>>{
+             {std::numeric_limits<Float64>::quiet_NaN(), "NaN"},
+             {std::numeric_limits<Float64>::infinity(), "Inf"},
+             {-std::numeric_limits<Float64>::infinity(), "-Inf"}})
+    {
+        {
+            auto column = makeFillColumn();
+            column.fill_description.fill_from = Field(value);
+            expectRejected(column, (std::string("a ") + what + " FROM").c_str(), "WITH FILL FROM value must be finite");
+        }
+        {
+            auto column = makeFillColumn();
+            column.fill_description.fill_to = Field(value);
+            expectRejected(column, (std::string("a ") + what + " TO").c_str(), "WITH FILL TO value must be finite");
+        }
+        {
+            auto column = makeFillColumn();
+            column.fill_description.fill_step = Field(value);
+            expectRejected(column, (std::string("a ") + what + " STEP").c_str(), "WITH FILL STEP value must be finite");
+        }
+        {
+            /// `STALENESS` cannot be combined with `FROM`, and that check runs first.
+            auto column = makeFillColumn();
+            column.fill_description.fill_from = Field();
+            column.fill_description.fill_staleness = Field(value);
+            expectRejected(column, (std::string("a ") + what + " STALENESS").c_str(), "WITH FILL STALENESS value must be finite");
+        }
     }
 }
 
