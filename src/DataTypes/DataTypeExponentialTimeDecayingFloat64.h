@@ -150,7 +150,7 @@ public:
     explicit DataTypeExponentialTimeDecayingFloat64(Float64 decay_length_);
 
     TypeIndex getTypeId() const override { return TypeIndex::ExponentialTimeDecayingFloat64; }
-    TypeIndex getColumnType() const override { return TypeIndex::Tuple; }
+    TypeIndex getColumnType() const override { return TypeIndex::ExponentialTimeDecayingFloat64; }
     String doGetName() const override;
     const char * getFamilyName() const override { return "ExponentialTimeDecaying"; }
 
