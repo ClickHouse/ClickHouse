@@ -47,7 +47,7 @@ namespace
 {
 
 /// The data lake engines read `DataLakeStorageSettings`, whose credentials they hide in their own `SETTINGS`.
-SecretArgumentsSpec withDataLakeSecretSettings(SecretArgumentsSpec spec)
+[[maybe_unused]] SecretArgumentsSpec withDataLakeSecretSettings(SecretArgumentsSpec spec)
 {
     spec.secret_settings = DataLake::SETTINGS_TO_HIDE;
     return spec;
