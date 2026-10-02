@@ -36,5 +36,14 @@ SELECT grouping(id), grouping(value) FROM t_05195_dist GROUP BY GROUPING SETS ((
 SELECT 'the cluster table function';
 SELECT grouping(id) FROM cluster(test_cluster_two_shards, currentDatabase(), t_05195) GROUP BY id ORDER BY 1 LIMIT 1 SETTINGS optimize_skip_unused_shards = 1;
 
+SELECT 'state arguments over optimize_const_name_size';
+-- A state argument of a `grouping` specialization longer than `optimize_const_name_size` must not be
+-- replaced with `__getScalar`, or it is not stripped from the query sent to the shards.
+SELECT grouping(id), grouping(value) FROM t_05195_dist GROUP BY GROUPING SETS ((id), (value)) ORDER BY 1, 2 LIMIT 1 SETTINGS optimize_const_name_size = 1;
+SELECT grouping(id), grouping(value) FROM t_05195_dist GROUP BY GROUPING SETS ((id), (value)) ORDER BY 1, 2 LIMIT 1 SETTINGS optimize_const_name_size = 1, optimize_skip_unused_shards = 1;
+SELECT grouping(id), grouping(value) FROM t_05195_dist GROUP BY ROLLUP(id, value) ORDER BY 1, 2 LIMIT 1 SETTINGS optimize_const_name_size = 1, optimize_skip_unused_shards = 1;
+SELECT grouping(id), grouping(value) FROM t_05195_dist GROUP BY CUBE(id, value) ORDER BY 1, 2 LIMIT 1 SETTINGS optimize_const_name_size = 1, optimize_skip_unused_shards = 1;
+SELECT grouping(id, value), id FROM t_05195_dist GROUP BY id, value ORDER BY id LIMIT 1 SETTINGS optimize_const_name_size = 1, optimize_skip_unused_shards = 1;
+
 DROP TABLE t_05195_dist;
 DROP TABLE t_05195;
