@@ -212,7 +212,7 @@ public:
     const IMergeTreeReader & getMainReader() const { return *readers.main; }
 
     void addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_);
-    const MarkRanges & getPrewhereUnmatchedMarks() { return prewhere_unmatched_marks; }
+    const MarkRanges & getPrewhereUnmatchedMarks() const { return prewhere_unmatched_marks; }
 
     /// Returns true if a reader earlier in the chain than PREWHERE can skip whole marks based on
     /// secondary indexes (skip-index or projection-index). When true, marks that appear in

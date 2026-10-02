@@ -12,11 +12,10 @@ select x from tab where bitAnd(y, 1023) == 0 order by x limit 10 settings read_i
 system flush logs query_log, processors_profile_log;
 
 -- With `read_in_order_use_virtual_row`, the merge answers `ORDER BY x LIMIT 10` from the
--- first part alone. The read-ahead window only starts once the merge has finished with a
--- source and still needs another one, which never happens here, so the second part is not
--- read; in any case the window reads at most one block per deferred source, never the whole
--- part. Assert the deterministic invariants: both parts have their own `MergeTreeSelect` and
--- `VirtualRowTransform` (virtual row is engaged) and neither reads more than one block.
+-- first part alone. The second part is read only once the merge reaches the key of its
+-- virtual row, which never happens here. Assert the deterministic invariants: both parts have
+-- their own `MergeTreeSelect` and `VirtualRowTransform` (virtual row is engaged) and neither
+-- reads more than one block.
 WITH
     (
         SELECT query_id

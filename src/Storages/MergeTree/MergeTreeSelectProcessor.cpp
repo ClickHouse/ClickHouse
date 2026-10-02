@@ -26,7 +26,9 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Storages/MergeTree/MergeTreeReadPoolInOrderSliced.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/MergeTreeSliceEndInfo.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <boost/functional/hash.hpp>
@@ -416,6 +418,82 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
     return {std::move(chunk), 0, 0, false, {}};
 }
 
+void MergeTreeSelectProcessor::updateQueryConditionCache(const MergeTreeReadTask & finished_task) const
+{
+    /// Update the query condition cache for filters in PREWHERE stage.
+    /// Skip the write when a reader earlier in the chain (skip-index or projection-index)
+    /// could have filtered marks before PREWHERE saw them, to avoid attributing those
+    /// marks to the PREWHERE predicate hash. See Issue #104781.
+    /// On-fly mutations and patch parts filter rows ahead of PREWHERE for the same reason.
+    /// A row-level security filter is also prepended before PREWHERE, yet this write keys
+    /// only on the query PREWHERE hash, so a mark hidden by a row policy must not be attributed
+    /// to the PREWHERE predicate (a later query without the policy would skip rows it should see).
+    if (!reader_settings.use_query_condition_cache || !prewhere_info
+        || finished_task.readersChainCanSkipMarksBeforePrewhere()
+        || finished_task.appliesMutationsBeforePrewhere()
+        || row_level_filter
+        /// QueryConditionCache needs the concrete part's storage UUID; skip for borrowed parts.
+        || !finished_task.getInfo().data_part_info->getDataPart())
+        return;
+
+    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+    {
+        if (output->result_name != prewhere_info->prewhere_column_name)
+            continue;
+
+        /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
+        /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is
+        /// `unsigned long long`).
+        size_t condition_hash = queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt);
+        if (!VirtualColumnUtils::isDeterministic(output))
+        {
+            /// A TopK read composes the dynamic `__topKFilter` into the PREWHERE, so the
+            /// granules it drops depend on the running threshold. They can still be
+            /// recorded: for a fixed plan and data the threshold only tightens, so a
+            /// granule with no surviving rows has no row that could have reached the
+            /// final top-N. The entry is keyed with the TopK plan salt (mirroring the
+            /// WHERE write path in `QueryPlanOptimizations::updateQueryConditionCache` and the consult in
+            /// `filterPartsByQueryConditionCache`), so only the same TopK plan, part set,
+            /// and post-PREWHERE predicate ever reuses it. Any other non-deterministic
+            /// condition must not be cached at all.
+            if (!reader_settings.query_condition_cache_top_k_salt
+                || !VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
+                break;
+            boost::hash_combine(condition_hash, *reader_settings.query_condition_cache_top_k_salt);
+        }
+
+        auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+        const auto & data_part_info = finished_task.getInfo().data_part_info;
+
+        String part_name = data_part_info->isProjectionPart()
+            ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
+            : data_part_info->getPartName();
+        query_condition_cache->write(
+            /// QueryConditionCache is a coordinator feature; concrete part present here.
+            data_part_info->getDataPart()->storage.getStorageID().uuid,
+            part_name,
+            condition_hash,
+            prewhere_info->prewhere_actions.getNames()[0],
+            finished_task.getPrewhereUnmatchedMarks(),
+            data_part_info->getIndexGranularity().getMarksCount(),
+            data_part_info->getIndexGranularity().hasFinalMark());
+
+        break;
+    }
+}
+
+ChunkAndProgress MergeTreeSelectProcessor::makeSliceEndMarker() const
+{
+    Columns empty_columns;
+    empty_columns.reserve(result_header.columns());
+    for (const auto & column : result_header)
+        empty_columns.push_back(column.type->createColumn());
+
+    Chunk chunk(std::move(empty_columns), 0);
+    chunk.getChunkInfos().add(std::make_shared<MergeTreeSliceEndInfo>());
+    return {std::move(chunk), 0, 0, false, {}};
+}
+
 ChunkAndProgress MergeTreeSelectProcessor::read()
 {
     if (pending_virtual_row)
@@ -431,68 +509,25 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         {
             if (!task || algorithm->needNewTask(*task))
             {
-                /// Update the query condition cache for filters in PREWHERE stage.
-                /// Skip the write when a reader earlier in the chain (skip-index or projection-index)
-                /// could have filtered marks before PREWHERE saw them, to avoid attributing those
-                /// marks to the PREWHERE predicate hash. See Issue #104781.
-                /// On-fly mutations and patch parts filter rows ahead of PREWHERE for the same reason.
-                /// A row-level security filter is also prepended before PREWHERE, yet this write keys
-                /// only on the query PREWHERE hash, so a mark hidden by a row policy must not be attributed
-                /// to the PREWHERE predicate (a later query without the policy would skip rows it should see).
-                if (reader_settings.use_query_condition_cache && task && prewhere_info
-                    && !task->readersChainCanSkipMarksBeforePrewhere()
-                    && !task->appliesMutationsBeforePrewhere()
-                    && !row_level_filter
-                    /// QueryConditionCache needs the concrete part's storage UUID; skip for borrowed parts.
-                    && task->getInfo().data_part_info->getDataPart())
+                if (task && !current_task_finalized)
                 {
-                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
-                    {
-                        if (output->result_name == prewhere_info->prewhere_column_name)
-                        {
-                            /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
-                            /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is
-                            /// `unsigned long long`).
-                            size_t condition_hash = queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt);
-                            if (!VirtualColumnUtils::isDeterministic(output))
-                            {
-                                /// A TopK read composes the dynamic `__topKFilter` into the PREWHERE, so the
-                                /// granules it drops depend on the running threshold. They can still be
-                                /// recorded: for a fixed plan and data the threshold only tightens, so a
-                                /// granule with no surviving rows has no row that could have reached the
-                                /// final top-N. The entry is keyed with the TopK plan salt (mirroring the
-                                /// WHERE write path in `updateQueryConditionCache` and the consult in
-                                /// `filterPartsByQueryConditionCache`), so only the same TopK plan, part set,
-                                /// and post-PREWHERE predicate ever reuses it. Any other non-deterministic
-                                /// condition must not be cached at all.
-                                if (!reader_settings.query_condition_cache_top_k_salt
-                                    || !VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
-                                    break;
-                                boost::hash_combine(condition_hash, *reader_settings.query_condition_cache_top_k_salt);
-                            }
+                    current_task_finalized = true;
+                    updateQueryConditionCache(*task);
 
-                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            const auto & data_part_info = task->getInfo().data_part_info;
-
-                            String part_name = data_part_info->isProjectionPart()
-                                ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
-                                : data_part_info->getPartName();
-                            query_condition_cache->write(
-                                /// QueryConditionCache is a coordinator feature; concrete part present here.
-                                data_part_info->getDataPart()->storage.getStorageID().uuid,
-                                part_name,
-                                condition_hash,
-                                prewhere_info->prewhere_actions.getNames()[0],
-                                task->getPrewhereUnmatchedMarks(),
-                                data_part_info->getIndexGranularity().getMarksCount(),
-                                data_part_info->getIndexGranularity().hasFinalMark());
-
-                            break;
-                        }
-                    }
+                    /// Tell the router that the slice is fully read before asking for the next one.
+                    if (sliced_pool)
+                        return makeSliceEndMarker();
                 }
 
-                task = algorithm->getNewTask(*pool, task.get());
+                auto new_task = algorithm->getNewTask(*pool, task.get());
+
+                /// Nothing is assigned to this source right now; the router wakes it up when there is.
+                /// The finished task is kept so that its readers can continue the lane.
+                if (!new_task && sliced_pool && !sliced_pool->isFinished())
+                    return makeSliceEndMarker();
+
+                task = std::move(new_task);
+                current_task_finalized = false;
             }
 
             if (!task)

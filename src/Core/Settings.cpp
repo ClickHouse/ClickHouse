@@ -4801,7 +4801,7 @@ Possible values:
 )", 0, \
         {"26.9", false, true, "New setting to enable the read-in-order optimization when reading in reverse order of the sorting key with the `FINAL` modifier from `ReplacingMergeTree` tables."}) \
     DECLARE(Bool, read_in_order_use_virtual_row, true, R"(
-Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only the parts that can actually contribute to the result are read, plus a bounded read-ahead window of at most `max_threads` parts that keeps reads parallel.
+Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only the parts that can actually contribute to the result are read.
 )", 0, \
         {"26.8", false, true, "Enable the virtual row optimization by default. When reading in order of the primary key over many parts, it lets `MergingSortedTransform` reprioritize sources using primary key values from the sparse index, so parts that are not relevant for the query are not read, plus a bounded read-ahead window of at most `max_threads` parts that keeps reads parallel. This significantly reduces peak memory consumption (see https://github.com/ClickHouse/ClickHouse/issues/52624)."}, \
         {"24.11", false, false, "Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched."}) \
@@ -4811,6 +4811,12 @@ This allows `MergingSortedTransform` to reprioritize sources more frequently, wh
 Note that it disables `read_in_order_use_buffering` optimization and preliminary merge (`read_in_order_two_level_merge_threshold`) for reading.
 )", 0, \
         {"26.4", false, false, "Emit virtual row after each block during read-in-order to allow more frequent source reprioritization in MergingSortedTransform."}) \
+    DECLARE(Bool, read_in_order_use_sliced_pool, false, R"(
+Read `MergeTree` tables in the order of the primary key with a shared pool of reading threads instead of one reading thread per data part.
+Parts are cut into slices which are handed out to the threads as the merge demands data, so a single part can be read by several threads when a filter discards most of its rows, while parts whose data is not needed yet are not touched.
+Requires `read_in_order_use_virtual_row`. Applies to ascending order and local reading only, and not when the streams are merged in two levels (see `read_in_order_two_level_merge_threshold`). When the pool is used, `read_in_order_use_buffering` is not applied, because the pool buffers rows per part itself.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting: read `MergeTree` tables in the order of the primary key with a shared pool of threads that read slices of parts on demand, instead of one thread per part."}) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/reference/statements/select/group-by) optimization in [SELECT](/reference/statements/select/index) queries for aggregating data in corresponding order in [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.
 

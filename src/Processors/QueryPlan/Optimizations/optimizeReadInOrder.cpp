@@ -1799,6 +1799,12 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
                 reader->resetVirtualRowConversions();
         }
 
+        /// The sliced pool buffers rows per part in its router; buffering here would only make the
+        /// reading side read further ahead than the merge needs.
+        for (const auto * reader : virtual_row_readers)
+            if (reader->usesSlicedPool())
+                use_buffering = false;
+
         /// FinishSorting's `MergingSortedTransform` requires every input stream of the union
         /// to be sorted by `max_sort_descr`; the union must not concatenate (narrow) them.
         union_step->disableNarrowing();
@@ -1808,6 +1814,10 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     {
         /// Use buffering only if have filter or don't have limit.
         bool use_buffering = order_info->limit == 0;
+        /// The sliced pool buffers rows per part in its router; buffering here would only make the
+        /// reading side read further ahead than the merge needs.
+        if (virtual_row_reader && virtual_row_reader->usesSlicedPool())
+            use_buffering = false;
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering, apply_virtual_row);
     }
 }
