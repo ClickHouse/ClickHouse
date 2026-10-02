@@ -49,6 +49,7 @@ CREATE TABLE ${DB}.dst (x Int64, y Int64) ENGINE = MergeTree ORDER BY tuple();
 CREATE MATERIALIZED VIEW ${DB}.mv_to TO ${DB}.dst AS SELECT x, y FROM ${DB}.src;
 CREATE MATERIALIZED VIEW ${DB}.mv_inner ENGINE = MergeTree ORDER BY x AS SELECT x, y FROM ${DB}.src;
 CREATE MATERIALIZED VIEW ${DB}.mv_cols (a Int64, b Int64) ENGINE = MergeTree ORDER BY a AS SELECT x AS a, y AS b FROM ${DB}.src;
+CREATE MATERIALIZED VIEW ${DB}.mv_refresh REFRESH EVERY 1 HOUR (x Int64) ENGINE = Memory AS SELECT number AS x FROM numbers(2);
 "
 echo "healthy views, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP_FILE")"
 replay_local 'healthy views' 'mv%'
@@ -105,6 +106,7 @@ CREATE TABLE ${CONSTRAINT_DB}.src (x Int64, y Int64) ENGINE = MergeTree ORDER BY
 CREATE TABLE ${CONSTRAINT_DB}.dst (x Int64, y Int64) ENGINE = MergeTree ORDER BY tuple();
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_to TO ${CONSTRAINT_DB}.dst AS SELECT x, y FROM ${CONSTRAINT_DB}.src;
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_inner ENGINE = MergeTree ORDER BY x AS SELECT x, y FROM ${CONSTRAINT_DB}.src;
+CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_refresh REFRESH EVERY 1 HOUR (x Int64) ENGINE = Memory AS SELECT number AS x FROM numbers(2);
 "
 $CLICKHOUSE_LOCAL --path "$LOCAL_PATH" --dump-schema="$CONSTRAINT_DB" > "$DUMP_FILE" 2>"$ERR_FILE"
 rm -rf "$LOCAL_PATH"
@@ -204,6 +206,21 @@ CREATE TABLE ${DB}.pk (k SimpleAggregateFunction(sum, UInt64)) ENGINE = Aggregat
 "
 echo "SimpleAggregateFunction key, suspicious-primary-key gate emitted: $(grep -c '^SET allow_suspicious_primary_key = 1;' "$DUMP_FILE")"
 replay_local 'SimpleAggregateFunction key' '%'
+make_dump "
+CREATE TABLE ${DB}.tc (d DateTime, t Time, x Int64 TTL d + INTERVAL 1 DAY) ENGINE = MergeTree ORDER BY d;
+"
+echo "Time column and column TTL, time-type gate emitted: $(grep -c '^SET allow_experimental_time_time64_type = 1;' "$DUMP_FILE")"
+echo "Time column and column TTL, suspicious-TTL gate emitted: $(grep -c '^SET allow_suspicious_ttl_expressions = 1;' "$DUMP_FILE")"
+replay_local 'Time column and column TTL' '%'
+make_dump "
+CREATE TABLE ${DB}.tt (d DateTime) ENGINE = MergeTree ORDER BY d TTL d + INTERVAL 1 DAY;
+"
+echo "table TTL, suspicious-TTL gate emitted: $(grep -c '^SET allow_suspicious_ttl_expressions = 1;' "$DUMP_FILE")"
+make_dump "
+CREATE TABLE ${DB}.named (time UInt32, ttl UInt32) ENGINE = MergeTree ORDER BY time;
+"
+echo "columns named time and ttl, time-type gate emitted: $(grep -c '^SET allow_experimental_time_time64_type = 1;' "$DUMP_FILE")"
+echo "columns named time and ttl, suspicious-TTL gate emitted: $(grep -c '^SET allow_suspicious_ttl_expressions = 1;' "$DUMP_FILE")"
 
 echo '--- a plain dump replays under every carrier-gate constraint ---'
 CONSTRAINT_DB="${DB}_sweep"
@@ -218,6 +235,7 @@ CREATE TABLE ${CONSTRAINT_DB}.plain_kafka (x Int64) ENGINE = Kafka('127.0.0.1:90
 CREATE TABLE ${CONSTRAINT_DB}.dst (x Int64, y Int64) ENGINE = MergeTree ORDER BY tuple();
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_to TO ${CONSTRAINT_DB}.dst AS SELECT x, y FROM ${CONSTRAINT_DB}.mt;
 CREATE VIEW ${CONSTRAINT_DB}.v AS SELECT x FROM ${CONSTRAINT_DB}.mt;
+CREATE TABLE ${CONSTRAINT_DB}.named (time UInt32, ttl UInt32) ENGINE = MergeTree ORDER BY time;
 "
 $CLICKHOUSE_LOCAL --path "$LOCAL_PATH" --dump-schema="$CONSTRAINT_DB" > "$DUMP_FILE" 2>"$ERR_FILE"
 rm -rf "$LOCAL_PATH"
@@ -225,7 +243,7 @@ $CLICKHOUSE_CLIENT --multiquery --query "
     DROP DATABASE IF EXISTS ${CONSTRAINT_DB};
     DROP USER IF EXISTS ${CONSTRAINT_USER};
     DROP SETTINGS PROFILE IF EXISTS ${CONSTRAINT_PROFILE};
-    CREATE SETTINGS PROFILE ${CONSTRAINT_PROFILE} SETTINGS allow_experimental_object_storage_queue_hive_partitioning = 0 CONST, allow_materialized_view_with_bad_select = 0 CONST, enable_time_series_table = 0 CONST, allow_kafka_offsets_storage_in_keeper = 0 CONST, enable_materialized_postgresql_table = 0 CONST, enable_funnel_functions = 0 CONST, allow_experimental_nlp_functions = 0 CONST, allow_experimental_hash_functions = 0 CONST, allow_simdjson = 0 CONST, allow_fuzz_query_functions = 0 CONST, allow_hyperscan = 0 CONST, allow_suspicious_codecs = 0 CONST, allow_deprecated_error_prone_window_functions = 0 CONST, allow_suspicious_low_cardinality_types = 0 CONST, allow_suspicious_fixed_string_types = 0 CONST, allow_suspicious_variant_types = 0 CONST, allow_suspicious_primary_key = 0 CONST, allow_suspicious_ttl_expressions = 0 CONST, allow_experimental_full_text_index = 0 CONST, allow_dynamic_type_in_join_keys = 0 CONST, enable_unique_key = 0 CONST, allow_experimental_ytsaurus_table_engine = 0 CONST, allow_experimental_paimon_storage_engine = 0 CONST, enable_nullable_tuple_type = 0 CONST;
+    CREATE SETTINGS PROFILE ${CONSTRAINT_PROFILE} SETTINGS enable_time_time64_type = 0 CONST, allow_experimental_object_storage_queue_hive_partitioning = 0 CONST, allow_materialized_view_with_bad_select = 0 CONST, enable_time_series_table = 0 CONST, allow_kafka_offsets_storage_in_keeper = 0 CONST, enable_materialized_postgresql_table = 0 CONST, enable_funnel_functions = 0 CONST, allow_experimental_nlp_functions = 0 CONST, allow_experimental_hash_functions = 0 CONST, allow_simdjson = 0 CONST, allow_fuzz_query_functions = 0 CONST, allow_hyperscan = 0 CONST, allow_suspicious_codecs = 0 CONST, allow_deprecated_error_prone_window_functions = 0 CONST, allow_suspicious_low_cardinality_types = 0 CONST, allow_suspicious_fixed_string_types = 0 CONST, allow_suspicious_variant_types = 0 CONST, allow_suspicious_primary_key = 0 CONST, allow_suspicious_ttl_expressions = 0 CONST, allow_experimental_full_text_index = 0 CONST, allow_dynamic_type_in_join_keys = 0 CONST, enable_unique_key = 0 CONST, allow_experimental_ytsaurus_table_engine = 0 CONST, allow_experimental_paimon_storage_engine = 0 CONST, enable_nullable_tuple_type = 0 CONST;
     CREATE USER ${CONSTRAINT_USER} SETTINGS PROFILE '${CONSTRAINT_PROFILE}';
     GRANT ALL ON *.* TO ${CONSTRAINT_USER};
 "

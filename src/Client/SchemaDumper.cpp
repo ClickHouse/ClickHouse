@@ -27,6 +27,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
@@ -2354,6 +2355,7 @@ struct ReplayGateNeeds
     bool queue_hive_partitioning = false;
     bool url_wildcard = false;
     std::set<String> codec_gates; /// `enable_<family>_codec` of the codecs the statements name
+    std::set<String> data_lake_catalog_gates; /// gates of the known `catalog_type`s; `data_lake_catalog_database` keeps all
 };
 
 /// Kafka reads its Keeper-offsets gate only when `kafka_keeper_path` or `kafka_replica_name` is set,
@@ -2426,6 +2428,32 @@ bool urlMayHaveWildcard(const ASTFunction & function_or_engine, std::string_view
         && !function_or_engine.arguments->children.front()->as<ASTLiteral>();
 }
 
+/// The `DataLakeCatalog` creator reads only the gate of its `catalog_type`; nullopt when the type is not known here.
+std::optional<std::vector<String>> dataLakeCatalogGates(const ASTStorage & storage)
+{
+    /// A named collection can carry the settings, so only literal arguments can be trusted.
+    if (storage.engine->arguments)
+        for (const auto & argument : storage.engine->arguments->children)
+            if (!argument->as<ASTLiteral>())
+                return std::nullopt;
+    const Field * type = storage.settings ? storage.settings->changes.tryGet("catalog_type") : nullptr;
+    if (!type || type->getType() != Field::Types::String)
+        return std::nullopt;
+    String name = type->safeGet<String>();
+    std::ranges::transform(name, name.begin(), [](unsigned char c) { return std::tolower(c); });
+    if (name == "rest" || name == "onelake" || name == "biglake" || name == "horizon" || name == "s3tables" || name == "delta_sharing")
+        return std::vector<String>{"allow_database_iceberg", "allow_experimental_database_iceberg"};
+    if (name == "glue")
+        return std::vector<String>{"allow_database_glue_catalog", "allow_experimental_database_glue_catalog"};
+    if (name == "unity")
+        return std::vector<String>{"allow_database_unity_catalog", "allow_experimental_database_unity_catalog"};
+    if (name == "hive")
+        return std::vector<String>{"allow_experimental_database_hms_catalog"};
+    if (name == "paimon_rest")
+        return std::vector<String>{"allow_experimental_database_paimon_rest_catalog"};
+    return std::nullopt;
+}
+
 void forEachNode(const IAST & node, const std::function<void(const IAST &)> & visit)
 {
     visit(node);
@@ -2458,7 +2486,7 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
                     .materialized_postgresql_table = true, .time_series_table = true,
                     .kafka_keeper_offsets = true, .nullable_tuple_type = true, .unique_key = true,
                     .data_lake_catalog_database = true, .ytsaurus_table = true, .paimon_table = true,
-                    .delta_lake_table = true, .codec_gates = {}};
+                    .delta_lake_table = true, .codec_gates = {}, .data_lake_catalog_gates = {}};
         }
 
         const auto * create = create_ast->as<ASTCreateQuery>();
@@ -2499,7 +2527,12 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
                 else if (equalsCaseInsensitive(engine.name, "MaterializedMySQL"))
                     needs.materialized_mysql_database = true;
                 else if (equalsCaseInsensitive(engine.name, "DataLakeCatalog"))
-                    needs.data_lake_catalog_database = true;
+                {
+                    if (auto gates = dataLakeCatalogGates(*create->storage))
+                        needs.data_lake_catalog_gates.insert(gates->begin(), gates->end());
+                    else
+                        needs.data_lake_catalog_database = true;
+                }
             }
         }
         else
@@ -2567,7 +2600,6 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
         needs.low_cardinality_type |= lower.contains("lowcardinality");
         needs.fixed_string_type |= lower.contains("fixedstring");
         needs.variant_type |= lower.contains("variant");
-        needs.time_type |= hasToken(lower, "time") || hasToken(lower, "time64");
 
         if (hasToken(lower, "codec"))
         {
@@ -2583,6 +2615,16 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
         const IAST * main_engine = create->storage ? create->storage->engine : nullptr;
         forEachNode(*create_ast, [&](const IAST & node)
         {
+            /// `enable_time_time64_type` is checked for column types and for table-function structure strings.
+            if (const auto * data_type = node.as<ASTDataType>())
+                needs.time_type |= equalsCaseInsensitive(data_type->name, "Time") || equalsCaseInsensitive(data_type->name, "Time64");
+            else if (const auto * literal = node.as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+            {
+                String text = literal->value.safeGet<String>();
+                std::ranges::transform(text, text.begin(), [](unsigned char c) { return std::tolower(c); });
+                needs.time_type |= hasToken(text, "time") || hasToken(text, "time64");
+            }
+
             const auto * function = node.as<ASTFunction>();
             if (!function)
                 return;
@@ -2645,7 +2687,13 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
                 needs.suspicious_indices = true;
             needs.minmax_index_for_json |= hasToken(lower, "minmax") && (hasToken(lower, "json") || hasToken(lower, "object"));
             needs.suspicious_primary_key |= hasToken(lower, "simpleaggregatefunction");
-            needs.suspicious_ttl_expressions |= hasToken(lower, "ttl");
+            /// Read only for a table TTL or a column TTL.
+            for (const auto * storage : storages)
+                needs.suspicious_ttl_expressions |= storage->ttl_table != nullptr;
+            if (create->columns_list && create->columns_list->columns)
+                for (const auto & child : create->columns_list->columns->children)
+                    if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getTTL())
+                        needs.suspicious_ttl_expressions = true;
         }
     }
     return needs;
@@ -2722,7 +2770,7 @@ String replaySettingsPrelude(
         "allow_suspicious_types_in_order_by",
         "allow_experimental_correlated_subqueries",
     };
-    /// Read only when a `DataLakeCatalog` database is created.
+    /// Read only when a `DataLakeCatalog` database is created, each by its own `catalog_type`.
     static const std::set<std::string_view> data_lake_catalog_settings = {
         "allow_experimental_database_iceberg",
         "allow_experimental_database_hms_catalog",
@@ -2739,7 +2787,7 @@ String replaySettingsPrelude(
         "allow_iceberg_remove_orphan_files",
         "allow_experimental_expire_snapshots",
     };
-    /// Read only when a `DeltaLake*` table is created, also inside a `DataLakeCatalog` database.
+    /// Read only when a `DeltaLake*` table is created; a `DataLakeCatalog` database's tables are not replayed.
     static const std::set<std::string_view> delta_lake_settings = {
         "allow_delta_lake_create_table",
         "allow_delta_kernel_rs",
@@ -2790,11 +2838,11 @@ String replaySettingsPrelude(
             && !iceberg_write_settings.contains(name)
             && (!analyzer_settings.contains(name) || needs.analyzable_query_text)
             && (name != "allow_experimental_unique_key" || needs.unique_key)
-            && (!data_lake_catalog_settings.contains(name) || needs.data_lake_catalog_database)
+            && (!data_lake_catalog_settings.contains(name) || needs.data_lake_catalog_database || needs.data_lake_catalog_gates.contains(name))
             && (name != "allow_experimental_ytsaurus_table_engine" || needs.ytsaurus_table)
             && (name != "allow_experimental_paimon_storage_engine" || needs.paimon_table)
             && (name != "allow_experimental_nullable_tuple_type" || needs.nullable_tuple_type)
-            && (!delta_lake_settings.contains(name) || needs.delta_lake_table || needs.data_lake_catalog_database))
+            && (!delta_lake_settings.contains(name) || needs.delta_lake_table))
             res += "SET " + name + " = 1;\n";
     /// Emit dump-specific gates only when the dumped AST proves they are needed.
     for (const auto & [name, value] : dump_specific)
@@ -2830,9 +2878,28 @@ std::set<String> insertableColumnNames(const ASTCreateQuery & create)
     return names;
 }
 
+/// `numbers` and `zeros` with plain count arguments have a fixed schema and always analyze.
+bool tableFunctionAlwaysAnalyzes(const IAST & node)
+{
+    const auto * function = node.as<ASTFunction>();
+    if (!function || !function->arguments)
+        return false;
+    const auto & arguments = function->arguments->children;
+    const bool numbers = equalsCaseInsensitive(function->name, "numbers") || equalsCaseInsensitive(function->name, "numbers_mt");
+    const bool zeros = equalsCaseInsensitive(function->name, "zeros") || equalsCaseInsensitive(function->name, "zeros_mt");
+    if (!(numbers && (arguments.size() == 1 || arguments.size() == 2)) && !(zeros && arguments.size() == 1))
+        return false;
+    return std::ranges::all_of(arguments, [](const ASTPtr & argument)
+    {
+        const auto * literal = argument->as<ASTLiteral>();
+        return literal && literal->value.getType() == Field::Types::UInt64;
+    });
+}
+
 bool containsTableFunction(const IAST & node)
 {
-    if (const auto * table_expression = node.as<ASTTableExpression>(); table_expression && table_expression->table_function)
+    if (const auto * table_expression = node.as<ASTTableExpression>(); table_expression && table_expression->table_function
+        && !tableFunctionAlwaysAnalyzes(*table_expression->table_function))
         return true;
     return std::any_of(node.children.begin(), node.children.end(), [](const auto & child) { return containsTableFunction(*child); });
 }
