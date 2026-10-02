@@ -4,10 +4,6 @@
 #if USE_FILELOG
 
 #include <Access/ContextAccess.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsDateTime.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -59,6 +55,9 @@ void StorageSystemFileLogFiles::fillData(MutableColumns & res_columns, ContextPt
 
     for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
+        if (db.first == DatabaseCatalog::TEMPORARY_DATABASE)
+            continue;
+
         for (auto it = db.second->getTablesIterator(context, {}, /* skip_not_loaded */ true); it->isValid(); it->next())
         {
             StoragePtr table = it->table();

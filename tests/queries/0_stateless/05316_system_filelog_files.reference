@@ -17,9 +17,16 @@ c.jsonl	16	16	2	consuming	1
 -- a renamed file whose name is reused, before the table processes it
 a.jsonl	1
 c.jsonl	0
+-- once processed, the renamed file keeps its row and the new file starts from zero
+a.jsonl	9	9	1	consuming	1
+a.jsonl.1	32	32	4	consuming	1
+c.jsonl	16	16	2	consuming	1
 -- access
 0
-2
+3
+-- a temporary table is not shown
+1
+0
 -- a table of a lazy_load_tables database is shown once it is loaded
 TableProxy
 0

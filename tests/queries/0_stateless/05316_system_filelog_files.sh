@@ -79,6 +79,18 @@ printf '{"a":10}\n' > "${dir}/a.jsonl"
 ${CLICKHOUSE_CLIENT} -q "SELECT file_name, file_size IS NULL
     FROM system.filelog_files WHERE database = currentDatabase() AND table = 'file_log' ORDER BY file_name"
 
+echo '-- once processed, the renamed file keeps its row and the new file starts from zero'
+start=$EPOCHSECONDS
+while true; do
+    ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT * FROM file_log FORMAT Null"
+    done_reading=$(${CLICKHOUSE_CLIENT} -q "SELECT count() = 3 AND sum(current_offset = file_size) = 3 AND has(groupArray(file_name), 'a.jsonl.1')
+        FROM system.filelog_files WHERE database = currentDatabase() AND table = 'file_log'")
+    [ "${done_reading}" = 1 ] && break
+    if ((EPOCHSECONDS - start > 120)); then echo "Timeout waiting for the renamed file"; break; fi
+    sleep 0.1
+done
+files
+
 echo '-- access'
 user="user_${CLICKHOUSE_DATABASE}_filelog"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}"
@@ -88,6 +100,16 @@ ${CLICKHOUSE_CLIENT} --user "${user}" -q "SELECT count() FROM system.filelog_fil
 ${CLICKHOUSE_CLIENT} -q "GRANT SHOW TABLES ON ${CLICKHOUSE_DATABASE}.file_log TO ${user}"
 ${CLICKHOUSE_CLIENT} --user "${user}" -q "SELECT count() FROM system.filelog_files WHERE database = '${CLICKHOUSE_DATABASE}'"
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${user}"
+
+echo '-- a temporary table is not shown'
+tmp_dir="${dir}_tmp"
+mkdir -p "${tmp_dir}"
+printf '{"a":1}\n' > "${tmp_dir}/a.jsonl"
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TEMPORARY TABLE file_log_tmp (a UInt64) ENGINE = FileLog('${tmp_dir}/', 'JSONEachRow');
+    SELECT count() FROM system.tables WHERE is_temporary AND name = 'file_log_tmp';
+    SELECT count() FROM system.filelog_files WHERE endsWith(path, '/${CLICKHOUSE_TEST_UNIQUE_NAME}_tmp/a.jsonl');
+"
 
 echo '-- a table of a lazy_load_tables database is shown once it is loaded'
 lazy_db="${CLICKHOUSE_DATABASE}_lazy"
@@ -107,4 +129,4 @@ ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${lazy_db} SYNC"
 rm -rf "${lazy_dir:?}"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
-rm -rf "${dir:?}"
+rm -rf "${dir:?}" "${tmp_dir:?}"
