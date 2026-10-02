@@ -733,6 +733,7 @@ bool FileSegment::reserve(
     FileCacheReserveStat dummy_stat;
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
+    reserve_stat->not_enough_space = false;
 
     bool reserved = cache->tryReserve(
         *this, size_to_reserve, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
@@ -740,8 +741,8 @@ bool FileSegment::reserve(
     if (!reserved && reserve_ahead)
         reserve_ahead->reset();
 
-    /// Reserve-ahead is best-effort: retry with the exact size.
-    if (!reserved && size_to_reserve > minimum_reserve_size)
+    /// Reserve-ahead is best-effort: retry with the exact size if it did not fit.
+    if (!reserved && size_to_reserve > minimum_reserve_size && reserve_stat->not_enough_space)
     {
         ProfileEvents::increment(ProfileEvents::FilesystemCacheReserveAheadRetries);
         *reserve_stat = FileCacheReserveStat{};

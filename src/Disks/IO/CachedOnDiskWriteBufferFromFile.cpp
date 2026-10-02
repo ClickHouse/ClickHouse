@@ -458,6 +458,7 @@ void FileSegmentRangeWriter::jumpToPosition(size_t position)
 
     expected_write_offset = position;
     ignore_bytes = 0;
+    reserve_ahead.reset();
 }
 
 CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
