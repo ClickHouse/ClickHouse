@@ -16,8 +16,7 @@ CREATE TABLE test_prewhere_decimal_overflow
 )
 ENGINE = MergeTree()
 ORDER BY (ts, id)
--- Pin compact parts (per-column sizes = 0) so PREWHERE ordering is by selectivity alone, stable under CI-randomized serialization settings.
-SETTINGS min_bytes_for_wide_part = 1000000000000, min_rows_for_wide_part = 1000000000000, auto_statistics_types = '';
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, auto_statistics_types = '';
 
 -- Single INSERT so all rows land in one part (needed for selectivity estimates to differ).
 INSERT INTO test_prewhere_decimal_overflow VALUES

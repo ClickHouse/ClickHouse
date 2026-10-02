@@ -1,0 +1,19 @@
+---
+slug: /managing-data/delete_mutations
+sidebarTitle: 'Мутации удаления'
+title: 'Мутации удаления'
+hide_title: false
+description: 'Страница с описанием мутаций удаления — запросов ALTER, которые удаляют данные из таблицы'
+keywords: ['delete mutations', 'ALTER TABLE DELETE', 'data mutations', 'data parts rewrite', 'ReplacingMergeTree']
+doc_type: 'reference'
+---
+
+Мутации удаления — это запросы `ALTER`, которые удаляют данные из таблицы. Прежде всего, к ним относятся запросы вроде `ALTER TABLE DELETE` и т. д. Выполнение таких запросов создаёт новые изменённые версии частей данных. Это означает, что такие команды приводят к перезаписи целых частей данных для всех данных, которые были вставлены до мутации, а значит — к большому количеству запросов на запись.
+
+<Info>
+  При удалении можно избежать такого большого количества запросов на запись, если использовать специализированные движки таблиц, например [ReplacingMergeTree](/ru/concepts/features/operations/update/replacing-merge-tree) или [CollapsingMergeTree](/ru/reference/engines/table-engines/mergetree-family/collapsingmergetree), вместо стандартного движка таблицы MergeTree.
+</Info>
+
+import DeleteMutations from '/snippets/ru/delete.mdx';
+
+<DeleteMutations />

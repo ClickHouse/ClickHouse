@@ -414,7 +414,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
 
             /// If that wasn't enough, try to stop some query.
             OvercommitTracker * overcommit_tracker_ptr = nullptr;
-            if (overcommit_result == OvercommitResult::NONE && (overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed)) && query_tracker != nullptr)
+            if (overcommit_result == OvercommitResult::NONE && ((overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed))) && query_tracker != nullptr)
                 overcommit_result = overcommit_tracker_ptr->needToStopQuery(query_tracker, size);
 
             if (overcommit_result != OvercommitResult::MEMORY_FREED)
@@ -430,39 +430,21 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
                 if (level == VariableContext::Global)
                     ProfileEvents::increment(ProfileEvents::GlobalMemoryLimitExceeded);
                 const auto * description = description_ptr.load(std::memory_order_relaxed);
-
-                if (level == VariableContext::Global)
-                {
-                    const Int64 untracked = DB::UntrackedMemoryRegistry::instance().sum();
-                    throw DB::Exception(
-                        DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                        "{}{} exceeded: "
-                        "would use {} (attempt to allocate chunk of {}), "
-                        "current RSS: {}"
-                        "{}, " /// page cache
-                        "maximum: {}."
-                        "{} Untracked memory across all threads: {}.",
-                        description ? description : "",
-                        description ? " memory limit" : "Memory limit",
-                        formatReadableSizeWithBinarySuffix(will_be),
-                        formatReadableSizeWithBinarySuffix(size),
-                        formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed)),
-                        page_cache_ptr ? ", userspace page cache " + formatReadableSizeWithBinarySuffix(page_cache_ptr->sizeInBytes()) : "",
-                        formatReadableSizeWithBinarySuffix(current_hard_limit),
-                        overcommit_result_ignore ? "" : fmt::format(" OvercommitTracker decision: {}.", toDescription(overcommit_result)),
-                        formatReadableSizeWithBinarySuffix(untracked));
-                }
-                else
-                {
-                    throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                        "{}{} exceeded: would use {} (attempt to allocate chunk of {}), maximum: {}.{}",
-                        description ? description : "",
-                        description ? " memory limit" : "Memory limit",
-                        formatReadableSizeWithBinarySuffix(will_be),
-                        formatReadableSizeWithBinarySuffix(size),
-                        formatReadableSizeWithBinarySuffix(current_hard_limit),
-                        overcommit_result_ignore ? "" : fmt::format(" OvercommitTracker decision: {}.", toDescription(overcommit_result)));
-                }
+                const Int64 untracked = DB::UntrackedMemoryRegistry::instance().sum();
+                throw DB::Exception(
+                    DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                    "{}{} exceeded: "
+                    "would use {} (attempt to allocate chunk of {}){}{}, maximum: {}."
+                    "{} Untracked memory across all threads: {}.",
+                    description ? description : "",
+                    description ? " memory limit" : "Memory limit",
+                    formatReadableSizeWithBinarySuffix(will_be),
+                    formatReadableSizeWithBinarySuffix(size),
+                    (level == VariableContext::Global) ? fmt::format(", current RSS: {}", formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed))) : "",
+                    (level == VariableContext::Global && page_cache_ptr) ? ", userspace page cache " + formatReadableSizeWithBinarySuffix(page_cache_ptr->sizeInBytes()) : "",
+                    formatReadableSizeWithBinarySuffix(current_hard_limit),
+                    overcommit_result_ignore ? "" : fmt::format(" OvercommitTracker decision: {}.", toDescription(overcommit_result)),
+                    formatReadableSizeWithBinarySuffix(untracked));
             }
 
             // If OvercommitTracker::needToStopQuery returned false, it guarantees that enough memory is freed.

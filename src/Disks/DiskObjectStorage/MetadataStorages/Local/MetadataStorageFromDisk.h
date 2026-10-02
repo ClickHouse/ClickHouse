@@ -66,8 +66,6 @@ public:
 
     MetadataTransactionPtr createTransaction() override;
 
-    ObjectStorageKeyGeneratorPtr getKeyGenerator() const override { return key_generator; }
-
     bool supportWritingWithAppend() const override;
 
     const std::string & getPath() const override;

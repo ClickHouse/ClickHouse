@@ -17,7 +17,7 @@ O servidor ClickHouse pode ser configurado com arquivos de configuração em sin
 Na maioria dos tipos de instalação, o servidor ClickHouse usa `/etc/clickhouse-server/config.xml` como arquivo de configuração padrão, mas também é possível especificar manualmente o local do arquivo de configuração na inicialização do servidor usando a opção de linha de comando `--config-file` ou `-C`.
 Arquivos de configuração adicionais podem ser colocados no diretório `config.d/`, relativo ao arquivo de configuração principal, por exemplo no diretório `/etc/clickhouse-server/config.d/`.
 Os arquivos desse diretório e a configuração principal são mesclados em uma etapa de pré-processamento antes de a configuração ser aplicada no servidor ClickHouse.
-Os fragmentos de configuração são mesclados em ordem lexicográfica por seus caminhos completos. Para arquivos no diretório padrão `config.d/`, isso equivale a ordená-los pelo nome do arquivo. O diretório legado `conf.d/` também é mesclado; como `conf.d` é ordenado antes de `config.d`, todos os seus fragmentos são processados primeiro quando ambos os diretórios existem.
+Os arquivos de configuração são mesclados em ordem alfabética.
 Para simplificar atualizações e melhorar a modularização, é uma prática recomendada manter o arquivo padrão `config.xml` sem alterações e colocar personalizações adicionais em `config.d/`.
 A configuração do ClickHouse Keeper fica em `/etc/clickhouse-keeper/keeper_config.xml`.
 Da mesma forma, arquivos de configuração adicionais do Keeper precisam ser colocados em `/etc/clickhouse-keeper/keeper_config.d/`.
@@ -175,22 +175,18 @@ O resultado é a configuração:
 
 Também é possível substituir partes da configuração pelo conteúdo de arquivos. Isso pode ser feito de duas formas:
 
-* *Substituição de valores*: se um elemento tiver o atributo `incl`, seu valor será substituído pelo conteúdo do arquivo referenciado. O caminho para o arquivo com substituições é definido pelo elemento [`include_from`](/pt-BR/reference/settings/server-settings/settings/other#include_from) da configuração do servidor; não há um caminho padrão, portanto as substituições são lidas somente quando ele é especificado. Os valores de substituição são especificados em elementos `/clickhouse/substitution_name` nesse arquivo. Se uma substituição especificada em `incl` não existir, isso será registrado no log. Para impedir que o ClickHouse registre substituições ausentes, especifique o atributo `optional="true"` (por exemplo, para configurações de [macros](/pt-BR/reference/settings/server-settings/settings/other#macros)).
+* *Substituição de valores*: se um elemento tiver o atributo `incl`, seu valor será substituído pelo conteúdo do arquivo referenciado. Por padrão, o caminho para o arquivo com substituições é `/etc/metrika.xml`. Isso pode ser alterado no elemento [`include_from`](/pt-BR/reference/settings/server-settings/settings#include_from) da configuração do servidor. Os valores de substituição são especificados em elementos `/clickhouse/substitution_name` nesse arquivo. Se uma substituição especificada em `incl` não existir, isso será registrado no log. Para impedir que o ClickHouse registre substituições ausentes, especifique o atributo `optional="true"` (por exemplo, para configurações de [macros](/pt-BR/reference/settings/server-settings/settings#macros)).
 * *Substituição de elementos*: se você quiser substituir o elemento inteiro por uma substituição, use `include` como nome do elemento. O nome de elemento `include` pode ser combinado com o atributo `from_zk = "/path/to/node"`. Nesse caso, o valor do elemento é substituído pelo conteúdo do nó do ZooKeeper em `/path/to/node`. Isso também funciona quando você armazena uma subárvore XML inteira como um nó do ZooKeeper; ela será inserida por completo no elemento de origem.
-
-<Note>
-  Alterado na versão 26.8: antes dessa versão, o arquivo `/etc/metrika.xml` era usado implicitamente sempre que existia, mesmo quando `include_from` não era especificado. Se você depende desse arquivo, especifique explicitamente seu caminho em `include_from`. Observe que `include_from` é lido individualmente em cada arquivo de configuração: arquivos carregados separadamente da configuração principal do servidor — a configuração dos usuários&#39; (por exemplo, `users.xml` quando não está incluído no arquivo principal) e as configurações de Dicionário XML — cada um precisa de seu próprio elemento `include_from`; especificá-lo apenas na configuração principal do servidor não se aplica a eles.
-</Note>
 
 Um exemplo disso é mostrado abaixo:
 
 ```xml
 <clickhouse>
-    <!-- Appends XML subtree found at `/profiles-in-zookeeper` ZK path to `<profiles>` element. -->
+    <!-- Acrescenta a subárvore XML encontrada no caminho ZK `/profiles-in-zookeeper` ao elemento `<profiles>`. -->
     <profiles from_zk="/profiles-in-zookeeper" />
 
     <users>
-        <!-- Replaces `include` element with the subtree found at `/users-in-zookeeper` ZK path. -->
+        <!-- Substitui o elemento `include` pela subárvore encontrada no caminho ZK `/users-in-zookeeper`. -->
         <include from_zk="/users-in-zookeeper" />
         <include from_zk="/other-users-in-zookeeper" />
     </users>
@@ -204,7 +200,7 @@ Se você quiser mesclar o conteúdo da substituição com a configuração exist
 </div>
 
 Você pode usar criptografia simétrica para criptografar um elemento de configuração, por exemplo, uma senha em texto simples ou uma chave privada.
-Para isso, primeiro configure o [codec de criptografia](/pt-BR/reference/statements/create/table/codec#encryption-codecs) e, em seguida, adicione o atributo `encrypted_by`, com o nome do codec de criptografia como valor, ao elemento que será criptografado.
+Para isso, primeiro configure o [codec de criptografia](/pt-BR/reference/statements/create/table#encryption-codecs) e, em seguida, adicione o atributo `encrypted_by`, com o nome do codec de criptografia como valor, ao elemento que será criptografado.
 
 Diferentemente dos atributos `from_zk`, `from_env` e `incl`, ou do elemento `include`, nenhuma substituição (ou seja, a descriptografia do valor criptografado) é realizada no arquivo pré-processado.
 A descriptografia ocorre apenas em tempo de execução, no processo do servidor.
@@ -330,7 +326,6 @@ O arquivo `config.xml` pode especificar uma configuração separada com configur
 A configuração de usuário pode ser dividida em arquivos separados, assim como em `config.xml` e `config.d/`.
 O nome do diretório é definido pela configuração `users_config`, sem o sufixo `.xml`, concatenado com `.d`.
 O diretório `users.d` é usado por padrão, já que `users_config` tem como padrão `users.xml`.
-Os fragmentos de configuração de usuário são mesclados em ordem lexicográfica por seus caminhos completos. Para arquivos no diretório padrão `users.d/`, isso equivale a ordená-los pelo nome do arquivo. O diretório legado `conf.d/` também é mesclado; como `conf.d` é ordenado antes de `users.d`, todos os seus fragmentos são processados primeiro quando ambos os diretórios existem.
 
 Observe que os arquivos de configuração primeiro são [mesclados](#merging), levando em conta as configurações, e as inclusões são processadas depois disso.
 

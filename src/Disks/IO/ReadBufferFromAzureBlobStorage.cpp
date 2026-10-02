@@ -14,7 +14,6 @@
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/ProfileEvents.h>
 #include <IO/SeekableReadBuffer.h>
-#include <base/sleep.h>
 
 
 namespace ProfileEvents

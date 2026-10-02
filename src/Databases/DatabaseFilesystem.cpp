@@ -1,7 +1,10 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseFilesystem.h>
 
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
@@ -33,13 +36,15 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int PATH_ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
 }
 
-DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path_, ContextPtr context_)
+DatabaseFilesystem::DatabaseFilesystem(
+    const String & name_, const String & path_, ContextPtr context_, bool is_internal_metadata_replay)
     : IDatabase(name_), WithContext(context_->getGlobalContext()), path(path_), log(getLogger("DatabaseFileSystem(" + name_ + ")"))
 {
     bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
@@ -59,7 +64,15 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
     }
 
     if (!fs::exists(path))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
+    {
+        /// Metadata loading stops at the first exception, so refusing the server's own startup replay here
+        /// would make a directory removed since then enough to stop the server from starting. Tables resolve
+        /// their file on access, so an unreachable path costs only the tables; the database still drops.
+        if (!is_internal_metadata_replay)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
+
+        LOG_WARNING(log, "Path does not exist: {}. The database has no tables until it reappears", path);
+    }
 }
 
 std::string DatabaseFilesystem::getTablePath(const std::string & table_name) const
@@ -68,13 +81,15 @@ std::string DatabaseFilesystem::getTablePath(const std::string & table_name) con
     return table_path.lexically_normal().string();
 }
 
-StoragePtr DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr table_storage) const
+void DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr table_storage) const
 {
     std::lock_guard lock(mutex);
-    /// `emplace` keeps the existing entry if the key is already there, so `first->second` is the storage
-    /// a concurrent call for the same name inserted first. Nothing that locks `mutex` again may be called
-    /// here: it is the non-recursive base `IDatabase::mutex`, shared with `getDatabaseName`.
-    return loaded_tables.emplace(table_name, table_storage).first->second;
+    auto [_, inserted] = loaded_tables.emplace(table_name, table_storage);
+    if (!inserted)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Table with name `{}` already exists in database `{}` (engine {})",
+            table_name, getDatabaseName(), getEngineName());
 }
 
 bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, ContextPtr context_, bool throw_on_error) const
@@ -134,6 +149,12 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name) co
 
 bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) const
 {
+    /// `EXISTS TABLE` requires only `SHOW TABLES`, so answering it without the read source grant turns
+    /// this database into an oracle for `user_files`. Claim the table: resolving it reports the denial.
+    /// `isGrantedWithFilter` does not exist on this branch; with an empty filter it is `isGranted`.
+    if (!context_->getAccess()->isGranted(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE)))
+        return true;
+
     if (tryGetTableFromCache(name))
         return true;
 
@@ -142,6 +163,11 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) 
 
 StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr context_, bool throw_on_error) const
 {
+    /// Resolving a table of this database requires the read source grant. It is checked here, above the
+    /// cache, because the cache is keyed on the table name alone: an entry resolved by one user is
+    /// handed to every later caller. `file` reports no URI, so the grant is checked with no filter.
+    context_->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+
     /// A renaming rule belongs to the one query that set it, while a cached table is shared with the
     /// later queries of every user. Such a table is therefore neither taken from the cache, where it
     /// would arrive without the rule, nor put into it, where it would rename for an unrelated query.
@@ -185,7 +211,7 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     /// TableFunctionFile throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(ast_function_ptr, context_, name);
     if (table_storage && !renames_after_processing)
-        return addTable(name, table_storage);
+        addTable(name, table_storage);
 
     return table_storage;
 }
@@ -286,7 +312,12 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
             init_path = safeGetLiteralValue<String>(arguments[0], engine_name);
         }
 
-        return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context);
+        /// The loader flag, not `internal`, is the discriminator: an internal query is not necessarily the
+        /// server's own replay, because wrappers run user statements as internal ones.
+        const bool is_internal_metadata_replay
+            = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+
+        return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context, is_internal_metadata_replay);
     };
     factory.registerDatabase("Filesystem", create_fn, {
         .supports_arguments = true,

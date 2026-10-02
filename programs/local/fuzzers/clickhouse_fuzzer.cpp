@@ -18,13 +18,11 @@
 #include <ctime>
 #include <pthread.h>
 #include <sanitizer/common_interface_defs.h>
-#include <poll.h>
+#include <sys/poll.h>
 #include <unistd.h>
 
 #include <new>
 #include <string_view>
-
-#include "config.h"
 
 int mainEntryClickHouseLocal(int argc, char ** argv);
 
@@ -35,24 +33,30 @@ using MainFunc = int (*)(int, char**);
 
 }
 
-/// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create,
-/// or messages that do not mean anything to the user.
-#if USE_JEMALLOC
+/// Prevent messages from JeMalloc in the release build.
+/// Some of these messages are non-actionable for the users, such as:
+/// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
+#if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
+extern "C" void (*je_malloc_message)(void *, const char *s);
+__attribute__((constructor(0))) void init_je_malloc_message() { je_malloc_message = [](void *, const char *){}; }
+#elif USE_JEMALLOC
+#include <unordered_set>
+/// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create
 extern "C" void (*je_malloc_message)(void *, const char * s);
-static __attribute__((constructor(0))) void init_je_malloc_message()
+__attribute__((constructor(0))) void init_je_malloc_message()
 {
     je_malloc_message = [](void *, const char * str)
     {
-        /// NOTE: You cannot have any allocations here
+        using namespace std::literals;
+        static const std::unordered_set<std::string_view> ignore_messages{
+            "<jemalloc>: background thread creation failed (11)\n"sv};
 
         std::string_view message_view{str};
-        if (message_view == "<jemalloc>: background thread creation failed (11)\n")
-            return;
-        if (message_view == "<jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.\n")
+        if (ignore_messages.contains(message_view))
             return;
 
 #    if defined(SYS_write)
-        syscall(SYS_write, STDERR_FILENO, message_view.data(), message_view.size());
+        syscall(SYS_write, 2 /*stderr*/, message_view.data(), message_view.size());
 #    else
         write(STDERR_FILENO, message_view.data(), message_view.size());
 #    endif

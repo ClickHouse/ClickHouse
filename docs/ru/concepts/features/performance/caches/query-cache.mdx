@@ -45,7 +45,7 @@ doc_type: 'guide'
   результатов запросов в clickhouse-local отключён.
 </Note>
 
-Параметр [use&#95;query&#95;cache](/ru/reference/settings/session-settings/use-query#use_query_cache) можно использовать, чтобы указать, должен ли конкретный запрос или все запросы
+Параметр [use&#95;query&#95;cache](/ru/reference/settings/session-settings#use_query_cache) можно использовать, чтобы указать, должен ли конкретный запрос или все запросы
 текущего сеанса использовать кэш запросов. Например, при первом выполнении запроса
 
 ```sql
@@ -63,8 +63,8 @@ SETTINGS use_query_cache = true;
   не выполняется с `SETTINGS use_query_cache = true`.
 </Note>
 
-Способ использования кэша можно более тонко настроить с помощью параметров [enable&#95;writes&#95;to&#95;query&#95;cache](/ru/reference/settings/session-settings/enable#enable_writes_to_query_cache)
-и [enable&#95;reads&#95;from&#95;query&#95;cache](/ru/reference/settings/session-settings/enable#enable_reads_from_query_cache) (оба по умолчанию имеют значение `true`). Первый параметр
+Способ использования кэша можно более тонко настроить с помощью параметров [enable&#95;writes&#95;to&#95;query&#95;cache](/ru/reference/settings/session-settings#enable_writes_to_query_cache)
+и [enable&#95;reads&#95;from&#95;query&#95;cache](/ru/reference/settings/session-settings#enable_reads_from_query_cache) (оба по умолчанию имеют значение `true`). Первый параметр
 управляет тем, сохраняются ли результаты запросов в кэше, а второй определяет, должна ли база данных пытаться получать результаты запросов
 из кэша. Например, следующий запрос будет использовать кэш только пассивно, то есть пытаться читать из него, но не сохранять в нём свой
 результат:
@@ -97,7 +97,7 @@ use_query_cache = true`), однако следует помнить, что т�
 Если запрос был прерван из-за исключения или отменён пользователем, в кэш запросов никакая запись не добавляется.
 
 Размер кэша запросов в байтах, максимальное число записей кэша и максимальный размер отдельных записей кэша (в байтах и в
-записях) можно настроить с помощью различных [параметров конфигурации сервера](/ru/reference/settings/server-settings/settings/query#query_cache).
+записях) можно настроить с помощью различных [параметров конфигурации сервера](/ru/reference/settings/server-settings/settings#query_cache).
 
 ```xml
 <query_cache>
@@ -111,8 +111,8 @@ use_query_cache = true`), однако следует помнить, что т�
 Также можно ограничить использование кэша отдельными пользователями с помощью [профилей настроек](/ru/concepts/features/configuration/settings/settings-profiles) и [ограничений
 на настройки](/ru/concepts/features/configuration/settings/constraints-on-settings). В частности, можно ограничить максимальный объём памяти (в байтах), который пользователь может
 выделить под кэш запросов, а также максимальное количество сохраняемых результатов запросов. Для этого сначала задайте параметры
-[query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/ru/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes) и
-[query&#95;cache&#95;max&#95;entries](/ru/reference/settings/session-settings/query-cache#query_cache_max_entries) в профиле пользователя в `users.xml`, затем сделайте оба параметра
+[query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/ru/reference/settings/session-settings#query_cache_max_size_in_bytes) и
+[query&#95;cache&#95;max&#95;entries](/ru/reference/settings/session-settings#query_cache_max_entries) в профиле пользователя в `users.xml`, затем сделайте оба параметра
 доступными только для чтения:
 
 ```xml
@@ -136,7 +136,7 @@ use_query_cache = true`), однако следует помнить, что т�
 ```
 
 Чтобы задать минимальное время выполнения запроса, при котором его результат можно кэшировать, используйте настройку
-[query&#95;cache&#95;min&#95;query&#95;duration](/ru/reference/settings/session-settings/query-cache#query_cache_min_query_duration). Например, результат запроса
+[query&#95;cache&#95;min&#95;query&#95;duration](/ru/reference/settings/session-settings#query_cache_min_query_duration). Например, результат запроса
 
 ```sql
 SELECT some_expensive_calculation(column_1, column_2)
@@ -145,10 +145,10 @@ SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
 ```
 
 кэшируется, только если запрос выполняется дольше 5 секунд. Также можно указать, сколько раз должен выполниться запрос, прежде чем его результат будет
-кэшироваться, — для этого используйте настройку [query&#95;cache&#95;min&#95;query&#95;runs](/ru/reference/settings/session-settings/query-cache#query_cache_min_query_runs).
+кэшироваться, — для этого используйте настройку [query&#95;cache&#95;min&#95;query&#95;runs](/ru/reference/settings/session-settings#query_cache_min_query_runs).
 
 Записи в кэше запросов становятся устаревшими по истечении определенного периода времени (time-to-live). По умолчанию этот период составляет 60 секунд, но можно указать другое
-значение на уровне сеанса, профиля или запроса с помощью настройки [query&#95;cache&#95;ttl](/ru/reference/settings/session-settings/query-cache#query_cache_ttl). Кэш
+значение на уровне сеанса, профиля или запроса с помощью настройки [query&#95;cache&#95;ttl](/ru/reference/settings/session-settings#query_cache_ttl). Кэш
 запросов вытесняет записи &quot;лениво&quot;, то есть когда запись устаревает, она не удаляется из кэша немедленно. Вместо этого, когда в кэш запросов
 нужно добавить новую запись, база данных проверяет, достаточно ли в кэше свободного места для новой записи. Если это не так,
 база данных пытается удалить все устаревшие записи. Если в кэше по-прежнему недостаточно свободного места, новая запись не добавляется.
@@ -157,10 +157,10 @@ SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
 кэшированной записи.
 
 Записи в кэше запросов по умолчанию сжимаются. Это уменьшает общее потребление памяти ценой более медленной записи в кэш запросов / чтения
-из кэша запросов. Чтобы отключить сжатие, используйте настройку [query&#95;cache&#95;compress&#95;entries](/ru/reference/settings/session-settings/query-cache#query_cache_compress_entries).
+из кэша запросов. Чтобы отключить сжатие, используйте настройку [query&#95;cache&#95;compress&#95;entries](/ru/reference/settings/session-settings#query_cache_compress_entries).
 
 Иногда бывает полезно хранить в кэше несколько результатов для одного и того же запроса. Этого можно добиться с помощью настройки
-[query&#95;cache&#95;tag](/ru/reference/settings/session-settings/query-cache#query_cache_tag), которая выступает как метка (или пространство имен) для записей кэша запросов. Кэш запросов
+[query&#95;cache&#95;tag](/ru/reference/settings/session-settings#query_cache_tag), которая выступает как метка (или пространство имен) для записей кэша запросов. Кэш запросов
 считает результаты одного и того же запроса с разными тегами разными.
 
 Пример создания трех разных записей кэша запросов для одного и того же запроса:
@@ -207,16 +207,16 @@ SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 
 Записи кэша подзапросов видны в [system.query&#95;cache](/ru/reference/system-tables/query_cache) при `is_subquery = 1`. Настройка `query_cache_ttl` также применяется к записям кэша подзапросов и может задаваться для каждого подзапроса.
 
-ClickHouse читает данные таблицы блоками по [max&#95;block&#95;size](/ru/reference/settings/session-settings/max#max_block_size) строк. Из-за фильтрации, агрегации
-и т. п. результирующие блоки обычно значительно меньше, чем &#39;max&#95;block&#95;size&#39;, хотя в некоторых случаях они могут быть и гораздо больше. Настройка
-[query&#95;cache&#95;squash&#95;partial&#95;results](/ru/reference/settings/session-settings/query-cache#query_cache_squash_partial_results) (включена по умолчанию) определяет, будут ли результирующие блоки
-объединяться (если они слишком малы) или разделяться (если они большие) на блоки размером &#39;max&#95;block&#95;size&#39; перед записью в кэш результатов
+ClickHouse читает данные таблицы блоками по [max&#95;block&#95;size](/ru/reference/settings/session-settings#max_block_size) строк. Из-за фильтрации, агрегации
+и т. п. результирующие блоки обычно значительно меньше, чем `max_block_size`, хотя в некоторых случаях они могут быть и гораздо больше. Настройка
+[query&#95;cache&#95;squash&#95;partial&#95;results](/ru/reference/settings/session-settings#query_cache_squash_partial_results) (включена по умолчанию) определяет, будут ли результирующие блоки
+объединяться (если они слишком малы) или разделяться (если они большие) на блоки размером `max_block_size` перед записью в кэш результатов
 запросов. Это снижает производительность записи в кэш запросов, но повышает степень сжатия записей кэша и обеспечивает более естественную
 гранулярность блоков, когда результаты запросов впоследствии отдаются из кэша запросов.
 
 В результате кэш запросов хранит для каждого запроса несколько (частичных)
 результирующих блоков. Хотя такое поведение по умолчанию вполне оправданно, его можно отключить с помощью настройки
-[query&#95;cache&#95;squash&#95;partial&#95;results](/ru/reference/settings/session-settings/query-cache#query_cache_squash_partial_results).
+[query&#95;cache&#95;squash&#95;partial&#95;results](/ru/reference/settings/session-settings#query_cache_squash_partial_results).
 
 Кроме того, результаты запросов с недетерминированными функциями по умолчанию не кэшируются. К таким функциям относятся
 
@@ -238,16 +238,16 @@ ClickHouse читает данные таблицы блоками по [max&#95
   [`getMacro()`](/ru/reference/functions/regular-functions/other-functions#getMacro) и т. д.
 
 Чтобы принудительно кэшировать результаты запросов с недетерминированными функциями, используйте настройку
-[query&#95;cache&#95;nondeterministic&#95;function&#95;handling](/ru/reference/settings/session-settings/query-cache#query_cache_nondeterministic_function_handling).
+[query&#95;cache&#95;nondeterministic&#95;function&#95;handling](/ru/reference/settings/session-settings#query_cache_nondeterministic_function_handling).
 
 Результаты запросов, в которых используются системные таблицы (например, [system.processes](/ru/reference/system-tables/processes)&#96; или
 [information&#95;schema.tables](/ru/reference/system-tables/information_schema)), по умолчанию не кэшируются. Чтобы принудительно кэшировать результаты запросов с
-системными таблицами, используйте настройку [query&#95;cache&#95;system&#95;table&#95;handling](/ru/reference/settings/session-settings/query-cache#query_cache_system_table_handling).
+системными таблицами, используйте настройку [query&#95;cache&#95;system&#95;table&#95;handling](/ru/reference/settings/session-settings#query_cache_system_table_handling).
 
 Наконец, по соображениям безопасности записи в кэше запросов не являются общими для разных пользователей. Например, пользователь A не должен иметь возможность обойти
 ROW POLICY для таблицы, выполнив тот же запрос, что и другой пользователь B, для которого такая политика не задана. Однако при необходимости записи кэша можно
 пометить как доступные другим пользователям (то есть общие), указав настройку
-[query&#95;cache&#95;share&#95;between&#95;users](/ru/reference/settings/session-settings/query-cache#query_cache_share_between_users).
+[query&#95;cache&#95;share&#95;between&#95;users](/ru/reference/settings/session-settings#query_cache_share_between_users).
 
 <div id="related-content">
   ## Материалы по теме

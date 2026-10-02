@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # no-fasttest: the PromQL grammar requires ANTLR4 which is disabled in the fast-test build.
+# no-replicated-database: the experimental TimeSeries table engine does not round-trip through DatabaseReplicated.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

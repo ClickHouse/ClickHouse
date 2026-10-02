@@ -6,7 +6,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
-#include <Processors/QueryPlan/IEJoinStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
@@ -282,10 +281,6 @@ private:
                 if (typeid_cast<const FullSortingMergeJoin *>(join_step->getJoin().get()))
                     return false;
             }
-
-            /// (3) IEJoin merges its pre-sorted inputs, its sortings are not redundant
-            if (typeid_cast<const IEJoinStep *>(step))
-                return false;
         }
 
         return true;

@@ -1,20 +1,20 @@
 ---
 slug: /cloud/managed-postgres/terraform
 sidebarTitle: 'Terraform'
-title: 'ClickHouse Managed Postgres Terraform reference'
+title: 'Managed Postgres Terraform reference'
 description: 'Reference for managing ClickHouse Managed Postgres services with the ClickHouse Terraform provider.'
 keywords: ['managed postgres', 'terraform', 'infrastructure as code', 'iac', 'provider', 'programmatic']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.terraform-beta" />
 
 ClickHouse Managed Postgres services can be created and managed using the `clickhouse_postgres_service` resource in the [ClickHouse Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service). This page covers provider setup and configuration examples for the resource and its companion data sources.
 
 <Note>
-This resource is in alpha and its behavior may change in future provider versions. It ships in the regular provider build. This page documents provider version **v3.21.0** and later. See the [provider releases](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) for details.
+This resource is in alpha and its behavior may change in future provider versions. It ships in the regular provider build and is available from provider version **v3.17.1** — check the [provider releases](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) for details.
 </Note>
 
 ## Provider setup {#provider-setup}
@@ -26,7 +26,7 @@ terraform {
   required_providers {
     clickhouse = {
       source  = "ClickHouse/clickhouse"
-      version = ">= 3.21.0"
+      version = ">= 3.17.1"
     }
   }
 }
@@ -52,19 +52,17 @@ The `clickhouse_postgres_service` resource has the following arguments:
 | `size` | For a standard create | Instance size (VM SKU), for example `m6gd.large`. Resizable in place. Omit for a point-in-time restore (the restored instance comes up at the backup's size). |
 | `postgres_version` | No | Major Postgres version (for example, `18`). Changing the major version destroys and recreates the service. |
 | `ha_type` | No | High-availability mode: `none`, `async`, or `sync`. See [High availability](#high-availability). |
-| `password` | For a standard create, unless `password_wo` is set | Superuser password, managed from your configuration. Terraform never reads it back from the API. Stored in (sensitive) state. Omit for a read replica (inherited) or a point-in-time restore (kept from the source backup). |
-| `password_wo` | For a standard create, unless `password` is set | Write-only superuser password: applied to the service but never stored in state. Requires `password_wo_version`; requires Terraform 1.11 or later. |
-| `password_wo_version` | With `password_wo` | Version number for `password_wo`. Change it to rotate to the current `password_wo` value. |
+| `password` | No | Superuser password. Omit to have the server generate one. Stored in (sensitive) state. |
 | `pg_config` | No | Postgres server parameters as a key-value map. |
 | `pgbouncer_config` | No | PgBouncer connection-pooler parameters as a key-value map. |
 | `tags` | No | Resource tags as a key-value map. |
 | `read_replica_of` | No | ID of a primary service to replicate. See [Read replicas](#read-replicas). Mutually exclusive with `restore_to_point_in_time`. |
 | `restore_to_point_in_time` | No | Create the service by restoring another service to a point in time. See [Point-in-time restore](#point-in-time-restore). Mutually exclusive with `read_replica_of`. |
 
-The following attributes are read-only and populated by ClickHouse Cloud after creation: `id`, `state`, `created_at`, `is_primary`, `hostname`, `port`, and `username`. There is no `connection_string` attribute: build connection URIs from `hostname`, `port`, `username`, and the password you declare, for example `postgres://${username}:${password}@${hostname}:${port}/postgres?sslmode=require`.
+The following attributes are read-only and populated by ClickHouse Cloud after creation: `id`, `state`, `created_at`, `is_primary`, `hostname`, `port`, `username`, and `connection_string` (sensitive).
 
 <Warning>
-The `password` is stored in plain text in your Terraform state. Protect your state file accordingly, for example with a remote backend using encryption at rest, or use `password_wo` to keep the password out of state entirely.
+The `password` is stored in plain text in your Terraform state. Protect your state file accordingly — for example, use a remote backend with encryption at rest. If you omit `password`, the server generates one and the provider reads it back into state on each refresh.
 </Warning>
 
 ## Create a service {#create-a-service}
@@ -75,7 +73,6 @@ resource "clickhouse_postgres_service" "example" {
   cloud_provider = "aws"
   region         = "us-east-1"
   size           = "m6gd.large"
-  password       = var.postgres_password
 
   # High-availability mode — number of standby replicas:
   #   "none"  – primary only, no standby (default)
@@ -90,7 +87,7 @@ resource "clickhouse_postgres_service" "example" {
 }
 ```
 
-A standard service must declare `password` or `password_wo`. The value must be at least 12 characters with at least one lowercase letter, one uppercase letter, and one digit. `password_wo` (with `password_wo_version`) applies the same password rules but is never stored in state; change `password_wo_version` to rotate. Because the API does not return credentials, Terraform must stay the only writer of the password: a password rotated outside Terraform (console or API) is not detected, and the next Terraform-driven rotation reasserts the declared value.
+To manage the password yourself, set `password` — it must be at least 12 characters with at least one lowercase letter, one uppercase letter, and one digit. Omit it and the server generates one.
 
 ## High availability {#high-availability}
 
@@ -145,7 +142,7 @@ data "clickhouse_postgres_service" "example" {
   id = clickhouse_postgres_service.example.id
 }
 
-# All ClickHouse Managed Postgres services in the organization.
+# All Managed Postgres services in the organization.
 data "clickhouse_postgres_services" "all" {}
 
 # The CA certificates for a service, for TLS connections.
@@ -156,13 +153,11 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
 
 ## Importing existing services {#importing-existing-services}
 
-Existing ClickHouse Managed Postgres services can be imported into Terraform state using the service ID:
+Existing Managed Postgres services can be imported into Terraform state using the service ID. The password is recovered on import — the server echoes it on `GET`:
 
 ```bash
 terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
-
-Import does not recover the password (the API does not return it). After importing, the first apply rotates the service to the `password` or `password_wo` declared in your configuration.
 
 ## Unsupported operations {#unsupported-operations}
 

@@ -6,8 +6,6 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 
-#include <atomic>
-
 #include <QueryPipeline/SizeLimits.h>
 
 #include <Interpreters/IKeyValueEntity.h>
@@ -35,9 +33,6 @@ public:
     std::string getName() const override { return "DirectKeyValueJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
-    /// Each left row's key is looked up once and the row is emitted in input order.
-    bool preservesLeftBlockOrder() const override { return true; }
-
     bool addBlockToJoin(const Block &, bool) override;
     void checkTypesOfKeys(const Block &) const override;
 
@@ -48,8 +43,6 @@ public:
     size_t getTotalRowCount() const override { return 0; }
 
     size_t getTotalByteCount() const override { return 0; }
-
-    StepAnalysisReport getAnalysisReport() const override;
 
     bool alwaysReturnsEmptySet() const override { return false; }
 
@@ -65,8 +58,6 @@ private:
     Block sample_block_with_columns_to_add;
     LoggerPtr log;
 
-    std::atomic<UInt64> left_rows_total{0};
-    std::atomic<UInt64> left_rows_matched{0};
 };
 
 }

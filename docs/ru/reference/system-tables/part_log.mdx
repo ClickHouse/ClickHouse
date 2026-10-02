@@ -15,7 +15,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
   ## Описание
 </div>
 
-Таблица `system.part_log` создается только в том случае, если указана настройка сервера [part&#95;log](/ru/reference/settings/server-settings/settings/other#part_log).
+Таблица `system.part_log` создается только в том случае, если указана настройка сервера [part&#95;log](/ru/reference/settings/server-settings/settings#part_log).
 
 Эта таблица содержит информацию о событиях, происходивших с [частями данных](/ru/reference/engines/table-engines/mergetree-family/custom-partitioning-key) в таблицах семейства [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree), например о добавлении данных или их слиянии.
 
@@ -43,7 +43,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `partition_id` ([String](/ru/reference/data-types/string)) — идентификатор партиции, в которую была вставлена часть данных. Столбец принимает значение `all`, если партиционирование выполняется по `tuple()`.
 * `partition` ([String](/ru/reference/data-types/string)) — Имя партиции.
 * `part_type` ([String](/ru/reference/data-types/string)) — Тип части данных. Возможные значения: Wide и Compact.
-* `part_storage_type` ([String](/ru/reference/data-types/string)) — Тип `DataPartStorage`. Возможные значения: `Packed` — большинство файлов части хранится в одном архиве (проекции и несколько служебных файлов, например `txn_version.txt`, записываются отдельно), `Full` — каждый файл хранится отдельно.
+* `part_storage_type` ([String](/ru/reference/data-types/string)) — Тип DataPartStorage. Возможные значения: Packed — все файлы хранятся в одном blob, Full — отдельный blob для каждого файла.
 * `disk_name` ([String](/ru/reference/data-types/string)) — Имя диска, на котором расположена часть данных.
 * `path_on_disk` ([String](/ru/reference/data-types/string)) — Абсолютный путь к папке с файлами части данных.
 * `rows` ([UInt64](/ru/reference/data-types/int-uint)) — количество строк в части данных.
@@ -97,16 +97,15 @@ part_name:               all_1_7_1
 partition_id:            all
 partition:               tuple()
 part_type:               Wide
-part_storage_type:       Full
 disk_name:               default
 path_on_disk:            ./data/store/1ad/1ad33424-f5f5-402b-ac03-ec82282634ab/all_1_7_1/
-rows:                    3285726 -- 3.29 million
-size_in_bytes:           438968542 -- 438.97 million
+rows:                    3285726 -- 3,29 миллиона
+size_in_bytes:           438968542 -- 438,97 миллиона
 merged_from:             ['all_1_1_0','all_2_2_0','all_3_3_0','all_4_4_0','all_5_5_0','all_6_6_0','all_7_7_0']
-bytes_uncompressed:      1373137767 -- 1.37 billion
-read_rows:               3285726 -- 3.29 million
-read_bytes:              1429206946 -- 1.43 billion
-peak_memory_usage:       303611887 -- 303.61 million
+bytes_uncompressed:      1373137767 -- 1,37 миллиарда
+read_rows:               3285726 -- 3,29 миллиона
+read_bytes:              1429206946 -- 1,43 миллиарда
+peak_memory_usage:       303611887 -- 303,61 миллиона
 error:                   0
 exception:
 mutation_ids:

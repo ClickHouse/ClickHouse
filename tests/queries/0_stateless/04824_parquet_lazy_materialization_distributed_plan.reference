@@ -1,9 +1,0 @@
--- make_distributed_plan = 0: the lazy read step is present
-1
-0	val_0
-1	val_1
-2	val_2
--- make_distributed_plan = 1: the sort is exchange-split, no lazy read step in the plan
-0	1
--- make_distributed_plan = 1: the distributed conversion succeeds (every fragment is serializable)
-0

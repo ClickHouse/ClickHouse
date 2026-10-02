@@ -44,6 +44,7 @@ class Labels:
     PR_SYNC_UPSTREAM = "pr-sync-upstream"
     RELEASE = "release"
     RELEASE_LTS = "release-lts"
+    ROLLING_OUT = "rolling-out"
     SUBMODULE_CHANGED = "submodule changed"
 
     # automatic backport for critical bug fixes

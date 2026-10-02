@@ -123,8 +123,13 @@ public:
         MutableColumns columns = sample_block.cloneEmptyColumns();
 
         RedisArray values = storage.multiGet(scan_keys);
-        for (size_t i = 0; i < scan_keys.size() && !values.get<RedisBulkString>(i).isNull(); i++)
+        for (size_t i = 0; i < scan_keys.size(); ++i)
         {
+            /// MGET answers by position, and a scanned key can hold another Redis type or expire
+            /// before the MGET runs, so a nil marks one absent value, not the end of the batch.
+            if (values.get<RedisBulkString>(i).isNull())
+                continue;
+
             fillColumns(scan_keys.get<RedisBulkString>(i).value(),
                         values.get<RedisBulkString>(i).value(),
                         primary_key_pos, sample_block, columns
@@ -456,20 +461,14 @@ Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<
     if (values.isNull() || values.size() == 0)
         return Chunk(std::move(columns), 0);
 
-    if (null_map && null_map->size() != keys.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "StorageRedis::getBySerializedKeys: null_map size {} does not match keys size {}",
-            null_map->size(), keys.size());
-
-    for (size_t i = 0; i < values.size(); ++i)
+    if (null_map)
     {
-        if (null_map && !(*null_map)[i])
-        {
-            for (size_t col_idx = 0; col_idx < sample_block.columns(); ++col_idx)
-                columns[col_idx]->insert(sample_block.getByPosition(col_idx).type->getDefault());
-            continue;
-        }
+        null_map->clear();
+        null_map->resize_fill(keys.size(), 1);
+    }
 
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
         if (!values.get<RedisBulkString>(i).isNull())
         {
             fillColumns(keys.get<RedisBulkString>(i).value(),
@@ -517,7 +516,18 @@ RedisArray StorageRedis::multiGet(const RedisArray & keys) const
     for (size_t i = 0; i < keys.size(); ++i)
         cmd_mget.add(keys.get<RedisBulkString>(i));
 
-    return connection->client->execute<RedisArray>(cmd_mget);
+    RedisArray values = connection->client->execute<RedisArray>(cmd_mget);
+
+    /// Callers pair the reply with the request by position, into arrays sized from `keys`.
+    if (values.isNull() || values.size() != keys.size())
+        throw Exception(
+            ErrorCodes::INTERNAL_REDIS_ERROR,
+            "Redis table {} returned {} values for MGET of {} keys",
+            getStorageID().getFullNameNotQuoted(),
+            values.isNull() ? 0 : values.size(),
+            keys.size());
+
+    return values;
 }
 
 void StorageRedis::multiSet(const RedisArray & data) const
@@ -558,15 +568,7 @@ Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, const Names &
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageRedis supports only one key, got: {}", keys.size());
 
-    /// `StorageMetadataHandle` owns the snapshot, so it has to be bound to a named local:
-    /// `operator->` is deleted on a temporary.
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    auto pk_type = metadata_snapshot->getSampleBlock().getByName(primary_key).type;
-    /// `null_map` is an output parameter, so start from a clean state: `resize_fill` alone would keep
-    /// pre-existing values if the caller passed an already sized array.
-    null_map.clear();
-    null_map.resize_fill(keys[0].column->size(), 1);
-    auto raw_keys = serializeKeysToRawString(keys[0], pk_type, &null_map);
+    auto raw_keys = serializeKeysToRawString(keys[0]);
 
     if (raw_keys.size() != keys[0].column->size())
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", raw_keys.size(), keys[0].column->size());
@@ -727,10 +729,9 @@ PRIMARY KEY(primary_key_name);
 :::note Serialization
 `PRIMARY KEY` supports only one column. The primary key will be serialized in binary as a Redis key.
 Columns other than the primary key will be serialized in binary as Redis value in corresponding order.
-Full scans with `SELECT * FROM redis_table` can fail with binary deserialization errors if the selected Redis database contains keys or values that were not written by ClickHouse.
 :::
 
-Arguments also can be passed using [named collections](/concepts/features/configuration/server-config/named-collections). In this case `host` and `port` should be specified separately. This approach is recommended for production environment. At this moment, all parameters passed using named collections to redis are required.
+Arguments also can be passed using [named collections](/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment. At this moment, all parameters passed using named collections to redis are required.
 
 :::note Filtering
 Queries with `key equals` or `in filtering` will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
@@ -751,7 +752,7 @@ CREATE TABLE redis_table
 ENGINE = Redis('redis1:6379') PRIMARY KEY(key);
 ```
 
-Or using [named collections](/concepts/features/configuration/server-config/named-collections):
+Or using [named collections](/operations/named-collections.md):
 
 ```xml
 <named_collections>

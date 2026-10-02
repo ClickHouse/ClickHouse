@@ -29,7 +29,7 @@ estimateCompressionRatio([codec, block_size_bytes])(column)
 **パラメータ**
 
 * `codec` — 圧縮コーデック、またはカンマ区切りの複数のコーデックを 1 つの文字列で指定した `String`。[`String`](/ja/reference/data-types/string)
-* `block_size_bytes` — 圧縮データのブロックサイズです。これは [`max_compress_block_size`](/ja/reference/settings/merge-tree-settings/max#max_compress_block_size) と [`min_compress_block_size`](/ja/reference/settings/merge-tree-settings/min#min_compress_block_size) の両方を設定するのと同様です。デフォルト値は 1 MiB (1048576 バイト) です。指定可能な最大値は 256 MiB (268435456 バイト) です。[`UInt64`](/ja/reference/data-types/int-uint)
+* `block_size_bytes` — 圧縮データのブロックサイズです。これは [`max_compress_block_size`](/ja/reference/settings/merge-tree-settings#max_compress_block_size) と [`min_compress_block_size`](/ja/reference/settings/merge-tree-settings#min_compress_block_size) の両方を設定するのと同様です。デフォルト値は 1 MiB (1048576 バイト) です。指定可能な最大値は 256 MiB (268435456 バイト) です。[`UInt64`](/ja/reference/data-types/int-uint)
 
 **引数**
 

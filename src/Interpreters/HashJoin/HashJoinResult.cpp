@@ -66,11 +66,10 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
         right_column.column = JoinCommon::filterWithBlanks(right_column.column, *null_map_filter);
 
     if (!right_column.type->equals(*right_key_type))
+    {
         right_column.column = castColumnAccurate(right_column, right_key_type);
-
-    /// Types may be equal but not identical, DateTime with different timezones
-    /// share physical representation but affect expressions over the key (issue #111033)
-    right_column.type = right_key_type;
+        right_column.type = right_key_type;
+    }
 
     right_column.column = right_column.column->convertToFullColumnIfConst();
     return right_column;
@@ -115,18 +114,12 @@ static void appendRightColumns(
     std::set<size_t> block_columns_to_erase;
     if (HashJoin::canRemoveColumnsFromLeftBlock(table_join))
     {
-        /// Keep left columns matching getOutputColumns(Left) by name AND multiplicity: it may list a
-        /// name fewer times than the physical block holds it, and the surviving count must equal
-        /// getOutputColumns(Left).size() (used as left_columns_count downstream). Cap per name.
-        std::unordered_map<std::string_view, size_t> left_output_remaining;
+        std::unordered_set<String> left_output_columns;
         for (const auto & out_column : table_join.getOutputColumns(JoinTableSide::Left))
-            ++left_output_remaining[out_column.name];
+            left_output_columns.insert(out_column.name);
         for (size_t i = 0; i < block.columns(); ++i)
         {
-            auto it = left_output_remaining.find(block.getByPosition(i).name);
-            if (it != left_output_remaining.end() && it->second > 0)
-                --it->second;
-            else
+            if (!left_output_columns.contains(block.getByPosition(i).name))
                 block_columns_to_erase.insert(i);
         }
     }
@@ -347,11 +340,7 @@ static size_t numLeftRowsForNextBlock(
 
     size_t max_rows = max_joined_block_rows;
     if (max_joined_block_bytes)
-    {
-        const size_t max_rows_by_bytes
-            = std::max<size_t>(1, max_joined_block_bytes / std::max<size_t>(avg_bytes_per_row, 1));
-        max_rows = max_rows ? std::min(max_rows, max_rows_by_bytes) : max_rows_by_bytes;
-    }
+        max_rows = std::min<size_t>(max_rows, max_joined_block_bytes / std::max<size_t>(avg_bytes_per_row, 1));
 
     const size_t prev_offset = next_row ? offsets[next_row - 1] : 0;
     const size_t next_allowed_offset = prev_offset + max_rows;
@@ -379,7 +368,6 @@ HashJoinResult::HashJoinResult(
     IColumn::Offsets offsets_,
     IColumn::Filter filter_,
     IColumn::Offsets && matched_rows_,
-    size_t matched_right_rows_,
     ScatteredBlock && block_,
     Properties properties_)
     : lazy_output(std::move(lazy_output_))
@@ -389,7 +377,6 @@ HashJoinResult::HashJoinResult(
     , offsets(std::move(offsets_))
     , filter(std::move(filter_))
     , matched_rows(std::move(matched_rows_))
-    , matched_right_rows(matched_right_rows_)
 {
 }
 

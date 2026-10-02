@@ -62,36 +62,6 @@ SettingSourceRestrictions getSettingSourceRestrictions(std::string_view name)
     return SettingSourceRestrictions(); // allows everything
 }
 
-/// Settings that are always allowed to change in readonly mode, regardless of the user profile's
-/// `<constraints>` block. These are per-request HTTP routing, query-construction, and output
-/// shaping settings (formerly special URL parameters like `?database=` and `?default_format=`)
-/// that any client must be able to set on a GET request, even when `users.xml` does not declare
-/// them as `<changeable_in_readonly/>`. Hard-coding the carve-out here (rather than shipping a
-/// new `<constraints>` block in the default `users.xml`) keeps the new server compatible with
-/// older `users.xml` files - and, importantly, lets older server versions continue to start up
-/// against the new repo `programs/server/users.xml` (the integration-test framework mounts it
-/// into backwards-compat containers, where unknown setting names in `<constraints>` would
-/// otherwise be rejected with `UNKNOWN_SETTING`).
-bool isAlwaysChangeableInReadonly(std::string_view name)
-{
-    /// HTTP routing / session.
-    if (name == "database" || name == "default_format")
-        return true;
-    /// Output format selection and response compression.
-    if (name == "format" || name == "input_format" || name == "output_format" || name == "compression")
-        return true;
-    /// Query-construction settings introduced for the HTTP "table as file" feature.
-    if (name == "select" || name == "order" || name == "sort" || name == "filter")
-        return true;
-    /// Result-shaping (LIMIT / OFFSET / paging). The query itself remains read-only.
-    if (name == "limit" || name == "offset" || name == "page")
-        return true;
-    /// FROM-less SELECT helper used by the HTTP "table as file" feature.
-    if (name == "implicit_table_at_top_level")
-        return true;
-    return false;
-}
-
 }
 
 SettingsConstraints::SettingsConstraints(const AccessControl & access_control_) : access_control(&access_control_)
@@ -630,15 +600,15 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     auto it = constraints.find(resolved_name);
     if (current_settings[Setting::readonly] == 1)
     {
-        const bool changeable_in_readonly = (it != constraints.end()
-                && it->second.writability == SettingConstraintWritability::CHANGEABLE_IN_READONLY)
-            || isAlwaysChangeableInReadonly(resolved_name);
-        if (!changeable_in_readonly)
+        if (it == constraints.end() || it->second.writability != SettingConstraintWritability::CHANGEABLE_IN_READONLY)
             return Checker(PreformattedMessage::create("Cannot modify '{}' setting in readonly mode", setting_name),
                            ErrorCodes::READONLY);
     }
-    if (it == constraints.end())
-        return Checker(Settings::resolveName); // Allowed — no stored Constraint, do not dereference end().
+    else // For both readonly=0 and readonly=2
+    {
+        if (it == constraints.end())
+            return Checker(Settings::resolveName); // Allowed
+    }
     return Checker(it->second, Settings::resolveName);
 }
 
@@ -647,8 +617,7 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
 bool SettingsConstraints::isAnyTierRestricted() const
 {
     return access_control
-        && (!access_control->getAllowExperimentalTierSettings() || !access_control->getAllowPrivatePreviewTierSettings()
-            || !access_control->getAllowBetaTierSettings());
+        && (!access_control->getAllowExperimentalTierSettings() || !access_control->getAllowBetaTierSettings());
 }
 
 /// The one place that enforces `allow_feature_tier`, for every kind of setting. Callers reach it only for
@@ -670,8 +639,6 @@ std::optional<SettingsConstraints::Checker> SettingsConstraints::getTierChecker(
 
     if (tier == SettingsTierType::EXPERIMENTAL && !access_control->getAllowExperimentalTierSettings())
         return refuse("EXPERIMENTAL");
-    if (tier == SettingsTierType::PRIVATE_PREVIEW && !access_control->getAllowPrivatePreviewTierSettings())
-        return refuse("PRIVATE PREVIEW");
     if (tier == SettingsTierType::BETA && !access_control->getAllowBetaTierSettings())
         return refuse("BETA");
     return {};

@@ -25,7 +25,7 @@ doc_type: 'guide'
   ## 1 引言
 </div>
 
-本文介绍 ClickHouse。它是一款列式 OLAP 数据库，专为在拥有数万亿行、数百列的表上执行高性能分析查询而设计。ClickHouse 于 2009 年[诞生](https://clickhou.se/evolution)，最初是面向超大规模日志文件数据的过滤与聚合算子，并于 2016 年开源。[图 1](#page-1-0) 展示了本文介绍的主要功能是在何时引入 ClickHouse 的。
+本文介绍 ClickHouse。它是一款列式 OLAP 数据库，专为在拥有数万亿行、数百列的表上执行高性能分析查询而设计。ClickHouse 于 2009 年[启动](https://clickhou.se/evolution)，最初作为面向超大规模日志文件数据的过滤与聚合算子，并于 2016 年开源。[图 1](#page-1-0) 展示了本文介绍的主要功能是在何时被引入 ClickHouse 的。
 
 ClickHouse 旨在应对现代分析型数据管理中的五项关键挑战：
 
@@ -35,7 +35,7 @@ ClickHouse 旨在应对现代分析型数据管理中的五项关键挑战：
 
 3. **多样化的数据存储、存储位置和格式**。为了与现有数据架构集成，现代分析型数据库应具备高度开放性，能够在任何系统、位置或格式中读写外部数据。
 
-4. **便捷的查询语言，并支持性能分析与内部信息查看**。OLAP 数据库在实际使用中还面临一些额外的“软性”要求。例如，用户通常更希望通过富有表现力的 SQL 方言与数据库交互，而不是使用小众编程语言；这种 SQL 方言还应支持嵌套数据类型，以及丰富的常规函数、聚合函数和窗口函数。分析型数据库还应提供成熟的工具，用于分析系统或单个查询的性能并查看其内部信息。
+4. **便捷的查询语言，并支持性能内部信息分析**。OLAP 数据库在实际使用中还面临一些额外的“软性”要求。例如，用户通常更希望通过富有表现力的 SQL 方言与数据库交互，而不是使用小众编程语言；这种 SQL 方言还应支持嵌套数据类型，以及丰富的常规函数、聚合函数和窗口函数。分析型数据库还应提供成熟的工具，用于分析系统或单个查询的性能内部信息。
 
 5. **工业级稳健性与灵活部署**。由于通用硬件并不可靠，数据库必须提供数据复制，以增强节点故障情况下的稳健性。此外，数据库应能运行在各种硬件上，从老旧笔记本到高性能服务器皆可。最后，为了避免基于 JVM 的程序中的垃圾回收开销，并实现裸机性能 (例如 SIMD) ，数据库最好以面向目标平台的原生二进制形式部署。
 
@@ -57,13 +57,13 @@ ClickHouse 旨在应对现代分析型数据管理中的五项关键挑战：
 
 如[图 2](#page-2-0)所示，ClickHouse 引擎分为三个主要层：查询处理层 (第 [4)](#page-6-0) 节) 、存储层 (第 [3)](#page-1-1) 节) 和集成层 (第 [5)](#page-9-0) 节) 。除此之外，还有一个访问层负责管理用户会话以及通过不同协议与应用程序进行通信。与这些层相互独立的组件包括线程、缓存、基于角色的访问控制、备份和持续监控。ClickHouse 使用 C++ 构建，为单一的静态链接二进制文件，且无外部依赖。
 
-查询处理遵循传统范式：解析传入的查询，构建并优化逻辑和物理查询计划，然后执行。ClickHouse 使用类似 MonetDB/X100 的向量化执行模型 <sup>[&#91;11&#93;](#page-12-0)</sup>，并结合机会式代码编译 <sup>[&#91;53&#93;](#page-13-0)</sup>。查询既可以使用功能丰富的 SQL 方言编写，也可以使用 PRQL <sup>[&#91;76&#93;](#page-13-1)</sup> 或 Kusto 的 KQL <sup>[&#91;50&#93;](#page-13-2)</sup> 编写。
+查询处理遵循传统范式：解析传入的查询，构建并优化逻辑和物理查询计划，然后执行。ClickHouse 使用类似 MonetDB/X100 的向量化执行模型 <sup>[[11]](#page-12-0)</sup>，并结合机会式代码编译 <sup>[[53]](#page-13-0)</sup>。查询既可以使用功能丰富的 SQL 方言编写，也可以使用 PRQL <sup>[[76]](#page-13-1)</sup> 或 Kusto 的 KQL <sup>[[50]](#page-13-2)</sup> 编写。
 
-存储层由不同的表引擎组成，这些引擎封装了表数据的格式和存储位置。表引擎分为三类：第一类是 MergeTree* 家族表引擎，它们是 ClickHouse 中主要的持久化格式。基于 LSM 树的思想 <sup>[&#91;60&#93;](#page-13-3)</sup>，表会被拆分为按主键排序的水平分片，并由后台进程持续合并。不同的 MergeTree* 表引擎在合并输入分片中的行时采用的方式各不相同。例如，当数据过期时，行可以被聚合或替换。
+存储层由不同的表引擎组成，这些引擎封装了表数据的格式和存储位置。表引擎分为三类：第一类是 MergeTree* 家族表引擎，它们是 ClickHouse 中主要的持久化格式。基于 LSM 树的思想 <sup>[[60]](#page-13-3)</sup>，表会被拆分为按主键排序的水平分片，并由后台进程持续合并。不同的 MergeTree* 表引擎在合并输入分片中的行时采用的方式各不相同。例如，当数据过期时，行可以被聚合或替换。
 
 第二类是专用表引擎，用于加速查询执行或实现查询的分布式执行。该类别包括称为字典的内存键值表引擎。[字典](https://clickhou.se/dictionaries)会缓存针对内部或外部数据源定期执行的查询结果。在可以容忍一定数据陈旧性的场景中，这能显著降低访问延迟。其他专用表引擎还包括用于临时表的纯内存引擎，以及用于透明数据分片的 Distributed 表引擎 (见下文) 。
 
-第三类表引擎是虚拟表引擎，用于与外部系统进行双向数据交换，例如关系型数据库 (如 PostgreSQL、MySQL) 、发布/订阅系统 (如 Kafka、RabbitMQ <sup>[&#91;24&#93;](#page-12-1)</sup>) 或键值存储 (如 Redis) 。虚拟引擎还可以与数据湖 (如 Iceberg、DeltaLake、Hudi <sup>[&#91;36&#93;](#page-12-2)</sup>) 或对象存储中的文件 (如 AWS S3、Google GCP) 进行交互。
+第三类表引擎是虚拟表引擎，用于与外部系统进行双向数据交换，例如关系型数据库 (如 PostgreSQL、MySQL) 、发布/订阅系统 (如 Kafka、RabbitMQ <sup>[[24]](#page-12-1)</sup>) 或键值存储 (如 Redis) 。虚拟引擎还可以与数据湖 (如 Iceberg、DeltaLake、Hudi <sup>[[36]](#page-12-2)</sup>) 或对象存储中的文件 (如 AWS S3、Google GCP) 进行交互。
 
 ClickHouse 支持在多个集群节点之间对表进行分片和复制，以实现可扩展性和高可用。分片会根据分片表达式将一张表划分为多个表分片。各个分片彼此独立，通常位于不同的节点上。客户端既可以直接读写这些分片，即将其视为独立的表，也可以使用特殊的 Distributed 表引擎，它提供所有表分片的全局视图。分片的主要目的是处理超出单个节点容量的数据集 (通常为数十 TB 的数据) 。分片的另一个用途是将表的读写负载分散到多个节点上，即负载均衡。与此相独立的是，一个分片还可以在多个节点上进行复制，以容忍节点故障。为此，每种 Merge-Tree* 表引擎都有对应的 ReplicatedMergeTree* 引擎，它采用基于 Raft 共识 <sup>[[59]](#page-13-4)</sup> 的多主协调方案 (由 [Keeper](https://clickhou.se/keeper) 实现；它是用 C++ 编写的 Apache ZooKeeper 直接替代品) ，以保证每个分片在任意时刻都拥有可配置数量的副本。第 [3.6](#page-5-0) 节将详细讨论复制机制。作为示例，[图 2](#page-2-0) 展示了一张具有两个分片的表，其中每个分片都复制到了两个节点上。
 
@@ -75,9 +75,9 @@ ClickHouse 支持在多个集群节点之间对表进行分片和复制，以实
 
 ### <a id="page-2-2" style={{display:"block",scrollMarginTop:"80px"}} />3.1 磁盘格式
 
-MergeTree* 表引擎中的每个表都组织为一组不可变的表分片。每当一批行被插入到表中时，就会创建一个分片。分片是自包含的，也就是说，它们包含了解释其内容所需的全部元数据，无需再到中央元数据目录中额外查找。为了将每个表的分片数量控制在较低水平，后台合并 job 会定期将多个较小的分片合并成一个较大的分片，直到达到可配置的分片 大小 (默认 150 GB) 。由于分片会按表的主键列排序 (见第 [3.2)](#page-3-0) 节) ，因此合并时会使用高效的 k 路归并排序 <sup>[&#91;40&#93;](#page-12-5)</sup>。源分片会被标记为非活动状态，并在其引用计数降为零时最终删除，也就是不再有查询从中读取数据时。
+MergeTree* 表引擎中的每个表都组织为一组不可变的表分片。每当一批行被插入到表中时，就会创建一个分片。分片是自包含的，也就是说，它们包含了解释其内容所需的全部元数据，无需再到中央元数据目录中额外查找。为了将每个表的分片数量控制在较低水平，后台 merge job 会定期将多个较小的分片合并成一个较大的分片，直到达到可配置的分片 大小 (默认 150 GB) 。由于分片会按表的主键列排序 (见第 [3.2)](#page-3-0) 节) ，因此合并时会使用高效的 k 路归并排序 <sup>[[40]](#page-12-5)</sup>。源分片会被标记为非活动状态，并在其引用计数降为零时最终删除，也就是不再有查询从中读取数据时。
 
-行可以通过两种模式插入：在同步插入模式下，每条 INSERT 语句都会创建一个新的分片，并将其追加到表中。为了尽量降低合并的开销，通常建议数据库客户端批量插入元组，例如一次插入 20,000 行。不过，如果数据需要进行实时分析，那么由客户端侧批处理带来的延迟往往是不可接受的。例如，可观测性场景通常涉及数千个监控 agent 持续发送少量事件和指标数据。在这种场景下，可以使用异步插入模式：ClickHouse 会将发往同一张表的多个传入 INSERT 中的行缓存在一起，只有当缓冲区大小超过可配置阈值或发生超时后，才会创建新的分片。
+行可以通过两种模式插入：在同步插入模式下，每条 INSERT 语句都会创建一个新的分片，并将其追加到表中。为了尽量降低 merge 的开销，通常建议数据库客户端批量插入元组，例如一次插入 20,000 行。不过，如果数据需要进行实时分析，那么由客户端侧批处理带来的延迟往往是不可接受的。例如，可观测性场景通常涉及数千个监控 agent 持续发送少量事件和指标数据。在这种场景下，可以使用异步插入模式：ClickHouse 会将发往同一张表的多个传入 INSERT 中的行缓存在一起，只有当缓冲区大小超过可配置阈值或发生超时后，才会创建新的分片。
 
 <a id="page-2-1" style={{display:"block",scrollMarginTop:"80px"}} />
 
@@ -85,9 +85,9 @@ MergeTree* 表引擎中的每个表都组织为一组不可变的表分片。每
   <img src="/images/managing-data/core-concepts/_vldb2024_2_Figure_5.webp" alt="图 3：MergeTree*-engine 表的插入与合并。" />
 </Frame>
 
-[图 3](#page-2-1) 展示了对一个 MergeTree*-engine 表进行的四次同步插入和两次异步插入。两次合并将活动分片的数量从最初的五个减少到了两个。
+[图 3](#page-2-1) 展示了对一个 MergeTree*-engine 表进行的四次同步插入和两次异步插入。两次 merge 将活动分片的数量从最初的五个减少到了两个。
 
-与 LSM 树 <sup>[&#91;58&#93;](#page-13-7)</sup> 及其在各种数据库中的实现 <sup>[&#91;13,](#page-12-6)</sup> <sup>[26,](#page-12-7)</sup> <sup>[&#91;56&#93;](#page-13-8)</sup> 相比，ClickHouse 将所有分片一视同仁，而不是把它们组织成层级结构。因此，合并不再局限于同一层级中的分片。由于这也放弃了分片按时间顺序隐式排列的特性，因此需要采用不依赖 tombstone 的替代更新和删除机制 (见第 [3.4)](#page-4-0) 节) 。ClickHouse 会将插入直接写入磁盘，而其他基于 LSM tree 的存储通常会使用预写日志 (见第 [3.7)](#page-5-1) 节) 。
+与 LSM trees <sup>[[58]](#page-13-7)</sup> 及其在各种数据库中的实现 <sup>[[13,](#page-12-6)</sup> <sup>[26,](#page-12-7)</sup> <sup>[56]](#page-13-8)</sup> 相比，ClickHouse 将所有分片一视同仁，而不是把它们组织成层级结构。因此，merge 不再局限于同一层级中的分片。由于这也放弃了分片按时间顺序隐式排列的特性，因此需要采用不依赖 tombstone 的替代更新和删除机制 (见第 [3.4)](#page-4-0) 节) 。ClickHouse 会将插入直接写入磁盘，而其他基于 LSM tree 的存储通常会使用预写日志 (见第 [3.7)](#page-5-1) 节) 。
 
 一个分片对应磁盘上的一个目录，其中每一列都有一个文件。作为一种优化方式，小分片的列 (默认小于 10 MB) 会连续存储在单个文件中，以提高读写时的空间局部性。一个分片中的行在逻辑上还会进一步划分为由 8192 条记录组成的组，称为粒度。粒度是 ClickHouse 中由扫描和索引查找算子处理的最小不可分数据单元。不过，磁盘数据的读取和写入并不是在粒度级别进行的，而是在块的粒度上进行；块会将一列中多个相邻的粒度组合在一起。新块根据每块可配置的字节大小形成 (默认 1 MB) ，也就是说，一个块中包含的粒度数量是可变的，并取决于该列的数据类型和分布。此外，块还会经过压缩以减小体积并降低 I/O 成本。默认情况下，ClickHouse 使用 LZ4 <sup>[[75]](#page-13-9)</sup> 作为通用压缩算法，但用户也可以为浮点数据指定 Gorilla <sup>[[63]](#page-13-10)</sup> 或 FPC <sup>[[12]](#page-12-8)</sup> 等专用编解码器。压缩算法还可以链式组合使用。例如，可以先使用 delta coding <sup>[[23]](#page-12-9)</sup> 消除数值中的逻辑冗余，再执行高强度压缩，最后使用 AES 编解码器对数据进行加密。块从磁盘加载到内存时会即时解压。为了在压缩情况下仍能对单个粒度实现快速随机访问，ClickHouse 还会为每一列额外存储一个映射，将每个粒度 id 关联到其所在压缩块在列文件中的偏移量，以及该粒度在未压缩块中的偏移量。
 
@@ -99,7 +99,7 @@ MergeTree* 表引擎中的每个表都组织为一组不可变的表分片。每
 
 在大多数使用场景中，仅为回答单个查询而扫描 PB 级数据，速度太慢且成本太高。ClickHouse 支持三种数据裁剪技术，可在搜索时跳过绝大多数行，从而显著提升查询速度。
 
-首先，用户可以为表定义一个**主键索引**。主键列决定了每个分片内行的排序顺序，也就是说，该索引是局部聚簇的。此外，对于每个分片，ClickHouse 还会存储从每个粒度首行的主键列值到该粒度 id 的映射，即该索引是稀疏的 <sup>[&#91;31&#93;](#page-12-13)</sup>。由此形成的数据结构通常足够小，能够完全驻留在内存中，例如，仅需 1000 个条目即可为 810 万行建立索引。主键的主要作用是针对经常用于过滤的列，使用二分查找而非顺序扫描来评估等值和范围谓词 (第 [4.4)](#page-7-0) 节) 。此外，这种局部排序还可用于 分片 merge 和查询优化，例如基于排序的 aggregation，或者当主键列构成排序列的前缀时，从物理执行计划中移除排序算子。
+首先，用户可以为表定义一个**主键索引**。主键列决定了每个分片内行的排序顺序，也就是说，该索引是局部聚簇的。此外，对于每个分片，ClickHouse 还会存储从每个粒度首行的主键列值到该粒度 id 的映射，即该索引是稀疏的 <sup>[[31]](#page-12-13)</sup>。由此形成的数据结构通常足够小，能够完全驻留在内存中，例如，仅需 1000 个条目即可为 810 万行建立索引。主键的主要作用是针对经常用于过滤的列，使用二分查找而非顺序扫描来评估等值和范围谓词 (第 [4.4)](#page-7-0) 节) 。此外，这种局部排序还可用于 分片 merge 和查询优化，例如基于排序的 aggregation，或者当主键列构成排序列的前缀时，从物理执行计划中移除排序算子。
 
 [图 4](#page-3-1) 展示了页面展示统计表中基于列 EventTime 的主键索引。查询中满足范围谓词的粒度可以通过对主键索引进行二分查找来定位，而无需顺序扫描 EventTime。
 
@@ -109,9 +109,9 @@ MergeTree* 表引擎中的每个表都组织为一组不可变的表分片。每
   <img src="/images/managing-data/core-concepts/_vldb2024_3_Figure_7.webp" alt="图 4：使用主键索引评估过滤器。" />
 </Frame>
 
-其次，用户可以创建**表投影**，即表的另一种版本，其中包含相同的行，但按不同的主键排序 <sup>[&#91;71&#93;](#page-13-13)</sup>。投影可以加速按不同于主表主键的列进行过滤的查询，但代价是 insert、merge 和空间占用方面会增加额外开销。默认情况下，投影只会以惰性方式从新插入主表的分片中填充，而不会从现有分片中填充，除非用户将该投影完全 materialize。查询优化器会根据估算的 I/O 成本，在读取主表还是投影之间做出选择。如果某个分片 没有对应的投影，查询执行会回退到对应的主表分片。
+其次，用户可以创建**表投影**，即表的另一种版本，其中包含相同的行，但按不同的主键排序 <sup>[[71]](#page-13-13)</sup>。投影可以加速按不同于主表主键的列进行过滤的查询，但代价是 insert、merge 和空间占用方面会增加额外开销。默认情况下，投影只会以惰性方式从新插入主表的分片中填充，而不会从现有分片中填充，除非用户将该投影完全 materialize。查询优化器会根据估算的 I/O 成本，在读取主表还是投影之间做出选择。如果某个分片 没有对应的投影，查询执行会回退到对应的主表分片。
 
-第三，**跳过索引**为投影提供了一种轻量级替代方案。跳过索引的思路是在多个连续粒度这一层级存储少量元数据，从而避免扫描无关行。跳过索引可以针对任意索引表达式创建，并可使用可配置的粒度，即一个跳过索引块中包含的粒度数量。可用的跳过索引类型包括：1. Min-max 索引 <sup>[&#91;51&#93;](#page-13-14)</sup>，为每个索引块存储该索引表达式的最小值和最大值。该索引类型非常适合绝对范围较小的局部聚簇数据，例如松散排序的数据。2. Set 索引，存储数量可配置的唯一索引块值。这类索引最适合局部基数较小的数据，也就是值“聚在一起”的数据。3. Bloom filter 索引 <sup>[&#91;9&#93;](#page-12-14)</sup> 可针对行、标记或 n-gram 值构建，并支持可配置的误报率。这些索引支持文本搜索 <sup>[&#91;73&#93;](#page-13-15)</sup>，但与 min-max 和 set 索引不同，它们不能用于范围谓词或否定谓词。
+第三，**跳过索引**为投影提供了一种轻量级替代方案。跳过索引的思路是在多个连续粒度这一层级存储少量元数据，从而避免扫描无关行。跳过索引可以针对任意索引表达式创建，并可使用可配置的粒度，即一个跳过索引块中包含的粒度数量。可用的跳过索引类型包括：1. Min-max 索引 <sup>[[51]](#page-13-14)</sup>，为每个索引块存储该索引表达式的最小值和最大值。该索引类型非常适合绝对范围较小的局部聚簇数据，例如松散排序的数据。2. Set 索引，存储数量可配置的唯一索引块值。这类索引最适合局部基数较小的数据，也就是值“聚在一起”的数据。3. Bloom filter 索引 <sup>[[9]](#page-12-14)</sup> 可针对行、标记或 n-gram 值构建，并支持可配置的误报率。这些索引支持文本搜索 <sup>[[73]](#page-13-15)</sup>，但与 min-max 和 set 索引不同，它们不能用于范围谓词或否定谓词。
 
 ### <a id="page-4-3" style={{display:"block",scrollMarginTop:"80px"}} />3.3 合并时数据转换
 
@@ -161,9 +161,9 @@ ClickHouse 提供了一种更轻量的替代方案，其依据是每次插入最
 
 ### <a id="page-5-0" style={{display:"block",scrollMarginTop:"80px"}} />3.6 数据复制
 
-复制是实现高可用性 (容忍节点故障) 的前置条件，但也可用于负载均衡和零停机升级 <sup>[&#91;14&#93;](#page-12-17)</sup>。在 ClickHouse 中，复制基于表状态这一概念：表状态由一组表分片 (第 [3.1)](#page-2-2) 节) 以及表元数据 (如列名和类型) 构成。节点通过三类操作推进表状态：1. 插入会向状态中新增一个分片；2. 合并会向状态中新增一个分片，并从状态中删除现有分片；3. 变更和 DDL 语句则会根据具体操作新增分片、和/或删除分片、和/或修改表元数据。这些操作都在单个节点上本地执行，并作为一系列状态转换记录到全局复制日志中。
+复制是实现高可用性 (容忍节点故障) 的前置条件，但也可用于负载均衡和零停机升级 <sup>[[14]](#page-12-17)</sup>。在 ClickHouse 中，复制基于表状态这一概念：表状态由一组表分片 (第 [3.1)](#page-2-2) 节) 以及表元数据 (如列名和类型) 构成。节点通过三类操作推进表状态：1. 插入会向状态中新增一个分片；2. 合并会向状态中新增一个分片，并从状态中删除现有分片；3. 变更和 DDL 语句则会根据具体操作新增分片、和/或删除分片、和/或修改表元数据。这些操作都在单个节点上本地执行，并作为一系列状态转换记录到全局复制日志中。
 
-复制日志由一组通常包含三个 ClickHouse Keeper 进程的节点维护，这些进程使用 Raft 共识算法 <sup>[&#91;59&#93;](#page-13-4)</sup>，为 ClickHouse 节点集群提供分布式、容错的协调层。所有集群节点最初都指向复制日志中的同一位置。当节点执行本地插入、合并、变更和 DDL 语句时，复制日志会在所有其他节点上异步重放。因此，复制表仅提供最终一致性，也就是说，节点在向最新状态收敛的过程中，可能会暂时读取到旧的表状态。上述大多数操作也可以改为同步执行，直到达到法定数量的节点 (例如大多数节点或所有节点) 采用新状态为止。
+复制日志由一组通常包含三个 ClickHouse Keeper 进程的节点维护，这些进程使用 Raft 共识算法 <sup>[[59]](#page-13-4)</sup>，为 ClickHouse 节点集群提供分布式、容错的协调层。所有集群节点最初都指向复制日志中的同一位置。当节点执行本地插入、合并、变更和 DDL 语句时，复制日志会在所有其他节点上异步重放。因此，复制表仅提供最终一致性，也就是说，节点在向最新状态收敛的过程中，可能会暂时读取到旧的表状态。上述大多数操作也可以改为同步执行，直到达到法定数量的节点 (例如大多数节点或所有节点) 采用新状态为止。
 
 举例来说，[图 6](#page-5-3) 展示了一个由三个 ClickHouse 节点组成的集群中一张初始为空的复制表。节点 1 首先接收两条插入语句，并将其记录到存储在 Keeper 集群中的复制日志中 ( 1 2 ) 。接着，节点 2 通过拉取第一条日志条目来重放该条目 ( 3 ) ，并从节点 1 下载新的分片 ( 4 ) ，而节点 3 则重放两条日志条目 ( 3 4 5 6 ) 。最后，节点 3 将这两个分片 合并为一个新的分片，删除输入分片，并在复制日志中记录一条合并条目 ( 7 ) 。
 
@@ -189,7 +189,7 @@ ClickHouse 提供了一种更轻量的替代方案，其依据是每次插入最
   <img src="/images/managing-data/core-concepts/_vldb2024_6_Figure_0.webp" alt="图 7：跨 SIMD 单元、核心和节点的并行化。" />
 </Frame>
 
-如[图 7](#page-6-1)所示，ClickHouse 会在数据元素、数据块和表分片这几个层面并行执行查询。借助 SIMD 指令，多个数据元素可以在算子内部同时处理。在单个节点上，查询引擎会通过多个线程同时执行算子。ClickHouse 采用与 MonetDB/X100 <sup>[&#91;11&#93;](#page-12-0)</sup> 相同的向量化模型，也就是说，算子会生成、传递并消费多行数据 (数据块) ，而不是一次处理一行，以尽量减少虚函数调用的开销。如果源表被拆分为彼此独立的表分片，多个节点就可以同时扫描这些分片。因此，所有硬件资源都能得到充分利用；通过增加节点，可以对查询处理进行横向扩展；通过增加核心，则可以进行纵向扩展。
+如[图 7](#page-6-1)所示，ClickHouse 会在数据元素、数据块和表分片这几个层面并行执行查询。借助 SIMD 指令，多个数据元素可以在算子内部同时处理。在单个节点上，查询引擎会通过多个线程同时执行算子。ClickHouse 采用与 MonetDB/X100 <sup>[[11]](#page-12-0)</sup> 相同的向量化模型，也就是说，算子会生成、传递并消费多行数据 (数据块) ，而不是一次处理一行，以尽量减少虚函数调用的开销。如果源表被拆分为彼此独立的表分片，多个节点就可以同时扫描这些分片。因此，所有硬件资源都能得到充分利用；通过增加节点，可以对查询处理进行横向扩展；通过增加核心，则可以进行纵向扩展。
 
 本节其余部分将先更详细地介绍数据元素、数据块和分片粒度上的并行处理。随后，我们将介绍若干能够最大化查询性能的关键优化。最后，我们将讨论 ClickHouse 在存在并发查询时如何管理共享系统资源。
 
@@ -209,13 +209,13 @@ ClickHouse 提供了一种更轻量的替代方案，其依据是每次插入最
   <img src="/images/managing-data/core-concepts/_vldb2024_7_Figure_1.webp" alt="图 8：具有三条执行通道的物理算子计划。" />
 </Frame>
 
-ClickHouse 采用传统方法 <sup>[&#91;31&#93;](#page-12-13)</sup>，将 SQL 查询转换为由物理计划算子组成的有向图。算子计划的输入由特殊的源算子表示，这些算子以原生格式或任一受支持的第三方格式读取数据 (见第 [5)](#page-9-0) 节)。同样，特殊的汇算子会将结果转换为所需的输出格式。物理算子计划会在查询编译时，基于可配置的最大工作线程数 (默认为核心数) 和源表大小，展开为相互独立的执行通道。执行通道会将并行算子要处理的数据拆分为互不重叠的范围。为了尽可能提高并行处理的机会，各执行通道会尽量延后合并。
+ClickHouse 采用传统方法 <sup>[[31]](#page-12-13)</sup>，将 SQL 查询转换为由物理计划算子组成的有向图。算子计划的输入由特殊的源算子表示，这些算子以原生格式或任一受支持的第三方格式读取数据 (见第 [5)](#page-9-0) 节) 。同样，特殊的汇算子会将结果转换为所需的输出格式。物理算子计划会在查询编译时，基于可配置的最大工作线程数 (默认为核心数) 和源表大小，展开为相互独立的执行通道。执行通道会将并行算子要处理的数据拆分为互不重叠的范围。为了尽可能提高并行处理的机会，各执行通道会尽量延后合并。
 
 例如，[图 8](#page-7-1) 中 Node 1 的方框展示了一个典型 OLAP 查询的算子图，该查询针对一张包含页面展示统计信息的表。在第一阶段，源表的三个不相交范围会同时进行过滤。Repartition exchange 算子会在第一和第二阶段之间动态路由结果块，以保持各处理线程的负载均衡。如果扫描范围之间的选择率差异显著，那么在第一阶段之后，各执行通道可能会出现负载不均衡。在第二阶段，通过过滤后的行会按 RegionID 分组。Aggregate 算子会维护局部结果分组，以 RegionID 作为分组列，并将每组的 sum 和 count 作为 avg() 的部分聚合状态。局部聚合结果最终会由 GroupStateMerge 算子合并为全局聚合结果。该算子同时也是一个管道阻断点，也就是说，只有在聚合结果完全计算出来后，第三阶段才能开始。在第三阶段，结果分组首先通过 Distribute exchange 算子被划分为三个大小相等、互不重叠的分区，随后按 AvgLatency 排序。排序分三步进行：首先，ChunkSort 算子对每个分区中的各个块分别排序。其次，StreamSort 算子维护局部有序结果，并通过 2 路归并排序将其与传入的已排序块合并。最后，MergeSort 算子使用 k 路排序合并这些局部结果，从而得到最终结果。
 
 算子是状态机，并通过输入端口和输出端口彼此连接。一个算子有三种可能状态：need-chunk、ready 和 done。要从 need-chunk 转换到 ready，需要在算子的输入端口放入一个块。要从 ready 转换到 done，算子会处理输入块并生成输出块。要从 done 转换到 need-chunk，需要将输出块从算子的输出端口移除。对于两个相连的算子，第一种和第三种状态转换只能作为一个组合步骤执行。源算子 (汇算子) 只有 ready 和 done (need-chunk 和 done) 两种状态。
 
-工作线程会持续遍历物理算子计划并执行状态转换。为了让 CPU 缓存保持热状态，计划中包含了一些提示，指示同一线程应处理同一执行通道中相邻的算子。并行处理既会横向发生在同一阶段内彼此不相交的输入之间 (例如在 [图 8](#page-7-1) 中，Aggregate 算子会并发执行)，也会纵向发生在未被管道阻断点分隔的不同阶段之间 (例如在 [图 8](#page-7-1) 中，同一执行通道内的 Filter 和 Aggregate 算子可以同时运行)。为了避免在新查询启动或并发查询结束时出现过度订阅或订阅不足，并行度可以在查询执行过程中动态调整，范围为 1 到查询开始时为该查询指定的最大工作线程数 (见第 [4.5)](#page-9-1) 节)。
+工作线程会持续遍历物理算子计划并执行状态转换。为了让 CPU 缓存保持热状态，计划中包含了一些提示，指示同一线程应处理同一执行通道中相邻的算子。并行处理既会横向发生在同一阶段内彼此不相交的输入之间 (例如在 [图 8](#page-7-1) 中，Aggregate 算子会并发执行) ，也会纵向发生在未被管道阻断点分隔的不同阶段之间 (例如在 [图 8](#page-7-1) 中，同一执行通道内的 Filter 和 Aggregate 算子可以同时运行) 。为了避免在新查询启动或并发查询结束时出现过度订阅或订阅不足，并行度可以在查询执行过程中动态调整，范围为 1 到查询开始时为该查询指定的最大工作线程数 (见第 [4.5)](#page-9-1) 节) 。
 
 算子还可以通过两种方式在运行时进一步影响查询执行。第一，算子可以动态创建并连接新的算子。这主要用于在内存消耗超过可配置阈值时，切换到外部聚合、排序或 JOIN 算法，而不是取消查询。第二，算子可以请求工作线程转入异步队列。这样在等待远程数据时，可以更有效地利用工作线程。
 
@@ -244,7 +244,7 @@ ClickHouse 的查询执行引擎以及 morsel-driven parallelism <sup>[[44]](#pa
 **哈希表**。哈希表是聚合和哈希 JOIN 的基础数据结构。选择合适的哈希表类型对性能至关重要。ClickHouse 以哈希函数、分配器、单元类型和扩容策略为可变点，从一个通用哈希表模板中[实例化](https://clickhou.se/hashtables)出多种哈希表 (截至 2024 年 3 月已超过 30 种) 。系统会根据分组列的数据类型、预估的哈希表基数以及其他因素，为每个查询算子分别选择最快的哈希表。针对哈希表还实现了以下优化：
 
 * 采用包含 256 个子表的两级布局 (基于哈希值的第一个字节) ，以支持超大键集合，
-* 字符串哈希表 <sup>[&#91;79&#93;](#page-13-20)</sup> 使用四个子表，并针对不同字符串长度采用不同的哈希函数，
+* 字符串哈希表 <sup>[[79]](#page-13-20)</sup> 使用四个子表，并针对不同字符串长度采用不同的哈希函数，
 * 当键数量较少时，使用直接以键作为 bucket 索引 (即不做哈希) 的查找表，
 * 当比较代价较高时 (例如字符串、AST) ，将哈希值嵌入 value 中，以加快冲突消解，
 * 根据运行时统计预测的大小创建哈希表，以避免不必要的扩容，
@@ -254,7 +254,7 @@ ClickHouse 的查询执行引擎以及 morsel-driven parallelism <sup>[[44]](#pa
 
 **JOIN**。由于 ClickHouse 最初对 JOIN 的支持较为有限，历史上许多用例只能依赖反规范化表。如今，该数据库[提供](https://clickhou.se/joins) SQL 中所有 JOIN 类型 (inner、left- /right/full outer、cross、as-of) ，以及多种 JOIN 算法，例如 hash join (naïve、grace) 、sort-merge join，以及适用于具有快速键值查找的表引擎 (通常是字典) 的 index join。
 
-由于 JOIN 是数据库中开销最高的操作之一，因此需要为经典 JOIN 算法提供并行变体，最好还能支持可配置的时间/空间权衡。对于 hash join，ClickHouse 实现了 <sup>[&#91;7&#93;](#page-12-23)</sup> 中的非阻塞共享分区算法。例如，[图 9](#page-8-3) 中的查询通过对页面命中统计表执行 self-join，计算用户如何在不同 URL 之间跳转。JOIN 的构建阶段被拆分为三个通道，分别覆盖源表中三个互不重叠的范围。这里使用的不是全局哈希表，而是分区哈希表。 (通常为三个) 工作线程通过计算哈希函数的模，为构建侧的每个输入行确定目标分区。对哈希表各分区的访问通过 Gather exchange 算子进行同步。探测阶段也会以类似方式为其输入 Tuple 确定目标分区。虽然该算法会为每个 Tuple 额外增加两次哈希计算，但会随着哈希表分区数量的增加，显著减少构建阶段的锁存争用。
+由于 JOIN 是数据库中开销最高的操作之一，因此需要为经典 JOIN 算法提供并行变体，最好还能支持可配置的时间/空间权衡。对于 hash join，ClickHouse 实现了 <sup>[[7]](#page-12-23)</sup> 中的非阻塞共享分区算法。例如，[图 9](#page-8-3) 中的查询通过对页面命中统计表执行 self-join，计算用户如何在不同 URL 之间跳转。JOIN 的构建阶段被拆分为三个通道，分别覆盖源表中三个互不重叠的范围。这里使用的不是全局哈希表，而是分区哈希表。 (通常为三个) 工作线程通过计算哈希函数的模，为构建侧的每个输入行确定目标分区。对哈希表各分区的访问通过 Gather exchange 算子进行同步。探测阶段也会以类似方式为其输入 Tuple 确定目标分区。虽然该算法会为每个 Tuple 额外增加两次哈希计算，但会随着哈希表分区数量的增加，显著减少构建阶段的锁存争用。
 
 <a id="page-8-3" style={{display:"block",scrollMarginTop:"80px"}} />
 
@@ -274,9 +274,9 @@ ClickHouse 会在 server、user 和 query 级别跟踪内存分配的字节大�
 
 ### <a id="page-9-0" style={{display:"block",scrollMarginTop:"80px"}} />5 集成层
 
-实时决策应用通常依赖于以高效、低延迟的方式访问分布在多个位置的数据。要让 OLAP 数据库能够使用外部数据，主要有两种方式。在基于推送的数据访问模式中，第三方组件充当数据库与外部数据存储之间的桥梁。典型例子是专门的提取、转换、加载 (ETL) 工具，它们会将远程数据推送到目标端系统。在基于拉取的模型中，数据库自身连接远程数据源，将数据拉取到本地表中供查询使用，或将数据导出到远程系统。虽然基于推送的方法更灵活、也更常见，但它们往往意味着更大的架构复杂度和可扩展性瓶颈。相比之下，直接在数据库中提供远程连接能力则带来了一些颇具吸引力的能力，例如本地数据与远程数据之间的JOIN，同时还能保持整体架构简洁并缩短获得洞察的时间。
+实时决策应用通常依赖于以高效、低延迟的方式访问分布在多个位置的数据。要让 OLAP 数据库能够使用外部数据，主要有两种方式。在基于推送的数据访问模式中，第三方组件充当数据库与外部数据存储之间的桥梁。典型例子是专门的提取、转换、加载 (ETL) 工具，它们会将远程数据推送到目标端系统。在基于拉取的模型中，数据库自身连接远程数据源，将数据拉取到本地表中供查询使用，或将数据导出到远程系统。虽然基于推送的方法更灵活、也更常见，但它们往往意味着更大的架构复杂度和可扩展性瓶颈。相比之下，直接在数据库中提供远程连接能力则带来了一些颇具吸引力的能力，例如本地数据与远程数据之间的连接，同时还能保持整体架构简洁并缩短获得洞察的时间。
 
-本节其余部分将介绍 ClickHouse 中用于访问远程位置数据的基于拉取的数据集成方法。需要说明的是，SQL 数据库中的远程连接这一思路并不新鲜。例如，SQL/MED 标准 <sup>[&#91;35&#93;](#page-12-25)</sup> 于 2001 年提出，PostgreSQL 自 2011 年起实现了该标准 <sup>[&#91;65&#93;](#page-13-21)</sup>，并提出以外部数据包装器作为管理外部数据的统一接口。与其他数据存储和存储格式实现最大限度的互操作性，是 ClickHouse 的设计目标之一。截至 2024 年 3 月，据我们所知，ClickHouse 在所有分析型数据库中提供了最多的内置数据集成选项。
+本节其余部分将介绍 ClickHouse 中用于访问远程位置数据的基于拉取的数据集成方法。需要说明的是，SQL 数据库中的远程连接这一思路并不新鲜。例如，SQL/MED 标准 <sup>[[35]](#page-12-25)</sup> 于 2001 年提出，PostgreSQL 自 2011 年起实现了该标准 <sup>[[65]](#page-13-21)</sup>，并提出以外部数据包装器作为管理外部数据的统一接口。与其他数据存储和存储格式实现最大限度的互操作性，是 ClickHouse 的设计目标之一。截至 2024 年 3 月，据我们所知，ClickHouse 在所有分析型数据库中提供了最多的内置数据集成选项。
 
 外部连接能力。ClickHouse 提供了 [50+](https://clickhou.se/query-integrations) 个集成表函数和引擎，用于连接外部系统和存储位置，包括 ODBC、MySQL、PostgreSQL、SQLite、Kafka、Hive、MongoDB、Redis、S3/GCP/Azure 对象存储以及各种数据湖。我们进一步将它们划分为下方附加图中所示的类别 (不属于原始 vldb 论文内容) 。
 
@@ -330,9 +330,9 @@ ClickHouse 会在 server、user 和 query 级别跟踪内存分配的字节大�
   #### 6.2.1 反规范化表
 </div>
 
-针对反规范化事实表的过滤和聚合查询，长期以来一直是 ClickHouse 的主要用例。我们报告了 ClickBench 的运行时间，这是一类典型的工作负载，用于模拟点击流和流量分析中使用的临时查询与周期性报表查询。该基准测试由 43 个查询组成，针对一张包含 1 亿条匿名页面点击记录的表，这些数据来自全球最大的网络分析平台之一。截至 2024 年 6 月，一个在线 dashboard <sup>[&#91;17&#93;](#page-12-28)</sup> 展示了超过 45 个商业和研究型数据库的测量结果 (冷/热态运行时间、数据导入时间、磁盘占用大小) 。结果由独立贡献者基于公开可用的数据集和查询 <sup>[&#91;16&#93;](#page-12-29)</sup> 提交。这些查询测试了顺序扫描和索引扫描访问路径，并且经常会暴露出受 CPU、IO 或内存限制的关系算子。
+针对反规范化事实表的过滤和聚合查询，长期以来一直是 ClickHouse 的主要用例。我们报告了 ClickBench 的运行时间，这是一类典型的工作负载，用于模拟点击流和流量分析中使用的临时查询与周期性报表查询。该基准测试由 43 个查询组成，针对一张包含 1 亿条匿名页面点击记录的表，这些数据来自全球最大的网络分析平台之一。截至 2024 年 6 月，一个在线 dashboard <sup>[[17]](#page-12-28)</sup> 展示了超过 45 个商业和研究型数据库的测量结果 (冷/热态运行时间、数据导入时间、磁盘占用大小) 。结果由独立贡献者基于公开可用的数据集和查询 <sup>[[16]](#page-12-29)</sup> 提交。这些查询测试了顺序扫描和索引扫描访问路径，并且经常会暴露出受 CPU、IO 或内存限制的关系算子。
 
-[图 10](#page-10-0) 展示了在分析场景中常用的数据库里，按顺序执行全部 ClickBench 查询时的总相对冷运行时间和热态运行时间。测量是在单节点 AWS EC2 c6a.4xlarge 实例上完成的，配置为 16 个 vCPU、32 GB RAM，以及 5000 IOPS / 1000 MiB/s disk。Redshift ([ra3.4xlarge](https://clickhou.se/redshift-sizes)，12 个 vCPU，96 GB RAM) 和 Snowflake ([warehouse size S](https://clickhou.se/snowflake-sizes)：2x8 个 vCPU，2x16 GB RAM) 也使用了可比的系统。物理数据库设计只做了少量调优，例如我们指定了主键，但没有更改单独列的压缩、创建 projections 或数据跳过索引。我们还会在每次冷查询运行前清空 Linux page cache，但不会调整数据库或操作系统参数。对于每个查询，都会以各数据库中最快的运行时间作为基线。其他数据库的相对查询运行时间按 ( + 10)/(&#95; + 10) 计算。某个数据库的总相对运行时间则是各查询比值的几何平均值。尽管研究型数据库 Umbra <sup>[&#91;54&#93;](#page-13-25)</sup> 取得了总体最佳的热态运行时间，但 ClickHouse 在热态运行时间和冷运行时间上都优于所有其他生产级数据库。
+[图 10](#page-10-0) 展示了在分析场景中常用的数据库里，按顺序执行全部 ClickBench 查询时的总相对冷运行时间和热态运行时间。测量是在单节点 AWS EC2 c6a.4xlarge 实例上完成的，配置为 16 个 vCPU、32 GB RAM，以及 5000 IOPS / 1000 MiB/s disk。Redshift ([ra3.4xlarge](https://clickhou.se/redshift-sizes)，12 个 vCPU，96 GB RAM) 和 Snowfake ([warehouse size S](https://clickhou.se/snowflake-sizes)：2x8 个 vCPU，2x16 GB RAM) 也使用了可比的系统。物理数据库设计只做了少量调优，例如我们指定了主键，但没有更改单独列的压缩、创建 projections 或数据跳过索引。我们还会在每次冷查询运行前清空 Linux page cache，但不会调整数据库或操作系统参数。对于每个查询，都会以各数据库中最快的运行时间作为基线。其他数据库的相对查询运行时间按 ( + 10)/(&#95; + 10) 计算。某个数据库的总相对运行时间则是各查询比值的几何平均值。尽管研究型数据库 Umbra <sup>[[54]](#page-13-25)</sup> 取得了总体最佳的热态运行时间，但 ClickHouse 在热态运行时间和冷运行时间上都优于所有其他生产级数据库。
 
 <a id="page-10-0" style={{display:"block",scrollMarginTop:"80px"}} />
 
@@ -340,7 +340,7 @@ ClickHouse 会在 server、user 和 query 级别跟踪内存分配的字节大�
   <img src="/images/managing-data/core-concepts/_vldb2024_10_Figure_0.webp" alt="图 10：ClickBench 的相对冷运行时间和热态运行时间。" />
 </Frame>
 
-为了长期跟踪更多样化工作负载中 SELECT 查询的性能，我们[使用](https://clickhou.se/performance-over-years)了一组由四个基准测试组成、名为 VersionsBench 的组合基准测试 <sup>[&#91;19&#93;](#page-12-30)</sup>。每当发布新版本时，都会每月执行一次该基准测试，以评估其性能 <sup>[&#91;20&#93;](#page-12-31)</sup> 并识别可能导致性能下降的代码变更：各个基准测试包括：1. ClickBench (如上所述) ，2. 15 个 MgBench <sup>[&#91;21&#93;](#page-12-32)</sup> 查询，3. 针对一个包含 6 亿行的反规范化 Star Schema Benchmark <sup>[&#91;57&#93;](#page-13-26)</sup> 事实表的 13 个查询。4. 针对包含 34 亿行的 [NYC Taxi Rides](https://clickhou.se/nyc-taxi-rides-benchmark) 的 4 个查询 <sup>[&#91;70&#93;](#page-13-27)</sup>。
+为了长期跟踪更多样化工作负载中 SELECT 查询的性能，我们[使用](https://clickhou.se/performance-over-years)了一组由四个基准测试组成、名为 VersionsBench 的组合基准测试 <sup>[[19]](#page-12-30)</sup>。每当发布新版本时，都会每月执行一次该基准测试，以评估其性能 <sup>[[20]](#page-12-31)</sup> 并识别可能导致性能下降的代码变更：各个基准测试包括：1. ClickBench (如上所述) ，2. 15 个 MgBench <sup>[[21]](#page-12-32)</sup> 查询，3. 针对一个包含 6 亿行的反规范化 Star Schema Benchmark <sup>[[57]](#page-13-26)</sup> 事实表的 13 个查询。4. 针对包含 34 亿行的 [NYC Taxi Rides](https://clickhou.se/nyc-taxi-rides-benchmark) 的 4 个查询 <sup>[[70]](#page-13-27)</sup>。
 
 [图 11](#page-10-5) 展示了 2018 年 3 月至 2024 年 3 月期间 77 个 ClickHouse 版本的 VersionsBench 运行时间变化。为了补偿各个查询相对运行时间的差异，我们使用几何平均值对运行时间进行归一化，并以该查询在所有版本中的最小运行时间之比作为权重。在过去六年中，VersionBench 的性能提升了 1.72 ×。具有长期支持 (LTS) 的版本发布日期标注在 x 轴上。尽管某些时期性能曾暂时下降，但 LTS 版本的性能通常与前一个 LTS 版本相当或更优。2022 年 8 月的显著提升是由第 [4.4.](#page-7-0) 节中描述的逐列过滤条件求值技术所带来的。
 
@@ -354,7 +354,7 @@ ClickHouse 会在 server、user 和 query 级别跟踪内存分配的字节大�
   #### 6.2.2 归一化表
 </div>
 
-在传统数仓中，数据通常采用星型或雪花 schema 建模。我们给出了 TPC-H 查询 (缩放因子为 100) 的运行时间，但需要指出的是，归一化表是 ClickHouse 的一个新兴用例。[图 12](#page-10-6) 展示了基于第 [4.4.](#page-7-0) 节所述并行哈希 JOIN 算法的 TPC-H 查询热态运行时间。测量是在单节点 AWS EC2 c6i.16xlarge 实例上完成的，配置为 64 个 vCPU、128 GB RAM，以及 5000 IOPS / 1000 MiB/s 磁盘。记录的是五次运行中最快的一次。作为参考，我们还在一个规模相当的 Snowflake 系统中进行了相同的测量 (仓库大小为 L，8x8 vCPU，8x16 GB RAM) 。表中排除了 11 个查询的结果：查询 Q2、Q4、Q13、Q17 和 Q20-22 包含相关子查询，而截至 ClickHouse v24.6 仍不支持此类子查询。查询 Q7-Q9 和 Q19 则依赖扩展的计划级 JOIN 优化，例如 JOIN 重排序和 JOIN 谓词下推 (截至 ClickHouse v24.6，这两项都尚未实现) ，才能获得可接受的运行时间。自动消除子查询相关性以及对 JOIN 更完善的优化器支持计划于 2024 年实现 <sup>[&#91;18&#93;](#page-12-33)</sup>。在其余 11 个查询中，有 5 个查询在 ClickHouse 中执行得更快，而 6 个查询在 Snowflake 中更快。鉴于上述优化已被证明对性能至关重要 <sup>[&#91;27&#93;](#page-12-34)</sup>，我们预计这些查询在相关优化实现后，运行时间还会进一步改善。
+在传统数仓中，数据通常采用星型或雪花 schema 建模。我们给出了 TPC-H 查询 (缩放因子为 100) 的运行时间，但需要指出的是，归一化表是 ClickHouse 的一个新兴用例。[图 12](#page-10-6) 展示了基于第 [4.4.](#page-7-0) 节所述并行哈希 JOIN 算法的 TPC-H 查询热态运行时间。测量是在单节点 AWS EC2 c6i.16xlarge 实例上完成的，配置为 64 个 vCPU、128 GB RAM，以及 5000 IOPS / 1000 MiB/s 磁盘。记录的是五次运行中最快的一次。作为参考，我们还在一个规模相当的 Snowfake 系统中进行了相同的测量 (仓库大小为 L，8x8 vCPU，8x16 GB RAM) 。表中排除了 11 个查询的结果：查询 Q2、Q4、Q13、Q17 和 Q20-22 包含相关子查询，而截至 ClickHouse v24.6 仍不支持此类子查询。查询 Q7-Q9 和 Q19 则依赖扩展的计划级 JOIN 优化，例如 JOIN 重排序和 JOIN 谓词下推 (截至 ClickHouse v24.6，这两项都尚未实现) ，才能获得可接受的运行时间。自动消除子查询相关性以及对 JOIN 更完善的优化器支持计划于 2024 年实现 <sup>[[18]](#page-12-33)</sup>。在其余 11 个查询中，有 5 个查询在 ClickHouse 中执行得更快，而 6 个查询在 Snowfake 中更快。鉴于上述优化已被证明对性能至关重要 <sup>[[27]](#page-12-34)</sup>，我们预计这些查询在相关优化实现后，运行时间还会进一步改善。
 
 <a id="page-10-6" style={{display:"block",scrollMarginTop:"80px"}} />
 
@@ -363,18 +363,18 @@ ClickHouse 会在 server、user 和 query 级别跟踪内存分配的字节大�
 </Frame>
 
 <div id="7-related-work">
-  ## 7 RELATED WORK
+  ## 7 相关工作
 </div>
 
-分析型数据库在近几十年来一直受到学术界和工业界的广泛关注 <sup>[&#91;1&#93;](#page-12-35)</sup>。早期的系统，如 Sybase IQ <sup>[&#91;48&#93;](#page-13-28)</sup>、Teradata <sup>[&#91;72&#93;](#page-13-29)</sup>、Vertica <sup>[&#91;42&#93;](#page-12-36)</sup> 和 Greenplum <sup>[&#91;47&#93;](#page-13-30)</sup>，其特点是依赖昂贵的批处理 ETL 作业，并且由于属于本地部署，弹性能力有限。到了 2010 年代初，云原生数据仓库和数据库即服务 (DBaaS) 产品 (如 Snowflake <sup>[&#91;22&#93;](#page-12-37)</sup>、BigQuery <sup>[&#91;49&#93;](#page-13-31)</sup> 和 Redshift <sup>[&#91;4&#93;](#page-12-38)</sup>) 的出现，显著降低了组织开展分析的成本和复杂度，同时还受益于高可用性和资源自动扩缩容。近年来，分析执行内核 (例如 Photon <sup>[&#91;5&#93;](#page-12-39)</sup> 和 Velox <sup>[&#91;62&#93;](#page-13-32)</sup>) 提供了可在不同分析、流式处理和机器学习应用中使用的协同优化数据处理能力。
+分析型数据库在近几十年来一直受到学术界和工业界的广泛关注 <sup>[[1]](#page-12-35)</sup>。早期的系统，如 Sybase IQ <sup>[[48]](#page-13-28)</sup>、Teradata <sup>[[72]](#page-13-29)</sup>、Vertica <sup>[[42]](#page-12-36)</sup> 和 Greenplum <sup>[[47]](#page-13-30)</sup>，其特点是依赖昂贵的批处理 ETL 作业，并且由于属于本地部署，弹性能力有限。到了 2010 年代初，云原生数据仓库和数据库即服务 (DBaaS) 产品 (如 Snowfake <sup>[[22]](#page-12-37)</sup>、BigQuery <sup>[[49]](#page-13-31)</sup> 和 Redshift <sup>[[4]](#page-12-38)</sup>) 的出现，显著降低了组织开展分析的成本和复杂度，同时还受益于高可用性和资源自动扩缩容。近年来，分析执行内核 (例如 Photon <sup>[[5]](#page-12-39)</sup> 和 Velox <sup>[[62]](#page-13-32)</sup>) 提供了可在不同分析、流式处理和机器学习应用中使用的协同优化数据处理能力。
 
-就目标和设计原则而言，与 ClickHouse 最相似的数据库是 Druid <sup>[&#91;78&#93;](#page-13-33)</sup> 和 Pinot <sup>[&#91;34&#93;](#page-12-40)</sup>。这两个系统都面向高数据摄取速率的实时分析。与 ClickHouse 一样，表会被水平拆分为称作分段的部分。ClickHouse 会持续合并较小的 parts，并可选择使用第 [3.3 节](#page-4-3)中的技术减少数据量，而在 Druid 和 Pinot 中，parts 则始终保持不可变。此外，Druid 和 Pinot 需要专用节点来创建、修改和查询表，而 ClickHouse 则使用单体可执行文件来完成这些任务。
+就目标和设计原则而言，与 ClickHouse 最相似的数据库是 Druid <sup>[[78]](#page-13-33)</sup> 和 Pinot <sup>[[34]](#page-12-40)</sup>。这两个系统都面向高数据摄取速率的实时分析。与 ClickHouse 一样，表会被水平拆分为称作分段的部分。ClickHouse 会持续合并较小的 parts，并可选择使用第 [3.3 节](#page-4-3)中的技术减少数据量，而在 Druid 和 Pinot 中，parts 则始终保持不可变。此外，Druid 和 Pinot 需要专用节点来创建、修改和查询表，而 ClickHouse 则使用单体可执行文件来完成这些任务。
 
-Snowflake <sup>[&#91;22&#93;](#page-12-37)</sup> 是一种流行的专有云数据仓库，基于共享磁盘架构。它将表划分为微分区的方法，与 ClickHouse 中 parts 的概念相似。Snowflake 使用混合 PAX 页面 <sup>[&#91;3&#93;](#page-12-41)</sup> 进行持久化，而 ClickHouse 的存储格式则是严格的列式格式。Snowflake 还强调本地缓存，以及借助自动创建的轻量级索引 <sup>[&#91;31,](#page-12-13)</sup> <sup>[&#91;51&#93;](#page-13-14)</sup> 进行数据裁剪，将其作为获得良好性能的关键。与 ClickHouse 中的主键类似，用户也可以选择创建聚簇索引，以便将具有相同值的数据放在一起。
+Snowfake <sup>[[22]](#page-12-37)</sup> 是一种流行的专有云数据仓库，基于共享磁盘架构。它将表划分为微分区的方法，与 ClickHouse 中 parts 的概念相似。Snowfake 使用混合 PAX 页面 <sup>[[3]](#page-12-41)</sup> 进行持久化，而 ClickHouse 的存储格式则是严格的列式格式。Snowfake 还强调本地缓存，以及借助自动创建的轻量级索引 <sup>[[31,](#page-12-13)</sup> <sup>[51]](#page-13-14)</sup> 进行数据裁剪，将其作为获得良好性能的关键。与 ClickHouse 中的主键类似，用户也可以选择创建聚簇索引，以便将具有相同值的数据放在一起。
 
-Photon <sup>[&#91;5&#93;](#page-12-39)</sup> 和 Velox <sup>[&#91;62&#93;](#page-13-32)</sup> 是查询执行引擎，被设计为复杂数据管理系统中的组件。这两个系统都接收查询计划作为输入，然后在本地节点上针对 Parquet (Photon) 或 Arrow (Velox) 文件 <sup>[&#91;46&#93;](#page-13-34)</sup> 执行这些计划。ClickHouse 能够读取和生成这些通用格式的数据，但在存储时更偏好其原生文件格式。虽然 Velox 和 Photon 不会优化查询计划 (Velox 会执行基本的表达式优化) ，但它们会利用运行时自适应技术，例如根据数据特征动态切换计算内核。类似地，ClickHouse 中的计划算子
+Photon <sup>[[5]](#page-12-39)</sup> 和 Velox <sup>[[62]](#page-13-32)</sup> 是查询执行引擎，被设计为复杂数据管理系统中的组件。这两个系统都接收查询计划作为输入，然后在本地节点上针对 Parquet (Photon) 或 Arrow (Velox) 文件 <sup>[[46]](#page-13-34)</sup> 执行这些计划。ClickHouse 能够读取和生成这些通用格式的数据，但在存储时更偏好其原生文件格式。虽然 Velox 和 Photon 不会优化查询计划 (Velox 会执行基本的表达式优化) ，但它们会利用运行时自适应技术，例如根据数据特征动态切换计算内核。类似地，ClickHouse 中的计划算子
 
-可以在运行时创建其他算子，主要是根据查询的内存消耗切换到 external aggregation 或 join 算子。Photon 论文指出，与解释型向量化设计 <sup>[&#91;11&#93;](#page-12-0)</sup> 相比，代码生成式设计 <sup>[&#91;38,](#page-12-22)</sup> <sup>[&#91;41,](#page-12-42)</sup> <sup>[&#91;53&#93;](#page-13-0)</sup> 更难开发和调试。Velox 构建中对代码生成的 (experimental) 支持会构建并链接一个由运行时生成的 C++ 代码产出的共享库，而 ClickHouse 则直接与 LLVM 的按需编译 API 交互。
+可以在运行时创建其他算子，主要是根据查询的内存消耗切换到 external aggregation 或 join 算子。Photon 论文指出，与解释型向量化设计 <sup>[[11]](#page-12-0)</sup> 相比，代码生成式设计 <sup>[[38,](#page-12-22)</sup> <sup>[41,](#page-12-42)</sup> <sup>[53]](#page-13-0)</sup> 更难开发和调试。Velox 构建中对代码生成的 (Experimental) 支持会构建并链接一个由运行时生成的 C++ 代码产出的共享库，而 ClickHouse 则直接与 LLVM 的按需编译 API 交互。
 
 DuckDB <sup>[[67]](#page-13-6)</sup> 也旨在嵌入到宿主进程中，但还提供了查询优化和事务。它的设计目标是以 OLAP 查询为主、夹杂少量 OLTP 语句的场景。因此，DuckDB 选择了 DataBlocks <sup>[[43]](#page-12-43)</sup> 存储格式，该格式采用轻量级压缩方法，例如保序字典或 frame-of-reference <sup>[[2]](#page-12-10)</sup>，以在混合负载下获得良好性能。相比之下，ClickHouse 针对只追加写入的用例进行了优化，也就是没有更新和删除，或更新和删除极少。块使用 LZ4 等较重的技术进行压缩，其前提是用户会充分利用数据裁剪来加速频繁查询，并且对其余查询而言，I/O 成本远高于解压缩成本。DuckDB 还基于 Hyper 的 MVCC 方案 <sup>[[55]](#page-13-35)</sup> 提供了可串行化事务，而 ClickHouse 仅提供快照隔离。
 
@@ -418,7 +418,7 @@ DuckDB <sup>[[67]](#page-13-6)</sup> 也旨在嵌入到宿主进程中，但还�
   * <a id="page-12-30" style={{display:"block",scrollMarginTop:"80px"}} /><sup>19</sup> ClickHouse. 2024. ClickHouse 版本基准测试。2024-06-20 检索自 https://github.com/ClickHouse/ClickBench/tree/main/versions
   * <a id="page-12-31" style={{display:"block",scrollMarginTop:"80px"}} /><sup>20</sup> ClickHouse. 2024. ClickHouse 版本基准测试结果。检索于 2024-06-20，来源：https://benchmark.clickhouse.com/versions/
   * <a id="page-12-32" style={{display:"block",scrollMarginTop:"80px"}} /><sup>21</sup> Andrew Crotty. 2022. MgBench. 2024-06-20 检索自 [https://github.com/](https://github.com/andrewcrotty/mgbench) [andrewcrotty/mgbench](https://github.com/andrewcrotty/mgbench)
-  * <a id="page-12-37" style={{display:"block",scrollMarginTop:"80px"}} /><sup>22</sup> Benoit Dageville、Thierry Cruanes、Marcin Zukowski、Vadim Antonov、Artin Avanes、Jon Bock、Jonathan Claybaugh、Daniel Engovatov、Martin Hentschel、Jiansheng Huang、Allison W. Lee、Ashish Motivala、Abdul Q. Munir、Steven Pelley、Peter Povinec、Greg Rahn、Spyridon Triantafyllis 和 Philipp Unterbrunner。2016。The Snowflake Elastic Data Warehouse。见 Proceedings of the 2016 International Conference on Management of Data (美国加利福尼亚州旧金山)  (SIGMOD &#39;16) 。Association for Computing Machinery，New York, NY, USA，215–226。[https:](https://doi.org/10.1145/2882903.2903741) [//doi.org/10.1145/2882903.2903741](https://doi.org/10.1145/2882903.2903741)
+  * <a id="page-12-37" style={{display:"block",scrollMarginTop:"80px"}} /><sup>22</sup> Benoit Dageville、Thierry Cruanes、Marcin Zukowski、Vadim Antonov、Artin Avanes、Jon Bock、Jonathan Claybaugh、Daniel Engovatov、Martin Hentschel、Jiansheng Huang、Allison W. Lee、Ashish Motivala、Abdul Q. Munir、Steven Pelley、Peter Povinec、Greg Rahn、Spyridon Triantafyllis 和 Philipp Unterbrunner。2016。The Snowfake Elastic Data Warehouse。见 Proceedings of the 2016 International Conference on Management of Data (美国加利福尼亚州旧金山)  (SIGMOD &#39;16) 。Association for Computing Machinery，New York, NY, USA，215–226。[https:](https://doi.org/10.1145/2882903.2903741) [//doi.org/10.1145/2882903.2903741](https://doi.org/10.1145/2882903.2903741)
   * <a id="page-12-9" style={{display:"block",scrollMarginTop:"80px"}} /><sup>23</sup> Patrick Damme、Annett Ungethüm、Juliana Hildebrandt、Dirk Habich 和 Wolfgang Lehner. 2019. From a Comprehensive Experimental Survey to a Cost-Based Selection Strategy for Lightweight Integer Compression Algorithms. ACM Trans. Database Syst. 44, 3，第 9 篇文章 (2019) ，46 页。https://doi.org/10.1145/3323991
   * <a id="page-12-1" style={{display:"block",scrollMarginTop:"80px"}} /><sup>24</sup> Philippe Dobbelaere 和 Kyumars Sheykh Esmaili. 2017. Kafka 与 RabbitMQ：两种业界参考发布/订阅实现的比较研究：产业论文 (DEBS &#39;17) 。Association for Computing Machinery，New York, NY, USA，227–238。https://doi.org/10.1145/3093742.3093908
   * <a id="page-12-19" style={{display:"block",scrollMarginTop:"80px"}} /><sup>25</sup> LLVM 文档。2024。LLVM 中的自动向量化。检索日期：2024-06-20。来源：https://llvm.org/docs/Vectorizers.html
@@ -455,7 +455,7 @@ DuckDB <sup>[[67]](#page-13-6)</sup> 也旨在嵌入到宿主进程中，但还�
   * <a id="page-13-8" style={{display:"block",scrollMarginTop:"80px"}} /><sup>56</sup> GitHub 上的 LevelDB。2024。LevelDB。检索自 2024-06-20：[https://github.](https://github.com/google/leveldb) [com/google/leveldb](https://github.com/google/leveldb)
   * <a id="page-13-26" style={{display:"block",scrollMarginTop:"80px"}} /><sup>57</sup> Patrick O&#39;Neil、Elizabeth O&#39;Neil、Xuedong Chen 和 Stephen Revilak. 2009. The Star Schema Benchmark and Augmented Fact Table Indexing. 收录于 Performance Evaluation and Benchmarking. Springer Berlin Heidelberg, 237–252. [https:](https://doi.org/10.1007/978-3-642-10424-4_17) [//doi.org/10.1007/978-3-642-10424-4&#95;17](https://doi.org/10.1007/978-3-642-10424-4_17)
   * <a id="page-13-7" style={{display:"block",scrollMarginTop:"80px"}} /><sup>58</sup> Patrick E. O&#39;Neil、Edward Y. C. Cheng、Dieter Gawlick 和 Elizabeth J. O&#39;Neil。1996。《The log-structured Merge-Tree (LSM-tree)》。Acta Informatica 33 (1996)：351–385。https://doi.org/10.1007/s002360050048
-  * <a id="page-13-4" style={{display:"block",scrollMarginTop:"80px"}} /><sup>59</sup> Diego Ongaro 与 John Ousterhout. 2014. In Search of an Understandable Consensus Algorithm. 载于 Proceedings of the 2014 USENIX Conference on USENIX Annual Technical Conference (USENIX ATC&#39;14). 305–320. [https://dl.acm.org/doi/10.5555/2643634.2643666](https://dl.acm.org/doi/10.5555/2643634.2643666)
+  * <a id="page-13-4" style={{display:"block",scrollMarginTop:"80px"}} /><sup>59</sup> Diego Ongaro 与 John Ousterhout. 2014. In Search of an Understandable Consensus Algorithm. 发表于 Proceedings of the 2014 USENIX Conference on USENIX Annual Technical Conference (USENIX ATC&#39;14). 305–320. [https://doi.org/doi/10.](https://doi.org/doi/10.5555/2643634.2643666) [5555/2643634.2643666](https://doi.org/doi/10.5555/2643634.2643666)
   * <a id="page-13-3" style={{display:"block",scrollMarginTop:"80px"}} /><sup>60</sup> Patrick O&#39;Neil、Edward Cheng、Dieter Gawlick 和 Elizabeth O&#39;Neil。1996。The Log-Structured Merge-Tree (LSM-Tree)。Acta Inf. 33, 4 (1996), 351–385。[https:](https://doi.org/10.1007/s002360050048) [//doi.org/10.1007/s002360050048](https://doi.org/10.1007/s002360050048)
   * <a id="page-13-5" style={{display:"block",scrollMarginTop:"80px"}} /><sup>61</sup> Pandas。2024。《Pandas 数据框》。检索于 2024-06-20，来源：[https://pandas.](https://pandas.pydata.org/) [pydata.org/](https://pandas.pydata.org/)
   * <a id="page-13-32" style={{display:"block",scrollMarginTop:"80px"}} /><sup>62</sup> Pedro Pedreira、Orri Erling、Masha Basmanova、Kevin Wilfong、Laith Sakka、Krishna Pai、Wei He 和 Biswapesh Chattopadhyay. 2022. Velox：Meta 的统一执行引擎。Proc. VLDB Endow. 15, 12 (2022 年 8 月), 3372–3384. [https:](https://doi.org/10.14778/3554821.3554829) [//doi.org/10.14778/3554821.3554829](https://doi.org/10.14778/3554821.3554829)

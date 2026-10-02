@@ -18,12 +18,11 @@ mkdir -p "${FILES_DIR}"
 
 READER="reader_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 FS_DB="fsdb_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-URL_DB="urldb_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 RENAME="rename_files_after_processing='processed_%a'"
 
 # One input file per renaming scenario: a successful rename consumes the name.
 for name in direct_select wrapped_url cluster_initiator cluster_no_setting cluster_granted \
-            explain_pipeline explain_plan granted_write urldb_denied urldb_granted \
+            explain_pipeline explain_plan granted_write \
             cached_armed_for_reader cached_armed_for_owner cached_unarmed \
             repeated_ref repeated_ref_setting \
             cluster_unoptimized dist_insert_denied dist_insert_granted; do
@@ -32,7 +31,6 @@ done
 
 ${CLICKHOUSE_CLIENT} -q "
 DROP DATABASE IF EXISTS ${FS_DB};
-DROP DATABASE IF EXISTS ${URL_DB};
 DROP USER IF EXISTS ${READER};
 CREATE USER ${READER} IDENTIFIED WITH no_password;
 GRANT CREATE TEMPORARY TABLE ON *.* TO ${READER};
@@ -181,21 +179,6 @@ ${CLICKHOUSE_CLIENT} -q "SELECT (SELECT count() FROM ${FS_DB}.\`repeated_ref_set
                                 count() AS from_outer FROM ${FS_DB}.\`repeated_ref_setting.csv\` SETTINGS ${RENAME}"
 file_state repeated_ref_setting
 
-echo '--- a URL database over file:// is gated the same way'
-# Its own resolution path: the delegate is built on a `Context::createCopy`, so the rule survives and
-# arms the storage, and the read reaches the gate through `StorageURLDatabaseTable::read`. The base
-# is empty and the table name is the absolute path, as in `04658_url_database_structure_read_grant`.
-${CLICKHOUSE_CLIENT} -q "
-CREATE DATABASE ${URL_DB} ENGINE = URL('file://');
-GRANT SELECT ON ${URL_DB}.* TO ${READER};
-"
-${CLICKHOUSE_CLIENT} --user "${READER}" -q \
-    "SELECT * FROM ${URL_DB}.\`${FILES_DIR}/urldb_denied.csv\` SETTINGS ${RENAME}" 2>&1 |
-    grep -o -m1 'WRITE ON FILE'
-file_state urldb_denied
-${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${URL_DB}.\`${FILES_DIR}/urldb_granted.csv\` SETTINGS ${RENAME}"
-file_state urldb_granted
-
 echo '--- with WRITE ON FILE granted, the rename happens'
 ${CLICKHOUSE_CLIENT} -q "GRANT WRITE ON FILE TO ${READER}"
 ${CLICKHOUSE_CLIENT} --user "${READER}" -q \
@@ -222,7 +205,6 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.dst"
 
 ${CLICKHOUSE_CLIENT} -q "
 DROP DATABASE IF EXISTS ${FS_DB};
-DROP DATABASE IF EXISTS ${URL_DB};
 DROP USER IF EXISTS ${READER};
 "
 rm -rf "${FILES_DIR}"

@@ -15,7 +15,6 @@
 #include <Columns/ColumnTuple.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
 
 
 namespace DB
@@ -35,6 +34,8 @@ class AggregateFunctionLast2Samples final :
     public IAggregateFunctionHelper<AggregateFunctionLast2Samples<TimestampType, ValueType>>
 {
 public:
+    static constexpr bool DateTime64Supported = true;
+
     using Base = IAggregateFunctionHelper<AggregateFunctionLast2Samples<TimestampType, ValueType>>;
 
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;
@@ -46,8 +47,7 @@ public:
     }
 
     /// Stores two samples with most recent distinct timestamps
-    /// If there are two samples with the same timestamp, the one with the bigger value is stored;
-    /// a NaN value is stored only if all values at this timestamp are NaN
+    /// If there are two samples with the same timestamp, the one with bigger value is stored
     struct Data
     {
         ValueType values[2]{};            /// In common scenario values are Float64, so put them first as they need 8-byte alignment
@@ -77,8 +77,8 @@ public:
                 }
                 else if (timestamp == timestamps[0])
                 {
-                    /// Replace the value with the bigger one
-                    values[0] = timeseriesMaxValueForDuplicateTimestamp(values[0], value);
+                    /// Replace the value with bigger one
+                    values[0] = std::max(value, values[0]);
                 }
                 else
                 {
@@ -107,8 +107,8 @@ public:
                 }
                 else if (timestamp == timestamps[0])
                 {
-                    /// Replace first sample value with the bigger one
-                    values[0] = timeseriesMaxValueForDuplicateTimestamp(values[0], value);
+                    /// Replace first sample value with bigger one
+                    values[0] = std::max(value, values[0]);
                 }
                 else if (timestamp > timestamps[1])
                 {
@@ -118,17 +118,10 @@ public:
                 }
                 else if (timestamp == timestamps[1])
                 {
-                    /// Replace second sample value with the bigger one
-                    values[1] = timeseriesMaxValueForDuplicateTimestamp(values[1], value);
+                    /// Replace second sample value with bigger one
+                    values[1] = std::max(value, values[1]);
                 }
             }
-        }
-
-        /// Bulk `add`, for the batch bucketing kernel of `AggregateFunctionTimeseriesBase`.
-        ALWAYS_INLINE void addMany(const TimestampType * __restrict timestamps_ptr, const ValueType * __restrict values_ptr, size_t count)
-        {
-            for (size_t i = 0; i < count; ++i)
-                add(timestamps_ptr[i], values_ptr[i]);
         }
 
         void merge(const Data & rhs)

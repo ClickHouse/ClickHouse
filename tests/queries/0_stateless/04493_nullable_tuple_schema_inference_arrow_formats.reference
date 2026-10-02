@@ -56,6 +56,19 @@ CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() 
 SELECT count() FROM test_04493;
 3
 DROP TABLE test_04493;
+-- ORC (legacy Arrow-based reader)
+DESCRIBE file(currentDatabase() || '_04493.orc', 'ORC') SETTINGS input_format_orc_use_fast_decoder = 0;
+id	Nullable(Int64)					
+s	Tuple(\n    a Nullable(Int64),\n    b Nullable(String))					
+n	Tuple(\n    x Nullable(Int64),\n    t Tuple(\n        y Nullable(Int64),\n        z Nullable(String)))					
+SELECT * FROM file(currentDatabase() || '_04493.orc', 'ORC') ORDER BY id SETTINGS input_format_orc_use_fast_decoder = 0;
+0	(0,'x')	(0,(0,'y'))
+1	(NULL,NULL)	(100,(1000,'y'))
+2	(20,'x')	(NULL,(NULL,NULL))
+CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.orc', 'ORC') SETTINGS input_format_orc_use_fast_decoder = 0;
+SELECT count() FROM test_04493;
+3
+DROP TABLE test_04493;
 -- Parquet (native reader)
 DESCRIBE file(currentDatabase() || '_04493.parquet', 'Parquet');
 id	Int64					
@@ -92,7 +105,7 @@ DESCRIBE file(currentDatabase() || '_04493.arrowstream', 'ArrowStream');
 id	Int64					
 s	Nullable(Tuple(a Int64, b String))					
 n	Nullable(Tuple(x Int64, t Tuple(y Int64, z String)))					
-DESCRIBE file(currentDatabase() || '_04493.orc', 'ORC');
+DESCRIBE file(currentDatabase() || '_04493.orc', 'ORC') SETTINGS input_format_orc_use_fast_decoder = 0;
 id	Nullable(Int64)					
 s	Nullable(Tuple(a Nullable(Int64), b Nullable(String)))					
 n	Nullable(Tuple(x Nullable(Int64), t Nullable(Tuple(y Nullable(Int64), z Nullable(String)))))					
