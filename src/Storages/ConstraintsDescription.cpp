@@ -197,6 +197,18 @@ void ConstraintsDescription::checkExpressionsPreserveRowCount() const
     }
 }
 
+void ConstraintsDescription::checkNamesAreUnique() const
+{
+    NameSet names;
+    for (const auto & constraint : constraints)
+    {
+        const auto & declaration = constraint->as<const ASTConstraintDeclaration &>();
+        if (!names.insert(declaration.name).second)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Constraint {} is declared more than once", backQuote(declaration.name));
+    }
+}
+
 const ComparisonGraph<ASTPtr> & ConstraintsDescription::getGraph() const
 {
     return *graph;
