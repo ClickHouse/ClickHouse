@@ -65,10 +65,12 @@ void rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept
         TransactionManager::instance().rollbackTransaction(txn);
 }
 
-/// Why a lost-reply wait has to give up, or empty while it may go on. Server shutdown kills queries
-/// long before it stops the transaction log.
-std::string_view reasonToStopWaiting()
+/// Why a lost-reply wait has to give up, or empty while it may go on. Server shutdown kills queries and
+/// cancels background merges and mutations long before it stops the transaction log.
+std::string_view reasonToStopWaiting(const std::atomic<bool> * cancelled)
 {
+    if (cancelled && cancelled->load())
+        return "a cancelled background task";
     if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
         return "a killed query";
     if (TransactionManager::instance().isShuttingDown())
@@ -78,11 +80,11 @@ std::string_view reasonToStopWaiting()
 
 /// Polls `resolved` every 100 ms rather than waiting on a condition, which nothing wakes for the reasons above;
 /// throws UNKNOWN_STATUS_OF_TRANSACTION once one of them holds.
-void waitUntilResolved(const std::function<bool()> & resolved, std::string_view what)
+void waitUntilResolved(const std::function<bool()> & resolved, const std::atomic<bool> * cancelled, std::string_view what)
 {
     while (!resolved())
     {
-        if (const auto reason = reasonToStopWaiting(); !reason.empty())
+        if (const auto reason = reasonToStopWaiting(cancelled); !reason.empty())
             throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION, "UNIQUE KEY {}, stopped waiting on {}", what, reason);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
@@ -90,10 +92,11 @@ void waitUntilResolved(const std::function<bool()> & resolved, std::string_view 
 
 /// The commit's Keeper reply was lost. The transaction log's updating thread resolves the transaction once
 /// it knows whether the csn entry exists.
-CSN waitForLostCommitReply(const MergeTreeTransactionPtr & txn, std::string_view kind)
+CSN waitForLostCommitReply(const MergeTreeTransactionPtr & txn, std::string_view kind, const std::atomic<bool> * cancelled)
 {
     waitUntilResolved(
         [&] { return txn->getState() == MergeTreeTransaction::COMMITTED || txn->getState() == MergeTreeTransaction::ROLLED_BACK; },
+        cancelled,
         fmt::format("{}: transaction {} lost its commit reply and is still unresolved", kind, txn->tid));
 
     if (txn->getState() == MergeTreeTransaction::ROLLED_BACK)
@@ -147,7 +150,8 @@ MergeTreeTransactionHolder beginUniqueKeyTransaction(const ContextPtr & context,
     return beginUniqueKeyTransaction(context->getCurrentTransaction(), operation);
 }
 
-CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & write)
+CSN UniqueKeyTxnManager::commitTransaction(
+    MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & write, const std::atomic<bool> * cancelled)
 {
     const MergeTreeTransactionPtr txn = transaction.getTransaction();
     chassert(txn, "UNIQUE KEY commit requires the transaction the part was written under");
@@ -167,15 +171,8 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
 
     try
     {
-        /// Normally nothing is unresolved: every writer resolves inside the guard. A given-up wait leaves a part
-        /// unresolved until the transaction log resolves it.
-        if (hasUnresolvedPart(data, partition_id))
-        {
-            LOG_DEBUG(log, "UNIQUE KEY {} (partition {}): waiting for an unresolved part, tid {}", kind, partition_id, txn->tid);
-            waitUntilResolved(
-                [&] { return !hasUnresolvedPart(data, partition_id); },
-                fmt::format("{} (partition {}): a part is still unresolved", kind, partition_id));
-        }
+        /// Before staging, it needs to see the latest state
+        waitForUnresolvedParts(partition_id, kind, txn->tid, cancelled);
 
         staged = write.stage(*write_guard);
         if (!staged)
@@ -211,7 +208,7 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
         {
             LOG_DEBUG(log, "UNIQUE KEY {} (partition {}): lost the commit reply, waiting for tid {} to resolve",
                 kind, partition_id, txn->tid);
-            csn = waitForLostCommitReply(txn, kind);
+            csn = waitForLostCommitReply(txn, kind, cancelled);
         }
 
         LOG_TRACE(log, "UNIQUE KEY {} (partition {}): committed part {} at csn {}",
@@ -236,6 +233,20 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
     TransactionManager::instance().waitForCSNLoaded(csn);
 
     return csn;
+}
+
+void UniqueKeyTxnManager::waitForUnresolvedParts(
+    const String & partition_id, std::string_view kind, const TransactionID & tid, const std::atomic<bool> * cancelled) const
+{
+    /// Normally nothing is unresolved: every writer resolves inside the guard.
+    if (!hasUnresolvedPart(data, partition_id))
+        return;
+
+    LOG_DEBUG(log, "UNIQUE KEY {} (partition {}): waiting for an unresolved part, tid {}", kind, partition_id, tid);
+    waitUntilResolved(
+        [&] { return !hasUnresolvedPart(data, partition_id); },
+        cancelled,
+        fmt::format("{} (partition {}): a part is still unresolved", kind, partition_id));
 }
 
 }
