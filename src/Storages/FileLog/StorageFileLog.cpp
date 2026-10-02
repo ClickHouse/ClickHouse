@@ -546,12 +546,11 @@ void StorageFileLog::openFilesAndSetPos()
             assertStreamGood(reader);
             if (file_ctx.open_failed)
             {
-                /// While the file could not be opened its path may have started to point to another file: read that one from the start.
+                /// The path may lead to another file now: read it from the start.
                 if (const UInt64 inode = getInode(getFullDataPath(file)); inode != file_ctx.inode)
                 {
                     if (isTrackedByDirectoryEvents(file))
                     {
-                        /// Replaced in the directory: the pending directory events give the file its offset.
                         file_ctx.reader.reset();
                         file_ctx.status = FileStatus::NO_CHANGE;
                         any_open_failed = true;
@@ -874,7 +873,6 @@ bool StorageFileLog::streamToViews()
     UInt64 milliseconds = watch.elapsedMilliseconds();
     LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", rows.load(), table_id.getNameForLogs(), milliseconds);
 
-    /// A stream that stopped after skipping broken records has more to read: do not wait for a directory event.
     bool stalled = updateFileInfos();
     return stalled && !read_more_after_skipped_records;
 }
