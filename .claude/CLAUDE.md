@@ -198,3 +198,13 @@ Do not try/catch exceptions to fall back to a less-optimized case. Let the excep
 Prefer functional (.sql/.sh) tests over unit (gtest) tests whenever possible. Unit tests are larger, too specific, and they are difficult to maintain.
 
 When you want to test changes in the CI scripts, you can write and run a throwaway test, but you don't need to commit it to the repository, because we don't have automated CI tests.
+
+## Cursor Cloud specific instructions
+
+Cloud Agents for this repository get a Clang 22 toolchain, shallow contrib submodules, a configured Debug build tree, and a packaged ClickHouse server.
+
+- `clang` and `clang++` on `PATH` are Clang 22 (`clang-22`, `clang++-22`). ClickHouse builds require Clang 21 or newer.
+- The Rust toolchain is `nightly-2026-03-22` with the `rust-src` component. CMake selects that toolchain by name for Rust components.
+- Contrib submodules are initialized with `git submodule update --init --depth 1`. When a branch moves a submodule pointer, run that command again before configuring.
+- `build/` is a Debug Ninja tree configured with `ccache` and Clang 22. Compile with `ninja -C build clickhouse` and redirect the log to a file under `build/`. Do not pass `-j`. A full `clickhouse` binary takes a long time and a lot of memory. The resulting executable is `build/programs/clickhouse`.
+- Boot starts the packaged `stable` `clickhouse-server` with `sudo clickhouse start`. This environment has no systemd. Startup is skipped when `clickhouse-client --query "SELECT 1"` already succeeds. The `default` user password is empty. HTTP listens on port `8123` and the native protocol listens on port `9000`.
