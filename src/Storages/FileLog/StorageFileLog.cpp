@@ -1250,7 +1250,7 @@ bool StorageFileLog::updateFileInfos()
                         file_infos.context_by_name,
                         [&](const auto & file)
                         { return file.second.inode == inode && file.second.status != FileStatus::REMOVED && file.first != file_name; });
-                    if (!fileNameMatches(file_name) && (!file_infos.meta_by_inode.contains(inode) || read_under_other_name) && !renamed_from_read)
+                    if (!fileNameMatches(file_name) && ((!file_infos.meta_by_inode.contains(inode) && !renamed_from_read) || read_under_other_name))
                     {
                         /// The file read under this name, if any, was replaced by one that is not read.
                         if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())

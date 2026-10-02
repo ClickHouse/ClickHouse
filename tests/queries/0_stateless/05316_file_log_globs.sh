@@ -141,6 +141,11 @@ mv "$dir/chain.log.2.bak" "$dir/chain.log.5"
 printf '32\n' >> "$dir/chain.log.2"
 read_rows "hard link renamed"
 
+ln "$dir/app.log" "$dir/alias.log"
+mv "$dir/alias.log" "$dir/alias.bak"
+printf '33\n' >> "$dir/app.log"
+read_rows "matching hard link renamed"
+
 echo "-- errors"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE file_log_bad (v UInt64) ENGINE = FileLog('$dir/*/app.log', 'TSV')" 2>&1 | grep -q 'Globs are supported only in the file name of the path' && echo OK || echo FAIL
 $CLICKHOUSE_CLIENT -q "CREATE TABLE file_log_bad (v UInt64) ENGINE = FileLog('${dir}_missing/*.log', 'TSV')" 2>&1 | grep -q '_missing of the path .* does not exist' && echo OK || echo FAIL

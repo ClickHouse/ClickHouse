@@ -43,6 +43,8 @@ app.log	30
 chain.log.2	31
 -- hard link renamed
 chain.log.2	32
+-- matching hard link renamed
+app.log	33
 -- errors
 OK
 OK
