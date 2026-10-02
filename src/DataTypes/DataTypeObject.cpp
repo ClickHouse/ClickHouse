@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
@@ -48,12 +49,7 @@ namespace DB
 
 bool containsObjectType(const IDataType & type)
 {
-    if (isObject(type))
-        return true;
-
-    bool contains_object = false;
-    type.forEachChild([&](const IDataType & child) { contains_object |= isObject(child); });
-    return contains_object;
+    return anyInTypeTree(type, [](const IDataType & node) { return isObject(node); });
 }
 
 namespace Setting

@@ -140,12 +140,7 @@ NameSet sortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
     NameSet names;
     for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
     {
-        bool has_float = isFloat(removeLowCardinalityAndNullable(sorting_key.data_types[i]));
-        sorting_key.data_types[i]->forEachChild([&](const IDataType & child)
-        {
-            if (!has_float && WhichDataType(child).isFloat())
-                has_float = true;
-        });
+        bool has_float = anyInTypeTree(*sorting_key.data_types[i], [](const IDataType & node) { return isFloat(node); });
         if (!has_float)
             names.insert(sorting_key.column_names[i]);
     }

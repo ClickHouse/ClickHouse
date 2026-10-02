@@ -2,6 +2,7 @@
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -35,14 +36,10 @@ static bool dependsOnItsBlock(const ActionsDAG & actions)
 }
 
 /// True if a value of this type can contain a floating-point number anywhere inside it - directly,
-/// or nested in a `Nullable`, `Array`, `Tuple`, `Map`, ... (`forEachChild` recurses on its own).
+/// or nested in a `Nullable`, `Array`, `Tuple`, `Map`, ...
 static bool typeCanContainFloat(const DataTypePtr & type)
 {
-    if (isFloat(type))
-        return true;
-    bool found = false;
-    type->forEachChild([&](const IDataType & child) { found = found || isFloat(child); });
-    return found;
+    return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
 }
 
 /// TopN dynamic filtering for sources that read data formats (e.g. Parquet files). There are no

@@ -1,3 +1,4 @@
+
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
@@ -12,6 +13,7 @@
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/TypeTree.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
 #include <Formats/FormatFilterInfo.h>
@@ -418,8 +420,7 @@ std::optional<Range> Reader::getTopKSortColumnRange(const parq::RowGroup & meta)
         /// because the per-row filter is not `nan`-aware either - see
         /// https://github.com/ClickHouse/ClickHouse/issues/116705 - but the statistics shortcut is
         /// unsound on its own and stays unsound after that is fixed.)
-        bool can_contain_float = isFloat(output_block_type_ptr);
-        output_block_type_ptr->forEachChild([&](const IDataType & child) { can_contain_float = can_contain_float || isFloat(child); });
+        bool can_contain_float = anyInTypeTree(*output_block_type_ptr, [](const IDataType & node) { return isFloat(node); });
         if (can_contain_float)
             return std::nullopt;
 
