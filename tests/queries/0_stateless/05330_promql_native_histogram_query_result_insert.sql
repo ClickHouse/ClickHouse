@@ -36,4 +36,13 @@ INSERT INTO ts_dst_rate (metric_name, tags, histograms)
 SELECT timestamp, flags, count_int, zero_count_int, positive_values_int, negative_values_int FROM timeSeriesHistograms(ts_dst_rate);
 DROP TABLE ts_dst_rate;
 
+SELECT '-- histogram * scalar: the result keeps the reset hint and is marked as a float histogram (flags 5)';
+DROP TABLE IF EXISTS ts_dst_math;
+CREATE TABLE ts_dst_math ENGINE = TimeSeries SETTINGS store_native_histograms = 1;
+INSERT INTO ts_dst_math (metric_name, tags, histograms)
+    SELECT 'h', map('job', 'a'), [(timestamp, h.1, h.2, h.3, h.4, h.5, h.6, h.7, h.8, h.9, h.10, h.11, h.12, h.13, h.14, h.15)]
+    FROM (SELECT timestamp, assumeNotNull(histogram) AS h FROM prometheusQuery(ts_src, 'h * 2', 120));
+SELECT timestamp, flags, count_int, zero_count_int, positive_values_int, negative_values_int FROM timeSeriesHistograms(ts_dst_math);
+DROP TABLE ts_dst_math;
+
 DROP TABLE ts_src;

@@ -1,12 +1,12 @@
 -- histogram + histogram: e1 + e2 = (count 12, sum 31, buckets x3, x9)
-[('job','x')]	1970-01-01 00:01:45.000	\N	(0,0,0,12,31,0,[(0,2)],[3,9],[],[],[],0,0,[],[])
--- histogram - histogram: e2 - e1 = (count 4, sum 11), result marked as gauge (flags 6)
-[('job','x')]	1970-01-01 00:01:45.000	\N	(6,0,0,4,11,0,[(0,2)],[1,3],[],[],[],0,0,[],[])
+[('job','x')]	1970-01-01 00:01:45.000	\N	(1,0,0,12,31,0,[(0,2)],[3,9],[],[],[],0,0,[],[])
+-- histogram - histogram: e2 - e1 = (count 4, sum 11), result marked as gauge (flags 7: gauge 6 | float 1)
+[('job','x')]	1970-01-01 00:01:45.000	\N	(7,0,0,4,11,0,[(0,2)],[1,3],[],[],[],0,0,[],[])
 -- scalar * histogram and histogram * scalar: e1 * 2 = (count 8, sum 20, buckets x2, x6)
-[('job','x')]	1970-01-01 00:01:45.000	\N	(0,0,0,8,20,0,[(0,2)],[2,6],[],[],[],0,0,[],[])
-[('job','x')]	1970-01-01 00:01:45.000	\N	(0,0,0,8,20,0,[(0,2)],[2,6],[],[],[],0,0,[],[])
+[('job','x')]	1970-01-01 00:01:45.000	\N	(1,0,0,8,20,0,[(0,2)],[2,6],[],[],[],0,0,[],[])
+[('job','x')]	1970-01-01 00:01:45.000	\N	(1,0,0,8,20,0,[(0,2)],[2,6],[],[],[],0,0,[],[])
 -- histogram / scalar: e1 / 2 = (count 2, sum 5, buckets x0.5, x1.5)
-[('job','x')]	1970-01-01 00:01:45.000	\N	(0,0,0,2,5,0,[(0,2)],[0.5,1.5],[],[],[],0,0,[],[])
+[('job','x')]	1970-01-01 00:01:45.000	\N	(1,0,0,2,5,0,[(0,2)],[0.5,1.5],[],[],[],0,0,[],[])
 -- exp + custom: schema-incompatible -> the sample is dropped (empty result)
 -- disallowed: histogram * histogram -> dropped
 -- disallowed: histogram % histogram (`^` and `atan2` take the same branch) -> dropped
@@ -16,17 +16,17 @@
 [('job','x')]	1970-01-01 00:01:45.000	6	\N
 -- f1 + e1: float + histogram -> dropped
 -- f1 * e1: float * histogram is allowed: e1 * 5 = (count 20, sum 50, buckets x5, x15)
-[('job','x')]	1970-01-01 00:01:45.000	\N	(0,0,0,20,50,0,[(0,2)],[5,15],[],[],[],0,0,[],[])
+[('job','x')]	1970-01-01 00:01:45.000	\N	(1,0,0,20,50,0,[(0,2)],[5,15],[],[],[],0,0,[],[])
 -- e1 / f1: histogram / float is allowed: (count 0.8, sum 2, buckets x0.2, x0.6)
-[('job','x')]	1970-01-01 00:01:45.000	\N	(0,0,0,0.8,2,0,[(0,2)],[0.2,0.6],[],[],[],0,0,[],[])
+[('job','x')]	1970-01-01 00:01:45.000	\N	(1,0,0,0.8,2,0,[(0,2)],[0.2,0.6],[],[],[],0,0,[],[])
 -- f1 / e1: float / histogram is NOT allowed -> dropped
 -- a float-only operand (ceil() drops the histogram arm of its argument) joined with a histogram one:
 -- ceil(f1) * e1 = e1 * 5
-[('job','x')]	1970-01-01 00:01:45.000	\N	(0,0,0,20,50,0,[(0,2)],[5,15],[],[],[],0,0,[],[])
+[('job','x')]	1970-01-01 00:01:45.000	\N	(1,0,0,20,50,0,[(0,2)],[5,15],[],[],[],0,0,[],[])
 -- one-to-many matching: g1 {job=grp, inst=a} (histogram e1) * on(job) group_left() g2 {job=grp} (float 2)
 -- -> e1 * 2 with the tags of the "many" side
-[('inst','a'),('job','grp')]	1970-01-01 00:01:45.000	\N	(0,0,0,8,20,0,[(0,2)],[2,6],[],[],[],0,0,[],[])
+[('inst','a'),('job','grp')]	1970-01-01 00:01:45.000	\N	(1,0,0,8,20,0,[(0,2)],[2,6],[],[],[],0,0,[],[])
 -- range query of the mixed-kind series, per-step resolution: mx1 (float@100, histogram e1@110) + mx2
 -- (histogram e2@100): at 100/115/130 mx1 resolves to float/histogram/histogram
 -- -> drop / e1+e2 / e1+e2
-[('job','mx')]	[]	[('1970-01-01 00:01:55.000',(0,0,0,12,31,0,[(0,2)],[3,9],[],[],[],0,0,[],[])),('1970-01-01 00:02:10.000',(0,0,0,12,31,0,[(0,2)],[3,9],[],[],[],0,0,[],[]))]
+[('job','mx')]	[]	[('1970-01-01 00:01:55.000',(1,0,0,12,31,0,[(0,2)],[3,9],[],[],[],0,0,[],[])),('1970-01-01 00:02:10.000',(1,0,0,12,31,0,[(0,2)],[3,9],[],[],[],0,0,[],[]))]

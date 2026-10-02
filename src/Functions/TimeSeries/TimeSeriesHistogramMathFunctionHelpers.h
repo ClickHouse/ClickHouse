@@ -31,7 +31,7 @@ namespace ErrorCodes
 }
 
 /// Appends one kernel histogram as a payload-tuple row (the encode-side counterpart of
-/// TimeSeriesFloatHistogram::fromPayloadTupleRow); the counter reset hint goes into the `flags` byte.
+/// TimeSeriesFloatHistogram::fromPayloadTupleRow); the `flags` byte carries the counter reset hint and the float flag.
 inline void appendTimeSeriesHistogramPayloadRow(const TimeSeriesFloatHistogram & histogram, ColumnTuple & tuple_to)
 {
     namespace Idx = TimeSeriesHistogramPayloadTupleIndex;
@@ -58,7 +58,8 @@ inline void appendTimeSeriesHistogramPayloadRow(const TimeSeriesFloatHistogram &
         offsets_to.push_back(offsets_to.empty() ? spans.size() : offsets_to.back() + spans.size());
     };
 
-    const UInt8 flags = static_cast<UInt8>(histogram.counter_reset_hint << TimeSeriesHistogramFlags::CounterResetHintShift);
+    const UInt8 flags = static_cast<UInt8>(
+        (histogram.counter_reset_hint << TimeSeriesHistogramFlags::CounterResetHintShift) | TimeSeriesHistogramFlags::IsFloat);
     typeid_cast<ColumnUInt8 &>(tuple_to.getColumn(Idx::Flags)).getData().push_back(flags);
     typeid_cast<ColumnInt8 &>(tuple_to.getColumn(Idx::Schema)).getData().push_back(static_cast<Int8>(histogram.schema));
     typeid_cast<ColumnFloat64 &>(tuple_to.getColumn(Idx::ZeroThreshold)).getData().push_back(histogram.zero_threshold);

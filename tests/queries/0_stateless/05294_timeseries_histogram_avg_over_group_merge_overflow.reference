@@ -1,2 +1,2 @@
 -- two partial states of one sample each with count = sum = bucket = 1.5e308: the average stays finite (1.5e308)
-(0,0,0,1.5e308,1.5e308,0,[(0,1)],[1.5e308],[],[],[],0,0,[],[])
+(1,0,0,1.5e308,1.5e308,0,[(0,1)],[1.5e308],[],[],[],0,0,[],[])

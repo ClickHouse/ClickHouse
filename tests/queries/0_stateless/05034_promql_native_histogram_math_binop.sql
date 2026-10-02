@@ -39,7 +39,7 @@ INSERT INTO ts_nh_math (metric_name, tags, histograms) VALUES
 SELECT '-- histogram + histogram: e1 + e2 = (count 12, sum 31, buckets x3, x9)';
 SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh_math', 'nh_e1 + nh_e2', 105);
 
-SELECT '-- histogram - histogram: e2 - e1 = (count 4, sum 11), result marked as gauge (flags 6)';
+SELECT '-- histogram - histogram: e2 - e1 = (count 4, sum 11), result marked as gauge (flags 7: gauge 6 | float 1)';
 SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh_math', 'nh_e2 - nh_e1', 105);
 
 SELECT '-- scalar * histogram and histogram * scalar: e1 * 2 = (count 8, sum 20, buckets x2, x6)';
