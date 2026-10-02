@@ -4,7 +4,6 @@
 #include <cstring>
 #include <optional>
 #include <base/types.h>
-#include <base/unaligned.h>
 #include <Common/BitHelpers.h>
 
 
@@ -48,25 +47,6 @@ inline size_t seqLength(const UInt8 first_octet)
     const auto first_zero = bitScanReverse(static_cast<UInt8>(~first_octet));
 
     return bits - 1 - first_zero;
-}
-
-inline constexpr size_t ascii_word_size = sizeof(UInt64);
-inline constexpr size_t ascii_chunk_size = 4 * ascii_word_size;
-
-/// The caller must ensure that the entire word is within the source bounds.
-inline bool isAllASCIIWord(const UInt8 * data)
-{
-    return (unalignedLoad<UInt64>(data) & 0x8080808080808080ULL) == 0;
-}
-
-/// Check four words at once without alignment requirements or architecture-specific code.
-/// The caller must ensure that all ascii_chunk_size bytes are within the source bounds.
-inline bool isAllASCIIChunk(const UInt8 * data)
-{
-    UInt64 bytes = 0;
-    for (size_t offset = 0; offset < ascii_chunk_size; offset += ascii_word_size)
-        bytes |= unalignedLoad<UInt64>(data + offset);
-    return (bytes & 0x8080808080808080ULL) == 0;
 }
 
 /// Every byte except a continuation byte (`0b10xxxxxx`) starts a code point: as signed bytes, those above `0xBF`.
