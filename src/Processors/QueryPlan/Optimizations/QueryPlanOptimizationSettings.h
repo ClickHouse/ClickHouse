@@ -171,6 +171,8 @@ struct QueryPlanOptimizationSettings
 
     bool optimize_use_implicit_projections;
     bool force_use_projection;
+    /// `EXPLAIN WHATIF` plans cannot see the projections that it weighs, so a forced projection must not fail them
+    bool skip_forced_projection_check = false;
     String force_projection_name;
 
     /// Bounds the cost of content-hashing IN-clause sets in projection matchers (today: aggregate

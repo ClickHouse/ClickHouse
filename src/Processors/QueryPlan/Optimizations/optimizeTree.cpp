@@ -867,7 +867,8 @@ void optimizeTreeSecondPass(
         }
     }
 
-    if (optimization_settings.force_use_projection && has_reading_from_mt && applied_projection_names.empty())
+    if (optimization_settings.force_use_projection && !optimization_settings.skip_forced_projection_check && has_reading_from_mt
+        && applied_projection_names.empty())
         throw Exception(
             ErrorCodes::PROJECTION_NOT_USED,
             "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1: {}",
