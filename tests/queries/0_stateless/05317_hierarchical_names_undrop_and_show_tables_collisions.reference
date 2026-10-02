@@ -1,0 +1,10 @@
+--- SHOW TABLES lists a relative name once, for the table that the name written as one identifier resolves to
+c.t
+t
+u
+db.ns . t
+db.ns . c.t
+c.t
+--- UNDROP TABLE restores the dropped table that the name denotes
+1
+1

@@ -236,13 +236,18 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
             /// `a.b.*` (listed as `c.table`), and the tables `b.*` of the database `a` (listed as `table`) - the names
             /// are relative to the name selected by `USE`. The relative name gets its own alias in the subquery,
             /// because an alias named `name` would shadow the column in the subquery's own `WHERE`.
+            /// When several sources give the same relative name, only one table is listed, the one that the name resolves
+            /// to when written as a single identifier (`DatabaseCatalog::resolveHierarchicalName`): a table of the database
+            /// `a.b` itself first, as its name as written resolves to it (`a.b`.`t` hides `a`.`b.t`, and `a.b`.`c.t` hides
+            /// `a.b.c`.`t`); otherwise the table of the longest database (`a.b.c.d`.`t` hides `a.b.c`.`d.t`).
             rewritten_query << "SELECT hierarchical_name AS name" << engine_column << " FROM (SELECT * EXCEPT (name), multiIf(";
             for (const auto & source : sources)
                 rewritten_query << source.condition << ", " << source.name_expression << ", ";
             rewritten_query << "name) AS hierarchical_name FROM " << system_table << " WHERE ";
             for (size_t i = 0; i < sources.size(); ++i)
                 rewritten_query << (i ? " OR " : "") << sources[i].condition;
-            rewritten_query << ") WHERE 1";
+            rewritten_query << " ORDER BY database != " << DB::quote << database << ", length(database) DESC"
+                << " LIMIT 1 BY hierarchical_name) WHERE 1";
         }
     }
 
