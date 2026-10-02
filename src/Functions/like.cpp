@@ -64,9 +64,9 @@ like(haystack, pattern[, escape_character])
         "Single character wildcard",
         "SELECT like('ClickHouse', 'Click_ouse');",
         R"(
-┌─like('ClickHouse', 'Click_ouse')─┐
-│                                1 │
-└──────────────────────────────────┘
+┌─like('ClickH⋯lick_ouse')─┐
+│                        1 │
+└──────────────────────────┘
         )"
     },
     {

@@ -18,7 +18,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/queryNormalization.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/EnumReflection.h>
@@ -315,13 +315,29 @@ bool RefreshTask::canCreateOrDropOtherTables() const
 
 void RefreshTask::startup()
 {
-    if (start_paused || view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
-        scheduling.stop_requested = true;
-    auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
-    view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
+    ContextMutablePtr context;
+    StorageID view_id = StorageID::createEmpty();
+    {
+        std::lock_guard guard(mutex);
 
-    std::lock_guard guard(mutex);
-    scheduleRefresh(guard);
+        /// shutdown() is allowed to run before or during startup() (see its declaration) and nulls `view`.
+        if (!view)
+            return;
+
+        if (start_paused || view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
+            scheduling.stop_requested = true;
+        context = view->getContext();
+        view_id = view->getStorageID();
+        auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
+
+        /// `set_handle` is not thread safe and shutdown() resets it under `mutex`.
+        context->getRefreshSet().emplace(view_id, inner_table_id, initial_dependencies, shared_from_this());
+
+        scheduleRefresh(guard);
+    }
+
+    /// Outside `mutex`: notifying a dependent view locks that view's own task mutex.
+    context->getRefreshSet().notifyDependents(view_id);
 }
 
 void RefreshTask::finalizeRestoreFromBackup()
@@ -1376,8 +1392,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                     ErrorCodes::LOGICAL_ERROR, "Pipeline for view {} refresh must be completed", view_storage_id.getFullTableName());
 
             {
-                CompletedPipelineExecutor executor(pipeline);
-                executor.initialize();
+                PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
+                executor.setReadProgressCallback(pipeline.getReadProgressCallback());
 
                 {
                     std::unique_lock exec_lock(execution.executor_mutex);
@@ -1390,7 +1406,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                     execution.executor = nullptr;
                 });
 
-                executor.execute();
+                executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
 
                 /// A cancelled PipelineExecutor may return without exception but with incomplete results.
                 /// In this case make sure to:

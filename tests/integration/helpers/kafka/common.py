@@ -152,15 +152,15 @@ def existing_kafka_topic(admin_client, topic_name, max_retries=50):
 
 
 def get_admin_client(kafka_cluster, retries=15):
-    # A broker that is not up yet surfaces as `NoBrokersAvailable` when the readiness
-    # probe is cluster-wide, and as `NodeNotReadyError` when it targets a specific node.
+    # Broker may not be reachable yet; retry like get_kafka_producer() instead of
+    # raising NoBrokersAvailable on the first attempt.
     errors = []
     for _ in range(retries):
         try:
             return KafkaAdminClient(
                 bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
             )
-        except (kafka.errors.NoBrokersAvailable, kafka.errors.NodeNotReadyError) as e:
+        except kafka.errors.NoBrokersAvailable as e:
             errors += [str(e)]
             time.sleep(1)
 

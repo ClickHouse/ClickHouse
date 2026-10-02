@@ -9,6 +9,7 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Access/ContextAccess.h>
+#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Columns/ColumnString.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -809,6 +810,20 @@ BlockIO InterpreterSystemQuery::execute()
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
             external_dictionaries_loader.unloadAllDictionaries();
             ExternalDictionariesLoader::resetAll();
+            break;
+        }
+        case Type::RELOAD_MODEL:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
+            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext(), query.target_model);
+            bridge_helper->removeModel();
+            break;
+        }
+        case Type::RELOAD_MODELS:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
+            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext());
+            bridge_helper->removeAllModels();
             break;
         }
         case Type::RELOAD_FUNCTION:
@@ -2872,6 +2887,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
             break;
         }
+        case Type::RELOAD_MODEL:
+        case Type::RELOAD_MODELS:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RELOAD_MODEL);
+            break;
+        }
         case Type::RELOAD_FUNCTION:
         case Type::RELOAD_FUNCTIONS:
         {
@@ -3208,11 +3229,22 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_THREAD_FUZZER);
+            break;
+        }
+        case Type::RESET_COVERAGE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM);
+            break;
+        }
+        /// The parser cases of the failpoint statements and of SYSTEM SET COVERAGE TEST never read an
+        /// ON CLUSTER clause, so those cluster spellings do not parse and reach no host. UNKNOWN and
+        /// END are not statements.
         case Type::ENABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
-        case Type::RESET_COVERAGE:
         case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
         case Type::END: break;

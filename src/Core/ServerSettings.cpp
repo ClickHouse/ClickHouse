@@ -34,7 +34,6 @@
 #if ENABLE_DISTRIBUTED_CACHE
 #    include <Disks/IO/WriteBufferFromDistributedCache.h>
 #endif
-#include <base/sanitizer_defs.h>
 #include <base/sort.h>
 #include <base/types.h>
 #include <Common/Config/ConfigReloader.h>
@@ -65,15 +64,6 @@ namespace fs = std::filesystem;
 
 #include <fmt/ranges.h>
 
-namespace
-{
-#if defined(MEMORY_SANITIZER)
-constexpr UInt64 default_global_profiler_period_ns = 0;
-#else
-constexpr UInt64 default_global_profiler_period_ns = 10000000000;
-#endif
-}
-
 
 namespace CurrentMetrics
 {
@@ -92,7 +82,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -129,7 +118,7 @@ namespace
 
 /// Settings without path are top-level server settings (no nesting).
 #define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
-    DECLARE(String, insert_deduplication_version, "new_unified_hash", R"(Deprecated migration guard. ClickHouse versions 26.7 and later support only the unified insert deduplication hash (`new_unified_hash`); the server refuses to start if this setting is present with any other value (such as `old_separate_hashes` or `compatible_double_hashes`). Complete the deduplication migration on the previous version before upgrading by running `compatible_double_hashes` (which writes both the legacy and unified hashes). For replicated tables run it for at least `replicated_deduplication_window_seconds` (one hour by default); the default windows retain the unified hashes of all inserts for that window, which is considered enough to cover an insert retry loop. For non-replicated tables with `non_replicated_deduplication_window` > 0 the window is count-based rather than time-based, so run `compatible_double_hashes` for at least that many inserts before upgrading.)", 0) \
+    DECLARE(String, insert_deduplication_version, "new_unified_hash", R"(Deprecated migration guard. This version supports only the unified insert deduplication hash (`new_unified_hash`); the server refuses to start if this setting is present with any other value (such as `old_separate_hashes` or `compatible_double_hashes`). Complete the deduplication migration on the previous version before upgrading by running `compatible_double_hashes` (which writes both the legacy and unified hashes). For replicated tables run it for at least `replicated_deduplication_window_seconds` (one hour by default); the default windows retain the unified hashes of all inserts for that window, which is considered enough to cover an insert retry loop. For non-replicated tables with `non_replicated_deduplication_window` > 0 the window is count-based rather than time-based, so run `compatible_double_hashes` for at least that many inserts before upgrading.)", 0) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
@@ -548,7 +537,6 @@ A value of `0` means "never". The default value corresponds to 1 day.
 )", 0) \
     DECLARE(UInt64, database_catalog_drop_error_cooldown_sec, 5, R"(In case of a failed table drop, ClickHouse will wait for this time-out before retrying the operation.)", 0) \
     DECLARE(UInt64, database_catalog_drop_table_concurrency, 16, R"(The size of the threadpool used for dropping tables.)", 0) \
-    DECLARE(UInt64, database_catalog_shutdown_table_concurrency, 0, R"(The size of the threadpool used for shutting down tables when the server is stopping. Zero means the number of threads is equal to the number of cores.)", 0) \
     \
     \
     DECLARE(UInt64, max_remote_read_connections, 1000, R"(Maximum number of open remote read connections kept alive by `ReaderExecutor` for sequential read optimization. 0 disables connection reuse.)", EXPERIMENTAL) \
@@ -1227,8 +1215,8 @@ The replica name in ZooKeeper.
     DECLARE(UInt64, storage_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for storage connections (replication, distributed queries). If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, http_connections_rcvbuf, 0, R"(The size of the SO_RCVBUF option for general HTTP connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the receive buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, http_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for general HTTP connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
-    DECLARE(UInt64, global_profiler_real_time_period_ns, default_global_profiler_period_ns, R"(Period for real clock timer of global profiler (in nanoseconds). Set 0 value to turn off the real clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling. Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.)", 0) \
-    DECLARE(UInt64, global_profiler_cpu_time_period_ns, default_global_profiler_period_ns, R"(Period for CPU clock timer of global profiler (in nanoseconds). Set 0 value to turn off the CPU clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling. Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.)", 0) \
+    DECLARE(UInt64, global_profiler_real_time_period_ns, 10000000000, R"(Period for real clock timer of global profiler (in nanoseconds). Set 0 value to turn off the real clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
+    DECLARE(UInt64, global_profiler_cpu_time_period_ns, 10000000000, R"(Period for CPU clock timer of global profiler (in nanoseconds). Set 0 value to turn off the CPU clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
     DECLARE(Bool, enable_azure_sdk_logging, false, R"(Enables logging from Azure sdk)", 0) \
     DECLARE(Bool, s3queue_disable_streaming, false, "Disable streaming in S3Queue even if the table is created and there are attached materiaized views", 0) \
     DECLARE(Bool, message_queue_disable_insertion, false, "Disable insertion from message queue engines (Kafka, RabbitMQ, NATS) into attached materialized views", 0) \
@@ -1581,11 +1569,10 @@ If enabled, every ZooKeeper request must have a component name set via `Coordina
 )", 0) \
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
     DECLARE(Bool, allow_experimental_webassembly_udf, false, R"(Enable experimental support for WebAssembly UDFs)", EXPERIMENTAL) \
-    DECLARE(Bool, enable_silk_runtime, false, R"(Enable experimental support for the silk fiber runtime: initialize the silk fiber scheduler at server startup, so that subsystems supporting it can run their jobs on fibers)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_executable_udf_drivers, false, R"(Enable experimental support for drivers for executable user-defined functions, declared via `user_defined_executable_function_drivers_config`. A driver turns a user code snippet supplied in `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` into a runnable executable UDF.)", EXPERIMENTAL) \
     DECLARE(Bool, enable_webterminal, true, R"(Enable the web terminal interface at the `/webterminal` HTTP endpoint. Provides an interactive `clickhouse-client` session in the browser via WebSocket. When `false`, requests to `/webterminal` return HTTP status `403 Forbidden`.)", 0) \
     DECLARE(String, webterminal_allowed_origins, "", R"(Comma-separated list of full origins (scheme + host + optional port) allowed to open `/webterminal` WebSocket sessions. When empty, the same-origin policy is enforced strictly (Origin must match the request scheme, host, and port). Set this for deployments behind a TLS-terminating reverse proxy where `request.isSecure()` is `false` even though the browser uses `https`. Example: `https://example.com,https://app.example.com:8443`.)", 0) \
-    DECLARE(String, webassembly_udf_engine, "wasmtime", "The engine used to execute WebAssembly UDFs. The only supported value is 'wasmtime'.", EXPERIMENTAL) \
+    DECLARE(String, webassembly_udf_engine, "wasmtime", "The engine used to execute WebAssembly UDFs. Supported values are 'wasmtime' and 'wasmedge'.", EXPERIMENTAL) \
     DECLARE(Bool, allow_impersonate_user, false, R"(Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). The setting is deprecated.)", SettingsTierType::OBSOLETE) \
     DECLARE(Bool, allow_experimental_webterminal, true, R"(Former (experimental) name of `enable_webterminal`. Still honored for backward compatibility when `enable_webterminal` is not set. The setting is deprecated.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, s3_credentials_provider_max_cache_size, 100, R"(The maximum number of S3 credentials providers that can be cached)", 0) \
@@ -1925,7 +1912,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(Bool, openssl_client_load_default_ca_file, true, R"(Determines whether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`) or in file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`).)", 0, "openSSL.client.loadDefaultCAFile") \
     DECLARE(String, openssl_client_chipher_list, "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH", R"(Supported OpenSSL encryptions.)", 0, "openSSL.client.cipherList") \
     DECLARE(Bool, openssl_client_cache_sessions, false, R"(Enables or disables caching sessions. Must be used in combination with `<sessionIdContext>`. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.cacheSessions") \
-    DECLARE(Bool, openssl_client_extended_verification, false, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.client.extendedVerification") \
+    DECLARE(Bool, openssl_client_extended_verification, true, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.client.extendedVerification") \
     DECLARE(Bool, openssl_client_required_tls_v1, false, R"(Require a TLSv1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1") \
     DECLARE(Bool, openssl_client_required_tls_v1_1, false, R"(Require a TLSv1.1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1_1") \
     DECLARE(Bool, openssl_client_required_tls_v1_2, false, R"(Require a TLSv1.2 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1_2") \
@@ -1957,26 +1944,7 @@ DECLARE_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_
 struct ServerSettingsImpl : public BaseSettings<ServerSettingsTraits>
 {
     void loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
-    void set(std::string_view name, const Field & value) override;
 };
-
-void ServerSettingsImpl::set(std::string_view name, const Field & value)
-{
-#if defined(MEMORY_SANITIZER)
-    if (name == "global_profiler_real_time_period_ns" || name == "global_profiler_cpu_time_period_ns")
-    {
-        if (BaseSettings::castValueUtil(name, value).safeGet<UInt64>() != 0)
-        {
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "The server setting `{}` is not supported in a MemorySanitizer build",
-                name);
-        }
-    }
-#endif
-
-    BaseSettings::set(name, value);
-}
 
 void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
@@ -2162,6 +2130,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "dictionary",
         "lemmatizers",
         "synonyms_extensions",
+        "catboost_lib_path",
         "path_to_regions_hierarchy_file",
         "path_to_regions_names_files",
 
@@ -2370,8 +2339,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// (e.g., cloud installations carrying historical settings). Kept here so
         /// that upgrading installations don't fail to start due to leftover keys.
         "format_alter_operations_with_parentheses",
-        /// The CatBoost integration is removed, but a leftover `catboost_lib_path` must not prevent the server from starting.
-        "catboost_lib_path",
 
         /// Background pool settings (legacy, moved to merge_tree section)
         "background_processing_pool_thread_sleep_seconds",
@@ -2415,9 +2382,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// SSL and security
         "ssh",
         "ssh_server",
-
-        /// Silk fiber runtime
-        "silk",
 
         /// Testing
         "_functional_tests_helper_database_replicated_replace_args_macros",
@@ -3787,8 +3751,8 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
         const bool is_changeable = (changeable_settings_it != changeable_settings.end());
 
         res_columns[0]->insert(setting_path.empty() ? setting_name : setting_path);
-        res_columns[1]->insert(is_changeable ? changeable_settings_it->second.first : setting.getValueString());
-        res_columns[2]->insert(setting.getDefaultValueString());
+        res_columns[1]->insert(is_changeable ? changeable_settings_it->second.first : setting.getValueString(/* show_secrets */ true));
+        res_columns[2]->insert(setting.getDefaultValueString(/* show_secrets */ true));
         res_columns[3]->insert(setting.isValueChanged());
         res_columns[4]->insert(setting.getDescription());
         res_columns[5]->insert(setting.getTypeName());

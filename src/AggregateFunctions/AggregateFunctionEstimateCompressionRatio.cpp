@@ -320,9 +320,9 @@ SELECT number FROM system.numbers LIMIT 100_000;
 SELECT estimateCompressionRatio(number) AS estimate FROM compression_estimate_example
         )",
         R"(
-┌──────────estimate─┐
-│ 5.758875867430677 │
-└───────────────────┘
+┌───────────estimate─┐
+│ 1.9988506608699999 │
+└────────────────────┘
         )"
     },
     {

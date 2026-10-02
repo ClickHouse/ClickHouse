@@ -163,7 +163,7 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
             size_t prefix_len = i + 1;
             if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
             {
-                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len, false, initial_array_level);
+                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len, initial_array_level);
                 /// Create data from path only if it's requested subcolumn.
                 /// Use the first exact match to be consistent with ColumnsDescription::addSubcolumns
                 /// which also keeps the first subcolumn when there are name collisions
@@ -190,9 +190,12 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
                         auto tmp_subpath = subpath;
                         if (tmp_subpath[i].creator)
                         {
+                            /// Build the serialization before the type is wrapped, so that a creator
+                            /// inspecting its prev_type argument sees the type the serialization
+                            /// actually serializes. Same order as in ISerialization::createFromPath.
+                            dynamic_subcolumn_data->serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization, dynamic_subcolumn_data->type);
                             dynamic_subcolumn_data->type = tmp_subpath[i].creator->create(dynamic_subcolumn_data->type);
                             dynamic_subcolumn_data->column = tmp_subpath[i].creator->create(dynamic_subcolumn_data->column);
-                            dynamic_subcolumn_data->serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization, dynamic_subcolumn_data->type);
                         }
 
                         tmp_subpath[i].data = *dynamic_subcolumn_data;
@@ -473,7 +476,6 @@ bool isDateTime(TYPE data_type) { return WhichDataType(data_type).isDateTime(); 
 bool isTime(TYPE data_type) { return WhichDataType(data_type).isTime(); } \
 bool isDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateTime64(); } \
 bool isTime64(TYPE data_type) { return WhichDataType(data_type).isTime64(); } \
-bool isTimeOrTime64(TYPE data_type) { return WhichDataType(data_type).isTimeOrTime64(); } \
 bool isDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateTimeOrDateTime64(); } \
 bool isDateOrDate32OrDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32OrDateTimeOrDateTime64(); } \
 bool isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(); } \

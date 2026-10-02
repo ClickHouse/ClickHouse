@@ -4,7 +4,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -173,11 +172,7 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 
 template <typename... Args>
 QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
-    const ASTPtr & ast,
-    const ContextMutablePtr & ctx,
-    const SelectQueryOptions & select_options,
-    const BuiltSetsByHashPtr & built_sets,
-    Args &&... interpreter_args)
+    const ASTPtr & ast, const ContextMutablePtr & ctx, const SelectQueryOptions & select_options, Args &&... interpreter_args)
 {
     const auto & logger = getLogger("InterpreterSelectQueryAnalyzer");
     if (!ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
@@ -219,18 +214,49 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     optimization_settings.optimize_projection = false;
     optimization_settings.force_use_projection = false;
     optimization_settings.force_projection_name.clear();
-    /// Adopt the sets the single-node plan already filled.
-    /// Without this the same subqueries are executed a second time
-    /// just to plan a candidate that might be thrown away.
-    reuseBuiltSets(plan, built_sets);
     plan.optimize(optimization_settings);
     return std::make_unique<QueryPlan>(std::move(plan));
 }
 }
 
+/// Like `extractAllTableReferences`, but does not descend into the inner queries of views inlined
+/// by the analyzer (`analyzer_inline_views`) into a query that is not itself inside a view:
+/// they read their own tables, just like a view that is not inlined.
+static bool isViewInnerQueryNode(const QueryTreeNodePtr & node)
+{
+    if (const auto * query_node = node->as<QueryNode>())
+        return query_node->getContext()->isViewInnerQuery();
+    if (const auto * union_node = node->as<UnionNode>())
+        return union_node->getContext()->isViewInnerQuery();
+    return false;
+}
+
+static void extractTableReferencesOutsideViews(const QueryTreeNodePtr & node, bool outer_is_view_inner, QueryTreeNodes & result)
+{
+    bool is_view_inner = isViewInnerQueryNode(node);
+    if (is_view_inner && !outer_is_view_inner)
+        return;
+
+    if (node->getNodeType() == QueryTreeNodeType::TABLE)
+    {
+        result.push_back(node);
+    }
+    else if (const auto * query_node = node->as<QueryNode>())
+    {
+        for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped(), /*add_array_join=*/ false, /*recursive=*/ false))
+            extractTableReferencesOutsideViews(table_expression, is_view_inner, result);
+    }
+    else if (const auto * union_node = node->as<UnionNode>())
+    {
+        for (const auto & query : union_node->getQueries().getNodes())
+            extractTableReferencesOutsideViews(query, is_view_inner, result);
+    }
+}
+
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
 {
-    auto nodes = extractAllTableReferences(query_tree);
+    QueryTreeNodes nodes;
+    extractTableReferencesOutsideViews(query_tree, isViewInnerQueryNode(query_tree), nodes);
     IQueryTreeNode::ReplacementMap replacement_map;
 
     for (auto & node : nodes)
@@ -307,9 +333,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , planner(query_tree, select_query_options, post_filter_)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
-          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names](
-              const BuiltSetsByHashPtr & built_sets)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, built_sets, column_names); })
+          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -331,8 +356,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            ctx = Context::createCopy(context_),
            storage = storage_,
            select_options = select_query_options_,
-           column_names](const BuiltSetsByHashPtr & built_sets)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, built_sets, storage, column_names); })
+           column_names]() { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, storage, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -346,9 +370,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , planner(query_tree_, select_query_options)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
-          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_](
-              const BuiltSetsByHashPtr & built_sets)
-          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, built_sets); })
+          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]()
+          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }

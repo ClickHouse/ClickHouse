@@ -100,8 +100,7 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
     /// clause is stored separately in `arrayJoinExpressionList()` (the clause itself is
     /// already an array-join operation, regardless of what its expressions contain).
     /// Both forms must reject pushdown.
-    /// The function may sit in any clause, e.g. only in WHERE through a WITH alias, and still multiply the rows.
-    if (astContainsArrayJoinFunction(query_info.query))
+    if (astContainsArrayJoinFunction(query.select()))
         return false;
     if (query.arrayJoinExpressionList().first)
         return false;

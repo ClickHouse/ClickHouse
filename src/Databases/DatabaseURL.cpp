@@ -17,6 +17,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 
 #include <filesystem>
@@ -41,26 +42,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// Check that the string starts with a valid RFC 3986 scheme followed by "://".
-bool hasURLScheme(const String & url)
-{
-    auto scheme_end = url.find("://");
-    if (scheme_end == String::npos || scheme_end == 0)
-        return false;
-
-    if (!std::isalpha(static_cast<unsigned char>(url[0])))
-        return false;
-
-    for (size_t i = 1; i < scheme_end; ++i)
-    {
-        char c = url[i];
-        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '+' && c != '-' && c != '.')
-            return false;
-    }
-
-    return true;
-}
 
 /// A table of a `URL` database is a thin wrapper over the `url` table function, which dispatches
 /// the URL to the matching backend (`file`, `s3`, `azureBlobStorage`, ...).
@@ -264,16 +245,17 @@ private:
 DatabaseURL::DatabaseURL(const String & name_, const String & base_url_, ContextPtr context_)
     : IDatabase(name_), WithContext(context_->getGlobalContext()), base_url(base_url_)
 {
-    if (!base_url.empty() && !hasURLScheme(base_url))
+    /// Not echoed back: password masking anchors on the `://` this value lacks, so it would log the password.
+    if (!base_url.empty() && findURIAuthority(base_url) == String::npos)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "The base URL of a URL database must contain a scheme (e.g. https://), got: {}", base_url);
+                        "The base URL of a URL database must contain a scheme (e.g. https://)");
 }
 
 String DatabaseURL::getTableURL(const String & name) const
 {
     String resolved = StorageURL::resolveURLBase(name, base_url, "base URL of the URL database");
 
-    if (!hasURLScheme(resolved))
+    if (findURIAuthority(resolved) == String::npos)
         return {};
     return resolved;
 }
@@ -454,25 +436,13 @@ void registerDatabaseURL(DatabaseFactory & factory)
                        "corresponding write source grant (e.g. `GRANT WRITE ON S3`). "
                        "clickhouse-local uses it (inside the Overlay database, with the `file://` base URL) as the default "
                        "database, so a plain table name resolves to a file in the current directory, while queries like "
-                       "`SELECT * FROM 'https://example.com/data.csv'` read from the URL. "
-                       "A base URL scopes the database to a location: after "
-                       "`CREATE DATABASE web ENGINE = URL('https://example.com/data/')`, the query "
-                       "``SELECT * FROM web.`daily.csv` `` reads `https://example.com/data/daily.csv`.",
+                       "`SELECT * FROM 'https://example.com/data.csv'` read from the URL.",
         .syntax = "ENGINE = URL([base_url])",
         .examples = {{
-            "Reading files of the user_files directory through a database with a `file://` base URL",
-            R"(
-INSERT INTO FUNCTION file('web/daily.csv', 'CSVWithNames', 'day Date, visits UInt32') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('2024-01-01', 100), ('2024-01-02', 150);
-CREATE DATABASE web ENGINE = URL('file://web/');
-SELECT * FROM web.`daily.csv`;
-DROP DATABASE web;
-            )",
-            R"(
-┌────────day─┬─visits─┐
-│ 2024-01-01 │    100 │
-│ 2024-01-02 │    150 │
-└────────────┴────────┘
-            )"
+            "Usage",
+            "CREATE DATABASE web ENGINE = URL('https://example.com/data/');\n"
+            "SELECT * FROM web.`daily.csv`; -- reads https://example.com/data/daily.csv",
+            ""
         }},
         .introduced_in = {26, 8},
         .related = {"Filesystem", "S3", "HDFS"}});

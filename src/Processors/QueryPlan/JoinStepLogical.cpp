@@ -17,7 +17,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -38,7 +37,6 @@
 #include <Processors/QueryPlan/IEJoinStep.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
-#include <Interpreters/JoinUtils.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
@@ -731,21 +729,14 @@ struct JoinPlanningContext
 {
     NameViewToNodeMapping actions_after_join_map;
     bool is_storage_join{};
-    bool is_prebuilt_hash_join{};
 };
 
-/** Convert the operands of an equality (or ASOF inequality) predicate in the JOIN ON section to a common type.
-  * `allow_conversion_to_subtype` enables the fallback described in `JoinCommon::tryGetCommonSubtypeForJoinKeys`.
-  * It is not applicable to null-safe comparisons, because there NULL matches NULL,
-  * and to ASOF inequalities, because there the order of the values matters, not only their equality.
-  */
 static void predicateOperandsToCommonType(
     JoinActionRef & left_node,
     JoinActionRef & right_node,
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context,
-    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors,
-    bool allow_conversion_to_subtype)
+    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors)
 {
     const auto & left_type = left_node.getType();
     const auto & right_type = right_node.getType();
@@ -769,45 +760,21 @@ static void predicateOperandsToCommonType(
         return;
 
     DataTypePtr common_type;
-    bool cast_to_subtype = false;
     try
     {
         common_type = getLeastSupertype(DataTypes{left_type, right_type});
     }
     catch (Exception & ex)
     {
-        if (allow_conversion_to_subtype)
-        {
-            if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(left_type, right_type))
-            {
-                /// The `Join` table engine holds a hash table prebuilt over the original key columns, and its reuse
-                /// path cannot remap a key rewritten to a derived expression (see `chooseJoinAlgorithm`). The fallback
-                /// applies only when the storage key itself is the subtype, so that only the probe side is converted.
-                /// The comparison ignores the `LowCardinality` and `Nullable` wrappers, same as `JoinCommon::checkTypesOfKeys`:
-                /// the hash table serves a probe key that differs from the build key only in these wrappers as is.
-                if (!planning_context.is_prebuilt_hash_join || removeNullable(recursiveRemoveLowCardinality(right_type))->equals(*subtype))
-                    common_type = makeNullable(subtype);
-            }
-        }
-
-        if (!common_type)
-        {
-            ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
-                left_node.getColumnName(), left_type->getName(),
-                right_node.getColumnName(), right_type->getName());
-            throw;
-        }
-        cast_to_subtype = true;
+        ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
+            left_node.getColumnName(), left_type->getName(),
+            right_node.getColumnName(), right_type->getName());
+        throw;
     }
 
-    auto cast_transform = [&common_type, &planning_context, cast_to_subtype](auto & dag, auto && nodes)
+    auto cast_transform = [&common_type, &planning_context](auto & dag, auto && nodes)
     {
         auto arg = nodes.at(0);
-        /// The nodes in `actions_after_join_map` are plain `CAST`s (from `buildJoinUsingCondition`),
-        /// which wrap the values that are out of the range of the target type instead of turning them into NULL,
-        /// so they cannot be reused as the key conversions for the subtype fallback.
-        if (cast_to_subtype)
-            return &dag.addAccurateCastOrNull(*arg, common_type, {}, nullptr);
         auto mapped_it = planning_context.actions_after_join_map.find(arg->result_name);
         if (mapped_it != planning_context.actions_after_join_map.end() && mapped_it->second->result_type->equals(*common_type))
             return mapped_it->second;
@@ -830,28 +797,54 @@ static void predicateOperandsToCommonType(
         }
     };
 
-    if (planning_context.is_prebuilt_hash_join)
+    if (planning_context.is_storage_join)
     {
-        /// A `Join` table engine keeps the key declared by its storage. Under the subtype fallback
-        /// the check above guarantees that a prebuilt hash table uses the subtype modulo the
-        /// `LowCardinality` and `Nullable` wrappers, so its key must not be rewritten at all.
-        if (!cast_to_subtype && !right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
-            cast_right_node();
-    }
-    else if (planning_context.is_storage_join
-        && (!cast_to_subtype || removeNullable(recursiveRemoveLowCardinality(right_type))->equals(*removeNullable(common_type))))
-    {
-        /// A direct dictionary lookup accepts its declared key type for an ordinary promotion or
-        /// a subtype fallback where only the probe needs an accurate conversion. In particular,
-        /// a nullable probe key does not require converting the dictionary key to `Nullable`,
-        /// which would turn it into a derived expression and disable the direct algorithm.
-        if (!removeNullable(recursiveRemoveLowCardinality(right_type))->equals(*removeNullable(common_type)))
+        if (!right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
             cast_right_node();
     }
     else
     {
         if (!right_type->equals(*common_type))
             cast_right_node();
+    }
+}
+
+/// Under `join_use_nulls`, a right column selected from a LEFT or FULL JOIN is output through `toNullable(x)`
+/// (see `addToNullableIfNeeded`). When that column is also a join key, joining on the `Nullable` node makes
+/// it the single right column that is both the key and the output, which the join restores from the left
+/// key. Joining on the plain input instead leaves the `Nullable` wrapper as a payload column next to the
+/// key: a whole extra column where the join keeps keys only in its arena, and a second count of the same
+/// bytes toward the spill threshold where it saves the key columns too.
+static void preferNullableRightKey(
+    JoinActionRef & right_node,
+    const JoinPlanningContext & planning_context,
+    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors)
+{
+    /// The `Join` engine and a dictionary are looked up by the key they declare.
+    if (planning_context.is_storage_join)
+        return;
+
+    const auto * input = right_node.getNode();
+    if (input->type != ActionsDAG::ActionType::INPUT)
+        return;
+
+    auto it = planning_context.actions_after_join_map.find(input->result_name);
+    if (it == planning_context.actions_after_join_map.end())
+        return;
+
+    const auto * to_nullable = it->second;
+    if (to_nullable->type != ActionsDAG::ActionType::FUNCTION || to_nullable->children.size() != 1
+        || to_nullable->children.front() != input || to_nullable->function_base->getName() != "toNullable")
+        return;
+
+    /// The build-side key name is the rendezvous with the shared runtime filter descriptors, as in
+    /// `predicateOperandsToCommonType`.
+    String name_before = right_node.getColumnName();
+    right_node = JoinActionRef::transform({right_node}, [to_nullable](auto &, auto &&) { return to_nullable; });
+    for (auto & descriptor : shared_runtime_filter_descriptors)
+    {
+        if (descriptor.second == name_before)
+            descriptor.second = right_node.getColumnName();
     }
 }
 
@@ -874,10 +867,10 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
         else if (!lhs.fromLeft() || !rhs.fromRight())
             continue;
 
+        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, shared_runtime_filter_descriptors);
         bool null_safe_comparison = JoinConditionOperator::NullSafeEquals == predicate_op;
-        predicateOperandsToCommonType(
-            lhs, rhs, join_settings, planning_context, shared_runtime_filter_descriptors,
-            /* allow_conversion_to_subtype= */ !null_safe_comparison);
+        if (!null_safe_comparison)
+            preferNullableRightKey(rhs, planning_context, shared_runtime_filter_descriptors);
         if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
         {
             /**
@@ -1026,11 +1019,7 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     for (size_t i = 0; i < keys.size(); ++i)
     {
         auto & [predicate_op, lhs, rhs] = keys[i];
-        /// The subtype fallback is not applicable: the IEJoin key conditions are inequalities,
-        /// where the order of the values matters, not only their equality.
-        predicateOperandsToCommonType(
-            lhs, rhs, join_settings, planning_context, join_operator.shared_runtime_filter_descriptors,
-            /* allow_conversion_to_subtype= */ false);
+        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, join_operator.shared_runtime_filter_descriptors);
 
         description.operators[i] = predicate_op;
         description.key_names_left.push_back(lhs.getColumnName());
@@ -1458,7 +1447,6 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     JoinPlanningContext planning_context;
     planning_context.is_storage_join = bool(prepared_join_storage);
-    planning_context.is_prebuilt_hash_join = bool(prepared_join_storage.storage_join);
     for (const auto * node : actions_after_join)
     {
         if (node->type == ActionsDAG::ActionType::ALIAS)
@@ -1551,9 +1539,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join does not support multiple inequality predicates in JOIN ON expression");
             found_asof_predicate_it = it;
 
-            predicateOperandsToCommonType(
-                lhs, rhs, join_settings, planning_context, join_operator.shared_runtime_filter_descriptors,
-                /* allow_conversion_to_subtype= */ false);
+            predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, join_operator.shared_runtime_filter_descriptors);
 
             used_expressions.push_back(lhs);
             used_expressions.push_back(rhs);
@@ -1562,18 +1548,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
             table_join_clauses.front().addKey(lhs.getColumnName(), rhs.getColumnName(), /* null_safe_comparison = */ false);
         }
         if (found_asof_predicate_it == join_expression.end())
-        {
-            /// The equality predicates have already been taken out of `join_expression` by the loop above,
-            /// so for the common mistake - `ASOF JOIN ... ON l.a = r.a`, with no inequality at all - what is
-            /// left to print is nothing, and the message used to end in ", in .".
-            const auto remaining_condition = formatJoinCondition(join_expression);
-            /// Equality predicates are optional for an ASOF join, so mention them only when there are some.
-            const bool has_equality_keys = table_join_clauses.front().keysCount() != 0;
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "ASOF join requires one inequality predicate (<, <=, > or >=) in the JOIN ON expression{}{}",
-                has_equality_keys ? ", in addition to the equality predicates" : "",
-                remaining_condition.empty() ? "" : fmt::format(", but only found: {}", remaining_condition));
-        }
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join requires one inequality predicate in JOIN ON expression, in {}",
+                formatJoinCondition(join_expression));
 
         join_expression.erase(found_asof_predicate_it);
     }
@@ -1590,19 +1566,10 @@ static QueryPlanNode buildPhysicalJoinImpl(
             used_expressions.push_back(left_pre_filter_condition);
         }
 
-        /// A `StorageJoin` right side is a prebuilt join read by stored column name rather than a
-        /// stream, so no query-specific filter can be evaluated over it. The other two terms negate
-        /// `build_mixed_join_expression` below, so such a condition becomes a post-join filter.
-        const bool right_condition_is_applied_after_join
-            = prepared_join_storage.storage_join && !is_disjunctive_condition && canPushDownFromOn(join_operator);
-
-        if (!right_condition_is_applied_after_join)
+        if (auto right_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Right))
         {
-            if (auto right_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Right))
-            {
-                table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
-                used_expressions.push_back(right_pre_filter_condition);
-            }
+            table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
+            used_expressions.push_back(right_pre_filter_condition);
         }
     }
 
@@ -1730,6 +1697,34 @@ static QueryPlanNode buildPhysicalJoinImpl(
     for (const auto * node : dag_inputs)
         name_to_nodes[node->result_name].push_back(node);
 
+    /// An input that only feeds a used expression, such as the `toNullable(x)` key under `join_use_nulls`
+    /// or a key cast to a common type, is not passed to the join as a column of its own: the join would
+    /// keep it as payload for nothing. `ActionsDAG::updateHeader` drops such consumed inputs anyway.
+    std::unordered_set<const ActionsDAG::Node *> consumed_inputs;
+    {
+        std::unordered_set<const ActionsDAG::Node *> used_nodes;
+        for (const auto & expression : used_expressions)
+            used_nodes.insert(expression.getNode());
+
+        std::stack<const ActionsDAG::Node *> stack;
+        for (const auto * node : used_nodes)
+            for (const auto * child : node->children)
+                stack.push(child);
+        while (!stack.empty())
+        {
+            const auto * node = stack.top();
+            stack.pop();
+            if (node->type == ActionsDAG::ActionType::INPUT)
+            {
+                if (!used_nodes.contains(node))
+                    consumed_inputs.insert(node);
+                continue;
+            }
+            for (const auto * child : node->children)
+                stack.push(child);
+        }
+    }
+
     for (const auto * child : children)
     {
         for (const auto & column : *child->step->getOutputHeader())
@@ -1743,8 +1738,10 @@ static QueryPlanNode buildPhysicalJoinImpl(
                     fmt::join(children | std::views::transform([](const auto & c) { return fmt::format("[{}]", c->step->getOutputHeader()->dumpNames()); }), ", "),
                     expression_actions.getActionsDAG()->dumpDAG());
 
-            used_expressions.emplace_back(input_it->second.front(), expression_actions);
+            const auto * input = input_it->second.front();
             input_it->second.pop_front();
+            if (!consumed_inputs.contains(input))
+                used_expressions.emplace_back(input, expression_actions);
         }
     }
 
@@ -1894,7 +1891,6 @@ void JoinStepLogical::buildPhysicalJoin(
     }
 
     UInt64 hash_table_key_hash = optimization_settings.collect_hash_table_stats_during_joins ? join_step->getRightHashTableCacheKey() : 0;
-    UInt64 join_output_key_hash = optimization_settings.collect_hash_table_stats_during_joins ? join_step->getJoinOutputCacheKey() : 0;
 
     if (!join_step->join_algorithm_params)
     {
@@ -1902,16 +1898,12 @@ void JoinStepLogical::buildPhysicalJoin(
             join_step->join_settings,
             optimization_settings.max_threads,
             hash_table_key_hash,
-            join_output_key_hash,
             optimization_settings.max_entries_for_hash_table_stats,
             optimization_settings.initial_query_id,
             optimization_settings.lock_acquire_timeout);
 
         if (join_step->right_relation.estimated_rows)
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
-
-        if (join_step->result_rows_estimation)
-            join_step->join_algorithm_params->result_rows_estimation = join_step->result_rows_estimation;
 
         if (hash_table_key_hash)
         {
@@ -2343,7 +2335,6 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->imprecise_estimate = imprecise_estimate;
     result_step->result_column_stats = result_column_stats;
     result_step->right_hash_table_cache_key = right_hash_table_cache_key;
-    result_step->join_output_cache_key = join_output_cache_key;
     result_step->left_relation = left_relation;
     result_step->right_relation = right_relation;
     result_step->table_stats_hint = table_stats_hint;

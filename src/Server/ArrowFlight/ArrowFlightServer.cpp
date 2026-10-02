@@ -47,7 +47,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NETWORK_ERROR;
     extern const int UNKNOWN_EXCEPTION;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int UNKNOWN_SETTING;
@@ -439,9 +438,7 @@ void ArrowFlightServer::start()
     auto init_status = Init(options);
     if (!init_status.ok())
     {
-        throw Exception(
-            init_status.IsIOError() ? ErrorCodes::NETWORK_ERROR : ErrorCodes::UNKNOWN_EXCEPTION,
-            "Failed init Arrow Flight Server: {}", init_status.ToString());
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed init Arrow Flight Server: {}", init_status.ToString());
     }
 
     initialized = true;
@@ -1379,14 +1376,14 @@ arrow::Status ArrowFlightServer::DoAction(
                 }
             };
 
-            for (const auto & [setting, value] : request.session_options)
+            auto apply_option = [&](const std::string & setting, const auto & value)
             {
                 if (!isValidIdentifier(setting))
                 {
                     result.errors[setting] = arrow::flight::SetSessionOptionsResult::Error{
                         arrow::flight::SetSessionOptionErrorValue::kInvalidName
                     };
-                    continue;
+                    return;
                 }
 
                 try
@@ -1394,14 +1391,14 @@ arrow::Status ArrowFlightServer::DoAction(
                     if (std::holds_alternative<std::monostate>(value))
                     {
                         /// std::monostate means "reset to default" (SET setting = DEFAULT).
-                        query_context->checkSettingsConstraintsForSettingsReset({setting}, SettingSource::QUERY);
+                        session_context->checkSettingsConstraintsForSettingsReset({setting}, SettingSource::QUERY);
                         session_context->resetSettingsToDefaultValue({setting});
                     }
                     else
                     {
                         auto string_value = std::visit(to_string_value, value);
                         SettingChange change{setting, Field{string_value}};
-                        query_context->checkSettingsConstraints(change, SettingSource::QUERY);
+                        session_context->checkSettingsConstraints(change, SettingSource::QUERY);
                         session_context->setSetting(setting, string_value);
                     }
                 }
@@ -1419,6 +1416,15 @@ arrow::Status ArrowFlightServer::DoAction(
 
                     result.errors[setting] = arrow::flight::SetSessionOptionsResult::Error{error_value};
                 }
+            };
+
+            /// The options arrive in a map with no order, so `profile` goes first for its constraints to bind the rest.
+            if (auto profile = request.session_options.find("profile"); profile != request.session_options.end())
+                apply_option(profile->first, profile->second);
+            for (const auto & [setting, value] : request.session_options)
+            {
+                if (setting != "profile")
+                    apply_option(setting, value);
             }
 
             ARROW_ASSIGN_OR_RAISE(auto serialized, result.SerializeToString())

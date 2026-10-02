@@ -270,7 +270,7 @@ private:
 
     void validateSortingKeyType(const DataTypePtr & sorting_key_type, const IdentifierResolveScope & scope) const;
 
-    void resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope);
+    void resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope, bool validate_key_types);
 
     void validateGroupByKeyType(const DataTypePtr & group_by_key_type, const IdentifierResolveScope & scope) const;
 
@@ -311,6 +311,9 @@ private:
 
     /// CTEs that are currently in resolve process
     QueryTreeNodePtrWithHashSet ctes_in_resolve_process;
+
+    /// Same as `ctes_in_resolve_process` but by identity: structural comparison cannot tell identical redefinitions apart.
+    std::unordered_set<const IQueryTreeNode *> cte_definitions_in_resolve_process;
 
     /// Window definitions that are currently in resolve process
     std::unordered_set<IQueryTreeNode *> windows_in_resolve_process;

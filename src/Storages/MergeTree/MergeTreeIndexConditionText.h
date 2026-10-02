@@ -115,8 +115,6 @@ public:
 
     /// Create text search query for the function node if it is suitable for optimization.
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
-    /// Whether the index can answer the predicate of the function node.
-    bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
     /// Returns generated virtual column name for the replacement of related function node.
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
@@ -163,13 +161,9 @@ private:
 
     bool traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const;
 
-    /// Whether the function accepts a tokenizer definition as its third argument and the given node
-    /// is a constant one that denotes the index tokenizer.
-    bool tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const;
-
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
-        const RPNBuilderTreeNode & index_column_node,
+        const RPNBuilderTreeNode & argument_node,
         DataTypePtr value_type,
         Field value_field,
         RPNElement & out) const;
@@ -242,5 +236,9 @@ private:
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
 bool isTextIndexVirtualColumn(const String & column_name);
+
+/// Strips `CAST`, `_CAST`, `toNullable` and `toLowCardinality` from the node while the conversion never
+/// changes the value and never throws. The index is analyzed on the expression under such conversions.
+const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node);
 
 }

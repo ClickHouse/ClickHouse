@@ -267,6 +267,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         {
             delete_data_writers[partition_key]->flush();
             delete_data_writers[partition_key]->finalize();
+            delete_data_statistics.at(partition_key).addColumnSizesOnDisk(
+                delete_data_writers[partition_key]->getColumnSizesOnDisk(), getPositionDeleteFileSampleBlock());
             delete_data_write_buffers[partition_key]->finalize();
             {
                 auto delete_bytes = delete_data_write_buffers[partition_key]->count();
@@ -289,6 +291,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         PullingPipelineExecutor executor(pipeline);
 
         auto header = interpreter->getUpdatedHeader();
+        auto update_sample_block = getNonVirtualColumns(header, /*remove_low_cardinality=*/ true);
 
         Block block;
         while (executor.pull(block))
@@ -338,6 +341,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         {
             update_data_writers[partition_key]->flush();
             update_data_writers[partition_key]->finalize();
+            update_data_statistics.at(partition_key).addColumnSizesOnDisk(
+                update_data_writers[partition_key]->getColumnSizesOnDisk(), update_sample_block);
             update_data_write_buffers[partition_key]->finalize();
             {
                 auto update_bytes = update_data_write_buffers[partition_key]->count();
@@ -421,6 +426,7 @@ static bool writeMetadataFiles(
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
     std::vector<Iceberg::FileContentType> per_entry_content_types;
+    std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
 
     auto hint_path = filename_generator.generateVersionHint();
     const bool use_version_hint = data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint];
@@ -454,6 +460,17 @@ static bool writeMetadataFiles(
             manifest_entries_in_storage->push_back(path_resolver.resolve(manifest_entry_path));
             manifest_entries.push_back(manifest_entry_path);
             per_entry_content_types.push_back(content_type);
+
+            /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
+            if (chunk_partitioner)
+            {
+                const auto & partition_types = chunk_partitioner->getResultTypes();
+                std::vector<std::pair<Field, DataTypePtr>> partition_summary;
+                partition_summary.reserve(partition_key.size());
+                for (size_t i = 0; i < partition_key.size(); ++i)
+                    partition_summary.emplace_back(partition_key[i], partition_types[i]);
+                entry_partition_summaries.push_back(std::move(partition_summary));
+            }
 
             auto buffer_manifest_entry = object_storage->writeObject(
                 StoredObject(path_resolver.resolve(manifest_entry_path)),
@@ -520,7 +537,11 @@ static bool writeMetadataFiles(
                 *buffer_manifest_list,
                 /* content_type */ Iceberg::FileContentType::POSITION_DELETE,
                 /* use_previous_snapshots */ true,
-                per_entry_content_types);
+                per_entry_content_types,
+                /* entry_counts */ {},
+                /* carry_forward_manifest_paths */ {},
+                /* entry_partition_spec_ids */ {},
+                entry_partition_summaries);
             buffer_manifest_list->finalize();
         }
 

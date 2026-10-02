@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 MySQLStreamSettings::MySQLStreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
@@ -325,6 +326,13 @@ namespace
                 if (mysql_type == enum_field_types::MYSQL_TYPE_BIT)
                 {
                     size_t n = value.size();
+                    /// A `BIT` column holds at most 64 bits, so a value of it never needs more than
+                    /// eight bytes. The length comes from the wire and is not otherwise validated,
+                    /// so a malicious or broken server could overflow `val` below.
+                    if (n > sizeof(UInt64))
+                        throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "MySQL sent {} bytes for a value of a `BIT` column, but at most {} bytes are expected",
+                            n, sizeof(UInt64));
                     UInt64 val = 0UL;
                     char * to = reinterpret_cast<char *>(&val);
                     memcpy(to, const_cast<char *>(value.data()), n);

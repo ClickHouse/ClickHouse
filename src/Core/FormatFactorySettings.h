@@ -615,14 +615,6 @@ Possible values:
 + 0 — Disable (throw error on type mismatch).
 + 1 — Enable (skip field on type mismatch).
 )", 0) \
-    DECLARE(Bool, type_json_skip_null_typed_paths, false, R"(
-When enabled, typed paths in JSON columns that have NULL values are treated as absent, matching the behavior of dynamic paths. This affects JSON serialization output, introspection functions like `JSONAllPaths`, `JSONHas`, `JSONExtractRaw`, `has`, and `empty`/`notEmpty` checks.
-
-Possible values:
-
-+ 0 — Disable (typed paths are always present, even with NULL values).
-+ 1 — Enable (NULL typed paths are treated as absent).
-)", 0) \
     DECLARE(UInt64Auto, max_dynamic_subcolumns_in_json_type_parsing, "auto", R"(
 The maximum number of dynamic subcolumns that can be created in every column during parsing of JSON column.
 It allows to control the number of dynamic subcolumns during parsing regardless of dynamic parameters specified in the data type.
@@ -776,8 +768,8 @@ See also:
 )", 0) \
     \
     DECLARE(Bool, date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, false, R"(
-Dynamically trim the trailing zeros of `DateTime64` values, rounding the output scale up to the next
-multiple of three that keeps every significant digit: [0, 3, 6, 9]. An all-zero fraction is dropped.)", 0) \
+Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to [0, 3, 6],
+corresponding to 'seconds', 'milliseconds', and 'microseconds')", 0) \
     DECLARE(Bool, input_format_read_datetime_number_as_raw_value, false, R"(
 Read a bare unquoted integer for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for
 `DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
@@ -874,20 +866,20 @@ Write data types in binary format instead of type names in RowBinaryWithNamesAnd
     DECLARE(URI, format_avro_schema_registry_url, "", R"(
 For AvroConfluent format: Confluent Schema Registry URL.
 )", 0) \
-    DECLARE(NonZeroUInt64, format_avro_schema_registry_connection_timeout, 1, R"(
-For AvroConfluent format: connection timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599.
+    DECLARE(UInt64, format_avro_schema_registry_connection_timeout, 1, R"(
+For AvroConfluent format: connection timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0 and less than 600 (10 minutes).
 )", 0) \
-    DECLARE(NonZeroUInt64, format_avro_schema_registry_send_timeout, 1, R"(
-For AvroConfluent format: send timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599.
+    DECLARE(UInt64, format_avro_schema_registry_send_timeout, 1, R"(
+For AvroConfluent format: send timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0 and less than 600 (10 minutes).
 )", 0) \
-    DECLARE(NonZeroUInt64, format_avro_schema_registry_receive_timeout, 1, R"(
-For AvroConfluent format: receive timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599.
+    DECLARE(UInt64, format_avro_schema_registry_receive_timeout, 1, R"(
+For AvroConfluent format: receive timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0 and less than 600 (10 minutes).
 )", 0) \
     DECLARE(UInt64, format_avro_schema_registry_max_retries, 5, R"(
-For AvroConfluent format: maximum number of retries for transient failures when communicating with the Confluent Schema Registry (transport timeouts, connection refused, DNS errors, HTTP 5xx/408/429). Set to 0 to disable retries. A value above 20 is reduced to 20. Schema validation errors (HTTP 409, malformed Avro JSON) are not retried.
+For AvroConfluent format: maximum number of retries for transient failures when communicating with the Confluent Schema Registry (transport timeouts, connection refused, DNS errors, HTTP 5xx/408/429). Set to 0 to disable retries. The maximum allowed value is 20. Schema validation errors (HTTP 409, malformed Avro JSON) are not retried.
 )", 0) \
-    DECLARE(NonZeroUInt64, format_avro_schema_registry_retry_initial_backoff_ms, 100, R"(
-For AvroConfluent format: initial backoff in milliseconds before retrying a failed Confluent Schema Registry request. The backoff doubles on each subsequent retry, capped at 10 seconds. Must be greater than 0; a value above 60000 is reduced to 60000.
+    DECLARE(UInt64, format_avro_schema_registry_retry_initial_backoff_ms, 100, R"(
+For AvroConfluent format: initial backoff in milliseconds before retrying a failed Confluent Schema Registry request. The backoff doubles on each subsequent retry, capped at 10 seconds. Must be greater than 0 and less than or equal to 60000.
 )", 0) \
     DECLARE(Bool, input_format_binary_read_json_as_string, false, R"(
 Read values of [JSON](/reference/data-types/newjson) data type as JSON [String](/reference/data-types/string) values in RowBinary input format.
@@ -1510,6 +1502,24 @@ Write Date values as plain 16-bit numbers (read back as UInt16), instead of conv
     DECLARE(Bool, output_format_arrow_unsupported_types_as_binary, true, R"(
 Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
 )", 0) \
+    DECLARE(UInt64, output_format_arrow_record_batch_size, 0, R"(
+Target number of rows per record batch for the `Arrow` and `ArrowStream` output formats. Combining small blocks reduces metadata and buffer-padding overhead, particularly for queries with selective filters.
+
+Blocks accumulate until this target or [output_format_arrow_record_batch_size_bytes](#output_format_arrow_record_batch_size_bytes) is reached. A block that already meets the row or byte target is written separately, without splitting. If you set a row target, combined batches contain fewer than twice that many rows, but a single input block can be larger.
+
+Buffering blocks can increase memory use and delay output. If the result never reaches either target, `ArrowStream` writes the first record batch only when the query finishes, though it can write the schema earlier. Leave both targets at `0` to write record batches as blocks arrive.
+
+`0` (the default) disables the row target. Try `65409` as a starting value.
+)", 0) \
+    DECLARE(UInt64, output_format_arrow_record_batch_size_bytes, 0, R"(
+Target record batch size for the `Arrow` and `ArrowStream` output formats, measured in bytes of accumulated block data. This uses the same measure as [min_insert_block_size_bytes](/reference/settings/settings#min_insert_block_size_bytes). A batch is written when either this target or [output_format_arrow_record_batch_size](#output_format_arrow_record_batch_size) is reached.
+
+Note that `LowCardinality` columns can produce Arrow batches much larger or smaller than this byte target. Repeated values expand in the output unless [output_format_arrow_low_cardinality_as_dictionary](#output_format_arrow_low_cardinality_as_dictionary) is enabled. Filtered blocks can also retain large dictionaries, so even a block with very few rows can reach the target and be written separately. For these columns, use [output_format_arrow_record_batch_size](#output_format_arrow_record_batch_size) to control the row count and set the byte target to `0`.
+
+Buffering blocks can increase memory use and delay the first record batch until the query finishes. Leave both targets at `0` to write record batches as blocks arrive.
+
+`0` (the default) disables the byte target. Try `1048576` (1 MiB) as a starting value.
+)", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns
@@ -1585,6 +1595,10 @@ Skip fields with unsupported types while schema inference for format BSON.
 Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, databases,
 table functions, and dictionaries.
 
+It also controls whether secrets embedded in setting values (such as a password in
+`format_avro_schema_registry_url`) are shown in `system.settings`, `system.processes`,
+`system.settings_profile_elements` and in `SHOW CREATE USER` / `SHOW CREATE SETTINGS PROFILE`.
+
 User wishing to see secrets must also have
 [`display_secrets_in_show_and_select` server setting](/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
 turned on and a
@@ -1599,7 +1613,7 @@ Possible values:
 Use the precise float parsing algorithm, which always returns the closest representable value to the input. When disabled, a faster but less accurate algorithm is used that may differ from the precise result by the least significant bits.
 )", 0) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
-Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
+Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type. It also applies when a `Date` or `DateTime` is parsed from text, including by an input format.
 
 Possible values:
 
