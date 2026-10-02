@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <limits>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnObject.h>
@@ -801,8 +802,9 @@ void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
     takeMaxDynamicPathsUpperBoundFrom(src_object_column);
 
     /// First, insert typed paths, they must be the same for both columns.
-    for (const auto & [path, column] : src_object_column.typed_paths)
-        typed_paths[path]->insertFrom(*column, n);
+    const auto & src_typed_path_columns = src_object_column.getSortedTypedPathColumns();
+    for (size_t i = 0; i != sorted_typed_path_columns.size(); ++i)
+        sorted_typed_path_columns[i]->insertFrom(*src_typed_path_columns[i], n);
 
     /// Second, insert dynamic paths and extend them if needed.
     /// We can reach the limit of dynamic paths, and in this case
@@ -850,8 +852,9 @@ void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
     takeMaxDynamicPathsUpperBoundFrom(src_object_column);
 
     /// First, insert typed paths, they must be the same for both columns.
-    for (const auto & [path, column] : src_object_column.typed_paths)
-        typed_paths[path]->insertRangeFrom(*column, start, length);
+    const auto & src_typed_path_columns = src_object_column.getSortedTypedPathColumns();
+    for (size_t i = 0; i != sorted_typed_path_columns.size(); ++i)
+        sorted_typed_path_columns[i]->insertRangeFrom(*src_typed_path_columns[i], start, length);
 
     /// Second, insert dynamic paths and extend them if needed.
     /// We can reach the limit of dynamic paths, and in this case
@@ -937,8 +940,9 @@ void ColumnObject::doInsertManyFrom(const IColumn & src, size_t position, size_t
         return;
     }
 
-    for (const auto & [path, column] : src_object.typed_paths)
-        typed_paths.find(path)->second->insertManyFrom(*column, position, length);
+    const auto & src_typed_path_columns = src_object.getSortedTypedPathColumns();
+    for (size_t i = 0; i != sorted_typed_path_columns.size(); ++i)
+        sorted_typed_path_columns[i]->insertManyFrom(*src_typed_path_columns[i], position, length);
     for (const auto & [path, column] : src_object.dynamic_paths)
         dynamic_paths_ptrs.find(path)->second->insertManyFrom(*column, position, length);
     shared_data->insertManyFrom(*src_object.shared_data, position, length);
@@ -2068,10 +2072,12 @@ bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
         || dynamic_paths.size() != rhs_object->dynamic_paths.size())
         return false;
 
-    for (const auto & [path, column] : typed_paths)
+    if (!std::equal(sorted_typed_paths.begin(), sorted_typed_paths.end(), rhs_object->sorted_typed_paths.begin()))
+        return false;
+
+    for (size_t i = 0; i != sorted_typed_path_columns.size(); ++i)
     {
-        auto it = rhs_object->typed_paths.find(path);
-        if (it == rhs_object->typed_paths.end() || !it->second->dynamicStructureEquals(*column))
+        if (!sorted_typed_path_columns[i]->dynamicStructureEquals(*rhs_object->sorted_typed_path_columns[i]))
             return false;
     }
 
