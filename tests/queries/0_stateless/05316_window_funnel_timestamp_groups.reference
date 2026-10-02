@@ -1,6 +1,7 @@
 repeated groups	4	4	4
 equal time	1	1	1
 same-group new start	3
+finite-window old prefix	3	3	3
 missing predecessor	2	4
 pending early exit	2
 first event inside group	1	3

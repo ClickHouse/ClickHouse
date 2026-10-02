@@ -18,6 +18,13 @@ SELECT 'same-group new start',
     windowFunnel(100, 'strict_increase', 'strict_order')(t, e = 'A', e = 'B', e = 'C')
 FROM values('t UInt32, e String', (1, 'A'), (2, 'A'), (2, 'B'), (3, 'C'));
 
+-- A newer start and B at the final timestamp must not overwrite the older valid AB prefix.
+SELECT 'finite-window old prefix',
+    windowFunnel(5, 'strict_increase')(t, e = 'A', e = 'B', e = 'C'),
+    windowFunnel(5, 'strict_increase', 'strict_order')(t, e = 'A', e = 'B', e = 'C'),
+    windowFunnel(5, 'strict_increase', 'strict_order', 'allow_reentry')(t, e = 'A', e = 'B', e = 'C')
+FROM values('t UInt32, e String', (1, 'A'), (2, 'B'), (5, 'A'), (6, 'B'), (6, 'C'));
+
 -- A genuinely missing predecessor still stops the funnel unless reentry is enabled.
 SELECT 'missing predecessor',
     windowFunnel(100, 'strict_increase', 'strict_order')(t, e = 'A', e = 'B', e = 'C', e = 'D'),
