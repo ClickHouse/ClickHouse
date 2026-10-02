@@ -29,15 +29,20 @@ namespace ErrorCodes
 namespace
 {
 
-/// The finalizer of MurmurHash3. Its top bits select the partition of a key.
+/// The partition of a key is selected by the top bits of `intHash64`, the finalizer of MurmurHash3:
+/// - Every bit of the key affects every bit of the hash, so the keys that differ only in their low bits, such as
+///   sequential identifiers or timestamps, are spread evenly over the partitions. The top bits of the key itself, or of
+///   a weak hash, would send them all to a few partitions, and the build of these partitions would not be balanced.
+/// - `intHashCRC32` is not good enough for it: it has only 32 bits, and they are not well mixed (see its comment).
+/// - It is cheap (two multiplications) and computed only once per routed key.
 ALWAYS_INLINE inline UInt64 partitionHash(UInt64 x)
 {
-    x ^= x >> 33;
-    x *= 0xff51afd7ed558ccdULL;
-    x ^= x >> 33;
-    x *= 0xc4ceb9fe1a85ec53ULL;
-    x ^= x >> 33;
-    return x;
+    return intHash64(x);
+}
+
+ALWAYS_INLINE inline UInt64 partitionHash(UInt32 x)
+{
+    return intHash64(x);
 }
 
 /// The 128-bit keys are uniformly distributed (see `mixKey`), so their low half is used as the hash.
@@ -46,21 +51,20 @@ ALWAYS_INLINE inline UInt64 partitionHash(UInt128 x)
     return static_cast<UInt64>(x);
 }
 
-/// The hash that selects the slot of a key in a set. It is cheaper than `partitionHash` and independent of it, so the keys
-/// of a partition, which share the top bits of `partitionHash`, are spread over the whole set.
+/// The slot of a key in a set is selected by a different hash:
+/// - The keys of a partition share the top bits of `partitionHash`, so a hash that is independent of it is needed to
+///   spread them over the whole set.
+/// - It is computed for every insertion into a set (the local set, the deduplication of the buffered keys, the build
+///   of a partition), so it must be as cheap as possible. CRC32 is a single instruction, and the set uses only its low
+///   bits, which are mixed well enough for that, as in the ordinary `uniqExact`.
 ALWAYS_INLINE inline UInt64 slotHash(UInt64 x)
 {
     return intHashCRC32(x);
 }
 
-ALWAYS_INLINE inline UInt64 partitionHash(UInt32 x)
-{
-    return partitionHash(static_cast<UInt64>(x));
-}
-
 ALWAYS_INLINE inline UInt64 slotHash(UInt32 x)
 {
-    return intHashCRC32(static_cast<UInt64>(x));
+    return intHashCRC32(x);
 }
 
 ALWAYS_INLINE inline UInt64 slotHash(UInt128 x)
@@ -69,7 +73,9 @@ ALWAYS_INLINE inline UInt64 slotHash(UInt128 x)
 }
 
 /// A bijection that makes the 128-bit values that are not hashes (`UUID`, `UInt128`, `Int128`) uniformly distributed,
-/// a two-round Feistel network.
+/// so that both halves of the result can serve as hashes. It is a two-round Feistel network with `intHash64` as the
+/// round function: each round only XORs one half with a function of the other one, so it can be undone, and distinct
+/// values stay distinct.
 ALWAYS_INLINE inline UInt128 mixKey(UInt128 x)
 {
     UInt64 low = static_cast<UInt64>(x);
