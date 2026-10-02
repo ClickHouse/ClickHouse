@@ -185,14 +185,14 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
             break;
     }
 
+    /// One set of readers reads all ranges of this source.
+    MarkRangesPtr read_request_map;
+    std::vector<MarkRangesPtr> patch_read_request_maps;
     if (read_settings.reader_executor.enabled)
     {
-        /// One set of readers reads all ranges of this source.
-        auto info = std::make_shared<MergeTreeReadTaskInfo>(*read_task_info);
-        info->read_request_map = std::make_shared<const MarkRanges>(mark_ranges);
+        read_request_map = std::make_shared<const MarkRanges>(mark_ranges);
         for (const auto & ranges : patch_ranges)
-            info->patch_read_request_maps.push_back(std::make_shared<const MarkRanges>(ranges));
-        read_task_info = std::move(info);
+            patch_read_request_maps.push_back(std::make_shared<const MarkRanges>(ranges));
     }
 
     MergeTreeReadTask::Extras extras =
@@ -203,7 +203,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         .storage_snapshot = storage_snapshot,
     };
 
-    readers = MergeTreeReadTask::createReaders(read_task_info, extras, mark_ranges, patch_ranges);
+    readers = MergeTreeReadTask::createReaders(read_task_info, extras, mark_ranges, patch_ranges, read_request_map, patch_read_request_maps);
 
     if (!readers.prewhere.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Sequential source doesn't support PREWHERE");
