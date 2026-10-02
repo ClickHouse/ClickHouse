@@ -52,7 +52,7 @@ SELECT 1, URL, COUNT(*) AS c FROM test.hits GROUP BY 1, URL ORDER BY c DESC LIMI
 SET max_block_size=65409;
 
 -- Just checking that statistics are collected with read in order
-SELECT CounterID from test.hits ORDER BY CounterID DESC FORMAT Null SETTINGS optimize_read_in_order=1, query_plan_read_in_order=1, log_comment='query_43';
+SELECT CounterID from test.hits ORDER BY CounterID DESC FORMAT Null SETTINGS optimize_read_in_order=1, log_comment='query_43';
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
