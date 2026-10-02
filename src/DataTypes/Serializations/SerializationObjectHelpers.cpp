@@ -68,7 +68,8 @@ std::vector<std::pair<String, ColumnPtr>> flattenPaths(const ColumnObject & obje
     return all_paths;
 }
 
-void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, std::vector<ColumnPtr> && flattened_columns, ColumnObject & object_column, size_t num_rows)
+template <typename PathsContainer>
+void unflattenAndInsertPaths(const PathsContainer & flattened_paths, std::vector<ColumnPtr> && flattened_columns, ColumnObject & object_column, size_t num_rows)
 {
     /// Iterate over paths and try to add them to dynamic paths until the limit is reached.
     /// All remaining paths will be inserted into shared data.
@@ -95,6 +96,12 @@ void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, std::v
         shared_data_offsets.push_back(shared_data_paths->size());
     }
 }
+
+template void unflattenAndInsertPaths<std::vector<String>>(
+    const std::vector<String> &, std::vector<ColumnPtr> &&, ColumnObject &, size_t);
+
+template void unflattenAndInsertPaths<VectorWithMemoryTracking<String>>(
+    const VectorWithMemoryTracking<String> &, std::vector<ColumnPtr> &&, ColumnObject &, size_t);
 
 size_t getSharedDataPathBucket(std::string_view path, size_t num_buckets)
 {
@@ -208,7 +215,7 @@ ColumnPtr createPathsIndexesImpl(const std::unordered_map<std::string_view, size
 }
 
 template <typename T = UInt8>
-void deserializeIndexesAndCollectPathsImpl(ColumnString & paths_column, ReadBuffer & istr, std::vector<String> && paths, size_t rows_offset, size_t limit)
+void deserializeIndexesAndCollectPathsImpl(ColumnString & paths_column, ReadBuffer & istr, VectorWithMemoryTracking<String> && paths, size_t rows_offset, size_t limit)
 {
     /// Ignore first rows_offset values as we don't need them in the result.
     istr.ignore(sizeof(T) * rows_offset);
@@ -265,7 +272,7 @@ std::pair<ColumnPtr, DataTypePtr> createPathsIndexes(const std::unordered_map<st
     }
 }
 
-void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr, std::vector<String> && paths, size_t rows_offset, size_t limit)
+void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr, VectorWithMemoryTracking<String> && paths, size_t rows_offset, size_t limit)
 {
     auto & paths_string_column = assert_cast<ColumnString &>(paths_column);
     auto indexes_type = getSmallestIndexesType(paths.size());

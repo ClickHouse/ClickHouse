@@ -3,6 +3,7 @@
 #include <Columns/ColumnObject.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
 
 #include <list>
@@ -140,7 +141,7 @@ private:
         ColumnObject::StatisticsPtr statistics;
 
         /// For flattened serialization only.
-        std::vector<String> flattened_paths;
+        VectorWithMemoryTracking<String> flattened_paths;
 
         explicit DeserializeBinaryBulkStateObjectStructure(UInt64 serialization_version_)
             : serialization_version(serialization_version_)
