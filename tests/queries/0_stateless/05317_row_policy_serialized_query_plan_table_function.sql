@@ -21,6 +21,10 @@ SELECT id FROM cluster('test_shard_localhost', mergeTreeProjection(currentDataba
 SELECT id FROM cluster('test_shard_localhost', mergeTreeProjection(currentDatabase(), 't_tf_rp', 'p')) PREWHERE dept = 'eng' ORDER BY id
     SETTINGS use_query_condition_cache = 1;
 SELECT id FROM cluster('test_shard_localhost', mergeTreeProjection(currentDatabase(), 't_tf_rp', 'p')) ORDER BY id DESC LIMIT 2;
+SELECT id FROM cluster('test_shard_localhost', mergeTreeProjection(currentDatabase(), 't_tf_rp', 'p'))
+    PREWHERE throwIf(id >= 3, 'row policy leak') = 0 ORDER BY id;
+SELECT id FROM cluster('test_shard_localhost', mergeTreeProjection(currentDatabase(), 't_tf_rp', 'p'))
+    WHERE throwIf(id >= 3, 'row policy leak') = 0 ORDER BY id;
 
 ALTER ROW POLICY rp_tf_rp ON _table_function.mergeTreeProjection USING id IN (SELECT number + 7 FROM numbers(3));
 SELECT id FROM cluster('test_shard_localhost', mergeTreeProjection(currentDatabase(), 't_tf_rp', 'p')) ORDER BY id;
