@@ -552,11 +552,13 @@ void DataPartStorageOnDiskPacked::commitTransaction()
 
     transaction->commit();
 
-    if (!reader)
-        reader.emplace(volume->getDisk(), getRelativeDataPath(), getReadSettings());
-
+    /// Reset the transaction before loading the reader: it is already committed, so if loading the reader throws,
+    /// `undoTransaction` must not run and remove the blobs of the committed part.
     transaction.reset();
     is_precommitted = false;
+
+    if (!reader)
+        reader.emplace(volume->getDisk(), getRelativeDataPath(), getReadSettings());
 }
 
 void DataPartStorageOnDiskPacked::undoTransaction()
@@ -594,11 +596,12 @@ TransactionCommitOutcomeVariant DataPartStorageOnDiskPacked::tryCommitTransactio
 
     if (!mayRetryCommit(options, result))
     {
-        if (!reader && isSuccessfulOutcome(result))
-            reader.emplace(volume->getDisk(), getRelativeDataPath(), getReadSettings());
-
+        /// Reset the transaction before loading the reader, see `commitTransaction`.
         transaction.reset();
         is_precommitted = false;
+
+        if (!reader && isSuccessfulOutcome(result))
+            reader.emplace(volume->getDisk(), getRelativeDataPath(), getReadSettings());
     }
 
     return result;
