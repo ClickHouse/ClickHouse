@@ -1,5 +1,0 @@
--- `AS` without `ENGINE`: the engine is taken from `ts_src` and the settings are merged the same way
-TimeSeries
-`id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))), `metric_name` LowCardinality(String), `job` String, `tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))), INDEX tags_idx tags TYPE text(tokenizer = \'keyValuePairs\') GRANULARITY 100000000
--- the copied `tags_to_columns` fills the dedicated column
-m1	j1
