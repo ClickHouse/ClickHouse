@@ -1117,13 +1117,13 @@ private:
     template <typename Method, typename Table>
     requires MapAggregationMethod<Method>
     Chunks
-    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, size_t max_rows_per_block = 0) const;
+    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, size_t max_rows_per_block = 0, bool keep_table_buffer = false) const;
 
     /// A set method skips the inline-count and compiled-function paths; it only emits keys.
     template <typename Method, typename Table>
     requires SetAggregationMethod<Method>
     Chunks
-    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, size_t max_rows_per_block = 0) const;
+    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, size_t max_rows_per_block = 0, bool keep_table_buffer = false) const;
 
     template <typename Mapped>
     void insertAggregatesIntoColumns(
@@ -1167,6 +1167,8 @@ private:
     /// `full_group_count`, when non-null, receives the bucket table's group count: the group-by
     /// limit must be enforced against the true cardinality, which the chunk's row count
     /// understates when the Top-K conversion truncates it.
+    /// `keep_table_buffer` leaves the converted table empty but with its buffer, for a caller that fills it again
+    /// (the adaptive merge's units), where an ordinary conversion releases the buffer at once.
     template <typename Method>
     AggregatedChunk convertOneBucketToChunk(
         AggregatedDataVariants & data_variants,
@@ -1175,9 +1177,17 @@ private:
         bool final,
         Int32 bucket,
         UInt64 * topk_full_key_bytes,
-        size_t * full_group_count) const;
+        size_t * full_group_count,
+        bool keep_table_buffer = false) const;
 
-    AggregatedChunk convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
+    /// The dispatch over the two-level variants of the conversion above, with its parameters.
+    AggregatedChunk convertOneBucketToChunk(
+        AggregatedDataVariants & variants,
+        Arena * arena,
+        bool final,
+        Int32 bucket,
+        UInt64 * topk_full_key_bytes = nullptr,
+        bool keep_table_buffer = false) const;
 
     /// The bucket-local Top-K conversion (see `Params::bucket_top_k`): materializes only the
     /// bucket's n best cells by the plain count() state and destroys the rest, so the sorter
@@ -1185,14 +1195,14 @@ private:
     template <typename Method>
     requires MapAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopK(
-        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const;
+        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes, bool keep_table_buffer) const;
 
     /// `bucket_top_k` ranks groups by a lone `count()`, so it is never set for a set method, which has no
     /// aggregate functions at all. This overload exists only because the call site tests it at run time.
     template <typename Method>
     requires SetAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopK(
-        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const;
+        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes, bool keep_table_buffer) const;
 
     /// `full_group_count`, when non-null, receives the merged bucket's group count (see
     /// `convertOneBucketToChunk`).

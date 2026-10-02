@@ -2671,6 +2671,17 @@ void Aggregator::flushToTemporaryFile(AggregatedDataVariants & data_variants, si
         ReadableSize(static_cast<double>(compressed_size) / elapsed_seconds));
 }
 
+/// Ends a conversion's use of its table: frees the buffer in order to release memory early, or keeps it, emptied,
+/// for a caller that fills the table again.
+template <typename Table>
+static void finishConvertedTable(Table & data, bool keep_table_buffer)
+{
+    if (keep_table_buffer)
+        data.clear();
+    else
+        data.clearAndShrink();
+}
+
 template <typename Method>
 Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     AggregatedDataVariants & data_variants,
@@ -2679,7 +2690,8 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     bool final,
     Int32 bucket,
     UInt64 * topk_full_key_bytes,
-    size_t * full_group_count) const
+    size_t * full_group_count,
+    bool keep_table_buffer) const
 {
     if (full_group_count)
         *full_group_count = method.data.impls[bucket].size();
@@ -2701,7 +2713,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     }
 
     if (final && params.bucket_top_k && !method.data.impls[bucket].empty())
-        return convertOneBucketToChunkTopK(method, arena, *pools_for_output, bucket, topk_full_key_bytes);
+        return convertOneBucketToChunkTopK(method, arena, *pools_for_output, bucket, topk_full_key_bytes, keep_table_buffer);
 
     auto result = convertToBlockImpl(
         method,
@@ -2710,7 +2722,9 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
         *pools_for_output,
         final,
         method.data.impls[bucket].size(),
-        return_single_block);
+        return_single_block,
+        /*max_rows_per_block=*/0,
+        keep_table_buffer);
     Chunk chunk = std::move(result[0]);
 
     return AggregatedChunk{std::move(chunk), bucket};
@@ -2721,7 +2735,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
 /// is needed for the set instantiation to exist; it is never reached.
 template <typename Method>
 requires SetAggregationMethod<Method>
-Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(Method &, Arena *, Arenas &, Int32, UInt64 *) const
+Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(Method &, Arena *, Arenas &, Int32, UInt64 *, bool) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "The bucket-local Top-K conversion does not support set methods");
 }
@@ -2729,7 +2743,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(Method &, Ar
 template <typename Method>
 requires MapAggregationMethod<Method>
 Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
-    Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const
+    Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes, bool keep_table_buffer) const
 {
     auto & data = method.data.impls[bucket];
     chassert(params.bucket_top_k_count_index < params.aggregates_size);
@@ -2911,7 +2925,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
         chunk = insertResultsIntoColumns(places, std::move(out_cols), arena, /*has_null_key_data=*/false, use_compiled_functions);
     }
 
-    data.clearAndShrink();
+    finishConvertedTable(data, keep_table_buffer);
     return AggregatedChunk{std::move(chunk), bucket};
 }
 
@@ -2997,7 +3011,8 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
     }
 }
 
-Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const
+Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
+    AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket, UInt64 * topk_full_key_bytes, bool keep_table_buffer) const
 {
     const auto method = variants.type;
     AggregatedChunk agg_chunk;
@@ -3005,7 +3020,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(AggregatedDataVa
     if (false) {} // NOLINT
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
-        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket, /*topk_full_key_bytes=*/nullptr, /*full_group_count=*/nullptr); \
+        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket, topk_full_key_bytes, /*full_group_count=*/nullptr, keep_table_buffer); \
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
@@ -3488,7 +3503,7 @@ void Aggregator::disableMinMaxOptimizationForFixedHashMaps(ManyAggregatedDataVar
 template <typename Method, typename Table>
 requires SetAggregationMethod<Method>
 Chunks
-Aggregator::convertToBlockImpl(Method & method, Table & data, Arena *, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, size_t max_rows_per_block) const
+Aggregator::convertToBlockImpl(Method & method, Table & data, Arena *, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, size_t max_rows_per_block, bool keep_table_buffer) const
 {
     if (data.empty())
     {
@@ -3501,7 +3516,7 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena *, Arenas & 
     Chunks res = convertToBlockImplKeysOnly(method, data, aggregates_pools, final, return_single_block, max_rows_per_block);
 
     /// In order to release memory early.
-    data.clearAndShrink();
+    finishConvertedTable(data, keep_table_buffer);
 
     return res;
 }
@@ -3509,7 +3524,7 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena *, Arenas & 
 template <typename Method, typename Table>
 requires MapAggregationMethod<Method>
 Chunks
-Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, size_t max_rows_per_block) const
+Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, size_t max_rows_per_block, bool keep_table_buffer) const
 {
     if (data.empty())
     {
@@ -3619,14 +3634,14 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
             chunks.emplace_back(finalizeChunk(params, std::move(out_cols).value(), final));
             /// Like the general paths below: the inline count values are copied out (final)
             /// or rebuilt as arena states (non-final), so the table releases its buffer now.
-            data.clearAndShrink();
+            finishConvertedTable(data, keep_table_buffer);
             return chunks;
         }
 
         if (rows_in_current_block)
             chunks.emplace_back(finalizeChunk(params, std::move(out_cols).value(), final));
 
-        data.clearAndShrink();
+        finishConvertedTable(data, keep_table_buffer);
         return chunks;
     }
 
@@ -3644,7 +3659,7 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
     }
 
     /// In order to release memory early.
-    data.clearAndShrink();
+    finishConvertedTable(data, keep_table_buffer);
 
     return res;
 }
