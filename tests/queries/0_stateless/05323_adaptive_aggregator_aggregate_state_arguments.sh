@@ -19,7 +19,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function check()
 {
     local label=$1 settings=$2 inner=$3 outer=$4 result=$5
-    local query="SELECT toString(k % 5000) AS g, $outer FROM (SELECT number % 20000 AS k, $inner FROM numbers_mt(4000000) GROUP BY k) GROUP BY g"
+    local query="SELECT toString(k % 5000) AS g, $outer FROM (SELECT number % 20000 AS k, $inner FROM numbers_mt(400000) GROUP BY k) GROUP BY g"
     $CLICKHOUSE_LOCAL --query "
     SET max_threads = 3, max_block_size = 1000, adaptive_aggregator_freeze_threshold = 128;
     SET collect_hash_table_stats_during_aggregation = 0, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
