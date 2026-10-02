@@ -721,10 +721,7 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         if (traverseMapElementKeyNode(function, out))
             return true;
 
-        if (traverseJSONSubcolumnKeyNode(function, out))
-            return true;
-
-        if (traverseSubstringOccurrenceNode(function, out))
+        if (traverseJSONSubcolumnKeyNode(function, out) || traverseSubstringOccurrenceNode(function, out))
             return true;
 
         /// `LIKE pattern ESCAPE 'c'` and `ILIKE pattern ESCAPE 'c'` arrive here as a 3-argument
@@ -946,6 +943,28 @@ String escapeForLikePattern(std::string_view needle)
     }
 
     return pattern;
+}
+
+/// Whether comparing a search result with `bound` means "found": `> 0`, `!= 0` or `>= 1`.
+/// `search_is_left` is false for the swapped form, e.g. `0 < position(s, 'x')`.
+inline bool isOccurrenceComparison(std::string_view comparison_name, UInt64 bound, bool search_is_left)
+{
+    if (bound == 0)
+        return comparison_name == "notEquals" || comparison_name == (search_is_left ? "greater" : "less");
+    return bound == 1 && comparison_name == (search_is_left ? "greaterOrEquals" : "lessOrEquals");
+}
+
+/// Substring search functions that the index serves as `LIKE '%needle%'`.
+inline bool isCaseSensitiveSubstringSearch(std::string_view function_name)
+{
+    return function_name == "position" || function_name == "positionUTF8" || function_name == "countSubstrings";
+}
+
+/// Substring search functions that the index serves as `ILIKE '%needle%'`.
+inline bool isCaseInsensitiveSubstringSearch(std::string_view function_name)
+{
+    return function_name == "positionCaseInsensitive" || function_name == "positionCaseInsensitiveUTF8"
+        || function_name == "countSubstringsCaseInsensitive" || function_name == "countSubstringsCaseInsensitiveUTF8";
 }
 
 }
@@ -1891,13 +1910,7 @@ bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuild
     if (bound.getType() != Field::Types::UInt64)
         return false;
 
-    /// Only comparisons that mean "found": `> 0`, `!= 0`, `>= 1`.
-    const UInt64 bound_value = bound.safeGet<UInt64>();
-    const bool search_is_left = search_argument == 0;
-    const bool is_occurrence_check = bound_value == 0
-        ? comparison_name == "notEquals" || comparison_name == (search_is_left ? "greater" : "less")
-        : bound_value == 1 && comparison_name == (search_is_left ? "greaterOrEquals" : "lessOrEquals");
-    if (!is_occurrence_check)
+    if (!isOccurrenceComparison(comparison_name, bound.safeGet<UInt64>(), search_argument == 0))
         return false;
 
     const auto search_node = function_node.getArgumentAt(search_argument);
@@ -1909,10 +1922,9 @@ bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuild
 
     /// Case-insensitive functions give the same result as `ILIKE` for every needle `ILIKE` accepts.
     String like_function_name;
-    if (search_function_name == "position" || search_function_name == "positionUTF8" || search_function_name == "countSubstrings")
+    if (isCaseSensitiveSubstringSearch(search_function_name))
         like_function_name = "like";
-    else if (search_function_name == "positionCaseInsensitive" || search_function_name == "positionCaseInsensitiveUTF8"
-        || search_function_name == "countSubstringsCaseInsensitive" || search_function_name == "countSubstringsCaseInsensitiveUTF8")
+    else if (isCaseInsensitiveSubstringSearch(search_function_name))
         like_function_name = "ilike";
     else
         return false;
