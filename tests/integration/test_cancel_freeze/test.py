@@ -37,8 +37,9 @@ def test_cancel_backup():
     node.query(
         f"CREATE TABLE tbl (x UInt32, y UInt32) ENGINE=MergeTree() PARTITION BY (x%{parts}) ORDER BY x"
     )
+    # Synchronous, so that writing the 20K parts is not bounded by `wait_for_async_insert_timeout`.
     node.query(
-        f"INSERT INTO tbl SELECT number, number FROM numbers({parts}) SETTINGS max_partitions_per_insert_block={parts}"
+        f"INSERT INTO tbl SELECT number, number FROM numbers({parts}) SETTINGS max_partitions_per_insert_block={parts}, async_insert=0"
     )
 
     uuid = node.query("SELECT uuid FROM system.tables WHERE name='tbl'").strip()
