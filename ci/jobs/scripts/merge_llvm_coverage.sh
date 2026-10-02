@@ -2,6 +2,11 @@
 
 set -e
 
+# Resolved before the `cd ci/tmp` below, while the invocation path is still valid.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./coverage_ignore_paths.sh
+source "$SCRIPT_DIR/coverage_ignore_paths.sh"
+
 echo "Merging LLVM coverage files..."
 
 # Debug: List available llvm tools
@@ -128,7 +133,6 @@ chmod +x clickhouse unit_tests_dbms 2>/dev/null || true
 echo "Generating coverage report..."
 # The coverage data references paths like "ci/tmp/build/base/base/..."
 # We created symlinks so those paths now resolve to actual source files
-# Ignore contrib files (coverage is disabled for them)
 
 # Detect workspace path - use WORKSPACE_PATH if set, otherwise try to detect
 if [ -z "$WORKSPACE_PATH" ]; then
@@ -144,7 +148,7 @@ echo "Using workspace path: $WORKSPACE_PATH"
         -object ./unit_tests_dbms   \
         -format=lcov   \
         -path-equivalence=ci/tmp/build,$WORKSPACE_PATH \
-        -ignore-filename-regex='contrib|_gtest_|\.pb\.|\.generated\.|/(QueryFuzzer|ThreadFuzzer|fuzzQuery|fuzzBits|StorageFuzzQuery|hasThreadFuzzer)\.(cpp|h)$|/fuzzers/' \
+        -ignore-filename-regex="$COVERAGE_IGNORE_FILENAME_REGEX" \
         -skip-expansions \
         > llvm_coverage.info
 

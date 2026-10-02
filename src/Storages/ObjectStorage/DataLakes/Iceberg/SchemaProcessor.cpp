@@ -405,8 +405,6 @@ void IcebergSchemaProcessor::dropCachedSchema(Int32 schema_id)
 void IcebergSchemaProcessor::addIcebergTableSchema(
     Poco::JSON::Object::Ptr schema_ptr, SchemaSource source, bool tolerate_conflicting_manifest_schemas)
 {
-    std::lock_guard lock(mutex);
-
     Int32 schema_id = schema_ptr->getValue<Int32>(f_schema_id);
 
     /// Databricks UniForm writes a degenerate placeholder schema (e.g. {"schema-id":0,"fields":[]})
@@ -414,15 +412,29 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
     if (!schema_ptr->isArray(f_fields) || schema_ptr->getArray(f_fields)->size() == 0)
         return;
 
+    std::unordered_map<String, String> type_mapping;
+    if (allow_geo_parser)
+    {
+        type_mapping[f_geography] = f_binary;
+        type_mapping[f_geometry] = f_binary;
+    }
+
+    Poco::JSON::Object::Ptr registered_schema;
+    {
+        SharedLockGuard lock(mutex);
+        auto it = iceberg_table_schemas_by_ids.find(schema_id);
+        if (it != iceberg_table_schemas_by_ids.end()
+            && (source == SchemaSource::ManifestFile || !manifest_sourced_schema_ids.contains(schema_id)))
+            registered_schema = it->second;
+    }
+    if (registered_schema && schemasAreIdentical(*registered_schema, *schema_ptr, type_mapping))
+        return;
+
+    std::lock_guard lock(mutex);
+
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
         chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
-        std::unordered_map<String, String> type_mapping;
-        if (allow_geo_parser)
-        {
-            type_mapping[f_geography] = f_binary;
-            type_mapping[f_geometry] = f_binary;
-        }
         if (schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
         {
             /// An identical metadata.json copy confirms a copy that was registered from a manifest header.

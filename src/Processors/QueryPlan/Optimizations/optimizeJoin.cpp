@@ -23,8 +23,8 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/Optimizations/debugHelpers.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -411,8 +411,7 @@ constexpr bool isInnerOrCross(JoinKind kind)
 static bool conflictDetectorReordersSemiAnti(const QueryPlanOptimizationSettings & optimization_settings)
 {
     const auto & algorithms = optimization_settings.query_plan_optimize_join_order_algorithm;
-    return (optimization_settings.query_plan_optimize_join_order_use_conflict_detector_a
-            || optimization_settings.query_plan_optimize_join_order_use_conflict_detector_c)
+    return optimization_settings.query_plan_optimize_join_order_conflict_detector != JoinOrderConflictDetector::NONE
         && algorithms.size() == 1
         && algorithms.front() == JoinOrderAlgorithm::DPSUB;
 }
@@ -946,6 +945,11 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     query_graph.join_kinds = std::move(query_graph_builder.join_kinds);
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);
     query_graph.conflict_ops = std::move(query_graph_builder.conflict_ops);
+    for (size_t i = 0; i < query_graph_builder.inputs.size(); ++i)
+    {
+        if (typeid_cast<const JoinStepLogicalLookup *>(query_graph_builder.inputs[i]->step.get()))
+            query_graph.prepared_storage_relations.set(i);
+    }
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());
 
