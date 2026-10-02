@@ -646,6 +646,35 @@ def test_create_and_load_table(started_cluster):
     assert result["metadata"]["properties"] == {"owner": "asya"}
 
 
+def test_partition_spec_without_field_ids(started_cluster):
+    ns = f"spec_ids_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+
+    # field-id is optional in CreateTableRequest. The server assigns 1000 + index.
+    spec = {
+        "fields": [
+            {"source-id": 1, "name": "id_p", "transform": "identity"},
+            {"source-id": 2, "name": "name_p", "transform": "identity"},
+        ]
+    }
+    metadata = create_table(ns, "no_ids", **{"partition-spec": spec}).json()["metadata"]
+    fields = metadata["partition-specs"][0]["fields"]
+    assert [field["field-id"] for field in fields] == [1000, 1001]
+    assert metadata["last-partition-id"] == 1001
+
+    # A missing field-id continues after the largest explicit one.
+    spec = {
+        "fields": [
+            {"source-id": 1, "field-id": 1005, "name": "id_p", "transform": "identity"},
+            {"source-id": 2, "name": "name_p", "transform": "identity"},
+        ]
+    }
+    metadata = create_table(ns, "mixed_ids", **{"partition-spec": spec}).json()["metadata"]
+    fields = metadata["partition-specs"][0]["fields"]
+    assert [field["field-id"] for field in fields] == [1005, 1006]
+    assert metadata["last-partition-id"] == 1006
+
+
 def test_table_location(started_cluster):
     ns = f"location_{uuid.uuid4().hex[:8]}"
     ns_location = f"s3://{BUCKET}/custom/{ns}"

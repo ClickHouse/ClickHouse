@@ -103,12 +103,18 @@ std::vector<Poco::JSON::Object::Ptr> getSpecFields(const Poco::JSON::Object & sp
 }
 
 /// Returns `last-partition-id`: the largest `field-id` of the spec, or the conventional value for an unpartitioned table.
+/// Assigns a `field-id` to every partition field that has none.
 Int64 getLastPartitionId(const Poco::JSON::Object & spec, const std::set<Int64> & schema_ids)
 {
     Int64 last_partition_id = PARTITION_FIELD_ID_START - 1;
-    for (const auto & field : getSpecFields(spec, "partition-spec", schema_ids))
-        /// TODO: `field-id` is optional in the request. Assign `1000 + index` when it is missing.
-        last_partition_id = std::max(last_partition_id, getInteger(*field, f_field_id, "'partition-spec' field"));
+    for (auto & field : getSpecFields(spec, "partition-spec", schema_ids))
+    {
+        /// If field-id is specified and valid, use it and bump the counter. Otherwise assign the next one.
+        if (field->has(f_field_id))
+            last_partition_id = std::max(last_partition_id, getInteger(*field, f_field_id, "'partition-spec' field"));
+        else
+            field->set(f_field_id, ++last_partition_id);
+    }
     return last_partition_id;
 }
 
@@ -149,6 +155,7 @@ Poco::JSON::Object::Ptr prepareSpec(Poco::JSON::Object::Ptr spec)
 
 }
 
+/// Normalizes the request objects in place to place them in the metadata.
 Poco::JSON::Object::Ptr buildInitialTableMetadata(
     const String & uuid,
     const String & location,
