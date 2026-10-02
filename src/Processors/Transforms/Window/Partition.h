@@ -25,7 +25,7 @@ public:
     const PartitionBounds & bounds() const;
 
 private:
-    PartitionBounds found;
+    PartitionBounds partition_bounds;
 };
 
 }

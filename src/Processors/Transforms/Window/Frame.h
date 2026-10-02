@@ -29,7 +29,7 @@ public:
 private:
     const WindowTransformParams & params;
     const WindowFrame definition;
-    FrameBounds found;
+    FrameBounds frame_bounds;
 };
 
 }

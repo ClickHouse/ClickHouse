@@ -78,7 +78,7 @@ bool isInsideFrame(const WindowTransformParams & params, const WindowFrame & fra
 
 void Frame::enterPartition(RowNumber partition_start)
 {
-    found = FrameBounds{.start = RowPoint{.location = partition_start}, .end = RowPoint{.location = partition_start}, .fully_visible = false};
+    frame_bounds = FrameBounds{.start = RowPoint{.location = partition_start}, .end = RowPoint{.location = partition_start}, .fully_visible = false};
 }
 
 Frame::Frame(const WindowTransformParams & params_, const WindowFrame & definition_)
@@ -107,21 +107,21 @@ void Frame::advance(const SlidingBlocks & blocks, const RowPoint & current, cons
         return true;
     };
 
-    found.fully_visible = false;
-    const bool start_found = advance_cursor(found.start, [&](const RowPoint & row) { return isBeforeFrame(params, definition, blocks, row, current); });
+    frame_bounds.fully_visible = false;
+    const bool start_found = advance_cursor(frame_bounds.start, [&](const RowPoint & row) { return isBeforeFrame(params, definition, blocks, row, current); });
     if (!start_found)
         return;
 
-    if (found.end.location < found.start.location)
-        found.end = found.start;
+    if (frame_bounds.end.location < frame_bounds.start.location)
+        frame_bounds.end = frame_bounds.start;
 
-    const bool end_found = advance_cursor(found.end, [&](const RowPoint & row) { return isInsideFrame(params, definition, blocks, row, current); });
-    found.fully_visible = end_found;
+    const bool end_found = advance_cursor(frame_bounds.end, [&](const RowPoint & row) { return isInsideFrame(params, definition, blocks, row, current); });
+    frame_bounds.fully_visible = end_found;
 }
 
 const FrameBounds & Frame::bounds() const
 {
-    return found;
+    return frame_bounds;
 }
 
 }

@@ -27,28 +27,28 @@ Partition::Partition()
 
 void Partition::beginAt(RowNumber first_row)
 {
-    found = PartitionBounds{.start = first_row, .end = RowNumber{first_row.block, first_row.row + 1}, .fully_visible = false};
+    partition_bounds = PartitionBounds{.start = first_row, .end = RowNumber{first_row.block, first_row.row + 1}, .fully_visible = false};
 }
 
 void Partition::advance(const SlidingBlocks & blocks)
 {
-    while (!found.fully_visible && found.end < blocks.end())
+    while (!partition_bounds.fully_visible && partition_bounds.end < blocks.end())
     {
-        const SlidingBlock & block = blocks.blockAt(found.end.block);
-        found.end = advancePartitionEnd(block, found.end);
-        found.fully_visible = found.end.block == block.block_number;
+        const SlidingBlock & block = blocks.blockAt(partition_bounds.end.block);
+        partition_bounds.end = advancePartitionEnd(block, partition_bounds.end);
+        partition_bounds.fully_visible = partition_bounds.end.block == block.block_number;
     }
 }
 
 void Partition::finish(RowNumber data_end)
 {
-    found.end = data_end;
-    found.fully_visible = true;
+    partition_bounds.end = data_end;
+    partition_bounds.fully_visible = true;
 }
 
 const PartitionBounds & Partition::bounds() const
 {
-    return found;
+    return partition_bounds;
 }
 
 }
