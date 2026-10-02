@@ -1,0 +1,70 @@
+-- The bucket top-K conversion keeps only the best n groups of each two-level bucket, ranked by the
+-- aggregation's `count()`. When `count()` shares the aggregation with other aggregate functions,
+-- each group's count sits in its aggregate state instead of the hash table cell, and the selection
+-- pass prefetches the states a fixed number of cells before it reads them. The cells compare that
+-- pass against the full conversion (`query_plan_aggregation_bucket_top_k = 0`) for buckets smaller
+-- and larger than the prefetch window, for fixed-width, string and serialized keys (including the
+-- legacy string table, which keeps the empty-string key apart from its other cells), for both sort
+-- directions, and through both the classic and the adaptive merge. `uniqExact` gives the states a
+-- nontrivial destructor. The five heaviest and the five lightest groups have unique counts, so each
+-- top-5 is exact: every cell prints the size of the symmetric difference of the two results (0)
+-- and the number of rows of the pruned result (5).
+
+SET max_threads = 4;
+SET max_block_size = 8192;
+SET group_by_two_level_threshold = 100;
+SET max_bytes_before_external_group_by = 0;
+SET max_bytes_ratio_before_external_group_by = 0;
+SET adaptive_aggregator_freeze_threshold = 128;
+SET collect_hash_table_stats_during_aggregation = 0;
+SET query_plan_enable_optimizations = 1;
+SET query_plan_push_down_limit = 1;
+
+DROP TABLE IF EXISTS t_bucket_top_k_count_state;
+CREATE TABLE t_bucket_top_k_count_state (k UInt64, v UInt64) ENGINE = Memory;
+
+-- 50000 groups of 10 rows, five heavy groups of 100..104 rows and five light groups of 1..5 rows.
+INSERT INTO t_bucket_top_k_count_state SELECT number % 50000, number FROM numbers(500000);
+INSERT INTO t_bucket_top_k_count_state SELECT 1000000 + i, j FROM (SELECT number AS i FROM numbers(5)) ARRAY JOIN range(100 + i) AS j;
+INSERT INTO t_bucket_top_k_count_state SELECT 2000000 + i, j FROM (SELECT number AS i FROM numbers(5)) ARRAY JOIN range(1 + i) AS j;
+
+-- The shape with `count()` next to other aggregate functions carries the flag.
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, count() AS c, sum(v) AS s FROM t_bucket_top_k_count_state GROUP BY k ORDER BY c DESC LIMIT 5)
+WHERE explain LIKE '%Bucket top-K: 5 descending%';
+
+{% set key_sets = [
+    ('UInt64', 'k', 'k', 1),
+    ('two numbers', 'k, k % 7', 'k, k % 7', 1),
+    ('String', "if(k = 1000004, '', toString(k)) AS sk", 'sk', 1),
+    ('String, legacy table', "if(k = 1000004, '', toString(k)) AS sk", 'sk', 0),
+    ('String and number', 'toString(k) AS sk, k % 7', 'sk, k % 7', 1),
+] -%}
+{% set bucket_sizes = [
+    ('buckets below the window', 'WHERE k < 1000 OR k >= 1000000'),
+    ('buckets above the window', ''),
+] -%}
+{% for adaptive in [0, 1] -%}
+SET enable_adaptive_aggregator = {{ adaptive }};
+{% for bucket_label, filter in bucket_sizes -%}
+{% for key_label, keys, group_keys, packed in key_sets -%}
+SET enable_packed_string_keys_in_aggregation = {{ packed }};
+{% for direction in ['DESC', 'ASC'] -%}
+{% set query = "SELECT " ~ keys ~ ", count() AS c, sum(v) AS s, avg(v) AS a, uniqExact(v) AS u FROM t_bucket_top_k_count_state " ~ filter ~ " GROUP BY " ~ group_keys ~ " ORDER BY c " ~ direction ~ " LIMIT 5" -%}
+SELECT 'adaptive {{ adaptive }}, {{ bucket_label }}, {{ key_label }}, {{ direction }}',
+    (SELECT count() FROM
+    (
+        (SELECT * FROM ({{ query }} SETTINGS query_plan_aggregation_bucket_top_k = 1)
+         EXCEPT ALL
+         SELECT * FROM ({{ query }} SETTINGS query_plan_aggregation_bucket_top_k = 0))
+        UNION ALL
+        (SELECT * FROM ({{ query }} SETTINGS query_plan_aggregation_bucket_top_k = 0)
+         EXCEPT ALL
+         SELECT * FROM ({{ query }} SETTINGS query_plan_aggregation_bucket_top_k = 1))
+    )),
+    (SELECT count() FROM ({{ query }} SETTINGS query_plan_aggregation_bucket_top_k = 1));
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+
+DROP TABLE t_bucket_top_k_count_state;
