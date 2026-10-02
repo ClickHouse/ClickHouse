@@ -2,6 +2,8 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Core/SortDescription.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -26,13 +28,19 @@ public:
     size_t getLimit() const { return limit; }
     size_t getOffset() const { return offset; }
 
-    size_t getLimitForSorting() const
+    /// Number of leading rows a source must produce for this `LIMIT` to be satisfiable,
+    /// i.e. `limit + offset`. Empty when that sum does not fit in `UInt64`, so there is no
+    /// representable bound to push down.
+    std::optional<size_t> getLimitWithOffset() const
     {
         if (limit > std::numeric_limits<UInt64>::max() - offset)
-            return 0;
+            return {};
 
         return limit + offset;
     }
+
+    /// 0 means unlimited, as everywhere in the sorting code.
+    size_t getLimitForSorting() const { return getLimitWithOffset().value_or(0); }
 
     bool withTies() const { return with_ties; }
     bool alwaysReadTillEnd() const { return always_read_till_end; }
