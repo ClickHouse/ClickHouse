@@ -181,7 +181,7 @@ clicklink clctl instances create \
 
 Before the definition reaches your cluster, the command reads the default encryption of both buckets with your AWS credentials. A bucket whose default encryption is not SSE-KMS is refused: on SSE-S3 buckets the server encrypts the objects under your key but the bucket stores them under an S3-managed key. Pass `--allow-mixed-encryption` to accept that on purpose. The flag is only accepted together with `--tde-kms-key-arn`.
 
-When the create arrives, the connector calls `kms:DescribeKey` on the key and stops before writing anything if the key is not `Enabled`, is not for `ENCRYPT_DECRYPT`, or refuses the role. Then it generates a 32-byte data key, wraps it with `kms:Encrypt` under your key, and stores the wrapped key in a Secret in the service namespace. The server unwraps the data key with the service's pod role. A retried create keeps the first data key. A retry with a different key is refused, and the error lists both ARNs.
+When the create arrives, the connector calls `kms:DescribeKey` on the key and stops before writing anything if the key is not `Enabled`, is not for `ENCRYPT_DECRYPT`, or refuses the role. Then it generates a 32-byte data key, wraps it with `kms:Encrypt` under your key, and stores the wrapped key in a Secret in the service namespace and in a record at `_tde/<service uuid>/keys.json` in the backup bucket, which outlives the namespace and keeps backups restorable. The server unwraps the data key with the service's pod role. A retried create keeps the first data key. A retry with a different key is refused, and the error lists both ARNs.
 
 <Note>
 TDE is fixed at create. A service created without `--tde-kms-key-arn` cannot be switched to TDE later, and a TDE service cannot be switched off. To change either, create a new service.
@@ -196,7 +196,7 @@ clicklink clctl instances rotate-tde-key --name <name> \
   --tde-kms-key-arn arn:aws:kms:<region>:<account-id>:key/<new-id>
 ```
 
-The command reaches the connector's local API, so run it on the connector host, or through a `kubectl port-forward` as for [status](/products/bring-your-own-cloud/connector/managed-services#status). The wrapped data key is re-wrapped inside KMS with `kms:ReEncrypt`: the data key itself does not change and its plaintext never leaves KMS. The Secret's current key entry is replaced in place, and the server pods roll the way a restart rolls them. The service no longer references the old key once the pods are back; check that no backup you intend to restore was taken under it before you disable it. Submitting the key that is already current only rolls the pods. A new key in another region is refused.
+The command reaches the connector's local API, so run it on the connector host, or through a `kubectl port-forward` as for [status](/products/bring-your-own-cloud/connector/managed-services#status). The wrapped data key is re-wrapped inside KMS with `kms:ReEncrypt*`: the data key itself does not change and its plaintext never leaves KMS. The Secret's current key entry is replaced in place, and the server pods roll the way a restart rolls them. The service no longer references the old key once the pods are back; check that no backup you intend to restore was taken under it before you disable it. Submitting the key that is already current only rolls the pods. A new key in another region is refused.
 
 This command is for moving to a different key. Automatic key rotation on the KMS key itself, which the Terraform example turns on, needs no action: KMS keeps the earlier key material and the wrapped data key stays decryptable.
 
@@ -214,7 +214,7 @@ Nothing in the connector or in ClickHouse Cloud polls the key. The first sign of
 ## What ClickHouse never has {#what-clickhouse-never-has}
 
 - ClickHouse Cloud has no identity in your account. Every call to KMS, S3, and IAM runs under a role you created: the Terraform roles, the service role `prepare` creates, or your own credentials when you run `prepare`, `storage ensure`, and `instances create`.
-- The connector holds no credentials for your buckets or IAM roles. The only KMS calls the connector makes are `kms:DescribeKey`, `kms:Encrypt`, and `kms:ReEncrypt` on a TDE key; there is no `kms:Decrypt` call.
-- The plaintext data key is generated in your cluster and cleared as soon as it is wrapped. Afterwards the connector holds only the wrapped key; the server pods unwrap it with the service's pod role. At rotation it is re-wrapped inside KMS and never appears in plaintext outside KMS.
+- The connector holds no credentials for your IAM roles, and its only bucket access is the `_tde/` prefix of the backup bucket, where it keeps the wrapped data key record. The only KMS calls the connector makes are `kms:DescribeKey`, `kms:Encrypt`, and `kms:ReEncrypt*` on a TDE key; it never calls `kms:Decrypt` on one.
+- The plaintext data key is generated inside your environment, in the executor pod on Kubernetes or on the connector host on a VM, and cleared as soon as it is wrapped. Afterwards the connector holds only the wrapped key; the server pods unwrap it with the service's pod role. At rotation it is re-wrapped inside KMS and never appears in plaintext outside KMS.
 - ClickHouse Cloud receives the key ARN with the create. It never receives key material, a wrapped data key, or a credential to your key.
 - The key policy is yours. Remove the statements for the connector's role or the service role, or disable the key, and access ends with them.

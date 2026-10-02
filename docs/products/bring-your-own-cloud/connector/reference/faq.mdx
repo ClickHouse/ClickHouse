@@ -72,7 +72,7 @@ To diagnose, check each component's `/livez` endpoint (the JSON `status` field i
 
 ### What is deleted when a service is deleted? {#what-is-deleted}
 
-The executor stops the service, removes its Kubernetes resources, and deletes its namespace. It reports the service terminated once the namespace is gone. Everything outside Kubernetes stays: the data bucket, the backup bucket, and the service's IAM role. The executor holds no credentials for your buckets or IAM, so it cannot touch them.
+The executor stops the service, removes its Kubernetes resources, and deletes its namespace. It reports the service terminated once the namespace is gone. Everything outside Kubernetes stays: the data bucket, the backup bucket, and the service's IAM role. The executor holds no credentials for your IAM and no bucket access beyond the `_tde/` key-record prefix, so it cannot touch them.
 
 You remove the rest with `clicklink clctl executor teardown`, run with your credentials. By default it removes the IAM role and keeps the data and the backups; deleting them takes explicit flags. See [delete a service](/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
 
