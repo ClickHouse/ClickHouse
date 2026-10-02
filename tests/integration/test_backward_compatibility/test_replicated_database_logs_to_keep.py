@@ -1,6 +1,8 @@
-# A `Replicated` database created by the current server must stay safe for replicas still running a
-# release whose DDL worker evaluates `entry_number + logs_to_keep < max_log_ptr` in 32-bit arithmetic,
-# see https://github.com/ClickHouse/ClickHouse/issues/122377.
+# A `Replicated` database must stay safe for replicas still running a release whose DDL worker evaluates
+# `entry_number + logs_to_keep < max_log_ptr` in 32-bit arithmetic, see
+# https://github.com/ClickHouse/ClickHouse/issues/122377. This holds both for a database created by the
+# current server and for one created while the maximum was `UInt32::max`, whose Keeper node the current
+# server rewrites.
 
 import time
 import uuid
@@ -99,3 +101,31 @@ def test_old_replica_of_database_created_by_new_server(start_cluster):
     node_old.query(f"ATTACH DATABASE {db}")
     node_old.query(f"DROP DATABASE {db} SYNC")
     node_new.query(f"DROP DATABASE {db} SYNC")
+
+
+def test_oversized_logs_to_keep_in_keeper_is_rewritten(start_cluster):
+    # A database created while the maximum was `UInt32::max` holds that value in Keeper. The current
+    # server must rewrite the node, because older replicas joining later, or after a rollback, read it.
+    db = f"db_{uuid.uuid4().hex[:8]}"
+    path = f"/clickhouse/databases/{db}"
+    logs_to_keep_path = f"{path}/logs_to_keep"
+
+    node_new.query(f"CREATE DATABASE {db} ENGINE = Replicated('{path}', 's1', 'new')")
+
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        node_new.query(f"DETACH DATABASE {db}")
+        zk.set(logs_to_keep_path, b"4294967295")
+
+        # A re-attached database gets a new DDL worker, which reads `logs_to_keep` from Keeper when it starts.
+        node_new.query(f"ATTACH DATABASE {db}")
+        for _ in range(60):
+            if zk.get(logs_to_keep_path)[0] == b"2147483647":
+                break
+            time.sleep(0.5)
+        assert zk.get(logs_to_keep_path)[0] == b"2147483647"
+        assert node_new.contains_in_log(f"Keeper ({logs_to_keep_path}) held 4294967295")
+    finally:
+        zk.stop()
+        zk.close()
+        node_new.query(f"DROP DATABASE IF EXISTS {db} SYNC")

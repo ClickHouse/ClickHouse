@@ -56,6 +56,43 @@ namespace FailPoints
     extern const char database_replicated_stop_entry_execution[];
 }
 
+namespace
+{
+UInt32 getLogsToKeepAndRepairKeeper(const LoggerPtr & log,
+    const ZooKeeperPtr & zookeeper,
+    const String & zookeeper_path)
+{
+    static_assert(DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP <= std::numeric_limits<UInt32>::max());
+    const auto path = zookeeper_path + "/logs_to_keep";
+    while (true)
+    {
+        Coordination::Stat logs_to_keep_stat;
+        const UInt64 keeper_logs_to_keep = parse<UInt64>(zookeeper->get(path, &logs_to_keep_stat));
+        if (keeper_logs_to_keep <= DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP)
+        {
+            return static_cast<UInt32>(keeper_logs_to_keep);
+        }
+
+        const auto err = zookeeper->trySet(path, std::to_string(DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP), logs_to_keep_stat.version);
+        if (err == Coordination::Error::ZOK)
+        {
+            LOG_WARNING(
+                log,
+                "The `logs_to_keep` node of the Replicated database in Keeper ({}) held {}, which exceeds the maximum of {}, "
+                "so the maximum is used instead and the node was updated to hold the maximum",
+                path,
+                keeper_logs_to_keep,
+                DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP);
+            return DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP;
+        }
+
+        if (err != Coordination::Error::ZBADVERSION)
+        {
+            throw zkutil::KeeperException::fromPath(err, path);
+        }
+    }
+}
+}
 
 DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_)
     : DDLWorker(
@@ -205,18 +242,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     Coordination::Stat max_log_ptr_stat;
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr", &max_log_ptr_stat));
 
-    const UInt64 keeper_logs_to_keep = parse<UInt64>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
-    logs_to_keep = static_cast<UInt32>(std::min(DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP, keeper_logs_to_keep));
-    if (keeper_logs_to_keep > DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP)
-    {
-        LOG_WARNING(
-            log,
-            "The `logs_to_keep` node of the Replicated database in Keeper ({}) holds {}, which exceeds the maximum of {}, "
-            "so the maximum is used instead",
-            database->zookeeper_path + "/logs_to_keep",
-            keeper_logs_to_keep,
-            DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP);
-    }
+    logs_to_keep = getLogsToKeepAndRepairKeeper(log, zookeeper, database->zookeeper_path);
 
     UInt64 digest = 0;
     String digest_str;
