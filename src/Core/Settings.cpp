@@ -7404,9 +7404,9 @@ This is an expert-level setting which should only be used for debugging by devel
         {"26.10", false, true, "Enable query_plan_lower_array_join_function by default."}, \
         {"26.9", false, false, "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."}) \
     DECLARE(Bool, legacy_array_join_function_nondeterministic_evaluation, false, R"(
-How a non-deterministic function next to the `arrayJoin` function is evaluated when it does not depend on the joined value, for example `rand()` or `generateUUIDv4()` in the same `SELECT`. By default it gives a different value on every output row, like with the `ARRAY JOIN` clause. Enable to get the behavior of older versions: one value per source row, repeated across that row's expanded rows.
+How non-deterministic and block-dependent functions next to the `arrayJoin` function are evaluated. By default `rand()` gives a different value on every output row and `runningDifference` or `neighbor` see the blocks of the expansion, like with the `ARRAY JOIN` clause. Enable to get the behavior of older versions.
 )", 0, \
-        {"26.10", true, false, "A non-deterministic function next to the `arrayJoin` function gives a different value on every output row, like with the `ARRAY JOIN` clause. The setting restores one value per source row."}) \
+        {"26.10", true, false, "Non-deterministic and block-dependent functions next to the `arrayJoin` function are evaluated like with the `ARRAY JOIN` clause."}) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
@@ -7420,6 +7420,22 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_filter_push_down_below_limit_by, true, R"(
+Toggles pushing filters on `LIMIT BY` key columns below the `LIMIT BY` step.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+It is read independently of [query_plan_filter_push_down](#query_plan_filter_push_down): the push-down pass also runs, with that setting off, once a `JOIN` runtime filter has been added.
+
+<Note>
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+</Note>
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.10", true, true, "New setting to control pushing a filter on the `LIMIT BY` key columns below the `LIMIT BY` step. Set it to false to keep the filter above the `LIMIT BY`."}, \
+        {"26.8", false, true, "New setting to control pushing a filter on the `LIMIT BY` key columns below the `LIMIT BY` step. Set it to false to keep the filter above the `LIMIT BY`."}) \
     DECLARE(Bool, query_plan_propagate_predicate_across_join, true, R"(
 Toggles a query-plan-level optimization which copies filter conjuncts from one side of an
 equi-join onto the other side via equi-key substitution, so that primary-key/index pruning
@@ -10419,6 +10435,10 @@ order. Only shapes where no exchange survives between the read and the sort are 
 Serialize the distributed query plan for execution at replicas.
 )", PRIVATE_PREVIEW, \
         {"26.4", false, false, "New setting to serialize distributed plan for replicas"}) \
+    DECLARE(UInt64, distributed_plan_max_buffered_log_rows, 100000, R"(
+When `send_logs_level` forwards stateless-worker task logs to the coordinator, each worker task buffers at most this many log lines between status polls. Lines beyond the bound are dropped and their count is reported to the client. `0` means unbounded (never drops, but a stalled status poll can grow the buffer without limit).
+)", EXPERIMENTAL, \
+        {"26.10", 100000, 100000, "New setting bounding how many log lines a stateless-worker task buffers for forwarding to the coordinator between status polls; excess lines are dropped and counted. New feature, so the previous value equals the default."}) \
     DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
 Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL, \

@@ -195,6 +195,8 @@ SELECT * FROM sqlite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1)
 SELECT * FROM sqlite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col2 > 1'));
 ```
 
+Passing a query is supported starting from version 26.7. ClickHouse wraps the query into `SELECT ... FROM (<query>)` before sending it to SQLite, so it must not end with a semicolon.
+
 Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`SQLite`](/reference/engines/table-engines/integrations/sqlite) table engine.
 
 <Note>

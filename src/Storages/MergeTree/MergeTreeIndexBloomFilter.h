@@ -99,6 +99,7 @@ private:
     const NameSet columns_shadowing_map_subcolumns;
     /// Argument types of the JSON index functions of this index, by position in `header`.
     const JSONIndexArgumentTypes json_argument_types;
+    const bool validate_enum_literals_in_operators;
     std::vector<RPNElement> rpn;
 
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;

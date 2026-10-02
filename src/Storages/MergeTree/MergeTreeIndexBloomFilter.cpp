@@ -5,7 +5,9 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -14,6 +16,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
@@ -29,6 +32,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool validate_enum_literals_in_operators;
+}
 
 namespace ErrorCodes
 {
@@ -322,6 +330,7 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     , hash_functions(hash_functions_)
     , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
     , json_argument_types(std::move(json_argument_types_))
+    , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
 {
     if (!predicate)
     {
@@ -994,6 +1003,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 if (array_type && bloomFilterHashDomainMatches(value_type, array_type->getNestedType()))
                 {
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
+                    if (!validate_enum_literals_in_operators && isUnknownEnumElement(*actual_type, value_field))
+                    {
+                        out.function = RPNElement::ALWAYS_FALSE;
+                        return true;
+                    }
+
                     auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
                     if (converted_field.isNull())
                         return false;
@@ -1087,6 +1102,14 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
                 if (fixed_index_type && fixed_index_type->getN() < constant_bytes)
                     return false;
+            }
+
+            /// With validation off, `equals` against a name the enum lacks is constant false for every row,
+            /// so the conversion below must not throw; `KeyCondition` folds the same way.
+            if (function_name == "equals" && !validate_enum_literals_in_operators && isUnknownEnumElement(*actual_type, value_field))
+            {
+                out.function = RPNElement::ALWAYS_FALSE;
+                return true;
             }
 
             auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
