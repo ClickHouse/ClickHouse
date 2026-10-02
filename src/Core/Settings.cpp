@@ -9124,6 +9124,12 @@ The total number of bytes to read is estimated based on the collected statistics
 )", EXPERIMENTAL, \
         {"26.1", 0, 1_MiB, "Better default value derived from testing results"}, \
         {"25.12", 0, 0, "New setting"}) \
+    DECLARE(Bool, automatic_parallel_replicas_ignore_thresholds, false, R"(
+For testing of the automatic parallel replicas cost model - ignore the cap on how many threads a read can usefully occupy (derived from `merge_tree_min_bytes_per_task_for_remote_reading`), which otherwise clamps both sides of the comparison to the same value for a read too small to occupy `max_threads`, so that the comparison collapses to `0 > output_bytes / replicas` and the query is decided before the cost model is consulted.
+
+It deliberately does NOT touch `automatic_parallel_replicas_min_bytes_per_replica`: set that to 0 to disable that gate, which is what it is for. Nor does it change read task sizing, or suppress the recollection of statistics that have drifted - a decision made on stale statistics is not a decision made by the cost model.
+)", 0, \
+        {"26.10", false, false, "New setting: for testing, ignore the reading-thread cap of the automatic parallel replicas cost model so that small reads are decided by the comparison rather than short-circuited by the cap."}) \
     DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
 The maximum number of replicas for each shard when executing a query.
 

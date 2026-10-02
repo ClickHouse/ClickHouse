@@ -15,6 +15,12 @@ SET enable_analyzer=1;
 SET max_threads=4;
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 SET automatic_parallel_replicas_min_bytes_per_replica=0;
+-- This test asserts the reading-thread cap itself (it sets
+-- `automatic_parallel_replicas_min_bytes_per_replica` to 0, so the cap is the only thing keeping a
+-- small read local), so it must run with the cap on. The `AutoParallelReplicas` stateless jobs turn
+-- it off in their server profile, and `no-random-settings` gives no protection against a server
+-- profile.
+SET automatic_parallel_replicas_ignore_thresholds=0;
 
 INSERT INTO t SELECT number, toString(number) FROM numbers(1e6);
 
