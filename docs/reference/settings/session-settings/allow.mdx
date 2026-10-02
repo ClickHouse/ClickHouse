@@ -60,7 +60,7 @@ If it's enabled, in hedged requests we can start new connection until receiving 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Added an alias for setting `allow_experimental_correlated_subqueries`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Added an alias for setting `allow_experimental_correlated_subqueries`."}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "1"},{"label": "Mark correlated subqueries support as Beta. At the time the setting was named `allow_experimental_correlated_subqueries`, which is now an alias of it."}]}, {"id": "row-3","items": [{"label": "25.4"},{"label": "0"},{"label": "Added new setting to allow correlated subqueries execution. At the time the setting was named `allow_experimental_correlated_subqueries`, which is now an alias of it."}]}]}/>
 
 Allow to execute correlated subqueries.
 
@@ -92,7 +92,7 @@ Enable custom error code in function throwIf(). If true, thrown exceptions may h
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_database_glue_catalog`"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_database_glue_catalog`"}]}, {"id": "row-2","items": [{"label": "25.3"},{"label": "0"},{"label": "Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'. At the time the setting was named `allow_experimental_database_glue_catalog`, which is now an alias of it."}]}]}/>
 
 Allow database engine `DataLakeCatalog` with `catalog_type = 'glue'`
 
@@ -106,7 +106,7 @@ Cloud default value: `1`.
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_database_iceberg`"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_database_iceberg`"}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "New setting. At the time the setting was named `allow_experimental_database_iceberg`, which is now an alias of it."}]}]}/>
 
 Allow database engine `DataLakeCatalog` with `catalog_type = 'iceberg'`
 
@@ -120,7 +120,7 @@ Cloud default value: `1`.
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_database_unity_catalog`"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_database_unity_catalog`"}]}, {"id": "row-2","items": [{"label": "25.3"},{"label": "0"},{"label": "Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'. At the time the setting was named `allow_experimental_database_unity_catalog`, which is now an alias of it."}]}]}/>
 
 Allow database engine `DataLakeCatalog` with `catalog_type = 'unity'`
 
@@ -162,7 +162,7 @@ Allow creating a new DeltaLake table using delta-kernel-rs or registering an exi
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "New setting. At the time the setting was named `allow_experimental_delta_lake_writes`, which is now an alias of it."}]}]}/>
 
 Enables delta-kernel writes feature.
 
@@ -236,7 +236,7 @@ Allows a more general join planning algorithm that can handle more complex condi
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_geo_types_in_iceberg`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_geo_types_in_iceberg`."}]}, {"id": "row-2","items": [{"label": "26.5"},{"label": "0"},{"label": "New setting to allow parsing Iceberg geometry\/geography fields as Geometry type. At the time the setting was named `allow_experimental_geo_types_in_iceberg`, which is now an alias of it."}]}]}/>
 
 Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
 
@@ -272,7 +272,7 @@ Allow to use 'ALTER TABLE ... EXECUTE remove_orphan_files()' for iceberg tables.
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Insert into iceberg was moved to Beta"}]}, {"id": "row-2","items": [{"label": "25.7"},{"label": "0"},{"label": "New setting."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Insert into iceberg was moved to Beta. This also applies to the alias `allow_experimental_insert_into_iceberg`."}]}, {"id": "row-2","items": [{"label": "25.7"},{"label": "0"},{"label": "New setting."}]}]}/>
 
 Allow to execute `insert` queries into iceberg.
 
@@ -300,7 +300,7 @@ Possible values:
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_join_right_table_sorting`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_join_right_table_sorting`."}]}, {"id": "row-2","items": [{"label": "24.9"},{"label": "0"},{"label": "If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join. At the time the setting was named `allow_experimental_join_right_table_sorting`, which is now an alias of it."}]}]}/>
 
 If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
 This setting is experimental and currently does not work together with all other join optimizations.
@@ -314,7 +314,7 @@ In particular, when the right table is reranged, the per-key split controlled by
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_kafka_offsets_storage_in_keeper`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_kafka_offsets_storage_in_keeper`."}]}, {"id": "row-2","items": [{"label": "24.8"},{"label": "0"},{"label": "Allow the usage of experimental Kafka storage engine that stores the committed offsets in ClickHouse Keeper. At the time the setting was named `allow_experimental_kafka_offsets_storage_in_keeper`, which is now an alias of it."}]}]}/>
 
 Allow storing Kafka related offsets in ClickHouse Keeper. When enabled, a ClickHouse Keeper path and replica name can be specified to the Kafka table engine. As a result instead of the regular Kafka engine, a new type of storage engine will be used that stores the committed offsets primarily in ClickHouse Keeper
 
@@ -544,7 +544,7 @@ Allow unrestricted (without condition on path) reads from system.zookeeper table
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_url_wildcard_from_index_pages`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_url_wildcard_from_index_pages`."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "New setting to enable expanding wildcards in the `url` table function by listing HTTP index pages. At the time the setting was named `allow_experimental_url_wildcard_from_index_pages`, which is now an alias of it."}]}]}/>
 
 Allow wildcard expansion for `url()` and `ENGINE = URL` from HTTP index pages.
 
