@@ -1260,7 +1260,13 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 Estimates the benefit a hypothetical skip index would have on a `SELECT` query, *without* materializing the index on disk. Define one or more candidates with [`CREATE HYPOTHETICAL INDEX`](/reference/statements/hypothetical-index#create-hypothetical-index), then run `EXPLAIN WHATIF SELECT ...` to see, for each candidate: applicability, estimated marks read, estimated bytes, and skip ratio.
 
-Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are candidates too. For a normal projection, the estimate builds its primary index in memory over the parts the query would read and reports the marks and rows it would read, a `read_ratio` against the base-table read, and a `verdict` on whether the optimizer would choose it. When the result depends on how the projection part would be laid out, `marks_span` gives the range, and a decision that could go either way is reported as `too close to call`. On large tables the estimate reads a sample of granules (see `projection_scan_budget_rows`). Aggregate projections, projections with a `WHERE` clause, their own skip indexes, a commit-order or virtual-column key or a stored `_block_number`, and projections that do not cover every column the query reads are reported as `not_applicable`. `force_optimize_projection`, `force_optimize_projection_name` and `preferred_optimize_projection_name` are ignored.
+Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are candidates too. For a normal projection, the estimate builds its primary index in memory over the parts the query would read and prunes it as a materialized projection would be pruned.
+
+The report gives the marks and rows it would read, a `read_ratio` against the base-table read, and a `verdict` on whether the optimizer would choose it. With `force_optimize_projection = 1` or `prefer_optimize_projection = 1` the optimizer uses any usable projection, so one it would not pick by cost is reported as `chosen (forced)`.
+
+When the result depends on how the projection part would be laid out, `marks_span` gives the range, and a decision that could go either way is reported as `too close to call`. On large tables the estimate reads a sample of granules (see `projection_scan_budget_rows`).
+
+Aggregate projections, projections with a `WHERE` clause, their own skip indexes, a commit-order or virtual-column key or a stored `_block_number`, and projections that do not cover every column the query reads are reported as `not_applicable`. `force_optimize_projection_name` and `preferred_optimize_projection_name` are ignored, and `force_optimize_projection` does not fail the statement.
 
 **Syntax**
 
