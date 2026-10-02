@@ -19,8 +19,6 @@
 #include <Parsers/ParserDatabaseOrNone.h>
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 #include <base/range.h>
 #include <base/insertAtEnd.h>
@@ -868,14 +866,12 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     return true;
 }
-}
 
-namespace DB
+std::map<String, Documentation> ParserCreateUserQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementUser(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE USER",
+    documentation["CREATE USER"] =
     {
         .description = R"DOCS_MD(
 Creates [user accounts](/concepts/features/security/access-rights#user-account-management).
@@ -1203,9 +1199,9 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 )",
         .parent = "CREATE",
         .related = {"ALTER USER", "CREATE ROLE", "GRANT", "DROP", "SHOW"},
-    });
+    };
 
-    factory.registerStatement("ALTER USER",
+    documentation["ALTER USER"] =
     {
         .description = R"DOCS_MD(
 Changes ClickHouse user accounts.
@@ -1378,7 +1374,9 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
 )",
         .parent = "ALTER",
         .related = {"CREATE USER", "ALTER", "GRANT", "SHOW"},
-    });
+    };
+
+    return documentation;
 }
 
 }
