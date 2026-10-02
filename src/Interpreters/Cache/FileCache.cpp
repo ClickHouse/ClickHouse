@@ -1262,18 +1262,40 @@ bool FileCache::doTryReserve(
         throw;
     }
 
+    /// Undo the reservation, so `main_priority` stays consistent with `FileSegment::reserved_size`.
+    auto rollback_main_entry = [&]
+    {
+        if (added_new_main_entry)
+            main_priority_iterator->invalidate();
+        else
+            main_priority_iterator->decrementSize(size);
+    };
+
+    /// After eviction, so a full cache disk can still admit.
+    bool created_base_directory = false;
+    try
+    {
+        created_base_directory = file_segment.getKeyMetadata()->createBaseDirectory();
+    }
+    catch (...)
+    {
+        rollback_main_entry();
+        throw;
+    }
+
+    if (!created_base_directory)
+    {
+        rollback_main_entry();
+        failure_reason = "not enough space on device";
+        return false;
+    }
+
     /// Mark that size was successfully updated.
     if (added_new_main_entry)
         file_segment.setQueueIterator(main_priority_iterator);
 
     file_segment.reserved_size += size;
     chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
-
-    if (!file_segment.getKeyMetadata()->createBaseDirectory())
-    {
-        failure_reason = "not enough space on device";
-        return false;
-    }
 
     return true;
 }
