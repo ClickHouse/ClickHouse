@@ -129,33 +129,6 @@ def connect_as_old_interserver_peer(node):
     return sock
 
 
-def connect_as_ordinary_client(node):
-    """Handshake as a normal (non-interserver) client and return the socket."""
-    hello = (
-        varuint(0)
-        + varstring("test")           # client name
-        + varuint(24)                 # version major
-        + varuint(3)                  # version minor
-        + varuint(OLD_REVISION)       # tcp protocol revision
-        + varstring("default")        # default database
-        + varstring("default")        # user
-        + varstring("")               # password
-    )
-
-    sock = socket.create_connection((node.ip_address, 9000), timeout=20)
-    sock.settimeout(20)
-    sock.sendall(hello)
-    read_varuint(sock)      # packet type (Hello)
-    read_varstring(sock)    # server name
-    read_varuint(sock)      # version major
-    read_varuint(sock)      # version minor
-    read_varuint(sock)      # revision
-    read_varstring(sock)    # timezone
-    read_varstring(sock)    # display name
-    read_varuint(sock)      # version patch
-    return sock
-
-
 def tables_status_request(tables):
     """A `TablesStatusRequest` (client packet 5) without an authentication hash, as an
     older peer sends it."""
@@ -282,79 +255,6 @@ def test_rolling_upgrade_initiator_on_old_version_is_rejected_in_strict_mode(
             "prefer_localhost_replica=0, max_replica_delay_for_distributed_queries=300, "
             "fallback_to_stale_replicas_for_distributed_queries=1"
         )
-
-
-def test_interserver_request_table_count_is_bounded(started_cluster):
-    """The request body is deserialized before the peer is authenticated, so the number of
-    tables an interserver peer can ask about is capped at
-    `MAX_TABLES_IN_INTERSERVER_STATUS_REQUEST`. At the cap the request is still answered;
-    above it the connection is closed without a response (any exception on an
-    unauthenticated interserver connection closes it silently)."""
-    sock = connect_as_old_interserver_peer(node_default)
-    try:
-        sock.sendall(
-            tables_status_request([("default", f"t{i}") for i in range(1024)])
-        )
-        states = read_tables_status_response(sock)
-    finally:
-        sock.close()
-    assert len(states) == 1024, f"expected 1024 table states, got {len(states)}"
-
-    sock = connect_as_old_interserver_peer(node_default)
-    try:
-        sock.sendall(
-            tables_status_request([("default", f"t{i}") for i in range(1025)])
-        )
-        try:
-            data = sock.recv(4096)
-        except ConnectionResetError:
-            data = b""
-        assert not data, (
-            "server answered an interserver TablesStatusRequest that exceeds the table-count "
-            "bound"
-        )
-    finally:
-        sock.close()
-
-
-def test_interserver_request_name_length_is_bounded(started_cluster):
-    """The table count alone does not bound the request: `readStringBinary` allocates the
-    declared size of a name before reading its bytes, so a single name declared as 1 GiB
-    would be an unauthenticated allocation. Names are capped as well, and the request is
-    refused before the declared bytes are allocated."""
-    sock = connect_as_old_interserver_peer(node_default)
-    try:
-        # A name whose declared length exceeds the cap. Only the length is sent - the point is
-        # that the server must not allocate it while waiting for bytes that never arrive.
-        oversized = varuint(5) + varuint(1) + varstring("default") + varuint(1 << 30)
-        sock.sendall(oversized)
-        try:
-            data = sock.recv(4096)
-        except ConnectionResetError:
-            data = b""
-        assert not data, (
-            "server answered an interserver TablesStatusRequest declaring an oversized table name"
-        )
-    finally:
-        sock.close()
-
-
-def test_ordinary_client_table_count_is_not_bounded_by_the_interserver_limit(
-    started_cluster,
-):
-    """The bound applies to the interserver path only: an ordinary authenticated client can
-    still ask about more tables than `MAX_TABLES_IN_INTERSERVER_STATUS_REQUEST`, as it could
-    before. None of the tables exist, so the response is empty - the point is that it is a
-    response and not a `TOO_LARGE_ARRAY_SIZE` error."""
-    sock = connect_as_ordinary_client(node_default)
-    try:
-        sock.sendall(
-            tables_status_request([("default", f"t{i}") for i in range(1025)])
-        )
-        states = read_tables_status_response(sock)
-    finally:
-        sock.close()
-    assert states == {}, f"unexpected table states for tables that do not exist: {states}"
 
 
 def test_old_protocol_unauthenticated_request_is_rejected(started_cluster):

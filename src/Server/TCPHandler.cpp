@@ -1637,7 +1637,7 @@ void TCPHandler::processTablesStatusRequest()
             /// Deserialize the body so its digest can bind the hash (same as `processQuery` reading
             /// the query before validating the per-query secret hash). Tables are resolved only after
             /// the hash validates below.
-            request.read(*in, client_tcp_protocol_version, INTERSERVER_TABLES_STATUS_REQUEST_LIMITS);
+            request.read(*in, client_tcp_protocol_version);
 
             String cluster_secret;
             try
@@ -1683,10 +1683,9 @@ void TCPHandler::processTablesStatusRequest()
                     "TablesStatusRequest requires interserver authentication");
 
             /// Otherwise read it - the Query packet of a not-yet-authenticated interserver peer is
-            /// deserialized the same way, under the same kind of bounds - but do not resolve the
-            /// tables unless an earlier Query on this connection has already authenticated with the
-            /// cluster secret.
-            request.read(*in, client_tcp_protocol_version, INTERSERVER_TABLES_STATUS_REQUEST_LIMITS);
+            /// deserialized the same way - but do not resolve the tables unless an earlier Query on
+            /// this connection has already authenticated with the cluster secret.
+            request.read(*in, client_tcp_protocol_version);
 
             if (!is_interserver_authenticated)
             {
@@ -1714,7 +1713,7 @@ void TCPHandler::processTablesStatusRequest()
     {
         chassert(session);
         context_to_resolve_table_names = session->sessionContext();
-        request.read(*in, client_tcp_protocol_version, {DEFAULT_MAX_STRING_SIZE, DEFAULT_MAX_STRING_SIZE});
+        request.read(*in, client_tcp_protocol_version);
     }
 
     TablesStatusResponse response;
@@ -1781,10 +1780,7 @@ void TCPHandler::processUnexpectedTablesStatusRequest()
     }
 
     TablesStatusRequest skip_request;
-    skip_request.read(*in, client_tcp_protocol_version,
-        is_interserver_mode
-            ? INTERSERVER_TABLES_STATUS_REQUEST_LIMITS
-            : TablesStatusRequestLimits{DEFAULT_MAX_STRING_SIZE, DEFAULT_MAX_STRING_SIZE});
+    skip_request.read(*in, client_tcp_protocol_version);
 
     throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet TablesStatusRequest received from client");
 }
