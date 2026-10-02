@@ -53,6 +53,19 @@ SET log_comment = '05317_versioned_unique';
 INSERT INTO t_versioned_unique VALUES (11, 1, -1, 'y'), (10, 1, 1, 'x');
 SELECT * FROM t_versioned_unique ORDER BY _part_offset;
 
+-- Unique keys with valid signs: every row is kept, sorted.
+CREATE TABLE t_collapse_unique (k UInt64, sign Int8, s String) ENGINE = CollapsingMergeTree(sign) ORDER BY k;
+SET log_comment = '05317_collapse_unique';
+INSERT INTO t_collapse_unique VALUES (3, -1, 'c'), (1, 1, 'a'), (4, 1, 'd'), (2, -1, 'b');
+SELECT * FROM t_collapse_unique ORDER BY _part_offset;
+
+-- Unique keys with valid is_deleted values: every row is kept, the deleted ones too.
+CREATE TABLE t_deleted_unique (k UInt64, ver UInt32, is_deleted UInt8, s String)
+ENGINE = ReplacingMergeTree(ver, is_deleted) ORDER BY k;
+SET log_comment = '05317_deleted_unique';
+INSERT INTO t_deleted_unique VALUES (3, 1, 1, 'c'), (1, 1, 0, 'a'), (2, 2, 1, 'b');
+SELECT * FROM t_deleted_unique ORDER BY _part_offset;
+
 -- Sorted runs of equal keys without a version: the last row of each run is kept.
 CREATE TABLE t_runs (k UInt64, s String) ENGINE = ReplacingMergeTree ORDER BY k;
 SET log_comment = '05317_runs';
@@ -70,6 +83,25 @@ CREATE TABLE t_key_only (k UInt64) ENGINE = ReplacingMergeTree ORDER BY k;
 SET log_comment = '05317_key_only';
 INSERT INTO t_key_only SELECT number % 10 FROM numbers(100);
 SELECT count(), sum(k) FROM t_key_only;
+
+-- A vertical merge of parts written without the insert merge keeps the last row of each key, with its own payload.
+CREATE TABLE t_vertical (k UInt64, s String, n UInt64) ENGINE = ReplacingMergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, enable_vertical_merge_algorithm = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 0, index_granularity = 8192, index_granularity_bytes = 10485760,
+    merge_max_block_size = 8192, min_bytes_for_full_part_storage = 0;
+SYSTEM STOP MERGES t_vertical;
+INSERT INTO t_vertical SETTINGS optimize_on_insert = 0 SELECT intDiv(number, 10), concat('a', toString(number)), number FROM numbers(1000);
+INSERT INTO t_vertical SETTINGS optimize_on_insert = 0 SELECT intDiv(number, 10) + 50, concat('b', toString(number)), number FROM numbers(1000);
+SYSTEM START MERGES t_vertical;
+OPTIMIZE TABLE t_vertical FINAL;
+SELECT count(), countIf(s != if(k < 50, concat('a', toString(k * 10 + 9)), concat('b', toString((k - 50) * 10 + 9)))),
+    countIf(n != (if(k < 50, k, k - 50) * 10 + 9))
+FROM t_vertical;
+SYSTEM FLUSH LOGS part_log;
+SELECT count() > 0, countIf(merge_algorithm != 'Vertical')
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_vertical' AND event_type = 'MergeParts' AND event_date >= yesterday();
 
 -- Invalid values are rejected even when no key repeats.
 SET log_comment = '05317_invalid';

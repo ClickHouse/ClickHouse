@@ -13,11 +13,22 @@
 2	2	1	d
 10	1	1	x
 11	1	-1	y
+1	1	a
+2	-1	b
+3	-1	c
+4	1	d
+1	1	0	a
+2	2	1	b
+3	1	1	c
 500	0
 3	c
 10	45
+150	0	0
+1	0
 05317_cancel	0	1
 05317_collapse	0	1
+05317_collapse_unique	1	0
+05317_deleted_unique	1	0
 05317_key_only	0	0
 05317_no_key	0	1
 05317_replace	0	1
