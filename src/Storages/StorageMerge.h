@@ -48,6 +48,7 @@ public:
     std::string getName() const override { return "Merge"; }
 
     bool isRemote() const override;
+    bool readRequiresAnalyzedQuery() const override { return true; }
     bool readsFromOtherTables() const override { return true; }
     bool supportsTruncate() const override { return false; }
 
@@ -203,7 +204,7 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
-    QueryPlanRawPtrs getChildPlans() override;
+    QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
     QueryPlanRawPtrs getBuiltChildPlans() override;
 
     /// Returns child plans aligned 1:1 with `getSelectedTables()`. Entries for uninitialized

@@ -136,7 +136,8 @@ public:
     /// Some steps build their child plans here rather than handing over plans they already hold, so this
     /// changes what the query has done by the time it returns. Callers that only observe a plan must use
     /// `getBuiltChildPlans` instead.
-    virtual QueryPlanRawPtrs getChildPlans() { return {}; }
+    /// EXPLAIN sets `for_explain`: a step whose plan runs with privileges the current user does not hold may hide it there.
+    virtual QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) { return {}; }
 
     /// The child plans this step has already built. A step that builds them on demand reports none until
     /// something else has asked for them, which keeps observing a plan from changing the work a query does.

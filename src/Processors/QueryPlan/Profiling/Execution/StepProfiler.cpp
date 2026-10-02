@@ -28,7 +28,8 @@ StepWallClocks collectWallClocksForPlanSteps(const QueryPlan & plan, bool only_b
 
         for (const auto * child : cur->children)
             stack.push_back(child);
-        for (const auto * child_plan : only_built_child_plans ? cur->step->getBuiltChildPlans() : cur->step->getChildPlans())
+        for (const auto * child_plan :
+            only_built_child_plans ? cur->step->getBuiltChildPlans() : cur->step->getChildPlans(/*for_explain=*/ false))
             stack.push_back(child_plan->getRootNode());
     }
 

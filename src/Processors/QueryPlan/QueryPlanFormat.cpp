@@ -611,7 +611,8 @@ namespace QueryPlanFormat
         for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
             buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns, only_built_child_plans);
 
-        for (auto * child_plan : only_built_child_plans ? node->step->getBuiltChildPlans() : node->step->getChildPlans())
+        for (auto * child_plan :
+            only_built_child_plans ? node->step->getBuiltChildPlans() : node->step->getChildPlans(/*for_explain=*/ true))
         {
             if (child_plan && child_plan->getRootNode())
             {
