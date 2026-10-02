@@ -196,6 +196,9 @@ private:
 
     void loadMetaFiles(bool attach);
 
+    /// The directory watcher reports when the file is removed, renamed or replaced (not a change of a symlink's target).
+    bool isTrackedByDirectoryEvents(const String & file_name) const;
+
     void threadFunc();
 
     size_t getPollMaxBatchSize() const;

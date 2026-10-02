@@ -11,13 +11,24 @@ target=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_target.jsonl
 bad=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_bad.jsonl
 sel_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_sel
 sel_target=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_sel_target.jsonl
-rm -rf "${logs_dir:?}" "${target}" "${bad}" "${sel_dir:?}" "${sel_target}" "${sel_target}.old"
-mkdir -p "${logs_dir}" "${sel_dir}"
+ren_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ren
+ovr_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ovr
+ovr_target=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ovr_target.jsonl
+rm -rf "${logs_dir:?}" "${target}" "${bad}" "${sel_dir:?}" "${sel_target}" "${sel_target}.old" "${ren_dir:?}" "${ovr_dir:?}" "${ovr_target}"
+mkdir -p "${logs_dir}" "${sel_dir}" "${ren_dir}" "${ovr_dir}"
 
 function wait_for_rows()
 {
     for _ in {1..240}; do
         [ "$(${CLICKHOUSE_CLIENT} -q 'SELECT count() FROM dst')" -ge "$1" ] && return
+        sleep 0.5
+    done
+}
+
+function wait_for_value()
+{
+    for _ in {1..240}; do
+        [ "$(${CLICKHOUSE_CLIENT} -q "SELECT countIf(a = $2) FROM $1")" -ge 1 ] && return
         sleep 0.5
     done
 }
@@ -85,6 +96,32 @@ printf 'not json\n' >> "${sel_target}"
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel" 2>&1 \
     | grep -o -m1 'CANNOT_PARSE_INPUT_ASSERTION_FAILED'
 
+# A file renamed in a watched directory keeps its offset even if the next round finds its old name gone:
+# a direct SELECT reads only the first records, then the file is renamed before a view starts reading.
+for i in {300..309}; do echo "{\"a\":$i}"; done > "${ren_dir}/r.jsonl"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_ren (a UInt64) ENGINE = FileLog('${ren_dir}/', 'JSONEachRow')
+    SETTINGS max_block_size = 1, poll_max_batch_size = 1"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_ren LIMIT 1"
+mv "${ren_dir}/r.jsonl" "${ren_dir}/r.jsonl.1"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_ren (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_ren TO dst_ren AS SELECT a FROM file_log_ren"
+wait_for_value dst_ren 309
+${CLICKHOUSE_CLIENT} -q "SELECT countIf(a = 300), countIf(a = 309) FROM dst_ren"
+
+# A file moved over a symlink that cannot be opened keeps its own offset.
+printf '{"a":600}\n' > "${ovr_dir}/b.jsonl"
+printf '{"a":500}\n' > "${ovr_target}"
+ln -s "${ovr_target}" "${ovr_dir}/l.jsonl"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_ovr (a UInt64) ENGINE = FileLog('${ovr_dir}/', 'JSONEachRow')"
+rm "${ovr_target}"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_ovr"
+mv "${ovr_dir}/b.jsonl" "${ovr_dir}/l.jsonl"
+printf '{"a":601}\n' >> "${ovr_dir}/l.jsonl"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_ovr (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_ovr TO dst_ovr AS SELECT a FROM file_log_ovr"
+wait_for_value dst_ovr 601
+${CLICKHOUSE_CLIENT} -q "SELECT countIf(a = 600), countIf(a = 601) FROM dst_ovr"
+
 ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0, countIf(c = 0) FROM dst_count"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
@@ -106,4 +143,10 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE dst"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE dst_count"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_sel"
-rm -rf "${logs_dir:?}" "${target}" "${sel_dir:?}" "${sel_target}" "${sel_target}.old"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_ren"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE dst_ren"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_ren"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_ovr"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE dst_ovr"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_ovr"
+rm -rf "${logs_dir:?}" "${target}" "${sel_dir:?}" "${sel_target}" "${sel_target}.old" "${ren_dir:?}" "${ovr_dir:?}" "${ovr_target}"
