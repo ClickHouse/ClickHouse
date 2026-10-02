@@ -354,7 +354,7 @@ The same query can split the waste of each size class between its backtraces, in
 WITH 60e9 AS min_age_ns
 SELECT format('{} {}',
     if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))),
-    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), toFloat64(b.waste)))))
+    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste))))
 FROM system.jemalloc_arena_bins AS b
 LEFT JOIN
 (
@@ -576,7 +576,7 @@ SELECT * FROM system.jemalloc_stats
 
 All `jemalloc` related metrics from `asynchronous_metrics` are also exposed using the Prometheus endpoint in both ClickHouse and Keeper.
 
-[Reference](/reference/settings/server-settings/settings/other#prometheus)
+[Reference](/reference/settings/server-settings/settings#prometheus)
 
 ### `jmst` 4LW command in Keeper {#jmst-4lw-command-in-keeper}
 

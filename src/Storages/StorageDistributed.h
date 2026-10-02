@@ -10,12 +10,8 @@
 
 #include <pcg_random.hpp>
 
-#include <filesystem>
-
 namespace DB
 {
-
-class AccessFlags;
 
 struct DistributedSettings;
 struct Settings;
@@ -68,13 +64,9 @@ public:
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
         LoadingStrictnessLevel mode,
-        /// Whether the sharding key comes from a definition the user supplies now, rather than from
-        /// stored metadata being replayed - see the constructor.
-        bool is_fresh_definition,
         ClusterPtr owned_cluster_ = {},
         ASTPtr remote_table_function_ptr_ = {},
-        bool is_remote_function_ = false,
-        bool is_remote_database_proxy_ = false);
+        bool is_remote_function_ = false);
 
     ~StorageDistributed() override;
 
@@ -127,7 +119,7 @@ public:
 
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     void initializeFromDisk();
     void shutdown(bool is_drop) override;
@@ -165,18 +157,6 @@ private:
     /// create directory monitors for each existing subdirectory
     void initializeDirectoryQueuesForDisk(const DiskPtr & disk);
 
-    /// Rename a subdirectory whose name is not one `DistributedSink` writes, so that it is not
-    /// taken for a directory queue. The files in it are left untouched, and the old name is saved
-    /// in a file next to them.
-    void renameUnrecognizedDirectoryQueue(const DiskPtr & disk, const std::filesystem::path & dir_path) const;
-
-    /// Remove the subdirectories quarantined by renameUnrecognizedDirectoryQueue(). They have no
-    /// directory queue, so `TRUNCATE TABLE` has to drop them separately.
-    void removeUnrecognizedDirectoryQueues(const DiskPtr & disk) const;
-
-    /// A guard that syncs the directory on destruction if `fsync_directories` is set, nullptr otherwise.
-    SyncGuardPtr getDirectorySyncGuard(const DiskPtr & disk, const std::string & relative_path) const;
-
     /// Get directory queue thread and connection pool created by disk and subdirectory name
     ///
     /// Used for the INSERT into Distributed in case of distributed_foreground_insert==1, from DistributedSink.
@@ -198,7 +178,15 @@ private:
     ClusterPtr getOptimizedCluster(
         ContextPtr local_context,
         const StorageSnapshotPtr & storage_snapshot,
-        const SelectQueryInfo & query_info) const;
+        const SelectQueryInfo & query_info,
+        const TreeRewriterResultPtr & syntax_analyzer_result) const;
+
+    ClusterPtr skipUnusedShards(
+        ClusterPtr cluster,
+        const SelectQueryInfo & query_info,
+        const TreeRewriterResultPtr & syntax_analyzer_result,
+        const StorageSnapshotPtr & storage_snapshot,
+        ContextPtr context) const;
 
     ClusterPtr skipUnusedShardsWithAnalyzer(
         ClusterPtr cluster, const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
@@ -219,16 +207,10 @@ private:
     ///
     /// @return QueryProcessingStage or empty std::optoinal
     /// (in this case regular WithMergeableState should be used)
+    std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const;
 
     bool isShardingKeySuitsQueryTreeNodeExpression(const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const;
-
-    /// The implicit `rand()` sharding key of a `Remote` database proxy (see `DatabaseRemote`) exists
-    /// only to spread `INSERT` rows across the shards; it says nothing about data placement. The read
-    /// path (shard pruning under `optimize_skip_unused_shards`/`force_optimize_skip_unused_shards`,
-    /// the distributed group-by optimization) must behave as if such a table has no sharding key,
-    /// exactly like a `Distributed` table declared without one.
-    bool hasShardingKeyForReads() const { return has_sharding_key && !is_remote_database_proxy; }
 
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
     std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
@@ -294,19 +276,6 @@ private:
     pcg64 rng;
 
     bool is_remote_function;
-
-    /// The storage is a table of a `Remote` database: a transient proxy over the remote table with
-    /// no data of its own. Such a proxy enforces the caller's own rights on
-    /// `remote_database.remote_table` in `read`/`write` when a shard points to this server, where
-    /// the query runs directly under the caller and the stored engine credentials do not apply
-    /// (the ordinary resolution path of the database validates only `SHOW_COLUMNS`; the `remote`
-    /// table function performs the same check at storage construction time instead, in
-    /// `TableFunctionRemote::executeImpl`, because there the query kind is known by then). It also
-    /// rejects `TRUNCATE`, which for a `Distributed` storage only clears the on-disk async-insert
-    /// spool: the proxy has none, so it would be a silent no-op reported as success.
-    bool is_remote_database_proxy;
-
-    void checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const;
 };
 
 }

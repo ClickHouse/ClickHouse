@@ -7,11 +7,11 @@ keywords: ['managed postgres', 'création de branches', 'pitr', 'restauration à
 doc_type: 'guide'
 ---
 
-ClickHouse Managed Postgres prend en charge la création de branches de base de données isolées à l’aide de la restauration à un instant précis (PITR).
+Managed Postgres prend en charge la création de branches de base de données isolées à l’aide de la restauration à un instant précis (PITR).
 
 Une branche est un déploiement PostgreSQL entièrement indépendant, créé à partir d’un instant précis d’une base de données existante. Les branches peuvent être utilisées pour le développement, la préproduction, les tests, le débogage, la validation des données ou les workflows de reprise, sans affecter la base de données source.
 
-Contrairement aux implémentations copy-on-write qui partagent le stockage avec la base de données principale, les branches ClickHouse Managed Postgres sont restaurées à partir de sauvegardes et fonctionnent comme des déploiements PostgreSQL indépendants.
+Contrairement aux implémentations copy-on-write qui partagent le stockage avec la base de données principale, les branches Managed Postgres sont restaurées à partir de sauvegardes et fonctionnent comme des déploiements PostgreSQL indépendants.
 
 <div id="branching">
   ## Fonctionnement de la création de branches
@@ -19,7 +19,7 @@ Contrairement aux implémentations copy-on-write qui partagent le stockage avec 
 
 La création d’une branche s’appuie sur la même infrastructure de sauvegarde et de restauration que celle utilisée pour la [restauration à un instant précis](/fr/products/managed-postgres/backup-and-restore).
 
-Lorsque vous créez une branche, ClickHouse Managed Postgres restaure une sauvegarde de base depuis le stockage objet, rejoue les segments WAL nécessaires pour atteindre le point de récupération demandé, puis déploie une nouvelle instance PostgreSQL à partir de l’état restauré. Une fois la restauration terminée, la branche fonctionne indépendamment de la base de données source.
+Lorsque vous créez une branche, Managed Postgres restaure une sauvegarde de base depuis le stockage objet, rejoue les segments WAL nécessaires pour atteindre le point de récupération demandé, puis déploie une nouvelle instance PostgreSQL à partir de l’état restauré. Une fois la restauration terminée, la branche fonctionne indépendamment de la base de données source.
 
 La branche obtenue est une copie complète de la base de données source au moment sélectionné.
 
@@ -63,7 +63,7 @@ Par exemple, un déploiement de production peut utiliser une configuration plus 
   ## Délai de création d&#39;une branche
 </div>
 
-Comme ClickHouse Managed Postgres utilise un stockage PostgreSQL sur NVMe, les branches sont restaurées à partir de sauvegardes plutôt que créées via des mécanismes de copy-on-write au niveau du stockage. Par conséquent, la création d&#39;une branche n&#39;est pas instantanée.
+Comme Managed Postgres utilise un stockage PostgreSQL sur NVMe, les branches sont restaurées à partir de sauvegardes plutôt que créées via des mécanismes de copy-on-write au niveau du stockage. Par conséquent, la création d&#39;une branche n&#39;est pas instantanée.
 
 Le délai de création d&#39;une branche varie généralement de quelques minutes à plusieurs dizaines de minutes, selon :
 
@@ -75,7 +75,7 @@ Le délai de création d&#39;une branche varie généralement de quelques minute
 
 Pour la plupart des déploiements, les branches sont disponibles en quelques minutes. Les bases de données plus volumineuses peuvent nécessiter plus de temps.
 
-Si le délai de création d&#39;une branche devient un goulot d&#39;étranglement dans votre workflow, contactez l&#39;équipe ClickHouse. Dans bien des cas, les performances de récupération de la branche peuvent être optimisées en fonction des caractéristiques de la charge de travail et des exigences de récupération.
+Si le délai de création d&#39;une branche devient un goulot d&#39;étranglement dans votre flux de travail, contactez l&#39;équipe ClickHouse. Dans bien des cas, les performances de récupération de la branche peuvent être optimisées en fonction des caractéristiques de la charge de travail et des exigences de récupération.
 
 <div id="branches-v-local-dev">
   ## Branches ou développement local
