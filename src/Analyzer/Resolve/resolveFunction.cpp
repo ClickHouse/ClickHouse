@@ -3079,8 +3079,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// `randConstant(), randConstant()` shares. What separates two calls is their arguments, which
         /// the hash still covers: `randConstant(1)` and `randConstant(2)` keep their own values, and that
         /// is the documented way to ask for two different constants in one query.
+        ///
+        /// Server constants (`hostName`, `serverUUID`, ...) capture `Context::isDistributed` when built.
+        /// A local `UNION` branch and a later cluster branch must not share that instance.
         if (function && !function->isDeterministic() && !function->isStateful()
-            && function->isDeterministicInScopeOfQuery())
+            && function->isDeterministicInScopeOfQuery()
+            && !function->isServerConstant())
         {
             auto hash = function_node_ptr->getTreeHash({ .compare_aliases = false });
             function_base_cache = &functions_cache[hash];
