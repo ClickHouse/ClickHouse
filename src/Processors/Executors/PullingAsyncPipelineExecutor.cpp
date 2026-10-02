@@ -120,7 +120,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
 
     const bool time_limit_exceeded = pipeline.process_list_element && !pipeline.process_list_element->checkTimeLimitSoft();
     if (time_limit_exceeded)
-        data->executor->cancel(PipelineExecutor::ExecutionStatus::CancelledByTimeout);
+        data->executor->cancel(IProcessor::CancelReason::CancelledByTimeout);
 
     const bool execution_finished = time_limit_exceeded || (lazy_format ? lazy_format->isFinished() : data->is_finished.load());
     if (execution_finished)
@@ -182,7 +182,7 @@ void PullingAsyncPipelineExecutor::cancel()
     cancelWithExceptionHandling([&]()
     {
         if (!data->is_finished && data->executor)
-            data->executor->cancel();
+            data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
     });
 
     /// The following code is needed to rethrow exception from PipelineExecutor.
