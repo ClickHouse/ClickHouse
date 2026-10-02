@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/parseAddress.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Defines.h>
@@ -355,18 +356,21 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
 
         auto maybe_secure_port = context->getTCPPortSecure();
 
-        /// Check host and port on affiliation allowed hosts.
+        const UInt16 default_port
+            = secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort();
+
+        /// Check host and port against the allowed hosts filter. The address is split with `parseAddress`,
+        /// the same helper that `Cluster` uses, because a naive split at the first `:` would tear a
+        /// bracketed IPv6 literal such as `[2001:db8::1]:9440` apart and check the nonsensical host `[2001`.
+        /// The brackets are stripped, so the filter sees the bare address, as it does for a URL.
         for (const auto & hosts : names)
         {
             for (const auto & host : hosts)
             {
-                size_t colon = host.find(':');
-                if (colon == String::npos)
-                    context->getRemoteHostFilter().checkHostAndPort(
-                        host,
-                        toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort())));
-                else
-                    context->getRemoteHostFilter().checkHostAndPort(host.substr(0, colon), host.substr(colon + 1));
+                auto [host_name, port] = parseAddress(host, default_port);
+                if (host_name.size() >= 2 && host_name.front() == '[' && host_name.back() == ']')
+                    host_name = host_name.substr(1, host_name.size() - 2);
+                context->getRemoteHostFilter().checkHostAndPort(host_name, toString(port));
             }
         }
 
@@ -375,7 +379,7 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
         ClusterConnectionParameters params{
             username,
             password,
-            static_cast<UInt16>(secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort()),
+            default_port,
             treat_local_as_remote,
             treat_local_port_as_remote,
             secure,
