@@ -76,9 +76,10 @@ bool isInsideFrame(const WindowTransformParams & params, const WindowFrame & fra
 
 }
 
-void Frame::enterPartition(RowNumber partition_start)
+void Frame::enterPartition(const SlidingBlocks & blocks, const RowPoint & current, const PartitionBounds & partition)
 {
-    frame_bounds = FrameBounds{.start = RowPoint{.location = partition_start}, .end = RowPoint{.location = partition_start}, .fully_visible = false};
+    frame_bounds = FrameBounds{.start = RowPoint{.location = partition.start}, .end = RowPoint{.location = partition.start}, .fully_visible = false};
+    advance(blocks, current, partition);
 }
 
 Frame::Frame(const WindowTransformParams & params_, const WindowFrame & definition_)

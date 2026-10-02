@@ -21,7 +21,7 @@ class Frame
 public:
     Frame(const WindowTransformParams & params_, const WindowFrame & definition_);
 
-    void enterPartition(RowNumber partition_start);
+    void enterPartition(const SlidingBlocks & blocks, const RowPoint & current, const PartitionBounds & partition);
     void advance(const SlidingBlocks & blocks, const RowPoint & current, const PartitionBounds & partition);
 
     const FrameBounds & bounds() const;
