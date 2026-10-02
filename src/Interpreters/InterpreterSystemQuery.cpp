@@ -44,6 +44,7 @@
 #include <Interpreters/JIT/CHJIT.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SessionLog.h>
@@ -2411,7 +2412,8 @@ void InterpreterSystemQuery::syncMerges()
 
         ActiveDataPartSet active_set;
         for (const auto & part : merge_tree.getDataPartsVectorForInternalUsage())
-            active_set.add(part->info, part->name);
+            if (part->version->isVisibleByLatestSnapshot())
+                active_set.add(part->info, part->name);
 
         if (ManualMergeSelector::isAllScheduledPartsCovered(table_id, active_set))
             return;

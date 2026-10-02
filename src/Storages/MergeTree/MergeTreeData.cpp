@@ -5037,8 +5037,7 @@ size_t MergeTreeData::clearEmptyParts()
                 continue;
 
             /// Do not try to drop uncommitted parts. If the newest tx doesn't see it then it probably hasn't been committed yet
-            if (!part->version->getInfo().creation_tid.isNonTransactional()
-                && !part->version->isVisible(TransactionManager::instance().getLatestSnapshot()))
+            if (!part->version->isVisibleByLatestSnapshot())
                 continue;
 
             if (isPinnedByDeleteBitmap(*part))
