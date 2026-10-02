@@ -143,6 +143,9 @@ public:
     /// target vector size when the model supports it.
     static AIParamSpecs embeddingParams();
 
+    /// Query id sent with AI requests: `initial_query_id`, or `current_query_id` when it is empty (a background mutation).
+    static String getQueryIdForAIRequest(const ContextPtr & context);
+
     /// Result of `embedTexts`. `embeddings` is aligned 1:1 with the `inputs` argument of `embedTexts`. An
     /// entry is empty when that input was not embedded (quota exceeded, or a failed request with
     /// `ai_function_throw_on_error` disabled).
@@ -161,6 +164,7 @@ public:
         const String & model,
         UInt64 dimensions,
         const String & function_name,
+        const String & query_id,
         const VectorWithMemoryTracking<std::string_view> & inputs,
         size_t max_batch_size,
         UInt64 max_retries,
