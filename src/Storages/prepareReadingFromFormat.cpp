@@ -100,10 +100,15 @@ ReadFromFormatInfo prepareReadingFromFormat(
             columns_to_read = std::move(new_columns_to_read);
         }
 
-        /// If only virtual columns were requested, just read the smallest column.
+        /// If only virtual or hive partition columns were requested, just read the smallest column.
+        /// Hive partition columns are never read from the data file (see below), so prefer any other column.
         if (columns_to_read.empty())
         {
-            columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
+            NamesAndTypesList candidates;
+            for (const auto & column : columns_in_data_file)
+                if (!hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(column.name))
+                    candidates.push_back(column);
+            columns_to_read.push_back(ExpressionActions::getSmallestColumn(candidates.empty() ? columns_in_data_file : candidates).name);
         }
 
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
