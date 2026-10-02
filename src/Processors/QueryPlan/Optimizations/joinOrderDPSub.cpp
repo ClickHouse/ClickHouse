@@ -52,7 +52,7 @@ private:
     friend class DB::EnumeratorCheckerWithCosts;
 
     std::optional<UInt64> estimateCardinality(
-        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const SelectivityEstimate & selectivity, JoinKind join_kind,
+        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind,
         JoinStrictness strictness = JoinStrictness::All) const;
 
     /// Native-mask counterparts used exclusively by the DPsub acceptor.
@@ -71,15 +71,15 @@ private:
 
     bool useConflictDetector() const
     {
-        return query_graph.use_conflict_detector_a || query_graph.use_conflict_detector_c;
+        return query_graph.conflict_detector != JoinOrderConflictDetector::NONE;
     }
     ConflictDetector conflictDetectorKind() const
     {
-        return query_graph.use_conflict_detector_c ? ConflictDetector::CDC : ConflictDetector::CDA;
+        return query_graph.conflict_detector == JoinOrderConflictDetector::CD_C ? ConflictDetector::CDC : ConflictDetector::CDA;
     }
 
     const std::vector<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
-    SelectivityEstimate computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
+    double computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
 
     QueryGraph & query_graph;
     SelectivityCache expression_selectivity;
@@ -115,6 +115,11 @@ private:
         UInt64 equiv_generation = 0;              /// bumped on each computeSelectivityMask call
         std::vector<JoinActionRef *> applicable_scratch; /// reused output of collectJoinEdgesMask
 
+        /// Whether the relations fall apart once cross products are set aside, computed in
+        /// `initDPsubScratch` from the masks below. DPsub builds the full set out of connected
+        /// pieces, so such a graph is one it cannot plan.
+        bool disconnected_graph = false;
+
         /// Per-operator conflict descriptors (CD-A or CD-C), populated in `initDPsubScratch` only
         /// when a conflict detector is enabled. When non-empty, `isValidJoinOrderMaskConflict` uses
         /// these (per-operator required-set + conflict rules) instead of the per-relation
@@ -127,7 +132,7 @@ private:
 };
 
 std::optional<UInt64> DPSubJoinOrderOptimizer::estimateCardinality(
-    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const SelectivityEstimate & selectivity, JoinKind join_kind,
+    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind,
     JoinStrictness strictness) const
 {
     return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind, strictness);
@@ -176,7 +181,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
 
         dpsub_data.conflict_operators = computeConflictOperators(ops, conflictDetectorKind(), log);
         LOG_TRACE(log, "DPsub: using {} conflict detector over {} captured join operators",
-                  query_graph.use_conflict_detector_c ? "CD-C" : "CD-A", dpsub_data.conflict_operators.size());
+                  toString(query_graph.conflict_detector), dpsub_data.conflict_operators.size());
     }
     else
     {
@@ -211,6 +216,63 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     }
     dpsub_data.class_visited.assign(dpsub_data.equiv_classes.size(), 0);
     dpsub_data.equiv_generation = 0;
+
+    /// Connectivity, over the links `initDPTable` seeds: every two-relation predicate, plus, with a
+    /// conflict detector, one per operator whose predicate does not span its two sides.
+    /// Cross products are left out - they join on nothing, so a graph they alone hold together is
+    /// disconnected. A query whose other predicates tie the same relations together still counts as
+    /// connected, which is what lets DPsub plan a cross product feeding an inner join.
+    std::vector<size_t> component(num_relations);
+    for (size_t i = 0; i < num_relations; ++i)
+        component[i] = i;
+
+    auto find = [&component](size_t x)
+    {
+        while (component[x] != x)
+        {
+            component[x] = component[component[x]];
+            x = component[x];
+        }
+        return x;
+    };
+    auto unite = [&](UInt32 a_mask, UInt32 b_mask)
+    {
+        if (!a_mask || !b_mask)
+            return;
+        const size_t ra = find(static_cast<size_t>(std::countr_zero(a_mask)));
+        const size_t rb = find(static_cast<size_t>(std::countr_zero(b_mask)));
+        if (ra != rb)
+            component[rb] = ra;
+    };
+
+    for (const UInt32 sources : dpsub_data.edge_source_mask)
+    {
+        if (std::popcount(sources) != 2)
+            continue;
+        const UInt32 lowest = sources & (~sources + 1);
+        unite(lowest, sources & ~lowest);
+    }
+
+    /// `initDPTable` seeds an operator link only for a degenerate operator - one whose predicate does
+    /// not span its two sides. A spanning predicate is already linked by its binary edge above, and
+    /// uniting the operator's whole subtrees instead would attach a relation that only a nested cross
+    /// product holds on (`t1` in `t1 CROSS JOIN t2 JOIN t3 ON t2.k = t3.k`).
+    for (const auto & op : dpsub_data.conflict_operators)
+    {
+        if (isCrossOrComma(op.kind) || !op.degenerate)
+            continue;
+        unite(op.left_relations, op.relations & ~op.left_relations);
+    }
+
+    dpsub_data.disconnected_graph = false;
+    for (size_t i = 1; i < num_relations; ++i)
+    {
+        if (find(i) != find(0))
+        {
+            dpsub_data.disconnected_graph = true;
+            break;
+        }
+    }
 }
 
 std::optional<JoinKind> DPSubJoinOrderOptimizer::isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const
@@ -411,10 +473,10 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
     return out;
 }
 
-SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
+double DPSubJoinOrderOptimizer::computeSelectivityMask(
     const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask)
 {
-    auto estimate = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
+    double selectivity = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
 
     /// Account for transitively-equivalent columns spanning both sides, visiting only the classes
     /// incident to the left relations. A generation stamp deduplicates classes without allocating
@@ -431,7 +493,7 @@ SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
                 continue;
             dpsub_data.class_visited[class_idx] = generation;
 
-            UInt64 max_ndv = 0;
+            size_t max_ndv = 0;
             bool has_left = false;
             bool has_right = false;
             for (const auto & equiv_member : *dpsub_data.equiv_classes[class_idx])
@@ -443,27 +505,20 @@ SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
                 if (left_mask & relation_bit)
                 {
                     has_left = true;
-                    max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()).value_or(0));
+                    max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
                 }
                 else if (right_mask & relation_bit)
                 {
                     has_right = true;
-                    max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()).value_or(0));
+                    max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
                 }
             }
-            if (has_left && has_right)
-            {
-                estimate.has_equi = true;
-                if (max_ndv > 0)
-                {
-                    estimate.value = std::min(estimate.value, 1.0 / static_cast<double>(max_ndv));
-                    estimate.reliable = true;
-                }
-            }
+            if (has_left && has_right && max_ndv > 0)
+                selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
         }
     }
 
-    return estimate;
+    return selectivity;
 }
 
 template <typename DPTable, std::unsigned_integral TUInt>
@@ -549,6 +604,14 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
     /// That is, we don't have to convert Bitvector -> BitSet -> Bitvector for every subset S
     /// and its subcomponents S1, S2
     initDPsubScratch();
+
+    /// Turn down a graph that only cross products hold together, before enumerating anything: DPsub
+    /// cannot stitch its components, so the next algorithm in the chain plans the query instead.
+    if (dpsub_data.disconnected_graph)
+    {
+        LOG_TRACE(log, "Join graph is disconnected apart from cross products, leaving it to the next algorithm");
+        return nullptr;
+    }
 
     Checker checker(n, *this);
     Enumerator enumerator(n, max_nr_ccps, log);

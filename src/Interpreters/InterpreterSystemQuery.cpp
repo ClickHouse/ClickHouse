@@ -75,6 +75,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageQueryRunner.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
 #include <Common/CoverageCollection.h>
@@ -353,7 +354,7 @@ static void reloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader,
 {
     if (query.database)
     {
-        loader.reloadDictionary({query.getDatabase(), query.getTable()});
+        loader.reloadDictionary({query.getDatabase(), query.getTable()}, context);
         return;
     }
 
@@ -364,7 +365,7 @@ static void unloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader,
 {
     if (query.database)
     {
-        loader.unloadDictionary({query.getDatabase(), query.getTable()});
+        loader.unloadDictionary({query.getDatabase(), query.getTable()}, context);
         return;
     }
 
@@ -483,6 +484,11 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {
             prewarmPrimaryIndexCache();
+            break;
+        }
+        case Type::CLEAR_TIME_SERIES_CACHES:
+        {
+            clearTimeSeriesCaches();
             break;
         }
         case Type::CLEAR_MARK_CACHE:
@@ -1171,6 +1177,16 @@ BlockIO InterpreterSystemQuery::execute()
             result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
             break;
         }
+        case Type::DISABLE_ALL_FAILPOINTS:
+        {
+            /// Outside the `USE_LIBFIU` guard below on purpose: this statement asks for a
+            /// server that injects nothing, which a build without libfiu already is. Failing
+            /// it would only make every caller - a test harness, above all - special-case a
+            /// build flag to ask for a state that already holds.
+            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            FailPointInjection::disableAllFailPoints();
+            break;
+        }
 #if USE_LIBFIU
         case Type::ENABLE_FAILPOINT:
         {
@@ -1191,7 +1207,7 @@ BlockIO InterpreterSystemQuery::execute()
             if (!holder)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
             holder->alloc(query.untracked_memory_size);
-            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
+            LOG_DEBUG(log, "Total tracked memory is {}", ReadableSize(total_memory_tracker.get()));
             break;
         }
         case Type::FREE_MEMORY:
@@ -1201,7 +1217,7 @@ BlockIO InterpreterSystemQuery::execute()
             if (!holder)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
             holder->free();
-            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
+            LOG_DEBUG(log, "Total tracked memory is {}", ReadableSize(total_memory_tracker.get()));
             break;
         }
         case Type::WAIT_FAILPOINT:
@@ -1249,6 +1265,10 @@ BlockIO InterpreterSystemQuery::execute()
             LOG_INFO(getLogger("InterpreterSystemQuery"),
                 "SYSTEM SET COVERAGE TEST '{}' received", query.coverage_test_name);
 #if WITH_COVERAGE_DEPTH
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+            /// The process writes its coverage to files, see `initCoverageFromEnvironment`.
+            if (!isCoverageFileSinkEnabled())
+#endif
             {
                 /// Register (or re-register) the flush callback so coverage data is
                 /// resolved and inserted into system.coverage_log when the previous
@@ -2551,6 +2571,7 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 
 void InterpreterSystemQuery::syncTransactionLog()
 {
+    getContext()->checkAccess(AccessType::SYSTEM_SYNC_TRANSACTION_LOG);
     getContext()->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
     TransactionManager::instance().sync();
 }
@@ -2718,6 +2739,17 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table {} has no controllable background activity", table_id.getNameForLogs());
     }
+}
+
+void InterpreterSystemQuery::clearTimeSeriesCaches()
+{
+    if (table_id.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for CLEAR TIME SERIES CACHES command");
+
+    getContext()->checkAccess(AccessType::SYSTEM_DROP_TIME_SERIES_CACHES, table_id);
+
+    auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    storagePtrToTimeSeries(table)->clearCaches();
 }
 
 void InterpreterSystemQuery::prewarmMarkCache()
@@ -3122,6 +3154,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, query.getDatabase(), query.getTable());
             break;
         }
+        case Type::CLEAR_TIME_SERIES_CACHES:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_DROP_TIME_SERIES_CACHES, query.getDatabase(), query.getTable());
+            break;
+        }
         case Type::SYNC_DATABASE_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_SYNC_DATABASE_REPLICA, query.getDatabase());
@@ -3230,11 +3267,23 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_THREAD_FUZZER);
+            break;
+        }
+        case Type::RESET_COVERAGE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM);
+            break;
+        }
+        /// The parser cases of the failpoint statements and of SYSTEM SET COVERAGE TEST never read an
+        /// ON CLUSTER clause, so those cluster spellings do not parse and reach no host. UNKNOWN and
+        /// END are not statements.
         case Type::ENABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
-        case Type::RESET_COVERAGE:
+        case Type::DISABLE_ALL_FAILPOINTS:
         case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
         case Type::END: break;
