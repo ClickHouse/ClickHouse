@@ -8288,6 +8288,8 @@ The `compatibility` setting causes ClickHouse to use the default settings of a p
 
 If settings are set to non-default values, then those settings are honored (only settings that have not been modified are affected by the `compatibility` setting).
 
+The `compatibility` setting never applies a value that the user could not set: a setting keeps its default if the previous version's default would violate the [constraints](/concepts/features/configuration/settings/constraints-on-settings) of the user's settings profiles, or if the setting belongs to a tier that [`allow_feature_tier`](/reference/settings/server-settings/settings/allow#allow_feature_tier) disables.
+
 Changes marked `Ignore` in [`system.settings_changes`](/reference/system-tables/settings_changes) block rollback of that change and all earlier changes to the same setting.
 
 This setting takes a ClickHouse version number as a string, like `22.3`, `22.8`. An empty value means that this setting is disabled.
@@ -10958,6 +10960,7 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 
     bool hasSettingsChangedByCompatibility() const { return num_settings_changed_by_compatibility_setting != 0; }
     void resetSettingsChangedByCompatibility();
+    void resetSettingsChangedByCompatibility(const std::function<bool(std::string_view, const Field &)> & is_allowed);
     void markSettingsChangedByCompatibilityAsUnchanged();
 
 private:
@@ -11216,6 +11219,24 @@ void SettingsImpl::resetSettingsChangedByCompatibility()
     num_settings_changed_by_compatibility_setting = 0;
 }
 
+void SettingsImpl::resetSettingsChangedByCompatibility(const std::function<bool(std::string_view, const Field &)> & is_allowed)
+{
+    const auto & accessor = Traits::Accessor::instance();
+    for (size_t word = 0; word < num_setting_bitmap_words; ++word)
+    {
+        UInt64 bits = settings_changed_by_compatibility_setting[word];
+        while (bits)
+        {
+            const size_t index = word * 64 + std::countr_zero(bits);
+            bits &= bits - 1;
+            if (is_allowed(accessor.getName(index), accessor.getValue(*this, index)))
+                continue;
+            accessor.resetValueToDefault(*this, index);
+            unmarkChangedByCompatibility(index);
+        }
+    }
+}
+
 const VersionToSettingsChangesMap & getSettingsChangesHistory()
 {
     static const VersionToSettingsChangesMap history = []
@@ -11456,6 +11477,11 @@ bool Settings::hasSettingsChangedByCompatibility() const
 void Settings::resetSettingsChangedByCompatibility()
 {
     impl->resetSettingsChangedByCompatibility();
+}
+
+void Settings::resetSettingsChangedByCompatibility(const std::function<bool(std::string_view name, const Field & value)> & is_allowed)
+{
+    impl->resetSettingsChangedByCompatibility(is_allowed);
 }
 
 void Settings::markSettingsChangedByCompatibilityAsUnchanged()
