@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, shard
+# Tags: no-parallel, shard, no-fasttest
 # Tag no-parallel: uses a global failpoint, which concurrent instances would share - one query would
 #   consume another's arming, and the injected cancel would land in an unrelated query.
 # Tag shard: uses a two-shards Distributed table.
@@ -81,7 +81,7 @@ else
 
     # The count is asserted, not discarded: the suppressed `cancel` must not cost the query its row.
     # Bounded, because the unfixed failure mode is a deadlock rather than an error, and bounded well
-    # inside Fast test's 60 s per-test allowance so that on a regression the diagnosis below is what
+    # inside the runner's per-test timeout so that on a regression the diagnosis below is what
     # surfaces, not the runner's bare timeout. The query itself returns in under a second here.
     #
     # Retried while the failpoint is still armed: a query whose `finish` calls all returned before the
