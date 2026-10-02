@@ -1292,7 +1292,9 @@ void writeColumnImpl(
                     const UInt32 x = UInt32(h); // overflow to take the lower 32 bits
                     for (size_t word_idx = 0; word_idx < 8; ++word_idx)
                     {
-                        const UInt32 y = x * salt[word_idx]; // overflow to take the lower 32 bits
+                        /// The wrap is what the Parquet split-block bloom filter is specified to do;
+                        /// `mulIgnoreOverflow` says so and keeps the check off this one multiply.
+                        const UInt32 y = common::mulIgnoreOverflow(x, salt[word_idx]);
                         const size_t bit_idx = y >> 27;
                         bd[block_idx * 8 + word_idx] |= 1u << bit_idx;
                     }
