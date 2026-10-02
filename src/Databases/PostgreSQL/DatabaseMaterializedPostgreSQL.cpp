@@ -215,7 +215,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
         /// Check nested ReplacingMergeTree table.
         auto storage = DatabaseAtomic::tryGetTable(table_name, getContext());
 
-        if (storage)
+        if (storage && !isCoordinated())
         {
             /// Nested table was already created and synchronized.
             storage = std::make_shared<StorageMaterializedPostgreSQL>(storage, getContext(), remote_database_name, table_name);
@@ -223,6 +223,10 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
         else
         {
             /// Nested table does not exist and will be created by replication thread.
+            /// In coordinated mode an existing nested table is not necessarily complete on this replica: after a
+            /// restart or a rejoin the initial snapshot may still be loading on the active worker, or this replica
+            /// may not have fetched it yet. Start with a wrapper that is not available yet and let
+            /// `PostgreSQLReplicationHandler::markCaughtUpNestedTablesAvailable` publish it once it has caught up.
             /// FIXME TSA
             storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name), getContext(), remote_database_name, table_name);
         }
@@ -411,6 +415,13 @@ StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, Cont
             /// window a user-facing read must not fall back to the nested table - that would bypass
             /// the forced `FINAL` and the `_sign = 1` filter and expose stale and deleted row
             /// versions - so wrap the nested table on the fly instead.
+            /// In coordinated mode the local nested table may not hold the complete initial snapshot yet,
+            /// and only `PostgreSQLReplicationHandler::markCaughtUpNestedTablesAvailable` can tell, so the
+            /// table stays invisible until `startSynchronization` has published the wrappers and that check
+            /// has marked it available.
+            if (!replication_stopped && isCoordinated())
+                return StoragePtr{};
+
             wrap_nested = !replication_stopped;
         }
 
@@ -1376,6 +1387,10 @@ StoragePtr DatabaseMaterializedPostgreSQL::getTableForRead(const String & table_
         if (replication_stopped)
             return table;
     }
+
+    /// In coordinated mode the table stays invisible in the startup window, see tryGetTable.
+    if (isCoordinated())
+        return StoragePtr{};
 
     /// Startup window: the map is empty because `startSynchronization` has not published the wrappers
     /// yet (see tryGetTable), so wrap the nested table on the fly. If `startSynchronization` publishes
