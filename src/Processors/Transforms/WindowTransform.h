@@ -29,7 +29,7 @@ class Arena;
  * ORDER BY, and arrives block by block; the transform keeps the blocks it still needs and walks them row by row.
  *
  *   blocks       [ block 7  ][ block 8  ][ block 9  ][ block 10 ] .. block 11 .. block 12 .. block 13 ..
- *                |<------------- stored ----------------------->|<-------- not read yet ------------- ..
+ *                |<------------------ stored ------------------>|<----------- not read yet ----------- .
  *   partition         |<---------------------------------------- - - - - - - - - - - - - - ->|
  *   frame                        |<------------>|
  *   peers                          |<------->|
