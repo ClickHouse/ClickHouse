@@ -1,0 +1,23 @@
+-- initial scan
+app.log	1
+app.log	2
+-- new files
+app.log	3
+moved_in.log	5
+new.log	4
+-- rotation
+app.log	8
+app.log.1	6
+app.log.1	7
+-- rotation while detached
+app.log	11
+app.log.0	10
+app.log.1	9
+-- second rotation
+app.log.2	12
+-- compression
+app.log	13
+-- renamed file replaced
+-- errors
+OK
+OK

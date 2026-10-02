@@ -17,6 +17,11 @@
 #include <mutex>
 #include <optional>
 
+namespace re2
+{
+class RE2;
+}
+
 namespace DB
 {
 namespace ErrorCodes
@@ -145,6 +150,9 @@ private:
     String root_data_path;
     String metadata_base_path;
 
+    /// Set when the file name of `path` has globs.
+    std::shared_ptr<const re2::RE2> file_name_matcher;
+
     FileInfos file_infos;
 
     const String format_name;
@@ -205,6 +213,8 @@ private:
     /// is not clobbered. Leaves `context_by_name[file_name]` at `{OPEN, inode}`
     /// and pushes the name into `file_names` exactly once.
     void onFileAppeared(const String & file_name, UInt64 inode);
+
+    bool fileNameMatches(const String & file_name) const;
 
     size_t getTableDependentCount() const;
 

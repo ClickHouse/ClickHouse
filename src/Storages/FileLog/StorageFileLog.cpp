@@ -32,6 +32,8 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
+#include <Common/parseGlobs.h>
+#include <Common/re2.h>
 
 #include <sys/stat.h>
 
@@ -68,6 +70,7 @@ namespace ErrorCodes
     extern const int TABLE_METADATA_ALREADY_EXISTS;
     extern const int CANNOT_SELECT;
     extern const int QUERY_NOT_ALLOWED;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace
@@ -287,21 +290,40 @@ void StorageFileLog::loadFiles()
 
         file_infos.file_names.push_back(absolute_path.filename());
     }
-    else if (std::filesystem::is_directory(absolute_path))
-    {
-        root_data_path = absolute_path;
-        /// Just consider file with depth 1
-        for (const auto & dir_entry : std::filesystem::directory_iterator{absolute_path})
-        {
-            if (dir_entry.is_regular_file())
-            {
-                file_infos.file_names.push_back(dir_entry.path().filename());
-            }
-        }
-    }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The path {} neither a regular file, nor a directory", absolute_path.c_str());
+        if (std::filesystem::is_directory(absolute_path))
+        {
+            root_data_path = absolute_path;
+        }
+        else
+        {
+            const String glob = absolute_path.filename();
+            const auto directory = absolute_path.parent_path();
+            if (directory.string().find_first_of("*?{") != std::string::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Globs are supported only in the file name of the path {}", absolute_path.c_str());
+            if (glob.find_first_of("*?{") == std::string::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The path {} neither a regular file, nor a directory", absolute_path.c_str());
+            if (!std::filesystem::is_directory(directory))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The directory {} of the path {} does not exist", directory.c_str(), absolute_path.c_str());
+
+            auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(glob));
+            if (!matcher->ok())
+                throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", glob, matcher->error());
+            file_name_matcher = std::move(matcher);
+            root_data_path = directory;
+        }
+
+        /// Just consider file with depth 1
+        for (const auto & dir_entry : std::filesystem::directory_iterator{root_data_path})
+        {
+            if (!dir_entry.is_regular_file())
+                continue;
+            String file_name = dir_entry.path().filename();
+            /// A file renamed to a non-matching name while it was read (log rotation) keeps being read.
+            if (fileNameMatches(file_name) || file_infos.meta_by_inode.contains(getInode(dir_entry.path().string())))
+                file_infos.file_names.push_back(std::move(file_name));
+        }
     }
 
     /// Get files inode
@@ -938,7 +960,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Engine arguments:
 
-- `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. Note that ClickHouse allows only paths inside `user_files` directory.
+- `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. The file name in the path can have [globs](/reference/functions/table-functions/file#globs-in-path) (`*`, `?`, `{abc,def}`, `{N..M}`) to read only the matching files of the directory, see [Selecting files with globs](#selecting-files-with-globs). Note that ClickHouse allows only paths inside `user_files` directory.
 - `format_name` - Record format. Note that FileLog process each line in a file as a separate record and not all data formats are suitable for it.
 
 Optional parameters:
@@ -998,6 +1020,20 @@ ATTACH TABLE consumer;
 
 If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
 
+## Selecting files with globs {#selecting-files-with-globs}
+
+When the file name in `path_to_logs` has globs, the table reads the files of that directory whose names match, including the ones that appear later. Globs are not supported in the directory part of the path.
+
+A file that the table reads keeps being read when it is renamed to a name that does not match, until it is removed from the directory. This is what log rotation needs. For example, `logrotate` with `compress` and `delaycompress` keeps the directory like this:
+
+```text
+app.log         the file the application writes
+app.log.1       the previous file, renamed by logrotate, compressed on the next rotation
+app.log.2.gz    older files, compressed
+```
+
+A table on `FileLog('/var/lib/clickhouse/user_files/my_app/*.log', 'JSONEachRow')` reads `app.log`; after the rotation it keeps reading `app.log.1`, so the lines the application writes there before it reopens its log are not lost, and it never reads the compressed files. Make sure the glob does not match the compressed file names.
+
 ## Virtual columns {#virtual-columns}
 
 - `_filename` - Name of the log file. Data type: `LowCardinality(String)`.
@@ -1041,6 +1077,11 @@ void StorageFileLog::onFileAppeared(const String & file_name, UInt64 inode)
         }
     }
     it->second = FileContext{.inode = inode};
+}
+
+bool StorageFileLog::fileNameMatches(const String & file_name) const
+{
+    return !file_name_matcher || re2::RE2::FullMatch(file_name, *file_name_matcher);
 }
 
 bool StorageFileLog::updateFileInfos()
@@ -1098,7 +1139,7 @@ bool StorageFileLog::updateFileInfos()
             case DirectoryWatcherBase::DW_ITEM_ADDED:
             {
                 /// Check if it is a regular file, and new file may be renamed or removed
-                if (std::filesystem::is_regular_file(file_path))
+                if (std::filesystem::is_regular_file(file_path) && fileNameMatches(file_name))
                 {
                     auto inode = getInode(file_path);
 
@@ -1124,7 +1165,8 @@ bool StorageFileLog::updateFileInfos()
                 /// and DW_ITEM_MODIFIED, since the order of these two events in the
                 /// sequence is uncentain, so we may can not find it in file_infos, just
                 /// skip it, the file info will be handled in DW_ITEM_ADDED case.
-                if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                if (auto it = file_infos.context_by_name.find(file_name);
+                    it != file_infos.context_by_name.end() && it->second.status != FileStatus::REMOVED)
                     it->second.status = FileStatus::UPDATED;
                 break;
             }
@@ -1145,6 +1187,14 @@ bool StorageFileLog::updateFileInfos()
                 if (std::filesystem::is_regular_file(file_path))
                 {
                     auto inode = getInode(file_path);
+
+                    if (!fileNameMatches(file_name) && !file_infos.meta_by_inode.contains(inode))
+                    {
+                        /// The file read under this name, if any, was replaced by one that is not read.
+                        if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                            it->second.status = FileStatus::REMOVED;
+                        break;
+                    }
 
                     onFileAppeared(file_name, inode);
 
