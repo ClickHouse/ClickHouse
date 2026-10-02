@@ -29,6 +29,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
+#include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
@@ -37,6 +38,7 @@
 
 #include <sys/stat.h>
 
+#include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -303,9 +305,9 @@ void StorageFileLog::loadFiles()
         {
             const String glob = absolute_path.filename();
             const auto directory = absolute_path.parent_path();
-            if (directory.string().find_first_of("*?{") != std::string::npos)
+            if (containsGlobs(directory.string()))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Globs are supported only in the file name of the path {}", absolute_path.c_str());
-            if (glob.find_first_of("*?{") == std::string::npos)
+            if (!containsGlobs(glob))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The path {} neither a regular file, nor a directory", absolute_path.c_str());
             if (!std::filesystem::is_directory(directory))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The directory {} of the path {} does not exist", directory.c_str(), absolute_path.c_str());
@@ -787,6 +789,10 @@ bool StorageFileLog::streamToViews()
         LOG_INFO(log, "There is a idle table named {}, no files need to parse.", getName());
         return updateFileInfos();
     }
+
+    /// Nothing to read until the watcher events are applied, e.g. when only files that the glob excludes changed.
+    if (std::ranges::all_of(file_infos.context_by_name, [](const auto & file) { return file.second.status == FileStatus::NO_CHANGE; }))
+        return updateFileInfos();
 
     // Create an INSERT query for streaming data
     auto insert = make_intrusive<ASTInsertQuery>();
