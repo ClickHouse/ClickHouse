@@ -1,41 +1,41 @@
 1
-adaptive 0, buckets below the window, UInt64, DESC	0	5
-adaptive 0, buckets below the window, UInt64, ASC	0	5
-adaptive 0, buckets below the window, two numbers, DESC	0	5
-adaptive 0, buckets below the window, two numbers, ASC	0	5
-adaptive 0, buckets below the window, String, DESC	0	5
-adaptive 0, buckets below the window, String, ASC	0	5
-adaptive 0, buckets below the window, String, legacy table, DESC	0	5
-adaptive 0, buckets below the window, String, legacy table, ASC	0	5
-adaptive 0, buckets below the window, String and number, DESC	0	5
-adaptive 0, buckets below the window, String and number, ASC	0	5
-adaptive 0, buckets above the window, UInt64, DESC	0	5
-adaptive 0, buckets above the window, UInt64, ASC	0	5
-adaptive 0, buckets above the window, two numbers, DESC	0	5
-adaptive 0, buckets above the window, two numbers, ASC	0	5
-adaptive 0, buckets above the window, String, DESC	0	5
-adaptive 0, buckets above the window, String, ASC	0	5
-adaptive 0, buckets above the window, String, legacy table, DESC	0	5
-adaptive 0, buckets above the window, String, legacy table, ASC	0	5
-adaptive 0, buckets above the window, String and number, DESC	0	5
-adaptive 0, buckets above the window, String and number, ASC	0	5
-adaptive 1, buckets below the window, UInt64, DESC	0	5
-adaptive 1, buckets below the window, UInt64, ASC	0	5
-adaptive 1, buckets below the window, two numbers, DESC	0	5
-adaptive 1, buckets below the window, two numbers, ASC	0	5
-adaptive 1, buckets below the window, String, DESC	0	5
-adaptive 1, buckets below the window, String, ASC	0	5
-adaptive 1, buckets below the window, String, legacy table, DESC	0	5
-adaptive 1, buckets below the window, String, legacy table, ASC	0	5
-adaptive 1, buckets below the window, String and number, DESC	0	5
-adaptive 1, buckets below the window, String and number, ASC	0	5
-adaptive 1, buckets above the window, UInt64, DESC	0	5
-adaptive 1, buckets above the window, UInt64, ASC	0	5
-adaptive 1, buckets above the window, two numbers, DESC	0	5
-adaptive 1, buckets above the window, two numbers, ASC	0	5
-adaptive 1, buckets above the window, String, DESC	0	5
-adaptive 1, buckets above the window, String, ASC	0	5
-adaptive 1, buckets above the window, String, legacy table, DESC	0	5
-adaptive 1, buckets above the window, String, legacy table, ASC	0	5
-adaptive 1, buckets above the window, String and number, DESC	0	5
-adaptive 1, buckets above the window, String and number, ASC	0	5
+adaptive 0, buckets below the window, UInt64, DESC	1	5
+adaptive 0, buckets below the window, UInt64, ASC	1	5
+adaptive 0, buckets below the window, two numbers, DESC	1	5
+adaptive 0, buckets below the window, two numbers, ASC	1	5
+adaptive 0, buckets below the window, String, DESC	1	5
+adaptive 0, buckets below the window, String, ASC	1	5
+adaptive 0, buckets below the window, String, legacy table, DESC	1	5
+adaptive 0, buckets below the window, String, legacy table, ASC	1	5
+adaptive 0, buckets below the window, String and number, DESC	1	5
+adaptive 0, buckets below the window, String and number, ASC	1	5
+adaptive 0, buckets above the window, UInt64, DESC	1	5
+adaptive 0, buckets above the window, UInt64, ASC	1	5
+adaptive 0, buckets above the window, two numbers, DESC	1	5
+adaptive 0, buckets above the window, two numbers, ASC	1	5
+adaptive 0, buckets above the window, String, DESC	1	5
+adaptive 0, buckets above the window, String, ASC	1	5
+adaptive 0, buckets above the window, String, legacy table, DESC	1	5
+adaptive 0, buckets above the window, String, legacy table, ASC	1	5
+adaptive 0, buckets above the window, String and number, DESC	1	5
+adaptive 0, buckets above the window, String and number, ASC	1	5
+adaptive 1, buckets below the window, UInt64, DESC	1	5
+adaptive 1, buckets below the window, UInt64, ASC	1	5
+adaptive 1, buckets below the window, two numbers, DESC	1	5
+adaptive 1, buckets below the window, two numbers, ASC	1	5
+adaptive 1, buckets below the window, String, DESC	1	5
+adaptive 1, buckets below the window, String, ASC	1	5
+adaptive 1, buckets below the window, String, legacy table, DESC	1	5
+adaptive 1, buckets below the window, String, legacy table, ASC	1	5
+adaptive 1, buckets below the window, String and number, DESC	1	5
+adaptive 1, buckets below the window, String and number, ASC	1	5
+adaptive 1, buckets above the window, UInt64, DESC	1	5
+adaptive 1, buckets above the window, UInt64, ASC	1	5
+adaptive 1, buckets above the window, two numbers, DESC	1	5
+adaptive 1, buckets above the window, two numbers, ASC	1	5
+adaptive 1, buckets above the window, String, DESC	1	5
+adaptive 1, buckets above the window, String, ASC	1	5
+adaptive 1, buckets above the window, String, legacy table, DESC	1	5
+adaptive 1, buckets above the window, String, legacy table, ASC	1	5
+adaptive 1, buckets above the window, String and number, DESC	1	5
+adaptive 1, buckets above the window, String and number, ASC	1	5
