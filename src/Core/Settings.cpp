@@ -6580,6 +6580,7 @@ Default value for Iceberg table property `history.expire.max-ref-age-ms` used by
 )", 0, \
         {"26.3", 9223372036854775807, 9223372036854775807, "New setting."}) \
     DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 384_MiB, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Data files smaller than this are selected for compaction.
 
 The default is `0.75` of the documented default of the Iceberg table property `write.target-file-size-bytes`
@@ -6589,6 +6590,7 @@ see https://iceberg.apache.org/docs/1.5.2/configuration/.
         {"26.9", 10 * 1024 * 1024, 384 * 1024 * 1024, "Aligned with how the Iceberg `rewrite_data_files` procedure derives `min-file-size-bytes`: 0.75 of the target file size (512 MiB). Compaction now selects files below 384 MiB instead of below 10 MiB."}, \
         {"26.5", 10_MiB, 10_MiB, "New setting"}) \
     DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Data files larger than this are selected for compaction.
 
 The default is `1.8` of the documented default of the Iceberg table property `write.target-file-size-bytes`
@@ -6598,6 +6600,7 @@ see https://iceberg.apache.org/docs/1.5.2/configuration/.
         {"26.9", 10ULL * 1024 * 1024 * 1024, 512ULL * 1024 * 1024 * 9 / 5, "Aligned with how the Iceberg `rewrite_data_files` procedure derives `max-file-size-bytes`: 1.8 of the target file size (512 MiB)."}, \
         {"26.5", 10_GiB, 10_GiB, "New setting"}) \
     DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Threshold for compaction data files in iceberg.
 )", 0, \
         {"26.5", 1000, 1000, "New setting"}) \
@@ -6654,14 +6657,17 @@ Possible values:
 )", 0, \
         {"26.3", false, true, "Enables cache of parquet file metadata."}) \
     DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Minimum time of delay between 2 background compaction operations.
 )", 0, \
         {"26.5", 60 * 60 * 3, 60 * 60 * 3, "New setting"}) \
     DECLARE(Seconds, iceberg_compaction_data_cleanup, 60 * 60 * 3, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 The time after which the data will be deleted.
 )", 0, \
         {"26.5", 60 * 60 * 3, 60 * 60 * 3, "New setting"}) \
     DECLARE(UInt64, iceberg_compaction_commit_batch_size, 100, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Number of merged data files that background Iceberg compaction accumulates before publishing them in a new snapshot.
 
 Compaction results are published in any case once there are no candidates left to compact, so this setting only bounds
@@ -7478,10 +7484,6 @@ Allow to merge expressions into JOIN step during join reordering optimization.
 Allow to convert `JOIN` to subquery with `IN` if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
 )", 0, \
         {"25.4", false, false, "New setting"}) \
-    DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
-Allow to push down filter to PREWHERE expression for supported storages
-)", 0, \
-        {"24.2", true, true, "Allow to push down filter to PREWHERE expression for supported storages"}) \
     DECLARE(Bool, optimize_prewhere_after_pushdown, false, R"(
 Run a second `PREWHERE` promotion pass after later query plan optimizations may have
 deposited additional filters above a `MergeTree` read step (e.g. predicate pushdown through
@@ -7529,35 +7531,8 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_read_in_order, true, R"(
-Toggles the read in-order optimization query-plan-level optimization.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-<Note>
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-</Note>
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
     DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0, \
         {"25.12", false, true, "New setting"}) \
-    DECLARE(Bool, query_plan_aggregation_in_order, true, R"(
-Toggles the aggregation in-order query-plan-level optimization.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-<Note>
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-</Note>
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0, \
-        {"22.12", 0, 1, "Enable some refactoring around query plan"}) \
     DECLARE(Bool, query_plan_remove_redundant_sorting, true, R"(
 Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
@@ -9658,6 +9633,7 @@ resulting file, and that `iceberg_insert_max_rows_in_data_file` caps the file in
         {"26.9", 1024 * 1024 * 1024, 512 * 1024 * 1024, "Aligned with the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB), see https://iceberg.apache.org/docs/1.5.2/configuration/."}, \
         {"25.9", 1_GiB, 1_GiB, "New setting."}) \
     DECLARE(UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Max rows of an iceberg parquet data file produced by compaction. Defaults to the maximum, so the size limit
 `iceberg_compaction_max_bytes_in_data_file` alone decides how much data goes into an output file, the same way
 Iceberg has no row-count counterpart of `write.target-file-size-bytes`.
@@ -9665,6 +9641,7 @@ Iceberg has no row-count counterpart of `write.target-file-size-bytes`.
         {"26.9", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."}, \
         {"26.7", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."}) \
     DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, 512_MiB, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Max bytes of an iceberg parquet data file produced by compaction.
 
 The default mirrors the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB),
@@ -9920,7 +9897,8 @@ Enables lazy type hints for the [JSON](/reference/data-types/newjson) type.
 With this setting enabled, `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeName)` that only adds or changes
 type hints is a metadata-only operation: the type hints are applied at query time for existing parts and
 materialized during inserts and background merges instead of rewriting the historical data.
-)", BETA, allow_experimental_json_lazy_type_hints, \
+)", 0, allow_experimental_json_lazy_type_hints, \
+        {"26.10", false, false, "Lazy `JSON` type hints are now GA. This also applies to the alias `allow_experimental_json_lazy_type_hints`."}, \
         {"26.9", false, false, "Lazy JSON type hints are now Beta. An alias for setting 'allow_experimental_json_lazy_type_hints'."}, \
         {"26.3", false, false, "New experimental setting for lazy JSON type hints. At the time the setting was named `allow_experimental_json_lazy_type_hints`, which is now an alias of it."}) \
     DECLARE(Bool, enable_hash_join_row_store, true, R"(
@@ -10298,11 +10276,13 @@ Allow to execute `insert` queries into iceberg.
         {"26.2", false, false, "Insert into iceberg was moved to Beta. This also applies to the alias `allow_experimental_insert_into_iceberg`."}, \
         {"25.7", false, false, "New setting."}) \
     DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Allow to clean up old data files during Iceberg compaction.
 )", EXPERIMENTAL, \
         {"26.5", false, false, "New setting"}) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
+In open-source builds only `OPTIMIZE TABLE ... MANIFEST` is supported; data compaction (`OPTIMIZE TABLE` without `MANIFEST`) reports `NOT_IMPLEMENTED`.
 )", EXPERIMENTAL, \
         {"25.8", 0, 0, "New setting"}) \
     DECLARE(UInt64, iceberg_manifest_min_count_to_compact, 100, R"(
@@ -10823,6 +10803,14 @@ Enable experimental table function `eval`.
         {"26.5", true, true, "Obsolete setting, the logical join step is now always used."}, \
         {"25.2", false, true, "Enable new step"}, \
         {"25.1", false, false, "New join step, internal change"}) \
+    MAKE_OBSOLETE(M, Bool, query_plan_read_in_order, true, \
+        {"26.10", true, true, "Obsolete setting: the read-in-order optimization is now always applied at the query plan level, and the legacy interpreter-level implementation (`ReadInOrderOptimizer`) was removed. Use `optimize_read_in_order` to toggle the optimization."}) \
+    MAKE_OBSOLETE(M, Bool, query_plan_optimize_prewhere, true, \
+        {"26.10", true, true, "Obsolete setting: moving conditions from `WHERE` to `PREWHERE` is now always done at the query plan level, and the legacy AST-based implementation in `InterpreterSelectQuery` was removed. Use `optimize_move_to_prewhere` to toggle the optimization."}, \
+        {"24.2", true, true, "Allow to push down filter to PREWHERE expression for supported storages"}) \
+    MAKE_OBSOLETE(M, Bool, query_plan_aggregation_in_order, true, \
+        {"26.10", true, true, "Obsolete setting: the aggregation-in-order optimization is now always applied at the query plan level, and the legacy interpreter-level implementation was removed. Use `optimize_aggregation_in_order` to toggle the optimization."}, \
+        {"22.12", 0, 1, "Enable some refactoring around query plan"}) \
     MAKE_OBSOLETE(M, Bool, parallel_replicas_insert_select_local_pipeline, true, \
         {"26.10", true, true, "Obsolete setting: whether the initiator runs the local pipeline of a distributed `INSERT SELECT` is decided by `parallel_replicas_local_plan` and `parallel_replicas_prefer_local_replica` alone, and it is still skipped when `max_execution_time_leaf` imposes a different timeout contract. Set `parallel_replicas_local_plan = 0` to leave all the reading to the remote replicas."}, \
         {"25.5", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}, \
