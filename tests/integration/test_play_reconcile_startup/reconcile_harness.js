@@ -491,69 +491,65 @@ function extractTopLevelFunction(js, name) {
 function checkAuthHeaderTransport(js) {
     const canSendRawSource = extractTopLevelFunction(js, 'canSendRawAuthHeader');
     const getAuthHeadersSource = extractTopLevelFunction(js, 'getAuthHeaders');
-    const location = {
-        protocol: 'https:',
-        origin: 'https://play.example',
-        href: 'https://play.example/play',
-    };
+    const getAuthServerOriginSource = extractTopLevelFunction(js, 'getAuthServerOrigin');
+    const serverPredatesDefaultSessionUserSource = extractTopLevelFunction(js, 'serverPredatesDefaultSessionUser');
+    const location = { href: 'https://play.example/play' };
     const getAuthHeaders = vm.runInNewContext(
-        `${canSendRawSource}\n${getAuthHeadersSource}\ngetAuthHeaders`,
+        `const legacyDefaultUserServers = new Set();\n${canSendRawSource}\n${getAuthServerOriginSource}\n${getAuthHeadersSource}\ngetAuthHeaders`,
         { Headers, URL, location },
     );
+    const serverPredatesDefaultSessionUser = vm.runInNewContext(
+        `${serverPredatesDefaultSessionUserSource}\nserverPredatesDefaultSessionUser`,
+    );
     const cases = [
-        ['named-user', 'alice', 'p&?#%', 'https://play.example', {
+        ['named-user', 'alice', 'p&?#%', 'https://play.example', false, {
             Authorization: 'never',
             'X-ClickHouse-User': 'alice',
             'X-ClickHouse-Key': 'p&?#%',
         }],
-        ['utf8-and-spaces', 'play:юзер', '  päss 密码  ', 'https://play.example', {
+        ['utf8-and-spaces', 'play:юзер', '  päss 密码  ', 'https://play.example', false, {
             Authorization: 'ClickHouse-Play',
             'X-ClickHouse-User': 'play%3A%D1%8E%D0%B7%D0%B5%D1%80',
             'X-ClickHouse-Key': '%20%20p%C3%A4ss%20%E5%AF%86%E7%A0%81%20%20',
         }],
-        ['ascii-edge-spaces', 'alice', ' secret ', 'https://play.example', {
+        ['ascii-edge-spaces', 'alice', ' secret ', 'https://play.example', false, {
             Authorization: 'ClickHouse-Play',
             'X-ClickHouse-User': 'alice',
             'X-ClickHouse-Key': '%20secret%20',
         }],
-        ['empty-password', 'alice', '', 'https://play.example', {
+        ['empty-password', 'alice', '', 'https://play.example', false, {
             Authorization: 'never',
             'X-ClickHouse-User': 'alice',
         }],
-        ['default-user-same-origin', '', 'secret', 'https://play.example', {
+        ['default-user-modern', '', 'secret', 'https://remote.example', false, {
             Authorization: 'never',
             'X-ClickHouse-Key': 'secret',
         }],
-        ['default-user-remote-legacy', '', 'secret', 'https://old.example', {
+        ['default-user-legacy-probe', '', 'secret', 'https://remote.example', true, {
             Authorization: 'never',
             'X-ClickHouse-User': 'default',
             'X-ClickHouse-Key': 'secret',
         }],
-        ['default-credentials', '', '', 'https://play.example', { Authorization: 'never' }],
+        ['default-credentials', '', '', 'https://play.example', false, { Authorization: 'never' }],
     ];
-    for (const [name, user, password, server_address, expected] of cases) {
-        const actual = getAuthHeaders(user, password, server_address);
+    for (const [name, user, password, server_address, force_legacy_default_user, expected] of cases) {
+        const actual = getAuthHeaders(user, password, server_address, force_legacy_default_user);
         check('auth-header-cases', `${name} uses the expected headers`,
             JSON.stringify(actual) === JSON.stringify(expected), actual);
 
         const browserHeaders = new Headers(actual);
         check('auth-header-cases', `${name} survives browser header normalization`,
             Object.entries(actual).every(([header, value]) => browserHeaders.get(header) === value), actual);
-
-        const encoded = actual.Authorization === 'ClickHouse-Play';
-        const remote = new URL(server_address, location.href).origin !== location.origin;
-        const expected_user = user || (password && !encoded && remote ? 'default' : '');
-        check('auth-header-cases', `${name} round-trips the transmitted credentials`,
-            (!actual['X-ClickHouse-User']
-                || (encoded ? decodeURIComponent(actual['X-ClickHouse-User']) : actual['X-ClickHouse-User']) === expected_user)
-                && (!actual['X-ClickHouse-Key']
-                    || (encoded ? decodeURIComponent(actual['X-ClickHouse-Key']) : actual['X-ClickHouse-Key']) === password),
-            actual);
     }
+    check('auth-header-cases', '26.6 predates default_session_user',
+        serverPredatesDefaultSessionUser('26.6.9.1') === true);
+    check('auth-header-cases', '26.7 supports default_session_user',
+        serverPredatesDefaultSessionUser('26.7.1.1') === false);
+    check('auth-header-cases', 'future major supports default_session_user',
+        serverPredatesDefaultSessionUser('27.1.1.1') === false);
 
     const requestFunctions = [
         ['auxiliaryQuery', 'headers: getAuthHeaders(user, password, server_address)'],
-        ['getServerStatus', 'headers: getAuthHeaders(user, password, server_address)'],
         ['postImpl', 'headers: getAuthHeaders(user, password, server_address)'],
         ['loadCompletions', 'headers: getAuthHeaders(user_elem.value, password_elem.value, url_elem.value)'],
     ];
@@ -563,6 +559,17 @@ function checkAuthHeaderTransport(js) {
         check('auth-header-cases', `${name} does not append credentials to its URL`,
             !/url \+= '&(?:user|password)=/.test(source), name);
     }
+
+    const statusSource = extractTopLevelFunction(js, 'getServerStatus');
+    check('auth-header-cases', 'getServerStatus tries modern header authentication first',
+        statusSource.includes('request(getAuthHeaders(user, password, server_address))'));
+    check('auth-header-cases', 'getServerStatus probes the legacy default user explicitly',
+        statusSource.includes('getAuthHeaders(user, password, server_address, true)'));
+    check('auth-header-cases', 'getServerStatus gates legacy auth on the server version',
+        statusSource.includes('serverPredatesDefaultSessionUser(legacy_status.v)')
+            && statusSource.includes('legacyDefaultUserServers.add(server_origin)'));
+    check('auth-header-cases', 'getServerStatus does not append credentials to its URL',
+        !/url \+= '&(?:user|password)=/.test(statusSource));
 
     const completionUrlSource = js.match(/function buildCompletionUrl\(\) \{\n[\s\S]*?\n\}/);
     if (!completionUrlSource) throw new Error('buildCompletionUrl not found in play.html');
