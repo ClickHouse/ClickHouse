@@ -324,20 +324,17 @@ bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, const std::
     return true;
 }
 
+/// The `String` overloads take UTF-8 and enter `std::filesystem` through `pathFromString`: the narrow
+/// `std::filesystem::path` constructor decodes through the active code page on Windows, which would
+/// make a non-ASCII path compare against a different prefix than the one it names.
 bool pathStartsWith(const String & path, const String & prefix_path)
 {
-    auto filesystem_path = std::filesystem::path(path);
-    auto filesystem_prefix_path = std::filesystem::path(prefix_path);
-
-    return pathStartsWith(filesystem_path, filesystem_prefix_path);
+    return pathStartsWith(pathFromString(path), pathFromString(prefix_path));
 }
 
 bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path)
 {
-    auto filesystem_path = std::filesystem::path(path);
-    auto filesystem_prefix_path = std::filesystem::path(prefix_path);
-
-    return fileOrSymlinkPathStartsWith(filesystem_path, filesystem_prefix_path);
+    return fileOrSymlinkPathStartsWith(pathFromString(path), pathFromString(prefix_path));
 }
 
 size_t getSizeFromFileDescriptor(int fd, const String & file_name)
