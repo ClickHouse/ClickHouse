@@ -2,11 +2,9 @@
 
 #include <Functions/FunctionFactory.h>
 
-#include <Interpreters/ExpressionActions.h>
-
 #include <Analyzer/AggregationUtils.h>
-#include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
@@ -39,51 +37,6 @@ std::unordered_set<size_t> convertUsedColumnNamesToUsedProjectionIndexes(const Q
     }
 
     return result;
-}
-
-/// Keeping a column with an aggregate function, a window function or a subquery forces a computation the query plan cannot drop
-bool isCostlyProjectionColumn(const QueryTreeNodePtr & query_or_union_node, size_t index)
-{
-    if (auto * union_node = query_or_union_node->as<UnionNode>())
-    {
-        const auto & queries = union_node->getQueries().getNodes();
-        return std::any_of(queries.begin(), queries.end(), [index](const auto & query) { return isCostlyProjectionColumn(query, index); });
-    }
-
-    const auto & projection_node = query_or_union_node->as<const QueryNode &>().getProjection().getNodes().at(index);
-    if (hasAggregateFunctionNodes(projection_node) || hasWindowFunctionNodes(projection_node))
-        return true;
-
-    bool has_subquery = false;
-    traverseQueryTree(projection_node,
-        [&has_subquery](const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return !has_subquery; },
-        [&has_subquery](const QueryTreeNodePtr & node) { has_subquery = has_subquery || isQueryOrUnionNode(node); });
-    return has_subquery;
-}
-
-size_t getCheapestProjectionColumnIndex(const QueryTreeNodePtr & query_or_union_node)
-{
-    auto * union_node = query_or_union_node->as<UnionNode>();
-    auto * query_node = query_or_union_node->as<QueryNode>();
-    NamesAndTypes projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
-    if (projection_columns.empty())
-        return 0;
-
-    std::vector<size_t> candidates;
-    for (size_t i = 0; i < projection_columns.size(); ++i)
-        if (!isCostlyProjectionColumn(query_or_union_node, i))
-            candidates.push_back(i);
-
-    if (candidates.empty())
-        for (size_t i = 0; i < projection_columns.size(); ++i)
-            candidates.push_back(i);
-
-    NamesAndTypesList candidate_columns;
-    for (size_t i : candidates)
-        candidate_columns.push_back(projection_columns[i]);
-
-    auto smallest_column = ExpressionActions::getSmallestColumn(candidate_columns, /*skip_subcolumns=*/ false);
-    return *std::find_if(candidates.begin(), candidates.end(), [&](size_t i) { return projection_columns[i] == smallest_column; });
 }
 
 /// We cannot remove aggregate functions, if query does not contain GROUP BY or arrayJoin from subquery projection
@@ -136,6 +89,42 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
         if ((!query_node.hasGroupBy() && hasAggregateFunctionNodes(projection_node)) || hasFunctionNode(projection_node, "arrayJoin"))
             used_projection_columns_indexes.insert(i);
     }
+}
+
+/// EXCEPT and INTERSECT compare the kept column, the next step of a recursive CTE reads it, INTERPOLATE refers to it
+/// by name, and it decides which ARRAY JOIN arrays are kept, whose sizes may differ
+bool canReplaceKeptColumnWithConstant(const QueryTreeNodePtr & query_or_union_node)
+{
+    auto * union_node = query_or_union_node->as<UnionNode>();
+    if (!union_node)
+    {
+        const auto & query_node = query_or_union_node->as<QueryNode &>();
+        auto table_expressions = extractTableExpressions(query_node.getJoinTreeNodeTyped(), true /* add_array_join */, true /* recursive */);
+        return !query_node.hasInterpolate()
+            && std::none_of(table_expressions.begin(), table_expressions.end(),
+                [](const auto & node) { return node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN; });
+    }
+
+    const auto & queries = union_node->getQueries().getNodes();
+    return union_node->getUnionMode() == SelectUnionMode::UNION_ALL && !union_node->hasRecursiveCTETable()
+        && std::all_of(queries.begin(), queries.end(), canReplaceKeptColumnWithConstant);
+}
+
+void replaceKeptColumnWithConstant(const QueryTreeNodePtr & query_or_union_node)
+{
+    if (auto * union_node = query_or_union_node->as<UnionNode>())
+    {
+        for (const auto & query : union_node->getQueries().getNodes())
+            replaceKeptColumnWithConstant(query);
+        return;
+    }
+
+    auto & query_node = query_or_union_node->as<QueryNode &>();
+    auto constant = std::make_shared<ConstantNode>(UInt64(1));
+    /// Column aliases such as `AS t(a, b)` are already applied to the projection names
+    query_node.setProjectionAliasesToOverride({});
+    query_node.resolveProjectionColumns({{query_node.getProjectionColumns().front().name, constant->getResultType()}});
+    query_node.getProjection().getNodes().front() = std::move(constant);
 }
 
 }
@@ -225,14 +214,19 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
             auto used_projection_indexes = convertUsedColumnNamesToUsedProjectionIndexes(query_or_union_node, used_columns);
             updateUsedProjectionIndexes(query_or_union_node, used_projection_indexes);
 
-            /// Keep at least 1 column if used projection columns are empty, the cheapest one
-            if (used_projection_indexes.empty())
-                used_projection_indexes.insert(getCheapestProjectionColumnIndex(query_or_union_node));
+            /// Keep at least 1 column if used projection columns are empty
+            bool no_column_is_used = used_projection_indexes.empty();
+            if (no_column_is_used)
+                used_projection_indexes.insert(0);
 
             if (auto * union_node = query_or_union_node->as<UnionNode>())
                 union_node->removeUnusedProjectionColumns(used_projection_indexes);
             else if (auto * query_node = query_or_union_node->as<QueryNode>())
                 query_node->removeUnusedProjectionColumns(used_projection_indexes);
+
+            /// Then the planner reads only what the other clauses need, or the cheapest column, like for `count()` over a table
+            if (no_column_is_used && canReplaceKeptColumnWithConstant(query_or_union_node))
+                replaceKeptColumnWithConstant(query_or_union_node);
         }
 
         for (const auto & subquery_node_to_visit : subqueries_nodes_to_visit)
