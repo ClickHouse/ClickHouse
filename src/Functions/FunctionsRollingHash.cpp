@@ -379,7 +379,7 @@ ColumnPtr FunctionContentDefinedChunkOffsetsUTF8::executeImpl(const ColumnsWithT
 
 REGISTER_FUNCTION(RollingHash)
 {
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 9};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category_cdc = FunctionDocumentation::Category::StringSplitting;
 
     /// Fields map to generated reference (docs website, `system.functions`): description, syntax line, args, notes, return type, examples, version, category.
@@ -394,6 +394,8 @@ Hash boundaries are only considered after at least `window_size` bytes of the cu
          "Unsigned divisor: cut when `(buzhash % reverse_probability) == 0`. Must be a constant native unsigned integer >= 2. Typical values: 256–65536.",
          {"const UInt8/16/32/64"}},
     };
+    FunctionDocumentation::Arguments cdc_utf8_args = cdc_args;
+    cdc_utf8_args[0] = {"string", "Input string. Must be valid UTF-8.", {"String", "FixedString"}};
     FunctionDocumentation::ReturnedValue cdc_chunks_ret = {"Array of substrings covering the whole input (empty array for empty string).", {"Array(String)"}};
     FunctionDocumentation::Examples cdc_chunks_ex = {
         {"Chunk binary data",
@@ -416,7 +418,7 @@ Input must be valid UTF-8.
     FunctionDocumentation cdc_utf8_doc = {
         cdc_utf8_desc,
         "contentDefinedChunksUTF8(string, window_size, reverse_probability)",
-        cdc_args,
+        cdc_utf8_args,
         {},
         cdc_chunks_ret,
         cdc_utf8_ex,
@@ -456,7 +458,7 @@ Input must be valid UTF-8.
     FunctionDocumentation cdc_off_utf8_doc = {
         cdc_off_utf8_desc,
         "contentDefinedChunkOffsetsUTF8(string, window_size, reverse_probability)",
-        cdc_args,
+        cdc_utf8_args,
         {},
         cdc_off_ret,
         cdc_off_utf8_ex,
