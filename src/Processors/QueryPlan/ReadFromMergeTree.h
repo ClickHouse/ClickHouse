@@ -121,6 +121,8 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
 /// `DistributedReadBucket` and `buildDistributedFinalPipe` live in `MergeTreeFinalMerge.h`.
 
+struct HypotheticalProjection;
+
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
 class ReadFromMergeTree final : public SourceStepWithFilter
@@ -581,6 +583,10 @@ public:
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
+
+    /// a hypothetical projection that the projection optimization also weighs
+    void setHypotheticalProjection(std::shared_ptr<HypotheticalProjection> projection) { hypothetical_projection = std::move(projection); }
+    const std::shared_ptr<HypotheticalProjection> & getHypotheticalProjection() const { return hypothetical_projection; }
     bool isTopKPrewhereQueryConditionCacheAllowed() const { return allow_top_k_prewhere_query_condition_cache; }
     bool isQueryConditionCacheAllowed() const { return allow_query_condition_cache; }
 
@@ -847,6 +853,7 @@ private:
     std::optional<size_t> number_of_current_replica;
 
     std::optional<TopKFilterInfo> top_k_filter_info;
+    std::shared_ptr<HypotheticalProjection> hypothetical_projection;
     ProjectionIndexReadDescription projection_index_read_desc;
     /// Number of tasks when this leaf read is distributed; each worker reads the lanes described by its
     /// per-read bucket parameter.

@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
+#include <Storages/MergeTree/HypotheticalProjection.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -390,7 +391,8 @@ bool analyzeProjectionCandidate(
     const std::optional<TopKFilterInfo> & top_k_filter_info,
     bool allow_query_condition_cache,
     bool allow_top_k_prewhere_query_condition_cache,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const HypotheticalProjection * hypothetical_projection)
 {
     RangesInDataParts projection_parts;
     size_t parent_parts_sum_marks = 0;
@@ -398,12 +400,15 @@ bool analyzeProjectionCandidate(
     {
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
-        if (it != created_projections.end() && !it->second->is_broken
+        MergeTreeDataPartPtr projection_part = it != created_projections.end() && !it->second->is_broken ? it->second : nullptr;
+        if (!projection_part && hypothetical_projection && candidate.projection == &hypothetical_projection->projection)
+            projection_part = hypothetical_projection->findPart(part_with_ranges.data_part->name);
+        if (projection_part
             && projectionPartHasRequiredColumns(
-                *it->second, *part_with_ranges.data_part, *candidate.projection, parent_metadata, required_column_names))
+                *projection_part, *part_with_ranges.data_part, *candidate.projection, parent_metadata, required_column_names))
         {
             projection_parts.push_back(RangesInDataPart(
-                it->second,
+                projection_part,
                 part_with_ranges.data_part,
                 part_with_ranges.part_index_in_query,
                 part_with_ranges.part_starting_offset_in_query));
