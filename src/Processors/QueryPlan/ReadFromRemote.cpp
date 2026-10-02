@@ -108,8 +108,12 @@ static void setClusterForParallelReplicas(const ContextMutablePtr & context, con
     ///
     /// The dispatch already pinned the cluster and cleared the count for the whole fan-out
     /// (`updateSettingsAndClientInfoForCluster`, which also covers the local shard plans); this repeats it
-    /// for the context this step actually ships, so the remote pipes do not depend on that ordering.
+    /// for the context this step actually ships, so the remote pipes do not depend on that ordering. The rest
+    /// of the outer follower state (`collaborate_with_initiator`, `number_of_current_replica`) is dropped for
+    /// the same reason: this read is not a follower of the outer coordinator.
     context->getClientInfo().obsolete_count_participating_replicas = 0;
+    context->getClientInfo().collaborate_with_initiator = false;
+    context->getClientInfo().number_of_current_replica = 0;
     context->clearParallelReplicasCoordinatorCount();
 
     LOG_TRACE(log, "Setting `cluster_for_parallel_replicas` to {}", cluster_name);

@@ -478,6 +478,14 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
             new_client_info.obsolete_count_participating_replicas = 0;
         }
 
+        /// The same holds for the rest of the follower state of an outer parallel-replicas read: when this
+        /// fan-out runs inside a follower query, the local shard plans must not key follower mode off the
+        /// outer `collaborate_with_initiator` (`canUseParallelReplicasOnFollower`) and send read-task requests
+        /// to a coordinator that belongs to another read. The remote pipes never inherit it either
+        /// (`RemoteQueryExecutor::sendQueryUnlocked`).
+        new_client_info.collaborate_with_initiator = false;
+        new_client_info.number_of_current_replica = 0;
+
         if (!disable_parallel_replicas)
         {
             disable_parallel_replicas = true;
