@@ -37,6 +37,10 @@ public:
     void build(const ColumnPtr & column) override;
     void merge(const StatisticsPtr & other_stats) override;
 
+    /// Sets the statistics of rows that were not read, such as those a data lake file's metadata gives. A NULL bound
+    /// leaves min/max unknown; `null_count` counts only for a column whose default is NULL.
+    void setSummary(UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count);
+
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
 

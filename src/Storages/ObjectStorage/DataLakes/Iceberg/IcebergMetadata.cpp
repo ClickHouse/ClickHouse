@@ -1647,7 +1647,7 @@ IcebergMetadata::estimateRead(
         return estimate;
 
     ManifestColumnStatistics column_statistics(
-        column_names, storage_metadata_snapshot->getColumns(), *persistent_components.schema_processor, table_state_snapshot->schema_id);
+        column_names, storage_metadata_snapshot->getColumns(), *persistent_components.schema_processor, table_state_snapshot->schema_id, context);
 
     /// Prune as the read does (`IcebergIterator`), but never build an `IN` set: planning must not run a subquery.
     const auto & settings = context->getSettingsRef();
@@ -1750,7 +1750,7 @@ IcebergMetadata::estimateRead(
         estimate.rows.reset();
         return estimate;
     }
-    estimate.columns = column_statistics.finalize(*estimate.rows);
+    column_statistics.finalize(*estimate.rows, estimate);
     return estimate;
 }
 

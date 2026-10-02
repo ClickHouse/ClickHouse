@@ -3,7 +3,6 @@
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
 
-#include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -51,25 +50,8 @@ using PartitionCommands = std::vector<PartitionCommand>;
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
-/// Statistics of one column over the data files left after pruning.
-struct DataLakeColumnEstimate
-{
-    /// Where `num_distinct_values` comes from; only the first two bound the true count.
-    enum class DistinctValuesSource : UInt8
-    {
-        IdentityPartition,
-        ValueRange,
-        ColumnSize,
-        ColumnType,
-    };
-
-    UInt64 num_distinct_values = 1;
-    DistinctValuesSource distinct_values_source = DistinctValuesSource::ColumnType;
-    /// Typed as the storage column.
-    std::optional<Field> min_value;
-    std::optional<Field> max_value;
-    std::optional<Float64> null_fraction;
-};
+class ConditionSelectivityEstimator;
+using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 
 /// Rows of a read, estimated from the data lake metadata without reading data (see `IDataLakeMetadata::estimateRead`).
 struct DataLakeReadEstimate
@@ -80,8 +62,11 @@ struct DataLakeReadEstimate
     bool pruned_data_files = false;
     /// The snapshot has live delete files.
     bool has_delete_files = false;
-    /// By storage column name; only requested columns, and only when `rows` is known and positive.
-    std::unordered_map<String, DataLakeColumnEstimate> columns;
+    /// Statistics of the requested columns over the remaining data files, merged as those of MergeTree parts;
+    /// nullptr unless `rows` is known and positive.
+    ConditionSelectivityEstimatorPtr column_statistics;
+    /// By storage column name: the number of distinct values that replaces the estimator's guess.
+    std::unordered_map<String, UInt64> num_distinct_values;
 };
 
 class IDataLakeMetadata : boost::noncopyable
