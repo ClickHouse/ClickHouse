@@ -625,3 +625,65 @@ def test_missing_covered_part_on_start(start_cluster):
     finally:
         node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         node2.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+
+def stranded_part_node_query(table):
+    return (
+        f"SELECT count() FROM system.zookeeper WHERE path = '/clickhouse/tables/{table}/replicas/1/parts' "
+        "AND name = 'all_0_1_1'"
+    )
+
+
+def build_stranded_part_node(table):
+    # Leaves a ZooKeeper part node of node1 that has no part in the working set and is covered by
+    # an active part. The directory is removed only after all_0_2_2 covers all_0_1_1: while all_0_1_1
+    # is active, DETACH/ATTACH declares it broken and the replica fetches it again.
+    for node, replica in [(node1, "1"), (node2, "2")]:
+        node.query(
+            f"CREATE TABLE {table} (n int) ENGINE=ReplicatedMergeTree('/clickhouse/tables/{table}', '{replica}') "
+            "ORDER BY n SETTINGS old_parts_lifetime=100500"
+        )
+
+    node1.query(f"INSERT INTO {table} VALUES (1)")
+    node1.query(f"INSERT INTO {table} VALUES (2)")
+    node1.query(f"OPTIMIZE TABLE {table} FINAL")
+    node1.query(f"INSERT INTO {table} VALUES (3)")
+    node1.query(f"OPTIMIZE TABLE {table} FINAL")
+    node1.query(f"SYSTEM SYNC REPLICA {table}")
+
+    remove_part_dir_from_disk(node1, table, "all_0_1_1")
+    node1.query(f"DETACH TABLE {table} SYNC")
+    node1.query(f"ATTACH TABLE {table}")
+    node1.query(f"SYSTEM WAIT LOADING PARTS {table}")
+
+    # system.parts omits Deleting parts unless _state is referenced.
+    assert node1.query(stranded_part_node_query(table)) == "1\n"
+    assert (
+        node1.query(
+            f"SELECT count() FROM system.parts WHERE table = '{table}' AND name = 'all_0_1_1' AND _state != ''"
+        )
+        == "0\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "table, drop_query",
+    [
+        ("rmt_stranded_truncate", "TRUNCATE TABLE {table}"),
+        ("rmt_stranded_detach", "ALTER TABLE {table} DETACH PARTITION tuple()"),
+    ],
+)
+def test_drop_range_removes_stranded_part_node(start_cluster, table, drop_query):
+    node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node2.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+    try:
+        build_stranded_part_node(table)
+
+        node1.query(drop_query.format(table=table), settings={"alter_sync": 2})
+
+        assert_eq_with_retry(node1, stranded_part_node_query(table), "0\n")
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node2.query(f"DROP TABLE IF EXISTS {table} SYNC")

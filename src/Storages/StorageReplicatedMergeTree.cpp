@@ -2981,14 +2981,23 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::executeFetchShared
     }
 }
 
-/// prefetched_parts, if set, must list <replica_path>/parts as of after the caller's last removal.
+static bool isPartInWorkingSet(const MergeTreeData & storage, const MergeTreePartInfo & part_info, const DataPartsAnyLock & lock)
+{
+    return storage.getPartIfExistsUnlocked(part_info,
+        {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated,
+         MergeTreeDataPartState::Deleting, MergeTreeDataPartState::DeleteOnDestroy},
+        lock) != nullptr;
+}
+
+/// With skip_stranded_parts, nodes of parts absent from the working set in every state are not reported:
+/// the caller has scheduled their removal by the cleanup thread.
 static void paranoidCheckForCoveredPartsInZooKeeper(
     const ZooKeeperPtr & zookeeper,
     const String & replica_path,
     MergeTreeDataFormatVersion format_version,
     const String & covering_part_name,
     const StorageReplicatedMergeTree & storage,
-    const std::optional<Strings> & prefetched_parts = {})
+    bool skip_stranded_parts)
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
     constexpr bool paranoid_check_for_covered_parts_default = true;
@@ -3003,17 +3012,17 @@ static void paranoidCheckForCoveredPartsInZooKeeper(
 
     auto dominated_info = MergeTreePartInfo::fromPartName(covering_part_name, format_version);
 
-    std::optional<Strings> listed_parts;
-    if (!prefetched_parts)
-        listed_parts = zookeeper->getChildren(replica_path + "/parts");
-    const Strings & parts_remain = prefetched_parts ? *prefetched_parts : *listed_parts;
-
+    Strings parts_remain = zookeeper->getChildren(replica_path + "/parts");
     Strings orphaned_parts;
-    for (const auto & part_name : parts_remain)
     {
-        auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
-        if (part_info && dominated_info.contains(*part_info))
-            orphaned_parts.push_back(part_name);
+        auto parts_lock = storage.readLockParts();
+        for (const auto & part_name : parts_remain)
+        {
+            auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
+            if (part_info && dominated_info.contains(*part_info)
+                && (!skip_stranded_parts || isPartInWorkingSet(storage, *part_info, parts_lock)))
+                orphaned_parts.push_back(part_name);
+        }
     }
 
     if (orphaned_parts.empty())
@@ -3026,33 +3035,59 @@ static void paranoidCheckForCoveredPartsInZooKeeper(
         covering_part_name);
 }
 
-Strings StorageReplicatedMergeTree::removeStrandedPartsInRangeFromZooKeeper(const MergeTreePartInfo & drop_range)
+void StorageReplicatedMergeTree::scheduleRemovalOfStrandedParts(const MergeTreePartInfo & drop_range)
 {
-    /// Precondition: the range cannot be satisfied by a live covering part instead of removing the
-    /// parts it covers (the is_drop_part predicate in MergeTreeData::grabActivePartsToRemoveForDropRange).
-    /// A narrower predicate strands the node forever, a wider one removes a still covered node.
-    chassert(!(!drop_range.isFakeDropRangePart() && drop_range.min_block));
+    /// The is_drop_part predicate of MergeTreeData::grabActivePartsToRemoveForDropRange: such a range may be
+    /// satisfied by a live covering part, which still owns the nodes it covers.
+    chassert(drop_range.isFakeDropRangePart() || !drop_range.min_block);
 
-    auto zookeeper = getZooKeeper();
-    Strings stranded_parts;
-    Strings remaining_parts;
-    for (auto & part_name : zookeeper->getChildren(replica_path + "/parts"))
+    {
+        std::lock_guard lock(drop_ranges_with_stranded_parts_mutex);
+        drop_ranges_with_stranded_parts.push_back(drop_range);
+    }
+    cleanup_thread.wakeup();
+}
+
+size_t StorageReplicatedMergeTree::removeStrandedPartsFromZooKeeper()
+{
+    std::vector<MergeTreePartInfo> drop_ranges;
+    {
+        std::lock_guard lock(drop_ranges_with_stranded_parts_mutex);
+        drop_ranges = drop_ranges_with_stranded_parts;
+    }
+    if (drop_ranges.empty())
+        return 0;
+
+    std::vector<std::pair<String, MergeTreePartInfo>> covered_parts;
+    for (auto & part_name : getZooKeeper()->getChildren(replica_path + "/parts"))
     {
         auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
-        if (part_info && drop_range.contains(*part_info))
-            stranded_parts.push_back(std::move(part_name));
-        else
-            remaining_parts.push_back(std::move(part_name));
+        if (part_info && std::ranges::any_of(drop_ranges, [&](const auto & drop_range) { return drop_range.contains(*part_info); }))
+            covered_parts.emplace_back(std::move(part_name), *part_info);
     }
 
-    if (stranded_parts.empty())
-        return remaining_parts;
+    Strings stranded_parts;
+    {
+        auto parts_lock = readLockParts();
+        for (auto & [part_name, part_info] : covered_parts)
+            if (!isPartInWorkingSet(*this, part_info, parts_lock))
+                stranded_parts.push_back(std::move(part_name));
+    }
 
-    LOG_WARNING(log, "Removing {} part(s) [{}] from ZooKeeper: covered by DROP_RANGE {}, but not present in the working set",
-        stranded_parts.size(), fmt::join(stranded_parts, ", "), drop_range.getPartNameForLogs());
+    if (!stranded_parts.empty())
+    {
+        LOG_WARNING(log, "Removing {} part(s) [{}] from ZooKeeper: covered by a completed drop range, but not present in the working set",
+            stranded_parts.size(), fmt::join(stranded_parts, ", "));
+        removePartsFromZooKeeperWithRetries(stranded_parts);
+    }
 
-    removePartsFromZooKeeperWithRetries(stranded_parts);
-    return remaining_parts;
+    /// Only this thread removes ranges, and ranges are only appended.
+    {
+        std::lock_guard lock(drop_ranges_with_stranded_parts_mutex);
+        drop_ranges_with_stranded_parts.erase(
+            drop_ranges_with_stranded_parts.begin(), drop_ranges_with_stranded_parts.begin() + drop_ranges.size());
+    }
+    return stranded_parts.size();
 }
 
 void StorageReplicatedMergeTree::waitForPreActivePartsInRange(const MergeTreePartInfo & drop_range) const
@@ -3148,11 +3183,10 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 
     /// Forcibly remove parts from ZooKeeper
     removePartsFromZooKeeperWithRetries(parts_to_remove);
-    std::optional<Strings> parts_remain_in_zookeeper;
     if (!may_be_covered_by_live_part)
-        parts_remain_in_zookeeper = removeStrandedPartsInRangeFromZooKeeper(drop_range_info);
+        scheduleRemovalOfStrandedParts(drop_range_info);
     paranoidCheckForCoveredPartsInZooKeeper(
-        getZooKeeper(), replica_path, format_version, entry.new_part_name, *this, parts_remain_in_zookeeper);
+        getZooKeeper(), replica_path, format_version, entry.new_part_name, *this, !may_be_covered_by_live_part);
 
     if (entry.detach)
         LOG_DEBUG(log, "Detached {} parts inside {}.", parts_to_remove.size(), entry.new_part_name);
@@ -3199,11 +3233,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
     {
         drop_range = {};
     }
-
-    /// Same predicate as in executeDropRange (the is_drop_part predicate in
-    /// MergeTreeData::grabActivePartsToRemoveForDropRange); always false here, because a replace
-    /// range always spans a whole partition at MAX_LEVEL.
-    const bool may_be_covered_by_live_part = !drop_range.isFakeDropRangePart() && drop_range.min_block;
 
     struct PartDescription
     {
@@ -3300,12 +3329,9 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
         removePartsFromZooKeeperWithRetries(parts_to_remove);
         if (replace)
         {
-            std::optional<Strings> parts_remain_in_zookeeper;
-            if (!may_be_covered_by_live_part)
-                parts_remain_in_zookeeper = removeStrandedPartsInRangeFromZooKeeper(drop_range);
+            scheduleRemovalOfStrandedParts(drop_range);
             paranoidCheckForCoveredPartsInZooKeeper(
-                getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name, *this,
-                parts_remain_in_zookeeper);
+                getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name, *this, /*skip_stranded_parts=*/ true);
         }
         return true;
     }
@@ -3635,11 +3661,9 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
     removePartsFromZooKeeperWithRetries(parts_to_remove);
     if (replace)
     {
-        std::optional<Strings> parts_remain_in_zookeeper;
-        if (!may_be_covered_by_live_part)
-            parts_remain_in_zookeeper = removeStrandedPartsInRangeFromZooKeeper(drop_range);
+        scheduleRemovalOfStrandedParts(drop_range);
         paranoidCheckForCoveredPartsInZooKeeper(
-            getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name, *this, parts_remain_in_zookeeper);
+            getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name, *this, /*skip_stranded_parts=*/ true);
     }
     res_parts.clear();
     parts_to_remove.clear();
