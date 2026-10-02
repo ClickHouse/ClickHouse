@@ -188,9 +188,14 @@ if (OS_LINUX)
     #   and whatever is poisoning it by LD_PRELOAD should not link to our symbols.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic -Wl,--gc-sections")
 
+    if (LINKER_NAME MATCHES "lld")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--fatal-warnings")
+    endif ()
+
     if (LINKER_NAME MATCHES "lld" AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
         # Fold identical code and data sections to reduce binary size.
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--icf=all")
+        # `safe` keeps address-taken functions distinct, as C and C++ require.
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--icf=safe")
     endif ()
 
     # In Release builds, strip residual debug sections that may come from contrib
@@ -362,7 +367,7 @@ if (NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -ffunction-sections -fdata-sections")
     # -faddrsig emits an address-significance table that lets lld's ICF
     # distinguish address-taken symbols from non-address-taken ones.
-    # Only useful on Linux where we use lld with --icf=all; Darwin's ld64
+    # Only useful on Linux where we use lld with --icf=safe; Darwin's ld64
     # does not consume these sections.
     if (OS_LINUX)
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -faddrsig")
@@ -392,6 +397,14 @@ endif()
 if (NOT ENABLE_FUZZING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
 endif()
+
+# Probe every page of a large stack allocation (big frames, `alloca`, VLAs) so that it cannot jump over
+# the guard page into another mapping. Only functions with frames larger than a page pay for it.
+# Clang ignores it (and `-Werror` turns the warning into an error) on Darwin, WebAssembly and LoongArch.
+# Note: it's not enabled on RISC-V64 due to bugs in LLVM.
+if (NOT OS_DARWIN AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X))
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-clash-protection")
+endif ()
 
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
@@ -676,6 +689,12 @@ endif ()
 # Not on Darwin: ld64 does not accept '-z' options.
 if (NOT OS_DARWIN)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro,-z,now")
+endif ()
+
+# Keep read-only data out of executable pages, so its bytes cannot serve as ROP gadgets.
+# Not on Darwin (no '-z' options in ld64) and not on WebAssembly (no ELF segments).
+if (NOT OS_DARWIN AND NOT OS_WASM)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,separate-code")
 endif ()
 
 if (ENABLE_TESTS)

@@ -160,6 +160,7 @@ void PushingAsyncPipelineExecutor::start()
     data = std::make_unique<Data>();
     data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
     data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+    data->executor->setStepProfiler(pipeline.getStepProfiler());
     data->source = pushing_source.get();
 
     auto func = [&, thread_group = CurrentThread::getGroup()]()
@@ -217,7 +218,7 @@ void PushingAsyncPipelineExecutor::cancel()
 {
     /// Cancel execution if it wasn't finished.
     if (data && !data->is_finished && data->executor)
-        data->executor->cancel();
+        data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
 
     finish();
 }
