@@ -1693,6 +1693,34 @@ async function main() {
         check(scenario, 'the tab keeps its title', out.title === 'Query A', out.title);
     }
 
+    /// Contract 11: Save writes a cell's parameters only while they describe its text. A cell whose
+    /// bindings were committed for an older text (`paramsSyncedQuery` differs from `query`) must not
+    /// pair them with the new text in the document, because Load stamps the pair as coherent.
+    {
+        const scenario = 'save-drops-stale-parameters';
+        const r = await runScenario(js, { href: base });
+        const out = await evalJSONAsync(r.sandbox, `
+            const settle = () => new Promise(res => setTimeout(res, 30));
+            const tab = getActiveTab();
+            query_area.value = 'SELECT 1';
+            addCell(tab, 'query', 1);
+            await settle();
+            query_area.value = 'SELECT 2';
+            captureActiveTab();
+            const stale = tab.cells[0];
+            stale.query = 'SELECT {kept:UInt8}';
+            stale.params = { gone: '1', kept: '2' };
+            stale.paramsSyncedQuery = 'SELECT {gone:UInt8}, {kept:UInt8}';
+            const doc = buildTabsMarkdown();
+            return { doc, active_is_other: activeCell(tab) !== stale };
+        `);
+        check(scenario, 'the stale cell is not the one the editor is docked in', out.active_is_other, out);
+        check(scenario, 'a binding whose placeholder is gone from the text is not saved',
+              !out.doc.includes('"gone"'), out.doc);
+        check(scenario, 'a binding whose placeholder survived is still saved',
+              out.doc.includes('"kept": "2"'), out.doc);
+    }
+
     if (failures) {
         console.log(`${failures} check(s) FAILED`);
         process.exit(1);

@@ -62,6 +62,7 @@ SCENARIOS = (
     "markdown-edit-backdrop-fences",
     "notebook-change-survives-immediate-reload",
     "save-load-round-trips-notebook",
+    "save-drops-stale-parameters",
 )
 
 

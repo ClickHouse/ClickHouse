@@ -15735,7 +15735,11 @@ function buildTabsMarkdown() {
             out.push('');
             /// The values bound to the query's `{name:Type}` placeholders, under their own sub-heading
             /// so that neither a reader nor the parser can confuse them with the result table below.
-            const params = cell.params || {};
+            /// Load treats the saved pair as coherent, so the bindings are written as they stand only
+            /// while they provably describe this text (`paramsSyncedQuery`); otherwise they still
+            /// belong to an older text and are pruned against this one, as `writeHistoryEntry` does.
+            const params = (cell.paramsSyncedQuery === cell.query
+                ? cell.params : pruneParamsToText(cell.params, cell.query)) || {};
             if (Object.keys(params).length) {
                 const json = JSON.stringify(params, null, 4);
                 const params_fence = codeFence(json);
