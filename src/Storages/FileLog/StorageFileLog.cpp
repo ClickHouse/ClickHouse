@@ -288,6 +288,9 @@ void StorageFileLog::loadFiles()
     auto absolute_path = std::filesystem::absolute(path);
     absolute_path = absolute_path.lexically_normal(); /// Normalize path.
 
+    /// Files that the glob excludes but whose inode has a stored meta, with that inode.
+    std::vector<std::pair<String, UInt64>> rotated_files;
+
     if (std::filesystem::is_regular_file(absolute_path))
     {
         path_is_directory = false;
@@ -325,11 +328,11 @@ void StorageFileLog::loadFiles()
             if (!dir_entry.is_regular_file())
                 continue;
             String file_name = dir_entry.path().filename();
-            /// A file renamed to a non-matching name while it was read (log rotation) keeps being read.
             struct stat file_stat{};
-            if (fileNameMatches(file_name)
-                || (stat(dir_entry.path().c_str(), &file_stat) == 0 && file_infos.meta_by_inode.contains(file_stat.st_ino)))
+            if (fileNameMatches(file_name))
                 file_infos.file_names.push_back(std::move(file_name));
+            else if (stat(dir_entry.path().c_str(), &file_stat) == 0 && file_infos.meta_by_inode.contains(file_stat.st_ino))
+                rotated_files.emplace_back(std::move(file_name), file_stat.st_ino);
         }
     }
 
@@ -338,6 +341,17 @@ void StorageFileLog::loadFiles()
     {
         auto inode = getInode(getFullDataPath(file));
         file_infos.context_by_name.emplace(file, FileContext{.inode = inode});
+    }
+
+    /// A file renamed to a non-matching name while it was read (log rotation) keeps being read, under one of its names.
+    std::ranges::sort(rotated_files);
+    for (auto & rotated : rotated_files)
+    {
+        const UInt64 inode = rotated.second;
+        if (std::ranges::any_of(file_infos.context_by_name, [inode](const auto & file) { return file.second.inode == inode; }))
+            continue;
+        file_infos.context_by_name.emplace(rotated.first, FileContext{.inode = inode});
+        file_infos.file_names.push_back(std::move(rotated.first));
     }
 
     /// Update file meta or create file meta
@@ -1231,7 +1245,12 @@ bool StorageFileLog::updateFileInfos()
                 {
                     auto inode = getInode(file_path);
 
-                    if (!fileNameMatches(file_name) && !file_infos.meta_by_inode.contains(inode) && !renamed_from_read)
+                    /// Another name of a file that is still read here (a hard link) is not read again.
+                    const bool read_under_other_name = std::ranges::any_of(
+                        file_infos.context_by_name,
+                        [&](const auto & file)
+                        { return file.second.inode == inode && file.second.status != FileStatus::REMOVED && file.first != file_name; });
+                    if (!fileNameMatches(file_name) && (!file_infos.meta_by_inode.contains(inode) || read_under_other_name) && !renamed_from_read)
                     {
                         /// The file read under this name, if any, was replaced by one that is not read.
                         if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())

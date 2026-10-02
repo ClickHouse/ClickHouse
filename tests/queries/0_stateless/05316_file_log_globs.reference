@@ -38,6 +38,11 @@ chain.log.2	27
 new2.log	29
 -- renamed twice, first name refilled
 gate.log.2	40
+-- hard links while detached
+app.log	30
+chain.log.2	31
+-- hard link renamed
+chain.log.2	32
 -- errors
 OK
 OK

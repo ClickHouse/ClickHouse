@@ -5,6 +5,7 @@
 # also across DETACH/ATTACH, until it is removed.
 # A file renamed from a matching name before the table read it is read, also after a second rename, and a rotation chain renamed while detached keeps its offsets.
 # An unread file never becomes read by passing through a read name, and a read file renamed over a new file keeps its offset.
+# A hard link to a read file under a name the glob excludes is not read again.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -127,6 +128,18 @@ mv "$dir/gate.log.1" "$dir/gate.log.2"
 printf '900\n' > "$outside/other"
 mv "$outside/other" "$dir/gate.log.1"
 read_rows "renamed twice, first name refilled"
+
+$CLICKHOUSE_CLIENT -q "DETACH TABLE file_log"
+ln "$dir/app.log" "$dir/app.log.bak"
+ln "$dir/chain.log.2" "$dir/chain.log.2.bak"
+printf '30\n' >> "$dir/app.log"
+printf '31\n' >> "$dir/chain.log.2"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE file_log"
+read_rows "hard links while detached"
+
+mv "$dir/chain.log.2.bak" "$dir/chain.log.5"
+printf '32\n' >> "$dir/chain.log.2"
+read_rows "hard link renamed"
 
 echo "-- errors"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE file_log_bad (v UInt64) ENGINE = FileLog('$dir/*/app.log', 'TSV')" 2>&1 | grep -q 'Globs are supported only in the file name of the path' && echo OK || echo FAIL
