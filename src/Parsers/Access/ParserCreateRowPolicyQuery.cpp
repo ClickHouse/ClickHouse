@@ -412,9 +412,19 @@ CREATE ROW POLICY p1, p2 ON t1, t2
 CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 ON table2
 ```
 
-## USING Clause {#using-clause}
+## USING clause {#using-clause}
 
-Allows specifying a condition to filter rows. A user will see a row if the condition is calculated to non-zero for the row.
+Defines a filter condition for a table. A user can only see rows for which the condition is true (evaluates to a non-zero value). This is similar to adding an extra `WHERE` condition to every query the user runs against the table.
+
+For example, the following policy limits `analyst_role` to rows from the EU:
+
+```sql
+CREATE ROW POLICY region_filter ON db.orders
+USING region = 'EU'
+TO analyst_role;
+```
+
+With this policy, `SELECT * FROM db.orders` returns the same rows as `SELECT * FROM db.orders WHERE region = 'EU'` would.
 
 ## TO Clause {#to-clause}
 
@@ -491,6 +501,10 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
 <Warning>
 Define the same policy on every server that holds the data. With [`serialize_query_plan = 1`](/reference/settings/session-settings/serialize#serialize_query_plan) the initiator ships an already-built read plan, and when it cannot apply its policy inside the read (an engine without `PREWHERE` support, or a policy on a column the engine does not filter in `PREWHERE`) that plan carries the initiator's policy instead of the executing server's own.
 </Warning>
+
+## Join tables {#join-tables}
+
+A [Join](/reference/engines/table-engines/special/join) table is a prepared hash table that a `JOIN` or `joinGet` reads as is, so its rows cannot be filtered there. A policy on such a table, including a database-wide `ON db.*` policy, filters a plain `SELECT` from the table, but while it applies, `JOIN` and `joinGet` queries against the table fail with `ACCESS_DENIED`.
 
 ## ON CLUSTER Clause {#on-cluster-clause}
 

@@ -27,7 +27,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
-#include <Storages/StorageMerge.h>
+#include <Storages/IStorage.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Planner/Utils.h>
 #include <Core/Settings.h>
@@ -208,13 +208,17 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
     auto table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
+    /// The `SelectQueryInfo` built above has no query: the step carries only a table name and the
+    /// table expression modifiers. Reads that need one get a `SELECT` over that table synthesized
+    /// and re-analyzed below; the rest read the storage directly.
+    const bool read_via_interpreter = storage->readRequiresAnalyzedQuery();
+
     ASTPtr query;
-    bool is_storage_merge = typeid_cast<const StorageMerge *>(storage.get());
     /// A read whose plan carries no filter for the policy gets it only by being planned again here -
     /// with the read-column widening and the FINAL / PREWHERE ordering that policy implies.
     bool needs_row_policy = false;
-    /// Remote and Merge reads are planned again below with their own options, which apply the policy.
-    if (reading_from_table && !storage->isRemote() && !is_storage_merge && getEffectiveRowPolicyFilter(*storage, context))
+    /// A read that needs an analyzed query is planned again below with its own options, which apply the policy.
+    if (reading_from_table && !read_via_interpreter && getEffectiveRowPolicyFilter(*storage, context))
     {
         switch (reading_from_table->getRowPolicyPlacement())
         {
@@ -229,7 +233,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
                 break;
         }
     }
-    bool replan_through_interpreter = storage->isRemote() || is_storage_merge || needs_row_policy;
+    bool replan_through_interpreter = read_via_interpreter || needs_row_policy;
     if (replan_through_interpreter)
     {
         auto table_expression = make_intrusive<ASTTableExpression>();
