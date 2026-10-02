@@ -107,7 +107,7 @@ FROM
             return std::make_shared<AggregateFunctionTimeseriesHistogramRateToGrid<TimestampType, IntervalType>>(argument_types, parameters, start, end, step, window, scale);
         },
         make_histogram_rate_documentation("timeSeriesHistogramRateToGrid", "rate", "rate", "rate",
-            "[NULL,NULL,NULL,NULL,(6,0,0,0.2222222222222222,0.611111111111111,0,[(0,2)],[0.05555555555555555,0.16666666666666666],[],[],[],0,0,[],[]),(6,0,0,0.2222222222222222,0.611111111111111,0,[(0,2)],[0.05555555555555555,0.16666666666666666],[],[],[],0,0,[],[]),NULL,NULL,NULL]"));
+            "[NULL,NULL,NULL,NULL,(7,0,0,0.2222222222222222,0.611111111111111,0,[(0,2)],[0.05555555555555555,0.16666666666666666],[],[],[],0,0,[],[]),(7,0,0,0.2222222222222222,0.611111111111111,0,[(0,2)],[0.05555555555555555,0.16666666666666666],[],[],[],0,0,[],[]),NULL,NULL,NULL]"));
 
     register_histogram_rate_function("timeSeriesHistogramIncreaseToGrid",
         []<typename TimestampType, typename IntervalType>(const DataTypes & argument_types, const Array & parameters, TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
@@ -115,7 +115,7 @@ FROM
             return std::make_shared<AggregateFunctionTimeseriesHistogramIncreaseToGrid<TimestampType, IntervalType>>(argument_types, parameters, start, end, step, window, scale);
         },
         make_histogram_rate_documentation("timeSeriesHistogramIncreaseToGrid", "increase", "increase", "increase",
-            "[NULL,NULL,NULL,NULL,(6,0,0,10,27.5,0,[(0,2)],[2.5,7.5],[],[],[],0,0,[],[]),(6,0,0,10,27.5,0,[(0,2)],[2.5,7.5],[],[],[],0,0,[],[]),NULL,NULL,NULL]"));
+            "[NULL,NULL,NULL,NULL,(7,0,0,10,27.5,0,[(0,2)],[2.5,7.5],[],[],[],0,0,[],[]),(7,0,0,10,27.5,0,[(0,2)],[2.5,7.5],[],[],[],0,0,[],[]),NULL,NULL,NULL]"));
 
     register_histogram_rate_function("timeSeriesHistogramDeltaToGrid",
         []<typename TimestampType, typename IntervalType>(const DataTypes & argument_types, const Array & parameters, TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
@@ -123,7 +123,7 @@ FROM
             return std::make_shared<AggregateFunctionTimeseriesHistogramDeltaToGrid<TimestampType, IntervalType>>(argument_types, parameters, start, end, step, window, scale);
         },
         make_histogram_rate_documentation("timeSeriesHistogramDeltaToGrid", "delta", "delta", "delta",
-            "[NULL,NULL,NULL,NULL,(6,0,0,10,27.5,0,[(0,2)],[2.5,7.5],[],[],[],0,0,[],[]),(6,0,0,10,27.5,0,[(0,2)],[2.5,7.5],[],[],[],0,0,[],[]),NULL,NULL,NULL]"));
+            "[NULL,NULL,NULL,NULL,(7,0,0,10,27.5,0,[(0,2)],[2.5,7.5],[],[],[],0,0,[],[]),(7,0,0,10,27.5,0,[(0,2)],[2.5,7.5],[],[],[],0,0,[],[]),NULL,NULL,NULL]"));
 
     register_histogram_rate_function("timeSeriesHistogramInstantRateToGrid",
         []<typename TimestampType, typename IntervalType>(const DataTypes & argument_types, const Array & parameters, TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
@@ -131,7 +131,7 @@ FROM
             return std::make_shared<AggregateFunctionTimeseriesHistogramInstantRateToGrid<TimestampType, IntervalType>>(argument_types, parameters, start, end, step, window, scale);
         },
         make_histogram_rate_documentation("timeSeriesHistogramInstantRateToGrid", "irate", "irate", "instant rate",
-            "[NULL,NULL,NULL,NULL,(6,0,0,0.4,1.1,0,[(0,2)],[0.1,0.3],[],[],[],0,0,[],[]),(6,0,0,0.4,1.1,0,[(0,2)],[0.1,0.3],[],[],[],0,0,[],[]),NULL,NULL,NULL]"));
+            "[NULL,NULL,NULL,NULL,(7,0,0,0.4,1.1,0,[(0,2)],[0.1,0.3],[],[],[],0,0,[],[]),(7,0,0,0.4,1.1,0,[(0,2)],[0.1,0.3],[],[],[],0,0,[],[]),NULL,NULL,NULL]"));
 
     register_histogram_rate_function("timeSeriesHistogramInstantDeltaToGrid",
         []<typename TimestampType, typename IntervalType>(const DataTypes & argument_types, const Array & parameters, TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
@@ -139,7 +139,7 @@ FROM
             return std::make_shared<AggregateFunctionTimeseriesHistogramInstantDeltaToGrid<TimestampType, IntervalType>>(argument_types, parameters, start, end, step, window, scale);
         },
         make_histogram_rate_documentation("timeSeriesHistogramInstantDeltaToGrid", "idelta", "idelta", "instant delta",
-            "[NULL,NULL,NULL,NULL,(6,0,0,4,11,0,[(0,2)],[1,3],[],[],[],0,0,[],[]),(6,0,0,4,11,0,[(0,2)],[1,3],[],[],[],0,0,[],[]),NULL,NULL,NULL]"));
+            "[NULL,NULL,NULL,NULL,(7,0,0,4,11,0,[(0,2)],[1,3],[],[],[],0,0,[],[]),(7,0,0,4,11,0,[(0,2)],[1,3],[],[],[],0,0,[],[]),NULL,NULL,NULL]"));
 }
 
 }
