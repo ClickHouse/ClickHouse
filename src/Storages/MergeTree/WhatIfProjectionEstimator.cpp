@@ -1044,7 +1044,7 @@ WhatIfCandidateResult evaluateProjection(
     const std::string_view relaxing_setting = !read_settings[Setting::prefer_optimize_projection] ? ""
         : force_requested ? "force_optimize_projection" : "prefer_optimize_projection";
 
-    /// with no parts, the optimizer still rejects a projection that the query cannot use, and nothing is read
+    /// with no parts, the optimizer still rejects a projection that the query cannot use, and WHATIF reads no data
     auto probe = std::make_shared<HypotheticalProjection>(projection->clone());
     weigh(probe);
     if (probe->outcome.rejected_for_query)

@@ -1,4 +1,4 @@
--- a projection that the optimizer rejects for the shape of the query is not applicable before any data is read
+-- a projection that the optimizer rejects for the shape of the query is not applicable, and WHATIF reads no data
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS no_filter;
