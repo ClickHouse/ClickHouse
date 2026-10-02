@@ -119,7 +119,7 @@ SELECT 'distributed', uniqExact(i64) FROM remote('127.0.0.{1,2}', currentDatabas
 
 -- The radix partitioned aggregation is used only for a single `uniqExact` of a supported type without keys.
 -- It is not used where the aggregation is not finalized, such as on parallel replicas, or where `uniqExact` is rewritten to `GROUP BY`.
-SET enable_parallel_replicas = 0, count_distinct_optimization = 0;
+SET enable_parallel_replicas = 0, count_distinct_optimization = 0, optimize_uniq_exact_radix_partitioning = 1;
 
 SELECT 'used', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(i64) FROM t_radix_uniq) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'used for Nullable', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(ns) FROM t_radix_uniq) WHERE explain LIKE '%RadixUniqExact%';

@@ -1965,6 +1965,7 @@ class SettingsRandomizer:
         "optimize_skip_unused_shards_rewrite_in": lambda: random.random() > 0.05,
         "optimize_time_filter_with_preimage": lambda: random.random() > 0.05,
         "optimize_trivial_count_query": lambda: random.random() > 0.05,
+        "optimize_uniq_exact_radix_partitioning": lambda: random.randint(0, 1),
         "optimize_uniq_to_count": lambda: random.random() > 0.05,
         "optimize_use_projections": lambda: random.random() > 0.05,
         "optimize_use_implicit_projections": lambda: random.random() > 0.05,
