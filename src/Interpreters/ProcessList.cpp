@@ -8,7 +8,7 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/IExecutor.h>
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
@@ -585,7 +585,7 @@ void QueryStatus::ExecutorHolder::cancel()
 {
     std::lock_guard lock(mutex);
     if (executor)
-        executor->cancel();
+        executor->cancel(IProcessor::CancelReason::CancelledByUser);
 }
 
 void QueryStatus::ExecutorHolder::remove()
@@ -657,7 +657,7 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
     }
 }
 
-void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
+void QueryStatus::addPipelineExecutor(IExecutor * e)
 {
     /// In case of asynchronous distributed queries it is possible to call
     /// addPipelineExecutor() from the cancelQuery() context, and this will
@@ -670,7 +670,7 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
     executors[e] = std::make_shared<ExecutorHolder>(e);
 }
 
-void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
+void QueryStatus::removePipelineExecutor(IExecutor * e)
 {
     ExecutorHolderPtr executor_holder;
 
