@@ -139,6 +139,7 @@ namespace Setting
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool async_socket_for_remote;
@@ -3949,7 +3950,15 @@ void InterpreterSelectQuery::initSettings()
 {
     auto & query = getSelectQuery();
     if (query.settings())
+    {
         InterpreterSetQuery(query.settings(), context).executeForCurrentContext(options.ignore_setting_constraints);
+
+        /// The old interpreter disabled the analyzer in `IInterpreterUnionOrSelectQuery`, but a `SELECT`
+        /// stored in a `VIEW` may enable it again here. Storages must not use analyzer-only query tree
+        /// paths (for example, `StorageDistributed::read`) when this interpreter built the query.
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            context->setSetting("allow_experimental_analyzer", false);
+    }
 
     const auto & client_info = context->getClientInfo();
 
