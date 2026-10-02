@@ -43,8 +43,7 @@ static std::vector<BlockNestedLoopPredicate::Source> resolvePredicateInputs(
                 required_column.name, in_left ? "both" : "neither");
 
         const Block & header = in_left ? left_header : right_header;
-        /// A name that occurs more than once in a header binds to its first column, as an input of
-        /// `ExpressionActions` does.
+        /// A repeated name binds to its first column, as an `ExpressionActions` input does.
         const size_t position = header.getPositionByName(required_column.name);
         /// The column is handed to the condition under the type the condition declares for it, so a
         /// column of another type would be read as one it is not.
