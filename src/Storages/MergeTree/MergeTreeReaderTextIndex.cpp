@@ -865,15 +865,31 @@ PostingList MergeTreeReaderTextIndex::readAllPostingsForToken(std::string_view t
     const auto blocks_to_read = token_info.getBlocksToRead(full_range);
 
     PostingList result;
-    auto & postings_stream = getPostingsStream(token, token_info);
+    /// The whole list is read once, so do not keep a stream for it in `postings_streams`
+    /// unless the token already has one.
+    std::unique_ptr<MergeTreeReaderStream> local_postings_stream;
+    MergeTreeReaderStream * postings_stream = nullptr;
 
     for (const auto & block_idx : blocks_to_read)
     {
         auto [it, inserted] = postings_blocks[token].try_emplace(block_idx);
         if (inserted)
         {
+            if (!postings_stream)
+            {
+                if (auto stream_it = postings_streams.find(token); stream_it != postings_streams.end())
+                {
+                    postings_stream = stream_it->second.get();
+                }
+                else
+                {
+                    local_postings_stream = makePostingsStream(token_info);
+                    postings_stream = local_postings_stream.get();
+                }
+            }
+
             it->second = MergeTreeIndexGranuleText::readPostingsBlock(
-                postings_stream,
+                *postings_stream,
                 *deserialization_state,
                 token_info,
                 block_idx,
