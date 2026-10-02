@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: every replica would create the disk over the same absolute path, so dropping the table on one replica removes the blobs of another.
 # The `plain_rewritable` metadata storage (like `plain` and `web`) removes blobs synchronously inside the
 # transaction and never replicates them, so a disk using it must never schedule the background tasks of
 # `BlobKillerThread` and `BlobCopierThread`. A disk with the default `local` metadata still runs the killer.

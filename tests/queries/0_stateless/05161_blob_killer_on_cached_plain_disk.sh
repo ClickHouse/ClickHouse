@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: every replica would create the disk over the same absolute path, so dropping the table on one replica removes the blobs of another.
 # A cached disk keeps a queue of dead blobs of its own: every commit moves the blobs that the wrapped
 # storage removed into it, so that `BlobKillerThread` drops the stale cache entries for them. So the killer
 # of the cache layer has to run even when the disk it wraps removes its blobs synchronously and needs no
