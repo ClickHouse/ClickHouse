@@ -2,6 +2,7 @@
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
 #include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Access/RolesOrUsersSet.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -72,7 +73,15 @@ BlockIO InterpreterSetRoleQuery::setDefaultRole(const ASTPtr & updated_query_ptr
     if (getContext()->isDDLOrOnClusterInternal() && getContext()->getUserID())
     {
         auto without_self = boost::static_pointer_cast<ASTRolesOrUsersSet>(query.to_users->clone());
-        std::erase(without_self->names, getContext()->getUserName());
+        if (without_self->names)
+        {
+            const String user_name = getContext()->getUserName();
+            auto & names = without_self->names->children;
+            names.erase(
+                std::remove_if(names.begin(), names.end(),
+                    [&](const ASTPtr & name) { return name->as<const ASTUserNameWithHost &>().toString() == user_name; }),
+                names.end());
+        }
         to_users_for_check = without_self;
     }
     getContext()->checkAccess(to_users_for_check->collectRequiredGrants(AccessType::ALTER_USER));
