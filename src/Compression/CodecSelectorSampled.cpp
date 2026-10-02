@@ -1,7 +1,15 @@
 #include <Compression/CodecSelectorSampled.h>
 #include <base/defines.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
+
+namespace ProfileEvents
+{
+extern const Event AdaptiveCodecBlocksPriced;
+extern const Event AdaptiveCodecBlocksRepriced;
+extern const Event AdaptiveCodecBlocksReused;
+}
 
 namespace DB::AdaptiveCodec
 {
@@ -24,8 +32,14 @@ Candidates CodecSelectorSampled::select(CompressionState * state, const Outcome 
         const UInt64 block = stream.block_index++;
         /// intHash64(block / selection_period) s.t. we get same hash for each block in the window.
         const bool sampled = block % selection_period == intHash64(block / selection_period) % selection_period;
+        /// No winner → either this is stream's first block or last block did full pricing and chose NONE. In either case, price all candidates.
         if (!stream.winner || sampled)
+        {
+            /// A stream with a single candidate is not adaptive, so its blocks are not counted.
+            if (outcome.all.count() > 1)
+                ProfileEvents::increment(ProfileEvents::AdaptiveCodecBlocksPriced);
             return outcome.all;
+        }
         return Candidates{}.set(*stream.winner);
     }
 
@@ -40,7 +54,12 @@ Candidates CodecSelectorSampled::select(CompressionState * state, const Outcome 
 
     /// The winner alone ran, but it writes more per source byte than the runner-up did when priced. Thus, try the rest.
     if (static_cast<UInt64>(outcome.best_size) * stream.source_size > static_cast<UInt64>(stream.runner_up_size) * outcome.source_size)
+    {
+        ProfileEvents::increment(ProfileEvents::AdaptiveCodecBlocksRepriced);
         return outcome.all & ~outcome.ran;
+    }
+
+    ProfileEvents::increment(ProfileEvents::AdaptiveCodecBlocksReused);
     return {};
 }
 

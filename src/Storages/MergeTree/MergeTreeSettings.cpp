@@ -2561,9 +2561,10 @@ Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/fu
         {"26.8", false, false, "New setting."}) \
     DECLARE(NonZeroUInt64, adaptive_codec_selection_period, 8, R"(
 Pricing a block means compressing it with every candidate codec and keeping the smallest output. With `enable_adaptive_codec_selection`, a column stream is split into windows of this many blocks, one sampled block per window is priced and the other blocks reuse its winner.
-A block reusing the winner is priced too when the winner writes more per source byte than the runner-up did on the priced block. When nothing shrank the priced block there is no winner, so the next block is priced.
+A block reusing the winner is re-priced when the winner writes more per source byte than the runner-up did on the priced block. When nothing shrank the priced block there is no winner, so the next block is priced.
 A priced block is never larger than the default codec would make it, a block reusing the winner may be.
 `1` prices every block. Compact parts always price every block.
+The profile events `AdaptiveCodecBlocksPriced`, `AdaptiveCodecBlocksRepriced` and `AdaptiveCodecBlocksReused` count the blocks of each kind per merge or mutation in `system.part_log`. Streams whose only candidates are the default codec and `NONE` are not counted.
 )", EXPERIMENTAL, \
         {"26.10", 8, 8, "New setting"}) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
