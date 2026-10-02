@@ -492,7 +492,11 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
         bool use_cast_accurate_or_null = !transform_null_in && data_types[i]->canBeInsideNullable() && !is_tuple_type;
         /// The same restrictions, for the lenient conversion below: it also produces a `Nullable`.
-        bool can_convert_leniently = target_type_without_nullable->canBeInsideNullable() && !is_tuple_type;
+        /// When the probe already has the key type (up to `Nullable`), no value can fail to fit, so the
+        /// cheap paths below are kept: an exact-type cast is a no-op, and that is the common
+        /// `x IN set_table` case.
+        bool can_convert_leniently = target_type_without_nullable->canBeInsideNullable() && !is_tuple_type
+            && !removeNullable(column_to_cast.type)->equals(*target_type_without_nullable);
 
         if (use_cast_accurate_or_null)
         {
