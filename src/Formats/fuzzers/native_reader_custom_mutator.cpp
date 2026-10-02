@@ -5,16 +5,25 @@
 ///   [per-column: VarUInt name_len][name bytes][VarUInt type_len][type bytes]
 ///   [serialization_info][column data...]
 ///
+/// When `native.encode_types_in_binary_format` is enabled, the type is written as raw
+/// `encodeDataType` bytes (`BinaryTypeIndex` encoding) instead of a length-prefixed name.
+///
 /// This mutator preserves the mode byte and occasionally injects known-valid
-/// ClickHouse type names as length-prefixed strings to help libFuzzer reach
-/// the type-parsing and column-deserialization code paths.
+/// ClickHouse types, encoded the way the selected mode expects (length-prefixed
+/// names for text mode, `encodeDataType` bytes for binary mode), to help libFuzzer
+/// reach the type-parsing and column-deserialization code paths.
 
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include <pcg_random.hpp>
+
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 
 /// Provided by libFuzzer — invokes the built-in mutation engine.
 extern "C" size_t LLVMFuzzerMutate(uint8_t * Data, size_t Size, size_t MaxSize);
@@ -60,6 +69,22 @@ static constexpr std::string_view kTypeNames[] = {
 };
 
 static constexpr size_t kTypeNamesCount = sizeof(kTypeNames) / sizeof(kTypeNames[0]);
+
+/// The same types in the binary encoding produced by `NativeWriter` when
+/// `native.encode_types_in_binary_format` is enabled. Built lazily from the real
+/// `encodeDataType`, so the encodings never drift from the reader's expectations.
+static const std::vector<std::string> & binaryTypeEncodings()
+{
+    static const std::vector<std::string> encodings = []
+    {
+        std::vector<std::string> result;
+        result.reserve(kTypeNamesCount);
+        for (const auto & name : kTypeNames)
+            result.push_back(DB::encodeDataType(DB::DataTypeFactory::instance().get(std::string(name))));
+        return result;
+    }();
+    return encodings;
+}
 
 /// Write a VarUInt-encoded value to buf, return bytes written.
 static size_t writeVarUInt(uint64_t v, uint8_t * buf, size_t cap)
@@ -130,13 +155,27 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t * Data, size_t Size, size_t Ma
     }
     else if (strategy < 45)
     {
-        /// Strategy 2: append a length-prefixed known type name to the payload.
-        const std::string_view & tname = kTypeNames[rng() % kTypeNamesCount];
+        /// Strategy 2: append a known type to the payload, encoded as the mode expects:
+        /// bit 0 = 0 - a length-prefixed type name, bit 0 = 1 - `BinaryTypeIndex` bytes.
+        const size_t type_index = rng() % kTypeNamesCount;
         const size_t payload_size = (Size >= 1) ? (Size - 1) : 0;
         const size_t avail = MaxSize - 1 - payload_size;
 
         uint8_t encoded[128];
-        const size_t enc_len = writeLenPrefixedString(tname, encoded, sizeof(encoded));
+        size_t enc_len = 0;
+        if (mode_byte & 1)
+        {
+            const std::string & binary = binaryTypeEncodings()[type_index];
+            if (binary.size() <= sizeof(encoded))
+            {
+                memcpy(encoded, binary.data(), binary.size());
+                enc_len = binary.size();
+            }
+        }
+        else
+        {
+            enc_len = writeLenPrefixedString(kTypeNames[type_index], encoded, sizeof(encoded));
+        }
         if (enc_len > 0 && enc_len <= avail)
         {
             Data[0] = mode_byte;
