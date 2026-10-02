@@ -41,6 +41,19 @@ FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_whatif_force_nested
       SETTINGS prefer_optimize_projection = 1)
 WHERE match(line, '^(status|verdict|reason):');
 
+SELECT '-- force in the CTE that reads the table, prefer outside, the verdict names force';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF WITH x AS (SELECT a, b, v FROM t_whatif_force_nested SETTINGS force_optimize_projection = 1)
+      SELECT * FROM x WHERE a = 42 AND b = 42 SETTINGS prefer_optimize_projection = 1)
+WHERE match(line, '^(status|verdict|reason):');
+
+SELECT '-- force in the query of a view, WHATIF forces the projection as the real optimizer does';
+CREATE VIEW v_whatif_forced AS SELECT a, b, v FROM t_whatif_force_nested SETTINGS force_optimize_projection = 1;
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF SELECT * FROM v_whatif_forced WHERE a = 42 AND b = 42)
+WHERE match(line, '^(status|verdict|reason):');
+DROP VIEW v_whatif_forced;
+
 SELECT '-- forced for the session';
 SET force_optimize_projection = 1;
 SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line

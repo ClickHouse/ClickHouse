@@ -17,6 +17,14 @@ reason: 2 marks would be read instead of 1 from the base table
 status: applicable
 verdict: chosen (forced)
 reason: `prefer_optimize_projection = 1` overrides the cost; the projection reads 2 marks instead of 1 from the base table
+-- force in the CTE that reads the table, prefer outside, the verdict names force
+status: applicable
+verdict: chosen (forced)
+reason: `force_optimize_projection = 1` overrides the cost; the projection reads the same 1 mark as the base table and serves no ORDER BY
+-- force in the query of a view, WHATIF forces the projection as the real optimizer does
+status: applicable
+verdict: chosen (forced)
+reason: `force_optimize_projection = 1` overrides the cost; the projection reads the same 1 mark as the base table and serves no ORDER BY
 -- forced for the session
 status: applicable
 verdict: chosen (forced)

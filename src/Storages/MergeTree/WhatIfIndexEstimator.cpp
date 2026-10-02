@@ -8,8 +8,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -30,7 +28,6 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
-#include <Core/SettingsFields.h>
 
 namespace DB
 {
@@ -42,8 +39,6 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsString ignore_data_skipping_indexes;
     extern const SettingsString force_data_skipping_indexes;
-    extern const SettingsBool force_optimize_projection;
-    extern const SettingsBool prefer_optimize_projection;
 }
 
 namespace ErrorCodes
@@ -157,43 +152,6 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
 
     for (const auto & child : node->children)
         stripWhatIfControlledSettings(child.get(), removed_force);
-}
-
-/// a subquery plan cannot see hypothetical projections, so `force_optimize_projection` becomes `prefer_optimize_projection` in each scope
-/// the two settings relax the same checks, but `prefer_optimize_projection` does not throw an exception
-/// `force_requested` gets `force_optimize_projection` of the select that reads the table, the read that WHATIF estimates
-void replaceForceWithPrefer(IAST * node, bool force, bool prefer, bool on_read_path, bool & force_requested)
-{
-    auto * select = node->as<ASTSelectQuery>();
-    if (select && select->settings())
-    {
-        auto & changes = select->settings()->as<ASTSetQuery &>().changes;
-        bool scoped = false;
-        for (const auto & change : changes)
-        {
-            if (change.name == "force_optimize_projection")
-                force = SettingFieldBool(change.value).value;
-            else if (change.name == "prefer_optimize_projection")
-                prefer = SettingFieldBool(change.value).value;
-            else
-                continue;
-            scoped = true;
-        }
-        if (scoped)
-        {
-            std::erase_if(changes, [](const auto & change)
-                { return change.name == "force_optimize_projection" || change.name == "prefer_optimize_projection"; });
-            changes.emplace_back("prefer_optimize_projection", Field{force || prefer});
-        }
-    }
-
-    if (select && on_read_path)
-        if (const auto * table = getTableExpression(*select, 0); table && table->database_and_table_name)
-            force_requested = force;
-
-    /// only the subqueries in `FROM` lead to the read, not the ones in expressions
-    for (const auto & child : node->children)
-        replaceForceWithPrefer(child.get(), force, prefer, on_read_path && (!select || child == select->tables()), force_requested);
 }
 
 /// Check applicability, then try empirical → statistical → applicability_only
@@ -369,12 +327,8 @@ WhatIfResult estimateHypotheticalIndexes(
     std::vector<String> forced_strings;
     stripWhatIfControlledSettings(select_query_copy.get(), forced_strings);
 
-    const bool force = context->getSettingsRef()[Setting::force_optimize_projection];
-    const bool prefer = context->getSettingsRef()[Setting::prefer_optimize_projection];
-    bool force_requested = false;
-    local_context->setSetting("force_optimize_projection", Field{false});
-    local_context->setSetting("prefer_optimize_projection", Field{force || prefer});
-    replaceForceWithPrefer(select_query_copy.get(), force, prefer, /* on_read_path */ true, force_requested);
+    /// the plans of the statement cannot see hypothetical projections, so a forced projection must not fail them
+    local_context->setSkipForcedProjectionCheck();
 
     if (forced_strings.empty() && context->getSettingsRef()[Setting::force_data_skipping_indexes].changed)
         forced_strings.push_back(context->getSettingsRef()[Setting::force_data_skipping_indexes]);
@@ -601,7 +555,7 @@ WhatIfResult estimateHypotheticalIndexes(
     for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
         result.candidates.push_back(
             evaluateProjection(
-                projection, read_step, analysis, baseline_parts, settings, force_requested, plan.getRootNode(), plan_context));
+                projection, read_step, analysis, baseline_parts, settings, plan.getRootNode(), plan_context));
 
     if (result.candidates.empty())
         appendNoCandidatesRow(result);
