@@ -92,16 +92,33 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {
             if (sparse)
-                return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, true>>(
+            {
+                if (shards > 1)
+                    return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, true, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
+                return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, true, false>>(
                     dict_id, dict_struct, std::move(source_ptr), configuration);
-            return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, false>>(
+            }
+
+            if (shards > 1)
+                return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, false, true>>(
+                    dict_id, dict_struct, std::move(source_ptr), configuration);
+            return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, false, false>>(
                 dict_id, dict_struct, std::move(source_ptr), configuration);
         }
 
         if (sparse)
-            return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, true>>(
+        {
+            if (shards > 1)
+                return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, true, true>>(
+                    dict_id, dict_struct, std::move(source_ptr), configuration);
+            return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, true, false>>(
                 dict_id, dict_struct, std::move(source_ptr), configuration);
-        return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, false>>(
+        }
+
+        if (shards > 1)
+            return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, false, true>>(
+                dict_id, dict_struct, std::move(source_ptr), configuration);
+        return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, false, false>>(
             dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 

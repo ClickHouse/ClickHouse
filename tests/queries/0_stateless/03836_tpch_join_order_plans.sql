@@ -4,10 +4,6 @@
 -- Verifies join order and distributed execution strategies for all TPC-H queries
 -- using SF100 cardinalities injected via `_internal_join_table_stat_hints`.
 
--- Pin aggregation pushdown off so the asserted plans are stable; the pushdown-enabled
--- twin of this test is `tpch_join_order_plans_aggregation_pushdown`.
-SET cascades_aggregation_pushdown = 0;
-
 DROP TABLE IF EXISTS region;
 DROP TABLE IF EXISTS nation;
 DROP TABLE IF EXISTS part;
@@ -89,6 +85,7 @@ SET allow_statistic_optimize = 1;
 SET query_plan_optimize_join_order_algorithm = 'dpsize,greedy';
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
 SET distributed_plan_execute_locally = 1;
 SET enable_cascades_optimizer = 1;
 -- The test profile installed in CI sets a non-zero max_rows_to_group_by, which keeps
@@ -103,7 +100,7 @@ SET rewrite_in_to_join = 0;
 -- node, so the asserted shape would depend on the fake data instead of the hints.
 SET use_index_for_in_with_subqueries = 0;
 SET correlated_subqueries_use_in_memory_buffer = 0;
-SET allow_correlated_subqueries = 1;
+SET allow_experimental_correlated_subqueries = 1;
 -- The CI test profile sets non-zero max_rows_in_join/max_bytes_in_join, which alters the
 -- correlated-subquery join order. Pin to 0 so the asserted plan is stable.
 SET max_rows_in_join = 0;

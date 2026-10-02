@@ -1123,16 +1123,6 @@ export const kbIndex = {
       ]
     },
     {
-      "id": "setup-installation/set-up-clickhouse-documentation-mcp-server",
-      "title": "Set up the ClickHouse documentation MCP server",
-      "description": "Connect AI tools to the ClickHouse documentation through the Model Context Protocol.",
-      "href": "/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
-      "category": "Setup & installation",
-      "tags": [
-        "Tools and Utilities"
-      ]
-    },
-    {
       "id": "performance-optimization/query-max-execution-time",
       "title": "Setting a limit on query execution time",
       "description": "How to enforce limit on max query execution time",
@@ -1247,16 +1237,6 @@ export const kbIndex = {
       "href": "/resources/support-center/knowledge-base/general-faqs/ne-tormozit",
       "category": "General & FAQs",
       "tags": []
-    },
-    {
-      "id": "materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts",
-      "title": "What happens to refreshable materialized views when the server restarts",
-      "description": "Why refreshable materialized views can all refresh at once when a server restarts, and how to start them again one at a time.",
-      "href": "/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts",
-      "category": "Materialized views & projections",
-      "tags": [
-        "Server Admin"
-      ]
     },
     {
       "id": "integrations/oracle-odbc",

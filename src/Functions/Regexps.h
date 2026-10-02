@@ -70,14 +70,6 @@ class LocalCacheTable
 public:
     using RegexpPtr = std::shared_ptr<OptimizedRegularExpression>;
 
-    ~LocalCacheTable()
-    {
-        if (hits)
-            ProfileEvents::increment(ProfileEvents::RegexpLocalCacheHit, hits);
-        if (misses)
-            ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss, misses);
-    }
-
     template <bool like, bool no_capture, bool case_insensitive>
     RegexpPtr getOrSet(const String & pattern)
     {
@@ -86,7 +78,7 @@ public:
         if (bucket.regexp == nullptr) [[unlikely]]
         {
             /// insert new entry
-            ++misses;
+            ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss);
             bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(pattern))};
         }
         else
@@ -94,11 +86,11 @@ public:
             if (pattern != bucket.pattern)
             {
                 /// replace existing entry
-                ++misses;
+                ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss);
                 bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(pattern))};
             }
             else
-                ++hits;
+                ProfileEvents::increment(ProfileEvents::RegexpLocalCacheHit);
         }
 
         return bucket.regexp;
@@ -115,10 +107,6 @@ private:
     };
     using CacheTable = std::array<Bucket, CACHE_SIZE>;
     CacheTable known_regexps;
-
-    /// Flushed once, in the destructor: per-lookup increments would contend on counters shared by all threads of the query.
-    size_t hits = 0;
-    size_t misses = 0;
 };
 
 }
