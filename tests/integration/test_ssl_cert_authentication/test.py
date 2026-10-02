@@ -881,6 +881,37 @@ def test_x509_san_email_lowercase_type_prefix():
         instance.query("DROP USER IF EXISTS email_lowercase_literal")
 
 
+def test_x509_san_uri_lowercase_type_prefix():
+    # The case-insensitive SAN type prefix applies to every recognized type, not only 'EMAIL:':
+    # a lowercase 'uri:' must match the certificate's 'URI:' SAN and be stored canonically.
+    instance.query("DROP USER IF EXISTS uri_lowercase_prefix")
+    instance.query(
+        "CREATE USER uri_lowercase_prefix IDENTIFIED WITH ssl_certificate SAN 'uri:spiffe://foo.com/bar'"
+    )
+    try:
+        # client4's certificate carries 'URI:spiffe://foo.com/bar'.
+        assert (
+            execute_query_native(
+                instance,
+                "SELECT currentUser()",
+                user="uri_lowercase_prefix",
+                cert_name="client4",
+            )
+            == "uri_lowercase_prefix\n"
+        )
+        assert (
+            execute_query_https(
+                "SELECT currentUser()", user="uri_lowercase_prefix", cert_name="client4"
+            )
+            == "uri_lowercase_prefix\n"
+        )
+        assert (
+            instance.query("SHOW CREATE USER uri_lowercase_prefix")
+            == "CREATE USER uri_lowercase_prefix IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://foo.com/bar\\'\n"
+        )
+    finally:
+        instance.query("DROP USER IF EXISTS uri_lowercase_prefix")
+
 def test_x509_san_email_no_wildcard():
     # '*' is a legal character in an email address local part (RFC 5321), so EMAIL: SANs are
     # matched exactly and a '*' is NEVER treated as a wildcard (unlike the Common Name and DNS:/URI:
