@@ -32,6 +32,9 @@
 #include <IO/copyData.h>
 #include <IO/Operators.h>
 #include <IO/Ask.h>
+#include <IO/ReadHelpers.h>
+#include <Access/AccessEntityIO.h>
+#include <Access/User.h>
 #include <readpassphrase.h>
 
 #include <Poco/Util/XMLConfiguration.h>
@@ -184,11 +187,12 @@ static bool hasAuthentication(const Poco::Util::AbstractConfiguration & config, 
     return false;
 }
 
-/// Whether a `DiskAccessStorage` at `directory_path` is known to have no access entities, so it cannot define the default user.
-/// It loads entities only from `<id>.sql` files and the `*.list` files indexing them.
+/// Whether a `DiskAccessStorage` at `directory_path` is known not to define the default user.
+/// It loads users either from `users.list` (with the other `*.list` files) or, when rebuilding the lists, from `<id>.sql` files,
+/// so both are checked. Empty lists and entities of other types (roles, settings profiles, etc.) don't define the default user.
 /// A relative path is resolved against the working directory of the server, which is not known here.
-/// A directory that cannot be inspected (e.g. without permissions) is not known to be empty.
-static bool isKnownEmptyDiskAccessStorage(const fs::path & directory_path)
+/// A directory or a file that cannot be inspected (e.g. without permissions, or corrupted) is not known to be without the default user.
+static bool isKnownWithoutDefaultUserDiskAccessStorage(const fs::path & directory_path)
 {
     if (directory_path.is_relative())
         return false;
@@ -197,14 +201,46 @@ static bool isKnownEmptyDiskAccessStorage(const fs::path & directory_path)
     if (!fs::exists(directory_path, ec))
         return !ec;
 
-    fs::directory_iterator it(directory_path, ec);
-    for (; !ec && it != fs::directory_iterator(); it.increment(ec))
+    try
     {
-        const auto extension = it->path().extension();
-        if (extension == ".sql" || extension == ".list")
-            return false;
+        const fs::path users_list_path = directory_path / "users.list";
+        if (fs::exists(users_list_path))
+        {
+            /// Same format as `writeListFile` in `DiskAccessStorage`.
+            ReadBufferFromFile in(users_list_path.string());
+            size_t num = 0;
+            readVarUInt(num, in);
+            for (size_t i = 0; i != num; ++i)
+            {
+                String name;
+                readStringBinary(name, in);
+                UUID id;
+                readUUIDText(id, in);
+                if (name == "default")
+                    return false;
+            }
+        }
+
+        for (const auto & entry : fs::directory_iterator(directory_path))
+        {
+            if (entry.path().extension() != ".sql")
+                continue;
+            String definition;
+            {
+                ReadBufferFromFile in(entry.path().string());
+                readStringUntilEOF(definition, in);
+            }
+            auto entity = deserializeAccessEntity(definition, entry.path().string());
+            if (entity->isTypeOf<User>() && entity->getName() == "default")
+                return false;
+        }
     }
-    return !ec;
+    catch (...)
+    {
+        return false;
+    }
+
+    return true;
 }
 
 static void createGroup(const String & group_name)
@@ -784,10 +820,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     users_config_files.push_back(users_config_path);
             };
 
-            /// `disk_storage_path` is set for a local directory storage, which cannot define the default user if it has no access entities.
+            /// `disk_storage_path` is set for a local directory storage, which shadows the users configs only if it may define the default user.
             auto add_shadowing_access_storage = [&](const std::string & description, const std::optional<fs::path> & disk_storage_path = {})
             {
-                if (shadowing_access_storage.empty() && !(disk_storage_path && isKnownEmptyDiskAccessStorage(*disk_storage_path)))
+                if (shadowing_access_storage.empty() && !(disk_storage_path && isKnownWithoutDefaultUserDiskAccessStorage(*disk_storage_path)))
                 {
                     shadowing_access_storage = description;
                     num_users_configs_before_shadowing_access_storage = users_config_files.size();
