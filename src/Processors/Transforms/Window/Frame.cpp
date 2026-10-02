@@ -29,9 +29,8 @@ int compareWithOffset(const WindowTransformParams & params, const SlidingBlocks 
 }
 
 /// Whether the row lies before the frame of the current row, so the frame start must step over it.
-bool isBeforeFrame(const WindowTransformParams & params, const SlidingBlocks & blocks, const RowPoint & row, const RowPoint & current)
+bool isBeforeFrame(const WindowTransformParams & params, const WindowFrame & frame, const SlidingBlocks & blocks, const RowPoint & row, const RowPoint & current)
 {
-    const WindowFrame & frame = params.window_description.frame;
     switch (frame.begin_type)
     {
         case WindowFrame::BoundaryType::Unbounded:
@@ -53,9 +52,8 @@ bool isBeforeFrame(const WindowTransformParams & params, const SlidingBlocks & b
 }
 
 /// Whether the row lies inside the frame of the current row, so the frame end must step over it.
-bool isInsideFrame(const WindowTransformParams & params, const SlidingBlocks & blocks, const RowPoint & row, const RowPoint & current)
+bool isInsideFrame(const WindowTransformParams & params, const WindowFrame & frame, const SlidingBlocks & blocks, const RowPoint & row, const RowPoint & current)
 {
-    const WindowFrame & frame = params.window_description.frame;
     switch (frame.end_type)
     {
         case WindowFrame::BoundaryType::Unbounded:
@@ -80,13 +78,12 @@ bool isInsideFrame(const WindowTransformParams & params, const SlidingBlocks & b
 
 void Frame::enterPartition(RowNumber partition_start)
 {
-    start = RowPoint{.location = partition_start};
-    end = start;
-    fully_visible = false;
+    found = FrameBounds{.start = RowPoint{.location = partition_start}, .end = RowPoint{.location = partition_start}, .fully_visible = false};
 }
 
-Frame::Frame(const WindowTransformParams & params_)
+Frame::Frame(const WindowTransformParams & params_, const WindowFrame & definition_)
     : params(params_)
+    , definition(definition_)
 {
 }
 
@@ -110,21 +107,21 @@ void Frame::advance(const SlidingBlocks & blocks, const RowPoint & current, cons
         return true;
     };
 
-    fully_visible = false;
-    const bool start_found = advance_cursor(start, [&](const RowPoint & row) { return isBeforeFrame(params, blocks, row, current); });
+    found.fully_visible = false;
+    const bool start_found = advance_cursor(found.start, [&](const RowPoint & row) { return isBeforeFrame(params, definition, blocks, row, current); });
     if (!start_found)
         return;
 
-    if (end.location < start.location)
-        end = start;
+    if (found.end.location < found.start.location)
+        found.end = found.start;
 
-    const bool end_found = advance_cursor(end, [&](const RowPoint & row) { return isInsideFrame(params, blocks, row, current); });
-    fully_visible = end_found;
+    const bool end_found = advance_cursor(found.end, [&](const RowPoint & row) { return isInsideFrame(params, definition, blocks, row, current); });
+    found.fully_visible = end_found;
 }
 
-FrameBounds Frame::bounds() const
+const FrameBounds & Frame::bounds() const
 {
-    return FrameBounds{.start = start.location, .end = end.location, .fully_visible = fully_visible};
+    return found;
 }
 
 }

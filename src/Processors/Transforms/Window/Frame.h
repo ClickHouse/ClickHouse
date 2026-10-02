@@ -11,26 +11,25 @@ namespace DB
 /// Rows-range of the frame seen so far.
 struct FrameBounds
 {
-    RowNumber start;
-    RowNumber end;
+    RowPoint start;
+    RowPoint end;
     bool fully_visible = false;
 };
 
 class Frame
 {
 public:
-    explicit Frame(const WindowTransformParams & params_);
+    Frame(const WindowTransformParams & params_, const WindowFrame & definition_);
 
     void enterPartition(RowNumber partition_start);
     void advance(const SlidingBlocks & blocks, const RowPoint & current, const PartitionBounds & partition);
 
-    FrameBounds bounds() const;
+    const FrameBounds & bounds() const;
 
 private:
     const WindowTransformParams & params;
-    RowPoint start;
-    RowPoint end;
-    bool fully_visible = false;
+    const WindowFrame definition;
+    FrameBounds found;
 };
 
 }
