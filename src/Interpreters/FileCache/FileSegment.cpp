@@ -1530,15 +1530,16 @@ void FileSegment::increasePriority()
 namespace
 {
 
-/// The last efficiency granule of a file segment of `size` bytes, and its bytes past the segment end.
-size_t lastGranule(size_t size)
+/// The number of the last efficiency granule of a file segment of `size` bytes.
+size_t lastGranuleNumber(size_t size)
 {
     return (size - 1) / FileSegment::EFFICIENCY_GRANULE_SIZE;
 }
 
-size_t lastGranuleTail(size_t size)
+/// Bytes of the last granule that lie inside a file segment of `size` bytes: from 1 to a full granule.
+size_t lastGranuleSize(size_t size)
 {
-    return (lastGranule(size) + 1) * FileSegment::EFFICIENCY_GRANULE_SIZE - size;
+    return size - lastGranuleNumber(size) * FileSegment::EFFICIENCY_GRANULE_SIZE;
 }
 
 }
@@ -1577,7 +1578,7 @@ void FileSegment::startEfficiencyWindowUnlocked(FileCacheEfficiency::Window wind
         state.previous_hit_window_id = state.window_id;
         state.previous_active_bytes = getActiveBytesUnlocked();
     }
-    state.active_granules.assign(lastGranule(range().size()) + 1, false);
+    state.active_granules.assign(lastGranuleNumber(range().size()) + 1, false);
     state.window_id = window;
     cache->getEfficiency().addPassiveBytes(window, static_cast<Int64>(reserved_size.load()));
 }
@@ -1601,10 +1602,12 @@ size_t FileSegment::setGranulesUnlocked(size_t first, size_t last)
     auto & granules = efficiency_state->active_granules;
     const auto from = granules.begin() + first;
     const auto to = granules.begin() + last + 1;
-    const bool new_last = last == lastGranule(size) && !granules[last];
+    const bool new_last = last == lastGranuleNumber(size) && !granules[last];
     const size_t new_granules = std::count(from, to, false);
     std::fill(from, to, true);
-    return new_granules * EFFICIENCY_GRANULE_SIZE - (new_last ? lastGranuleTail(size) : 0);
+    if (!new_last)
+        return new_granules * EFFICIENCY_GRANULE_SIZE;
+    return (new_granules - 1) * EFFICIENCY_GRANULE_SIZE + lastGranuleSize(size);
 }
 
 void FileSegment::addReservedSize(Int64 delta)
@@ -1655,9 +1658,11 @@ size_t FileSegment::getActiveBytesUnlocked() const
         return 0;
     const size_t size = range().size();
     const auto & granules = efficiency_state->active_granules;
-    chassert(lastGranule(size) < granules.size());
+    chassert(lastGranuleNumber(size) < granules.size());
     const size_t set = std::count(granules.begin(), granules.end(), true);
-    return set * EFFICIENCY_GRANULE_SIZE - (granules[lastGranule(size)] ? lastGranuleTail(size) : 0);
+    if (!granules[lastGranuleNumber(size)])
+        return set * EFFICIENCY_GRANULE_SIZE;
+    return (set - 1) * EFFICIENCY_GRANULE_SIZE + lastGranuleSize(size);
 }
 
 FileSegment::~FileSegment()
