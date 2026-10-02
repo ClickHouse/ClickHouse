@@ -1,7 +1,7 @@
 -- Tags: no-parallel-replicas
 
--- `text_index_like_max_postings_to_read` under the upfront planning flavor: a matched token whose
--- posting blocks the primary key already ruled out is never read, so it must not count.
+-- `text_index_like_max_postings_to_read` and `text_index_like_rows_max_selectivity` under the upfront
+-- planning flavor: a matched token whose posting blocks the primary key already ruled out must not count.
 
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;
 SET use_skip_indexes = 1;
@@ -38,6 +38,15 @@ SELECT count() FROM t_text_index_like_direct WHERE message LIKE '%pa%'
 -- A budget the pattern fits in: the whole dictionary is scanned and the 27 matched tokens are counted.
 SELECT count() FROM t_text_index_like_direct WHERE message LIKE '%pa%'
     SETTINGS log_comment = 'like_direct_q2', text_index_like_max_postings_to_read = 1000000;
+
+-- `common` is in every row, more than half of the part, so the scan is discarded.
+SELECT count() FROM t_text_index_like_direct WHERE message LIKE '%common%'
+    SETTINGS log_comment = 'like_direct_q5', text_index_like_rows_max_selectivity = 0.5;
+
+-- `common` and `pmm` cover more rows than the part has, but 1 turns the rows check off.
+SELECT count() FROM t_text_index_like_direct WHERE message LIKE '%mm%'
+    SETTINGS log_comment = 'like_direct_q6', text_index_like_rows_max_selectivity = 1,
+             text_index_like_max_postings_to_read = 1000000;
 
 -- The primary key prunes first; `gapfar` spans the surviving ranges, but none of its posting blocks
 -- lies in them, so only `gapnear` may count.
@@ -84,6 +93,13 @@ WHERE id >= 150000 AND id < 151000 AND message LIKE '%gap%'
              use_text_index_postings_cache = 0, use_text_index_dictionary_cache = 0,
              text_index_like_max_postings_to_read = 0;
 
+-- Q7: the rows check skips `gapfar` too; `gapnear` alone is 1000 of 200000 rows, within 0.01.
+SELECT count() FROM t_text_index_like_gap
+WHERE id >= 70000 AND id < 71000 AND message LIKE '%gap%'
+    SETTINGS log_comment = 'like_direct_q7', text_index_like_min_pattern_length = 3,
+             use_text_index_postings_cache = 0, use_text_index_dictionary_cache = 0,
+             text_index_like_rows_max_selectivity = 0.01;
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT 'q1',
@@ -112,6 +128,24 @@ SELECT 'q4',
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment = 'like_direct_q4';
+
+SELECT 'q5',
+    ProfileEvents['TextIndexDiscardPatternScan'] = 1 AS discarded_scan_once
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment = 'like_direct_q5';
+
+SELECT 'q6',
+    ProfileEvents['TextIndexDiscardPatternScan'] = 0 AS scan_not_discarded
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment = 'like_direct_q6';
+
+SELECT 'q7',
+    ProfileEvents['TextIndexDiscardPatternScan'] = 0 AS scan_not_discarded
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment = 'like_direct_q7';
 
 DROP TABLE t_text_index_like_gap;
 DROP TABLE t_text_index_like_direct;

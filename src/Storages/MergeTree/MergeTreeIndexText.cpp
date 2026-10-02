@@ -95,6 +95,7 @@ namespace MergeTreeSetting
 namespace Setting
 {
     extern const SettingsUInt64 text_index_like_max_postings_to_read;
+    extern const SettingsDouble text_index_like_rows_max_selectivity;
     extern const SettingsFloat text_index_hint_max_selectivity;
     extern const SettingsBool use_text_index_negative_tokens_cache;
 }
@@ -721,11 +722,17 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     if (sparse_index.empty())
         return;
 
-    const size_t max_postings_to_read = condition_text.getContext()->getSettingsRef()[Setting::text_index_like_max_postings_to_read];
+    const auto & settings = condition_text.getContext()->getSettingsRef();
+    const size_t max_postings_to_read = settings[Setting::text_index_like_max_postings_to_read];
+    /// A row can hold several matched tokens, so their rows can add up past the part's rows: 1 turns the check off.
+    const double rows_max_selectivity = settings[Setting::text_index_like_rows_max_selectivity];
+    const bool check_postings_rows = rows_max_selectivity < 1.0;
+    const double max_postings_rows = rows_max_selectivity * static_cast<double>(state.part_info.getRowCount());
     const auto block_ranges = blocksMatchingTokenKeyRanges(sparse_index, analyzer->getPatternTokenKeyRanges());
     const bool filter_tokens_by_literals = analyzer->canFilterTokensByLiterals();
 
     size_t postings_to_read = 0;
+    size_t postings_rows_to_read = 0;
     std::vector<size_t> matched_indices;
     PaddedPODArray<UInt8> candidate_marks;
     for (const auto & [range_begin, range_end] : block_ranges)
@@ -774,12 +781,16 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
                 const auto reachable_blocks = analyzer->addTokenInfo(token, infos[i]);
                 if (reachable_blocks && *reachable_blocks > 0
                     && !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings))
+                {
                     ++postings_to_read;
+                    postings_rows_to_read += infos[i]->cardinality;
+                }
             }
 
-            if (postings_to_read > max_postings_to_read)
+            if (postings_to_read > max_postings_to_read
+                || (check_postings_rows && static_cast<double>(postings_rows_to_read) > max_postings_rows))
             {
-                /// Too many large-posting tokens matched.
+                /// Too many large-posting tokens matched, or they cover too many rows of the part.
                 /// Not all dictionary blocks were scanned, so the set of matched pattern tokens is incomplete.
                 analyzer->bypassPatternQueries();
                 ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternScan);

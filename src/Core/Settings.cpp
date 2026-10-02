@@ -10106,6 +10106,16 @@ Each matched token whose posting list is stored outside the dictionary counts on
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0, \
         {"26.4", 50, 50, "New setting"}) \
+    DECLARE(Double, text_index_like_rows_max_selectivity, 1.0, R"(
+Maximum fraction of a part's rows that the posting lists read for a LIKE/ILIKE pattern may cover when LIKE evaluation by the dictionary scan is enabled.
+
+While scanning the dictionary of a part, ClickHouse adds up the row counts of the matched tokens whose posting lists are stored outside the dictionary. If the sum exceeds this fraction of the part's rows, the dictionary scan stops, the pattern is not answered from the index, and the rows are read and filtered by the pattern as usual. A token whose rows an earlier filter (for example, the primary key) has already ruled out is not counted, except with `distributed_index_analysis` and `use_skip_indexes_on_data_read = 0`.
+
+A row can contain several matched tokens, so the sum can exceed the number of rows. The value `1` disables the check.
+
+Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
+)", 0, \
+        {"26.10", 1.0, 1.0, "New setting"}) \
     DECLARE(Bool, use_text_index_tokens_cache, true, R"(
 Whether to cache deserialized text index token infos in memory.
 Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.

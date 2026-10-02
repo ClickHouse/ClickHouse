@@ -1463,19 +1463,24 @@ Needles that span several tokens keep using the complete tokens of the needle an
 
 As a special case, if the index tokenizer is `array`, then _any_ pattern qualifies for the optimization: anchors, punctuation, `_` wildcards, several `%`-separated needles and escaped metacharacters.
 
-When the optimization is enabled, LIKE/ILIKE queries should be significantly faster than a full-table scan. However, when the pattern matches most dictionary tokens, the performance can be worse compared to a full-table scan. Two guards bound that cost:
+When the optimization is enabled, LIKE/ILIKE queries should be significantly faster than a full-table scan. However, when the pattern matches most dictionary tokens, the performance can be worse compared to a full-table scan. Three guards bound that cost:
 
-1. If the needle of the pattern is shorter than [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length), the dictionary scan is skipped and the pattern is evaluated on the column as usual. With the `splitByNonAlpha` tokenizer the needle is the alphanumeric run between the `%` wildcards; with the `array` tokenizer, the non-wildcard characters of the whole pattern are counted.
+1. If the needle of the pattern is shorter than [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length), the dictionary scan is skipped and the pattern is evaluated on the column as usual. How the needle is measured depends on the tokenizer:
+   - `splitByNonAlpha`: the pattern must be ASCII letters and digits with `%` at one or both ends, and the needle is those letters and digits. A pattern with any other character does not use the dictionary scan: `LIKE` searches for its complete tokens instead, and `ILIKE` does not use the index.
+   - `array`: any pattern qualifies, and the needle length is the number of bytes in the whole pattern other than `%` and `_`.
+   - Other tokenizers never use the dictionary scan, so this rule does not apply to them: `LIKE` searches for the complete tokens of the pattern (see [`LIKE` and `match`](#functions-example-like-match)), and `ILIKE` does not use the index.
 2. While scanning the dictionary, ClickHouse counts the matched tokens whose posting lists it would have to read. [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read) caps that number; a token whose rows the primary key or an earlier index has already ruled out is not counted. With [distributed_index_analysis](/reference/settings/session-settings/distributed-index-analysis#distributed_index_analysis) and [use_skip_indexes_on_data_read](/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read) = 0, every matched token counts. If the limit is exceeded, the index gives up on the pattern, and the rows are read and filtered as usual.
+3. [text_index_like_rows_max_selectivity](/reference/settings/session-settings/text-index#text_index_like_rows_max_selectivity) limits the rows of the same counted tokens, as a fraction of the part's rows. If their row counts add up to more than that fraction, the index gives up on the pattern in the same way. A row can contain several matched tokens, so the sum can exceed the part's rows. The default `1` disables this check.
 
 The speed-up of a `value%` or `%value` pattern comes from skipping granules, so it depends on how the matching rows are laid out. Needles that match rows in every granule prune nothing, and the query pays for the dictionary scan on top of the full scan it would have done anyway. Disable [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) for such workloads.
 
 The optimization is controlled by a setting:
 - [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
-The guards above are controlled by two settings:
+The guards above are controlled by three settings:
 - [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
+- [text_index_like_rows_max_selectivity](/reference/settings/session-settings/text-index#text_index_like_rows_max_selectivity)
 
 This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`.
 It generally requires an index without a preprocessor or postprocessor (`ilike` also accepts the `lower` or `upper` as the preprocessor function).
