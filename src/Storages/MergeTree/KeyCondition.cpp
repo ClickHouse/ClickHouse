@@ -73,11 +73,15 @@ namespace Setting
 
 namespace ErrorCodes
 {
+extern const int ABORTED;
 extern const int BAD_ARGUMENTS;
+extern const int CANNOT_ALLOCATE_MEMORY;
 extern const int LOGICAL_ERROR;
 extern const int MEMORY_LIMIT_EXCEEDED;
 extern const int QUERY_WAS_CANCELLED;
+extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 extern const int TIMEOUT_EXCEEDED;
+extern const int TOO_SLOW;
 }
 
 const KeyCondition::AtomMap KeyCondition::atom_map
@@ -6170,10 +6174,17 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
                 /// `applyFunction` runs the function on a whole boundary column, so a conversion with a
                 /// cancellation budget can hit `max_execution_time` here. Swallowing that would let the
                 /// query proceed to a full scan instead of aborting.
-                if (e.code() == ErrorCodes::LOGICAL_ERROR
-                    || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
-                    || e.code() == ErrorCodes::QUERY_WAS_CANCELLED
-                    || e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
+                /// The cancellation exception stored by `checkTimeLimit` may carry `QUERY_WAS_CANCELLED_BY_CLIENT`,
+                /// and an allocation failure below the memory tracker surfaces as `CANNOT_ALLOCATE_MEMORY`.
+                const int code = e.code();
+                if (code == ErrorCodes::LOGICAL_ERROR
+                    || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+                    || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY
+                    || code == ErrorCodes::QUERY_WAS_CANCELLED
+                    || code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+                    || code == ErrorCodes::TIMEOUT_EXCEEDED
+                    || code == ErrorCodes::TOO_SLOW
+                    || code == ErrorCodes::ABORTED)
                     throw;
 
                 return {};
