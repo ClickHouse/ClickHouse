@@ -431,9 +431,7 @@ RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node)
         return node;
 
     const auto function = node.toFunctionNode();
-    const auto * function_dag_node = function.getDAGNode();
-
-    if (!function_dag_node || !isLosslessConversionFunction(*function_dag_node))
+    if (!isLosslessConversionFunction(*function.getDAGNode()))
         return node;
 
     return unwrapLosslessConversion(function.getArgumentAt(0));

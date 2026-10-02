@@ -99,7 +99,6 @@ public:
 bool isLosslessConversionFunction(const ActionsDAG::Node & node);
 
 /// Strips lossless conversions (see above) from the node. Indexes are analyzed on the expression under them.
-/// The AST form carries no types and is returned as is.
 RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node);
 const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node);
 
