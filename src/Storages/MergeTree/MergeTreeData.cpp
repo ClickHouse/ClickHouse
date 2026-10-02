@@ -6598,23 +6598,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 
-    /// The table is loaded with its TTL analyzed in the global context, where nothing that exists only for this
-    /// query (a table function, a temporary table) can be resolved.
-    if (!is_secondary_replay && new_metadata.table_ttl.definition_ast
-        && std::ranges::any_of(commands, [](const AlterCommand & command) { return command.type == AlterCommand::MODIFY_TTL; }))
-    {
-        try
-        {
-            TTLTableDescription::getTTLForTableFromAST(
-                new_metadata.table_ttl.definition_ast, new_metadata.columns, getContext(), new_metadata.primary_key,
-                TTLValidationMode::Attach);
-        }
-        catch (const Exception & e)
-        {
-            throw Exception(e.code(), "Cannot apply ALTER because the table could not be loaded with the new TTL: {}", e.message());
-        }
-    }
-
     if (!columns_to_check_conversion.empty())
     {
         auto old_header = old_metadata.getSampleBlock();

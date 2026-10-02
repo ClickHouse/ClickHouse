@@ -1710,6 +1710,12 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
             result.move_ttl.emplace_back(std::move(ttl));
         }
     }
+
+    /// A table is loaded with its TTL analyzed in the global context, where nothing that exists only for a query or
+    /// a session (a table function, a temporary table) resolves, so a TTL that is going to be stored must analyze there.
+    if (validation_mode != TTLValidationMode::Attach && !context->isGlobalContext())
+        getTTLForTableFromAST(definition_ast, columns, context->getGlobalContext(), primary_key, TTLValidationMode::Attach);
+
     return result;
 }
 

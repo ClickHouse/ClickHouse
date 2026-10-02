@@ -60,7 +60,7 @@ ALTER TABLE t_rmt MODIFY TTL d + INTERVAL 1 YEAR WHERE x < (SELECT count() FROM 
 SELECT countIf(value LIKE '%\nttl: %'), count()
 FROM system.zookeeper WHERE path = '/clickhouse/tables/' || currentDatabase() || '/t_rmt' AND name = 'metadata';
 
--- A table of a Replicated database: the query is rejected before it is enqueued.
+-- A table of a Replicated database: the ALTER is rejected, and the database loads again.
 SET distributed_ddl_output_mode = 'none';
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Replicated('/test/05317/{database}', 's1', 'r1');
