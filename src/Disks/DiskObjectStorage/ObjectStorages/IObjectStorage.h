@@ -190,16 +190,24 @@ struct RelativePathWithMetadata
 
     std::string getFileName() const
     {
+        /// `relative_path` is an object key or a URL path, `/`-separated on every platform, so its last
+        /// component is taken as a string: through `std::filesystem` it would, on Windows, be decoded
+        /// through the active code page and split at `\` as well.
+        auto last_component = [](const std::string & path)
+        {
+            const size_t last_slash = path.rfind('/');
+            return last_slash == std::string::npos ? path : path.substr(last_slash + 1);
+        };
+
         if (!derive_file_name_from_url_path)
-            return pathToString(std::filesystem::path(relative_path).filename());
+            return last_component(relative_path);
 
         /// Web index listings can carry a URL query/fragment in `relative_path` (for example,
         /// "data.tsv.gz?download=1"). They are not part of the file name and would defeat
         /// extension-based format/compression detection, so strip them only for web paths, consistent
         /// with how direct `url` reads use the URL path component.
         const auto pos = relative_path.find_first_of("?#");
-        const std::string path_without_query = pos == std::string::npos ? relative_path : relative_path.substr(0, pos);
-        return pathToString(std::filesystem::path(path_without_query).filename());
+        return last_component(pos == std::string::npos ? relative_path : relative_path.substr(0, pos));
     }
     std::string getPath() const { return relative_path; }
     std::string getPathForGlobMatching() const { return path_for_glob_matching.value_or(relative_path); }
