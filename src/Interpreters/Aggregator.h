@@ -160,7 +160,7 @@ public:
         /// plan re-runs without the optimization, which is the safe direction.
         size_t bucket_top_k = 0;
         bool bucket_top_k_ascending = false;
-        size_t bucket_top_k_count_index = 0;
+        size_t bucket_top_k_rank_index = 0;
 
         bool enable_producing_buckets_out_of_order_in_aggregation = true;
 

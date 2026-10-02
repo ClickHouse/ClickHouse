@@ -2732,7 +2732,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes, bool keep_table_buffer) const
 {
     auto & data = method.data.impls[bucket];
-    chassert(params.bucket_top_k_count_index < params.aggregates_size);
+    chassert(params.bucket_top_k_rank_index < params.aggregates_size);
     ProfileEvents::increment(ProfileEvents::AggregationBucketTopKConversions);
 
     /// One selection pass with a bounded heap: the count is read straight from the state (the
@@ -2741,7 +2741,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     /// pass over the bucket costs more than the whole materialization it saves. The heap keeps
     /// the first-seen cells on boundary ties, which is exact for LIMIT semantics: any correct
     /// top set is valid, and the sorter above orders it.
-    const size_t count_offset = offsets_of_aggregate_states[params.bucket_top_k_count_index];
+    const size_t count_offset = offsets_of_aggregate_states[params.bucket_top_k_rank_index];
     const auto better
         = [ascending = params.bucket_top_k_ascending](UInt64 a, UInt64 b) { return ascending ? a < b : a > b; };
 

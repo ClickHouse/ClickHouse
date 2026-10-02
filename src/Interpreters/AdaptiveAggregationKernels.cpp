@@ -1404,7 +1404,7 @@ void Aggregator::addAdaptiveCountsToBins(Method & method, UInt16 * bins) const
 {
     if constexpr (MapAggregationMethod<Method>)
     {
-        const size_t count_offset = offsets_of_aggregate_states[params.bucket_top_k_count_index];
+        const size_t count_offset = offsets_of_aggregate_states[params.bucket_top_k_rank_index];
         const auto add = [&](auto & table)
         {
             forEachMappedCellWithHash(
@@ -1669,7 +1669,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                 updater->recordAggregationKeySizes(chunk.chunk, keys_positions, key_types);
         }
         if (pruning)
-            offerTopKCounts(*pruning, *chunk.chunk.getColumns()[params.keys_size + params.bucket_top_k_count_index]);
+            offerTopKCounts(*pruning, *chunk.chunk.getColumns()[params.keys_size + params.bucket_top_k_rank_index]);
         chunks.push_back(std::move(chunk));
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationMergeUnits);
 
