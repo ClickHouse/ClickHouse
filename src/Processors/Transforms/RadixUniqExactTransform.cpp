@@ -483,7 +483,7 @@ private:
     /// which grows without a limit since then. The keys are moved to the chains when the stream finishes.
     void switchToUnboundedSetMode(Stream & stream, size_t sampled_before, size_t sampled_after)
     {
-        const size_t estimated_size = stream.num_buffered * sampled_after / sampled_before + 1;
+        const size_t estimated_size = stream.num_buffered * sampled_after / std::max<size_t>(sampled_before, 1) + 1;
         auto & set = stream.local_set;
         set.reset(std::bit_ceil(std::max<size_t>(estimated_size * 2, INITIAL_LOCAL_SET_CAPACITY)));
         stream.mode = Mode::UnboundedSet;
