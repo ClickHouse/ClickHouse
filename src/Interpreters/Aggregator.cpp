@@ -2587,6 +2587,16 @@ bool Aggregator::executeOnBlock(Columns columns,
     return true;
 }
 
+Block Aggregator::getSpilledStatesHeader() const
+{
+    Block header;
+    for (size_t i = 0; i < params.keys_size; ++i)
+        header.insert({key_types[i]->createColumn(), key_types[i], params.keys[i]});
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+        header.insert({aggregate_state_types[i]->createColumn(), aggregate_state_types[i], params.aggregates[i].column_name});
+    return header;
+}
+
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
 {
     flushToTemporaryFile(data_variants, max_temp_file_size, /*reinitialize=*/true);
@@ -2612,12 +2622,7 @@ void Aggregator::flushToTemporaryFile(AggregatedDataVariants & data_variants, si
     auto & out_stream = [this, max_temp_file_size]() -> TemporaryBlockStreamHolder &
     {
         std::lock_guard lk(tmp_files_mutex);
-        Block header;
-        for (size_t i = 0; i < params.keys_size; ++i)
-            header.insert({key_types[i]->createColumn(), key_types[i], params.keys[i]});
-        for (size_t i = 0; i < params.aggregates_size; ++i)
-            header.insert({aggregate_state_types[i]->createColumn(), aggregate_state_types[i], params.aggregates[i].column_name});
-        return tmp_files.emplace_back(std::make_shared<const Block>(std::move(header)), tmp_data, max_temp_file_size);
+        return tmp_files.emplace_back(std::make_shared<const Block>(getSpilledStatesHeader()), tmp_data, max_temp_file_size);
     }();
 
     LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", out_stream.getHolder()->describeFilePath());

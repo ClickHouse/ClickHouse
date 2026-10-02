@@ -52,10 +52,6 @@ constexpr size_t adaptive_spill_min_buffer_bytes = 4 << 10;
 /// table, grown to hold them, stays in the cache while the unit is drained and converted; a bucket smaller than a
 /// unit is merged as one, which spares a small bucket the fixed cost of every further unit.
 constexpr size_t adaptive_merge_unit_records = 16'384;
-/// When the merge goes external, the staged records are drained into tables written as ordinary spilled parts; a
-/// part is written once its table holds an eighth of the external-aggregation threshold, but never below this
-/// floor, under which every part costs the external merge a reader of its own for little data.
-constexpr size_t adaptive_external_min_part_bytes = 32 << 20;
 /// The count bins of the top-K pruning (see `AdaptiveTopKPruning`) sit on the hash bits 14..31, the bucket's and the
 /// ten right below them, so every bucket owns 1024 consecutive bins and every partition or merge unit a run of them. A
 /// bin then holds a few hundred rows of a hundred-million-row aggregation, which keeps the bounds of most bins below

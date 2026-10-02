@@ -157,6 +157,93 @@ namespace
     private:
         TemporaryBlockStreamReaderHolder tmp_stream;
     };
+
+    /// Feeds the staged records of an engaged adaptive aggregation into the external merge in the form of the spilled
+    /// parts it reads: chunks of aggregate states, in ascending order of their buckets. The sources split the buckets,
+    /// every `step`-th one from `first_bucket`, and merge each one as the adaptive merge does, a merge unit at a time
+    /// (see `Aggregator::mergeAndConvertAdaptiveBucket`), into the destination they share: the table slot and the
+    /// arena slot of a bucket belong to the source of the bucket. The records of a unit are freed once it is
+    /// converted, and the states of a chunk once the external merge has merged it.
+    ///
+    /// The external merge takes a bucket once every input has passed it (see `GroupingAggregatedTransform`), which it
+    /// learns from the input's first chunk of a later bucket, and pulls nothing more from an input until it reaches
+    /// that bucket. So a source merges its next bucket right after it hands out the first chunk of a bucket, while
+    /// the merge works through the buckets before it: merging it only once the chunks run out would make the merge
+    /// wait for every bucket of the source.
+    class AdaptiveStagedRecordsSource final : public ISource
+    {
+    public:
+        AdaptiveStagedRecordsSource(
+            SharedHeader header,
+            AggregatingTransformParamsPtr params_,
+            AdaptiveAggregationSessionPtr session_,
+            ManyAggregatedDataVariantsPtr destination_,
+            size_t first_bucket,
+            size_t step_)
+            : ISource(std::move(header))
+            , params(std::move(params_))
+            , session(std::move(session_))
+            , destination(std::move(destination_))
+            , next_bucket(first_bucket)
+            , step(step_)
+        {
+        }
+
+        String getName() const override { return "AdaptiveStagedRecordsSource"; }
+
+    protected:
+        Chunk generate() override
+        {
+            if (chunks.empty() || handed_out_first_chunk)
+            {
+                /// A bucket without staged records has no chunks, so the next bucket with some is merged.
+                const size_t chunks_before = chunks.size();
+                while (chunks.size() == chunks_before && next_bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS)
+                {
+                    const auto bucket = static_cast<Int32>(next_bucket);
+                    next_bucket += step;
+
+                    auto agg_chunks = params->aggregator.mergeAndConvertAdaptiveBucket(
+                        *destination,
+                        *session,
+                        scratch,
+                        /*final=*/false,
+                        bucket,
+                        previous_bucket,
+                        is_cancelled,
+                        /*updater=*/nullptr,
+                        /*full_group_count=*/nullptr);
+                    previous_bucket = bucket;
+                    if (is_cancelled.load(std::memory_order_seq_cst))
+                        return {};
+
+                    params->aggregator.retireAdaptiveMergedBucket(*destination->at(0), bucket);
+                    chunks.splice(chunks.end(), agg_chunks);
+                }
+            }
+
+            if (chunks.empty())
+                return {};
+
+            auto agg_chunk = std::move(chunks.front());
+            chunks.pop_front();
+            handed_out_first_chunk = agg_chunk.bucket_num != last_handed_out_bucket;
+            last_handed_out_bucket = agg_chunk.bucket_num;
+            return convertToChunk(std::move(agg_chunk));
+        }
+
+    private:
+        AggregatingTransformParamsPtr params;
+        AdaptiveAggregationSessionPtr session;
+        ManyAggregatedDataVariantsPtr destination;
+        AdaptiveMergeScratch scratch;
+        Aggregator::AggregatedChunks chunks;
+        size_t next_bucket;
+        const size_t step;
+        Int32 previous_bucket = -1;
+        Int32 last_handed_out_bucket = -1;
+        bool handed_out_first_chunk = false;
+    };
 }
 
 /// Worker which merges states for single-level aggregation of FixedHashMap.
@@ -1624,13 +1711,11 @@ void AggregatingTransform::initGenerate()
     if (adaptive_engaged && aggregator_has_temporary_data())
     {
         /// A producer on the baseline path spilled, so the merge goes external and the
-        /// bucket-parallel adaptive merge does not run: the staged records are written as
-        /// ordinary spilled parts beside the other tables, which the external branch below
-        /// flushes. The external merge bypasses `prepareVariantsToMerge`, which is where the
-        /// thaw verdict is normally recorded.
-        auto & shared = *adaptive_context->session;
-        params->aggregator.writeAdaptiveRecordsToTemporaryFiles(shared);
-        params->aggregator.recordAdaptiveStagingVerdict(shared);
+        /// bucket-parallel adaptive merge does not run: the staged records join the external
+        /// merge below as inputs of their own (see `AdaptiveStagedRecordsSource`). The external
+        /// merge bypasses `prepareVariantsToMerge`, which is where the thaw verdict is normally
+        /// recorded.
+        params->aggregator.recordAdaptiveStagingVerdict(*adaptive_context->session);
     }
 
     if (!aggregator_has_temporary_data())
@@ -1737,6 +1822,22 @@ void AggregatingTransform::initGenerate()
             }
 
             tmp_files.splice(tmp_files.end(), new_tmp_files);
+        }
+
+        /// The staged records of an engaged adaptive aggregation are not written out as parts: they join the merge as
+        /// one source per merging thread, but no more than one per bucket, each merging its share of the buckets on
+        /// demand. They do not prune: the rows the producers spilled during the aggregation are in no count bin, so the
+        /// bins bound no group's count.
+        if (adaptive_engaged)
+        {
+            adaptive_context->session->top_k_pruning.reset();
+            const auto destination
+                = std::make_shared<ManyAggregatedDataVariants>(1, params->aggregator.createAdaptiveExternalMergeDestination());
+            const auto header = std::make_shared<const Block>(params->aggregator.getSpilledStatesHeader());
+            const size_t num_sources = std::min(temporary_data_merge_threads, ADAPTIVE_AGGREGATION_NUM_BUCKETS);
+            for (size_t first_bucket = 0; first_bucket < num_sources; ++first_bucket)
+                pipes.emplace_back(Pipe(std::make_unique<AdaptiveStagedRecordsSource>(
+                    header, params, adaptive_context->session, destination, first_bucket, num_sources)));
         }
 
         LOG_DEBUG(

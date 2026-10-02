@@ -173,6 +173,19 @@ void Aggregator::retireAdaptiveMergedBucket(AggregatedDataVariants & dest, size_
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationBucketsRetired);
 }
 
+AggregatedDataVariantsPtr Aggregator::createAdaptiveExternalMergeDestination() const
+{
+    auto destination = std::make_shared<AggregatedDataVariants>();
+    destination->aggregator = this;
+    destination->keys_size = params.keys_size;
+    destination->key_sizes = key_sizes;
+    destination->init(convertToTwoLevelTypeIfPossible(method_chosen));
+    destination->adaptive_merge_bucket_arenas.resize(ADAPTIVE_AGGREGATION_NUM_BUCKETS);
+    for (auto & slot : destination->adaptive_merge_bucket_arenas)
+        slot = std::make_shared<Arena>();
+    return destination;
+}
+
 /// The flushed variants' sizes are meaningless by the time the external path finishes, so a
 /// stored entry keeps its sizes: only the verdict is written, and only when the session staged
 /// enough records to trust the thaw sampler. Runs without a measurement leave the entry alone.

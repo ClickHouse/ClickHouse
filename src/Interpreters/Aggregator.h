@@ -359,8 +359,9 @@ public:
     /// Merges bucket `bucket` of an adaptive aggregation and converts it, one merge unit at a time. A unit is a run
     /// of the bucket's partitions: its records from every producer and the cells of the sources' bucket tables that
     /// fall into it are merged into the destination's bucket table, grown for them, which is converted into one
-    /// chunk, and the unit's staged records are freed. `data[0]` is the empty destination `prepareVariantsToMerge`
-    /// puts in front of the adaptive sources. The table is kept, emptied, from one unit to the next, and taken over
+    /// chunk, and the unit's staged records are freed. `data[0]` is the empty destination: the one
+    /// `prepareVariantsToMerge` puts in front of the adaptive sources, or, with no sources behind it, the one of
+    /// `createAdaptiveExternalMergeDestination`. The table is kept, emptied, from one unit to the next, and taken over
     /// from the slot of `previous_bucket`, the bucket the calling task merged before (-1 for its first), so a task
     /// allocates and faults in one table instead of one per unit. `full_group_count` receives the bucket's group
     /// count over all its units, taken before any top-K truncation.
@@ -381,11 +382,15 @@ public:
     /// destruction covers those.
     void retireAdaptiveMergedBucket(AggregatedDataVariants & dest, size_t bucket) const;
 
-    /// For a merge that goes external because a producer on the baseline path spilled: drains the session's staged
-    /// records bucket by bucket into two-level tables and writes them through the ordinary external machinery, a
-    /// table at a time, freeing the records of every written table, so the external merge reads them like any other
-    /// spilled table.
-    void writeAdaptiveRecordsToTemporaryFiles(AdaptiveAggregationSession & session) const;
+    /// For a merge that goes external because a producer on the baseline path spilled, the staged records join it as
+    /// chunks of aggregate states, the form of a spilled part, made by `mergeAndConvertAdaptiveBucket` with no sources
+    /// behind the destination, instead of being read from parts written out for it. This is that destination: an
+    /// empty two-level variants of the aggregation's method with a fresh arena slot per bucket, in which the states of
+    /// the bucket's chunks are created.
+    AggregatedDataVariantsPtr createAdaptiveExternalMergeDestination() const;
+
+    /// The header of the blocks of aggregate states that the external aggregation spills and merges.
+    Block getSpilledStatesHeader() const;
 
     /** This array serves two purposes.
       *
