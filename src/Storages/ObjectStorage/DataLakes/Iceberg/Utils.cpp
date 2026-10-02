@@ -463,16 +463,16 @@ std::optional<TransformAndArgument> parseTransformAndArgument(const String & tra
     std::string transform_name = Poco::toLower(transform_name_src);
 
     if (transform_name == "year" || transform_name == "years")
-        return TransformAndArgument{"icebergYear", std::nullopt};
+        return TransformAndArgument{"toYearNumSinceEpoch", std::nullopt};
 
     if (transform_name == "month" || transform_name == "months")
-        return TransformAndArgument{"icebergMonth", std::nullopt};
+        return TransformAndArgument{"toMonthNumSinceEpoch", std::nullopt};
 
     if (transform_name == "day" || transform_name == "date" || transform_name == "days" || transform_name == "dates")
-        return TransformAndArgument{"icebergDay", std::nullopt};
+        return TransformAndArgument{"toRelativeDayNum", std::nullopt};
 
     if (transform_name == "hour" || transform_name == "hours")
-        return TransformAndArgument{"icebergHour", std::nullopt};
+        return TransformAndArgument{"toRelativeHourNum", std::nullopt};
 
     if (transform_name == "identity")
         return TransformAndArgument{"identity", std::nullopt};
@@ -837,22 +837,22 @@ static Poco::JSON::Object::Ptr getPartitionField(
         result->set(Iceberg::f_transform, "identity");
         return result;
     }
-    else if (partition_function->name == "icebergYear" || partition_function->name == "toYearNumSinceEpoch")
+    else if (partition_function->name == "toYearNumSinceEpoch")
     {
         result->set(Iceberg::f_transform, "year");
         return result;
     }
-    else if (partition_function->name == "icebergMonth" || partition_function->name == "toMonthNumSinceEpoch")
+    else if (partition_function->name == "toMonthNumSinceEpoch")
     {
         result->set(Iceberg::f_transform, "month");
         return result;
     }
-    else if (partition_function->name == "icebergDay" || partition_function->name == "toRelativeDayNum")
+    else if (partition_function->name == "toRelativeDayNum")
     {
         result->set(Iceberg::f_transform, "day");
         return result;
     }
-    else if (partition_function->name == "icebergHour" || partition_function->name == "toRelativeHourNum")
+    else if (partition_function->name == "toRelativeHourNum")
     {
         result->set(Iceberg::f_transform, "hour");
         return result;
@@ -928,10 +928,6 @@ static std::pair<String, String> parseFunction(const ASTPtr & func_object)
             {"identity", "identity"},
             {"icebergBucket", "bucket"},
             {"icebergTruncate", "truncate"},
-            {"icebergYear", "year"},
-            {"icebergMonth", "month"},
-            {"icebergDay", "day"},
-            {"icebergHour", "hour"},
             {"toYearNumSinceEpoch", "year"},
             {"toMonthNumSinceEpoch", "month"},
             {"toRelativeDayNum", "day"},
@@ -1765,6 +1761,10 @@ DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTyp
 {
     if (iceberg_transform_name.starts_with("identity") || iceberg_transform_name.starts_with("truncate"))
         return source_type;
+    if (iceberg_transform_name.starts_with("year"))
+        return std::make_shared<DataTypeUInt16>();
+    if (iceberg_transform_name.starts_with("month") || iceberg_transform_name.starts_with("day") || iceberg_transform_name.starts_with("hour"))
+        return std::make_shared<DataTypeUInt32>();
     return std::make_shared<DataTypeInt32>();
 }
 

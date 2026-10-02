@@ -1701,7 +1701,7 @@ For example:
 ## timezone {#timezone}
 The server's time zone.
 
-Specified as a name that `system.time_zones` lists - the [IANA Time Zone Database](https://www.iana.org/time-zones) that is shipped with the server, for example `Africa/Abidjan` - or as a fixed offset from UTC, spelled `Fixed/UTC±HH:MM:SS`, for example `Fixed/UTC+05:30:00`. A name that only the operating system's time zone database has is rejected, because ClickHouse ships its own copy of the database so that results do not depend on the host.
+Specified as an IANA identifier for the UTC timezone or geographic location (for example, Africa/Abidjan).
 
 The time zone is necessary for conversions between String and DateTime formats when DateTime fields are output to text format (printed on the screen or in a file), and when getting DateTime from a string. Besides, the time zone is used in functions that work with the time and date if they didn't receive the time zone in the input parameters.
 
@@ -1808,7 +1808,6 @@ Settings for optional improvements in the access control system.
 
 | Setting                                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Default |
 |-------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| `enable_read_write_grants` | Enables separation of `READ` and `WRITE` privileges for external data sources such as `S3`, `HDFS`, `Kafka`, and others. Available starting with version 25.7. When set to `true`, you can grant `READ` and `WRITE` separately for sources instead of a single grant covering both. | `false` |
 | `on_cluster_queries_require_cluster_grant` | Sets whether `ON CLUSTER` queries require the `CLUSTER` grant.                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `true`  |
 | `role_cache_expiration_time_seconds` | Sets the number of seconds since last access, that a role is stored in the Role Cache.                                                                                                                                                                                                                                                                                                                                                                                                                           | `600`   |
 | `select_from_information_schema_requires_grant` | Sets whether `SELECT * FROM information_schema.<table>` requires any grants and can be executed by any user. If set to true, then this query requires `GRANT SELECT ON information_schema.<table>`, just as for ordinary tables.                                                                                                                                                                                                                                                                                 | `true`  |
@@ -1830,7 +1829,6 @@ Example:
     <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
     <table_engines_require_grant>false</table_engines_require_grant>
     <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
-    <enable_read_write_grants>false</enable_read_write_grants>
 </access_control_improvements>
 ```
 

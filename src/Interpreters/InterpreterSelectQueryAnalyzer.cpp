@@ -273,6 +273,26 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
 /// The plan steps captured the query tree node contexts by pointer at build time, so the
 /// distributed-to-local fallback must flip the setting in place on those same objects
 /// as some optimization steps (Second-pass index analysis) read settings directly from the context tree.
+static void disableDistributedPlanInQueryTreeContexts(const QueryTreeNodePtr & query_tree)
+{
+    std::vector<IQueryTreeNode *> stack;
+    stack.push_back(query_tree.get());
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+
+        if (auto * query_node = node->as<QueryNode>())
+            query_node->getMutableContext()->setSetting("make_distributed_plan", false);
+        else if (auto * union_node = node->as<UnionNode>())
+            union_node->getMutableContext()->setSetting("make_distributed_plan", false);
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                stack.push_back(child.get());
+    }
+}
+
 static void tweakSettingsForStreamingQuery(const ContextMutablePtr & context, const QueryTreeNodePtr & query_tree)
 {
     for (const auto & node : extractAllTableReferences(query_tree))
@@ -449,13 +469,15 @@ void InterpreterSelectQueryAnalyzer::applyDistributedPlanFallbackIfNeeded()
     planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
 
-    /// The interpreter context is a different object from the root query node's; later settings
-    /// snapshots are built from it, so it follows the decision too. The query-tree node contexts
-    /// were registered by the planners that built the plan (`extendQueryContextAndStoragesLifetime`).
-    query_plan.addDistributedPlanDecisionContext(context);
-
     QueryPlanOptimizationSettings probe_settings(context);
-    query_plan.applyDistributedPlanFallbackToLocal(probe_settings);
+    if (!query_plan.applyDistributedPlanFallbackToLocal(probe_settings))
+        return;
+
+    /// The decision must land on the context objects, not only on settings snapshots: consumers
+    /// such as `FutureSetFromSubquery::buildSetInplace` read `make_distributed_plan` live from
+    /// the contexts the plan steps captured at build time.
+    context->setSetting("make_distributed_plan", false);
+    disableDistributedPlanInQueryTreeContexts(query_tree);
 }
 
 QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()

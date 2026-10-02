@@ -50,9 +50,7 @@ namespace JSONUtils
 
         while (loadAtPosition(in, memory, pos) && need_more_data)
         {
-            /// Not restricted to the inside of an object: input that never opens a bracket must be bounded too,
-            /// otherwise it is buffered until EOF.
-            if (max_row_size)
+            if (max_row_size && balance > 0)
             {
                 const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position()) - object_start_bytes;
                 if (current_object_size > max_row_size)
