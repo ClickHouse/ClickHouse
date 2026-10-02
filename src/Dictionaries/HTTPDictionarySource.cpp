@@ -1,4 +1,5 @@
 #include <Dictionaries/HTTPDictionarySource.h>
+#include <Common/maskURIPassword.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -350,7 +351,18 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
     };
-    factory.registerSource("http", create_table_source, SecretArgumentsSpec{.secret_keys = {"headers", "header"}}, Documentation{
+    /// The `url` and `endpoint` can carry basic-auth credentials (`http://user:password@host/`).
+    factory.registerSource(
+        "http",
+        create_table_source,
+        SecretArgumentsSpec{
+            .secret_keys = {"headers", "header"},
+            .partial = {
+                {"url", [](String & value) { return maskURIPassword(&value); }},
+                {"endpoint", [](String & value) { return maskURIPassword(&value); }},
+            },
+        },
+        Documentation{
         .description = R"DOCS_MD(
 # HTTP(S) dictionary source
 
