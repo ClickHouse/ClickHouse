@@ -477,6 +477,66 @@ String capitalized(String text)
     return text;
 }
 
+/// the granules to read from each part: all of them, or a sample when the parts have more rows than the budget
+struct ScanPlan
+{
+    size_t sample_step = 1;
+    std::vector<MarkRanges> ranges;
+    /// the marks of a full scan
+    UInt64 marks_to_scan = 0;
+};
+
+/// plans the scan, or returns false with the reason when the query does not allow it
+bool planScan(
+    WhatIfCandidateResult & result,
+    ScanPlan & plan,
+    const RangesInDataParts & baseline_parts,
+    bool filters_on_offsets,
+    UInt64 projection_scan_budget_rows,
+    const Settings & query_settings)
+{
+    UInt64 rows_to_scan = 0;
+    for (const auto & part_with_ranges : baseline_parts)
+    {
+        rows_to_scan += part_with_ranges.data_part->rows_count;
+        plan.marks_to_scan += part_with_ranges.data_part->index_granularity->getMarksCountWithoutFinal();
+    }
+    UInt64 budget = projection_scan_budget_rows;
+    if (const UInt64 read_limit = query_settings[Setting::max_rows_to_read]; read_limit != 0)
+        budget = budget == 0 ? read_limit : std::min(budget, read_limit);
+    plan.sample_step = budget != 0 && rows_to_scan > budget ? (rows_to_scan + budget - 1) / budget : 1;
+    /// but keep at least 30 sampled granules, fewer can't give an error estimate: the largest step with ceil(marks / step) >= 30
+    if (plan.sample_step > 1)
+        plan.sample_step = std::min<size_t>(plan.sample_step, std::max<size_t>(1, (plan.marks_to_scan - 1) / 29));
+
+    /// a sample's row offsets are not the part's, so an offset filter can't be applied to it
+    if (plan.sample_step > 1 && filters_on_offsets)
+    {
+        result.empirical_unsupported_reason
+            = "The query filters on part offsets, which an estimate from a sample of granules cannot follow "
+              "(see projection_scan_budget_rows)";
+        return false;
+    }
+
+    /// the granule floor and one granule per part can outgrow the budget, so check the read limit before reading
+    plan.ranges.reserve(baseline_parts.size());
+    UInt64 rows_planned = 0;
+    for (const auto & part_with_ranges : baseline_parts)
+    {
+        plan.ranges.push_back(marksToScan(part_with_ranges.data_part, plan.sample_step));
+        rows_planned += part_with_ranges.data_part->index_granularity->getRowsCountInRanges(plan.ranges.back());
+    }
+    if (const UInt64 read_limit = query_settings[Setting::max_rows_to_read]; read_limit != 0 && rows_planned > read_limit)
+    {
+        result.empirical_unsupported_reason = fmt::format(
+            "The estimate would read {} rows, over max_rows_to_read = {} (a sample keeps at least ~30 granules and one per part)",
+            rows_planned,
+            read_limit);
+        return false;
+    }
+    return true;
+}
+
 /// a sampled part, kept until the optimizer weighs it, for the error of the estimate
 struct SampledPart
 {
@@ -489,22 +549,33 @@ struct SampledPart
     MergeTreeDataPartPtr synthetic;
 };
 
-bool tryEstimateProjection(
+/// the optimizer weighs the projection as a materialized projection, first with each part in its likeliest layout
+/// then it weighs each layout that the writer can leave, to find if the choice changes with the layout
+struct Scenarios
+{
+    std::array<HypotheticalProjectionsPtr, 4> scenarios;
+    bool layouts_differ = false;
+    UInt64 scanned_parts = 0;
+    UInt64 scanned_marks = 0;
+    UInt64 uneven_width_parts = 0;
+    std::vector<SampledPart> samples;
+};
+
+/// reads the planned granules of each part and builds its projection parts, or returns false with the reason
+bool buildScenarios(
     WhatIfCandidateResult & result,
+    Scenarios & out,
     const ProjectionDescription & projection,
-    bool filters_on_offsets,
-    std::string_view relaxing_setting,
+    const ScanPlan & plan,
     ReadFromMergeTree * read_step,
     const RangesInDataParts & baseline_parts,
-    UInt64 baseline_marks,
-    UInt64 projection_scan_budget_rows,
-    const WeighHypotheticalProjections & weigh,
     const ContextPtr & context)
 {
     const auto & data = read_step->getMergeTreeData();
     const auto mt_settings_ptr = data.getSettings(&projection.settings_changes);
     const auto & mt_settings = *mt_settings_ptr;
     const auto & query_settings = context->getSettingsRef();
+    auto log = getLogger("WhatIfProjectionEstimator");
 
     /// check read limits by hand
     const SizeLimits read_limits(
@@ -512,62 +583,8 @@ bool tryEstimateProjection(
     UInt64 total_rows_read = 0;
     UInt64 total_bytes_read = 0;
 
-    /// the scan reads whole parts, so past the budget sample granules instead
-    UInt64 rows_to_scan = 0;
-    UInt64 marks_to_scan = 0;
-    for (const auto & part_with_ranges : baseline_parts)
-    {
-        rows_to_scan += part_with_ranges.data_part->rows_count;
-        marks_to_scan += part_with_ranges.data_part->index_granularity->getMarksCountWithoutFinal();
-    }
-    UInt64 budget = projection_scan_budget_rows;
-    if (const UInt64 read_limit = query_settings[Setting::max_rows_to_read]; read_limit != 0)
-        budget = budget == 0 ? read_limit : std::min(budget, read_limit);
-    size_t sample_step = budget != 0 && rows_to_scan > budget ? (rows_to_scan + budget - 1) / budget : 1;
-    /// but keep at least 30 sampled granules, fewer can't give an error estimate: the largest step with ceil(marks / step) >= 30
-    if (sample_step > 1)
-        sample_step = std::min<size_t>(sample_step, std::max<size_t>(1, (marks_to_scan - 1) / 29));
-
-    /// a sample's row offsets are not the part's, so an offset filter can't be applied to it
-    if (sample_step > 1 && filters_on_offsets)
-    {
-        result.empirical_unsupported_reason
-            = "The query filters on part offsets, which an estimate from a sample of granules cannot follow "
-              "(see projection_scan_budget_rows)";
-        return false;
-    }
-
-    /// the granule floor and one granule per part can outgrow the budget, so check the read limit before reading
-    std::vector<MarkRanges> ranges_to_scan;
-    ranges_to_scan.reserve(baseline_parts.size());
-    UInt64 rows_planned = 0;
-    for (const auto & part_with_ranges : baseline_parts)
-    {
-        ranges_to_scan.push_back(marksToScan(part_with_ranges.data_part, sample_step));
-        rows_planned += part_with_ranges.data_part->index_granularity->getRowsCountInRanges(ranges_to_scan.back());
-    }
-    if (const UInt64 read_limit = query_settings[Setting::max_rows_to_read]; read_limit != 0 && rows_planned > read_limit)
-    {
-        result.empirical_unsupported_reason = fmt::format(
-            "The estimate would read {} rows, over max_rows_to_read = {} (a sample keeps at least ~30 granules and one per part)",
-            rows_planned,
-            read_limit);
-        return false;
-    }
-
-    Stopwatch watch;
-    auto log = getLogger("WhatIfProjectionEstimator");
-
-    /// the optimizer weighs the projection as a materialized projection, first with each part in its likeliest layout
-    /// then it weighs each layout that the writer can leave, to find if the choice changes with the layout
-    std::array<HypotheticalProjectionsPtr, 4> scenarios;
-    for (auto & scenario : scenarios)
+    for (auto & scenario : out.scenarios)
         scenario = std::make_shared<HypotheticalProjections>(projection.clone());
-    bool layouts_differ = false;
-    UInt64 scanned_parts = 0;
-    UInt64 scanned_marks = 0;
-    UInt64 uneven_width_parts = 0;
-    std::vector<SampledPart> samples;
 
     for (size_t part_idx = 0; part_idx < baseline_parts.size(); ++part_idx)
     {
@@ -579,7 +596,7 @@ bool tryEstimateProjection(
         const bool adaptive = part->index_granularity_info.mark_type.adaptive
             && mt_settings[MergeTreeSetting::index_granularity_bytes] != 0;
 
-        const MarkRanges & ranges = ranges_to_scan[part_idx];
+        const MarkRanges & ranges = plan.ranges[part_idx];
         ProjectionPartData part_data;
         if (!buildProjectionPart(
                 part_data, projection, part, ranges, read_step, read_limits, adaptive, total_rows_read, total_bytes_read, context))
@@ -597,18 +614,18 @@ bool tryEstimateProjection(
             return false;
         }
 
-        ++scanned_parts;
-        scanned_marks += ranges.getNumberOfMarks();
+        ++out.scanned_parts;
+        out.scanned_marks += ranges.getNumberOfMarks();
         /// with uneven row widths the layout depends on block boundaries we can't know
         /// a sample can't show that rows it didn't read have the same width
-        bool uneven_rows = sample_step > 1 && part_data.variable_width;
+        bool uneven_rows = plan.sample_step > 1 && part_data.variable_width;
         if (!uneven_rows && part_data.row_bytes.size() == part_data.rows && !part_data.row_bytes.empty())
         {
             const auto [narrowest, widest] = std::minmax_element(part_data.row_bytes.begin(), part_data.row_bytes.end());
             uneven_rows = *narrowest != *widest;
         }
         if (uneven_rows)
-            ++uneven_width_parts;
+            ++out.uneven_width_parts;
         /// no key rows from a non-empty part: the key needs a column we don't read, e.g. `_part_offset`
         if (part_data.rows == 0 && part->rows_count > 0)
         {
@@ -618,54 +635,28 @@ bool tryEstimateProjection(
         if (part_data.rows == 0)
             continue;
 
-        const size_t part_rows = sample_step > 1 ? part->rows_count : part_data.rows;
+        const size_t part_rows = plan.sample_step > 1 ? part->rows_count : part_data.rows;
         const auto [parts, primary]
             = buildSyntheticProjectionParts(part_data, projection, data, part, mt_settings, uneven_rows, part_rows);
-        scenarios[0]->parts[part->name] = parts[primary];
+        out.scenarios[0]->parts[part->name] = parts[primary];
         /// a part with one layout uses it in every scenario
-        for (size_t layout = 0; layout + 1 < scenarios.size(); ++layout)
+        for (size_t layout = 0; layout + 1 < out.scenarios.size(); ++layout)
         {
             const auto & layout_part = parts[std::min(layout, parts.size() - 1)];
-            scenarios[1 + layout]->parts[part->name] = layout_part;
-            layouts_differ |= layout_part != parts[primary];
+            out.scenarios[1 + layout]->parts[part->name] = layout_part;
+            out.layouts_differ |= layout_part != parts[primary];
         }
         if (part_rows > part_data.rows)
-            samples.push_back({part->name, std::move(part_data), part_rows, ranges, part, parts[primary]});
+            out.samples.push_back({part->name, std::move(part_data), part_rows, ranges, part, parts[primary]});
     }
 
-    const size_t weighed = layouts_differ ? scenarios.size() : 1;
-    for (size_t i = 0; i < weighed; ++i)
-        weigh(scenarios[i]);
+    return true;
+}
 
-    const auto & outcome = scenarios[0]->outcome;
-    result.sampled_parts = scanned_parts;
-    result.sampled_marks = scanned_marks;
-    /// out of what a full scan would read
-    result.total_marks = marks_to_scan;
-    result.elapsed_us = watch.elapsedMicroseconds();
-    if (!outcome.marks)
-    {
-        result.status = WhatIfCandidateResult::NotApplicable;
-        result.not_applicable_reason
-            = outcome.reason.empty() ? "The optimizer did not weigh the projection for this read" : capitalized(outcome.reason);
-        return true;
-    }
-
-    const UInt64 projection_marks = *outcome.marks;
-    UInt64 marks_low = projection_marks;
-    UInt64 marks_high = projection_marks;
-    size_t chosen_in = 0;
-    for (size_t i = 0; i < weighed; ++i)
-    {
-        const auto & scenario_outcome = scenarios[i]->outcome;
-        chosen_in += scenario_outcome.chosen;
-        if (scenario_outcome.marks)
-        {
-            marks_low = std::min(marks_low, *scenario_outcome.marks);
-            marks_high = std::max(marks_high, *scenario_outcome.marks);
-        }
-    }
-
+/// widens the mark range by what a sample can move: the ends of the selected ranges and the share of rows selected
+void widenForSamples(
+    const std::vector<SampledPart> & samples, const HypotheticalProjections::Outcome & outcome, UInt64 & marks_low, UInt64 & marks_high)
+{
     /// the estimate knows a range end only up to the gap between neighbouring sample rows
     /// that gap is a sampling step if the key follows the parent order
     std::vector<double> granule_shares;
@@ -729,10 +720,22 @@ bool tryEstimateProjection(
         widen(marks_low, marks_high, 2.0 * standard_error * static_cast<double>(layout_marks));
     }
 
-    result.estimated_marks = projection_marks;
-    result.estimated_rows = outcome.rows;
-    result.estimated_marks_low = marks_low;
-    result.estimated_marks_high = marks_high;
+}
+
+/// the verdict and its reason, from how the optimizer weighed the projection in each scenario
+void setVerdict(
+    WhatIfCandidateResult & result,
+    const HypotheticalProjections::Outcome & outcome,
+    size_t chosen_in,
+    size_t weighed,
+    std::string_view relaxing_setting,
+    UInt64 baseline_marks,
+    UInt64 uneven_width_parts,
+    UInt64 scanned_parts)
+{
+    const UInt64 projection_marks = *outcome.marks;
+    const UInt64 marks_low = result.estimated_marks_low;
+    const UInt64 marks_high = result.estimated_marks_high;
     auto marks_text = [](UInt64 marks) { return fmt::format("{} mark{}", marks, marks == 1 ? "" : "s"); };
     /// the optimizer prefers the projection to the base table for fewer marks, or for the same marks if it serves the ORDER BY
     auto beats_base = [&](UInt64 marks) { return marks < baseline_marks || (marks == baseline_marks && outcome.serves_order); };
@@ -785,6 +788,67 @@ bool tryEstimateProjection(
         if (chosen_in == 0 && projection_marks < baseline_marks)
             result.verdict_reason = outcome.reason;
     }
+}
+
+bool tryEstimateProjection(
+    WhatIfCandidateResult & result,
+    const ProjectionDescription & projection,
+    bool filters_on_offsets,
+    std::string_view relaxing_setting,
+    ReadFromMergeTree * read_step,
+    const RangesInDataParts & baseline_parts,
+    UInt64 baseline_marks,
+    UInt64 projection_scan_budget_rows,
+    const WeighHypotheticalProjections & weigh,
+    const ContextPtr & context)
+{
+    ScanPlan plan;
+    if (!planScan(result, plan, baseline_parts, filters_on_offsets, projection_scan_budget_rows, context->getSettingsRef()))
+        return false;
+
+    Stopwatch watch;
+    Scenarios built;
+    if (!buildScenarios(result, built, projection, plan, read_step, baseline_parts, context))
+        return false;
+
+    const size_t weighed = built.layouts_differ ? built.scenarios.size() : 1;
+    for (size_t i = 0; i < weighed; ++i)
+        weigh(built.scenarios[i]);
+
+    const auto & outcome = built.scenarios[0]->outcome;
+    result.sampled_parts = built.scanned_parts;
+    result.sampled_marks = built.scanned_marks;
+    /// out of what a full scan would read
+    result.total_marks = plan.marks_to_scan;
+    result.elapsed_us = watch.elapsedMicroseconds();
+    if (!outcome.marks)
+    {
+        result.status = WhatIfCandidateResult::NotApplicable;
+        result.not_applicable_reason
+            = outcome.reason.empty() ? "The optimizer did not weigh the projection for this read" : capitalized(outcome.reason);
+        return true;
+    }
+
+    UInt64 marks_low = *outcome.marks;
+    UInt64 marks_high = *outcome.marks;
+    size_t chosen_in = 0;
+    for (size_t i = 0; i < weighed; ++i)
+    {
+        const auto & scenario_outcome = built.scenarios[i]->outcome;
+        chosen_in += scenario_outcome.chosen;
+        if (scenario_outcome.marks)
+        {
+            marks_low = std::min(marks_low, *scenario_outcome.marks);
+            marks_high = std::max(marks_high, *scenario_outcome.marks);
+        }
+    }
+    widenForSamples(built.samples, outcome, marks_low, marks_high);
+
+    result.estimated_marks = *outcome.marks;
+    result.estimated_rows = outcome.rows;
+    result.estimated_marks_low = marks_low;
+    result.estimated_marks_high = marks_high;
+    setVerdict(result, outcome, chosen_in, weighed, relaxing_setting, baseline_marks, built.uneven_width_parts, built.scanned_parts);
     result.estimate_source = WhatIfCandidateResult::Empirical;
     result.empirical_status = WhatIfCandidateResult::Ok;
     return true;
