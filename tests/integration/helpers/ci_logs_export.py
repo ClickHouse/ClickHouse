@@ -606,11 +606,82 @@ def _setup_for_instance(cluster, instance):
     active = _create_senders_and_watchers(instance, tables, exportable, expression)
 
     instance.ci_logs_export_tables = active
+    instance.ci_logs_export_hashes = {
+        table: hash_value for table, hash_value, _ in tables if table in active
+    }
     logging.info(
         "CI logs export: enabled on %s/%s for tables: %s",
         test_name,
         instance.name,
         ", ".join(active),
+    )
+
+
+def refresh_after_start(cluster, instance):
+    """Rewire the export of a server that has just been started again, for the
+    log tables whose structure changed across the restart (e.g. a test switches
+    `system.metric_log` to another schema in the config and restarts the
+    server): the existing `_sender` table and `_watcher` view still have the
+    header of the old structure and send to the destination table of the old
+    hash. The other tables keep exporting through what was set up before.
+    Best effort: never raises."""
+    if not getattr(instance, "ci_logs_export_tables", None):
+        return
+    try:
+        _refresh_after_start(cluster, instance)
+    except Exception:
+        logging.warning(
+            "CI logs export: failed to refresh the export for instance %s",
+            instance.name,
+            exc_info=True,
+        )
+
+
+def _refresh_after_start(cluster, instance):
+    reason = _disabled_reason(_cache_dir())
+    if reason is not None:
+        logging.info("CI logs export: disabled earlier in this job: %s", reason)
+        return
+
+    # The discovery also does `SYSTEM FLUSH LOGS`, which is what makes a log
+    # table with a changed structure rename the old table away and create the
+    # new one, so the hashes below are those of the tables the server writes to.
+    tables = _discover_log_tables(instance)
+    known = instance.ci_logs_export_hashes
+    changed = [entry for entry in tables if known.get(entry[0]) != entry[1]]
+    if not changed:
+        return
+
+    stale = [table for table, _, _ in changed if table in known]
+    if stale:
+        # Send out what the stale `_sender` tables still hold, it has the old
+        # structure and goes to the destination table of the old hash
+        statements = "".join(
+            f"SYSTEM FLUSH DISTRIBUTED system.{table}_sender;\n"
+            f"DROP VIEW IF EXISTS system.{table}_watcher SYNC;\n"
+            f"DROP TABLE IF EXISTS system.{table}_sender SYNC;\n"
+            for table in stale
+        )
+        instance.query(statements, timeout=300)
+    active = [table for table in instance.ci_logs_export_tables if table not in stale]
+    hashes = {table: known[table] for table in active}
+    instance.ci_logs_export_tables = active
+    instance.ci_logs_export_hashes = hashes
+
+    exportable = _ensure_remote_tables(cluster.client_bin_path, changed)
+    if not exportable:
+        return
+
+    expression = _extra_columns_expression(_test_name(cluster), instance.name)
+    created = _create_senders_and_watchers(instance, changed, exportable, expression)
+    for table, hash_value, _ in changed:
+        if table in created:
+            hashes[table] = hash_value
+    instance.ci_logs_export_tables = sorted(set(active) | set(created))
+    logging.info(
+        "CI logs export: re-created the export on %s for the changed tables: %s",
+        instance.name,
+        ", ".join(created),
     )
 
 
@@ -702,11 +773,16 @@ def _shutdown_statements(tables):
     profile has `async_insert = 1` with `wait_for_async_insert = 0`, so the rows
     they produce sit in the asynchronous insert queue until it is flushed, and
     only then do they reach the `_sender` tables the last statements send out.
-    Mirrors `stop` in `ci/jobs/scripts/log_export.py`."""
+    Mirrors `stop` in `ci/jobs/scripts/log_export.py`, except that the
+    asynchronous insert queue is flushed only for the `_sender` tables."""
+    senders = [f"system.{table}_sender" for table in tables]
     return [
         "SYSTEM FLUSH LOGS",
-        "SYSTEM FLUSH ASYNC INSERT QUEUE",
-        *(f"SYSTEM FLUSH DISTRIBUTED system.{table}_sender" for table in tables),
+        # Only the queues of the `_sender` tables: a flush of the whole queue
+        # also waits for the batches of the tables of the test, which may be
+        # held on purpose (e.g. by a failpoint) while the test stops the server.
+        f"SYSTEM FLUSH ASYNC INSERT QUEUE {', '.join(senders)}",
+        *(f"SYSTEM FLUSH DISTRIBUTED {sender}" for sender in senders),
     ]
 
 
@@ -720,6 +796,7 @@ def teardown_for_instance(instance):
         return
     flush_before_shutdown(instance)
     instance.ci_logs_export_tables = []
+    instance.ci_logs_export_hashes = {}
     statements = "".join(
         f"DROP VIEW IF EXISTS system.{table}_watcher SYNC;\n"
         f"DROP TABLE IF EXISTS system.{table}_sender SYNC;\n"

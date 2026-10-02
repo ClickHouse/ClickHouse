@@ -296,18 +296,18 @@ def test_shutdown_flushes_the_async_insert_queue_before_the_senders():
     the queue is flushed in between - the order the single-server exporter
     already uses."""
     statements = HELPER._shutdown_statements(["query_log", "text_log"])
-    assert statements.index("SYSTEM FLUSH LOGS") < statements.index(
-        "SYSTEM FLUSH ASYNC INSERT QUEUE"
+    # Scoped to the `_sender` tables, so that a batch of a table of the test
+    # held by a failpoint does not block the graceful stop
+    async_flush = (
+        "SYSTEM FLUSH ASYNC INSERT QUEUE system.query_log_sender, system.text_log_sender"
     )
+    assert statements.index("SYSTEM FLUSH LOGS") < statements.index(async_flush)
     senders = [s for s in statements if s.startswith("SYSTEM FLUSH DISTRIBUTED ")]
     assert senders == [
         "SYSTEM FLUSH DISTRIBUTED system.query_log_sender",
         "SYSTEM FLUSH DISTRIBUTED system.text_log_sender",
     ]
-    assert all(
-        statements.index("SYSTEM FLUSH ASYNC INSERT QUEUE") < statements.index(s)
-        for s in senders
-    )
+    assert all(statements.index(async_flush) < statements.index(s) for s in senders)
 
 
 def test_flush_before_shutdown_runs_the_statements_in_order():
@@ -328,7 +328,7 @@ def test_flush_before_shutdown_runs_the_statements_in_order():
     sent = [s for s in instance.queries[0].split(";\n") if s]
     assert sent == [
         "SYSTEM FLUSH LOGS",
-        "SYSTEM FLUSH ASYNC INSERT QUEUE",
+        "SYSTEM FLUSH ASYNC INSERT QUEUE system.query_log_sender",
         "SYSTEM FLUSH DISTRIBUTED system.query_log_sender",
     ]
 
@@ -339,6 +339,83 @@ def test_flush_before_shutdown_runs_the_statements_in_order():
             raise AssertionError("no export tables, nothing to flush")
 
     HELPER.flush_before_shutdown(Idle())
+
+
+def test_a_restart_rewires_only_the_tables_whose_structure_changed(monkeypatch):
+    """A test may restart a server into another schema of a log table (e.g.
+    `system.metric_log` switched to the transposed schema): the export of that
+    table must be re-created for the new structure hash, while the other tables
+    keep their `_sender` tables and `_watcher` views."""
+
+    class Instance:
+        name = "node"
+        ci_logs_export_tables = ["metric_log", "query_log"]
+        ci_logs_export_hashes = {"metric_log": "old", "query_log": "same"}
+        queries = []
+
+        def query(self, sql, timeout=None):
+            self.queries.append(sql)
+            return ""
+
+    class Cluster:
+        client_bin_path = "clickhouse"
+        base_dir = "/tests/test_transposed_metric_log"
+        base_path = "/tests/test_transposed_metric_log/test.py"
+
+    monkeypatch.setattr(HELPER, "_disabled_reason", lambda cache_dir: None)
+    monkeypatch.setattr(
+        HELPER,
+        "_discover_log_tables",
+        lambda instance: [
+            ("metric_log", "new", "CREATE metric_log"),
+            ("query_log", "same", "CREATE query_log"),
+        ],
+    )
+    ensured = []
+
+    def ensure_remote_tables(client_bin_path, tables):
+        ensured.extend(tables)
+        return {table for table, _, _ in tables}
+
+    monkeypatch.setattr(HELPER, "_ensure_remote_tables", ensure_remote_tables)
+    created = []
+
+    def create_senders_and_watchers(instance, tables, exportable, expression):
+        created.extend(tables)
+        return [table for table, _, _ in tables]
+
+    monkeypatch.setattr(
+        HELPER, "_create_senders_and_watchers", create_senders_and_watchers
+    )
+
+    instance = Instance()
+    HELPER.refresh_after_start(Cluster(), instance)
+
+    assert len(instance.queries) == 1
+    dropped = instance.queries[0]
+    assert "DROP VIEW IF EXISTS system.metric_log_watcher SYNC" in dropped
+    assert "DROP TABLE IF EXISTS system.metric_log_sender SYNC" in dropped
+    assert "query_log" not in dropped
+    assert ensured == [("metric_log", "new", "CREATE metric_log")]
+    assert created == [("metric_log", "new", "CREATE metric_log")]
+    assert instance.ci_logs_export_tables == ["metric_log", "query_log"]
+    assert instance.ci_logs_export_hashes == {"metric_log": "new", "query_log": "same"}
+
+    # Nothing changed: no DDL at all
+    instance.queries = []
+    created.clear()
+    HELPER.refresh_after_start(Cluster(), instance)
+    assert instance.queries == []
+    assert created == []
+
+
+def test_a_started_server_refreshes_the_export():
+    """`start_clickhouse` (and `restart_clickhouse`, which delegates to it)
+    must rewire the export once the server is up, see `refresh_after_start`."""
+    source = CLUSTER_HELPER.read_text()
+    start = source.index("    def start_clickhouse(")
+    body = source[start : source.index("\n    def ", start + 1)]
+    assert "ci_logs_export.refresh_after_start(self.cluster, self)" in body
 
 
 def _remote_tables_harness(monkeypatch, tmp_path, answers):

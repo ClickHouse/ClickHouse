@@ -6056,7 +6056,6 @@ class ClickHouseInstance:
                     raise Exception("ClickHouse was expected not to be running.")
                 try:
                     self.wait_start(start_wait_sec + start_time - time.time())
-                    return exec_id
                 except Exception:
                     logging.warning(
                         f"Current start attempt failed. Will kill {pid} just in case."
@@ -6067,6 +6066,12 @@ class ClickHouseInstance:
                     if not retry_start:
                         raise
                     time.sleep(time_to_sleep)
+                    continue
+                # A restart may have changed the structure of a log table, see
+                # helpers/ci_logs_export.py
+                if self.ci_logs_export_enabled:
+                    ci_logs_export.refresh_after_start(self.cluster, self)
+                return exec_id
 
         raise Exception("Cannot start ClickHouse, see additional info in logs")
 
@@ -6518,6 +6523,9 @@ class ClickHouseInstance:
 
         if enable_ci_logs_export:
             ci_logs_export.setup_for_instance(self.cluster, self)
+        elif self.ci_logs_export_enabled:
+            # The binary under test may have log tables of another structure
+            ci_logs_export.refresh_after_start(self.cluster, self)
 
     def get_docker_handle(self) -> Container:
         return self.cluster.get_docker_handle(self.docker_id)
