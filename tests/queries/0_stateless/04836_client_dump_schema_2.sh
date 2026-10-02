@@ -69,6 +69,17 @@ rc=$?
 [[ $rc -ne 0 ]] && echo 'OK: non-zero exit code' || echo 'FAIL: expected non-zero exit code'
 grep -o -m1 'BAD_ARGUMENTS' "$ERR_FILE"
 
+echo '--- a file on stdin is rejected, a pipe is not read ---'
+STDIN_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_stdin.csv"
+echo '1,2' > "$STDIN_FILE"
+$CLICKHOUSE_LOCAL --dump-schema < "$STDIN_FILE" > /dev/null 2>"$ERR_FILE"
+rc=$?
+[[ $rc -ne 0 ]] && echo 'OK: non-zero exit code' || echo 'FAIL: expected non-zero exit code'
+grep -o -m1 'BAD_ARGUMENTS' "$ERR_FILE"
+rm -f "$STDIN_FILE"
+printf '1\n' | $CLICKHOUSE_LOCAL --dump-schema > /dev/null 2>"$ERR_FILE"
+echo "piped stdin, exit code: $?"
+
 echo '--- merge()/loop() with constant-expression arguments name their local source ---'
 # Each view reads its source only through folded merge()/loop() arguments.
 CONSTEXPR_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_constexpr"

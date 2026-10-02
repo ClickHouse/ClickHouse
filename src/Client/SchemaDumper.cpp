@@ -3315,7 +3315,7 @@ bool tableFunctionHasStaticStructure(const ASTFunction & function, const Context
         /// Parsing these reads only their arguments.
         return TableFunctionFactory::instance().get(function.clone(), context)->hasStaticStructure();
     }
-    catch (const Poco::Exception &)
+    catch (const Poco::Exception &) /// `DB::Exception` derives from it, so every parse error answers false here.
     {
         return false;
     }
