@@ -2069,6 +2069,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
     first_offset = file_offset_of_buffer_end = new_pos;
 
     info.reset();
+    info.reserve_ahead.reset();
     state.reset();
     initialized = false;
 

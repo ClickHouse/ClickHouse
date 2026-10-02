@@ -382,7 +382,7 @@ WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
     toDateTimeOrDefault({to:String}, '', now()) AS to
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
     avg(ProfileEvent_FilesystemCacheReserveAttempts) AS Attempts,
-    avg(ProfileEvent_FilesystemCacheFailedReserveAttempts) AS Failed,
+    avg(ProfileEvent_FilesystemCacheFailedReserveAttempts - ProfileEvent_FilesystemCacheReserveAheadRetries) AS Failed,
     avg(ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfLockContention) AS SkippedOnLockContention,
     avg(ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfCacheResize) AS SkippedOnCacheResize,
     avg(ProfileEvent_FilesystemCacheReserveAheadRetries) AS ReserveAheadRetries

@@ -129,7 +129,7 @@ public:
         /// List of file segments which we need to read
         /// given initial [start_offset, read_until_position).
         FileSegmentsHolderPtr file_segments;
-        /// Kept across file segments and seeks, not cleared by reset().
+        /// Kept across file segments and setReadUntilPosition(), reset on seek.
         FileCacheReserveAhead reserve_ahead;
 
         void reset();
