@@ -58,6 +58,14 @@ add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (grpc-cmake grpc)
+# Declared here rather than in `arrow-cmake`, because `flatbuffers-cmake` below builds `flatc` only
+# when Arrow needs it, and has to see the final value on the first configure.
+set (ENABLE_PARQUET_DEFAULT ${ENABLE_LIBRARIES})
+if (OS_FREEBSD)
+    set (ENABLE_PARQUET_DEFAULT OFF)
+endif()
+option (ENABLE_PARQUET "Enable parquet" ${ENABLE_PARQUET_DEFAULT})
+
 add_contrib (flatbuffers-cmake flatbuffers) # builds `flatc`, which generates the Arrow IPC bindings
 add_contrib (compiler-rt-cmake llvm-project)
 add_contrib (libllvmlibc-cmake llvm-project)

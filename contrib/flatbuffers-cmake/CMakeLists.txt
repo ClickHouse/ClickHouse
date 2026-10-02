@@ -26,6 +26,13 @@ target_include_directories(_flatbuffers SYSTEM PUBLIC "${LIBRARY_DIR}/include")
 target_compile_definitions(_flatbuffers PRIVATE -DFLATBUFFERS_LOCALE_INDEPENDENT=0)
 add_library(ch_contrib::flatbuffers ALIAS _flatbuffers)
 
+# Only Arrow needs `flatc`. Skip it otherwise: when cross-compiling it is a native target, and the
+# native sub-build cannot work on every platform (for WebAssembly it would get `emcc` as its host
+# compiler).
+if (NOT ENABLE_PARQUET)
+    return()
+endif()
+
 # === flatc
 #
 # Generated FlatBuffers code contains a `static_assert` on `FLATBUFFERS_VERSION_MAJOR`/`MINOR`/
