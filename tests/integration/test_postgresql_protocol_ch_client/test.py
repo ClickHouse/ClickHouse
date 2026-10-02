@@ -443,10 +443,11 @@ def test_copy_rejects_unsupported_options(started_cluster):
             cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, DELIMITER ';')", io.StringIO())
         conn.rollback()
 
-        # HEADER is not produced by the text output formats used here.
-        with pytest.raises(py_psql.Error, match="HEADER"):
-            cur = conn.cursor()
-            cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, HEADER)", io.StringIO())
+        # HEADER is honoured rather than rejected: the column names come first.
+        out = io.StringIO()
+        cur = conn.cursor()
+        cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, HEADER)", out)
+        assert out.getvalue() == '"a","b"\n1,2\n'
         conn.rollback()
 
         # For the text format the only supported NULL marker is the default `\N`; an empty marker would be
@@ -458,9 +459,9 @@ def test_copy_rejects_unsupported_options(started_cluster):
         conn.rollback()
 
         # An option we do not interpret at all is rejected by name rather than dropped.
-        with pytest.raises(py_psql.Error, match='"QUOTE" option'):
+        with pytest.raises(py_psql.Error, match='"ENCODING" option'):
             cur = conn.cursor()
-            cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, QUOTE '\"')", io.StringIO())
+            cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, ENCODING 'UTF8')", io.StringIO())
         conn.rollback()
 
         # A format we do not recognize must be rejected with a clean error too, not throw inside the parser

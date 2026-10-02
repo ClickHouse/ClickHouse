@@ -37,4 +37,17 @@ String toString(ASTCopyQuery::Formats format)
     }
 }
 
+String getFormatName(const ASTCopyQuery & query)
+{
+    switch (query.format)
+    {
+        case ASTCopyQuery::Formats::TSV:
+            return query.header ? "TSVWithNames" : "TSV";
+        case ASTCopyQuery::Formats::CSV:
+            return query.header ? "CSVWithNames" : "CSV";
+        case ASTCopyQuery::Formats::Binary:
+            return toString(query.format);
+    }
+}
+
 }

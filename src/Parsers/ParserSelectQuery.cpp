@@ -20,8 +20,6 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTWithElement.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -907,14 +905,11 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserSelectQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementSelect(StatementFactory & factory)
-{
-    factory.registerStatement("SELECT",
+    documentation["SELECT"] =
     {
         .description = R"DOCS_MD(
 `SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](/reference/statements/insert-into) it can be forwarded to a different table.
@@ -1205,9 +1200,9 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 )",
         .related = {"FROM", "WHERE", "GROUP BY", "ORDER BY", "LIMIT", "JOIN", "UNION", "INSERT INTO", "FORMAT"},
-    });
+    };
 
-    factory.registerStatement("DISTINCT",
+    documentation["DISTINCT"] =
     {
         .description = R"DOCS_MD(
 If `SELECT DISTINCT` is specified, only unique rows will remain in a query result. Thus, only a single row will remain out of all the sets of fully matching rows in the result.
@@ -1362,9 +1357,9 @@ SELECT DISTINCT [ON (column1, column2, ...)] expr_list ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "ALL", "GROUP BY", "LIMIT BY"},
-    });
+    };
 
-    factory.registerStatement("ALL",
+    documentation["ALL"] =
     {
         .description = R"DOCS_MD(
 If there are multiple matching rows in a table, then `ALL` returns all of them. `SELECT ALL` is identical to `SELECT` without `DISTINCT`. If both `ALL` and `DISTINCT` are specified, then an exception will be thrown.
@@ -1388,9 +1383,9 @@ SELECT ALL expr_list ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "DISTINCT"},
-    });
+    };
 
-    factory.registerStatement("PREWHERE",
+    documentation["PREWHERE"] =
     {
         .description = R"DOCS_MD(
 `PREWHERE` can make filtering more efficient by reducing the amount of data read. By default, ClickHouse applies this optimization, even when a query does not explicitly specify `PREWHERE`, by moving eligible conditions from [`WHERE`](/reference/statements/select/where) to `PREWHERE`. You can specify `PREWHERE` explicitly to control which conditions are applied at this stage.
@@ -1531,9 +1526,9 @@ SELECT ... PREWHERE expr ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "WHERE", "EXPLAIN"},
-    });
+    };
 
-    factory.registerStatement("WHERE",
+    documentation["WHERE"] =
     {
         .description = R"DOCS_MD(
 The `WHERE` clause allows you to filter the data that comes from the[`FROM`](/reference/statements/select/from) clause of `SELECT`.
@@ -1975,9 +1970,9 @@ SELECT ... WHERE expr ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "PREWHERE", "HAVING", "QUALIFY"},
-    });
+    };
 
-    factory.registerStatement("GROUP BY",
+    documentation["GROUP BY"] =
     {
         .description = R"DOCS_MD(
 `GROUP BY` clause switches the `SELECT` query into an aggregation mode, which works as follows:
@@ -2365,9 +2360,9 @@ SELECT ... GROUP BY ROLLUP(expr_list) | CUBE(expr_list) | GROUPING SETS (...) ..
 )",
         .parent = "SELECT",
         .related = {"SELECT", "HAVING", "DISTINCT", "ORDER BY"},
-    });
+    };
 
-    factory.registerStatement("HAVING",
+    documentation["HAVING"] =
     {
         .description = R"DOCS_MD(
 Allows filtering the aggregation results produced by [GROUP BY](/reference/statements/select/group-by). It is similar to the [WHERE](/reference/statements/select/where) clause, but the difference is that `WHERE` is performed before aggregation, while `HAVING` is performed after it.
@@ -2409,9 +2404,9 @@ SELECT ... GROUP BY ... HAVING expr ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "GROUP BY", "WHERE", "QUALIFY"},
-    });
+    };
 
-    factory.registerStatement("QUALIFY",
+    documentation["QUALIFY"] =
     {
         .description = R"DOCS_MD(
 Allows filtering window functions results. It is similar to the [WHERE](/reference/statements/select/where) clause, but the difference is that `WHERE` is performed before window functions evaluation, while `QUALIFY` is performed after it.
@@ -2447,9 +2442,9 @@ SELECT ... QUALIFY expr ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "WHERE", "HAVING"},
-    });
+    };
 
-    factory.registerStatement("ORDER BY",
+    documentation["ORDER BY"] =
     {
         .description = R"DOCS_MD(
 The `ORDER BY` clause contains
@@ -3082,9 +3077,9 @@ SELECT ... ORDER BY expr [ASC | DESC] [NULLS FIRST | NULLS LAST] [COLLATE 'local
 )",
         .parent = "SELECT",
         .related = {"SELECT", "LIMIT", "GROUP BY", "ALTER TABLE ... MODIFY ORDER BY"},
-    });
+    };
 
-    factory.registerStatement("LIMIT",
+    documentation["LIMIT"] =
     {
         .description = R"DOCS_MD(
 The `LIMIT` clause controls how many rows are returned from your query results. Rows can be selected by count and offset, or by the conditions that open and close a range of rows with [`LIMIT ... AFTER ... UNTIL`](#limit-after-until).
@@ -3128,7 +3123,7 @@ LIMIT [n] AFTER start_expr [UNTIL end_expr]
 LIMIT [n] UNTIL end_expr
 ```
 
-Returns the rows from the first row where `start_expr` is true, or from the start of the stream when `AFTER` is omitted, up to but excluding the first row where `end_expr` is true; `n` caps the length of that range. `AFTER start_expr ALL` opens a range at every matching row. See [LIMIT ... AFTER ... UNTIL](#limit-after-until) below.
+Returns the rows from the first row where `start_expr` is true, or from the start of the stream when `AFTER` is omitted, up to but excluding the first row at or after that start where `end_expr` is true; `n` caps the length of that range. `AFTER start_expr ALL` opens a range at every matching row. See [LIMIT ... AFTER ... UNTIL](#limit-after-until) below.
 
 ## Negative limits {#negative-limits}
 
@@ -3264,12 +3259,16 @@ LIMIT [n] UNTIL end_expr
 
 - `AFTER start_expr`: Start output from the first row where `start_expr` is true (that row is included).
 - `AFTER start_expr ALL`: Output the union of all matching ranges that start where `start_expr` is true, without duplicating rows when ranges overlap.
-- `UNTIL end_expr`: Stop before the first row where `end_expr` is true (that row is excluded).
+- `UNTIL end_expr`: End each range before the first row at or after its start where `end_expr` is true (that row is excluded).
 - `n`: Optional row count. Without `ALL` it is the maximum length of the single opened range. With `AFTER ... ALL` it is the length of *each* opened range, so the total result can exceed `n` (for example, `LIMIT 2 AFTER number IN (2, 6) ALL` can return up to four rows). To cap the total number of result rows, use the `limit` setting, which is applied as a global limit after the range.
 
 Stream order (the order rows are read) defines “first” match; use `ORDER BY` to control it.
 
-Without `ALL`, if the first `UNTIL` match appears before the first `AFTER` match, the result is empty. With `AFTER ... ALL`, later `AFTER` matches can still open new ranges.
+`UNTIL` matches before a range starts have no effect. If both conditions match the starting row, the range is empty. If no `UNTIL` match occurs at or after the start, the range continues to its row count `n` or the end of the stream. With `AFTER ... ALL`, later `AFTER` matches can open new ranges after an earlier range ends.
+
+With `AFTER` and without `ALL`, the range step evaluates `AFTER` until it finds a chunk containing a start match. It then evaluates `UNTIL` in that chunk and subsequent chunks while the range remains open. Expressions are evaluated over whole chunks, so `UNTIL` can still be evaluated for rows before the start within the starting chunk.
+
+If `UNTIL` contains stateful functions such as `rowNumberInAllBlocks`, or functions that are non-deterministic within the query, it is evaluated from the first chunk to preserve those functions' behavior. Without `ALL`, `AFTER` is evaluated only through the starting chunk; subsequent chunks evaluate only `UNTIL`. End matches before the start still have no effect.
 
 **Examples:**
 
@@ -3316,7 +3315,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 7;
 └────────┘
 ```
 
-Without `n` but with `UNTIL`, the range runs from the first `AFTER` match up to the first `UNTIL` match:
+Without `n` but with `UNTIL`, the range runs from the first `AFTER` match up to the first `UNTIL` match at or after it:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL number >= 6;
@@ -3325,6 +3324,20 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL num
 ```response
 ┌─number─┐
 │      2 │
+│      3 │
+│      4 │
+│      5 │
+└────────┘
+```
+
+An `UNTIL` match before the start is ignored; here `number = 1` has no effect, and the range ends before `number = 6`:
+
+```sql
+SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 3 UNTIL number IN (1, 6);
+```
+
+```response
+┌─number─┐
 │      3 │
 │      4 │
 │      5 │
@@ -3448,9 +3461,9 @@ SELECT TOP m ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "OFFSET FETCH", "LIMIT BY", "ORDER BY"},
-    });
+    };
 
-    factory.registerStatement("LIMIT BY",
+    documentation["LIMIT BY"] =
     {
         .description = R"DOCS_MD(
 A query with the `LIMIT n BY expressions` clause selects the first `n` rows for each distinct value of `expressions`. The key for `LIMIT BY` can contain any number of [expressions](/reference/syntax#expressions).
@@ -3653,9 +3666,9 @@ SELECT ... LIMIT n OFFSET offset_value BY expressions ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "LIMIT", "DISTINCT", "ORDER BY"},
-    });
+    };
 
-    factory.registerStatement("OFFSET FETCH",
+    documentation["OFFSET FETCH"] =
     {
         .description = R"DOCS_MD(
 `OFFSET` and `FETCH` allow you to retrieve data by portions. They specify a row block which you want to get by a single query.
@@ -3760,7 +3773,9 @@ SELECT ... [LIMIT [n, ]m] [OFFSET offset_row_count]
 )",
         .parent = "SELECT",
         .related = {"SELECT", "LIMIT", "ORDER BY"},
-    });
+    };
+
+    return documentation;
 }
 
 }

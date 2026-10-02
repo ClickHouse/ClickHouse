@@ -36,8 +36,8 @@ public:
     } format = Formats::TSV;
 
     /// A human-readable reason set by the parser when the `COPY` command carries a data-formatting option we
-    /// cannot faithfully honor (a non-default `DELIMITER`, a non-default `NULL` marker, `HEADER`, or any
-    /// option we do not interpret). The handler rejects such a command with a clean `ErrorResponse` instead
+    /// cannot faithfully honor (a non-default `DELIMITER`, `NULL` marker or `QUOTE`, or any option
+    /// we do not interpret). The handler rejects such a command with a clean `ErrorResponse` instead
     /// of silently ignoring the option and producing output that does not match what the client asked for.
     /// Empty when there is nothing to reject.
     String unsupported_option;
@@ -50,6 +50,9 @@ public:
     /// rejected via `unsupported_option`.
     String csv_null_marker;
 
+    /// `HEADER` of the option list: the first line of the data is the column names.
+    bool header = false;
+
     String getID(char) const override { return "CopyQuery"; }
 
     ASTPtr clone() const override;
@@ -61,5 +64,8 @@ protected:
 };
 
 String toString(ASTCopyQuery::Formats format);
+
+/// The ClickHouse input/output format the data of this `COPY` is written in.
+String getFormatName(const ASTCopyQuery & query);
 
 }

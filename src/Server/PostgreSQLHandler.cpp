@@ -81,6 +81,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsString default_session_user;
+    extern const ServerSettingsUInt64 handshake_timeout_milliseconds;
 }
 
 namespace ErrorCodes
@@ -789,9 +790,15 @@ PostgreSQLHandler::PostgreSQLHandler(
 
 void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 {
+    const std::shared_ptr<ReadBufferFromPocoSocket> previous_in = in;
+
     in = std::make_shared<ReadBufferFromPocoSocket>(socket, read_event);
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(socket, write_event);
     message_transport = std::make_shared<PostgreSQLProtocol::Messaging::MessageTransport>(in.get(), out.get());
+
+    /// The deadline lives in the buffer, so carry it over to the replacement.
+    if (previous_in)
+        in->adoptHandshakeDeadlineFrom(*previous_in);
 }
 
 void PostgreSQLHandler::run()
@@ -807,6 +814,10 @@ void PostgreSQLHandler::run()
     /// to be reachable from the whole server for as long as this one is open.
     server.context()->getProcessList().registerPostgreSQLCancellationKey(connection_id, secret_key, currentQueryId());
     SCOPE_EXIT({ server.context()->getProcessList().unregisterPostgreSQLCancellationKey(connection_id, secret_key); });
+
+    /// The listener leaves this socket without a receive timeout, so nothing else bounds a peer
+    /// that connects and says nothing.
+    in->setHandshakeTimeout(server.context()->getServerSettings()[ServerSetting::handshake_timeout_milliseconds]);
 
     try
     {
@@ -968,6 +979,8 @@ bool PostgreSQLHandler::startup()
 
     authentication_manager.authenticate(user_name, *session, *message_transport, socket().peerAddress());
 
+    in->clearHandshakeTimeout();
+
     try
     {
         session->makeSessionContext();
@@ -1005,8 +1018,16 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
 {
     bool was_secure_connection = false;
     bool was_encryption_req = true;
-    readBinaryBigEndian(payload_size, *in);
-    readBinaryBigEndian(info, *in);
+    auto receive_first_message_header = [&]
+    {
+        readBinaryBigEndian(payload_size, *in);
+        if (payload_size < 8)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong PostgreSQL initial message length {}, it must be at least 8", payload_size);
+        readBinaryBigEndian(info, *in);
+    };
+
+    receive_first_message_header();
 
     switch (static_cast<PostgreSQLProtocol::Messaging::FrontMessageType>(info))
     {
@@ -1028,10 +1049,7 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
             was_encryption_req = false;
     }
     if (was_encryption_req)
-    {
-        readBinaryBigEndian(payload_size, *in);
-        readBinaryBigEndian(info, *in);
-    }
+        receive_first_message_header();
 
     if (secure_required && !was_secure_connection)
     {
@@ -1143,9 +1161,9 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> message;
     try
     {
-        if (payload_size < 8 || payload_size > max_startup_message_size)
+        if (payload_size < 9 || payload_size > max_startup_message_size)
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                "Startup message declares a size of {} bytes, while it must be between 8 and {} bytes",
+                "Startup message declares a size of {} bytes, while it must be between 9 and {} bytes",
                 payload_size, max_startup_message_size);
 
         message = message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::StartupMessage>(payload_size - 8);
@@ -1230,6 +1248,33 @@ static String removePgCatalogQualifier(const String & query)
             prev_emitted_significant = i;
     }
     return result;
+}
+
+namespace
+{
+
+/// The option list of a `COPY` command is accepted only when it asks for the shape the PostgreSQL
+/// protocol transfers anyway - see `ParserCopyQuery::parseOptions`. That check compares the requested
+/// values against the defaults of the formats, so the format settings of the session must not be able
+/// to move them: a session that did `SET format_csv_delimiter = ';'` would otherwise get its
+/// `COPY ... WITH (FORMAT csv, DELIMITER ',')` accepted and then served with `;`, which is the silent
+/// shape mismatch the option list is there to prevent. The NULL marker of the CSV format is set
+/// afterwards from `ASTCopyQuery::csv_null_marker`.
+void pinCopyFormatSettings(const ContextMutablePtr & query_context)
+{
+    query_context->setSetting("format_csv_delimiter", String(","));
+    query_context->setSetting("format_csv_null_representation", String("\\N"));
+    query_context->setSetting("format_tsv_null_representation", String("\\N"));
+    query_context->setSetting("format_csv_allow_single_quotes", false);
+    query_context->setSetting("format_csv_allow_double_quotes", true);
+    query_context->setSetting("input_format_csv_allow_whitespace_or_tab_as_delimiter", false);
+
+    /// The rows of a `COPY` are separated by a single line feed on the wire.
+    query_context->setSetting("input_format_tsv_crlf_end_of_line", false);
+    query_context->setSetting("output_format_tsv_crlf_end_of_line", false);
+    query_context->setSetting("output_format_csv_crlf_end_of_line", false);
+}
+
 }
 
 /// `pg_table_is_visible(oid)` answers whether a relation can be referenced without a schema qualifier,
@@ -1350,8 +1395,8 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
     /// A `COPY` we cannot faithfully serve is rejected here rather than silently mis-served. This covers a
     /// copy endpoint other than the client stream (only `COPY ... TO STDOUT` and `COPY ... FROM STDIN` are
     /// implemented - a file path or `PROGRAM '...'` would make us drive the wrong side of the protocol), and
-    /// a data-formatting option we cannot honor (a non-default `DELIMITER`, a non-default `NULL` marker, a
-    /// `HEADER`, or any option we do not interpret): honoring only the format while dropping such options
+    /// a data-formatting option we cannot honor (a non-default `DELIMITER`, `NULL` marker or `QUOTE`, or
+    /// any option we do not interpret): honoring only the format while dropping such options
     /// would stream output that does not match what the client requested. The parser records the reason in
     /// `unsupported_option`. Like the binary rejection above, this is sent as an ordinary `ErrorResponse`
     /// (not thrown) so the connection stays open for the following `ReadyForQuery`.
@@ -1382,6 +1427,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         /// stays an empty string), while ClickHouse's CSV default marker is `\N`. Apply the marker the
         /// client asked for - PostgreSQL's default, or an explicit `NULL '\N'` - so that nullable values
         /// are read back faithfully.
+        pinCopyFormatSettings(query_context);
         if (copy_query->format == ASTCopyQuery::Formats::CSV)
             query_context->setSetting("format_csv_null_representation", copy_query->csv_null_marker);
 
@@ -1415,7 +1461,21 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         auto [ast, io] = executeQuery(fmt::format("INSERT INTO {} {} FROM INFILE 'psql_copy'", table_name, columns_to_insert), query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pushing());
 
-        String format = toString(copy_query->format);
+        const String format = getFormatName(*copy_query);
+
+        /// `COPY ... FROM` data carries the column names only when `HEADER` was asked for, which the
+        /// format name above already accounts for. Header auto-detection would otherwise take a first
+        /// data row that happens to look like the column names for a header and drop it.
+        query_context->setSetting("input_format_tsv_detect_header", false);
+        query_context->setSetting("input_format_csv_detect_header", false);
+
+        /// The `HEADER` of a PostgreSQL `COPY ... FROM` says that the first line of the data is the
+        /// column names, and says nothing else: the fields are still bound to the columns of the
+        /// command by position, and the names on that line are not looked at. The ClickHouse
+        /// `*WithNames` formats that read the line would otherwise match the fields to columns by
+        /// those names and default the columns no name was given for, so a header naming the same
+        /// columns in another order would load them the other way round.
+        query_context->setSetting("input_format_with_names_use_header", false);
 
         const Settings & settings = query_context->getSettingsRef();
 
@@ -1724,6 +1784,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         /// written as `""`), while ClickHouse's CSV default marker is `\N`. Apply the marker the client
         /// asked for - PostgreSQL's default, or an explicit `NULL '\N'` - so that nullable values are
         /// streamed in the form the client expects.
+        pinCopyFormatSettings(query_context);
         if (copy_query->format == ASTCopyQuery::Formats::CSV)
             query_context->setSetting("format_csv_null_representation", copy_query->csv_null_marker);
 
@@ -1793,7 +1854,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(static_cast<Int32>(source_header.columns())));
         VectorWithMemoryTracking<char> result_buf;
         WriteBufferFromVectorImpl<decltype(result_buf)> output_buffer(result_buf);
-        auto format_ptr = FormatFactory::instance().getOutputFormat(toString(copy_query->format), output_buffer, output_header, query_context);
+        auto format_ptr = FormatFactory::instance().getOutputFormat(getFormatName(*copy_query), output_buffer, output_header, query_context);
         auto executor = std::make_unique<PullingPipelineExecutor>(io.pipeline);
         Block block;
         UInt64 rows_count = 0;

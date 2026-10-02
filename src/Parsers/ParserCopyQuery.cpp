@@ -383,27 +383,29 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
     ///
     /// The data-formatting options are handled as follows so that a client's request is never silently
     /// disregarded (which would emit output that does not match what it asked for). A `DELIMITER` and a
-    /// `HEADER` that match our defaults for the chosen format (a tab for text/TSV, a comma for CSV, and no
-    /// header) are no-ops and accepted - this is exactly what real clients append, e.g. psycopg2's
+    /// `QUOTE` that match our defaults for the chosen format (a tab for text/TSV, a comma for CSV, and a
+    /// double quote for CSV) are no-ops and accepted - this is exactly what real clients append, e.g. psycopg2's
     /// `copy_to`/`copy_from` always send `DELIMITER AS '\t' NULL AS '\N'`, and PostgreSQL's
     /// escape-string spellings of the same values (`DELIMITER E'\t' NULL E'\\N'`) are decoded and
     /// accepted the same way. The `NULL` marker follows
     /// PostgreSQL's per-format defaults: `\N` for the text format (which is also ClickHouse's TSV default,
     /// so nothing needs wiring) and an empty unquoted field for CSV, which is carried in `csv_null_marker`
     /// and applied by the handler through `format_csv_null_representation`; an explicit `NULL '\N'` for CSV
-    /// selects the `\N` marker the same way. A non-default `DELIMITER`, any other `NULL` marker, a `HEADER`,
-    /// or any option we do not interpret (`QUOTE`, `ESCAPE`, `ENCODING`, ...) is recorded in
-    /// `unsupported_option`; the handler then rejects the command with an `ErrorResponse`. Wiring
-    /// `DELIMITER`/`HEADER` all the way through to `FormatSettings` is left to a dedicated follow-up.
+    /// selects the `\N` marker the same way. `HEADER` (optionally followed by `true`/`on`/`1` or
+    /// `false`/`off`/`0`) is carried in `header`, and the handler reads and writes the column names line
+    /// through the `*WithNames` formats. A non-default `DELIMITER`, any other `NULL` marker, a non-default
+    /// `QUOTE`, or any option we do not interpret (`ESCAPE`, `ENCODING`, ...) is recorded in
+    /// `unsupported_option`; the handler then rejects the command with an `ErrorResponse`.
     ///
     /// The parser must not throw for these options: an exception here makes
     /// `PostgreSQLHandler::processCopyQuery` fall through to the regular-query path, whose error tears the
     /// connection down mid-COPY (a driver such as psycopg2 then reports a lost connection instead of a clean
     /// error), which is why the rejection is deferred to the handler.
-    enum class PendingOption : uint8_t { None, Delimiter, Null, Header };
+    enum class PendingOption : uint8_t { None, Delimiter, Null, Quote, Header };
     PendingOption pending = PendingOption::None;
     std::optional<String> delimiter_value;
     std::optional<String> null_value;
+    std::optional<String> quote_value;
     bool header_requested = false;
     bool stray_literal = false;
     String unknown_option;
@@ -427,10 +429,11 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
                 is_escape_string_prefix = next->type == TokenType::StringLiteral && pos->end == next->begin;
             }
 
-            /// `DELIMITER` and `NULL` accept only string-literal values. In particular, do not let a
+            /// `DELIMITER`, `NULL` and `QUOTE` accept only string-literal values. In particular, do not let a
             /// bare word that is expected as their value be reinterpreted as the legacy format keyword:
             /// `DELIMITER csv` is malformed, not `DELIMITER` followed by `CSV`.
-            if ((pending == PendingOption::Delimiter || pending == PendingOption::Null) && !is_escape_string_prefix && lower != "as")
+            if ((pending == PendingOption::Delimiter || pending == PendingOption::Null || pending == PendingOption::Quote)
+                && !is_escape_string_prefix && lower != "as")
             {
                 stray_literal = true;
                 pending = PendingOption::None;
@@ -467,6 +470,8 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
                 pending = PendingOption::Delimiter;
             else if (lower == "null")
                 pending = PendingOption::Null;
+            else if (lower == "quote")
+                pending = PendingOption::Quote;
             else if (lower == "header")
             {
                 header_requested = true;
@@ -502,10 +507,23 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
                 delimiter_value = value;
             else if (pending == PendingOption::Null)
                 null_value = value;
+            else if (pending == PendingOption::Quote)
+                quote_value = value;
             else
                 stray_literal = true;
             pending = PendingOption::None;
             pending_value_is_escape_string = false;
+            ++pos;
+        }
+        else if (pos->type == TokenType::Number)
+        {
+            /// The only numeric option value is the `1` / `0` spelling of a boolean `HEADER`.
+            const std::string_view number(pos->begin, pos->end);
+            if (pending == PendingOption::Header && (number == "1" || number == "0"))
+                header_requested = number == "1";
+            else
+                stray_literal = true;
+            pending = PendingOption::None;
             ++pos;
         }
         else
@@ -523,7 +541,8 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
     }
     else if (!unknown_option.empty())
         node->unsupported_option = fmt::format("the \"{}\" option", unknown_option);
-    else if (pending == PendingOption::Delimiter || pending == PendingOption::Null || pending_value_is_escape_string || stray_literal)
+    else if (pending == PendingOption::Delimiter || pending == PendingOption::Null || pending == PendingOption::Quote
+        || pending_value_is_escape_string || stray_literal)
         node->unsupported_option = "an option with a missing or unexpected value";
     else
     {
@@ -546,8 +565,10 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
         const String backslash_n = "\\N";
         if (delimiter_value && *delimiter_value != default_delimiter)
             node->unsupported_option = "a non-default DELIMITER";
-        else if (header_requested)
-            node->unsupported_option = "HEADER";
+        else if (quote_value && !is_csv)
+            node->unsupported_option = "QUOTE for a format other than CSV";
+        else if (quote_value && *quote_value != "\"")
+            node->unsupported_option = "a non-default QUOTE";
         else if (null_value && *null_value == backslash_n)
         {
             if (is_csv)
@@ -562,6 +583,7 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
             node->unsupported_option = "a non-default NULL marker";
     }
 
+    node->header = header_requested;
     return true;
 }
 
