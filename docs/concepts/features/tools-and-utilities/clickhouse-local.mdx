@@ -248,7 +248,7 @@ Arguments:
 - `--logger.console` — Log to console.
 - `--logger.log` — Log file name.
 - `--logger.level` — Log level.
-- `--ignore-error` — do not stop processing if a query failed.
+- `--ignore-error` — do not stop processing if a query failed: the error is reported on `stderr` and the next query is processed. Because the errors are ignored, the process exits with a success code even when some of the queries failed.
 - `-c`, `--config-file` — path to configuration file in same format as for ClickHouse server. When it is not given, `clickhouse-local` looks up its main configuration file itself, see ["Configuration files"](#configuration-files); the configuration is empty only when none of the searched files exists.
 - `--no-system-tables` — do not attach system tables.
 - `--help` — arguments references for `clickhouse-local`.

@@ -999,6 +999,16 @@ private:
         return nullptr;
     }
 
+    template <typename T>
+    ColumnPtr executeNumSameType(const IColumn * col_left_untyped, const IColumn * col_right_untyped) const
+    {
+        if (const auto * col_left = checkAndGetColumn<ColumnVector<T>>(col_left_untyped))
+            return executeNumRightType<T, T>(col_left, col_right_untyped);
+        if (const auto * col_left_const = checkAndGetColumnConst<ColumnVector<T>>(col_left_untyped))
+            return executeNumConstRightType<T, T>(col_left_const, col_right_untyped);
+        return nullptr;
+    }
+
     template <typename T0>
     ColumnPtr executeNumLeftType(const IColumn * col_left_untyped, const IColumn * col_right_untyped) const
     {
@@ -1194,7 +1204,7 @@ private:
 
         auto is_string_not_in_enum = [this, &string_value]<typename T>(const EnumValues<T> * enum_values) -> bool
         {
-            if constexpr (!IsOperation<Op>::equals && IsOperation<Op>::not_equals)
+            if constexpr (!IsOperation<Op>::equals && !IsOperation<Op>::not_equals)
                 return false;
             if (params.validate_enum_literals_in_operators)
                 return false;
@@ -2031,6 +2041,13 @@ public:
             return res;
         }
         if ((res = executeWithConstString(result_type, col_left_untyped, col_right_untyped, left_type, right_type, input_rows_count)))
+        {
+            return res;
+        }
+        if (types_equal && (which_left.isUUID() || which_left.isIPv4() || which_left.isIPv6())
+            && ((res = executeNumSameType<UUID>(col_left_untyped, col_right_untyped))
+                || (res = executeNumSameType<IPv4>(col_left_untyped, col_right_untyped))
+                || (res = executeNumSameType<IPv6>(col_left_untyped, col_right_untyped))))
         {
             return res;
         }
