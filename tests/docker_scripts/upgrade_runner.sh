@@ -612,6 +612,11 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       them and logs this per table instead of refusing to start, which is what #115941 made it do on purpose.
 #       Requires the `StorageKeeperMap` logger AND the backquoted fixture-table prefix, so the same message on any
 #       other KeeperMap table - the shape a real metadata-compatibility regression takes - still fails this job.
+# `Query memory tracker: fault injected` is the stress phase's own fault injection (`memory_tracker_fault_probability`
+#       of stress worker 1) reaching the upgraded server with the work the stress phase left behind: a distributed
+#       DDL entry (e.g. an `ON CLUSTER` `BACKUP`) and a pending batch of a `Distributed` table both keep the settings
+#       of the query that created them and run again after the restart. Nothing enables fault injection on the
+#       upgraded server itself, so this message is never a compatibility signal, whichever component logs it.
 # `SystemLogQueue` + `Queue had been full` overflow happens under heavy stress test load and is not a
 #       compatibility bug. Filtered via regex in the secondary pipe below to require both the component name
 #       AND the specific overflow phrase together (the log format is `SystemLogQueue (system.<table>): Queue
@@ -812,6 +817,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed" \
            -e "No stream (ba1.bin) file checksum for column b" \
            -e "Exception during get topic partitions from Kafka: Local: Broker transport failure" \
+           -e "Query memory tracker: fault injected" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Error on initialization of rdb_test_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
