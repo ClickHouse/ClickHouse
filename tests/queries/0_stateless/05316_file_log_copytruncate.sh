@@ -31,12 +31,12 @@ printf '20\n' >> "${logs_dir}/other.log"
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log"
 read_log
 
-# The same while the table is attached. The directory watcher reports the change asynchronously,
-# so read until it has been observed.
-printf '5\n' > "${logs_dir}/app.log"
+# The same while the table is attached. The directory watcher installs its watch and reports the
+# change asynchronously, so truncate again on every attempt until a read observes it.
 deadline=$((EPOCHSECONDS + 60))
 res=
 while [[ -z "${res}" ]] && ((EPOCHSECONDS < deadline)); do
+    printf '5\n' > "${logs_dir}/app.log"
     res=$(read_log)
     [[ -z "${res}" ]] && sleep 0.5
 done
