@@ -18,18 +18,32 @@
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessBackup.h>
 #include <Access/resolveSetting.h>
+#include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/AccessType.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Functions/FunctionFactory.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <base/range.h>
 #include <IO/Operators.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Common/re2.h>
+#include <Common/StringUtils.h>
 
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/trim.hpp>
+#include <algorithm>
 #include <filesystem>
+#include <atomic>
+#include <functional>
+#include <memory>
 #include <mutex>
+#include <string_view>
+#include <unordered_set>
 
 
 namespace DB
@@ -47,6 +61,87 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Process-wide, so that `checkFunctionAccess` can skip the whole check with one relaxed
+    /// atomic load on the default empty list: reaching the `AccessControl` instance would mean
+    /// `Context::getAccessControl`, which takes a shared lock on the global context mutex, on
+    /// every function resolution. There is one `AccessControl` per server process.
+    std::atomic<bool> functions_requiring_grant_enabled{false};
+    std::mutex functions_requiring_grant_mutex;
+
+    struct TransparentStringHash
+    {
+        using is_transparent = void;
+        size_t operator()(std::string_view sv) const noexcept { return std::hash<std::string_view>{}(sv); }
+        size_t operator()(const String & s) const noexcept { return std::hash<std::string_view>{}(s); }
+    };
+    using FunctionNameSet = std::unordered_set<String, TransparentStringHash, std::equal_to<>>;
+
+    std::shared_ptr<const FunctionNameSet> functions_requiring_grant_names = std::make_shared<const FunctionNameSet>();
+
+    Strings parseFunctionsRequiringGrant(const Poco::Util::AbstractConfiguration & config)
+    {
+        const String prefix = "access_control_improvements.functions_requiring_grant";
+        Strings names;
+        if (!config.has(prefix))
+            return names;
+
+        /// Repeated elements are enumerated as `function`, `function[1]`, `function[2]`, ...
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys(prefix, keys);
+
+        if (keys.empty())
+        {
+            /// A bare list such as `<functions_requiring_grant>hex, decrypt</functions_requiring_grant>`
+            /// protects nothing. Say so instead of starting up with an empty list.
+            String text = config.getString(prefix, "");
+            boost::trim(text);
+            if (!text.empty())
+                throw Exception(
+                    ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                    "Function names in {} must be listed as <function> elements, got the text '{}'",
+                    prefix,
+                    text);
+            return names;
+        }
+
+        auto count_non_whitespace = [](const String & text)
+        {
+            return static_cast<size_t>(std::ranges::count_if(text, [](char c) { return !isWhitespaceASCII(c); }));
+        };
+
+        /// Text of the <function> elements, to compare with the text of the whole section below.
+        size_t function_elements_text_size = 0;
+
+        for (const auto & key : keys)
+        {
+            if (key != "function" && !key.starts_with("function["))
+                throw Exception(
+                    ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                    "Unknown element '{}' in {}: only <function> is allowed there",
+                    key,
+                    prefix);
+
+            function_elements_text_size += count_non_whitespace(config.getRawString(prefix + "." + key, ""));
+
+            String name = config.getString(prefix + "." + key);
+            boost::trim(name);
+            if (!name.empty())
+                names.push_back(std::move(name));
+        }
+
+        /// `keys` lists only child elements, so a name written as bare text next to them, as in
+        /// `hex <function>decrypt</function>`, would be dropped and `hex` left unprotected. The text
+        /// of an element includes the text of all its children, so any text that is not accounted
+        /// for by the <function> elements sits directly in the section.
+        if (count_non_whitespace(config.getRawString(prefix, "")) != function_elements_text_size)
+            throw Exception(
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                "Function names in {} must be listed as <function> elements, found text outside of them",
+                prefix);
+
+        return names;
+    }
+
     void checkForUsersNotInMainConfig(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_path,
@@ -309,6 +404,7 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
 
     /// The default values of the following improvements are false because we need to be compatible with earlier access configurations
     setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
+    setFunctionsRequiringGrantFromConfig(config_);
     setEnableReadWriteGrants(config_.getBool("access_control_improvements.enable_read_write_grants", false));
     setThrowOnUnmatchedRowPolicies(config_.getBool("access_control_improvements.throw_on_unmatched_row_policies", false));
 
@@ -810,6 +906,103 @@ void AccessControl::setEnableReadWriteGrants(bool enable_read_write_grants_)
 bool AccessControl::isEnabledReadWriteGrants() const
 {
     return enable_read_write_grants;
+}
+
+bool AccessControl::hasFunctionsRequiringGrant() noexcept
+{
+    return functions_requiring_grant_enabled.load(std::memory_order_relaxed);
+}
+
+void AccessControl::setFunctionsRequiringGrantFromConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    setFunctionsRequiringGrant(parseFunctionsRequiringGrant(config));
+}
+
+void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
+{
+    auto names = std::make_shared<FunctionNameSet>();
+    for (const auto & name : function_names)
+    {
+        if (name.empty())
+            continue;
+
+        const auto & function_factory = FunctionFactory::instance();
+        const auto & aggregate_function_factory = AggregateFunctionFactory::instance();
+
+        /// Resolve before the lookup: `hasNameOrAlias` matches only the registered spelling, so
+        /// `HEX` itself is not found, while `hex` is.
+        String registered_name = function_factory.resolveNameOrAlias(name);
+        if (function_factory.hasNameOrAlias(registered_name))
+        {
+            /// Store the registered name, so that `<function>isValidASCII</function>` also covers
+            /// the `isASCII` alias and `<function>HEX</function>` covers `hex`.
+            names->emplace(std::move(registered_name));
+        }
+        else if (aggregate_function_factory.isAggregateFunctionName(name))
+        {
+            /// Aggregate and window functions are resolved through `AggregateFunctionFactory`, which this
+            /// privilege does not cover. Accepting such a name would silently protect nothing, so reject it
+            /// here instead of leaving the administrator with a false sense of security.
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function '{}' cannot be listed in access_control_improvements.functions_requiring_grant: "
+                "only ordinary and user defined functions are supported",
+                name);
+        }
+        else
+        {
+            /// Not a no-op: a user defined function with this name may be created later.
+            LOG_WARNING(
+                getLogger(),
+                "Function '{}' listed in access_control_improvements.functions_requiring_grant is neither an ordinary nor an "
+                "aggregate function. It will require GRANT FUNCTION only if a user defined function with this name exists.",
+                name);
+            names->emplace(name);
+        }
+    }
+
+    const bool enabled = !names->empty();
+    {
+        std::lock_guard lock(functions_requiring_grant_mutex);
+        functions_requiring_grant_names = std::move(names);
+    }
+    functions_requiring_grant_enabled.store(enabled, std::memory_order_release);
+}
+
+void AccessControl::canonicalizeFunctionNames(AccessRightsElements & elements)
+{
+    for (auto & element : elements)
+    {
+        if (element.isGlobalWithParameter() && !element.anyParameter()
+            && element.access_flags.getParameterType() == AccessFlags::FUNCTION)
+        {
+            element.parameter = FunctionFactory::instance().resolveNameOrAlias(element.parameter);
+        }
+    }
+}
+
+void AccessControl::checkFunctionGrant(const ContextPtr & context, std::string_view function_name)
+{
+    if (!hasFunctionsRequiringGrant() || !context)
+        return;
+    if (functionRequiresGrant(function_name))
+        context->checkAccess(AccessType::FUNCTION, function_name);
+}
+
+bool AccessControl::functionRequiresGrant(std::string_view function_name)
+{
+    if (!functions_requiring_grant_enabled.load(std::memory_order_acquire))
+        return false;
+
+    std::shared_ptr<const FunctionNameSet> names;
+    {
+        std::lock_guard lock(functions_requiring_grant_mutex);
+        names = functions_requiring_grant_names;
+    }
+    /// Both sides are canonical names: the config list is canonicalized in
+    /// `setFunctionsRequiringGrant`, and the callers in `checkFunctionAccess` canonicalize the
+    /// name written in the query. So a plain lookup is enough, with no allocation.
+    return names->contains(function_name);
 }
 
 std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(const ContextAccessParams & params) const
