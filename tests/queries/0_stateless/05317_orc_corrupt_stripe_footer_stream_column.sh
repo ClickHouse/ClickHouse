@@ -26,7 +26,9 @@ FILE="05317_${CLICKHOUSE_DATABASE}.orc"
 $CLICKHOUSE_CLIENT --s3_truncate_on_insert 1 \
     --query "INSERT INTO FUNCTION s3(s3_conn, filename='$FILE', format='RawBLOB') SELECT base64Decode('$ORC_B64')"
 
-$CLICKHOUSE_CLIENT --query "SELECT * FROM s3(s3_conn, filename='$FILE', format='ORC') FORMAT Null" 2>&1 \
+# Stripes are prebuffered only with `remote_filesystem_read_prefetch`, which CI randomizes.
+$CLICKHOUSE_CLIENT --remote_filesystem_read_prefetch 1 \
+    --query "SELECT * FROM s3(s3_conn, filename='$FILE', format='ORC') FORMAT Null" 2>&1 \
     | grep -o -m1 'column=20 is out of range, the file has 5 columns'
 
 # The server is still alive, and a valid ORC file is still read through the same path.
