@@ -56,8 +56,8 @@ wait_for_rows 5
 ${CLICKHOUSE_CLIENT} -q "SELECT file, a FROM dst WHERE file = 'bad.jsonl' ORDER BY a"
 
 # Direct reads of a single-file table, which has no directory watcher: a file whose symlink target is gone is skipped
-# and logged once, a target created again is read from its start even with the old inode and not again after the table
-# is reloaded, and a record that does not parse fails the query.
+# and logged once, a target created again is read from its start, with the old inode even if the table is reloaded
+# first and with a new inode not again after a reload, and a record that does not parse fails the query.
 printf '{"a":200}\n' > "${sel_target}"
 ln -s "${sel_target}" "${sel_dir}/link.jsonl"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_sel (a UInt64) ENGINE = FileLog('${sel_dir}/link.jsonl', 'JSONEachRow')"
@@ -70,6 +70,13 @@ ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_s
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel"
 printf '{"a":201}\n' > "${sel_target}.old"
 ln "${sel_target}.old" "${sel_target}"
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log_sel"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log_sel"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel"
+# The target is removed again and created with a new inode, because `.old` still holds the old one.
+rm "${sel_target}"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel"
+printf '{"a":202}\n' > "${sel_target}"
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel"
 ${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log_sel"
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log_sel"

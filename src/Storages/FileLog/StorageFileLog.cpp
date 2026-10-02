@@ -515,8 +515,16 @@ void StorageFileLog::openFilesAndSetPos()
                 file_ctx.reader.reset();
                 file_ctx.status = FileStatus::NO_CHANGE;
                 file_ctx.open_failed = true;
+                /// The path leads to no file: what appears there later is read from its start, also after a restart.
                 if (open_errno == ENOENT || open_errno == ELOOP)
-                    file_ctx.path_missing = true;
+                {
+                    if (auto it = file_infos.meta_by_inode.find(file_ctx.inode);
+                        it != file_infos.meta_by_inode.end() && it->second.file_name == file && it->second.last_writen_position != 0)
+                    {
+                        disk->removeFileIfExists(getFullMetaPath(file));
+                        it->second.last_writen_position = 0;
+                    }
+                }
                 any_open_failed = true;
                 continue;
             }
@@ -524,8 +532,8 @@ void StorageFileLog::openFilesAndSetPos()
             assertStreamGood(reader);
             if (file_ctx.open_failed)
             {
-                /// A path that led to no file, or that leads to another inode now, names a new file: read it from the start.
-                if (const UInt64 inode = getInode(getFullDataPath(file)); file_ctx.path_missing || inode != file_ctx.inode)
+                /// While the file could not be opened its path may have started to point to another file: read that one from the start.
+                if (const UInt64 inode = getInode(getFullDataPath(file)); inode != file_ctx.inode)
                 {
                     file_infos.meta_by_inode.erase(file_ctx.inode);
                     disk->removeFileIfExists(getFullMetaPath(file));
@@ -533,7 +541,6 @@ void StorageFileLog::openFilesAndSetPos()
                     file_infos.meta_by_inode.insert_or_assign(inode, FileMeta{.file_name = file});
                 }
                 file_ctx.open_failed = false;
-                file_ctx.path_missing = false;
                 file_ctx.status = FileStatus::UPDATED;
             }
 
