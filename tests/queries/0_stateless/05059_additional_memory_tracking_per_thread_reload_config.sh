@@ -20,8 +20,10 @@ config_path=${CLICKHOUSE_CONFIG_DIR}/config.d/${CLICKHOUSE_TEST_NAME}.xml
 
 function reload_config()
 {
-    # In case of listen_try we can have 'Address already in use'
-    $CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG" |& grep -v -e 'Address already in use'
+    # In case of listen_try we can have 'Address already in use'.
+    # Server log messages emitted while reloading (e.g. `Cannot set max size of core file`
+    # on macOS) are not part of the result, so do not forward them to the client.
+    $CLICKHOUSE_CLIENT --send_logs_level=error --query "SYSTEM RELOAD CONFIG" |& grep -v -e 'Address already in use'
 }
 
 function show_setting()
