@@ -34,17 +34,6 @@
 /// ClickHouse has no dependencies, it is packaged and distributed in single binary.
 /// There is no reason to use Docker unless you are already running all your software in Docker.
 
-#if defined(OS_WASM)
-/// Emscripten's libc provides the identity-switching stubs (`setuid`, `setgid`, `setgroups`)
-/// but not `initgroups`. A sandbox has no supplementary groups to initialize, so fail closed
-/// and let the caller report the error.
-extern "C" int initgroups(const char *, gid_t)
-{
-    errno = ENOSYS;
-    return -1;
-}
-#endif
-
 namespace DB
 {
 

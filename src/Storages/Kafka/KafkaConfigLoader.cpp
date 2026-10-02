@@ -18,7 +18,6 @@
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
 #include <IO/S3/getAvailabilityZone.h>
-#include <chrdkafka_conf_sensitive.h>
 #include <csignal>
 #include <unordered_set>
 
@@ -465,8 +464,7 @@ void updateConfigurationFromConfig(
     }
 
 #if USE_KRB5
-    static const String default_kinit_cmd = cppkafka::Configuration{}.get("sasl.kerberos.kinit.cmd");
-    if (kafka_config.get("sasl.kerberos.kinit.cmd") != default_kinit_cmd)
+    if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
         LOG_WARNING(params.log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
 
     kafka_config.set("sasl.kerberos.kinit.cmd", "");
@@ -553,36 +551,6 @@ void updateConfigurationFromConfig(
 
 }
 
-namespace
-{
-
-/// Sensitive properties must not be logged in cleartext: the log records can reach not only the
-/// server log, but also clients that set `send_logs_level`.
-bool isSensitiveProperty(std::string_view name)
-{
-    /// The properties librdkafka marks with the _RK_SENSITIVE flag, plus a substring safety net
-    /// for properties unknown to the vendored librdkafka version.
-    static const std::unordered_set<std::string_view> sensitive_properties = []
-    {
-        std::unordered_set<std::string_view> res;
-        for (const char * const * prop_name = chrd_kafka_conf_sensitive_properties(); *prop_name; ++prop_name)
-            res.emplace(*prop_name);
-        return res;
-    }();
-    return sensitive_properties.contains(name) || name.contains("password") || name.contains("secret");
-}
-
-/// Log all properties of a Kafka client configuration, replacing the values of sensitive
-/// properties, e.g. `sasl.password` or `sasl.oauthbearer.client.secret`, with `[HIDDEN]`.
-void logConfigProperties(const cppkafka::Configuration & conf, const LoggerPtr & log, std::string_view client_type)
-{
-    for (const auto & property : conf.get_all())
-        LOG_TRACE(log, "{} set property {}:{}", client_type, property.first,
-            isSensitiveProperty(property.first) ? "[HIDDEN]" : property.second);
-}
-
-}
-
 template <typename TKafkaStorage>
 cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorage & storage, const ConsumerConfigParams & params, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr)
 {
@@ -613,7 +581,12 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
     conf.set("enable.auto.offset.store", "false"); // Update offset automatically - to commit them all at once.
     conf.set("enable.partition.eof", "false"); // Ignore EOF messages
 
-    logConfigProperties(conf, params.log, "Consumer");
+    for (auto & property : conf.get_all())
+    {
+        if (property.first.find("password") != std::string::npos)
+            continue;
+        LOG_TRACE(params.log, "Consumer set property {}:{}", property.first, property.second);
+    }
 
     return conf;
 }
@@ -634,7 +607,8 @@ cppkafka::Configuration KafkaConfigLoader::getProducerConfiguration(TKafkaStorag
 
     updateConfigurationFromConfig(loadProducerConfig, conf, storage, params);
 
-    logConfigProperties(conf, params.log, "Producer");
+    for (auto & property : conf.get_all())
+        LOG_TRACE(params.log, "Producer set property {}:{}", property.first, property.second);
 
     /// compression.codec is a global and topic level property, however compression.level is only a topic level property.
     /// cppkafka::Configuration::get_all returns the global properties only, so we need to check compression.level separately.
