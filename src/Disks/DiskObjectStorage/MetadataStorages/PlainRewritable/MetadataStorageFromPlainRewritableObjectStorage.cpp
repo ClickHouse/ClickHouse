@@ -510,7 +510,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                     if (auto known_info = read_snapshot->getDirectoryRemoteInfo(known_path->second);
                         known_info && known_info->remote_path == directory.remote_path && known_info->etag == directory.metadata->etag)
                     {
-                        results[i] = DirectoryLoadResult{true, known_path->second, std::move(*known_info)};
+                        results[i] = DirectoryLoadResult{true, false, directory.object_path, known_path->second, std::move(*known_info)};
                         continue;
                     }
                 }
