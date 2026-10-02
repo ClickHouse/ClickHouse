@@ -17,13 +17,17 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Пользователи консоли SQL создаются для каждого сеанса и проходят аутентификацию с помощью сертификатов X.509, которые автоматически обновляются. Пользователь удаляется после завершения сеанса. При составлении списков доступа для аудита перейдите на вкладку Settings сервиса в консоли и учитывайте доступ к консоли SQL наряду с пользователями базы данных, существующими в базе данных. Если настроены пользовательские роли, доступ пользователя указан в роли, имя которой оканчивается на его имя пользователя.
 
-## Пользователи и роли консоли SQL {#sql-console-users-and-roles}
+<div id="sql-console-users-and-roles">
+  ## Пользователи и роли консоли SQL
+</div>
 
-Базовые роли консоли SQL можно назначать пользователям с разрешениями Service Read Only и Service Admin. Подробнее см. в разделе [Управление пользователями Cloud](/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments). В этом руководстве показано, как создать пользовательскую роль для пользователя консоли SQL.
+Базовые роли консоли SQL можно назначать пользователям с разрешениями Service Read Only и Service Admin. Подробнее см. в разделе [Управление назначением ролей консоли SQL](/ru/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). В этом руководстве показано, как создать пользовательскую роль для пользователя консоли SQL.
 
-<Tip>
-  Предпочтительно используйте [роли базы данных, управляемые Cloud](/ru/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) для управления доступом к базе данных из консоли. Роли `sql-console-role:<email>` несовместимы с JWT-сеансами в консоли SQL.
-</Tip>
+<Note>
+  **Управление ролями базы данных из консоли (бета)**
+
+  Вы также можете управлять ролями базы данных непосредственно из консоли ClickHouse Cloud, добавляя разрешения на доступ к данным к пользовательским ролям. Эта возможность находится в бета-версии и доступна для сервисов, работающих на ClickHouse версии 26.4 и выше. Роли, назначенные вручную с использованием соглашения об именовании `sql-console-role:<email>`, имеют приоритет над ролями, назначенными через консоль. Подробнее см. в разделе [Управление ролями базы данных](/ru/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles).
+</Note>
 
 Чтобы создать пользовательскую роль для пользователя консоли SQL и назначить ей роль общего назначения, выполните следующие команды. Адрес электронной почты должен совпадать с адресом электронной почты пользователя в консоли.
 
@@ -88,7 +92,9 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 
 Подробное пошаговое руководство с примерами см. в статье [How to connect to ClickHouse Cloud using SSH keys](/ru/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys) в нашей базе знаний.
 
-## Разрешения на уровне базы данных {#database-permissions}
+<div id="database-permissions">
+  ## Разрешения на уровне базы данных
+</div>
 
 Настройте следующие параметры в сервисах и базах данных с помощью SQL-оператора [GRANT](/ru/reference/statements/grant).
 
@@ -124,7 +130,9 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 
 Вы можете использовать генератор SHA256-хеша или такую библиотеку, как `hashlib` в Python, чтобы преобразовать пароль длиной не менее 12 символов с достаточной сложностью в строку SHA256 и передать её системному администратору в качестве пароля. Это гарантирует, что администратор не увидит пароль и не будет работать с ним в открытом виде.
 
-### Списки доступа к базе данных для пользователей консоли SQL {#database-access-listings-with-sql-console-users}
+<div id="database-access-listings-with-sql-console-users">
+  ### Списки доступа к базе данных для пользователей консоли SQL
+</div>
 
 Следующий процесс можно использовать, чтобы получить полный список доступа в консоли SQL и базах данных вашей организации.
 
@@ -170,6 +178,8 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
   </Step>
 </Steps>
 
-## Пользователи хранилища {#warehouse-users}
+<div id="warehouse-users">
+  ## Пользователи хранилища
+</div>
 
 Пользователи хранилища общие для всех сервисов в рамках одного хранилища. Подробнее см. в разделе [управление доступом к хранилищу](/ru/products/cloud/features/infrastructure/warehouses#access-controls).

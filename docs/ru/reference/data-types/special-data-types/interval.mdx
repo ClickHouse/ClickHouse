@@ -39,7 +39,9 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-## Примечания по использованию {#usage-remarks}
+<div id="usage-remarks">
+  ## Примечания по использованию
+</div>
 
 Значения типа `Interval` можно использовать в арифметических операциях со значениями типов [Date](/ru/reference/data-types/date) и [DateTime](/ru/reference/data-types/datetime). Например, к текущему времени можно добавить 4 дня:
 
@@ -87,33 +89,9 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## Агрегация {#aggregation}
-
-Функции `sum`, `avg`, `min`, `max` и `any`, применённые к столбцу типа `Interval`, возвращают интервал того же типа.
-`sum` суммирует количество единиц, а `avg` вычисляет их среднее и округляет результат до целого числа
-единиц:
-
-```sql
-SELECT
-    sum(duration) AS total_duration,
-    avg(duration) AS avg_duration,
-    toTypeName(total_duration)
-FROM VALUES('duration IntervalMillisecond',
-    toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
-```
-
-```text
-┌─total_duration─┬─avg_duration─┬─toTypeName(total_duration)─┐
-│            600 │          200 │ IntervalMillisecond        │
-└────────────────┴──────────────┴────────────────────────────┘
-```
-
-Перед агрегированием значения в разных единицах приводятся к общей единице, поэтому
-сумма минуты и секунды даёт 61 секунду. У `Month`, `Quarter` и `Year` нет общей
-единицы с более мелкими единицами (число дней в месяце не фиксировано), поэтому
-смешивать их с ними вообще нельзя.
-
-## Интервалы смешанных типов {#mixed-type-intervals}
+<div id="mixed-type-intervals">
+  ## Интервалы смешанных типов
+</div>
 
 Интервалы смешанных типов, например включающие и часы, и минуты, можно создавать с помощью синтаксиса `INTERVAL 'value' <from_kind> TO <to_kind>`.
 Результат представляет собой кортеж из двух или более интервалов.
@@ -156,9 +134,9 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 └────────────────────────────────────────────┘
 ```
 
-## См. также {#see-also}
+<div id="see-also">
+  ## См. также
+</div>
 
 * оператор [INTERVAL](/ru/reference/operators/index#interval)
 * [toInterval](/ru/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) функции преобразования типов
-* агрегатная функция [avg](/ru/reference/functions/aggregate-functions/avg)
-* агрегатная функция [sum](/ru/reference/functions/aggregate-functions/sum)

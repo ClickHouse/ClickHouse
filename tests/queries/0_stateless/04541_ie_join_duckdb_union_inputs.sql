@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- IEJoin over inputs assembled with UNION ALL (multiple upstream streams).
 
 SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
