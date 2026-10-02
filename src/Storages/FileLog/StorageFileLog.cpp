@@ -1160,7 +1160,7 @@ bool StorageFileLog::updateFileInfos()
                         if (disk->existsFile(getFullMetaPath(old_name)))
                             disk->replaceFile(getFullMetaPath(old_name), getFullMetaPath(file_name));
                     }
-                    /// May move from other place, adding new meta info
+                    /// The rename source was not tracked, e.g. it was created and renamed within one batch
                     else
                         file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
                 }
