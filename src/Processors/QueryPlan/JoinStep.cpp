@@ -170,6 +170,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     /// shard, so the counts diverge only if the plan is inconsistent: for a `YShaped` join the regular
     /// pipeline below is not a usable fallback, it accepts a single port per side and throws otherwise.
     bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
+    sharding_fell_back = !primary_key_sharding.empty() && !use_sharding;
 
     QueryExecutionCounters::addExecutedJoin(*join, getExecutedJoinAlgorithm(*join, use_sharding));
 
@@ -487,7 +488,7 @@ void JoinStep::describeActions(FormatSettings & settings) const
     }
     if (swap_streams)
         settings.out << prefix << "Swapped: true\n";
-    if (!primary_key_sharding.empty())
+    if (!primary_key_sharding.empty() && !sharding_fell_back)
     {
         settings.out << prefix << "Sharding: [";
         bool first = true;
@@ -516,7 +517,7 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add(name, value);
     if (swap_streams)
         map.add("Swapped", true);
-    if (!primary_key_sharding.empty())
+    if (!primary_key_sharding.empty() && !sharding_fell_back)
     {
         auto array = std::make_unique<JSONBuilder::JSONArray>();
         for (const auto & [lhs, rhs] : primary_key_sharding)

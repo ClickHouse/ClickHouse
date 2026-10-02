@@ -133,6 +133,9 @@ public:
     bool swap_streams = false;
     bool useJoinDisjunctionsPushDown() const { return use_join_disjunctions_push_down; }
     PrimaryKeySharding primary_key_sharding;
+    /// Set by `updatePipeline` when the plan sharded this join but the stream counts diverged, so the join
+    /// was built as a single-stream join. `EXPLAIN` then must not report `Sharding`.
+    bool sharding_fell_back = false;
 };
 
 /// Special step for the case when Join is already filled.
