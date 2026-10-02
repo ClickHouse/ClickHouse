@@ -1,6 +1,6 @@
 #include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
 
-#include <Core/SettingsFields.h>
+#include <Core/SettingsFieldsConversionHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
@@ -27,8 +27,7 @@ UInt64 getTimeSeriesVersion(const ASTCreateQuery & query)
     if (!value)
         return TimeSeriesVersion::LATEST;
 
-    /// The same conversion as in the `version` setting itself, so that every value the setting accepts (e.g. a string literal) is recognized here too.
-    return SettingFieldUInt64{*value}.value;
+    return fieldToNumberSettingValue<UInt64>(*value);
 }
 
 
@@ -57,10 +56,7 @@ void setTimeSeriesVersion(ASTCreateQuery & query, UInt64 version)
 UInt64 getTimeSeriesRecentSamplesTTL(const ASTCreateQuery & query, bool for_restore)
 {
     if (const auto * value = tryGetSettingValue(query, "recent_samples_ttl_seconds"))
-    {
-        /// The same conversion as in the `recent_samples_ttl_seconds` setting itself.
-        return SettingFieldUInt64{*value}.value;
-    }
+        return fieldToNumberSettingValue<UInt64>(*value);
 
     if (for_restore)
     {
@@ -91,10 +87,7 @@ bool isTimeSeriesRecentSamplesTargetEnabled(const ASTCreateQuery & query, bool f
 bool isTimeSeriesTimeRangesTargetEnabled(const ASTCreateQuery & query, bool for_restore)
 {
     if (const auto * value = tryGetSettingValue(query, "store_time_ranges"))
-    {
-        /// The same conversion as in the `store_time_ranges` setting itself.
-        return SettingFieldBool{*value}.value;
-    }
+        return fieldToNumberSettingValue<bool>(*value);
 
     /// The stored definition of an existing table declares the target by its TIME RANGES clauses.
     if (hasTimeSeriesTargetDefinition(query, ViewTarget::TimeRanges))

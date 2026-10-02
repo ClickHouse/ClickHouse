@@ -56,6 +56,7 @@ configure_file ("${CH}/src/Common/config.h.in" "${CMAKE_BINARY_DIR}/gen/Common/c
 file (GLOB PARSER_SOURCES CONFIGURE_DEPENDS
     "${CH}/src/Parsers/*.cpp"
     "${CH}/src/Parsers/Access/*.cpp"
+    "${CH}/src/Parsers/Prometheus/CreateQueryTimeSeriesSettings.cpp"
     "${CH}/src/Access/Common/*.cpp"
 )
 
@@ -94,6 +95,7 @@ set (SUPPORT_SOURCES
     "${CH}/src/Core/Field.cpp"
     "${CH}/src/Core/Joins.cpp"
     "${CH}/src/Core/QualifiedTableName.cpp"
+    "${CH}/src/Core/SettingsFieldsConversionHelpers.cpp"
     "${CH}/src/Core/SettingsSecrets.cpp"
     "${CH}/src/Core/Streaming/CursorTree.cpp"
     "${CH}/src/Core/Streaming/Settings.cpp"
