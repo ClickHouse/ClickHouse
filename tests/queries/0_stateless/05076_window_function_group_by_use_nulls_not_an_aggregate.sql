@@ -100,16 +100,16 @@ SELECT '-- and a frame offset that is only constant while the key is not Nullabl
 SELECT count() OVER (ORDER BY 1 ROWS BETWEEN toUInt8(k IS NULL) PRECEDING AND CURRENT ROW)
 FROM values('k String', ('a'), ('b')) GROUP BY k WITH ROLLUP; -- { serverError BAD_ARGUMENTS }
 
--- Guards below: these already worked and must keep working unchanged.
-
-SELECT '-- WITH TOTALS, where `group_by_use_nulls` does not reach the key today';
+SELECT '-- WITH TOTALS, where `group_by_use_nulls` makes the key Nullable and NULL in the totals row';
 SELECT k, rank() OVER (PARTITION BY k) AS r
 FROM values('k String', ('a'), ('b')) GROUP BY k WITH TOTALS ORDER BY ALL;
 
-SELECT '-- and an aggregate inside a window function under WITH TOTALS alone, unconverted for the same reason';
+SELECT '-- and an aggregate inside a window function under WITH TOTALS alone, converted for the same reason';
 SELECT k, sum(sum(x)) OVER (ORDER BY k) AS running_total_of_an_aggregate,
     any(toTypeName(k)) OVER (ORDER BY k) AS the_window_argument
 FROM values('k String, x UInt8', ('a', 1), ('b', 2)) GROUP BY k WITH TOTALS ORDER BY ALL;
+
+-- Guards below: these already worked and must keep working unchanged.
 
 SELECT '-- a named window, which resolves outside the window function and already worked';
 SELECT k, row_number() OVER w AS r
