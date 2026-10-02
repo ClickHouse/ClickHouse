@@ -555,7 +555,9 @@ protected:
     static void appendBucketToResultColumns(const State & state, const Bucket & bucket, ColumnTuple & tuple_to)
     {
         namespace Idx = TimeSeriesHistogramPayloadTupleIndex;
-        typeid_cast<ColumnUInt8 &>(tuple_to.getColumn(Idx::Flags)).getData().push_back(bucket.flags);
+        /// A query result is a float histogram, as in Prometheus, so its exact integer counts stay empty.
+        const UInt8 flags = static_cast<UInt8>(bucket.flags | TimeSeriesHistogramFlags::IsFloat);
+        typeid_cast<ColumnUInt8 &>(tuple_to.getColumn(Idx::Flags)).getData().push_back(flags);
         typeid_cast<ColumnInt8 &>(tuple_to.getColumn(Idx::Schema)).getData().push_back(bucket.schema);
         typeid_cast<ColumnFloat64 &>(tuple_to.getColumn(Idx::ZeroThreshold)).getData().push_back(bucket.zero_threshold);
         typeid_cast<ColumnFloat64 &>(tuple_to.getColumn(Idx::Count)).getData().push_back(bucket.count);
