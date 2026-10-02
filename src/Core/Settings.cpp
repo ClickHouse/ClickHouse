@@ -7367,6 +7367,19 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"26.8", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."}) \
+    DECLARE(Bool, query_plan_aggregation_having_prefilter, true, R"(
+Toggles a query-plan-level optimization for `HAVING count() <comparison> <constant>` over a `GROUP BY`. While a two-level bucket of the aggregation result is converted to chunks, a group whose count cannot satisfy the bound is skipped before its key columns are materialized, instead of being materialized and then discarded by the filter above. Speeds up "groups above a threshold" queries over a high-cardinality `GROUP BY`, where most groups are discarded and the discarded keys are most of the conversion.
+
+A skipped group is neither filtered nor finalized, so this is not only a performance toggle: a `HAVING` conjunct written before the bound, and a sibling aggregate's finalization, stop being evaluated on the groups the bound rejects. A query that raised an exception from one of those can return rows instead, for example `HAVING throwIf(cnt = 3) = 0 AND count() > 3` over a `count() AS cnt`. Setting this to 0, or `compatibility` to a version below `26.10`, keeps the previous behavior.
+
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.10", false, true, "New setting to toggle the plan optimization that skips a group's key materialization while a two-level bucket of a final aggregation is converted, when a HAVING bound on that aggregation's own no-argument count() already rejects the group. A skipped group is neither filtered nor finalized, so a HAVING conjunct written before the bound, and a sibling aggregate's finalization, stop being evaluated on the groups the bound rejects. A query that raised an exception from one of those can now succeed; `compatibility` below 26.10 keeps the previous behavior."}) \
     DECLARE(Bool, query_plan_split_filter, true, R"(
 <Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
