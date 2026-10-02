@@ -1592,9 +1592,9 @@ The option applies to all system log tables; it does not allow for a different c
 When the `cluster` setting is used, the table definition references the cluster, and the cluster has to exist for the table to be loaded. If you remove the cluster from the configuration, also drop the `all_...` tables (they will be recreated according to the new configuration at the next flush).
 </Note>
 
-<Warning>
-Once this section is enabled, the `all_...` names in the `system` database are reserved for this feature. Do not keep your own tables under these names: rename any such table before enabling the section.
-</Warning>
+<Note>
+A table under one of the `all_...` names is considered to be created by this feature, and may be replaced when its definition differs from the expected one, only if it selects from the `merge` or `clusterAllReplicas` table function and its comment contains the marker sentence above. Do not copy this sentence into the comments of your own tables.
+</Note>
 
 **Example**
 
