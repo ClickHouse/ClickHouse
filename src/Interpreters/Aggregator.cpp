@@ -2813,12 +2813,37 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     }
     else
     {
+        /// The states sit in arena memory in the order they were created, which is unrelated to the
+        /// cell order, so reading a group's count when the scan reaches its cell stalls on a cache
+        /// miss for nearly every group of a large bucket. Instead, the count is prefetched when the
+        /// scan reaches the cell and read `state_prefetch_distance` cells later, which keeps that
+        /// many misses in flight. The cells are still offered in scan order, so boundary ties
+        /// resolve as described above. The distance is a constant because the `PrefetchingHelper`
+        /// estimate, which is derived from the duration of the first iterations, measured slower:
+        /// on ClickBench Q30-Q32 at 16 and 64 threads, 32 beat 8 and 16 and matched 48.
+        static constexpr size_t state_prefetch_distance = 32;
+        struct PendingCell
+        {
+            TableKey key;
+            AggregateDataPtr mapped;
+        };
+        std::array<PendingCell, state_prefetch_distance> pending;
+        size_t scanned = 0;
+        const auto offer_pending = [&](const PendingCell & cell)
+        { offer(*reinterpret_cast<const UInt64 *>(cell.mapped + count_offset), cell.key, cell.mapped); };
         data.forEachValue(
             [&](const auto & key, auto & mapped)
             {
                 account_key_bytes(key);
-                offer(*reinterpret_cast<const UInt64 *>(mapped + count_offset), key, mapped);
+                __builtin_prefetch(mapped + count_offset);
+                PendingCell & slot = pending[scanned % state_prefetch_distance];
+                if (scanned >= state_prefetch_distance)
+                    offer_pending(slot);
+                slot = {key, mapped};
+                ++scanned;
             });
+        for (size_t i = scanned - std::min(scanned, state_prefetch_distance); i < scanned; ++i)
+            offer_pending(pending[i % state_prefetch_distance]);
     }
 
     if (full_key_bytes)
