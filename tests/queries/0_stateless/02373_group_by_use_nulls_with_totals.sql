@@ -1,6 +1,3 @@
--- WITH TOTALS + group_by_use_nulls is only supported by the analyzer.
-SET enable_analyzer = 1;
-
 SELECT number
 FROM numbers(10)
 GROUP BY number

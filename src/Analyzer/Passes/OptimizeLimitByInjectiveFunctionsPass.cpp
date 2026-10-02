@@ -54,7 +54,8 @@ public:
             /// converted shape as well. Only a `FunctionNode` needs it: `unwrapInjectiveFunctionsInKeys`
             /// keeps every other kind of node anyway.
             const bool group_by_use_nulls = getSettings()[Setting::group_by_use_nulls]
-                && (query->isGroupByWithGroupingSets() || query->isGroupByWithRollup() || query->isGroupByWithCube());
+                && (query->isGroupByWithGroupingSets() || query->isGroupByWithRollup() || query->isGroupByWithCube()
+                    || query->isGroupByWithTotals());
 
             auto register_key = [&](const QueryTreeNodePtr & key)
             {
