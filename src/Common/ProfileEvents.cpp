@@ -611,6 +611,8 @@
     M(MergeTreeDataWriterStatisticsCalculationMicroseconds, "Time spent calculating statistics", ValueType::Microseconds) \
     M(MergeTreeDataWriterSortingBlocksMicroseconds, "Time spent sorting blocks", ValueType::Microseconds) \
     M(MergeTreeDataWriterMergingBlocksMicroseconds, "Time spent merging input blocks (for special MergeTree engines)", ValueType::Microseconds) \
+    M(MergeTreeDataWriterBlocksMergeSkipped, "Number of blocks INSERTed to ReplacingMergeTree, CollapsingMergeTree or VersionedCollapsingMergeTree tables whose sorting key values were all distinct, so the insert merge was skipped.", ValueType::Number) \
+    M(MergeTreeDataWriterBlocksMergedOnKeyColumns, "Number of blocks INSERTed to ReplacingMergeTree, CollapsingMergeTree or VersionedCollapsingMergeTree tables that were merged on the columns the merge reads only, the other columns being copied once afterwards.", ValueType::Number) \
     M(MergeTreeDataWriterProjectionsCalculationMicroseconds, "Time spent calculating projections", ValueType::Microseconds) \
     M(MergeTreeDataProjectionWriterSortingBlocksMicroseconds, "Time spent sorting blocks (for projection it might be a key different from table's sorting key)", ValueType::Microseconds) \
     M(MergeTreeDataProjectionWriterMergingBlocksMicroseconds, "Time spent merging blocks", ValueType::Microseconds) \
