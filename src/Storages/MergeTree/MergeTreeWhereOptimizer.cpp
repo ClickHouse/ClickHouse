@@ -469,7 +469,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     /// Grouping by storage columns (rather than the exact column set) keeps subcolumns of the
     /// same column (e.g. `map.key_k0` and `map.key_k1`) in one group, so they are moved to
     /// PREWHERE together and arrive adjacent for the prewhere-splitting step.
-    /// Non-viable and expensive conjuncts stay as individual Conditions.
+    /// Non-viable conjuncts stay as individual Conditions.
+    /// 'expensive' conjuncts each get their own group.
     ///
     /// We use a simple linear search to find groups (WHERE clauses are short).
     struct Group
@@ -623,9 +624,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
                 && !cannotBeMoved(conjunct, where_optimizer_context)
                 && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
                 && columnsSupportPrewhere(columns)
-                && columns.size() < queried_columns.size()
-                /// The original order is kept, so an expensive condition could precede cheaper ones.
-                && !isExpensiveExpression(conjunct);
+                && columns.size() < queried_columns.size();
             res.emplace_back(std::move(cond));
         }
         return res;

@@ -1,13 +1,14 @@
-aiGenerate: cheap ai
-aiClassify: cheap ai
-aiExtract: cheap ai
-aiTranslate: cheap ai
-aiFilter: cheap ai
-aiRedact: cheap ai
-aiEmbed: cheap ai
-aiSimilarity: cheap ai
-AI inside a lambda: cheap ai
-AI and a cheap condition on the same column: cheap cheap ai
-AI inside OR: cheap ai
-AI condition alone: ai
-Reordering disabled: cheap
+aiGenerate: in PREWHERE, last
+aiClassify: in PREWHERE, last
+aiExtract: in PREWHERE, last
+aiTranslate: in PREWHERE, last
+aiFilter: in PREWHERE, last
+aiRedact: in PREWHERE, last
+aiEmbed: in PREWHERE, last
+aiSimilarity: in PREWHERE, last
+AI inside a lambda: in PREWHERE, last
+AI and a cheap condition on the same column: in PREWHERE, last
+AI inside OR: in PREWHERE, last
+AI condition alone: in PREWHERE, last
+Reordering disabled, AI written first: in PREWHERE, not last
+Reordering disabled, AI written last: in PREWHERE, last
