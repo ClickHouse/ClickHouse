@@ -24,11 +24,17 @@ printf '{"a":10}\n{"a":20' > "${logs_dir}/dir/a.jsonl"
 printf '{"a":30}\n{"a":40' > "${logs_dir}/dir/b.jsonl"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_dir (a UInt64) ENGINE = FileLog('${logs_dir}/dir/', 'JSONEachRow') SETTINGS max_threads = 1"
 ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_dir ORDER BY a"
+# The directory watch is installed asynchronously after CREATE: wait until it reports a file created now.
+for i in {1..300}; do
+    printf '{"a":0}\n' > "${logs_dir}/dir/ready_${i}.jsonl"
+    [ "$(${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT count() FROM file_log_dir")" -gt 0 ] && break
+    sleep 0.1
+done
 printf '}\n' >> "${logs_dir}/dir/a.jsonl"
 printf '}\n' >> "${logs_dir}/dir/b.jsonl"
 res=""
 for _ in {1..300}; do
-    res+=$(${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_dir")$'\n'
+    res+=$(${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_dir WHERE a != 0")$'\n'
     [ "$(grep -c . <<< "${res}")" -ge 2 ] && break
     sleep 0.1
 done
