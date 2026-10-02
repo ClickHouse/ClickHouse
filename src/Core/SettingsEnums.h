@@ -527,6 +527,48 @@ enum class GeoToH3ArgumentOrder : uint8_t
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
+/// The day a week starts on for week functions called without an explicit `mode`.
+/// The values of the weekdays are the numbers `toDayOfWeek` gives them: 1 = Monday ... 7 = Sunday.
+enum class WeekFunctionsStartingDay : uint8_t
+{
+    /// No effect: each function keeps its own default.
+    AUTO = 0,
+    MONDAY = 1,
+    TUESDAY = 2,
+    WEDNESDAY = 3,
+    THURSDAY = 4,
+    FRIDAY = 5,
+    SATURDAY = 6,
+    SUNDAY = 7,
+};
+
+DECLARE_SETTING_ENUM(WeekFunctionsStartingDay)
+
+/// The range of week numbers for week functions called without an explicit `mode`.
+enum class WeekFunctionsRange : uint8_t
+{
+    /// No effect: each function keeps its own default.
+    AUTO,
+    /// Weeks 0-53, numbered within the year of the date.
+    ZERO_TO_53,
+    /// Weeks 1-53, a week at a year boundary belongs to the previous or the next year.
+    ONE_TO_53,
+};
+
+DECLARE_SETTING_ENUM(WeekFunctionsRange)
+
+/// Which week is week 1 for week functions called without an explicit `mode`.
+enum class WeekFunctionsFirstWeekOfYear : uint8_t
+{
+    /// No effect: each function keeps its own default.
+    AUTO,
+    FIRST_FULL_WEEK,
+    FOUR_OR_MORE_DAYS,
+    CONTAINS_JANUARY_1,
+};
+
+DECLARE_SETTING_ENUM(WeekFunctionsFirstWeekOfYear)
+
 /// Controls which exceptions from a remote shard are silently ignored when `skip_unavailable_shards` is enabled.
 enum class SkipUnavailableShardsMode : uint8_t
 {

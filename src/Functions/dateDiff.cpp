@@ -13,6 +13,7 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/TransformDateTime64.h>
+#include <Functions/WeekFunctionsSettings.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -38,7 +39,12 @@ class DateDiffImpl
 public:
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 
-    DateDiffImpl(const String & name_, bool is_diff_) : name(name_), is_diff(is_diff_) {}
+    DateDiffImpl(const String & name_, bool is_diff_, UInt8 first_weekday_)
+        : name(name_)
+        , is_diff(is_diff_)
+        , first_weekday(first_weekday_)
+    {
+    }
 
     template <typename Transform>
     void dispatchForColumns(
@@ -123,8 +129,8 @@ public:
         const auto & x_data = x.getData();
         const auto & y_data = y.getData();
 
-        const auto transform_x = TransformDateTime64<Transform>(getScale(x));
-        const auto transform_y = TransformDateTime64<Transform>(getScale(y));
+        const auto transform_x = makeTransform<Transform>(getScale(x));
+        const auto transform_y = makeTransform<Transform>(getScale(y));
         for (size_t i = 0; i < input_rows_count; ++i)
             result[i] = calculate(transform_x, transform_y, x_data[i], y_data[i], timezone_x, timezone_y);
     }
@@ -137,8 +143,8 @@ public:
         ColumnInt64::Container & result) const
     {
         const auto & x_data = x.getData();
-        const auto transform_x = TransformDateTime64<Transform>(getScale(x));
-        const auto transform_y = TransformDateTime64<Transform>(getScale(y));
+        const auto transform_x = makeTransform<Transform>(getScale(x));
+        const auto transform_y = makeTransform<Transform>(getScale(y));
         const auto y_value = stripDecimalFieldValue(y);
 
         for (size_t i = 0; i < input_rows_count; ++i)
@@ -153,8 +159,8 @@ public:
         ColumnInt64::Container & result) const
     {
         const auto & y_data = y.getData();
-        const auto transform_x = TransformDateTime64<Transform>(getScale(x));
-        const auto transform_y = TransformDateTime64<Transform>(getScale(y));
+        const auto transform_x = makeTransform<Transform>(getScale(x));
+        const auto transform_y = makeTransform<Transform>(getScale(y));
         const auto x_value = stripDecimalFieldValue(x);
 
         for (size_t i = 0; i < input_rows_count; ++i)
@@ -233,8 +239,10 @@ public:
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
             {
-                auto a_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, static_cast<UInt8>(0), timezone_x);
-                auto b_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, static_cast<UInt8>(0), timezone_y);
+                auto a_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier())
+                                         .execute(x, WeekDaySpec::fromMode(0), timezone_x);
+                auto b_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier())
+                                         .execute(y, WeekDaySpec::fromMode(0), timezone_y);
                 if (x_nanoseconds > y_nanoseconds)
                     std::swap(a_day_of_week, b_day_of_week);
                 if ((a_day_of_week > b_day_of_week)
@@ -295,6 +303,16 @@ public:
         }
     }
 
+    /// Weeks are counted from `first_weekday`; the other units have no state.
+    template <typename Transform>
+    TransformDateTime64<Transform> makeTransform(UInt32 scale) const
+    {
+        if constexpr (std::is_same_v<Transform, ToRelativeWeekNumImpl<ResultPrecision::Extended>>)
+            return TransformDateTime64<Transform>(Transform{first_weekday}, scale);
+        else
+            return TransformDateTime64<Transform>(scale);
+    }
+
     template <typename T>
     static UInt32 getScale(const T & v)
     {
@@ -316,6 +334,8 @@ public:
 private:
     String name;
     bool is_diff;
+    /// The day the weeks start on for the `week` unit, 1 = Monday ... 7 = Sunday.
+    UInt8 first_weekday;
 };
 
 
@@ -332,12 +352,18 @@ private:
 class FunctionDateDiff final : public IFunction
 {
 public:
-    FunctionDateDiff(const char * name_, bool is_relative_)
-        : function_name(name_), impl{function_name, is_relative_} {}
-
-    static FunctionPtr create(const char * name, bool is_relative)
+    FunctionDateDiff(const char * name_, bool is_relative_, UInt8 first_weekday_)
+        : function_name(name_)
+        , impl{function_name, is_relative_, first_weekday_}
     {
-        return std::make_shared<FunctionDateDiff>(name, is_relative);
+    }
+
+    /// `dateDiff` counts the week boundaries crossed, so the `week` unit follows `week_functions_starting_day`.
+    /// `age` counts whole weeks of 7 days, which don't depend on the day they start on; it keeps Monday, which its
+    /// adjustment for partial weeks relies on.
+    static FunctionPtr create(const char * name, bool is_relative, UInt8 first_weekday)
+    {
+        return std::make_shared<FunctionDateDiff>(name, is_relative, first_weekday);
     }
 
     String getName() const override { return function_name; }
@@ -465,7 +491,8 @@ public:
         return col_res;
     }
 private:
-    DateDiffImpl impl{name, true};
+    /// Only seconds are counted, so the day weeks start on doesn't matter.
+    DateDiffImpl impl{name, true, 1};
 };
 
 }
@@ -478,7 +505,8 @@ The difference is calculated using relative units. For example, the difference b
 (see [`toRelativeDayNum`](#toRelativeDayNum)), 1 month for unit month (see [`toRelativeMonthNum`](#toRelativeMonthNum)) and 1 year for unit year
 (see [`toRelativeYearNum`](#toRelativeYearNum)).
 
-If the unit `week` was specified, then `dateDiff` assumes that weeks start on Monday.
+If the unit `week` was specified, then `dateDiff` assumes that weeks start on Monday, or on the day set by
+[`week_functions_starting_day`](/reference/settings/session-settings/week-functions#week_functions_starting_day).
 Note that this behavior is different from that of function `toWeek()` in which weeks start by default on Sunday.
 
 For an alternative to `dateDiff`, see function [`age`](#age).
@@ -537,9 +565,11 @@ SELECT
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("dateDiff",
-        [](ContextPtr){ return FunctionDateDiff::create("dateDiff", true); },
-        documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction(
+        "dateDiff",
+        [](ContextPtr context) { return FunctionDateDiff::create("dateDiff", true, WeekFunctionsSettings(context).firstWeekday(1)); },
+        documentation,
+        FunctionFactory::Case::Insensitive);
     factory.registerAlias("date_diff", "dateDiff");
     factory.registerAlias("DATE_DIFF", "dateDiff");
     factory.registerAlias("timestampDiff", "dateDiff");
@@ -611,6 +641,9 @@ The difference is calculated using a precision of 1 nanosecond.
 For example, the difference between 2021-12-29 and 2022-01-01 is 3 days for the day unit,
 0 months for the month unit, and 0 years for the year unit.
 
+The `week` unit counts whole weeks of 7 days, so it doesn't depend on the day weeks start on, and the setting
+[`week_functions_starting_day`](/reference/settings/session-settings/week-functions#week_functions_starting_day) doesn't affect it.
+
 For an alternative to age, see function [`dateDiff`](#dateDiff).
     )";
     FunctionDocumentation::Syntax syntax = R"(
@@ -667,9 +700,8 @@ SELECT
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("age",
-        [](ContextPtr){ return FunctionDateDiff::create("age", false); },
-        documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction(
+        "age", [](ContextPtr) { return FunctionDateDiff::create("age", false, 1); }, documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

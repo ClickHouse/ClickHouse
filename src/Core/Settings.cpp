@@ -1508,6 +1508,64 @@ The table below shows the behavior of this setting for various date-time functio
 | `toStartOfMinute` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 | `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 )", 0) \
+    DECLARE(WeekFunctionsStartingDay, week_functions_starting_day, WeekFunctionsStartingDay::AUTO, R"(
+The day a week starts on for week functions called without an explicit `mode` argument (or, for `toStartOfInterval`, without an `origin`).
+
+Possible values:
+
+- `'auto'` — The setting has no effect: each function keeps its own default. The defaults differ between functions: `toWeek`, `toYearWeek`, `toStartOfWeek` and `toLastDayOfWeek` start the week on Sunday (mode 0), `toDayOfWeek`, `toStartOfInterval`, `date_trunc`, `toRelativeWeekNum` and `dateDiff` start it on Monday, `dateName('week', ...)` returns the ISO week, and `formatDateTime` `%w` numbers the days from Sunday = 0.
+- `'monday'`, `'tuesday'`, `'wednesday'`, `'thursday'`, `'friday'`, `'saturday'`, `'sunday'` — Weeks start on this day.
+
+The setting affects:
+
+- `toStartOfWeek`, `toLastDayOfWeek`, `toWeek` and `toYearWeek`: the first day of the week.
+- `toDayOfWeek`: the day number counts from 1 on the first day of the week. For example, with `'saturday'`, Saturday is 1 and Friday is 7.
+- `toStartOfInterval` with a `WEEK` interval and `date_trunc('week', ...)`: the buckets start on this day. For intervals of more than one week, the buckets are aligned to the first such day on or after 1970-01-01.
+- `toRelativeWeekNum` and `dateDiff` with the `week` unit (`week`, `weeks`, `wk`, `ww`): the weeks are counted from this day.
+- `dateName('week', ...)`: the week number, computed like `toWeek` with mode 3 with this day as the first day of the week.
+- `formatDateTime` and `fromUnixTimestamp` with a format, `%w`: the day number counts from 0 on the first day of the week.
+
+It doesn't affect `toISOWeek`, `toISOYear`, `toMonday`, `age`, `dateName('weekday', ...)`, the other `formatDateTime` specifiers, `formatDateTimeInJodaSyntax`, `parseDateTime` and `parseDateTimeInJodaSyntax`, nor `EXTRACT(ISODOW FROM ...)`, `EXTRACT(DOW FROM ...)` and the `day_of_week` function of the Trino dialect and the `dayofweek` function of the Kusto dialect, which call `toDayOfWeek` with an explicit `mode`.
+
+An explicit `mode` argument (or `origin` for `toStartOfInterval`) always takes precedence: [week_functions_starting_day](#week_functions_starting_day), [week_functions_range](#week_functions_range) and [week_functions_first_week_of_year](#week_functions_first_week_of_year) are then ignored. Otherwise, each of these settings that is not `'auto'` replaces its part of the function's default mode, and the parts left at `'auto'` keep the values of that mode. For example, with only `week_functions_starting_day = 'monday'`, `toWeek(d)` behaves like `toWeek(d, 5)` (Monday, `0-53`, first full week), not like `toWeek(d, 1)`.
+
+<Warning>
+The setting changes the results of week functions called without `mode` or `origin`, so stored expressions that use such calls depend on it:
+
+- The sorting key and the partition key of a `MergeTree` table are computed with the server's settings, even if the session that creates the table or inserts the data sets this setting. A query that sets it differently can get wrong results: index analysis and partition pruning compare the values computed by the query with the stored ones, and can skip rows that match.
+- `DEFAULT` and `MATERIALIZED` columns are computed with the setting of the `INSERT` query, so different inserts can store values computed with different settings. `TTL`, skip indexes, projections and materialized views can also compute different values under different settings.
+
+In stored expressions, pass `mode` or `origin` explicitly. `toRelativeWeekNum` and `dateDiff` with the `week` unit take neither argument, so don't use them in stored expressions if this setting can change. Expressions stored by earlier versions can also contain such calls: for example, `EXTRACT(ISODOW FROM d)` used to be stored as `toDayOfWeek(d)`.
+</Warning>
+)", IMPORTANT, \
+        {"26.10", "auto", "auto", "New setting: the day a week starts on for week functions called without an explicit `mode`. `auto` keeps the previous behavior, so `compatibility` must not change it."}) \
+    DECLARE(WeekFunctionsRange, week_functions_range, WeekFunctionsRange::AUTO, R"(
+The range of week numbers returned by `toWeek` and `dateName('week', ...)` called without an explicit `mode` argument.
+
+Possible values:
+
+- `'auto'` — The setting has no effect: each function keeps its own default (`0-53` for `toWeek`, `1-53` for `dateName('week', ...)`).
+- `'0-53'` — Weeks are numbered within the year of the date. The days of January before week 1 are week 0.
+- `'1-53'` — The days of January before week 1 belong to the last week of the previous year (52 or 53), and the last days of December can belong to week 1 of the next year.
+
+`toYearWeek` always returns the week together with the year it belongs to, as if the range were `1-53`, so this setting doesn't affect it. With [week_functions_first_week_of_year](#week_functions_first_week_of_year) set to `'contains_january_1'`, weeks are always numbered `1-53`.
+
+An explicit `mode` argument always takes precedence, and the parts of the mode that aren't set keep their defaults. See [week_functions_starting_day](#week_functions_starting_day) for the details and for the caveat about stored expressions such as table keys.
+)", IMPORTANT, \
+        {"26.10", "auto", "auto", "New setting: the range of week numbers for week functions called without an explicit `mode`. `auto` keeps the previous behavior, so `compatibility` must not change it."}) \
+    DECLARE(WeekFunctionsFirstWeekOfYear, week_functions_first_week_of_year, WeekFunctionsFirstWeekOfYear::AUTO, R"(
+Which week of the year is week 1 for `toWeek`, `toYearWeek` and `dateName('week', ...)` called without an explicit `mode` argument.
+
+Possible values:
+
+- `'auto'` — The setting has no effect: each function keeps its own default (`'first_full_week'` for `toWeek` and `toYearWeek`, `'four_or_more_days'` for `dateName('week', ...)`).
+- `'first_full_week'` — Week 1 is the first week that starts in this year, that is, the week that contains the first occurrence of the first day of the week.
+- `'four_or_more_days'` — Week 1 is the first week that has 4 or more days in this year, as in ISO 8601.
+- `'contains_january_1'` — Week 1 is the week that contains January 1. Weeks are numbered `1-53` regardless of [week_functions_range](#week_functions_range).
+
+An explicit `mode` argument always takes precedence, and the parts of the mode that aren't set keep their defaults. See [week_functions_starting_day](#week_functions_starting_day) for the details and for the caveat about stored expressions such as table keys.
+)", IMPORTANT, \
+        {"26.10", "auto", "auto", "New setting: which week is week 1 for week functions called without an explicit `mode`. `auto` keeps the previous behavior, so `compatibility` must not change it."}) \
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeIDToDateTime*().
 This setting exists only for compatibility reasons. In ClickHouse, the time zone is a property of the data type, respectively of the column.

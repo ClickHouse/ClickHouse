@@ -42,6 +42,9 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsBool least_greatest_legacy_null_behavior;
     extern const SettingsBool h3togeo_lon_lat_result_order;
     extern const SettingsGeoToH3ArgumentOrder geotoh3_argument_order;
+    extern const SettingsWeekFunctionsStartingDay week_functions_starting_day;
+    extern const SettingsWeekFunctionsRange week_functions_range;
+    extern const SettingsWeekFunctionsFirstWeekOfYear week_functions_first_week_of_year;
     extern const SettingsBool splitby_max_substrings_includes_remaining_string;
     extern const SettingsBool count_matches_stop_at_empty_match;
     extern const SettingsUInt64 function_visible_width_behavior;
@@ -99,6 +102,11 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     /// `h3ToGeo` swaps the tuple elements, `geoToH3` swaps the arguments.
     hash.update(settings[Setting::h3togeo_lon_lat_result_order].value);
     hash.update(static_cast<UInt64>(settings[Setting::geotoh3_argument_order].value));
+    /// The week functions (`toWeek`, `toStartOfWeek`, `toDayOfWeek`, `toRelativeWeekNum`, `dateDiff`, ...) called
+    /// without an explicit `mode` or `origin` capture how weeks are numbered when they are built.
+    hash.update(static_cast<UInt64>(settings[Setting::week_functions_starting_day].value));
+    hash.update(static_cast<UInt64>(settings[Setting::week_functions_range].value));
+    hash.update(static_cast<UInt64>(settings[Setting::week_functions_first_week_of_year].value));
     /// `splitBy*` with `max_substrings`, `countMatches`, `visibleWidth`, `JSON_VALUE`.
     hash.update(settings[Setting::splitby_max_substrings_includes_remaining_string].value);
     hash.update(settings[Setting::count_matches_stop_at_empty_match].value);

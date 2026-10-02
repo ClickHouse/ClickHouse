@@ -125,6 +125,9 @@ class WriteBuffer;
     M(CLASS_NAME, URI) \
     M(CLASS_NAME, VectorSearchFilterStrategy) \
     M(CLASS_NAME, GeoToH3ArgumentOrder) \
+    M(CLASS_NAME, WeekFunctionsStartingDay) \
+    M(CLASS_NAME, WeekFunctionsRange) \
+    M(CLASS_NAME, WeekFunctionsFirstWeekOfYear) \
     M(CLASS_NAME, ObjectStorageGranularityLevel) \
     M(CLASS_NAME, DecorrelationJoinKind) \
     M(CLASS_NAME, JoinOrderAlgorithm) \

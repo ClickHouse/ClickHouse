@@ -15,7 +15,12 @@ template <typename ToDataType, typename Transform>
 class FunctionCustomWeekToSomething final : public IFunctionCustomWeek<Transform>
 {
 public:
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCustomWeekToSomething>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionCustomWeekToSomething>(context); }
+
+    explicit FunctionCustomWeekToSomething(ContextPtr context)
+        : IFunctionCustomWeek<Transform>(context)
+    {
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -34,19 +39,24 @@ public:
         WhichDataType which(from_type);
 
         if (which.isDate())
-            return CustomWeekTransformImpl<DataTypeDate, ToDataType>::execute(arguments, result_type, input_rows_count, Transform{});
+            return CustomWeekTransformImpl<DataTypeDate, ToDataType>::execute(
+                arguments, result_type, input_rows_count, this->default_spec, Transform{});
         if (which.isDate32())
-            return CustomWeekTransformImpl<DataTypeDate32, ToDataType>::execute(arguments, result_type, input_rows_count, Transform{});
+            return CustomWeekTransformImpl<DataTypeDate32, ToDataType>::execute(
+                arguments, result_type, input_rows_count, this->default_spec, Transform{});
         if (which.isDateTime())
-            return CustomWeekTransformImpl<DataTypeDateTime, ToDataType>::execute(arguments, result_type, input_rows_count, Transform{});
+            return CustomWeekTransformImpl<DataTypeDateTime, ToDataType>::execute(
+                arguments, result_type, input_rows_count, this->default_spec, Transform{});
         if (which.isDateTime64())
             return CustomWeekTransformImpl<DataTypeDateTime64, ToDataType>::execute(
                 arguments,
                 result_type,
                 input_rows_count,
+                this->default_spec,
                 TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
         if (Transform::value_may_be_string && which.isString())
-            return CustomWeekTransformImpl<DataTypeString, ToDataType>::execute(arguments, result_type, input_rows_count, Transform{});
+            return CustomWeekTransformImpl<DataTypeString, ToDataType>::execute(
+                arguments, result_type, input_rows_count, this->default_spec, Transform{});
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal type {} of argument of function {}",

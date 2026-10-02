@@ -52,6 +52,12 @@ public:
         : scale_multiplier(scale_multiplier_)
     {}
 
+    /// For a transform with state, e.g. a setting captured when the function was built.
+    TransformTime64(Transform wrapped_transform_, UInt32 scale_)
+        : scale_multiplier(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale_))
+        , wrapped_transform(std::move(wrapped_transform_))
+    {}
+
     template <typename ... Args>
     auto NO_SANITIZE_UNDEFINED execute(const Time64 & t, Args && ... args) const
     {

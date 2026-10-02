@@ -258,6 +258,8 @@ REGISTER_FUNCTION(DateTrunc)
 {
     FunctionDocumentation::Description description = R"(
 Truncates a date and time value to the specified part of the date.
+
+For the `week` unit, weeks start on Monday, or on the day set by [`week_functions_starting_day`](/reference/settings/session-settings/week-functions#week_functions_starting_day).
     )";
     FunctionDocumentation::Syntax syntax = R"(
 dateTrunc(unit, datetime[, timezone])

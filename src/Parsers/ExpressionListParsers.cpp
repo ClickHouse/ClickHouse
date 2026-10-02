@@ -1692,8 +1692,9 @@ static ASTPtr buildExtractTimePartAST(IntervalKind interval_kind, ExtractUnit ex
         case ExtractUnit::Doy:
             return makeASTFunction("toDayOfYear", expr);
         case ExtractUnit::Isodow:
-            /// ISO day of week: 1 = Monday, 7 = Sunday
-            return makeASTFunction("toDayOfWeek", expr);
+            /// ISO day of week: 1 = Monday, 7 = Sunday (`toDayOfWeek` mode 0). The explicit mode keeps the
+            /// `week_functions_starting_day` setting from changing the result.
+            return makeASTFunction("toDayOfWeek", expr, make_intrusive<ASTLiteral>(UInt64(0)));
         case ExtractUnit::Isoyear:
             return makeASTFunction("toISOYear", expr);
         case ExtractUnit::Century:

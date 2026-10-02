@@ -18,7 +18,14 @@ template <typename ToDataType, typename Transform>
 class FunctionDateOrDateTimeToSomething final : public IFunctionDateOrDateTime<Transform>
 {
 public:
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateOrDateTimeToSomething>(makeTransform(context)); }
+
+    FunctionDateOrDateTimeToSomething() = default;
+
+    explicit FunctionDateOrDateTimeToSomething(Transform transform_)
+        : transform(std::move(transform_))
+    {
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -127,24 +134,26 @@ public:
         if (isInterval(from_type))
             return executeOnInterval(arguments, result_type, input_rows_count);
         if (isDate(from_type))
-            return DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(arguments, result_type, input_rows_count, transform);
         if (isDate32(from_type))
-            return DateTimeTransformImpl<DataTypeDate32, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<DataTypeDate32, ToDataType, Transform>::execute(
+                arguments, result_type, input_rows_count, transform);
         if (isTime(from_type))
-            return DateTimeTransformImpl<DataTypeTime, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<DataTypeTime, ToDataType, Transform>::execute(arguments, result_type, input_rows_count, transform);
         if (isTime64(from_type))
         {
             const auto scale = static_cast<const DataTypeTime64 *>(from_type)->getScale();
-            const TransformTime64<Transform> transformer(scale);
+            const TransformTime64<Transform> transformer(transform, scale);
             return DateTimeTransformImpl<DataTypeTime64, ToDataType, decltype(transformer)>::execute(
                 arguments, result_type, input_rows_count, transformer);
         }
         if (isDateTime(from_type))
-            return DateTimeTransformImpl<DataTypeDateTime, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<DataTypeDateTime, ToDataType, Transform>::execute(
+                arguments, result_type, input_rows_count, transform);
         if (isDateTime64(from_type))
         {
             const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
-            const TransformDateTime64<Transform> transformer(scale);
+            const TransformDateTime64<Transform> transformer(transform, scale);
             return DateTimeTransformImpl<DataTypeDateTime64, ToDataType, decltype(transformer)>::execute(
                 arguments, result_type, input_rows_count, transformer);
         }
@@ -156,6 +165,18 @@ public:
     }
 
 private:
+    /// A transform whose result depends on settings builds itself from the context, e.g.
+    /// `ToRelativeWeekNumImpl::fromContext`; the others are stateless.
+    static Transform makeTransform(const ContextPtr & context)
+    {
+        if constexpr (requires { Transform::fromContext(context); })
+            return Transform::fromContext(context);
+        else
+            return Transform{};
+    }
+
+    const Transform transform{};
+
     /// PostgreSQL-style `EXTRACT(<unit> FROM INTERVAL ...)`: kind matching is
     /// validated in `getReturnTypeImpl`, so here we just return the underlying
     /// Int64 values cast to the function's result type.
