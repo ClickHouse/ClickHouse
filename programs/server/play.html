@@ -8283,15 +8283,27 @@ checkURL(true);
     updateDocsURL();
 }
 
+function canSendRawAuthHeader(value) {
+    /// Preserve compatibility with older servers whenever the browser can transport the
+    /// credential byte-for-byte through a regular X-ClickHouse header. Fetch header values are
+    /// byte strings and may trim surrounding whitespace, so non-ASCII or normalized values use
+    /// the encoded Web UI marker understood by newer servers instead.
+    if (!/^[\\x20-\\x7E]*$/.test(value))
+        return false;
+    try {
+        return new Headers({ 'X-ClickHouse-Auth-Check': value }).get('X-ClickHouse-Auth-Check') === value;
+    } catch {
+        return false;
+    }
+}
+
 function getAuthHeaders(user, password) {
-    /// Fetch normalizes header values and accepts only byte-string values. Percent-encode
-    /// credentials so arbitrary UTF-8 and significant spaces survive the header transport
-    /// exactly as they did in URL query parameters.
-    const headers = { 'Authorization': 'ClickHouse-Play' };
+    const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
+    const headers = { 'Authorization': send_raw ? 'never' : 'ClickHouse-Play' };
     if (user)
-        headers['X-ClickHouse-User'] = encodeURIComponent(user);
+        headers['X-ClickHouse-User'] = send_raw ? user : encodeURIComponent(user);
     if (password)
-        headers['X-ClickHouse-Key'] = encodeURIComponent(password);
+        headers['X-ClickHouse-Key'] = send_raw ? password : encodeURIComponent(password);
     return headers;
 }
 

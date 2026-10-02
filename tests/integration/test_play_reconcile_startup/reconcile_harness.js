@@ -489,23 +489,31 @@ function extractTopLevelFunction(js, name) {
 }
 
 function checkAuthHeaderTransport(js) {
-    const helperMatch = js.match(/function getAuthHeaders\(user, password\) \{\n[\s\S]*?\n\}/);
-    if (!helperMatch) throw new Error('getAuthHeaders not found in play.html');
-    const getAuthHeaders = vm.runInNewContext(`(${helperMatch[0]})`);
+    const canSendRawSource = extractTopLevelFunction(js, 'canSendRawAuthHeader');
+    const getAuthHeadersSource = extractTopLevelFunction(js, 'getAuthHeaders');
+    const getAuthHeaders = vm.runInNewContext(
+        `${canSendRawSource}\n${getAuthHeadersSource}\ngetAuthHeaders`,
+        { Headers },
+    );
     const cases = [
         ['named-user', 'alice', 'p&?#%', {
-            Authorization: 'ClickHouse-Play',
+            Authorization: 'never',
             'X-ClickHouse-User': 'alice',
-            'X-ClickHouse-Key': 'p%26%3F%23%25',
+            'X-ClickHouse-Key': 'p&?#%',
         }],
         ['utf8-and-spaces', 'play:юзер', '  päss 密码  ', {
             Authorization: 'ClickHouse-Play',
             'X-ClickHouse-User': 'play%3A%D1%8E%D0%B7%D0%B5%D1%80',
             'X-ClickHouse-Key': '%20%20p%C3%A4ss%20%E5%AF%86%E7%A0%81%20%20',
         }],
-        ['empty-password', 'alice', '', { Authorization: 'ClickHouse-Play', 'X-ClickHouse-User': 'alice' }],
-        ['default-user', '', 'secret', { Authorization: 'ClickHouse-Play', 'X-ClickHouse-Key': 'secret' }],
-        ['default-credentials', '', '', { Authorization: 'ClickHouse-Play' }],
+        ['ascii-edge-spaces', 'alice', ' secret ', {
+            Authorization: 'ClickHouse-Play',
+            'X-ClickHouse-User': 'alice',
+            'X-ClickHouse-Key': '%20secret%20',
+        }],
+        ['empty-password', 'alice', '', { Authorization: 'never', 'X-ClickHouse-User': 'alice' }],
+        ['default-user', '', 'secret', { Authorization: 'never', 'X-ClickHouse-Key': 'secret' }],
+        ['default-credentials', '', '', { Authorization: 'never' }],
     ];
     for (const [name, user, password, expected] of cases) {
         const actual = getAuthHeaders(user, password);
@@ -515,9 +523,13 @@ function checkAuthHeaderTransport(js) {
         const browserHeaders = new Headers(actual);
         check('auth-header-cases', `${name} survives browser header normalization`,
             Object.entries(actual).every(([header, value]) => browserHeaders.get(header) === value), actual);
+
+        const encoded = actual.Authorization === 'ClickHouse-Play';
         check('auth-header-cases', `${name} round-trips the credentials`,
-            (!actual['X-ClickHouse-User'] || decodeURIComponent(actual['X-ClickHouse-User']) === user)
-                && (!actual['X-ClickHouse-Key'] || decodeURIComponent(actual['X-ClickHouse-Key']) === password),
+            (!actual['X-ClickHouse-User']
+                || (encoded ? decodeURIComponent(actual['X-ClickHouse-User']) : actual['X-ClickHouse-User']) === user)
+                && (!actual['X-ClickHouse-Key']
+                    || (encoded ? decodeURIComponent(actual['X-ClickHouse-Key']) : actual['X-ClickHouse-Key']) === password),
             actual);
     }
 
@@ -531,10 +543,10 @@ function checkAuthHeaderTransport(js) {
         const source = extractTopLevelFunction(js, name);
         check('auth-header-cases', `${name} uses header authentication`, source.includes(headerCall), name);
         check('auth-header-cases', `${name} does not append credentials to its URL`,
-            !/url \+= '&(?:user|password)=/.test(source), name);
+            !/url \\+= '&(?:user|password)=/.test(source), name);
     }
 
-    const completionUrlSource = js.match(/function buildCompletionUrl\(\) \{\n[\s\S]*?\n\}/);
+    const completionUrlSource = js.match(/function buildCompletionUrl\\(\\) \\{\\n[\\s\\S]*?\\n\\}/);
     if (!completionUrlSource) throw new Error('buildCompletionUrl not found in play.html');
     const buildCompletionUrl = vm.runInNewContext(`(${completionUrlSource[0]})`, {
         url_elem: { value: 'http://localhost:8123/?tenant=default' },
