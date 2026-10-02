@@ -39,7 +39,7 @@ namespace DB
 
 struct Settings;
 class IAST;
-class PipelineExecutor;
+class IExecutor;
 
 struct ProcessListForUser;
 class QueryStatus;
@@ -170,20 +170,20 @@ protected:
 
     struct ExecutorHolder
     {
-        explicit ExecutorHolder(PipelineExecutor * e) : executor(e) {}
+        explicit ExecutorHolder(IExecutor * e) : executor(e) {}
 
         void cancel();
 
         void remove();
 
-        PipelineExecutor * executor;
+        IExecutor * executor;
         std::mutex mutex;
     };
 
     using ExecutorHolderPtr = std::shared_ptr<ExecutorHolder>;
 
     /// Container of PipelineExecutors to be cancelled when a cancelQuery is received
-    std::unordered_map<PipelineExecutor *, ExecutorHolderPtr> executors;
+    std::unordered_map<IExecutor *, ExecutorHolderPtr> executors;
 
     enum class QueryStreamsStatus : uint8_t
     {
@@ -284,10 +284,10 @@ public:
     void setAllDataSent() { is_all_data_sent = true; }
 
     /// Adds a pipeline to the QueryStatus
-    void addPipelineExecutor(PipelineExecutor * e);
+    void addPipelineExecutor(IExecutor * e);
 
     /// Removes a pipeline to the QueryStatus
-    void removePipelineExecutor(PipelineExecutor * e);
+    void removePipelineExecutor(IExecutor * e);
 
     /// Checks the query time limits (cancelled or timeout)
     bool checkTimeLimit();
