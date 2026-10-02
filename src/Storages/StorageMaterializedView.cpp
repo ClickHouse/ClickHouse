@@ -32,7 +32,6 @@
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -40,8 +39,6 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Core/ProtocolDefines.h>
-#include <Common/config_version.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -530,9 +527,6 @@ void StorageMaterializedView::readImpl(
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
 
-    if (query_info.order_optimizer)
-        query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
-
     if (!view_metadata->select.select_table_id.empty())
         context->checkAccess(AccessType::SELECT, view_metadata->select.select_table_id, column_names);
 
@@ -736,15 +730,7 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     refresh_context->setSetting("log_comment", log_comment);
     refresh_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
     /// The client info is inherited from the table's (global) context and has no client version.
-    /// This server is the real initiator of the refresh query and of any distributed sub-query it
-    /// spawns (e.g. the refresh `SELECT` reads from a `Distributed` table), so fill the version with
-    /// this server's version. Otherwise remote shards treat the initiator as a pre-23.3 server and
-    /// apply legacy compatibility downgrades, and `RemoteQueryExecutor` rejects the zero version
-    /// outright.
-    if (client_info.client_version_major == 0
-        && client_info.client_version_minor == 0
-        && client_info.client_version_patch == 0)
-        refresh_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
+    refresh_context->setInitiatorVersionIfUnset();
     /// Generate a random query id.
     refresh_context->setCurrentQueryId("");
     /// Use the database where the materialized view is created to run the select query in the refresh task
@@ -1189,6 +1175,13 @@ bool StorageMaterializedView::isRemote() const
 {
     if (auto table = tryGetTargetTable())
         return table->isRemote();
+    return false;
+}
+
+bool StorageMaterializedView::readRequiresAnalyzedQuery() const
+{
+    if (auto table = tryGetTargetTable())
+        return table->readRequiresAnalyzedQuery();
     return false;
 }
 
