@@ -79,6 +79,10 @@ private:
         /// Does the condition presumably have good selectivity?
         bool good = false;
 
+        /// Does the condition contain a function that reports `isExpensive`?
+        /// Such a condition is moved to PREWHERE after all other conditions.
+        bool expensive = false;
+
         /// the lower the better
         UInt64 estimated_row_count = 0;
 
@@ -103,11 +107,12 @@ private:
                 names += n.getColumnName();
             }
             return fmt::format(
-                "Condition(exp:{} viable: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
+                "Condition(exp:{} viable: {}, good: {}, expensive: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
                 "columns_size: {}, bytes_per_rejected_row: {}, table_columns.size: {})",
                 names,
                 viable,
                 good,
+                expensive,
                 min_position_in_primary_key,
                 estimated_row_count,
                 columns_size,
@@ -117,7 +122,7 @@ private:
 
         auto tuple() const
         {
-            return std::make_tuple(!viable, !good, -min_position_in_primary_key, bytes_per_rejected_row, table_columns.size());
+            return std::make_tuple(!viable, expensive, !good, -min_position_in_primary_key, bytes_per_rejected_row, table_columns.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
@@ -180,6 +185,9 @@ private:
       * Also, disallow moving expressions with GLOBAL [NOT] IN.
       */
     bool cannotBeMoved(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
+
+    /// Whether the expression contains a function that reports `isExpensive`.
+    static bool isExpensiveExpression(const RPNBuilderTreeNode & node);
 
     static NameSet determineArrayJoinedNames(const ASTSelectQuery & select);
 

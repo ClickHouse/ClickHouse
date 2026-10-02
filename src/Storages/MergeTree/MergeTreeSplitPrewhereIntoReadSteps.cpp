@@ -25,8 +25,8 @@ struct NodeInfo
     /// Column names resolved to their physical storage names (subcolumn suffix stripped).
     /// Used for grouping: conditions on subcolumns of the same storage column are placed into one step.
     NameSet required_storage_columns;
-    /// True if computing this node may throw an exception, so it must not be evaluated on rows
-    /// that a preceding condition rejects.
+    /// True if computing this node may throw an exception or is expensive, so it must not be evaluated
+    /// on rows that a preceding condition rejects.
     bool may_throw = false;
 };
 
@@ -90,7 +90,8 @@ void fillRequiredColumns(
     /// FunctionDateOrDateTimeAddInterval). There is no sound can-throw oracle in the tree yet,
     /// see the TODO on canThrow in IFunctionAdaptors.h.
     if (!node_info.may_throw && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
-        && node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children)))
+        && (node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children))
+            || node->function_base->isExpensive()))
         node_info.may_throw = true;
 }
 
