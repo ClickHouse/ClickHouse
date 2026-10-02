@@ -281,17 +281,17 @@ DROP TABLE IF EXISTS t_sub_array;
 CREATE TABLE t_sub_array (id UInt64, j JSON(arr Array(String)), INDEX idx JSONAllValues(j) TYPE text(tokenizer = 'array'))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 INSERT INTO t_sub_array VALUES (1, '{"arr": []}'), (2, '{"arr": ["a"]}');
-SELECT count() FROM t_sub_array WHERE empty(j.arr);
-SELECT count() FROM t_sub_array WHERE empty(j.arr) SETTINGS use_skip_indexes = 0;
-SELECT count() FROM t_sub_array WHERE empty(j.arr) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_sub_array WHERE empty(j.arr) SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM t_sub_array WHERE empty(j.arr) SETTINGS optimize_functions_to_subcolumns = 1, use_skip_indexes = 0;
+SELECT count() FROM t_sub_array WHERE empty(j.arr) SETTINGS optimize_functions_to_subcolumns = 1, force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE IF EXISTS t_sub_string;
 CREATE TABLE t_sub_string (id UInt64, j JSON(s String), INDEX idx JSONAllValues(j) TYPE text(tokenizer = 'splitByNonAlpha'))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 INSERT INTO t_sub_string VALUES (1, '{"s": ""}'), (2, '{"s": "abc"}');
-SELECT count() FROM t_sub_string WHERE empty(j.s);
-SELECT count() FROM t_sub_string WHERE empty(j.s) SETTINGS use_skip_indexes = 0;
-SELECT count() FROM t_sub_string WHERE empty(j.s) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_sub_string WHERE empty(j.s) SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM t_sub_string WHERE empty(j.s) SETTINGS optimize_functions_to_subcolumns = 1, use_skip_indexes = 0;
+SELECT count() FROM t_sub_string WHERE empty(j.s) SETTINGS optimize_functions_to_subcolumns = 1, force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE IF EXISTS t_sub_tuple;
 CREATE TABLE t_sub_tuple (id UInt64, j JSON(t Tuple(a Int64, b String)), INDEX idx JSONAllValues(j) TYPE text(tokenizer = 'array'))
