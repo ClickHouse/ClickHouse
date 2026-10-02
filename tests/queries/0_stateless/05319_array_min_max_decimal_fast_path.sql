@@ -22,8 +22,7 @@ SELECT
     arrayMax(values) = toDecimal256(3, 12),
     toTypeName(arrayMax(values)) = 'Decimal(76, 12)';
 
-WITH
-    [
+WITH materialize([
         toDateTime64('1960-01-01 00:00:00.123', 3, 'UTC'),
         toDateTime64('2026-01-01 00:00:00.456', 3, 'UTC'),
         toDateTime64('2000-01-01 00:00:00.789', 3, 'UTC')
