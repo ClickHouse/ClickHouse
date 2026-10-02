@@ -313,6 +313,91 @@ SELECT count() FROM t_object_ngrams WHERE CAST(j.obj AS String) = '{"a":"1844674
 SELECT count() FROM t_object_ngrams WHERE CAST(j.obj AS String) = '{"a":"18446744073709551615"}' SETTINGS output_format_json_quote_64bit_integers = 1, use_skip_indexes = 0;
 1
 SELECT count() FROM t_object_ngrams WHERE CAST(j.obj AS String) = '{"a":"18446744073709551615"}' SETTINGS output_format_json_quote_64bit_integers = 1, force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+DROP TABLE IF EXISTS t_object_variant;
+CREATE TABLE t_object_variant (id UInt64, j JSON(obj JSON(a Variant(UInt64, String))), INDEX idx JSONAllValues(j) TYPE text(tokenizer = 'array'))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_object_variant VALUES (1, '{"obj": {"a": 1, "c": -0.0}}'), (2, '{"obj": {"a": 7}}'), (3, '{"obj": {"a": 18446744073709551615}}');
+SELECT count() FROM t_object_variant WHERE j.obj = '{"a":1,"c":0.0}';
+1
+SELECT count() FROM t_object_variant WHERE j.obj = '{"a":1,"c":0.0}' SETTINGS use_skip_indexes = 0;
+1
+SELECT count() FROM t_object_variant WHERE j.obj = '{"a":1,"c":0.0}' SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_object_variant WHERE CAST(j.obj AS String) IN ('{"a":"18446744073709551615"}', 'zz') SETTINGS output_format_json_quote_64bit_integers = 1;
+1
+SELECT count() FROM t_object_variant WHERE CAST(j.obj AS String) IN ('{"a":"18446744073709551615"}', 'zz') SETTINGS output_format_json_quote_64bit_integers = 1, use_skip_indexes = 0;
+1
+SELECT count() FROM t_object_variant WHERE CAST(j.obj AS String) IN ('{"a":"18446744073709551615"}', 'zz') SETTINGS output_format_json_quote_64bit_integers = 1, force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+-- A subcolumn of a typed path reads a part of the stored text.
+DROP TABLE IF EXISTS t_sub_array;
+CREATE TABLE t_sub_array (id UInt64, j JSON(arr Array(String)), INDEX idx JSONAllValues(j) TYPE text(tokenizer = 'array'))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_sub_array VALUES (1, '{"arr": []}'), (2, '{"arr": ["a"]}');
+SELECT count() FROM t_sub_array WHERE empty(j.arr);
+1
+SELECT count() FROM t_sub_array WHERE empty(j.arr) SETTINGS use_skip_indexes = 0;
+1
+SELECT count() FROM t_sub_array WHERE empty(j.arr) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+DROP TABLE IF EXISTS t_sub_string;
+CREATE TABLE t_sub_string (id UInt64, j JSON(s String), INDEX idx JSONAllValues(j) TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_sub_string VALUES (1, '{"s": ""}'), (2, '{"s": "abc"}');
+SELECT count() FROM t_sub_string WHERE empty(j.s);
+1
+SELECT count() FROM t_sub_string WHERE empty(j.s) SETTINGS use_skip_indexes = 0;
+1
+SELECT count() FROM t_sub_string WHERE empty(j.s) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+DROP TABLE IF EXISTS t_sub_tuple;
+CREATE TABLE t_sub_tuple (id UInt64, j JSON(t Tuple(a Int64, b String)), INDEX idx JSONAllValues(j) TYPE text(tokenizer = 'array'))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_sub_tuple VALUES (1, '{"t": {"a": 1, "b": "x"}}'), (2, '{"t": {"a": 7, "b": "z"}}');
+SELECT count() FROM t_sub_tuple WHERE j.t.a = 1;
+1
+SELECT count() FROM t_sub_tuple WHERE j.t.a = 1 SETTINGS use_skip_indexes = 0;
+1
+SELECT count() FROM t_sub_tuple WHERE j.t.a = 1 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_sub_tuple WHERE j.t.b = 'x';
+1
+SELECT count() FROM t_sub_tuple WHERE j.t.b = 'x' SETTINGS use_skip_indexes = 0;
+1
+SELECT count() FROM t_sub_tuple WHERE j.t.b = 'x' SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_sub_tuple WHERE j.t.b IN ('x', 'q');
+1
+SELECT count() FROM t_sub_tuple WHERE j.t.b IN ('x', 'q') SETTINGS use_skip_indexes = 0;
+1
+SELECT count() FROM t_sub_tuple WHERE j.t.b IN ('x', 'q') SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+DROP TABLE IF EXISTS t_sub_object;
+CREATE TABLE t_sub_object (id UInt64, j JSON(obj JSON(a UInt64)), INDEX idx JSONAllValues(j) TYPE text(tokenizer = 'array'))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_sub_object VALUES (1, '{"obj": {"a": 1}}'), (2, '{"obj": {"a": 7}}');
+SELECT count() FROM t_sub_object WHERE j.obj.a = 1;
+1
+SELECT count() FROM t_sub_object WHERE j.obj.a = 1 SETTINGS use_skip_indexes = 0;
+1
+SELECT count() FROM t_sub_object WHERE j.obj.a = 1 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+DROP TABLE IF EXISTS t_sub_nullable;
+CREATE TABLE t_sub_nullable (id UInt64, j JSON(n Nullable(Int64)), INDEX idx JSONAllValues(j) TYPE text(tokenizer = 'array'))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_sub_nullable VALUES (1, '{"n": null}'), (2, '{"n": 5}');
+SELECT count() FROM t_sub_nullable WHERE j.n.null = 1;
+1
+SELECT count() FROM t_sub_nullable WHERE j.n.null = 1 SETTINGS use_skip_indexes = 0;
+1
+SELECT count() FROM t_sub_nullable WHERE j.n.null = 1 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+DROP TABLE IF EXISTS t_sub_dynamic;
+CREATE TABLE t_sub_dynamic (id UInt64, j JSON, INDEX idx JSONAllValues(j) TYPE text(tokenizer = 'array'))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_sub_dynamic VALUES (1, '{"x": ["a"]}'), (2, '{"x": "q"}');
+SELECT count() FROM t_sub_dynamic WHERE j.x.:`Array(Nullable(String))`.size0 = 1;
+1
+SELECT count() FROM t_sub_dynamic WHERE j.x.:`Array(Nullable(String))`.size0 = 1 SETTINGS use_skip_indexes = 0;
+1
+SELECT count() FROM t_sub_dynamic WHERE j.x.:`Array(Nullable(String))`.size0 = 1 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+DROP TABLE IF EXISTS t_tuple_json;
+CREATE TABLE t_tuple_json (id UInt64, t Tuple(j JSON(n Int64)), INDEX idx JSONAllValues(t.j) TYPE text(tokenizer = 'array'))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_tuple_json VALUES (1, tuple('{"n": 5}')), (2, tuple('{"n": 7}'));
+SELECT count() FROM t_tuple_json WHERE t.j.n = 5 SETTINGS force_data_skipping_indices = 'idx';
+1
 -- A `DateTime` without a time zone is written in the session time zone, while one with a time zone is not.
 SET session_timezone = 'UTC';
 DROP TABLE IF EXISTS t_implicit_zone;
@@ -377,6 +462,14 @@ DROP TABLE t_array_float;
 DROP TABLE t_tuple;
 DROP TABLE t_object;
 DROP TABLE t_object_ngrams;
+DROP TABLE t_object_variant;
+DROP TABLE t_sub_array;
+DROP TABLE t_sub_string;
+DROP TABLE t_sub_tuple;
+DROP TABLE t_sub_object;
+DROP TABLE t_sub_nullable;
+DROP TABLE t_sub_dynamic;
+DROP TABLE t_tuple_json;
 DROP TABLE t_implicit_zone;
 DROP TABLE t_implicit_zone_array;
 DROP TABLE t_implicit_zone64;
