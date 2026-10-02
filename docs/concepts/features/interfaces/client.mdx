@@ -211,7 +211,7 @@ A custom prompt (see the `--prompt` option) does not have to contain the `{displ
 
 Entering `/dialect` on its own prints the current dialect.
 
-The command is only recognized in interactive mode: a noninteractive script is parsed as SQL from end to end, and the dialect for it is selected with the `--dialect` option or with a `SET dialect = ...` statement. A `clickhouse-local` script that contains the command is rejected with a message saying that the command is available in interactive mode only.
+The command is only recognized in interactive mode: a noninteractive script is parsed as SQL from end to end, and the dialect for it is selected with the `--dialect` option or with a `SET dialect = ...` statement. When the whole query text of `clickhouse-local` is the command (for example, `clickhouse-local -q '/dialect kusto'`), it is rejected with a message saying that the command is available in interactive mode only. Inside a longer script the command is not recognized at all and is parsed as a part of the script, like any other text.
 
 ### Query processing information {#processing-info}
 
