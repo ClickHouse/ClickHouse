@@ -382,8 +382,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const ActionsDAG::Node & node) const
 {
     RPNElement rpn_element;
-    RPNBuilderTreeContext rpn_tree_context(getContext());
-    RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
+    RPNBuilderTreeNode rpn_node(&node, getContext());
 
     if (!traverseAtomNode(rpn_node, rpn_element))
         return nullptr;
@@ -405,8 +404,7 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
     if (function_name == "like" || function_name == "ilike" || function_name == "mapContainsKeyValue")
         return true;
 
-    RPNBuilderTreeContext rpn_tree_context(getContext());
-    RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
+    RPNBuilderTreeNode rpn_node(&node, getContext());
     const auto function_node = rpn_node.toFunctionNode();
 
     return tokenizerArgumentMatchesIndex(function_name, function_node.getArgumentAt(2));
@@ -1973,7 +1971,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
                 /// A NULL key is declined: `arrayElement` returns NULL for it, not the default value.
                 Field key_field;
                 DataTypePtr key_type;
-                if (!RPNBuilderTreeNode(const_key_argument, function_node.getTreeContext()).tryGetConstant(key_field, key_type)
+                if (!RPNBuilderTreeNode(const_key_argument, function_node.getContext()).tryGetConstant(key_field, key_type)
                     || key_field.getType() != Field::Types::String)
                     return false;
 
@@ -2274,7 +2272,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     if (!future_set)
         return false;
 
-    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
+    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getContext());
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
