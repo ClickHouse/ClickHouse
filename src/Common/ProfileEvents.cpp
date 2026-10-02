@@ -825,7 +825,7 @@ The server successfully detected this situation and will download merged part fr
     M(S3DeleteObjects, "Number of S3 API DeleteObject(s) calls.", ValueType::Number) \
     M(S3CopyObject, "Number of S3 API CopyObject calls.", ValueType::Number) \
     M(S3ListObjects, "Number of S3 API ListObjects calls.", ValueType::Number) \
-    M(S3HeadObject,  "Number of S3 API HeadObject calls.", ValueType::Number) \
+    M(S3HeadObject, "Number of S3 API HeadObject calls.", ValueType::Number) \
     M(S3GetObjectTagging, "Number of S3 API GetObjectTagging calls.", ValueType::Number) \
     M(S3CreateMultipartUpload, "Number of S3 API CreateMultipartUpload calls.", ValueType::Number) \
     M(S3UploadPartCopy, "Number of S3 API UploadPartCopy calls.", ValueType::Number) \
@@ -915,7 +915,6 @@ The server successfully detected this situation and will download merged part fr
     M(CachedReadBufferReadFromSourceBytes, "Bytes read from filesystem cache source (from remote fs, etc)", ValueType::Bytes) \
     M(CachedReadBufferPredownloadedFromSourceBytes, "Bytes read from filesystem cache source for predownload (from remote fs, etc)", ValueType::Bytes) \
     M(CachedReadBufferReadFromCacheBytes, "Bytes read from filesystem cache", ValueType::Bytes) \
-    M(CachedReadBufferPredownloadedBytes, "Bytes read from filesystem cache source. Cache segments are read from left to right as a whole, it might be that we need to predownload some part of the segment irrelevant for the current task just to get to the needed data", ValueType::Bytes) \
     M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache", ValueType::Bytes) \
     M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache", ValueType::Microseconds) \
     M(CachedReadBufferCacheWriteStopped, "Number of times writing a file segment into the filesystem cache was stopped mid-download (space reservation or the cache write failed), after which the read continues bypassing the cache", ValueType::Number) \
