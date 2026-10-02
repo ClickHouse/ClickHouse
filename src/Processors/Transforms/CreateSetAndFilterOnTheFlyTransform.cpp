@@ -1,13 +1,13 @@
 #include <Processors/Transforms/CreateSetAndFilterOnTheFlyTransform.h>
 
 #include <cstddef>
+#include <cstring>
 
 #include <Interpreters/SetWithState.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnSparse.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <base/types.h>
@@ -186,7 +186,7 @@ void FilterBySetOnTheFlyTransform::transform(Chunk & chunk)
         ColumnPtr mask_col = set->execute(key_columns, false);
         const auto & mask = assert_cast<const ColumnUInt8 *>(mask_col.get())->getData();
 
-        if (memoryIsByte(mask.data(), 0, mask.size(), 1))
+        if (mask.front() && std::memchr(mask.data() + 1, 0, mask.size() - 1) == nullptr)
             return;
 
         stat.result_rows -= chunk.getNumRows();
