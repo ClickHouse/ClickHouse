@@ -78,6 +78,10 @@ std::optional<String> SecretArgumentsRegistry::renderSecretSetting(const String 
     for (const auto & [_, creator] : DatabaseFactory::instance().getDatabaseEngines())
         if (auto it = creator.secret_arguments.secret_settings.find(name); it != creator.secret_arguments.secret_settings.end())
             return it->second(value);
+    /// A table function takes a `SETTINGS` clause among its arguments (`iceberg(..., SETTINGS auth_header = '...')`).
+    for (const auto & [_, data] : TableFunctionFactory::instance().getAllTableFunctions())
+        if (auto it = data.secret_arguments.secret_settings.find(name); it != data.secret_arguments.secret_settings.end())
+            return it->second(value);
     return {};
 }
 

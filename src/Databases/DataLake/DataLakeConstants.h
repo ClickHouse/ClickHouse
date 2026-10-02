@@ -2,6 +2,7 @@
 
 #include <unordered_set>
 #include <Core/Types.h>
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Core/Field.h>
 #include <Common/HiddenSecret.h>
 #include <optional>
@@ -48,4 +49,13 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
     {"dlf_access_key_id", DB::hideSecretValue},
     {"dlf_access_key_secret", DB::hideSecretValue},
 };
+
+/// The data lake table engines and table functions read `DataLakeStorageSettings`, and hide their credentials
+/// in their own `SETTINGS`.
+inline DB::SecretArgumentsSpec withSecretSettings(DB::SecretArgumentsSpec spec)
+{
+    spec.secret_settings = SETTINGS_TO_HIDE;
+    return spec;
+}
+
 }
