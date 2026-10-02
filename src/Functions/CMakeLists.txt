@@ -7,6 +7,7 @@ add_headers_and_sources(clickhouse_functions Kusto)
 # This allows less dependency and linker work (specially important when building many example executables)
 set(DBMS_FUNCTIONS
     ComparisonOrderDomain.cpp # ComparisonOrderDomain::operator== (Used by LogicalExpressionOptimizerPass.cpp)
+    ComparisonParams.cpp # ComparisonParams::ComparisonParams (Used by MergeTreeIndexConditionText.cpp)
     IFunction.cpp # IFunctionOverloadResolver::getLambdaArgumentTypes, IExecutableFunction::execute... (Many AST visitors, analyzer passes, some storages...)
     IFunctionAdaptors.cpp # FunctionToFunctionBaseAdaptor (Used by FunctionFactory.cpp)
     FunctionDynamicAdaptor.cpp # IFunctionOverloadResolver::getLambdaArgumentTypes, IExecutableFunction::execute... (Many AST visitors, analyzer passes, some storages...)
@@ -62,6 +63,7 @@ set(DBMS_FUNCTIONS
 extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
     ComparisonOrderDomain.h
+    ComparisonParams.h
     IFunction.h
     FunctionFactory.h
     FunctionHelpers.h

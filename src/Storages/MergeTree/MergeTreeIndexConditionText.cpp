@@ -10,9 +10,12 @@
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <Functions/ComparisonParams.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/MultiSearchImpl.h>
 #include <Functions/checkHyperscanRegexp.h>
@@ -25,6 +28,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/TokenizerFactory.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -1055,6 +1059,102 @@ static String serializeFieldAsText(const Field & value, const DataTypePtr & type
     return buf.str();
 }
 
+/// A `Dynamic` or `Variant` value has the type of its row, not of its path.
+static bool holdsValuesOfSeveralTypes(const IDataType & type)
+{
+    bool result = isDynamic(type) || isVariant(type);
+    type.forEachChild([&](const IDataType & child) { result |= isDynamic(child) || isVariant(child); });
+    return result;
+}
+
+static bool isCastFunction(const RPNBuilderTreeNode & node)
+{
+    if (!node.isFunction())
+        return false;
+
+    const auto function = node.toFunctionNode();
+    const auto function_name = function.getFunctionName();
+    return (function_name == "CAST" || function_name == "_CAST") && function.getArgumentsSize() == 2;
+}
+
+/// The JSON path in the node, as `tryMatchNodeToJSONIndex` matches it.
+static RPNBuilderTreeNode getJSONPathNode(const RPNBuilderTreeNode & node)
+{
+    return isCastFunction(node) ? node.toFunctionNode().getArgumentAt(0) : node;
+}
+
+static bool isCastOfTypedJSONPath(const RPNBuilderTreeNode & node)
+{
+    if (!isCastFunction(node))
+        return false;
+
+    const auto * path_node = getJSONPathNode(node).getDAGNode();
+    return !path_node || !holdsValuesOfSeveralTypes(*path_node->result_type);
+}
+
+/// Whether `JSONAllValues` writes one text for a value of the type: a `DateTime` without a time zone is written
+/// in `session_timezone`, and a nested `JSON` holds values of runtime types.
+static bool hasStableText(const IDataType & type)
+{
+    auto is_stable = [](const IDataType & part)
+    {
+        if (isObject(part))
+            return false;
+        if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(&part))
+            return date_time->hasExplicitTimeZone();
+        if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&part))
+            return date_time64->hasExplicitTimeZone();
+        return true;
+    };
+
+    bool result = is_stable(type);
+    type.forEachChild([&](const IDataType & child) { result &= is_stable(child); });
+    return result;
+}
+
+/// `-0` equals `0` and has another text.
+static bool containsFloatZero(const Field & value)
+{
+    switch (value.getType())
+    {
+        case Field::Types::Float64:
+            return value.safeGet<Float64>() == 0;
+        case Field::Types::Array:
+            return std::ranges::any_of(value.safeGet<Array>(), containsFloatZero);
+        case Field::Types::Tuple:
+            return std::ranges::any_of(value.safeGet<Tuple>(), containsFloatZero);
+        case Field::Types::Map:
+            return std::ranges::any_of(value.safeGet<Map>(), containsFloatZero);
+        default:
+            return false;
+    }
+}
+
+/// The text of the only value of `type` that `equals` matches with the constant, or nullopt when it is not known exactly.
+static std::optional<String> getTextOfEqualValue(
+    const DataTypePtr & type, const Field & value, const DataTypePtr & value_type, const ContextPtr & context)
+{
+    const auto constant_type = removeNullable(removeLowCardinality(value_type));
+
+    Field converted;
+    if (constant_type->equals(*type))
+        converted = value;
+    else if (isStringOrFixedString(constant_type))
+        converted = tryConvertFieldToType(value, *type, constant_type.get(), ComparisonParams(context).format_settings);
+    else if (isNativeNumber(constant_type) && isNativeNumber(type))
+        converted = tryConvertFieldToTypeExact(value, *type, constant_type.get());
+
+    if (converted.isNull() || containsFloatZero(converted))
+        return {};
+
+    /// The conversion leaves a string longer than the `FixedString` as is.
+    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(type.get());
+        fixed_string_type && converted.safeGet<String>().size() > fixed_string_type->getN())
+        return {};
+
+    return serializeFieldAsText(converted, type);
+}
+
 static void validateRegexpPatterns(const Array & patterns, const Settings & settings)
 {
     VectorWithMemoryTracking<std::string_view> needles;
@@ -1294,6 +1394,38 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
     {
+        const auto * path_node = getJSONPathNode(index_column_node).getDAGNode();
+        if (!path_node)
+            return false;
+
+        /// `JSONAllValues` holds the text of a typed path's value in the path's type.
+        if (!holdsValuesOfSeveralTypes(*path_node->result_type))
+        {
+            if (isCastOfTypedJSONPath(index_column_node))
+                return false;
+
+            const auto path_type = removeNullable(removeLowCardinality(path_node->result_type));
+            if (!isString(path_type))
+            {
+                if (!hasStableText(*path_type))
+                    return false;
+
+                if (function_name == "equals")
+                {
+                    auto text = getTextOfEqualValue(path_type, value_field, value_type, getContext());
+                    if (!text)
+                        return false;
+
+                    value_field = std::move(*text);
+                    value_type = std::make_shared<DataTypeString>();
+                }
+                else if (!isFixedString(path_type))
+                {
+                    return false;
+                }
+            }
+        }
+
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
@@ -2271,7 +2403,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             return true;
         }
         return hasIndexForColumn(node.getColumnName())
-            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
+            || (tryMatchNodeToJSONIndex(node, header, "JSONAllValues") && !isCastOfTypedJSONPath(node));
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
