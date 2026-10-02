@@ -37,3 +37,11 @@ SELECT t1.k FROM (SELECT number AS k FROM numbers(3)) AS t1 LEFT SEMI JOIN (SELE
 1
 SELECT t1.k FROM (SELECT number AS k FROM numbers(3)) AS t1 LEFT ANTI JOIN (SELECT number AS k, k FROM numbers(3)) AS t2 ON t1.k < t2.k ORDER BY 1;
 2
+SELECT t1.k FROM (SELECT number AS k FROM numbers(3)) AS t1 LEFT SEMI JOIN (SELECT number AS k, * FROM (SELECT number, number + 10 AS k FROM numbers(3))) AS t2 ON t2.k >= t1.k AND t2.k <= t1.k ORDER BY 1;
+0
+1
+2
+SELECT t1.k FROM (SELECT number AS k FROM numbers(3)) AS t1 LEFT SEMI JOIN (SELECT number AS k, * FROM (SELECT number, number + 10 AS k FROM numbers(3))) AS t2 ON t2.k = t1.k ORDER BY 1;
+0
+1
+2
