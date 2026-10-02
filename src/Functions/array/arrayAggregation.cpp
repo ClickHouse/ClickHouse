@@ -151,22 +151,31 @@ struct ArrayAggregateImpl
         return result;
     }
 
-    /// Vectorized fast path for plain numeric arrays: reduce each array slice with findExtremeMin/Max
-    /// (branchless SIMD horizontal min/max) instead of a per-element compareAt.
+    /// Fast path for fixed-width arrays supported by findExtreme*: reduce each array slice directly
+    /// instead of a per-element compareAt. Native-width types use the vectorized reduction, while
+    /// wide integers and decimals use the existing wide-value kernel.
     /// The result is bitwise-identical to the generic path: the extreme value is unique up to representation,
     /// and the only value classes with multiple representations (NaN payloads and 0.0/-0.0) are fixed up below
     /// to return the first occurrence, which is what compareAt-based selection returns.
     template <typename Element>
-    requires(has_find_extreme_implementation<Element>)
+    requires(has_find_extreme_implementation<Element> || underlying_has_find_extreme_implementation<Element>)
     static bool executeMinOrMaxNumeric(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
     {
-        const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
+        using ColVecType = ColumnVectorOrDecimal<Element>;
+
+        const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
         if (!column)
             return false;
 
         const Element * data = column->getData().data();
-        auto res_column = ColumnVector<Element>::create(offsets.size());
-        typename ColumnVector<Element>::Container & res = res_column->getData();
+
+        typename ColVecType::MutablePtr res_column;
+        if constexpr (is_decimal<Element>)
+            res_column = ColVecType::create(offsets.size(), column->getScale());
+        else
+            res_column = ColVecType::create(offsets.size());
+
+        typename ColVecType::Container & res = res_column->getData();
 
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -260,7 +269,12 @@ struct ArrayAggregateImpl
             || executeMinOrMaxNumeric<Int128>(mapped, offsets, res_ptr)
             || executeMinOrMaxNumeric<Int256>(mapped, offsets, res_ptr)
             || executeMinOrMaxNumeric<Float32>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Float64>(mapped, offsets, res_ptr))
+            || executeMinOrMaxNumeric<Float64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Decimal32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Decimal64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Decimal128>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Decimal256>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<DateTime64>(mapped, offsets, res_ptr))
             return;
 
         MutableColumnPtr res_column = mapped->cloneEmpty();
