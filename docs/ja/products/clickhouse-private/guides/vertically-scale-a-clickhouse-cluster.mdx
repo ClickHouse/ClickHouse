@@ -1,0 +1,85 @@
+---
+noindex: true
+title: "ClickHouseクラスターを垂直スケール"
+sidebarTitle: "クラスターをスケール"
+description: "Private APIを使用して、ClickHouseクラスターのCPUとメモリのリソースを調整します。"
+---
+
+Private APIを使用して、ClickHouseクラスターのCPUとメモリのリソースを調整します。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* ClickHouse Private API がインストール済みで、アクセス可能であること (例: `http://localhost:8080/` へのポートフォワード経由) 
+* 少なくとも 1 つの ClickHouse クラスターがデプロイされていること (このガイドでは `default-xx-01` を使用) 
+
+<Steps>
+  <Step>
+    ## 1. スケールリクエストを作成する
+
+    必要なリソース割り当てを指定した JSON ファイルを作成します。
+
+    ```json
+    {
+      "vertical": {
+        "resources": {
+          "cpu": "4",
+          "memory": "16Gi"
+        }
+      }
+    }
+    ```
+
+    これを `scale.json` として保存します。
+  </Step>
+
+  <Step>
+    ## 2. リクエストを送信する
+
+    ```bash
+    curl -X POST "http://localhost:8080/api/v1/instances/default-xx-01/scale" \
+        -H "Content-Type: application/json" \
+        --data-binary "@scale.json"
+    ```
+  </Step>
+
+  <Step>
+    ## 3. CPU:メモリ比率の制約
+
+    API では、**CPU とメモリの比率を 1:4** (CPU 1 コアあたりメモリ 4 GiB) にする制約があり、5% の許容幅が設けられています。
+
+    どちらか一方のリソース種別だけを指定した場合、API がもう一方を自動的に算出します。たとえば、`"memory": "16Gi"` のみを指定すると、CPU は 4 コアに設定されます。
+
+    **指定可能なリソース量のフォーマット:**
+
+    | 種類     | 例                                                       |
+    | ------ | ------------------------------------------------------- |
+    | CPU    | `"4"` (cores), `"2.5"` (decimal), `"500m"` (millicores) |
+    | Memory | `"16Gi"` (gibibytes), `"4096Mi"` (mebibytes)            |
+
+    メモリにはバイナリ単位 (Ki、Mi、Gi) の使用を推奨します。
+  </Step>
+
+  <Step>
+    ## 4. スケーリングの進行状況を監視する
+
+    スケーリング処理の進行状況を確認するには、クラスターのステータスを確認します。
+
+    ```bash
+    curl "http://localhost:8080/api/v1/instances/default-xx-01/status"
+    ```
+
+    レスポンスには次の情報が含まれます: - `state`: 現在のクラスター状態 - `previousState`: 遷移前の状態 - `message`: 状態遷移の詳細
+
+    クラスターが再び稼働状態に戻れば、スケーリングは完了です。
+  </Step>
+</Steps>
+
+<div id="rolling-restart-behavior">
+  ## ローリング再起動の挙動
+</div>
+
+API は、`ClickhouseCluster` カスタムリソースの `ServerPodPolicy` を更新します。これにより、operator は新しいリソース割り当てを反映して StatefulSet のローリング再起動を実行します。
+
+> **重要:** ClickHouse Cloud とは異なり、ClickHouse Private では [Make Before Break (MBB) scaling](https://clickhouse.com/docs/manage/scaling#how-scaling-works-in-clickhouse-cloud) は使用されません。垂直スケーリングを行うと、ローリング再起動中に短時間サービスが中断する可能性があります。

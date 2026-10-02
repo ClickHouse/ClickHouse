@@ -47,7 +47,7 @@ To install Clang on Ubuntu/Debian, use LLVM's automatic installation script from
 ```bash
 wget https://apt.llvm.org/llvm.sh
 chmod +x llvm.sh
-sudo ./llvm.sh 22
+sudo ./llvm.sh 21
 ```
 
 For other Linux distributions, check if you can install any of LLVM's [prebuild packages](https://releases.llvm.org/download.html).
@@ -87,8 +87,8 @@ You can have several different directories (e.g. `build_release`, `build_debug`,
 Optional: If you have multiple compiler versions installed, you can optionally specify the exact compiler to use.
 
 ```sh
-export CC=clang-22
-export CXX=clang++-22
+export CC=clang-21
+export CXX=clang++-21
 ```
 
 For development purposes, debug builds are recommended.

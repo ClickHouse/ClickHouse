@@ -12,7 +12,7 @@ integration:
 
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 import { Image } from "/snippets/ar/components/Image.jsx";
-import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
@@ -32,7 +32,9 @@ Lightdash هي **منصة ذكاء أعمال قائمة على الذكاء ا�
 <Image size="md" img="/images/integrations/data-visualization/lightdash_02.webp" alt="مثال على لوحة معلومات في Lightdash" border />
 
 <Steps>
-  <Step title="اجمع تفاصيل الاتصال" id="connection-data-required">
+  <Step>
+    ### اجمع تفاصيل الاتصال
+
     عند إعداد الاتصال بين Lightdash وClickHouse، ستحتاج إلى التفاصيل التالية:
 
     * **Host:** العنوان الذي تعمل عليه قاعدة بيانات ClickHouse
@@ -50,7 +52,9 @@ Lightdash هي **منصة ذكاء أعمال قائمة على الذكاء ا�
     ***
   </Step>
 
-  <Step title="قم بتهيئة ملف تعريف dbt لـ ClickHouse" id="configuring-your-dbt-profile-for-clickhouse">
+  <Step>
+    ### قم بتهيئة ملف تعريف dbt لـ ClickHouse
+
     في Lightdash، تستند الاتصالات إلى **مشروع dbt** الحالي لديك.
     للاتصال بـ ClickHouse، تأكد من أن ملفك المحلي `~/.dbt/profiles.yml` يتضمن إعداد target صالحًا لـ ClickHouse.
 
@@ -61,7 +65,9 @@ Lightdash هي **منصة ذكاء أعمال قائمة على الذكاء ا�
     <br />
   </Step>
 
-  <Step title="أنشئ مشروع Lightdash متصلًا بـ ClickHouse" id="creating-a-lightdash-project-connected-to-clickhouse">
+  <Step>
+    ### أنشئ مشروع Lightdash متصلًا بـ ClickHouse
+
     بمجرد تهيئة ملف تعريف dbt لاستخدام ClickHouse، ستحتاج أيضًا إلى ربط **مشروع dbt** الخاص بك بـ Lightdash.
 
     ولأن هذه العملية هي نفسها في جميع مستودعات البيانات، فلن نتناولها هنا بالتفصيل — يمكنك اتباع دليل Lightdash الرسمي لاستيراد مشروع dbt:
@@ -73,7 +79,9 @@ Lightdash هي **منصة ذكاء أعمال قائمة على الذكاء ا�
     ***
   </Step>
 
-  <Step title="استكشف بيانات ClickHouse في Lightdash" id="exploring-your-clickhouse-data-in-lightdash">
+  <Step>
+    ### استكشف بيانات ClickHouse في Lightdash
+
     بمجرد الاتصال، يزامن Lightdash تلقائيًا نماذج dbt الخاصة بك ويعرض ما يلي:
 
     * **الأبعاد** و**المقاييس** المعرّفة في YAML
@@ -85,7 +93,9 @@ Lightdash هي **منصة ذكاء أعمال قائمة على الذكاء ا�
     ***
   </Step>
 
-  <Step title="تحديد المقاييس والأبعاد في Lightdash" id="defining-metrics-and-dimensions-in-lightdash">
+  <Step>
+    ### تحديد المقاييس والأبعاد في Lightdash
+
     في Lightdash، تُعرَّف جميع **المقاييس** و**الأبعاد** مباشرةً في ملفات `.yml` الخاصة بنماذج dbt. وهذا يجعل منطق الأعمال لديك خاضعًا للتحكم في الإصدارات، ومتسقًا، وشفافًا بالكامل.
 
     <Image size="md" img="/images/integrations/data-visualization/lightdash_03.webp" alt="مثال على تعريف المقاييس في ملف .yml" border />
@@ -102,7 +112,9 @@ Lightdash هي **منصة ذكاء أعمال قائمة على الذكاء ا�
     ***
   </Step>
 
-  <Step title="استعلم عن بياناتك من الجداول" id="querying-your-data-from-tables">
+  <Step>
+    ### استعلم عن بياناتك من الجداول
+
     بمجرد ربط مشروع dbt الخاص بك بـ Lightdash ومزامنته معه، يمكنك البدء في استكشاف البيانات مباشرةً من **الجداول** (أو &quot;الاستكشافات&quot;).
     يمثّل كل جدول نموذجًا في dbt، ويتضمّن المقاييس والأبعاد التي عرّفتها في YAML.
 
@@ -124,7 +136,9 @@ Lightdash هي **منصة ذكاء أعمال قائمة على الذكاء ا�
     ***
   </Step>
 
-  <Step title="إنشاء لوحات المعلومات" id="building-dashboards">
+  <Step>
+    ### إنشاء لوحات المعلومات
+
     بعد استكشاف بياناتك وحفظ التصورات، يمكنك جمعها في **لوحات معلومات** لمشاركتها مع فريقك.
 
     تتميز لوحات المعلومات في Lightdash بأنها تفاعلية بالكامل — إذ يمكنك تطبيق عوامل التصفية، وإضافة علامات تبويب، وعرض مخططات تعتمد على استعلامات ClickHouse في الوقت الفعلي.
@@ -146,8 +160,10 @@ Lightdash هي **منصة ذكاء أعمال قائمة على الذكاء ا�
     ***
   </Step>
 
-  <Step title="Ask AI: تحليلات ذاتية الخدمة مدعومة بـ dbt" id="ask-ai">
-    **AI Agents** في Lightdash تجعل استكشاف البيانات ذاتي الخدمة بالفعل.
+  <Step>
+    ### Ask AI: تحليلات ذاتية الخدمة مدعومة بـ dbt
+
+    تجعل **AI Agents** في Lightdash استكشاف البيانات ذاتي الخدمة بالفعل.
     فبدلًا من كتابة الاستعلامات، يمكنك ببساطة طرح الأسئلة بلغة طبيعية — مثل *&quot;ما نمو إيراداتنا الشهري؟&quot;* — وسينشئ AI Agent تلقائيًا التصور المناسب، مع الاستناد إلى المقاييس والنماذج المعرّفة في dbt لضمان الدقة والاتساق.
 
     وهي مدعومة بالطبقة الدلالية نفسها التي تستخدمها في dbt، ما يعني أن كل إجابة تظل خاضعة للحوكمة، وقابلة للتفسير، وسريعة — وكل ذلك بالاستناد إلى ClickHouse.

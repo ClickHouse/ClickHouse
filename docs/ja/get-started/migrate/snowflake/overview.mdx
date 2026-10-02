@@ -158,9 +158,9 @@ S3 のスケーラビリティ特性は、shared-disk
   がないため、
   リアルタイム分析に[より適しています](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)。
   またユーザーは、その利用方法をきめ細かく制御でき、
-  [クエリごと](/ja/reference/settings/session-settings/use-query#use_query_cache)の利用制御、
-  [正確なサイズ](/ja/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes)、
-  [クエリを cache するかどうか](/ja/reference/settings/session-settings/enable#enable_writes_to_query_cache)
+  [クエリごと](/ja/reference/settings/session-settings#use_query_cache)の利用制御、
+  [正確なサイズ](/ja/reference/settings/session-settings#query_cache_max_size_in_bytes)、
+  [クエリを cache するかどうか](/ja/reference/settings/session-settings#enable_writes_to_query_cache)
   (有効期間や必要実行回数の制限) 、
   さらに[受動的にのみ使用する](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design#using-logs-and-settings)
   かどうかも指定できます。

@@ -30,7 +30,7 @@ StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescrip
 {
 }
 
-std::optional<Float64> StatisticsCountMinSketch::estimateEqual(const Field & val) const
+Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
 {
     /// Coerce the comparison field to data_type (e.g. parse '5' into a number). `val` may have an
     /// unrelated type on paths that do not pre-coerce it, such as `col IN (subquery)`.
