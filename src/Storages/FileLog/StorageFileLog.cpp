@@ -716,6 +716,7 @@ void StorageFileLog::threadFunc()
         auto table_id = getStorageID();
 
         auto dependencies_count = getTableDependentCount();
+        reschedule = !dependencies_count;
 
         if (dependencies_count)
         {
