@@ -450,12 +450,10 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         else
             new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
     }
-    /// Whether this hop can read with parallel replicas is decided per shard below, from the shard's
-    /// replica count, and not here by turning the setting off: `new_settings` is what the shard
-    /// receives. A cluster whose every shard has one replica cannot use parallel replicas for this hop,
-    /// but the shard's own table may be a `Distributed` table over a cluster that can, and shipping the
-    /// disable there took parallel replicas away from that read too. A shard that cannot use them
-    /// declines on its own, see `canUseParallelReplicasOnInitiator`.
+    /// Parallel replicas are not disabled here for a cluster whose every shard has one replica:
+    /// `new_settings` is what the shard receives, and its own table may be a `Distributed` table over a
+    /// cluster that can use them. Whether this hop uses them is decided per shard below, and a shard
+    /// that cannot declines on its own, see `canUseParallelReplicasOnInitiator`.
 
     if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
     {
