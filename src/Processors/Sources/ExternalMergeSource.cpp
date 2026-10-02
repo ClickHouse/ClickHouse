@@ -61,7 +61,7 @@ ExternalMergeSource::ExternalMergeSource(
     chassert(num_files);
     LOG_TRACE(log, "Preparing external merge with {} files in {} groups (fan-in limit: {})",
         num_files, groups.size(), max_fan_in);
-    if (max_fan_in && num_files > max_fan_in)
+    if (needsIntermediateMerges(num_files, max_fan_in))
         for (auto & group : groups)
             std::ranges::make_heap(group.runs, std::greater{}, &Run::compressed_size);
 }
@@ -187,7 +187,7 @@ void ExternalMergeSource::prepareMerge()
     chassert(processors.empty());
     SharedHeaders headers;
     size_t uncompressed_bytes = 0;
-    const bool is_final_merge = !max_fan_in || num_files <= max_fan_in;
+    const bool is_final_merge = !needsIntermediateMerges(num_files, max_fan_in);
     if (is_final_merge)
     {
         for (auto & group : groups)

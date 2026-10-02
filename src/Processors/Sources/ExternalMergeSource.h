@@ -54,6 +54,10 @@ public:
 
     static size_t validateFanIn(size_t fan_in);
 
+    /// Whether `num_files` exceed a nonzero `max_fan_in`, so that intermediate merges must reduce them before
+    /// the final merge. Each merge, intermediate or final, then reads at most `max_fan_in` files at a time.
+    static bool needsIntermediateMerges(size_t num_files, size_t max_fan_in) { return max_fan_in && num_files > max_fan_in; }
+
     String getName() const override { return "ExternalMergeSource"; }
     Status prepare() override;
     void work() override;
