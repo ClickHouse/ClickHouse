@@ -4,8 +4,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserUndropQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Core/UUID.h>
 
 
@@ -74,14 +72,11 @@ bool ParserUndropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return false;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserUndropQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementUndrop(StatementFactory & factory)
-{
-    factory.registerStatement("UNDROP",
+    documentation["UNDROP"] =
     {
         .description = R"DOCS_MD(
 Cancels the dropping of the table.
@@ -170,7 +165,9 @@ ttl_expression:
 UNDROP TABLE [db.]name [UUID '<uuid>'] [ON CLUSTER cluster]
 )",
         .related = {"DROP", "DETACH", "ATTACH"},
-    });
+    };
+
+    return documentation;
 }
 
 }

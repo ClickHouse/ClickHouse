@@ -6,8 +6,6 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -124,15 +122,11 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     return true;
 }
 
-
-}
-
-namespace DB
+std::map<String, Documentation> ParserOptimizeQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementOptimize(StatementFactory & factory)
-{
-    factory.registerStatement("OPTIMIZE",
+    documentation["OPTIMIZE"] =
     {
         .description = R"DOCS_MD(
 This query tries to initialize an unscheduled merge of data parts for tables. Note that we generally recommend against using `OPTIMIZE TABLE ... FINAL` (see these [docs](/concepts/best-practices/avoid-optimize-final)) as its use case is meant for administration, not for daily operations.
@@ -406,7 +400,9 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
 )",
         .related = {"SYSTEM", "ALTER TABLE ... PARTITION", "CHECK TABLE"},
-    });
+    };
+
+    return documentation;
 }
 
 }

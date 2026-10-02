@@ -94,9 +94,23 @@ void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExterna
     dict.updateDictionaryComment(config.getString(key_in_config + ".comment", ""));
 }
 
+std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, ContextPtr local_context) const
+{
+    auto resolved = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    local_context->addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::Dictionary, resolved.qualified_name.getFullName());
+    return std::move(resolved.key);
+}
+
+std::string ExternalDictionariesLoader::resolveDictionaryName(const QualifiedTableName & dictionary_name, ContextPtr local_context) const
+{
+    auto resolved = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    local_context->addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::Dictionary, resolved.qualified_name.getFullName());
+    return std::move(resolved.key);
+}
+
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context);
 
     /// Check if we have a cancellable query context
     QueryStatusPtr process_list_element;
@@ -138,7 +152,7 @@ ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(co
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context);
     auto dictionary = std::static_pointer_cast<const IDictionary>(tryLoad(resolved_dictionary_name));
 
     if (local_context->hasQueryContext() && local_context->getSettingsRef()[Setting::log_queries] && dictionary)
@@ -150,25 +164,25 @@ ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary
 
 void ExternalDictionariesLoader::reloadDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context);
     loadOrReload(resolved_dictionary_name);
 }
 
 void ExternalDictionariesLoader::reloadDictionary(const QualifiedTableName & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context);
     loadOrReload(resolved_dictionary_name);
 }
 
 bool ExternalDictionariesLoader::unloadDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context);
     return unload(resolved_dictionary_name);
 }
 
 bool ExternalDictionariesLoader::unloadDictionary(const QualifiedTableName & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context);
     return unload(resolved_dictionary_name);
 }
 
@@ -179,7 +193,7 @@ void ExternalDictionariesLoader::unloadAllDictionaries() const
 
 DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std::string & dictionary_name, ContextPtr query_context) const
 {
-    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase());
+    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context);
 
     auto load_result = getLoadResult(resolved_name);
 
@@ -197,7 +211,7 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
 
 std::string ExternalDictionariesLoader::getDictionaryLayoutType(const std::string & dictionary_name, ContextPtr query_context) const
 {
-    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase());
+    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context);
 
     auto load_result = getLoadResult(resolved_name);
     if (!load_result.config)
@@ -222,7 +236,10 @@ void ExternalDictionariesLoader::assertDictionaryStructureExists(const std::stri
 
 QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr query_context) const
 {
-    return qualifyDictionaryNameWithDatabase(dictionary_name, query_context->getCurrentDatabase());
+    /// Recording usage needed to verify if query is supported for distributed execution under make_distributed_plan=1
+    const auto name = qualifyDictionaryNameWithDatabase(dictionary_name, query_context->getCurrentDatabase());
+    query_context->addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::Dictionary, name.getFullName());
+    return name;
 }
 
 QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, const std::string & current_database_name) const
@@ -238,47 +255,47 @@ QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase
     /// If dictionary was not qualified with database name, try to resolve dictionary as xml dictionary.
     if (qualified_name->database.empty() && !has(qualified_name->table))
     {
-        std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
+        auto resolved = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
 
         /// If after qualify dictionary_name with default_database_name we find it, add default_database to qualified name.
-        if (has(resolved_name))
+        if (has(resolved.key))
             qualified_name->database = current_database_name;
     }
 
     return *qualified_name;
 }
 
-std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const
+ExternalDictionariesLoader::ResolvedDictionaryName ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const
 {
     if (has(dictionary_name))
-        return dictionary_name;
+        return {dictionary_name, QualifiedTableName::tryParseFromString(dictionary_name).value_or(QualifiedTableName{.database = {}, .table = dictionary_name})};
 
-    std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
+    auto resolved = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
 
-    if (has(resolved_name))
-        return resolved_name;
+    if (has(resolved.key))
+        return resolved;
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary ({}) not found", backQuote(dictionary_name));
 }
 
-std::string ExternalDictionariesLoader::resolveDictionaryName(const QualifiedTableName & dictionary_name, const std::string & current_database_name) const
+ExternalDictionariesLoader::ResolvedDictionaryName ExternalDictionariesLoader::resolveDictionaryName(const QualifiedTableName & dictionary_name, const std::string & current_database_name) const
 {
-    std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
+    auto resolved = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
 
-    if (has(resolved_name))
-        return resolved_name;
+    if (has(resolved.key))
+        return resolved;
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary ({}) not found", backQuote(dictionary_name.getFullName()));
 }
 
-std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog(const std::string & name, const std::string & current_database_name) const
+ExternalDictionariesLoader::ResolvedDictionaryName ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog(const std::string & name, const std::string & current_database_name) const
 {
     /// If it's dictionary from Atomic database, then we need to convert qualified name to UUID.
     /// Try to split name and get id from associated StorageDictionary.
     /// If something went wrong, return name as is.
 
     if (name.empty())
-        return name;
+        return {name, QualifiedTableName{.database = {}, .table = name}};
 
     /// `db.dict`, or a hierarchical name: `a.b.dict`, or `dict` inside `USE a.b` (see `DatabaseCatalog`).
     StorageID dictionary_id = DatabaseCatalog::parseHierarchicalName(name);
@@ -289,33 +306,34 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
         /// or it's an XML dictionary.
         bool is_xml_dictionary = has(name);
         if (is_xml_dictionary)
-            return name;
+            return {name, QualifiedTableName{.database = {}, .table = dictionary_id.table_name}};
     }
 
     return resolveDictionaryNameFromDatabaseCatalog({dictionary_id.database_name, dictionary_id.table_name}, current_database_name);
 }
 
-std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog(const QualifiedTableName & name, const std::string & current_database_name) const
+ExternalDictionariesLoader::ResolvedDictionaryName ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog(const QualifiedTableName & name, const std::string & current_database_name) const
 {
     auto context = const_pointer_cast<Context>(getContext());
 
     /// The name is taken as written when such a dictionary exists (`db`.`dict.with.dots`); otherwise the other
     /// splits of the hierarchical name are tried, also inside the current database (see `DatabaseCatalog`).
     StorageID dictionary_id = DatabaseCatalog::instance().resolveHierarchicalName({name.database, name.table}, current_database_name, context);
+    QualifiedTableName qualified_name{.database = dictionary_id.database_name, .table = dictionary_id.table_name};
     String res = dictionary_id.getFullNameNotQuoted();
 
     auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(dictionary_id, context);
 
     if (!db)
-        return res;
+        return {res, qualified_name};
     chassert(table);
 
     if (db->getUUID() == UUIDHelpers::Nil)
-        return res;
+        return {res, qualified_name};
     if (table->getName() != "Dictionary")
-        return res;
+        return {res, qualified_name};
 
-    return toString(table->getStorageID().uuid);
+    return {toString(table->getStorageID().uuid), qualified_name};
 }
 
 DictionaryStructure

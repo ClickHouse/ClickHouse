@@ -329,6 +329,10 @@ public:
 
     void nodeLoadedFromSnapshot(std::string_view path, const KeeperNodeStats & stats);
 
+    /// Undoes the bookkeeping done by `nodeLoadedFromSnapshot` for an orphaned node that is
+    /// removed from the snapshot during startup recovery (`remove_orphaned_nodes_on_startup`).
+    void nodeRemovedFromSnapshot(std::string_view path, const KeeperNodeStats & stats);
+
     /// Register watches from a request/response pair.
     void updateWatches(
         const Coordination::ZooKeeperRequestPtr & zk_request,

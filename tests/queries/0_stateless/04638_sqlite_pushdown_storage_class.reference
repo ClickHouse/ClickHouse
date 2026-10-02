@@ -1,0 +1,12 @@
+Int64 over INTEGER declared type holding the TEXT cell abc, x = 0 must keep the row:
+0	abc
+String over BLOB declared type, s = abc must keep the row:
+abc
+String over the BLOB column of a STRICT table, b = abc must keep the row:
+abc
+Int64 over the ANY column of a STRICT table holding the TEXT cell abc, a = 0 must keep the row:
+0
+Query: SELECT `x` FROM `t`
+Query: SELECT `s` FROM `t`
+Query: SELECT `b` FROM `st`
+Query: SELECT `a` FROM `st`

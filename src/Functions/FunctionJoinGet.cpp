@@ -11,6 +11,8 @@
 #include <Storages/TableLockHolder.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 
 namespace DB
 {
@@ -21,6 +23,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -81,6 +84,12 @@ public:
     }
 
     String getName() const override { return function_name; }
+
+    /// A `Join` table is local to the server that holds it and is not kept in sync with anything, so
+    /// the same call answers differently on another node. The overload resolver says so already, but
+    /// whoever asks the built function - a predicate on its way to a shard, an index analysis - asks
+    /// this one, and `IFunctionBase` answers `true` by default. `dictGet` overrides it here as well.
+    bool isDeterministic() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -146,7 +155,14 @@ ExecutableFunctionPtr FunctionJoinGet::prepare(const ColumnsWithTypeAndName &) c
 
     Names column_names = storage_join->getKeyNames();
     column_names.push_back(attr_name);
-    context->checkAccess(AccessType::SELECT, storage_join->getStorageID(), column_names);
+    const auto storage_id = storage_join->getStorageID();
+    context->checkAccess(AccessType::SELECT, storage_id, column_names);
+
+    /// The hash table is read as is, so a row policy on the table cannot be applied here any more than in a JOIN.
+    auto row_policy_filter = context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot use {} because a row policy is applied on table {} with the Join engine", function_name, storage_id.getNameForLogs());
 
     return std::make_unique<ExecutableFunctionJoinGet>(function_name, context, table_lock, storage_join, result_columns);
 }
@@ -171,6 +187,8 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
     auto storage_join = std::dynamic_pointer_cast<StorageJoin>(table);
     if (!storage_join)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Table {} should have engine StorageJoin", join_name);
+    /// Resolved on the executing server: a `make_distributed_plan` worker would look it up in its own catalog.
+    context->addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::JoinTable, storage_id.getFullTableName());
 
     String attr_name;
     if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))

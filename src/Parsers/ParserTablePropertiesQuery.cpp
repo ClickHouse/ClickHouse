@@ -3,8 +3,6 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 #include <Common/typeid_cast.h>
 
@@ -138,15 +136,11 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     return true;
 }
 
-
-}
-
-namespace DB
+std::map<String, Documentation> ParserTablePropertiesQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementExists(StatementFactory & factory)
-{
-    factory.registerStatement("EXISTS",
+    documentation["EXISTS"] =
     {
         .description = R"DOCS_MD(
 ```sql
@@ -154,12 +148,70 @@ EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename]
 ```
 
 Returns a single `UInt8`-type column, which contains the single value `0` if the table or database does not exist, or `1` if the table exists in the specified database.
+
+## Subquery form {#subquery-form}
+
+The `EXISTS` operator checks whether a subquery returns any rows. It returns `0` if the subquery result is empty; otherwise, it returns `1`.
+
+You can use `EXISTS` in a [`WHERE`](/reference/statements/select/where) clause. The subquery cannot reference tables or columns from the outer query.
+
+**Syntax**
+
+```sql
+EXISTS(subquery)
+```
+
+**Examples**
+
+Check whether a subquery returns rows:
+
+```sql title="Query"
+SELECT
+    EXISTS(SELECT * FROM numbers(10) WHERE number > 8),
+    EXISTS(SELECT * FROM numbers(10) WHERE number > 11)
+```
+
+```text title="Response"
+┌─in(1, _subquery1)─┬─in(1, _subquery2)─┐
+│                 1 │                 0 │
+└───────────────────┴───────────────────┘
+```
+
+Use `EXISTS` in a `WHERE` clause with a subquery that returns several rows:
+
+```sql title="Query"
+SELECT count()
+FROM numbers(10)
+WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 8)
+```
+
+```text title="Response"
+┌─count()─┐
+│      10 │
+└─────────┘
+```
+
+When the subquery result is empty, `EXISTS` returns `0`:
+
+```sql title="Query"
+SELECT count()
+FROM numbers(10)
+WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 11)
+```
+
+```text title="Response"
+┌─count()─┐
+│       0 │
+└─────────┘
+```
 )DOCS_MD",
         .syntax = R"(
 EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]
 )",
         .related = {"SHOW", "DESCRIBE TABLE", "CREATE"},
-    });
+    };
+
+    return documentation;
 }
 
 }
