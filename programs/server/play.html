@@ -8303,7 +8303,7 @@ let ping_request_num = 0;
 /// credentials to the server.
 let connection_generation = 0;
 /// `probe_credentials` additionally checks the credentials against the server once the ping succeeds.
-/// It is set for the initial load and for the connection commit (see `commitConnection`),
+/// It is set for the initial load of the own endpoint and for the connection commit (see `commitConnection`),
 /// but NOT for intermediate `url` keystrokes: `getServerStatus` puts the password in the request, so
 /// probing on every edit would send it to a half-typed or still-old endpoint before the connection
 /// tuple is committed.
@@ -8327,7 +8327,12 @@ function checkURL(probe_credentials) {
 };
 
 url_elem.addEventListener('input', () => checkURL(false));
-checkURL(true);
+/// The initial probe sends whatever is in `#user` / `#password` once the ping answers, and the browser
+/// may autofill this page's saved login into them in the meantime. That login belongs to the endpoint
+/// this page was served from (see `storeCredentials`), so probe on load only when `?url=` names that
+/// endpoint; any other target (another origin, or another path-routed backend on this one) is only
+/// pinged, and its credentials are first sent by an explicit commit or `Run`.
+checkURL(isOwnServerTarget(url_elem.value));
 
 /// The `/docs` page lives on the ClickHouse server addressed by `url_elem.value`, which may differ from
 /// the page's own origin when `/play` is opened locally (`file://`) or pointed at a remote server.
@@ -10093,7 +10098,7 @@ password_elem.addEventListener('input', onCredentialInput);
 /// the stale check and clear the old indication here — otherwise the fields would keep the previous
 /// server's colour until the block is committed. Marking the connection edited makes that commit
 /// re-check the credentials against the new server even when only the `url` changed. (Registered
-/// after `check_credentials_request_num` is declared, so the initial synchronous `checkURL(true)`
+/// after `check_credentials_request_num` is declared, so the initial synchronous `checkURL`
 /// call above never reaches this before the counter exists.)
 /// Shares `onCredentialInput`'s handling, including its `isTrusted` gate on `connection_edited`.
 url_elem.addEventListener('input', onCredentialInput);

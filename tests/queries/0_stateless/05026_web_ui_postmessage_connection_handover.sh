@@ -201,6 +201,20 @@ content=$(fetch_page schema)
 credential_store=$(echo "$content" | grep -qF "\$('password').value && isOwnServerTarget(\$('url').value)" \
     && echo "$content" | sed -n '/function isOwnServerTarget(value)/,/^}/p' | grep -qF "defaultServerAddress()" \
     && echo endpoint || echo origin)
-credential_retrieval=$(echo "$content" | grep -qF "window.PasswordCredential && isOwnServerTarget(\$('url').value)" \
+# The login filled into `#user` / `#password` is sent automatically (on open, which also retrieves a
+# remembered login, and after a paste) only to the endpoint this page was served from.
+credential_retrieval=$(echo "$content" | sed -n '/^async function autoLoadOnOpen()/,/^}/p' \
+        | grep -qF "if (openedLocally || !isOwnServerTarget(\$('url').value)) return;" \
     && echo endpoint || echo origin)
-echo "schema credential_store=${credential_store} credential_retrieval=${credential_retrieval}"
+auto_probe=$(echo "$content" | grep -qF "if (isOwnServerTarget(\$('url').value)) checkCredentials();" \
+    && ! echo "$content" | grep -qF "isSameOriginTarget" \
+    && echo endpoint || echo origin)
+echo "schema credential_store=${credential_store} credential_retrieval=${credential_retrieval} auto_probe=${auto_probe}"
+
+# `/play` probes the credentials on open only when `?url=` names its own endpoint: the browser may
+# autofill the login saved for this page while the initial ping is in flight.
+content=$(fetch_page play)
+initial_probe=$(echo "$content" | grep -qxF "checkURL(isOwnServerTarget(url_elem.value));" \
+    && ! echo "$content" | grep -qxF "checkURL(true);" \
+    && echo endpoint || echo any)
+echo "play initial_probe=${initial_probe}"
