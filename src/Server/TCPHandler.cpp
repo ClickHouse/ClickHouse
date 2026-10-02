@@ -1706,6 +1706,13 @@ void TCPHandler::processTablesStatusRequest()
     /// unauthenticated peer cannot make the server deserialize an arbitrary request.
     TablesStatusRequest request;
     ContextPtr context_to_resolve_table_names;
+    /// Derived once for every `read` below rather than chosen per branch, so the interserver bound
+    /// cannot be missed on one of them. It also gives the signed branch coverage it cannot get on
+    /// its own: there is no raw-socket test for the signed path, but getting this wrong would take
+    /// the bound off the unsigned branch too, which is tested.
+    const auto request_source = is_interserver_mode
+        ? TablesStatusRequestSource::InterserverPeer
+        : TablesStatusRequestSource::Client;
     if (is_interserver_mode)
     {
 #if USE_SSL
@@ -1717,7 +1724,7 @@ void TCPHandler::processTablesStatusRequest()
             /// Deserialize the body so its digest can bind the hash (same as `processQuery` reading
             /// the query before validating the per-query secret hash). Tables are resolved only after
             /// the hash validates below.
-            request.read(*in, client_tcp_protocol_version, TablesStatusRequestSource::InterserverPeer);
+            request.read(*in, client_tcp_protocol_version, request_source);
 
             String cluster_secret;
             try
@@ -1762,13 +1769,13 @@ void TCPHandler::processTablesStatusRequest()
         {
             /// Old client authenticated by an earlier query on this connection, or auth not required:
             /// no hash to bind the body to, so just read it.
-            request.read(*in, client_tcp_protocol_version, TablesStatusRequestSource::InterserverPeer);
+            request.read(*in, client_tcp_protocol_version, request_source);
         }
 #else
         if (!is_interserver_authenticated)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
                 "TablesStatusRequest requires interserver authentication");
-        request.read(*in, client_tcp_protocol_version, TablesStatusRequestSource::InterserverPeer);
+        request.read(*in, client_tcp_protocol_version, request_source);
 #endif
 
         /// In the interserver mode session context does not exist, because authentication is done for each query.
@@ -1783,7 +1790,7 @@ void TCPHandler::processTablesStatusRequest()
     {
         chassert(session);
         context_to_resolve_table_names = session->sessionContext();
-        request.read(*in, client_tcp_protocol_version, TablesStatusRequestSource::Client);
+        request.read(*in, client_tcp_protocol_version, request_source);
     }
 
     TablesStatusResponse response;
