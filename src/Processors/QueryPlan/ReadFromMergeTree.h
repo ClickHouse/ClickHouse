@@ -616,6 +616,9 @@ public:
     void copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step);
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
+    /// Whether `_part_starting_offset` and `_part_offset` of the output are this read's own row positions in `getParts()`
+    /// (no table column or computed filter output takes these names). Precondition of `addStartingPartOffsetAndPartOffset`.
+    bool canComputeGlobalRowIndex() const;
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
 
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_) { lazy_materializing_rows = std::move(lazy_materializing_rows_); }

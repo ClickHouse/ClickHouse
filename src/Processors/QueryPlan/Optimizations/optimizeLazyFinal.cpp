@@ -491,14 +491,16 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// aggregation-based FINAL on parts that have no duplicates.
     /// When all parts are non-intersecting, replaceNodeWithPlan is called inside
     /// and fully_replaced is set — in that case we're done.
+    const bool can_compute_global_row_index = reading_step->canComputeGlobalRowIndex();
     auto split_result = trySplitNonIntersectingParts(
-        reading_step, analyzed_result, filter_step, read_node, query_plan, /*allow_partial_split=*/ !stops_reading_early);
+        reading_step, analyzed_result, filter_step, read_node, query_plan,
+        /*allow_partial_split=*/ !stops_reading_early && can_compute_global_row_index);
 
     if (split_result.fully_replaced)
         return;
 
     /// `trySplitNonIntersectingParts` can return before running these checks, e.g. for a `Nullable` key.
-    if (stops_reading_early || !reading_step->getIndexReadTasks().empty())
+    if (stops_reading_early || !reading_step->getIndexReadTasks().empty() || !can_compute_global_row_index)
         return;
 
     const auto & context = reading_step->getContext();
