@@ -77,8 +77,8 @@ void FinishSortingTransform::consume(Chunk chunk)
         columns[desc.column_number] = columns[desc.column_number]->convertToFullIfWrapped();
     chunk.setColumns(std::move(columns), num_rows);
 
-    /// Compact the remaining duplicated columns.
-    compactReplicatedColumns(chunk);
+    /// Materialize the remaining duplicated columns.
+    materializeReplicatedColumns(chunk);
 
     /// Find the position of last already read key in current chunk.
     if (!chunks.empty())
