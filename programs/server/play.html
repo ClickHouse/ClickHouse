@@ -8297,13 +8297,22 @@ function canSendRawAuthHeader(value) {
     }
 }
 
-function getAuthHeaders(user, password) {
+function getAuthHeaders(user, password, server_address) {
     const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
     const headers = { 'Authorization': send_raw ? 'never' : 'ClickHouse-Play' };
-    /// Older servers reject X-ClickHouse-Key without X-ClickHouse-User. Their implicit HTTP
-    /// user was always `default`, so make it explicit on the raw compatibility path instead of
-    /// putting the password back into the URL.
-    const header_user = !user && password && send_raw ? 'default' : user;
+
+    /// A blank user must stay blank when talking back to the server that served this page, because
+    /// newer servers can map it through default_session_user. For a remote target we cannot assume
+    /// that support: older servers reject X-ClickHouse-Key without X-ClickHouse-User, and their
+    /// implicit HTTP user was always `default`. Make that legacy user explicit without putting the
+    /// password back into the URL.
+    let same_origin = false;
+    try {
+        same_origin = location.protocol !== 'file:' && new URL(server_address, location.href).origin === location.origin;
+    } catch {
+        /// An invalid server address will fail at fetch time; do not make auth decisions from it.
+    }
+    const header_user = !user && password && send_raw && !same_origin ? 'default' : user;
     if (header_user)
         headers['X-ClickHouse-User'] = send_raw ? header_user : encodeURIComponent(header_user);
     if (password)
@@ -8341,7 +8350,7 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
 
     let response;
     try {
-        response = await fetch(url, { method: "POST", body: query, headers: getAuthHeaders(user, password) });
+        response = await fetch(url, { method: "POST", body: query, headers: getAuthHeaders(user, password, server_address) });
     } catch (e) {
         if (!quiet && belongs_to_active_connection()) {
             clear();
@@ -8375,7 +8384,7 @@ async function getServerStatus(server_address, user, password) {
         /// parsed as JSON, not as a packet stream.
         'add_http_cors_header=1&framing_output_format=None&default_format=JSONEachRow';
     try {
-        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t", headers: getAuthHeaders(user, password) });
+        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t", headers: getAuthHeaders(user, password, server_address) });
         if (!response.ok) return false;
         json = await response.json();
         return json;
@@ -11096,7 +11105,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             throw new Error("This page requires framing to render results; it cannot run a query that sets framing_output_format = 'None' - or to a value it cannot know upfront (DEFAULT, or a query-parameter placeholder like {fmt:String}).");
         }
 
-        const fetch_options = { method: "POST", body: query, signal: abortController.signal, headers: getAuthHeaders(user, password) };
+        const fetch_options = { method: "POST", body: query, signal: abortController.signal, headers: getAuthHeaders(user, password, server_address) };
         response = await fetch(use_framing ? framing_url : url, fetch_options);
 
         /// Detect image results (e.g. `FORMAT PNG`) by the response `Content-Type` rather than by
@@ -18005,7 +18014,7 @@ async function loadCompletions() {
         const response = await fetch(buildCompletionUrl(), {
             method: "POST",
             body: COMPLETION_QUERY,
-            headers: getAuthHeaders(user_elem.value, password_elem.value),
+            headers: getAuthHeaders(user_elem.value, password_elem.value, url_elem.value),
         });
         /// The connection settings changed while loading — discard this stale result.
         if (generation !== connectionGeneration) {
