@@ -167,7 +167,7 @@ A decoder dispatches on the `type` string. Type strings often carry parameters i
 
 The `type` field is a textual `String` only in the default mode. When the query setting `output_format_native_encode_types_in_binary_format = 1` is set, this field is instead a **binary type encoding** — the same tag-based encoding documented in [data type binary encoding](/reference/data-types/data-types-binary-encoding) — and flattened `Dynamic` type lists use the same binary encoding for their per-type names. A decoder that always reads field 2 as a length-prefixed string would treat the first binary type tag as a string length and desynchronize, so it must know which mode the stream uses.
 
-For a query with `query_kind = SECONDARY_QUERY` (sent by another server for `remote`, `Distributed` or parallel replicas, or by `clickhouse-client --query_kind secondary_query`), both peers ignore `output_format_native_encode_types_in_binary_format` and `input_format_native_decode_types_in_binary_format` for the blocks of that query: they carry textual type names in both directions.
+At revision 54493 and above (`DBMS_MIN_REVISION_WITH_TYPE_NAMES_FOR_SECONDARY_QUERY`), for a query with `query_kind = SECONDARY_QUERY` (sent by another server for `remote`, `Distributed` or parallel replicas, or by `clickhouse-client --query_kind secondary_query`), both peers ignore `output_format_native_encode_types_in_binary_format` and `input_format_native_decode_types_in_binary_format` for the blocks of that query: they carry textual type names in both directions.
 </Info>
 
 <img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="Decoder routing from a type description to its encoding family" width="1568" height="854" loading="lazy" />

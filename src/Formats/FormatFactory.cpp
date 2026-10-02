@@ -26,6 +26,7 @@
 #include <Common/tryGetFileNameByFileDescriptor.h>
 #include <Core/Defines.h>
 #include <Core/FormatFactorySettings.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
@@ -467,10 +468,11 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     return format_settings;
 }
 
-FormatSettings getNativeWireFormatSettings(const ContextPtr & context)
+FormatSettings getNativeWireFormatSettings(const ContextPtr & context, UInt64 peer_protocol_revision)
 {
     auto format_settings = getFormatSettings(context);
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && peer_protocol_revision >= DBMS_MIN_REVISION_WITH_TYPE_NAMES_FOR_SECONDARY_QUERY)
     {
         format_settings.native.encode_types_in_binary_format = false;
         format_settings.native.decode_types_in_binary_format = false;
