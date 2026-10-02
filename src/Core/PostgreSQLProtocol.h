@@ -23,6 +23,7 @@
 #include <Poco/SHA1Engine.h>
 #include <Access/Credentials.h>
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <limits>
 #include <optional>
@@ -2539,7 +2540,286 @@ private:
             /// Quote both arguments because a type name can contain quotes.
             return fmt::format("accurateCast({}, {})", quoteString(value), quoteString(type));
 
+        if (auto element_oid = elementOIDForArrayOID(oid))
+            return formatArrayParameter(*element_oid, value);
+
         return std::nullopt;
+    }
+
+    /// The element type of the PostgreSQL array types whose elements a declared parameter can carry.
+    static std::optional<Int32> elementOIDForArrayOID(Int32 oid)
+    {
+        switch (oid)
+        {
+            case 1000: return 16;    /// bool[]
+            case 1005: return 21;    /// int2[]
+            case 1007: return 23;    /// int4[]
+            case 1016: return 20;    /// int8[]
+            case 1028: return 26;    /// oid[]
+            case 1021: return 700;   /// float4[]
+            case 1022: return 701;   /// float8[]
+            case 1182: return 1082;  /// date[]
+            case 1115: return 1114;  /// timestamp[]
+            case 1185: return 1184;  /// timestamptz[]
+            case 2951: return 2950;  /// uuid[]
+            case 1231: return 1700;  /// numeric[]
+            case 1009: return 25;    /// text[]
+            case 1015: return 1043;  /// varchar[]
+            default:   return std::nullopt;
+        }
+    }
+
+    /// One element of a parsed PostgreSQL array literal: a nested array, a value, or `NULL`.
+    struct ArrayLiteralElement
+    {
+        std::optional<String> value;
+        VectorWithMemoryTracking<ArrayLiteralElement> nested;
+        bool is_array = false;
+    };
+
+    static ArrayLiteralElement makeArrayLiteralValue(String value)
+    {
+        ArrayLiteralElement element;
+        element.value = std::move(value);
+        return element;
+    }
+
+    /// PostgreSQL's own limit on the number of dimensions of an array.
+    static constexpr size_t MAX_ARRAY_DIMENSIONS = 6;
+
+    /// The dimensions of a parsed array literal: the length of every dimension, which is the same for all
+    /// sub-arrays of that dimension, and the number of dimensions, which is the same for all values.
+    struct ArrayLiteralShape
+    {
+        std::array<std::optional<size_t>, MAX_ARRAY_DIMENSIONS> lengths;
+        std::optional<size_t> dimensions;
+    };
+
+    [[noreturn]] static void throwMalformedArrayLiteral(const String & value)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid value {} for an array prepared-statement parameter: not a PostgreSQL array literal",
+                        quoteString(value));
+    }
+
+    /// Parse the PostgreSQL array literal `{...}` starting at `pos` (which points at `{`), the text form a
+    /// client sends for an array-typed parameter: elements are separated by commas, a `"`-quoted element is
+    /// taken literally after unescaping `\`, an unquoted element is trimmed and may use `\` escapes too, and
+    /// an unquoted `NULL` in any case is a null element. The array has to be rectangular, as PostgreSQL
+    /// requires: every value at the same depth, and all sub-arrays of one dimension of the same length.
+    static ArrayLiteralElement parseArrayLiteral(const String & value, size_t & pos, size_t depth, ArrayLiteralShape & shape)
+    {
+        const auto skip_spaces = [&]
+        {
+            while (pos < value.size() && isWhitespaceASCII(value[pos]))
+                ++pos;
+        };
+
+        if (depth >= MAX_ARRAY_DIMENSIONS || pos >= value.size() || value[pos] != '{')
+            throwMalformedArrayLiteral(value);
+        ++pos;
+
+        ArrayLiteralElement result;
+        result.is_array = true;
+        /// Whether this dimension holds sub-arrays; unknown until its first element.
+        std::optional<bool> holds_arrays;
+
+        skip_spaces();
+        if (pos < value.size() && value[pos] == '}')
+        {
+            ++pos;
+        }
+        else
+        {
+            while (true)
+            {
+                skip_spaces();
+                if (pos >= value.size())
+                    throwMalformedArrayLiteral(value);
+
+                const bool is_array = value[pos] == '{';
+                if (holds_arrays.has_value() && *holds_arrays != is_array)
+                    throwMalformedArrayLiteral(value);
+                holds_arrays = is_array;
+
+                if (is_array)
+                {
+                    result.nested.push_back(parseArrayLiteral(value, pos, depth + 1, shape));
+                }
+                else if (value[pos] == '"')
+                {
+                    ++pos;
+                    String element;
+                    while (true)
+                    {
+                        if (pos >= value.size())
+                            throwMalformedArrayLiteral(value);
+                        char c = value[pos++];
+                        if (c == '"')
+                            break;
+                        if (c == '\\')
+                        {
+                            if (pos >= value.size())
+                                throwMalformedArrayLiteral(value);
+                            c = value[pos++];
+                        }
+                        element += c;
+                    }
+                    result.nested.push_back(makeArrayLiteralValue(std::move(element)));
+                }
+                else
+                {
+                    String element;
+                    /// The end of the element without its trailing spaces; escaped characters are kept.
+                    size_t significant_size = 0;
+                    bool has_escapes = false;
+                    while (pos < value.size() && value[pos] != ',' && value[pos] != '}')
+                    {
+                        char c = value[pos++];
+                        if (c == '{' || c == '"')
+                            throwMalformedArrayLiteral(value);
+                        if (c == '\\')
+                        {
+                            if (pos >= value.size())
+                                throwMalformedArrayLiteral(value);
+                            element += value[pos++];
+                            significant_size = element.size();
+                            has_escapes = true;
+                            continue;
+                        }
+                        element += c;
+                        if (!isWhitespaceASCII(c))
+                            significant_size = element.size();
+                    }
+                    element.resize(significant_size);
+                    if (element.empty())
+                        throwMalformedArrayLiteral(value);
+                    if (!has_escapes && equalsCaseInsensitive(element, "null"))
+                        result.nested.push_back(ArrayLiteralElement{});
+                    else
+                        result.nested.push_back(makeArrayLiteralValue(std::move(element)));
+                }
+
+                skip_spaces();
+                if (pos >= value.size())
+                    throwMalformedArrayLiteral(value);
+                if (value[pos] == '}')
+                {
+                    ++pos;
+                    break;
+                }
+                if (value[pos] != ',')
+                    throwMalformedArrayLiteral(value);
+                ++pos;
+            }
+        }
+
+        /// Only the whole array may be empty.
+        if (depth > 0 && result.nested.empty())
+            throwMalformedArrayLiteral(value);
+
+        if (!holds_arrays.value_or(false))
+        {
+            if (shape.dimensions.has_value() && *shape.dimensions != depth + 1)
+                throwMalformedArrayLiteral(value);
+            shape.dimensions = depth + 1;
+        }
+
+        auto & length = shape.lengths[depth];
+        if (length.has_value() && *length != result.nested.size())
+            throwMalformedArrayLiteral(value);
+        length = result.nested.size();
+
+        return result;
+    }
+
+    /// Render a parsed array literal as a ClickHouse array of string literals (or `NULL`), for `accurateCast`
+    /// to convert to the element type. `transform` turns the text of every element into the string to cast.
+    /// Sets `has_null` if any element is `NULL`.
+    template <typename Transform>
+    static void writeArrayLiteral(const ArrayLiteralElement & element, String & out, bool & has_null, Transform && transform)
+    {
+        if (element.is_array)
+        {
+            out += '[';
+            for (size_t i = 0; i < element.nested.size(); ++i)
+            {
+                if (i > 0)
+                    out += ", ";
+                writeArrayLiteral(element.nested[i], out, has_null, transform);
+            }
+            out += ']';
+        }
+        else if (element.value.has_value())
+            out += quoteString(transform(*element.value));
+        else
+        {
+            out += "NULL";
+            has_null = true;
+        }
+    }
+
+    /// Format a declared array-typed parameter: its PostgreSQL array literal (`{1,2}`, `{{a,b},{c,NULL}}`)
+    /// becomes a ClickHouse array of the element type, validated with `accurateCast` like a scalar of that
+    /// type, instead of reaching the query as a string.
+    static String formatArrayParameter(Int32 element_oid, const String & value)
+    {
+        size_t pos = 0;
+        while (pos < value.size() && isWhitespaceASCII(value[pos]))
+            ++pos;
+        ArrayLiteralShape shape;
+        const ArrayLiteralElement array = parseArrayLiteral(value, pos, 0, shape);
+        while (pos < value.size() && isWhitespaceASCII(value[pos]))
+            ++pos;
+        if (pos != value.size())
+            throwMalformedArrayLiteral(value);
+
+        String element_type;
+        String literal;
+        bool has_null = false;
+        if (element_oid == 1700) /// numeric
+        {
+            /// Every element gets the scale of the most precise one, as in a `numeric` column without a
+            /// declared scale.
+            UInt32 scale = 0;
+            const auto normalize = [&value](const String & element)
+            {
+                std::optional<std::pair<String, UInt32>> normalized;
+                if (isSingleNumericLiteral(element))
+                    normalized = normalizeDecimal(element);
+                if (!normalized)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Invalid element {} of the numeric array prepared-statement parameter {}",
+                                    quoteString(element), quoteString(value));
+                return std::move(*normalized);
+            };
+            writeArrayLiteral(array, literal, has_null, [&](const String & element)
+            {
+                auto normalized = normalize(element);
+                scale = std::max(scale, normalized.second);
+                return std::move(normalized.first);
+            });
+            if (scale > DECIMAL256_MAX_PRECISION)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Value {} for a numeric array prepared-statement parameter exceeds the maximum "
+                                "representable Decimal precision", quoteString(value));
+            element_type = fmt::format("Decimal256({})", scale);
+        }
+        else
+        {
+            if (element_oid == 25 || element_oid == 1043) /// text, varchar
+                element_type = "String";
+            else
+                element_type = clickhouseTypeForOID(element_oid);
+            writeArrayLiteral(array, literal, has_null, [](const String & element) { return element; });
+        }
+
+        /// Every element of a PostgreSQL array may be `NULL`, but the element type is made `Nullable` only
+        /// when one is: many ClickHouse array functions (`arraySum`, ...) do not accept `Nullable` elements.
+        String type = has_null ? fmt::format("Nullable({})", element_type) : element_type;
+        for (size_t i = 0; i < shape.dimensions.value_or(1); ++i)
+            type = fmt::format("Array({})", type);
+        return fmt::format("accurateCast({}, {})", literal, quoteString(type));
     }
 
     /// Match only the case-insensitive boolean keywords `true` and `false`.
