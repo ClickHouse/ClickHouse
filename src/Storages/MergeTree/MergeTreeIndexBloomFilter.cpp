@@ -873,6 +873,21 @@ static bool searchFunctionCoercesConstant(const DataTypePtr & value_type, const 
 static Field convertConstantForArrayIndexFunction(
     const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & nested_type, const DataTypePtr & actual_type)
 {
+    /// Over `Enum` elements a `String` or `FixedString` constant is compared by the name of the enum value,
+    /// after the cast of both arguments to their common type `String`, which strips the padding of a
+    /// `FixedString` (arrayIndex.h `executeGeneric`). Do the same, and hash the value of the enum. A name
+    /// that is not in the `Enum` does not throw there, it does not match, so decline the index instead of
+    /// throwing `UNKNOWN_ELEMENT_OF_ENUM` while it is prepared.
+    if (isEnum(actual_type) && value_field.getType() == Field::Types::String && value_type
+        && isStringOrFixedString(removeLowCardinalityAndNullable(value_type)))
+    {
+        String name = value_field.safeGet<String>();
+        if (isFixedString(removeLowCardinalityAndNullable(value_type)))
+            name.resize(name.find_last_not_of('\0') + 1);
+
+        return tryConvertFieldToType(Field(std::move(name)), *actual_type, nullptr, {}, /* strict */ true);
+    }
+
     if (WhichDataType(removeNullable(nested_type)).isString() || !searchFunctionCoercesConstant(value_type, actual_type))
         return convertFieldToType(value_field, *actual_type, value_type.get());
 
