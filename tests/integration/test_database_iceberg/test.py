@@ -1518,6 +1518,25 @@ def test_drop_table(started_cluster):
     assert len(catalog.list_tables(root_namespace)) == 0
 
 
+def test_drop_table_in_multi_level_namespace(started_cluster):
+    # The DropTable URL must carry the catalog prefix and encode the namespace levels.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_drop_multi_level_{uuid.uuid4()}"
+    namespace = f"{test_ref}_namespace.sub"
+    table_name = f"{test_ref}_table"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, namespace, table_name, "(x String)")
+    assert catalog.table_exists(f"{namespace}.{table_name}")
+
+    drop_clickhouse_iceberg_table(node, namespace, table_name)
+    assert not catalog.table_exists(f"{namespace}.{table_name}")
+    assert catalog.list_tables(namespace) == []
+
+
 def test_table_with_slash(started_cluster):
     node = started_cluster.instances["node1"]
 
