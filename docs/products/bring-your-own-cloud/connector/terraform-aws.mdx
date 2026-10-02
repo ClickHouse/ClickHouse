@@ -46,7 +46,7 @@ All four roots emit the same `clicklink` output. The hand-off to `clicklink clct
 
 ### `production` {#production}
 
-The VPC spans three zones (`availability_zone_count`, 2 to 4) with a private `/19` and a public `/21` per zone, one NAT gateway per zone, an S3 gateway endpoint, interface endpoints for ECR, STS, EC2, CloudWatch Logs, SSM, SQS, KMS, and ELB, and VPC flow logs. The EKS cluster has a private API endpoint, access-entries authentication, all control-plane log types in a log group the root owns, and secrets encrypted with a customer-managed KMS key. The cluster gets the managed addons `vpc-cni`, `kube-proxy`, `coredns`, and `aws-ebs-csi-driver`, and one untainted system node group labeled `clickhouseGroup=system` (two to four `m7g.large` nodes by default). The root also creates Karpenter IAM with an interruption queue and `karpenter.sh/discovery` tags, IRSA roles for the AWS Load Balancer controller and for the connector's executor, and a second KMS key for EBS volumes.
+The VPC spans three zones (`availability_zone_count`, 2 to 4) with a private `/19` and a public `/21` per zone, one NAT gateway per zone, an S3 gateway endpoint, interface endpoints for ECR, STS, EC2, CloudWatch Logs, SSM, SQS, KMS, and ELB, and VPC flow logs. The EKS cluster has a private API endpoint, access-entries authentication, all control-plane log types in a log group the root owns, and secrets encrypted with a customer-managed KMS key. The cluster gets the managed addons `vpc-cni`, `kube-proxy`, `coredns`, and `aws-ebs-csi-driver`, and one untainted system node group labeled `clickhouseGroup=system` (two to four `m7g.large` nodes by default). The root also creates Karpenter IAM with an interruption queue and `karpenter.sh/discovery` tags, IRSA roles for the AWS Load Balancer controller and for the connector's executor, and KMS keys for EBS volumes and for the object storage buckets.
 
 ### `existing-vpc` and `existing-eks` {#existing-infrastructure}
 
@@ -108,7 +108,7 @@ tar -xzf "${TERRAFORM_TARBALL}"
 cd "clicklink-terraform-${CLICKLINK_VERSION}"
 ```
 
-The archive extracts to one directory with `aws/production`, `aws/minimal`, `aws/existing-vpc`, `aws/existing-eks`, and `aws/modules`. The roots reference the modules as `../modules`. Keep the extracted tree together rather than copying one root out of it.
+The archive extracts to one directory with `aws/production`, `aws/minimal`, `aws/existing-vpc`, `aws/existing-eks`, and `aws/modules`. The roots reference the modules as `../modules`. Keep the extracted tree together rather than copying one root out of it. The root READMEs in the archive may show the `init` hand-off without `--platform-bundle`; the command in [initialize the connector from Terraform outputs](#hand-off) is the supported one.
 
 </Step>
 
@@ -176,14 +176,16 @@ The rest of the enrollment is the standard flow in [onboarding](/products/bring-
 
 ## KMS keys and required grants {#keys}
 
-`production` and `existing-vpc` create two customer-managed KMS keys with rotation on, one for EKS secrets and one for EBS volumes, unless you pass ARNs in `kms`. `existing-eks` accepts `ebs_kms_key_arn` and creates none; `minimal` creates none. Keys you supply need these grants in their key policies:
+`production` and `existing-vpc` create three customer-managed KMS keys with rotation on, for EKS secrets, EBS volumes, and the object storage buckets, unless you pass ARNs in `kms`. `existing-eks` creates the storage key unless you set `storage_kms_key_arn`, and takes `ebs_kms_key_arn` for service volumes without creating one. `minimal` creates none; without `storage_kms_key_arn` its buckets stay on SSE-S3. A created key carries one account-root statement that delegates access to IAM. A key you supply needs the same delegation, or these grants in its key policy:
 
 | Key | Principal | Actions |
 |---|---|---|
 | EKS secrets | `<cluster_name>-cluster` | `kms:Encrypt`, `kms:Decrypt`, `kms:DescribeKey` |
 | EBS | `<cluster_name>-ebs-csi-driver`, `<cluster_name>-karpenter-controller` | `kms:Encrypt`, `kms:Decrypt`, `kms:ReEncrypt*`, `kms:GenerateDataKey*`, `kms:DescribeKey`, `kms:CreateGrant` with the `kms:GrantIsForAWSResource = true` condition |
+| Storage | Each `CH-S3-<service>-<region>-00-Role` that `clicklink clctl executor prepare --storage-kms-key-arn` creates | `kms:Decrypt`, `kms:GenerateDataKey`, `kms:DescribeKey` |
+| Storage | `<cluster_name>-clicklink-executor`, for the `_tde/` key record beside a service's backups | `kms:GenerateDataKey`, `kms:Decrypt` |
 
-The roots attach the matching IAM role policies either way. System node root volumes hold images and kubelet logs, not service data, and use the account's default EBS key.
+The roots attach the IAM role policies for the EKS secrets and EBS keys either way, and the executor's storage key policy whenever the root has a storage key; `executor prepare` attaches each service role's policy. System node root volumes hold images and kubelet logs, not service data, and use the account's default EBS key.
 
 ## Destroy Terraform-managed infrastructure {#destroy}
 
