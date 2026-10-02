@@ -19,7 +19,7 @@ Every layer that holds data for a managed service is encrypted at rest. Each lay
 
 | Layer | Default key | Your key | Supplied with |
 |---|---|---|---|
-| Object storage: the data and backup buckets | SSE-S3 (an S3-managed key) | SSE-KMS under your key, bucket key enabled | `clicklink clctl executor prepare --storage-kms-key-arn <arn>` (also `executor storage ensure`) |
+| Object storage: the data and backup buckets | SSE-S3 (an S3-managed key) | SSE-KMS under your key, bucket key enabled | `clicklink clctl executor prepare --storage-kms-key-arn <arn>` (also [`executor storage ensure`](/products/bring-your-own-cloud/connector/reference/cli#executor-storage-ensure)) |
 | ClickHouse volumes: the EBS volumes of server and Keeper pods | Root-created key (`production`, `existing-vpc`); account default otherwise | Your key | `kms.ebs_key_arn` (`production`, `existing-vpc`) or `ebs_kms_key_arn` (`existing-eks`) |
 | EKS secrets: the Kubernetes Secrets in the cluster, including the wrapped TDE data key | Root-created key (`production`, `existing-vpc`); none otherwise | Your key | `kms.eks_secrets_key_arn` (`production`, `existing-vpc`) |
 | Data at rest inside ClickHouse (transparent data encryption, TDE) | Off | A data key wrapped by your key | `clicklink clctl instances create --tde-kms-key-arn <arn>` |
