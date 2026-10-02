@@ -1,0 +1,6 @@
+one join in a view restarted by the loop table function
+10
+two loop branches over the same joined view
+20
+05057_loop_a_one_branch	1	['HASH']	['INNER']	['ALL']
+05057_loop_b_two_branches	2	['HASH']	['INNER','INNER']	['ALL','ALL']
