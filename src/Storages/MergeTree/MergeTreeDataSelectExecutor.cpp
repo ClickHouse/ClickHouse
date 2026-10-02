@@ -2133,41 +2133,6 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
     return std::max(marks, min_marks);
 }
 
-/// Whether a real NULL is nested somewhere in `field`. A `Tuple`, `Array` or `Map` key value holds its
-/// NULLs inside, where `Field::isNull` does not see them - and where it would answer true for the
-/// `-inf`/`+inf` stand-ins of a nullable key range, which are not NULLs.
-static bool fieldHasNullInside(const Field & field)
-{
-    switch (field.getType())
-    {
-        case Field::Types::Null:
-            return !field.isPositiveInfinity() && !field.isNegativeInfinity();
-        case Field::Types::Tuple:
-        {
-            for (const auto & element : field.safeGet<Tuple>())
-                if (fieldHasNullInside(element))
-                    return true;
-            return false;
-        }
-        case Field::Types::Array:
-        {
-            for (const auto & element : field.safeGet<Array>())
-                if (fieldHasNullInside(element))
-                    return true;
-            return false;
-        }
-        case Field::Types::Map:
-        {
-            for (const auto & element : field.safeGet<Map>())
-                if (fieldHasNullInside(element))
-                    return true;
-            return false;
-        }
-        default:
-            return false;
-    }
-}
-
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
 /// In other words, it removes subranges from whole range, that definitely could not contain required keys.
 /// If @exact_ranges is not null, fill it with ranges containing marks of fully matched records.
@@ -2419,33 +2384,37 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     }
 
     /// A key value that holds a NULL nested in a `Tuple` is not comparable in `Field` order the way the
-    /// key column is stored: `Field` orders `Null` below every value, while the key stores NULLs last.
-    /// Where a granule spans the boundary between non-NULL and NULL values, the two marks then come out
-    /// in the wrong order, the granule looks empty, and it is skipped together with the matching rows it
-    /// holds. Only such a pair is replaced - by the extremes of its own sides, which claim nothing about
-    /// the column. A pair that is still ordered keeps its exact bounds, because for it `Field` order and
-    /// the key's order agree on everything the range algebra asks. Returns whether the pair was
-    /// replaced: a replaced pair no longer stands for the equal boundaries `equal_boundaries_mask`
-    /// reports.
-    /// Set once a pair has been replaced: the mark ranges then no longer follow the condition's own
-    /// continuity, because a granule the condition describes as wholly matching may hold rows the
-    /// filter rejects. Only the exactness of the analysis is affected - a replaced pair claims nothing
-    /// about the column, so it can only widen `can_be_true`.
-    bool boundary_pair_repaired = false;
+    /// key column is stored: the key stores a nested NULL above every value of its element (the same
+    /// `+inf` a flat `Nullable` NULL is mapped to), while `Field` orders `Null` below every value. Such a
+    /// bound therefore comes out in `Field` order below where the key stores it. For the lower bound in
+    /// value space this only widens the range. The upper bound is widened to `+inf` by `KeyCondition`
+    /// where it is compared in `Field` order (a set is compared in the key's own order and needs no
+    /// widening). That is not enough where a granule spans the boundary between non-NULL and NULL
+    /// values: the upper bound then comes out below the lower one, and the range of the granule looks
+    /// empty before any comparison is made. Only such a pair is replaced - by the extremes of its own
+    /// sides, which claim nothing about the column. Returns whether the pair was replaced: a replaced
+    /// pair no longer stands for the equal boundaries `equal_boundaries_mask` reports.
+    /// Set once an upper bound holds a nested NULL: the mark ranges then no longer follow the
+    /// condition's own continuity, because a granule the condition describes as wholly matching may
+    /// hold rows the filter rejects. Only the exactness of the analysis is affected - a widened bound
+    /// claims nothing about the column, so it can only widen `can_be_true`.
+    bool boundary_pair_inexact = false;
 
-    auto repair_boundary_pair = [&key_order, &boundary_pair_repaired](size_t column, FieldRef & left, FieldRef & right)
+    auto repair_boundary_pair = [&key_order, &boundary_pair_inexact](size_t column, FieldRef & left, FieldRef & right)
     {
-        if (!fieldHasNullInside(left) && !fieldHasNullInside(right))
+        /// Boundaries follow the storage order of the column: values ascend unless the column does not.
+        const bool reversed = key_order.isReversed(column);
+        if (!KeyCondition::fieldHasNullInside(reversed ? left : right))
             return false;
 
-        /// Boundaries follow the storage order of the column, so they ascend unless the column does not.
-        const bool ordered = key_order.isReversed(column) ? !(left < right) : !(right < left);
+        boundary_pair_inexact = true;
+
+        const bool ordered = reversed ? !(left < right) : !(right < left);
         if (ordered)
             return false;
 
         left = key_order.physicalStartExtreme(column);
         right = key_order.physicalEndExtreme(column);
-        boundary_pair_repaired = true;
         return true;
     };
 
@@ -2512,6 +2481,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         const size_t key_col = used_key_indices[sparse_pos];
                         create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
                         sparse_key_right[sparse_pos] = key_order.physicalEndExtreme(key_col);
+                        /// On a descending column the upper bound is the left one, which can hold a nested NULL.
+                        if (unlikely(repair_boundary_pair(key_col, sparse_key_left[sparse_pos], sparse_key_right[sparse_pos]))
+                            && key_col < equal_boundaries_mask.size())
+                            equal_boundaries_mask[key_col] = false;
                     }
                 }
                 else
@@ -2559,6 +2532,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         create_field_ref(range.begin, i, index_left[i]);
                         /// The value at the unknown physical end of the part is the directional extreme.
                         index_right[i] = key_order.physicalEndExtreme(i);
+                        repair_boundary_pair(i, index_left[i], index_right[i]);
                     }
                     else
                     {
@@ -2782,12 +2756,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                             /// range is then simply dropped, the same as in a release build.
                             /// TODO: Remove the #ifndef and always throw after
                             ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
-                            /// A repaired boundary pair breaks the same assumption in its own way: the
-                            /// granule between two marks that `Field` order cannot compare is analysed as
-                            /// the whole universe, so an interior granule of a continuous range can hold
-                            /// rows the filter rejects.
+                            /// An upper bound holding a nested NULL breaks the same assumption in its own
+                            /// way: it is widened to `+inf`, so an interior granule of a continuous range
+                            /// is no longer claimed to match wholly.
 #ifndef NDEBUG
-                            if (used_key_prefix_loaded_in_memory && !boundary_pair_repaired)
+                            if (used_key_prefix_loaded_in_memory && !boundary_pair_inexact)
                             {
                                 auto describe_condition = [](const KeyCondition & condition)
                                 {

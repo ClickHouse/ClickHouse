@@ -69,3 +69,36 @@ SELECT count() FROM t_pk_tuple_nullable_element WHERE t <= (5., 3) SETTINGS use_
 SELECT count() FROM t_pk_tuple_nullable_element WHERE t = (10., 1) SETTINGS use_partition_minmax_for_primary_key_pruning = 1;
 
 DROP TABLE t_pk_tuple_nullable_element;
+
+-- The NULL is in a later element of the tuple, after an element that differs between the two marks of
+-- the granule. The pair of marks is ordered in `Field` order, yet `(2, NULL)` comes out below `(2, 3)`,
+-- which the key stores before it.
+SELECT 'a NULL in a later element';
+
+CREATE TABLE t_pk_tuple_nullable_element (t Tuple(UInt8, Nullable(UInt8)), x Int32) ENGINE = MergeTree ORDER BY t
+SETTINGS index_granularity = 2, allow_nullable_key = 1;
+
+INSERT INTO t_pk_tuple_nullable_element VALUES ((1,5),0),((2,3),0),((2,NULL),0),((3,1),0),((3,NULL),0),((4,1),0);
+
+SELECT count() FROM t_pk_tuple_nullable_element WHERE t = (2, 3);
+SELECT count() FROM t_pk_tuple_nullable_element WHERE t >= (2, 3) AND t <= (2, 200);
+SELECT count() FROM t_pk_tuple_nullable_element WHERE t = (3, 1);
+SELECT count() FROM t_pk_tuple_nullable_element WHERE t >= (2, 3) SETTINGS use_primary_key = 0, use_query_condition_cache = 0;
+SELECT count() FROM t_pk_tuple_nullable_element WHERE t >= (2, 3);
+
+DROP TABLE t_pk_tuple_nullable_element;
+
+-- On a descending key column the upper bound of a granule is its first mark.
+SELECT 'a descending key column';
+
+CREATE TABLE t_pk_tuple_nullable_element (t Tuple(UInt8, Nullable(UInt8)), x Int32) ENGINE = MergeTree ORDER BY t DESC
+SETTINGS index_granularity = 2, allow_nullable_key = 1;
+
+INSERT INTO t_pk_tuple_nullable_element VALUES ((4,1),0),((3,NULL),0),((3,1),0),((2,NULL),0),((2,3),0),((1,5),0);
+
+SELECT count() FROM t_pk_tuple_nullable_element WHERE t = (2, 3);
+SELECT count() FROM t_pk_tuple_nullable_element WHERE t = (3, 1);
+SELECT count() FROM t_pk_tuple_nullable_element WHERE t <= (3, 1);
+SELECT count() FROM t_pk_tuple_nullable_element WHERE t <= (3, 1) SETTINGS use_primary_key = 0, use_query_condition_cache = 0;
+
+DROP TABLE t_pk_tuple_nullable_element;

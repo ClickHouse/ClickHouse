@@ -18,3 +18,14 @@ the key column in the partition key, not loaded in memory
 2
 2
 1
+a NULL in a later element
+1
+1
+1
+4
+4
+a descending key column
+1
+1
+4
+4
