@@ -3,3 +3,6 @@ count()	1000000
 max(y)	999999
 no policy	2000000
 no row, in order
+remote replica first, in order
+engineering	1
+engineering	3

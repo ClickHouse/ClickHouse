@@ -47,5 +47,13 @@ CREATE ROW POLICY pr_rp_key_policy ON pr_rp_key FOR SELECT USING a = 'nomatch' T
 SELECT 'no row, in order';
 SELECT a, b FROM pr_rp_key ORDER BY b;
 
+-- The same reading mode is required when a remote replica's read request reaches the coordinator
+-- before the initiator's: the failpoint delays every read request of the initiator's local plan.
+ALTER ROW POLICY pr_rp_key_policy ON pr_rp_key USING a = 'engineering';
+SELECT 'remote replica first, in order';
+SYSTEM ENABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;
+SELECT a, b FROM pr_rp_key ORDER BY b;
+SYSTEM DISABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;
+
 DROP ROW POLICY pr_rp_key_policy ON pr_rp_key;
 DROP TABLE pr_rp_key;
