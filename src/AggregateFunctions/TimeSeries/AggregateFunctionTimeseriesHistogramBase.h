@@ -603,12 +603,13 @@ protected:
         return histogram;
     }
 
-    /// Appends a computed rate-family histogram to the subcolumns of `tuple_to` (payload tuple layout); the counter reset
-    /// hint is re-encoded into the `flags` byte, all other flag bits 0 (a synthetic histogram, not a stored sample).
+    /// Appends a computed rate-family histogram to the subcolumns of `tuple_to` (payload tuple layout); the `flags` byte
+    /// carries the counter reset hint and the float flag (a synthetic histogram, not a stored sample).
     static void appendHistogramToResultColumns(const TimeSeriesFloatHistogram & result, ColumnTuple & tuple_to)
     {
         namespace Idx = TimeSeriesHistogramPayloadTupleIndex;
-        const UInt8 flags = static_cast<UInt8>(result.counter_reset_hint << TimeSeriesHistogramFlags::CounterResetHintShift);
+        const UInt8 flags = static_cast<UInt8>(
+            (result.counter_reset_hint << TimeSeriesHistogramFlags::CounterResetHintShift) | TimeSeriesHistogramFlags::IsFloat);
         typeid_cast<ColumnUInt8 &>(tuple_to.getColumn(Idx::Flags)).getData().push_back(flags);
         typeid_cast<ColumnInt8 &>(tuple_to.getColumn(Idx::Schema)).getData().push_back(static_cast<Int8>(result.schema));
         typeid_cast<ColumnFloat64 &>(tuple_to.getColumn(Idx::ZeroThreshold)).getData().push_back(result.zero_threshold);

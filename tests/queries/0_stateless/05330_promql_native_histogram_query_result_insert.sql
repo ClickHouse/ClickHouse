@@ -27,4 +27,13 @@ SELECT timestamp, flags, `schema`, zero_threshold, count, sum, zero_count, posit
 FROM timeSeriesHistograms(ts_dst_selector);
 DROP TABLE ts_dst_selector;
 
+SELECT '-- rate: a computed histogram has the gauge hint and is marked as a float histogram (flags 7)';
+DROP TABLE IF EXISTS ts_dst_rate;
+CREATE TABLE ts_dst_rate ENGINE = TimeSeries SETTINGS store_native_histograms = 1;
+INSERT INTO ts_dst_rate (metric_name, tags, histograms)
+    SELECT 'h', map('job', 'a'), [(timestamp, h.1, h.2, h.3, h.4, h.5, h.6, h.7, h.8, h.9, h.10, h.11, h.12, h.13, h.14, h.15)]
+    FROM (SELECT timestamp, assumeNotNull(histogram) AS h FROM prometheusQuery(ts_src, 'rate(h[1m])', 120));
+SELECT timestamp, flags, count_int, zero_count_int, positive_values_int, negative_values_int FROM timeSeriesHistograms(ts_dst_rate);
+DROP TABLE ts_dst_rate;
+
 DROP TABLE ts_src;
