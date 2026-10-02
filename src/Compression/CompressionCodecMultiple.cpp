@@ -7,7 +7,9 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <base/arithmeticOverflow.h>
+#include <base/defines.h>
 
+#include <array>
 #include <cstring>
 #include <limits>
 
@@ -113,35 +115,66 @@ UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_si
 
 UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
-    const auto chain = getCodecs();
     /// The caller sized dest from getMaxCompressedDataSize(source_size).
-    const UInt32 dest_size = getMaxCompressedDataSize(source_size);
+    return compressBody(/*completed_stages=*/0, source, source_size, getMaxCompressedDataSize(source_size), dest);
+}
 
-    PODArray<char> compressed_buf;
-    PODArray<char> uncompressed_buf(source, source + source_size);
+UInt32 CompressionCodecMultiple::compressRemainingStages(
+    size_t completed_stages, const char * input, UInt32 input_size, UInt32 source_size, char * dest) const
+{
+    chassert(input != nullptr && dest != nullptr);
+
+    const UInt32 body_size
+        = compressBody(completed_stages, input, input_size, getMaxCompressedDataSize(source_size), &dest[getHeaderSize()]);
+    return writeHeader(dest, body_size, source_size);
+}
+
+UInt32
+CompressionCodecMultiple::compressBody(size_t completed_stages, const char * input, UInt32 input_size, UInt32 dest_size, char * dest) const
+{
+    const auto chain = getCodecs();
+    chassert(completed_stages <= chain.size());
 
     dest[0] = static_cast<UInt8>(chain.size());
+    for (size_t idx = 0; idx < chain.size(); ++idx)
+        dest[1 + idx] = chain[idx]->getMethodByte();
 
-    size_t codecs_byte_pos = 1;
-    for (size_t idx = 0; idx < chain.size(); ++idx, ++codecs_byte_pos)
+    const size_t payload_offset = 1 + chain.size();
+    char * const payload = dest + payload_offset;
+
+    /// Stage outputs alternate between two buffers. The last stage writes into `dest` when its reserve fits there.
+    std::array<PODArray<char>, 2> buffers;
+    for (size_t idx = completed_stages; idx < chain.size(); ++idx)
     {
         const auto & codec = chain[idx];
-        dest[codecs_byte_pos] = codec->getMethodByte();
-        compressed_buf.resize(getCheckedReserveSize(codec, source_size, idx, chain.size()));
+        const UInt32 reserve = getCheckedReserveSize(codec, input_size, idx, chain.size());
+        const bool is_last_stage = idx + 1 == chain.size();
+        const bool in_place = is_last_stage && payload_offset + reserve <= dest_size;
 
-        UInt32 size_compressed = codec->compress(uncompressed_buf.data(), source_size, compressed_buf.data());
+        char * output = payload;
+        if (!in_place)
+        {
+            buffers[idx % 2].resize_exact(reserve);
+            output = buffers[idx % 2].data();
+        }
 
-        uncompressed_buf.swap(compressed_buf);
-        source_size = size_compressed;
+        input_size = codec->compress(input, input_size, output);
+        input = output;
     }
 
-    /// source_size is now each codec's actual output, computed independently of the bounds above.
-    size_t written_size = sizeof(UInt8) + chain.size() + source_size;
-    if (written_size > dest_size)
-        throw Exception(ErrorCodes::CANNOT_COMPRESS,
-            "Compressed data of size {} does not fit the reserved buffer of size {}", written_size, dest_size);
+    const size_t written_size = payload_offset + input_size;
 
-    memcpy(&dest[1 + chain.size()], uncompressed_buf.data(), source_size);
+    /// The result is in a buffer after no stage was left to run or a last stage whose reserve did not fit. If so, memcpy it to `dest`.
+    if (input != payload)
+    {
+        if (written_size > dest_size)
+            throw Exception(
+                ErrorCodes::CANNOT_COMPRESS,
+                "Compressed data of size {} does not fit the reserved buffer of size {}",
+                written_size,
+                dest_size);
+        memcpy(payload, input, input_size);
+    }
 
     return static_cast<UInt32>(written_size);
 }

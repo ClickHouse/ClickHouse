@@ -269,7 +269,7 @@ private:
         /// │   ├── name2
         /// │   └── name3
         /// ├── ["running"] (ephemeral)
-        /// ├── ["requested-<replica>"] (persistent; a pending `SYSTEM REFRESH VIEW` made on that replica, see `run`)
+        /// ├── ["requested-<replica>"] (persistent; the number of pending `SYSTEM REFRESH VIEW`s made on that replica, see `run`)
         /// └── ["paused"]
 
         struct WatchState

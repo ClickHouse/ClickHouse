@@ -1474,9 +1474,9 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     /// Enforce <http_forbid_headers> before any network access. This is the single funnel for
     /// schema inference (StorageURL ctor, StorageURLCluster, TableFunctionURL analysis), so the
     /// check here also covers the DESCRIBE / INSERT..SELECT / format-detection paths that never
-    /// reach the StorageURL ctor body. checkAndNormalizeHeaders mutates, so validate a copy.
+    /// reach the StorageURL ctor body. The check takes a mutable reference, so validate a copy.
     HTTPHeaderEntries headers_to_check(headers);
-    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_to_check);
+    context->getHTTPHeaderFilter().checkHeaders(headers_to_check);
 
     Poco::Net::HTTPBasicCredentials credentials;
 
@@ -1636,7 +1636,7 @@ void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromURL::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
 }
@@ -1664,11 +1664,12 @@ void IStorageURLBase::read(
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
-    if (query_info.prewhere_info || query_info.row_level_filter)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+    if (query_info.prewhere_info)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
         && local_context->getSettingsRef()[Setting::optimize_count_from_files]
+        && !query_info.row_level_filter
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto read_post_data_callback = getReadPOSTDataCallback(
@@ -1839,11 +1840,12 @@ void StorageURLWithFailover::read(
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
-    if (query_info.prewhere_info || query_info.row_level_filter)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+    if (query_info.prewhere_info)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
         && local_context->getSettingsRef()[Setting::optimize_count_from_files]
+        && !query_info.row_level_filter
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto read_post_data_callback = getReadPOSTDataCallback(
@@ -2058,7 +2060,7 @@ StorageURL::StorageURL(
         distributed_processing_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    context_->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+    context_->getHTTPHeaderFilter().checkHeaders(headers);
 }
 
 

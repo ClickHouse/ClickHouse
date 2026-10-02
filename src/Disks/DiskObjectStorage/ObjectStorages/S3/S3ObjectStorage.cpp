@@ -671,6 +671,9 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         auto size = S3::getObjectSize(*client.get(), src_bucket, src_key, {});
         auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
         const auto read_settings_to_use = patchSettings(read_settings);
+        auto blob_storage_log = BlobStorageLogWriter::create(dest_s3->disk_name);
+        if (blob_storage_log)
+            blob_storage_log->local_path = object_to.local_path;
 
         try
         {
@@ -684,7 +687,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 /*dest_key=*/dest_key,
                 settings_ptr->request_settings,
                 read_settings_to_use,
-                BlobStorageLogWriter::create(disk_name),
+                blob_storage_log,
                 scheduler,
                 [&, this]{ return readObject(object_from, read_settings_to_use);},
                 object_to_attributes);
@@ -733,6 +736,9 @@ void S3ObjectStorage::copyObject( // NOLINT
     auto size = S3::getObjectSize(*current_client, src_bucket, src_key, {});
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);
+    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+    if (blob_storage_log)
+        blob_storage_log->local_path = object_to.local_path;
 
     copyS3File(
         /*src_s3_client=*/current_client,
@@ -744,7 +750,7 @@ void S3ObjectStorage::copyObject( // NOLINT
         /*dest_key=*/dest_key,
         settings_ptr->request_settings,
         read_settings_to_use,
-        BlobStorageLogWriter::create(disk_name),
+        blob_storage_log,
         scheduler,
         [&, this]{ return readObject(object_from, read_settings_to_use);},
         object_to_attributes);
