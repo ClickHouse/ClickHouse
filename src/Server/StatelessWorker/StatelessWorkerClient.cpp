@@ -6,14 +6,33 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/HTTPHeaderEntries.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Core/ProtocolDefines.h>
 #include <base/types.h>
+#include <fmt/format.h>
 
 namespace DB
 {
 
 namespace
 {
+
+/// W3C `traceparent`/`tracestate` headers carrying the current trace context to the worker. Sent with
+/// the start request only: the cancel and forget requests are housekeeping after the task's outcome is
+/// known, and a traced request needs a client span to hang under, which only the dispatch has.
+HTTPHeaderEntries getTraceContextHeaders()
+{
+    HTTPHeaderEntries headers;
+    const auto & current_trace_context = OpenTelemetry::CurrentContext();
+    if (current_trace_context.isTraceEnabled())
+    {
+        headers.emplace_back("traceparent", current_trace_context.composeTraceparentHeader());
+        if (!current_trace_context.tracestate.empty())
+            headers.emplace_back("tracestate", current_trace_context.tracestate);
+    }
+    return headers;
+}
 
 String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const ContextPtr & context)
 {
@@ -53,6 +72,7 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
         .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
         .withTimeouts(timeouts)
         .withSettings(read_settings)
+        .withHeaders(getTraceContextHeaders())
         .withOutCallback(write_body_callback)
         .withDelayInit(false)
         .create(creds);
@@ -70,6 +90,17 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
 
 String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const ContextPtr & context)
 {
+    /// The dispatch request is the trace hop to the worker, so the worker's spans hang under it.
+    const Poco::URI uri(endpoint_uri);
+    OpenTelemetry::SpanHolder span(
+        "StatelessWorkerClient::sendTask",
+        OpenTelemetry::SpanKind::CLIENT,
+        {
+            {"clickhouse.distributed.task_id", task_description.task.task_id},
+            {"clickhouse.initial_query_id", task_description.initial_query_id},
+            {"clickhouse.target_host", fmt::format("{}:{}", uri.getHost(), uri.getPort())},
+        });
+
     auto task_serializer = [task_description] (WriteBuffer & buf)
     {
         serializeTask(task_description, buf);

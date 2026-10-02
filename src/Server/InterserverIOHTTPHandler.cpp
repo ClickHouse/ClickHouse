@@ -9,6 +9,7 @@
 #include <Interpreters/InterserverIOHandler.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
 #include <Common/setThreadName.h>
@@ -87,11 +88,36 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
     return {"", true};
 }
 
+OpenTelemetry::TracingContextHolderPtr InterserverIOHTTPHandler::startTracingContext(const HTTPServerRequest & request) const
+{
+    if (!request.has("traceparent"))
+        return nullptr;
+
+    OpenTelemetry::TracingContext client_trace_context;
+    const String traceparent = request.get("traceparent");
+    String error;
+    if (client_trace_context.parseTraceparentHeader(traceparent, error))
+        client_trace_context.tracestate = request.get("tracestate", "");
+    else
+        LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", traceparent, error);
+
+    auto thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(
+        "InterserverIOHTTPHandler", client_trace_context, server.context()->getOpenTelemetrySpanLog());
+    thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+    thread_trace_context->root_span.addAttribute(
+        "clickhouse.uri", [&] { return maskSensitiveQueryParametersInURI(request.getURI()); });
+    thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
+    return thread_trace_context;
+}
+
 void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, OutputPtr output)
 {
     HTMLForm params(server.context()->getSettingsRef(), request);
 
     LOG_TRACE(log, "Request URI: {}", maskSensitiveQueryParametersInURI(request.getURI()));
+
+    /// Kept alive for the whole request: the trace context is installed on this thread while it exists.
+    OpenTelemetry::TracingContextHolderPtr thread_trace_context = startTracingContext(request);
 
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
