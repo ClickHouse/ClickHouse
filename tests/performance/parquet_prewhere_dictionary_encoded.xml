@@ -1,0 +1,18 @@
+<!-- PREWHERE over dictionary-encoded columns of a Parquet file without a page index. -->
+<test>
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_parquet_prewhere_dictionary_encoded.parquet', Parquet)
+        SELECT
+            number AS k,
+            toUInt16(cityHash64(number) % 300) AS a,
+            toUInt8(intDiv(number, 500) % 7) AS r,
+            concat('v', toString(cityHash64(number, 1) % 1000)) AS s
+        FROM numbers(50000000)
+        SETTINGS output_format_parquet_write_page_index = 0
+    ]]></fill_query>
+
+    <query>SELECT sum(a), sum(r), max(s) FROM file('test_parquet_prewhere_dictionary_encoded.parquet', Parquet) PREWHERE k % 3 = 0 FORMAT Null</query>
+    <query>SELECT sum(a), sum(r), max(s) FROM file('test_parquet_prewhere_dictionary_encoded.parquet', Parquet) PREWHERE k % 10 != 0 FORMAT Null</query>
+    <query>SELECT sum(a), sum(r), max(s) FROM file('test_parquet_prewhere_dictionary_encoded.parquet', Parquet) PREWHERE k % 1000 = 0 FORMAT Null</query>
+    <query>SELECT sum(a), sum(r), max(s) FROM file('test_parquet_prewhere_dictionary_encoded.parquet', Parquet) PREWHERE k % 1000 != 0 FORMAT Null</query>
+</test>
