@@ -16,6 +16,7 @@ INSERT INTO t_num SELECT number FROM numbers(4);
 -- The 1 MB column s is not read.
 SELECT count() FROM (SELECT s, id FROM t_smallest WHERE id < 100) SETTINGS query_plan_remove_unused_columns = 0, max_bytes_to_read = 100000;
 SELECT count() FROM (SELECT s, id FROM t_smallest LIMIT 100000) SETTINGS max_bytes_to_read = 100000;
+SELECT count() FROM (SELECT s, id FROM t_smallest ORDER BY id LIMIT 100000) SETTINGS query_plan_remove_unused_columns = 0, max_bytes_to_read = 100000;
 SELECT count() FROM (SELECT toString(id) AS k, cityHash64(s) AS h FROM t_smallest LIMIT 100000) SETTINGS max_bytes_to_read = 100000;
 SELECT count() FROM (SELECT cityHash64(s) AS h, id FROM t_smallest LIMIT 100000) SETTINGS max_bytes_to_read = 100000;
 SELECT count() FROM (SELECT uniqExact(s) AS c, toString(id) AS k FROM t_smallest GROUP BY k) SETTINGS max_bytes_to_read = 100000;
