@@ -1,0 +1,379 @@
+---
+slug: /cloud/managed-postgres/guides/go
+sidebarTitle: 'Go (pgx)'
+title: 'ClickHouse Managed Postgres에서 Go (pgx) 사용하기'
+description: 'pgx와 pgxpool을 사용해 검증된 TLS로 Go 서비스를 ClickHouse Managed Postgres에 연결하고, golang-migrate로 마이그레이션을 실행한 뒤 net/http 기반 CRUD API를 제공하는 방법을 안내합니다'
+keywords: ['managed postgres', 'go', 'golang', 'pgx', 'pgxpool', 'golang-migrate', 'net/http', 'pgbouncer', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-go-beta" />
+
+[pgx](https://github.com/jackc/pgx)는 Go에서 가장 널리 사용되는 PostgreSQL 드라이버이며, `pgxpool`은 pgx가 제공하는 연결 풀(connection pool)입니다. 이 가이드에서는 검증된 TLS로 Go 서비스를 ClickHouse Managed Postgres에 연결하고, [golang-migrate](https://github.com/golang-migrate/migrate) 마이그레이션으로 `todos` 테이블을 생성한 뒤, `net/http` 서버에서 생성(create), 조회(read), 수정(update), 삭제(delete) 요청을 처리합니다.
+
+## 사전 요구 사항 {#prerequisites}
+
+* [Go](https://go.dev/dl/) 1.25 이상. 이 가이드는 Go 1.27.1, pgx 5.11.0, golang-migrate 4.20.1 환경에서 테스트했습니다.
+* ClickHouse Cloud 계정
+* 데이터베이스 생성에 사용할 [`psql`](https://www.postgresql.org/download/). [SQL 콘솔](/ko/integrations/connectors/sql-clients/sql-console)에서 `CREATE DATABASE` 문을 실행해도 됩니다.
+
+## ClickHouse Managed Postgres 서비스 생성 {#create-service}
+
+ClickHouse Cloud 콘솔에서 **New service**를 클릭한 후 **Postgres**를 선택하십시오. 인스턴스는 몇 분 안에 준비됩니다. 단계별 안내는 [빠른 시작 가이드](/ko/products/managed-postgres/quickstart)를 참조하십시오.
+
+## 연결 정보 확인하기 {#connection-details}
+
+서비스의 왼쪽 사이드바에서 **Connect**를 클릭합니다. **Directly**를 선택한 상태로 두고 **Use SSL**을 켜십시오. 이제 **url** 탭의 연결 URL은 포트 `5432`를 사용하며 `sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem`으로 끝납니다. **Download CA certificate**를 클릭합니다. 나중에 **Settings → CA Certificate**에서 다운로드할 수도 있습니다. 이 인증서는 인스턴스마다 고유하므로, pgx는 이 인증서로 실제 서버와 통신하고 있는지 검증할 수 있습니다.
+
+이 가이드에서는 마이그레이션과 애플리케이션 모두 포트 `5432`의 Postgres에 **직접** 연결합니다. Go 서비스는 장시간 실행되는 프로세스이며 `pgxpool`이 이미 프로세스 내에서 연결 풀을 유지하므로, 별도의 풀러가 필요하지 않습니다. 서비스 인스턴스를 여러 개 실행하여 Postgres가 허용하는 수보다 많은 클라이언트 연결이 필요하다면, 애플리케이션에는 번들로 제공되는 PgBouncer(**via PgBouncer**, 포트 `6432`)를 사용하십시오. 이때는 연결 설정을 하나 추가해야 하며, 자세한 내용은 [PgBouncer 사용하기](#pgbouncer)를 참조하십시오.
+
+## 프로젝트 설정 {#project-setup}
+
+Go 모듈을 생성하고 pgx를 추가한 후, pgx 드라이버를 포함하여 `migrate` CLI를 설치하십시오:
+
+```bash
+mkdir todo-api && cd todo-api
+go mod init example.com/todo-api
+go get github.com/jackc/pgx/v5
+go install -tags 'pgx5' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+```
+
+`-tags 'pgx5'` 플래그를 지정하면 `migrate` CLI가 pgx v5 드라이버를 포함하여 컴파일되며, 이 드라이버는 `pgx5://` URL 스킴을 사용합니다. `go install`은 바이너리를 `$GOBIN`에 설치하며, `GOBIN`이 설정되어 있지 않으면 `$(go env GOPATH)/bin`에 설치합니다. 따라서 해당 디렉터리가 `PATH`에 포함되어 있는지 확인하십시오.
+
+<Tip>
+  **기존 앱에 추가하는 경우**
+
+  `mkdir`와 `go mod init`은 건너뛰십시오. 모듈에서 `go get github.com/jackc/pgx/v5`와 위의 `go install` 명령을 실행한 다음 [연결 구성](#configure-connection)으로 진행하십시오. 코드에서 `database/sql`을 사용한다면 [`stdlib.OpenDBFromPool`](https://pkg.go.dev/github.com/jackc/pgx/v5/stdlib#OpenDBFromPool)이 동일한 풀을 `*sql.DB`로 래핑하므로 기존 쿼리를 점진적으로 옮길 수 있습니다. 이때 `?` 플레이스홀더는 `$1`, `$2` 등으로 바꾸십시오.
+</Tip>
+
+## 연결 구성 {#configure-connection}
+
+다운로드한 CA 인증서를 프로젝트 디렉터리로 옮긴 후 파일 이름을 `ca-certificate.pem`으로 변경하십시오.
+
+애플리케이션용 데이터베이스를 생성하십시오. `<PASSWORD>`와 호스트를 **Connect** 모달에 표시된 값으로 바꾸십시오.
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_go;"
+```
+
+```text
+CREATE DATABASE
+```
+
+셸에서 환경 변수 2개를 설정하십시오. 두 변수 모두 동일한 `guide_go` 데이터베이스를 가리키며, URL 스킴만 다릅니다. 애플리케이션은 `DATABASE_URL`을 읽고 `migrate` CLI는 `MIGRATE_URL`을 사용합니다.
+
+```bash
+export DATABASE_URL="postgres://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_go?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+export MIGRATE_URL="pgx5://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_go?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+```
+
+pgx는 `libpq`와 같은 방식으로 URL을 파싱합니다. `sslmode=verify-full`을 지정하면 pgx가 `sslrootcert`에서 CA 파일을 로드하고 인증서 체인과 호스트명을 모두 검사하므로 별도의 TLS 코드를 작성할 필요가 없습니다. `sslrootcert` 경로는 명령어를 실행하는 디렉터리를 기준으로 한 상대 경로로 해석됩니다. 비밀번호에 `@`, `/`, `#` 등의 특수 문자가 포함되어 있다면 URL 인코딩하십시오.
+
+<Warning>
+  **항상 `sslmode=verify-full`을 설정하십시오**
+
+  `sslmode`를 지정하지 않으면 pgx는 `prefer`를 사용하므로, `sslrootcert`를 설정하더라도 서버 인증서를 검증하지 않습니다. `sslmode=verify-full`을 설정했더라도 CA 파일이 잘못되었다면 pgx는 `x509: certificate signed by unknown authority` 오류를 내며 실패하고, 파일이 존재하지 않으면 `unable to read CA file` 오류를 냅니다. 호스트명 대신 IP 주소로 연결하면 `x509: cannot validate certificate for <IP> because it doesn't contain any IP SANs` 오류가 발생합니다.
+</Warning>
+
+## 마이그레이션으로 스키마 생성하기 {#migrations}
+
+마이그레이션 파일을 생성합니다:
+
+```bash
+migrate create -ext sql -dir migrations -seq create_todos
+```
+
+```text
+/Users/you/todo-api/migrations/000001_create_todos.up.sql
+/Users/you/todo-api/migrations/000001_create_todos.down.sql
+```
+
+`up` 마이그레이션을 다음과 같이 작성하세요:
+
+```sql title="migrations/000001_create_todos.up.sql"
+CREATE TABLE todos (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    title      text NOT NULL,
+    done       boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+이를 되돌리는 `down` 마이그레이션은 다음과 같습니다.
+
+```sql title="migrations/000001_create_todos.down.sql"
+DROP TABLE todos;
+```
+
+마이그레이션을 적용합니다:
+
+```bash
+migrate -path migrations -database "$MIGRATE_URL" up
+```
+
+```text
+1/u create_todos (480.890916ms)
+```
+
+`migrate`는 현재 버전을 `schema_migrations` 테이블에 기록하고, 이후 실행할 때는 그보다 새로운 마이그레이션만 적용합니다. `migrations` 디렉터리는 코드와 함께 커밋하세요.
+
+<Note>
+  `migrate`는 항상 직접 연결(포트 `5432`)로 실행하세요. `migrate`는 실행되는 동안 세션 수준의 권고 잠금(advisory lock)을 유지하므로, 두 배포가 동시에 마이그레이션을 수행할 수 없습니다. PgBouncer를 거치면 잠금과 잠금 해제가 서로 다른 Postgres 연결에서 실행될 수 있습니다. 그러면 잠금이 해제되지 않은 채 남아 이후의 `migrate` 실행이 멈추거나 `timeout: can't acquire database lock` 오류와 함께 실패합니다.
+</Note>
+
+## 데이터베이스 쿼리하기 {#query}
+
+`db.go` 파일을 생성하십시오. 이 파일은 `DATABASE_URL`을 사용해 풀을 생성하고, 시작 시 세션에서 사용 중인 TLS 버전을 Postgres에 조회하여 연결 상태를 확인합니다.
+
+```go title="db.go"
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// newPool creates a connection pool from DATABASE_URL and verifies that it can connect.
+func newPool(ctx context.Context) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+	if err != nil {
+		return nil, err
+	}
+
+	var tlsVersion string
+	err = pool.QueryRow(ctx,
+		"SELECT coalesce(version, 'none') FROM pg_stat_ssl WHERE pid = pg_backend_pid()",
+	).Scan(&tlsVersion)
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("connect to Postgres: %w", err)
+	}
+	log.Printf("Connected to Postgres (TLS: %s)", tlsVersion)
+	return pool, nil
+}
+```
+
+HTTP 핸들러를 정의하는 `todos.go` 파일을 생성하세요. 각 핸들러는 풀에서 매개변수화된 쿼리를 하나씩 실행하며, `pgx.CollectRows`와 `pgx.CollectExactlyOneRow`는 컬럼명을 기준으로 각 행을 `Todo` 구조체에 매핑합니다.
+
+```go title="todos.go"
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"log"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Todo struct {
+	ID        int64     `json:"id" db:"id"`
+	Title     string    `json:"title" db:"title"`
+	Done      bool      `json:"done" db:"done"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+}
+
+const todoColumns = "id, title, done, created_at"
+
+// registerTodoRoutes adds the CRUD endpoints for todos to mux.
+func registerTodoRoutes(mux *http.ServeMux, pool *pgxpool.Pool) {
+	// Read
+	mux.HandleFunc("GET /todos", func(w http.ResponseWriter, r *http.Request) {
+		rows, _ := pool.Query(r.Context(), "SELECT "+todoColumns+" FROM todos ORDER BY id")
+		todos, err := pgx.CollectRows(rows, pgx.RowToStructByName[Todo])
+		writeJSON(w, http.StatusOK, todos, err)
+	})
+
+	// Create
+	mux.HandleFunc("POST /todos", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Title string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Title == "" {
+			http.Error(w, "expected a JSON body with a title", http.StatusBadRequest)
+			return
+		}
+		rows, _ := pool.Query(r.Context(),
+			"INSERT INTO todos (title) VALUES ($1) RETURNING "+todoColumns, in.Title)
+		todo, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Todo])
+		writeJSON(w, http.StatusCreated, todo, err)
+	})
+
+	// Update: toggle the done flag
+	mux.HandleFunc("PATCH /todos/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		rows, _ := pool.Query(r.Context(),
+			"UPDATE todos SET done = NOT done WHERE id = $1 RETURNING "+todoColumns, id)
+		todo, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Todo])
+		writeJSON(w, http.StatusOK, todo, err)
+	})
+
+	// Delete
+	mux.HandleFunc("DELETE /todos/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		tag, err := pool.Exec(r.Context(), "DELETE FROM todos WHERE id = $1", id)
+		if err == nil && tag.RowsAffected() == 0 {
+			err = pgx.ErrNoRows
+		}
+		writeJSON(w, http.StatusNoContent, nil, err)
+	})
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any, err error) {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		http.Error(w, "not found", http.StatusNotFound)
+	case err != nil:
+		log.Println(err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+	case status == http.StatusNoContent:
+		w.WriteHeader(status)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		enc.Encode(body)
+	}
+}
+```
+
+값을 SQL 문자열에 직접 포맷팅하지 않고 인수(`$1`)로 전달하면 SQL 인젝션을 방지할 수 있습니다. pgx는 이러한 값을 쿼리 텍스트와 분리하여 전송합니다. `pool.Query`에서 반환되는 오류는 별도로 확인할 필요가 없습니다. `pgx.CollectRows`와 `pgx.CollectExactlyOneRow`가 해당 오류를 함께 반환하기 때문입니다.
+
+`main.go`를 생성하십시오. 이 파일은 프로세스 전체에서 사용할 풀을 하나 생성하고, 포트 `3114`에서 라우트를 제공하며, <kbd>Ctrl</kbd>+<kbd>C</kbd>를 누르면 풀을 닫습니다. 기존 애플리케이션에서는 이 파일 대신 시작 시 `newPool`을 한 번 호출하고, 사용 중인 `http.ServeMux`에 `registerTodoRoutes`를 호출하십시오:
+
+```go title="main.go"
+package main
+
+import (
+	"context"
+	"errors"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+)
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := newPool(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer pool.Close()
+
+	mux := http.NewServeMux()
+	registerTodoRoutes(mux, pool)
+	srv := &http.Server{Addr: ":3114", Handler: mux}
+
+	go func() {
+		<-ctx.Done()
+		srv.Shutdown(context.Background())
+	}()
+
+	log.Println("Listening on http://localhost:3114/todos")
+	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
+	}
+	log.Println("Shutting down")
+}
+```
+
+## 실행 및 확인 {#verify}
+
+`pgxpool`의 나머지 의존성을 `go.mod`와 `go.sum`에 추가한 다음, 서버를 시작하십시오.
+
+```bash
+go mod tidy
+go run .
+```
+
+```text
+2026/10/01 09:44:25 Connected to Postgres (TLS: TLSv1.3)
+2026/10/01 09:44:25 Listening on http://localhost:3114/todos
+```
+
+`TLSv1.3` 값은 서버의 `pg_stat_ssl`에서 가져온 것이므로, 이를 통해 세션이 암호화되어 있음을 확인할 수 있습니다. `sslrootcert`가 다른 인증서를 가리키도록 설정하면 서버가 시작되지 않고 `x509: certificate signed by unknown authority` 로그를 남깁니다. 이를 통해 인증서가 실제로 검증되고 있음을 알 수 있습니다.
+
+두 번째 터미널에서 할 일 2개를 생성하고, 첫 번째 항목을 완료로 표시한 다음 두 번째 항목을 삭제하십시오:
+
+```bash
+curl -X POST localhost:3114/todos -d '{"title": "Try pgx"}'
+curl -X POST localhost:3114/todos -d '{"title": "Write a migration"}'
+curl -X PATCH localhost:3114/todos/1
+curl -X DELETE localhost:3114/todos/2
+```
+
+`PATCH` 요청은 업데이트된 행을 반환합니다.
+
+```json
+{
+  "id": 1,
+  "title": "Try pgx",
+  "done": true,
+  "created_at": "2026-10-01T09:44:25.896031-05:00"
+}
+```
+
+브라우저에서 `http://localhost:3114/todos`를 열어 남은 할 일 목록을 확인하십시오. pgx는 `timestamptz` 값을 로컬 시간대 기준으로 반환합니다. 응답은 다음과 같습니다.
+
+```json
+[
+  {
+    "id": 1,
+    "title": "Try pgx",
+    "done": true,
+    "created_at": "2026-10-01T09:44:25.896031-05:00"
+  }
+]
+```
+
+<kbd>Ctrl</kbd>+<kbd>C</kbd>를 눌러 서버를 중지합니다. 서버는 `Shutting down` 로그를 출력한 뒤 풀을 닫습니다.
+
+콘솔에서 데이터를 확인하려면 서비스의 왼쪽 사이드바에서 **SQL 콘솔**을 열고, `guide_go`와 `public`을 차례로 펼친 다음 `todos` 테이블을 클릭하세요. 바로 옆의 `schema_migrations` 테이블에는 마이그레이션 버전이 저장되어 있습니다. `todos` 테이블에는 다음과 같이 남은 행이 있습니다.
+
+| id | title   | done | created&#95;at                |
+| -- | ------- | ---- | ----------------------------- |
+| 1  | Try pgx | true | 2026-10-01 14:44:25.896031+00 |
+
+## PgBouncer 사용 {#pgbouncer}
+
+앱의 쿼리를 번들로 제공되는 [PgBouncer](/ko/products/managed-postgres/connection#pgbouncer)를 거쳐 전송하려면 Connect 모달에서 **via PgBouncer**를 선택하고, `DATABASE_URL`의 포트를 `6432`로 변경한 다음 `default_query_exec_mode=cache_describe`를 추가하십시오. `MIGRATE_URL`은 포트 `5432`로 유지하십시오:
+
+```bash
+export DATABASE_URL="postgres://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/guide_go?sslmode=verify-full&sslrootcert=ca-certificate.pem&default_query_exec_mode=cache_describe"
+```
+
+pgx는 URL에서 `default_query_exec_mode`를 읽어 들이며, 이 값을 서버로 전송하지 않습니다. 코드를 변경할 필요가 없으며, 기존 CA 인증서도 그대로 사용할 수 있습니다. 이제 시작 로그에는 `TLS: none`이 표시되는데, 이는 `pg_stat_ssl`이 PgBouncer와 Postgres 사이의 연결 정보를 보고하기 때문입니다. 애플리케이션과 PgBouncer 간의 연결은 여전히 검증되므로, 잘못된 CA 인증서를 사용하면 이전과 마찬가지로 연결에 실패합니다.
+
+<Warning>
+  **PgBouncer를 사용할 때는 pgx의 기본 쿼리 모드를 사용하지 마십시오**
+
+  pgx는 기본적으로 연결마다 각 쿼리를 이름이 지정된 SQL 문(named statement)으로 한 번 준비하고, 이때 반환받은 컬럼 타입을 재사용합니다. PgBouncer는 이러한 SQL 문을 쿼리가 실행되는 Postgres 연결에서 준비하며, 이를 여러 클라이언트가 공유합니다. 마이그레이션으로 컬럼 타입이 바뀌거나 `SELECT *`로 조회하는 테이블에 컬럼이 추가되면, PgBouncer를 거치는 쿼리는 애플리케이션을 재시작한 후에도 `cached plan must not change result type` 오류로 계속 실패할 수 있습니다. pgx 5.9 이상에서는 오류 없이 잘못된 값이 반환될 수도 있습니다. 예를 들어 `bigint` 컬럼을 `double precision`으로 변경하면 `float64` 값의 원시 비트가 그대로 반환되어, `42.5` 대신 `4631178160564600832`와 같은 값이 나타납니다.
+
+  `cache_describe`는 매개변수와 컬럼 타입만 캐시하고, 모든 쿼리를 이름 없는 SQL 문으로 한 번의 왕복 안에 실행하며, 서버가 결과마다 함께 반환하는 컬럼 타입으로 행을 디코딩하므로 이 문제가 발생하지 않습니다. `exec`도 정상적으로 동작합니다. 반면 PgBouncer 환경에서는 `describe_exec`를 사용하지 마십시오. 이 모드는 각 쿼리를 두 번의 왕복으로 나누어 처리하는데, PgBouncer가 각 왕복을 서로 다른 Postgres 연결로 보낼 수 있기 때문입니다. `statement_cache_capacity=0`은 설정하지 않아도 됩니다.
+</Warning>
+
+PgBouncer는 트랜잭션 풀링 모드(transaction pooling mode)로 실행되므로, 트랜잭션마다 서로 다른 Postgres 연결에서 실행될 수 있습니다.
+
+* `pool.Begin` 또는 `pgx.BeginFunc`를 사용하는 트랜잭션은 평소와 같이 동작합니다.
+* `SET`으로 지정한 세션 설정은 해당 연결에 유지되지 않으며, 다른 클라이언트로 새어 나갈 수 있습니다. 대신 트랜잭션 내에서 `SET LOCAL`을 사용하십시오. 또한 PgBouncer는 연결 URL에 `search_path`가 포함되어 있으면 `unsupported startup parameter: search_path` 오류를 반환하며 연결을 거부하므로, 테이블 이름에 스키마를 직접 명시하십시오.
+* SQL 수준의 `PREPARE` 및 `EXECUTE`, `LISTEN`, 세션 권고 잠금(advisory lock)은 동작하지 않습니다.
+
+## 다음 단계 {#next-steps}
+
+* [연결](/ko/products/managed-postgres/connection): 연결 문자열(connection string), PgBouncer, TLS
+* [설정](/ko/products/managed-postgres/settings): `max_connections` 등 Postgres 및 PgBouncer 매개변수
+* [읽기 레플리카(Read Replica)](/ko/products/managed-postgres/read-replicas): 두 번째 `pgxpool.Pool`을 사용해 읽기 전용 쿼리를 레플리카로 전송
+* [보안](/ko/products/managed-postgres/security): IP 액세스 목록 및 프라이빗 네트워킹

@@ -241,7 +241,7 @@ Arguments :
 * `--logger.console` — journalise dans la console.
 * `--logger.log` — nom du fichier de log.
 * `--logger.level` — niveau de log.
-* `--ignore-error` — ne pas arrêter le traitement si une requête a échoué.
+* `--ignore-error` — ne pas arrêter le traitement si une requête a échoué : l&#39;erreur est signalée sur `stderr` et la requête suivante est traitée. Comme les erreurs sont ignorées, le processus se termine avec un code de succès même si certaines requêtes ont échoué.
 * `-c`, `--config-file` — chemin vers le fichier de configuration, au même format que pour serveur ClickHouse ; par défaut, la configuration est vide.
 * `--no-system-tables` — ne pas attacher les tables système.
 * `--help` — référence des arguments de `clickhouse-local`.

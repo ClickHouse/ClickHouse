@@ -89,6 +89,7 @@
               "pages": [
                 "zh/concepts/features/operations/insert/inserting-data",
                 "zh/concepts/features/operations/insert/asyncinserts",
+                "zh/concepts/features/operations/insert/async-insert-select",
                 "zh/concepts/features/operations/insert/bulkinserts",
                 "zh/concepts/features/operations/insert/deduplication",
                 "zh/concepts/features/operations/insert/deduplicating-inserts-on-retries",

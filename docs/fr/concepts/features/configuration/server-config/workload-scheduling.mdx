@@ -50,11 +50,11 @@ Les ressources sont classées par mode de partage :
 * **Ressources partagées dans le temps** (CPU, IO, slots de requête) - gèrent les requêtes de ressources mises en file d&#39;attente aux feuilles de la hiérarchie d&#39;ordonnancement. Les requêtes sont ordonnancées selon les politiques et les contraintes définies par la hiérarchie. Les requêtes de ressources sont créées lorsqu&#39;une requête accède à la ressource correspondante. Par exemple, lorsqu&#39;une requête lit des données sur le disque ou utilise le CPU pour le traitement, des requêtes de ressources sont créées pour chaque quantum de travail effectué ou pour chaque quantité d&#39;octets envoyés ou reçus via un socket.
 * **Ressources partagées dans l&#39;espace** (Memory) - gèrent les allocations de ressources aux feuilles de la hiérarchie d&#39;ordonnancement. Les allocations peuvent être actives ou en attente. Les allocations en attente sont bloquées jusqu&#39;à ce que suffisamment d&#39;espace soit libéré ou qu&#39;une autre allocation soit évincée (interrompue de force). Les décisions sont fondées sur les limites et les politiques définies par la hiérarchie. Il existe une correspondance un à un entre les allocations et les requêtes (ou les activités en arrière-plan). Une allocation est créée lorsqu&#39;une requête commence son exécution et elle est libérée lorsqu&#39;elle se termine. Les allocations en cours d’exécution peuvent augmenter ou diminuer leur taille de manière dynamique.
 
-## Hiérarchie des workloads {#workloads}
+## Hiérarchie des charges de travail {#workloads}
 
-ClickHouse fournit une syntaxe SQL pratique pour définir la hiérarchie d’ordonnancement. Toutes les ressources sont réparties dans une hiérarchie WORKLOAD commune. Les règles de répartition peuvent différer sur certains points selon les ressources, mais la hiérarchie reste la même. Chaque WORKLOAD comporte les nœuds d’ordonnancement nécessaires pour chaque ressource. Un workload enfant peut être créé au sein de n’importe quel workload pour construire la hiérarchie. ClickHouse n’impose aucune structure spécifique ou prédéfinie pour la hiérarchie des workloads.
+ClickHouse fournit une syntaxe SQL pratique pour définir la hiérarchie d’ordonnancement. Toutes les ressources sont réparties dans une hiérarchie de charges de travail commune. Les règles de répartition peuvent différer sur certains points selon les ressources, mais la hiérarchie reste la même. Chaque charge de travail comporte les nœuds d’ordonnancement nécessaires pour chaque ressource. Une charge de travail enfant peut être créée au sein de n’importe quelle charge de travail pour construire la hiérarchie. ClickHouse n’impose aucune structure spécifique ou prédéfinie pour la hiérarchie des charges de travail. Une charge de travail sans parent (sans clause `IN`) est une charge de travail racine, et la hiérarchie peut en contenir autant que nécessaire — par exemple, une arborescence définie en SQL et une autre chargée depuis la configuration. Toutes les charges de travail racines sont les enfants d’une racine anonyme implicite (affichée au path `/` dans `system.scheduler`) ; elles sont donc ordonnancées les unes par rapport aux autres selon leurs paramètres `weight`, `priority` et `precedence`, exactement comme des charges de travail sœurs au sein d’une même arborescence.
 
-Voici un exemple de hiérarchie qui répartit toutes les ressources entre les workloads &quot;user&quot; et &quot;system&quot;, avec une garantie respective de 90 % et 10 %. Notez que les poids définis pour les workloads sont utilisés pour l’équité max-min et ne fournissent donc qu’une garantie minimale au mieux (et non une limite ou un quota maximal). L’ordonnancement est effectué indépendamment sur chaque hôte et, par conséquent, les limites définies par les paramètres `max_*` s’appliquent à chaque hôte. Le workload &quot;user&quot; subdivise ses ressources entre les workloads &quot;development&quot; et &quot;production&quot;, &quot;production&quot; disposant de 3 fois plus de ressources que &quot;development&quot; :
+Voici un exemple de hiérarchie qui répartit toutes les ressources entre les charges de travail &quot;user&quot; et &quot;system&quot;, avec une garantie respective de 90 % et 10 %. Notez que les poids définis pour les charges de travail sont utilisés pour l’équité max-min et ne fournissent donc qu’une garantie minimale au mieux (et non une limite ou un quota maximal). L’ordonnancement est effectué indépendamment sur chaque hôte et, par conséquent, les limites définies par les paramètres `max_*` s’appliquent à chaque hôte. La charge de travail &quot;user&quot; subdivise ses ressources entre les charges de travail &quot;development&quot; et &quot;production&quot;, &quot;production&quot; disposant de 3 fois plus de ressources que &quot;development&quot; :
 
 ```sql
 CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
@@ -102,36 +102,36 @@ graph LR
   oth --> all
 ```
 
-Le nom d’un workload feuille sans enfants peut être utilisé dans les paramètres de requête `SETTINGS workload = 'name'`. Consultez [Workload markup](#workload-markup) pour plus de détails.
+Le nom d’une charge de travail feuille sans enfants peut être utilisé dans les paramètres de requête `SETTINGS workload = 'name'`. Consultez [Charge de travail markup](#workload-markup) pour plus de détails.
 
-Pour personnaliser un workload, les paramètres suivants peuvent être utilisés :
+Pour personnaliser une charge de travail, les paramètres suivants peuvent être utilisés :
 
-* `priority` - (time-shared uniquement) les workloads frères sont servis selon des valeurs statiques (une valeur plus faible signifie une priorité plus élevée). Détermine la préemption.
-* `precedence` - (space-shared uniquement) les workloads frères sont admis selon des valeurs statiques (une valeur plus faible signifie une préséance plus élevée). Détermine l’éviction et l’admission.
-* `weight` - les workloads frères ayant la même priorité statique ou la même préséance se partagent les ressources en fonction de leurs poids, de manière équitable. Affecte la préemption, l’éviction et l’admission.
-* `max_io_requests` - la limite du nombre de requêtes d’E/S concurrentes dans ce workload.
-* `max_bytes_inflight` - la limite du nombre total d’octets en cours de traitement pour les requêtes concurrentes dans ce workload.
-* `max_bytes_per_second` - la limite du débit en octets en lecture ou en écriture de ce workload.
-* `max_burst_bytes` - le nombre maximal d’octets pouvant être traités par le workload sans être bridé (pour chaque ressource indépendamment).
-* `max_concurrent_threads` - la limite du nombre de threads pour les requêtes dans ce workload.
+* `priority` - (time-shared uniquement) les charges de travail sœurs sont servies selon des valeurs statiques (une valeur plus faible signifie une priorité plus élevée). Détermine la préemption.
+* `precedence` - (space-shared uniquement) les charges de travail sœurs sont admises selon des valeurs statiques (une valeur plus faible signifie une préséance plus élevée). Détermine l’éviction et l’admission.
+* `weight` - les charges de travail sœurs ayant la même priorité statique ou la même préséance se partagent les ressources en fonction de leurs poids, de manière équitable. Affecte la préemption, l’éviction et l’admission.
+* `max_io_requests` - la limite du nombre de requêtes d’E/S concurrentes dans cette charge de travail.
+* `max_bytes_inflight` - la limite du nombre total d’octets en cours de traitement pour les requêtes concurrentes dans cette charge de travail.
+* `max_bytes_per_second` - la limite du débit en octets en lecture ou en écriture de cette charge de travail.
+* `max_burst_bytes` - le nombre maximal d’octets pouvant être traités par la charge de travail sans être bridée (pour chaque ressource indépendamment).
+* `max_concurrent_threads` - la limite du nombre de threads pour les requêtes dans cette charge de travail.
 * `max_concurrent_threads_ratio_to_cores` - identique à `max_concurrent_threads`, mais normalisé par rapport au nombre de cœurs CPU disponibles.
-* `max_cpus` - la limite du nombre de cœurs CPU pour servir les requêtes dans ce workload.
+* `max_cpus` - la limite du nombre de cœurs CPU pour servir les requêtes dans cette charge de travail.
 * `max_cpu_share` - identique à `max_cpus`, mais normalisé par rapport au nombre de cœurs CPU disponibles.
-* `max_burst_cpu_seconds` - le nombre maximal de secondes CPU pouvant être consommées par le workload sans être bridé en raison de `max_cpus`.
-* `max_memory` - la limite de la mémoire totale réservée à ce workload.
+* `max_burst_cpu_seconds` - le nombre maximal de secondes CPU pouvant être consommées par la charge de travail sans être bridée en raison de `max_cpus`.
+* `max_memory` - la limite de la mémoire totale réservée à cette charge de travail.
 
-Toutes les limites spécifiées via les workload settings sont indépendantes pour chaque ressource. Par exemple, un workload avec `max_bytes_per_second = '10Mi'` aura une limite de bande passante de 10 MB/s pour chaque ressource de lecture et d’écriture, indépendamment. Si une limite commune pour la lecture et l’écriture est requise, envisagez d’utiliser la même ressource pour l’accès READ et WRITE.
+Toutes les limites définies via les paramètres de la charge de travail s’appliquent indépendamment à chaque ressource. Par exemple, une charge de travail avec `max_bytes_per_second = '10Mi'` aura une limite de débit de 10 Mo/s pour chaque ressource de lecture et d’écriture, de manière indépendante. Si vous avez besoin d’une limite commune pour la lecture et l’écriture, envisagez d’utiliser la même ressource pour les accès READ et WRITE.
 
-Il n’existe aucun moyen de spécifier des hiérarchies de workloads différentes pour différentes ressources. Mais il existe un moyen de spécifier une valeur de workload setting différente pour une ressource spécifique :
+Il n’est pas possible de définir des hiérarchies de charges de travail différentes selon les ressources. Il est toutefois possible de définir une valeur de paramètre de charge de travail différente pour une ressource donnée :
 
 ```sql
 CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_second = '1Mi' FOR network_read, max_bytes_per_second = '2Mi' FOR network_write
 ```
 
-Notez également qu’un workload ou une ressource ne peut pas être supprimé s’il est référencé par un autre workload. Pour mettre à jour la définition d’un workload, utilisez la requête `CREATE OR REPLACE WORKLOAD`.
+Notez également qu’une charge de travail ou une ressource ne peut pas être supprimée si elle est référencée par une autre charge de travail. Pour mettre à jour la définition d’une charge de travail, utilisez la requête `CREATE OR REPLACE WORKLOAD`.
 
 <Note>
-  Les paramètres du workload sont convertis en un ensemble approprié de nœuds d’ordonnancement. Pour plus de détails sur les mécanismes sous-jacents, consultez la description des [types et options](#hierarchy) des nœuds d’ordonnancement.
+  Les paramètres de la charge de travail sont convertis en un ensemble approprié de nœuds d’ordonnancement. Pour plus de détails sur les mécanismes sous-jacents, consultez la description des [types et options](#hierarchy) des nœuds d’ordonnancement.
 </Note>
 
 ## Marquage des workloads {#workload-markup}

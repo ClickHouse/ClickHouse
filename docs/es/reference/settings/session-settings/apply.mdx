@@ -13,25 +13,19 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas opciones de configuración están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="apply_deleted_mask">
-  ## apply_deleted_mask
-</div>
+## apply_deleted_mask {#apply_deleted_mask}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Permite filtrar las filas eliminadas con DELETE de eliminación ligera. Si se deshabilita, una consulta podrá leer esas filas. Esto resulta útil para tareas de depuración y para escenarios de &quot;deshacer la eliminación&quot;.
 
-<div id="apply_mutations_on_fly">
-  ## apply_mutations_on_fly
-</div>
+## apply_mutations_on_fly {#apply_mutations_on_fly}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Si se establece en true, las mutaciones (UPDATE y DELETE) que no estén materializadas en la parte de datos se aplicarán en las consultas SELECT.
 
-<div id="apply_prewhere_after_final">
-  ## apply_prewhere_after_final
-</div>
+## apply_prewhere_after_final {#apply_prewhere_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -40,32 +34,39 @@ Si se establece en true, las mutaciones (UPDATE y DELETE) que no estén material
 Cuando se habilita, las condiciones PREWHERE se aplican después del procesamiento FINAL en ReplacingMergeTree y motores similares.
 Esto puede ser útil cuando PREWHERE hace referencia a columnas que pueden tener valores distintos entre filas duplicadas
 y quiere que FINAL seleccione la fila que prevalece antes de filtrar. Cuando está deshabilitada, PREWHERE se aplica durante la lectura.
-Nota: Si apply&#95;row&#95;level&#95;security&#95;after&#95;final está habilitada y la política de filas usa columnas que no forman parte de la clave de ordenación, PREWHERE también
-se aplazará para mantener el orden de ejecución correcto (la política de filas debe aplicarse antes de PREWHERE).
-
-<div id="apply_row_policy_after_final">
-  ## apply_row_policy_after_final
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "1"},{"label": "La configuración se añadió como corrección de la regresión posterior a #87303, en la que las políticas de fila y PREWHERE se aplicaban antes de FINAL. El PR #91065 introdujo la configuración y el PR #97279 hizo que true, la opción segura en términos de corrección, fuera el valor predeterminado. Se registró como {true, true} para que compatibility nunca revierta al comportamiento false anterior a la corrección."}]}]} />
-
-Cuando está habilitado, las políticas de fila y PREWHERE se aplican después del procesamiento de FINAL en las tablas *MergeTree. (Especialmente en ReplacingMergeTree)
-Cuando está deshabilitado, las políticas de fila se aplican antes de FINAL, lo que puede dar resultados diferentes cuando la política
-filtra filas que deberían usarse para la deduplicación en ReplacingMergeTree o motores similares.
-
-Si la expresión de la política de fila depende solo de columnas de ORDER BY, se seguirá aplicando antes de FINAL como optimización,
-ya que ese filtrado no puede afectar al resultado de la deduplicación.
+Nota: PREWHERE también se aplaza, independientemente de esta configuración, siempre que `apply_row_policy_after_final` aplace una ROW POLICY,
+ya que la ROW POLICY debe aplicarse antes de PREWHERE. Esto ocurre cuando la
+expresión de la política no es determinista, lee una columna que no está en ORDER BY o lee una columna de ORDER BY
+cuyo tipo es o contiene un tipo de coma flotante.
 
 Valores posibles:
 
-* 0 — La política de fila y PREWHERE se aplican antes de FINAL (predeterminado).
-* 1 — La política de fila y PREWHERE se aplican después de FINAL.
+* 0 — PREWHERE se aplica antes de FINAL, salvo que una ROW POLICY aplazada también lo aplace (predeterminado).
+* 1 — PREWHERE se aplica después de FINAL.
 
-<div id="apply_settings_from_server">
-  ## apply_settings_from_server
-</div>
+## apply_row_policy_after_final {#apply_row_policy_after_final}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "1"},{"label": "La configuración se añadió como corrección de la regresión posterior a #87303, en la que las ROW POLICY y PREWHERE se aplicaban antes de FINAL. El PR #91065 introdujo la configuración y el PR #97279 hizo que true, la opción segura en términos de corrección, fuera el valor predeterminado. Se registró como {true, true} para que compatibility nunca revierta al comportamiento false anterior a la corrección."}]}]} />
+
+Cuando está habilitado, las ROW POLICY se aplican después del procesamiento de FINAL en las tablas *MergeTree. (Especialmente en ReplacingMergeTree)
+Cuando la política se aplaza de esta forma, PREWHERE también se aplaza para que la política se siga aplicando primero
+(consulte `apply_prewhere_after_final` para aplazar PREWHERE de forma incondicional).
+Cuando está deshabilitado, las ROW POLICY se aplican antes de FINAL, lo que puede dar resultados diferentes cuando la política
+filtra filas que deberían usarse para la deduplicación en ReplacingMergeTree o motores similares.
+
+Si la expresión de la ROW POLICY es determinista y depende solo de columnas de ORDER BY que no son de coma flotante, se seguirá
+aplicando antes de FINAL como optimización, ya que ese filtrado no puede afectar al resultado de la deduplicación. Las columnas de coma flotante
+o las columnas que contienen valores de coma flotante (como `Tuple(Float64, ...)`, `Array(Float64)`, `Nullable(Float64)`, etc.)
+se excluyen porque `-0.0` y `0.0` se deduplican como una sola clave, mientras que una condición de la política sí puede distinguirlos.
+
+Valores posibles:
+
+* 0 — La ROW POLICY se aplica antes de FINAL.
+* 1 — La ROW POLICY se aplica después de FINAL (predeterminado).
+
+## apply_settings_from_server {#apply_settings_from_server}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

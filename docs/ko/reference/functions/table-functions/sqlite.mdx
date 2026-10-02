@@ -10,31 +10,31 @@ doc_type: 'reference'
 
 [SQLite](/ko/reference/engines/database-engines/sqlite) 데이터베이스에 저장된 데이터를 쿼리할 수 있습니다.
 
-## 구문
+## 구문 {#syntax}
 
 ```sql
 sqlite('db_path', 'table_name')
 ```
 
-## 인수
+## 인수 {#arguments}
 
 * `db_path` — SQLite 데이터베이스가 있는 파일의 경로입니다. [String](/ko/reference/data-types/string).
 * `table_name` — SQLite 데이터베이스의 테이블 이름 또는 SQLite에 그대로 전달할 쿼리입니다([테이블 이름 대신 쿼리 전달](#passing-a-query) 참조). [String](/ko/reference/data-types/string).
 
-## 반환 값
+## 반환 값 {#returned-value}
 
 * 원본 `SQLite` 테이블과 동일한 컬럼을 갖는 테이블 객체입니다.
 
-## 테이블 이름 대신 쿼리 전달하기
+## 테이블 이름 대신 쿼리 전달하기 {#passing-a-query}
 
-테이블 이름 대신 두 번째 인수로 SQLite에 그대로 전달되는 `SELECT` 쿼리를 사용할 수 있습니다. 결과로 생성되는 테이블의 구조는 쿼리 결과로부터 추론됩니다. 쿼리는 서브쿼리로 작성하거나 `query` 함수로 감싸 작성할 수 있습니다:
+두 번째 인수로 테이블 이름 대신 `SELECT` 쿼리를 지정할 수 있으며, 이 쿼리는 SQLite에 그대로 전달됩니다. 결과 테이블의 구조는 쿼리 결과로부터 추론됩니다. SQLite는 테이블의 컬럼을 직접 참조하는 결과 컬럼에 대해서만 선언된 타입을 보고하며, 표현식, 리터럴, 집계에 대해서는 아무것도 보고하지 않습니다. `String`으로 매핑되는 선언된 타입([타입 매핑](/ko/reference/engines/database-engines/sqlite#data_types-support) 참조)은 그대로 사용됩니다. 그 밖의 모든 컬럼, 즉 숫자 타입으로 선언된 컬럼과 선언된 타입이 없는 컬럼은 쿼리 결과 첫 번째 행에 있는 값의 저장 클래스(storage class)를 기준으로 타입이 해석됩니다. `INTEGER` 값은 `Int64`, `REAL` 값은 `Float64`가 되며, 그 밖의 값(`TEXT`, `BLOB`, `NULL`)이나 빈 결과는 `String`이 됩니다. SQLite는 복합 `SELECT`에 대해서도 선언된 타입을 보고하는데, 이 타입은 여러 분기 중 하나에서만 가져온 것인 반면 행은 모든 분기에서 나옵니다. 따라서 숫자로 선언된 타입은 해당 행의 저장 클래스와 일치하는 경우에만 유지되며, 그렇지 않으면 선언되지 않은 컬럼과 마찬가지로 저장 클래스에 따라 타입이 결정됩니다. 따라서 추론된 타입은 확장될 수는 있어도 축소되지는 않습니다. 이러한 컬럼의 타입을 추론하는 과정에서 SQLite의 쿼리가 실행됩니다. 다만 첫 번째 행이 나머지 행을 대표하지는 않습니다. SQLite는 행마다 다른 저장 클래스를 반환할 수 있으므로(예: `CASE WHEN id = 1 THEN 1 ELSE 1.5 END`), 쿼리 기반 읽기는 선언된 타입이 없는 컬럼뿐 아니라 숫자 타입으로 읽는 모든 컬럼에 대해 실패 시 차단(fail-closed) 방식으로 동작합니다. 저장 클래스가 해당 타입과 일치하지 않거나 해당 타입으로 정확히 표현할 수 없는 값(예: `UInt8` 컬럼에 있는 값이 `300`인 `INTEGER` 셀, `Float32` 컬럼에 있는 값이 `16777217`인 `REAL` 셀)은 암묵적으로 변환되지 않으며, 읽기가 실패합니다. 저장 클래스가 섞인 값을 가진 컬럼을 읽으려면 해당 컬럼을 `String`으로 선언하거나 SQLite 쿼리에서 텍스트로 캐스팅하십시오. 추론된 컬럼은 모두 `Nullable`입니다. 쿼리는 서브쿼리로 작성하거나 `query` 함수로 감싸서 작성할 수 있습니다.
 
 ```sql
 SELECT * FROM sqlite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1));
 SELECT * FROM sqlite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col2 > 1'));
 ```
 
-이러한 테이블은 읽기 전용이므로 여기에 `INSERT`할 수 없습니다. 동일한 구문이 [`SQLite`](/ko/reference/engines/table-engines/integrations/sqlite) 테이블 엔진에서도 지원됩니다.
+이러한 테이블은 읽기 전용이므로 `INSERT`를 수행할 수 없습니다. [`SQLite`](/ko/reference/engines/table-engines/integrations/sqlite) 테이블 엔진에서도 동일한 구문을 지원합니다.
 
 <Note>
   서브쿼리(subquery) 형식인 `(SELECT ...)`는 ClickHouse에서 파싱된 후 다시 직렬화되어 SQLite로 전송됩니다. 따라서 유효한 ClickHouse SQL이어야 합니다. ClickHouse가 파싱하지 않는 SQLite 전용 구문을 전달하려면 `query('...')` 형식을 사용하십시오. 이 형식의 텍스트는 그대로 SQLite로 전송됩니다.
@@ -42,7 +42,7 @@ SELECT * FROM sqlite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col
   전달된 쿼리로는 바깥쪽 `WHERE`, `LIMIT`, 집계 등 주변 ClickHouse 쿼리의 요소가 **푸시다운되지 않습니다**. 대신 전체 쿼리 결과를 가져온 후 ClickHouse에서 적용됩니다. SQLite에서 읽는 데이터를 제한하려면 필터를 전달된 쿼리 내부에 넣으십시오. [`external_table_strict_query = 1`](/ko/reference/settings/session-settings/external-table#external_table_strict_query)을 사용하면 전달된 쿼리로 푸시다운할 수 없는 테이블 함수의 컬럼에 대한 바깥쪽 필터는 로컬에서 적용되지 않고 예외와 함께 거부됩니다. 이 검사는 최상위 수준의 `WHERE` 프레디케이트와 최상위 수준 `AND`의 각 결합항을 대상으로 합니다. 이 테이블의 컬럼에 대한 `PREWHERE`는 이 설정의 대상이 아닙니다. 이 테이블 엔진은 `PREWHERE`를 지원하지 않으며, 이러한 쿼리는 설정과 관계없이 `ILLEGAL_PREWHERE`로 거부됩니다. 필터를 실제로 푸시다운할 수 있는 경우에만 검사가 실행됩니다. 즉, 이 테이블이 쿼리의 유일한 테이블이거나, `INNER JOIN`의 양쪽 중 한쪽이거나, 외부 조인의 보존 측(`LEFT JOIN`의 왼쪽, `RIGHT JOIN`의 오른쪽)인 경우입니다. `LEFT`/`RIGHT JOIN`의 비보존 측과 `FULL JOIN`의 양쪽에서는 아무것도 푸시다운되거나 검사되지 않으므로, 엄격 모드에서도 이 테이블의 컬럼에 대한 필터는 조인 후 로컬에서 적용됩니다. 검사가 실행되는 경우, 주변 쿼리에서 조인된 다른 테이블을 참조하는 프레디케이트는 조인된 측만 참조하든 하나의 비-`AND` 표현식(예: `OR`) 안에서 이 테이블과 함께 참조하든 푸시다운되지 않으며 검사에서 제외됩니다. 이러한 프레디케이트는 일반적인 ClickHouse 평가 시점(조인 후 `WHERE`, 조인 전 `PREWHERE`)을 유지하며 거부되지 않습니다.
 </Note>
 
-## 예시
+## 예시 {#example}
 
 ```sql title="Query"
 SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
@@ -56,7 +56,7 @@ SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
 └───────┴──────┘
 ```
 
-## 관련
+## 관련 {#related}
 
 * [SQLite](/ko/reference/engines/table-engines/integrations/sqlite) 테이블 엔진
 * [SQLite 데이터베이스 엔진](/ko/reference/engines/database-engines/sqlite) — 데이터 타입 지원 섹션

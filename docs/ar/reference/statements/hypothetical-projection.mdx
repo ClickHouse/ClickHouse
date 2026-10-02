@@ -10,9 +10,9 @@ doc_type: 'reference'
 
 الإسقاطات الافتراضية (Hypothetical projections) هي إسقاطات وهمية يقتصر نطاقها على الجلسة، ويمكنك إرفاقها بجدول من عائلة `MergeTree` دون بنائها أو تخزينها فعليًا. وهي لا توجد إلا داخل الجلسة الحالية، ويتم إدراجها عبر [`EXPLAIN WHATIF`](/ar/reference/statements/explain#explain-whatif).
 
-لا يقدّر `EXPLAIN WHATIF` حتى الآن مدى فائدة الإسقاط الافتراضي، بل يُبلغ عن كل منها بالحالة `status: not_applicable`. ويبقى تعريفها مفيدًا اليوم للتحقق من صحة التعريف مقابل الجدول دون تجسيده، وكذلك للأدوات التي تقرأ من [`system.hypothetical_projections`](/ar/reference/system-tables/hypothetical_projections).
+يقدّر `EXPLAIN WHATIF` الإسقاطات الافتراضية العادية (المرتّبة): عدد العلامات والصفوف التي ستطالها قراءة الإسقاط عند تنفيذ استعلام، وما إذا كان مُحسِّن الاستعلامات سيختار الإسقاط بدلًا من الجدول الأساسي. ولا يقدّر جميع الإسقاطات؛ فالإسقاطات التجميعية والإسقاطات التي تتضمن عبارة `WHERE` مثالان على ذلك. ويعرض الإسقاطات المرشحة التي لم يقدّرها مع سبب ذلك. راجع [`EXPLAIN WHATIF`](/ar/reference/statements/explain#explain-whatif) للاطلاع على القائمة الكاملة. وتظهر الإسقاطات الافتراضية للجلسة أيضًا في [`system.hypothetical_projections`](/ar/reference/system-tables/hypothetical_projections).
 
-## CREATE HYPOTHETICAL PROJECTION
+## CREATE HYPOTHETICAL PROJECTION {#create-hypothetical-projection}
 
 ```sql
 CREATE HYPOTHETICAL PROJECTION [IF NOT EXISTS] name
@@ -37,7 +37,7 @@ CREATE HYPOTHETICAL PROJECTION p_by_b ON t (SELECT a, b ORDER BY b);
 CREATE HYPOTHETICAL PROJECTION p_idx ON t INDEX b TYPE basic;
 ```
 
-## DROP HYPOTHETICAL PROJECTION
+## DROP HYPOTHETICAL PROJECTION {#drop-hypothetical-projection}
 
 ```sql
 DROP HYPOTHETICAL PROJECTION [IF EXISTS] name ON [db.]table_name
@@ -45,7 +45,7 @@ DROP HYPOTHETICAL PROJECTION [IF EXISTS] name ON [db.]table_name
 
 يزيل إسقاطًا افتراضيًا (hypothetical projection) من الجلسة الحالية.
 
-## DROP ALL HYPOTHETICAL PROJECTIONS
+## DROP ALL HYPOTHETICAL PROJECTIONS {#drop-all-hypothetical-projections}
 
 ```sql
 DROP ALL HYPOTHETICAL PROJECTIONS
@@ -53,19 +53,19 @@ DROP ALL HYPOTHETICAL PROJECTIONS
 
 يمسح كل إسقاط افتراضي مُعرَّف في الجلسة الحالية، بغض النظر عن الجدول. ولا يمسّ الفهارس الافتراضية؛ أما `DROP ALL HYPOTHETICAL INDEXES` فيفعل العكس.
 
-## النطاق ودورة الحياة
+## النطاق ودورة الحياة {#scope-and-lifetime}
 
 * لا توجد الإسقاطات الافتراضية إلا في **الجلسة الحالية** — فهي غير مرئية للجلسات الأخرى ويتم التخلص منها عند انتهاء الجلسة.
 * تعريف إحداها أو حذفها لا يُنشئ أي إسقاط ولا يؤثر مطلقًا على الاستعلامات العادية على الجدول.
 * يمكنك الاطلاع على الإسقاطات الافتراضية للجلسة الحالية عبر [`system.hypothetical_projections`](/ar/reference/system-tables/hypothetical_projections).
 
-## الصلاحيات المطلوبة
+## الصلاحيات المطلوبة {#required-privileges}
 
-يتطلب `CREATE HYPOTHETICAL PROJECTION` صلاحية `ALTER ADD PROJECTION` على الجدول — وهي الصلاحية نفسها التي يحتاجها الأمر الفعلي `ALTER TABLE ... ADD PROJECTION` — لأنه يتحقق من صحة التعريف بمقارنته بأعمدة الجدول. وهو لا يقرأ أي بيانات من الجدول، لذا لا تُشترط صلاحية `SELECT` على أعمدة الإسقاط في الوقت الحالي؛ أما عندما يبدأ `EXPLAIN WHATIF` بتقدير الإسقاطات فسيقرأ تلك الأعمدة، وعندئذٍ ستصبح صلاحية `SELECT` على مستوى العمود مطلوبة، كما هو الحال بالفعل مع [`CREATE HYPOTHETICAL INDEX`](/ar/reference/statements/hypothetical-index#required-privileges).
+يتطلب `CREATE HYPOTHETICAL PROJECTION` صلاحية `ALTER ADD PROJECTION` على الجدول — وهي الصلاحية نفسها التي يحتاجها الأمر الفعلي `ALTER TABLE ... ADD PROJECTION` — لأنه يتحقق من صحة التعريف بمقارنته بأعمدة الجدول. ويتطلب `EXPLAIN WHATIF` صلاحية `SELECT` على مستوى العمود لأعمدة الإسقاط كي يتمكن من تقديره، كما هو الحال بالفعل مع [`CREATE HYPOTHETICAL INDEX`](/ar/reference/statements/hypothetical-index#required-privileges).
 
-ويتطلب `DROP HYPOTHETICAL PROJECTION` الصلاحية نفسها، حتى لا يكشف ذكر اسم جدول في عملية حذف عمّا إذا كان موجودًا أو مؤهلًا. أما `DROP ALL HYPOTHETICAL PROJECTIONS` فلا يذكر أي جدول ولا يتطلب أي صلاحية.
+ويتطلب `DROP HYPOTHETICAL PROJECTION` الصلاحية نفسها، حتى لا يكشف ذكر اسم جدول في عملية حذف عمّا إذا كان موجودًا أو مؤهلًا، ويعيد `EXPLAIN WHATIF` التحقق من هذه الصلاحية قبل التحقق من صحة تعريف مخزّن بمقارنته بالجدول. أما `DROP ALL HYPOTHETICAL PROJECTIONS` فلا يذكر أي جدول ولا يتطلب أي صلاحية.
 
-## انظر أيضاً
+## انظر أيضاً {#see-also}
 
 * [`CREATE HYPOTHETICAL INDEX`](/ar/reference/statements/hypothetical-index)
 * [`EXPLAIN WHATIF`](/ar/reference/statements/explain#explain-whatif)

@@ -13,25 +13,19 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="apply_deleted_mask">
-  ## apply_deleted_mask
-</div>
+## apply_deleted_mask {#apply_deleted_mask}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Habilita a filtragem de linhas excluídas com exclusão leve. Se estiver desabilitado, uma consulta poderá ler essas linhas. Isso é útil para depuração e cenários de &quot;desfazer exclusão&quot;
 
-<div id="apply_mutations_on_fly">
-  ## apply_mutations_on_fly
-</div>
+## apply_mutations_on_fly {#apply_mutations_on_fly}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Se true, as mutações (UPDATEs e DELETEs) que não estão materializadas na data part serão aplicadas nas instruções SELECT.
 
-<div id="apply_prewhere_after_final">
-  ## apply_prewhere_after_final
-</div>
+## apply_prewhere_after_final {#apply_prewhere_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -40,32 +34,39 @@ Se true, as mutações (UPDATEs e DELETEs) que não estão materializadas na dat
 Quando habilitada, as condições PREWHERE são aplicadas após o processamento FINAL para ReplacingMergeTree e motores semelhantes.
 Isso pode ser útil quando PREWHERE faz referência a colunas que podem ter valores diferentes em linhas duplicadas
 e você quer que FINAL selecione a linha que prevalece antes da filtragem. Quando desabilitada, PREWHERE é aplicada durante a leitura.
-Observação: se apply&#95;row&#95;level&#95;security&#95;after&#95;final estiver habilitada e a política de linha usar colunas fora da chave de ordenação, PREWHERE também
-será adiada para manter a ordem correta de execução (a política de linha deve ser aplicada antes de PREWHERE).
+Observação: independentemente desta configuração, PREWHERE também é adiada sempre que uma política de linha é adiada por
+`apply_row_policy_after_final`, pois a política de linha deve ser aplicada antes de PREWHERE. Isso acontece quando a
+expressão da política é não determinística, lê uma coluna que não está em ORDER BY ou lê uma coluna de ORDER BY
+cujo tipo é ou contém um tipo de ponto flutuante.
 
-<div id="apply_row_policy_after_final">
-  ## apply_row_policy_after_final
-</div>
+Valores possíveis:
+
+* 0 — PREWHERE é aplicada antes de FINAL, a menos que uma política de linha adiada também a adie (padrão).
+* 1 — PREWHERE é aplicada após FINAL.
+
+## apply_row_policy_after_final {#apply_row_policy_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "1"},{"label": "A configuração foi adicionada como uma correção para a regressão pós-#87303, em que as políticas de linha e PREWHERE eram aplicados antes de FINAL. O PR #91065 introduziu a configuração, e o PR #97279 tornou true o padrão seguro em termos de correção. Registrado como {true, true} para que a compatibilidade nunca reverta ao comportamento false anterior à correção."}]}]} />
 
-Quando ativado, as políticas de linha e PREWHERE são aplicados após o processamento de FINAL para tabelas *MergeTree. (Especialmente para ReplacingMergeTree)
-Quando desativado, as políticas de linha são aplicadas antes de FINAL, o que pode causar resultados diferentes quando a política
+Quando habilitado, as políticas de linha são aplicadas após o processamento de FINAL para tabelas *MergeTree. (Especialmente para ReplacingMergeTree)
+Quando a política é adiada dessa forma, PREWHERE também é adiado, para que a política continue sendo aplicada primeiro
+(consulte `apply_prewhere_after_final` para adiar PREWHERE incondicionalmente).
+Quando desabilitado, as políticas de linha são aplicadas antes de FINAL, o que pode causar resultados diferentes quando a política
 filtra linhas que deveriam ser usadas para desduplicação em ReplacingMergeTree ou motores semelhantes.
 
-Se a expressão da política de linha depender apenas de colunas em ORDER BY, ela ainda será aplicada antes de FINAL como uma otimização,
-pois essa filtragem não pode afetar o resultado da desduplicação.
+Se a expressão da política de linha for determinística e depender apenas de colunas que não sejam de ponto flutuante em ORDER BY, ela ainda será
+aplicada antes de FINAL como uma otimização, pois essa filtragem não pode afetar o resultado da desduplicação. Colunas de ponto flutuante
+ou colunas que contêm valores de ponto flutuante (como `Tuple(Float64, ...)`, `Array(Float64)`, `Nullable(Float64)` etc.)
+são excluídas porque `-0.0` e `0.0` são desduplicados como uma única chave, enquanto uma condição da política pode diferenciá-los.
 
 Valores possíveis:
 
-* 0 — A política de linha e PREWHERE são aplicados antes de FINAL (padrão).
-* 1 — A política de linha e PREWHERE são aplicados após FINAL.
+* 0 — A política de linha é aplicada antes de FINAL.
+* 1 — A política de linha é aplicada após FINAL (padrão).
 
-<div id="apply_settings_from_server">
-  ## apply_settings_from_server
-</div>
+## apply_settings_from_server {#apply_settings_from_server}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

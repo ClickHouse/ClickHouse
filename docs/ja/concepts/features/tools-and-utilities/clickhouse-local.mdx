@@ -228,7 +228,7 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `--queries-file` - 実行するクエリが含まれたファイルのパス。`--queries-file` は複数回指定できます。例: `--query queries1.sql --query queries2.sql`。`--query` と同時には使用できません。
 * `--multiquery, -n` – 指定すると、`--query` オプションの後にセミコロン区切りで複数のクエリを指定できます。利便性のため、`--query` を省略して `--multiquery` の後にクエリを直接渡すこともできます。
 * `-N`, `--table` — 出力データの格納先となるテーブル名。デフォルトは `table` です。
-* `--f`, `--format`, `--output-format` — 出力フォーマット。デフォルトは `TSV` です。
+* `-f`, `--format`, `--output-format` — 出力フォーマット。デフォルトは `TSV` です。
 * `-d`, `--database` — デフォルトのデータベース。デフォルトは `_local` です。
 * `--stacktrace` — 例外発生時にデバッグ出力をダンプするかどうか。
 * `--echo [ <bool> ]` — 実行前に各クエリを表示します。省略可能なブール値を取ります。対話型モードではデフォルトで有効、バッチモードでは無効です。注意: `--echo` は省略可能な値を取るようになったため、値を指定しない `--echo` の直後に置かれた位置引数のクエリはその値として解釈されます。代わりに `--echo --query "..."`、`--echo -q "..."`、`--echo=false`、またはパイプされた `stdin` を使用してください。
@@ -241,7 +241,7 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `--logger.console` — コンソールにログを出力します。
 * `--logger.log` — ログファイル名。
 * `--logger.level` — ログレベル。
-* `--ignore-error` — クエリが失敗しても処理を停止しません。
+* `--ignore-error` — クエリが失敗しても処理を停止しません。エラーは `stderr` に報告され、次のクエリが処理されます。エラーは無視されるため、一部のクエリが失敗しても、プロセスは成功を示す終了コードで終了します。
 * `-c`, `--config-file` — ClickHouseサーバー と同じ形式の設定ファイルへのパス。デフォルトでは設定は空です。
 * `--no-system-tables` — システムテーブルをアタッチしません。
 * `--help` — `clickhouse-local` の引数リファレンス。

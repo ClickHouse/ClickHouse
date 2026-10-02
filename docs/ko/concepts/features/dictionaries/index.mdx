@@ -17,9 +17,7 @@ ClickHouse의 딕셔너리는 다양한 [내부 및 외부 소스](/ko/reference
 
 <Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="ClickHouse 딕셔너리의 사용 사례" />
 
-<div id="speeding-up-joins-using-a-dictionary">
-  ## 딕셔너리를 사용해 조인 속도 높이기
-</div>
+## 딕셔너리를 사용해 조인 속도 높이기 {#speeding-up-joins-using-a-dictionary}
 
 딕셔너리는 특정 유형의 `JOIN` 속도를 높이는 데 사용할 수 있습니다. 여기서 말하는 유형은 조인 키가 기반 키-값 저장소의 키 속성과 일치해야 하는 [`LEFT ANY` 유형](/ko/reference/statements/select/join#supported-types-of-join)입니다.
 
@@ -30,7 +28,7 @@ ClickHouse의 딕셔너리는 다양한 [내부 및 외부 소스](/ko/reference
 Direct Join 알고리즘을 사용하려면 오른쪽 테이블이 딕셔너리를 기반으로 해야 합니다. 즉, 해당 테이블에서 조인할 데이터가 이미 메모리에 지연 시간이 짧은 키-값 데이터 구조 형태로 존재해야 합니다.
 
 <div id="example">
-  ### 예시
+  ### 예시 {#example}
 </div>
 
 [Stack Overflow 데이터셋](/ko/get-started/sample-datasets/stackoverflow)을 사용해 다음 질문에 답해 보겠습니다.
@@ -88,7 +86,7 @@ Peak memory usage: 3.18 GiB.
 이 쿼리는 빠르지만, 좋은 성능을 내려면 `JOIN`을 신중하게 작성해야 합니다. 이상적으로는 메트릭을 계산하기 위해 해당 블로그 하위 집합의 `UpVote` 및 `DownVote` 수를 보기 전에, 먼저 &quot;SQL&quot;을 포함하는 게시물만 필터링하면 됩니다.
 
 <div id="applying-a-dictionary">
-  #### 딕셔너리 적용
+  #### 딕셔너리 적용 {#applying-a-dictionary}
 </div>
 
 이 개념을 설명하기 위해 투표 데이터에 딕셔너리를 사용합니다. 딕셔너리는 일반적으로 메모리에 유지되므로([ssd&#95;cache](/ko/reference/statements/create/dictionary/layouts/ssd-cache)는 예외입니다) 데이터 크기를 염두에 두어야 합니다. `votes` 테이블의 크기를 확인해 보겠습니다:
@@ -197,7 +195,7 @@ Peak memory usage: 552.26 MiB.
 이 쿼리는 훨씬 더 단순할 뿐만 아니라 속도도 2배 이상 빠릅니다! 또한 upvote와 downvote가 10개를 넘는 게시물만 딕셔너리에 로드하고, 미리 계산된 controversial 값만 저장하도록 하면 더 최적화할 수 있습니다.
 
 <div id="query-time-enrichment">
-  ## 쿼리 시점 보강
+  ## 쿼리 시점 보강 {#query-time-enrichment}
 </div>
 
 딕셔너리는 쿼리 시점에 값을 조회하는 데 사용할 수 있습니다. 이러한 값은 결과로 반환되거나 집계에 활용될 수 있습니다. 예를 들어, 사용자 ID를 위치에 매핑하는 딕셔너리를 생성한다고 가정해 보겠습니다:
@@ -266,11 +264,13 @@ LIMIT 5
 Peak memory usage: 248.84 MiB.
 ```
 
-<div id="index-time-enrichment">
-  ## 인덱싱 시점 보강
-</div>
+## 인덱싱 시점 보강 {#index-time-enrichment}
 
-위 예시에서는 쿼리 시점에 딕셔너리를 사용해 join을 제거했습니다. 딕셔너리는 삽입 시점에 행을 보강하는 데에도 사용할 수 있습니다. 일반적으로 이 방식은 보강 값이 바뀌지 않고, 딕셔너리를 채우는 데 사용할 수 있는 외부 소스에 해당 값이 존재할 때 적합합니다. 이 경우 삽입 시점에 행을 보강하면 쿼리 시점에 딕셔너리를 조회하지 않아도 됩니다.
+위 예시에서는 쿼리 시점에 딕셔너리를 사용해 조인을 제거했습니다. 딕셔너리는 삽입 시점에 행을 보강하는 데에도 사용할 수 있습니다. 일반적으로 이 방식은 보강 값이 바뀌지 않고, 딕셔너리를 채우는 데 사용할 수 있는 외부 소스에 해당 값이 존재할 때 적합합니다. 이 경우 삽입 시점에 행을 보강하면 쿼리 시점에 딕셔너리를 조회하지 않아도 됩니다.
+
+<Note>
+  예측 가능한 지연 시간과 소스 가용성이 중요하다면 삽입 시점 보강에 캐시 기반 딕셔너리 레이아웃을 사용하지 마십시오. 각 서버는 독립적인 로컬 캐시를 유지하므로, 서버가 재시작되거나 대체되면 캐시가 비게 되어 삽입이 딕셔너리 소스에 대한 콜드 캐시 조회에 의존하게 됩니다. ClickHouse Cloud에서는 자동 스케일링과 관리형 노드 대체로 인해 이러한 상황이 발생할 가능성이 더 높습니다. 각 서버에 전체 딕셔너리를 로드하는 레이아웃을 선택하십시오. 자세한 내용은 [수집 경로의 캐시 딕셔너리](/ko/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path)를 참조하십시오.
+</Note>
 
 Stack Overflow에서 사용자의 `Location`은 절대 바뀌지 않는다고 가정해 보겠습니다(실제로는 바뀝니다). 구체적으로는 `users` 테이블의 `Location` 컬럼입니다. 위치별로 `posts` 테이블에 대한 분석 쿼리를 수행하려고 한다고 가정해 보겠습니다. 이 테이블에는 `UserId`가 포함되어 있습니다.
 
@@ -342,13 +342,13 @@ Peak memory usage: 666.82 MiB.
 ```
 
 <div id="advanced-dictionary-topics">
-  ## 고급 딕셔너리 주제
+  ## 고급 딕셔너리 주제 {#advanced-dictionary-topics}
 </div>
 
 딕셔너리 레이아웃을 선택하는 방법, 딕셔너리와 조인 중 언제 무엇을 사용해야 하는지, 그리고 딕셔너리 사용량을 모니터링하는 방법에 대한 지침은 [딕셔너리 모범 사례](/ko/concepts/features/dictionaries/best-practices)를 참조하십시오.
 
 <div id="refreshing-dictionaries">
-  ### 딕셔너리 갱신
+  ### 딕셔너리 갱신 {#refreshing-dictionaries}
 </div>
 
 딕셔너리에 `MIN 600 MAX 900`의 `LIFETIME`을 지정했습니다. LIFETIME은 딕셔너리의 갱신 주기이며, 여기서 설정한 값에 따라 600초에서 900초 사이의 임의 간격으로 주기적으로 다시 로드됩니다. 이러한 임의 간격은 많은 수의 서버에서 업데이트할 때 딕셔너리 소스에 걸리는 부하를 분산하기 위해 필요합니다. 업데이트 중에도 이전 버전의 딕셔너리는 계속 쿼리할 수 있으며, 쿼리가 차단되는 경우는 초기 적재 시뿐입니다. `(LIFETIME(0))`을 설정하면 딕셔너리가 갱신되지 않습니다.
@@ -357,14 +357,12 @@ Peak memory usage: 666.82 MiB.
 ClickHouse 및 Postgres와 같은 데이터베이스 소스의 경우, 주기적 간격으로 업데이트하는 대신 실제로 변경되었을 때만 딕셔너리가 업데이트되도록 쿼리를 설정할 수 있습니다(이 여부는 쿼리 응답으로 결정됩니다). 자세한 내용은 [여기](/ko/reference/statements/create/dictionary/lifetime)에서 확인할 수 있습니다.
 
 <div id="other-dictionary-types">
-  ### 기타 딕셔너리 유형
+  ### 기타 딕셔너리 유형 {#other-dictionary-types}
 </div>
 
 ClickHouse는 [Hierarchical](/ko/reference/statements/create/dictionary/layouts/hierarchical), [Polygon](/ko/reference/statements/create/dictionary/layouts/polygon), [Regular Expression](/ko/reference/statements/create/dictionary/layouts/regexp-tree) 딕셔너리도 지원합니다.
 
-<div id="more-reading">
-  ### 더 읽어보기
-</div>
+### 더 읽어보기 {#more-reading}
 
 * [딕셔너리 모범 사례](/ko/concepts/features/dictionaries/best-practices) — 레이아웃 선택, 딕셔너리와 조인의 비교, 모니터링
 * [딕셔너리를 활용한 쿼리 가속화](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

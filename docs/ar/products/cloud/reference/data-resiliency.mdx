@@ -17,7 +17,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Tip>
 
 <div id="definitions">
-  ## التعريفات
+  ## التعريفات {#definitions}
 </div>
 
 من المفيد توضيح بعض التعريفات أولًا.
@@ -28,9 +28,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 **النسخ الاحتياطية ولقطات قاعدة البيانات**: توفّر النسخ الاحتياطية تخزينًا طويل الأمد وموثوقًا مع نسخة منفصلة من البيانات. أمّا اللقطات فلا تُنشئ نسخة إضافية من البيانات، وعادةً ما تكون أسرع، وتوفّر قيم RPO أفضل.
 
-<div id="database-backups">
-  ## النسخ الاحتياطية لقاعدة البيانات
-</div>
+## النسخ الاحتياطية لقاعدة البيانات {#database-backups}
 
 يُعدّ الاحتفاظ بنسخة احتياطية من الخدمة الأساسية وسيلة فعّالة تتيح استخدام النسخة الاحتياطية والاستعادة منها عند توقّف الخدمة الأساسية.
 يدعم ClickHouse Cloud الإمكانات التالية للنسخ الاحتياطية.
@@ -43,7 +41,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 2. **النسخ الاحتياطية الخارجية (في حاوية التخزين الخاصة بالعميل)**
 
-يمكنك [تصدير النسخ الاحتياطية](/ar/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) إلى تخزين الكائنات الخاص بك ضمن حسابك، سواء في المنطقة نفسها أو في منطقة أخرى.
+يمكنك [تصدير النسخ الاحتياطية](/ar/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) إلى تخزين كائني خاص بك ضمن حسابك، سواء في المنطقة نفسها أو في منطقة أخرى.
 سيتوفر قريبًا دعم تصدير النسخ الاحتياطية عبر سُحُب مختلفة.
 ستنطبق رسوم نقل البيانات المناسبة على النسخ الاحتياطية عبر المناطق المختلفة وعبر السُحُب المختلفة.
 
@@ -56,11 +54,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يمكن للعملاء [تهيئة النسخ الاحتياطية](/ar/products/cloud/guides/backups/configurable-backups) لتتم بوتيرة أعلى، حتى مرة كل 6 ساعات، لتحسين RPO.
 ويمكن للعملاء أيضًا تهيئة فترة احتفاظ أطول.
 
+يحدّد تواتر النسخ الاحتياطية أقصى عمر محتمل لأحدث نقطة استعادة، ومن ثم يحدّد RPO. أمّا فترة الاحتفاظ فتحدّد مدة الاحتفاظ ببيانات النسخ الاحتياطية، ولا تجعل أحدث نقطة استعادة أقرب إلى الوقت الحالي. على سبيل المثال، قد يصل عمر أحدث نقطة استعادة لخدمة هُيِّئت بفترة احتفاظ تبلغ يومًا واحدًا وتواتر نسخ احتياطي يبلغ 48 ساعة إلى ما يقارب 48 ساعة.
+
 تُعرَض النسخ الاحتياطية المتاحة حاليًا للخدمة في صفحة “backups” ضمن وحدة تحكم ClickHouse Cloud.
 كما يوفّر هذا القسم حالة النجاح/الفشل لكل نسخة احتياطية.
 
 <div id="restoring-from-a-backup">
-  ## الاستعادة من نسخة احتياطية
+  ## الاستعادة من نسخة احتياطية {#restoring-from-a-backup}
 </div>
 
 1. يمكن استعادة النسخ الاحتياطية الافتراضية الموجودة في حاوية التخزين الخاصة بـ ClickHouse Cloud إلى خدمة جديدة في نفس المنطقة.
@@ -82,20 +82,20 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Note>
 
 <div id="recovery-process">
-  ## عملية الاستعادة
+  ## عملية الاستعادة {#recovery-process}
 </div>
 
 يشرح هذا القسم خيارات الاستعادة المختلفة والإجراءات التي يمكن اتباعها في كل حالة.
 
 <div id="primary-service-data-corruption">
-  ### تلف بيانات الخدمة الأساسية
+  ### تلف بيانات الخدمة الأساسية {#primary-service-data-corruption}
 </div>
 
 في هذه الحالة، [يمكن استعادة البيانات](/ar/products/cloud/guides/backups/review-and-restore-backups#restore-a-backup) من النسخة الاحتياطية إلى خدمة أخرى في المنطقة نفسها.
 قد يصل عمر النسخة الاحتياطية إلى 24 ساعة عند استخدام سياسة النسخ الاحتياطي الافتراضية، أو إلى 6 ساعات (عند استخدام النسخ الاحتياطية القابلة للتهيئة بتكرار كل 6 ساعات).
 
 <div id="restoration-steps">
-  #### خطوات الاستعادة
+  #### خطوات الاستعادة {#restoration-steps}
 </div>
 
 للاستعادة من نسخة احتياطية موجودة
@@ -107,7 +107,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="الاستعادة من نسخة احتياطية" />
 
 <div id="primary-region-downtime">
-  ### تعطل المنطقة الأساسية
+  ### تعطل المنطقة الأساسية {#primary-region-downtime}
 </div>
 
 يمكنك [تصدير النسخ الاحتياطية](/ar/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) إلى حاوية التخزين لدى موفر الخدمة السحابية الخاص بك.
@@ -127,7 +127,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Note>
 
 <div id="additional-options">
-  ## خيارات إضافية
+  ## خيارات إضافية {#additional-options}
 </div>
 
 هناك بعض الخيارات الإضافية التي يجدر أخذها في الاعتبار.

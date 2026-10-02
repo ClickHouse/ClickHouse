@@ -10,7 +10,7 @@
         {
           "expandable": true,
           "expanded": false,
-          "group": "الأدلة السريعة",
+          "group": "أدلة البدء السريع",
           "pages": [
             "ar/get-started/quickstarts/home",
             {
@@ -43,7 +43,7 @@
             },
             {
               "expanded": false,
-              "group": "أوبزرفابيليتي",
+              "group": "إمكانية المراقبة",
               "pages": [
                 "ar/get-started/quickstarts/working-with-the-map-type"
               ]

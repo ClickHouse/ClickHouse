@@ -60,7 +60,7 @@ Union
             Output: number
 ```
 
-## Types d’EXPLAIN
+## Types d’EXPLAIN {#explain-types}
 
 * `AST` — Arbre syntaxique abstrait.
 * `SYNTAX` — Texte de la requête après les optimisations au niveau de l’AST.
@@ -71,7 +71,7 @@ Union
 * `ESTIMATE` — Nombre estimé de lignes, de marks et de parts à lire depuis les tables pendant le traitement de la requête.
 * `TABLE OVERRIDE` — Résultat validé d’une surcharge de table sur le schéma d’une fonction de table.
 
-### EXPLAIN AST
+### EXPLAIN AST {#explain-ast}
 
 Affiche l’AST de la requête. Prend en charge tous les types de requêtes, pas uniquement `SELECT`.
 
@@ -109,7 +109,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
         ExpressionList
 ```
 
-### EXPLAIN SYNTAX
+### EXPLAIN SYNTAX {#explain-syntax}
 
 Affiche l&#39;arbre syntaxique abstrait (AST) d&#39;une requête après l&#39;analyse syntaxique.
 
@@ -150,7 +150,7 @@ ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
 ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
 ```
 
-### EXPLAIN QUERY TREE
+### EXPLAIN QUERY TREE {#explain-query-tree}
 
 Paramètres :
 
@@ -179,7 +179,7 @@ QUERY id: 0
     TABLE id: 3, table_name: default.test_table
 ```
 
-### EXPLAIN PLAN
+### EXPLAIN PLAN {#explain-plan}
 
 Affiche les étapes du plan de requête.
 
@@ -663,7 +663,7 @@ Join (JOIN FillRightFirst)
          Output: id, value
 ```
 
-### EXPLAIN PIPELINE
+### EXPLAIN PIPELINE {#explain-pipeline}
 
 Paramètres :
 
@@ -703,7 +703,7 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
-### EXPLAIN ANALYZE
+### EXPLAIN ANALYZE {#explain-analyze}
 
 `EXPLAIN ANALYZE` exécute effectivement la requête, ignore les lignes de résultat et affiche la même arborescence du plan que `EXPLAIN PLAN`, avec pour chaque étape des annotations indiquant ce qui s’est réellement produit à l’exécution.
 
@@ -723,6 +723,7 @@ Paramètres :
 * `pretty` — voir la section [EXPLAIN PLAN](#explain-plan). Par défaut : 1.
 * `processors` — Pour `EXPLAIN ANALYZE`, affiche une ligne supplémentaire par étape avec la répartition du temps écoulé par processeur : `min`, `median`, `max` et `sum`. Utile pour repérer un déséquilibre de charge entre les processeurs parallèles. Par défaut : 0.
 * `matches` — Pour `EXPLAIN ANALYZE`, permet aux étapes de jointure d’effectuer le suivi supplémentaire nécessaire aux métriques `matched`, `match rate` et `fanout` lorsque ces valeurs ne peuvent pas être déduites de ce que produit la jointure. Lorsqu’elles le peuvent, elles sont signalées sans cette option. Voir [Étapes de jointure](#explain-analyze-join-steps). Par défaut : 0.
+* `time` — Pour `EXPLAIN ANALYZE`, affiche des lignes `Time` et `Concurrency` pour chaque étape, indiquant le temps d’horloge et le niveau de concurrence de l’étape et de sa branche. Voir [Temps d’horloge et niveaux de concurrence des étapes et des branches](#explain-analyze-concurrency). Par défaut : 1.
 
 <Note>
   Comme `EXPLAIN ANALYZE` exécute réellement la requête encapsulée, il se comporte comme cette
@@ -749,29 +750,38 @@ EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP 
 
 ```text
 Query summary:
-  Time:        10.72 ms (planning 6.45 ms · execution 4.26 ms)
-  Read:        1.00 million rows, 8.00 MB (234.49 million rows/s., 1.88 GB/s.)
-  Peak memory: 28.98 KiB
+  Time:        22.65 ms (planning 7.98 ms · execution 14.66 ms)
+  Execution:   in steps 3.46 ms (23.60%) · outside steps 16.60 us (0.11%) · idle 11.19 ms (76.29%)
+  Read:        1.00 million rows, 8.00 MB (68.20 million rows/s., 545.59 MB/s.)
+  Peak memory: 16.00 KiB
 
 Output: number MOD 10, count()
 
 Expression ((Project names + Projection))
 │  I/O: rows 10 → 10 · 90 B → 90 B
-│    time 21.82 us (0.5%) · parallelism 0.98/1
+│  Time: step 12.09 us (0.08%) · branch 3.46 ms (23.60%)
+│  Concurrency: step 1.00/16 · branch 4.96/16
+│    time 12.36 us (0.08%) · parallelism 0.98/1
 └──Aggregating
    │  Keys: number MOD 10
    │  Aggregates: count()
    │  Skip merging: 0
    │  I/O: rows 1.00 million → 10 (0.00%) · 1.00 MB → 90 B
-   │    Stage (partial aggregation): time 868.45 us (20.4%) · parallelism 3.80/15
-   │    Stage (final aggregation): time 445.27 us (10.4%) · parallelism 1.11/16
+   │  Time: step 2.03 ms (13.85%) · branch 3.45 ms (23.52%)
+   │  Concurrency: step 5.93/16 · branch 4.97/16
+   │    Stage (partial aggregation): time 1.69 ms (11.50%) · parallelism 1.80/15
+   │    Stage (final aggregation): time 351.39 us (2.40%) · parallelism 1.10/16
    └──Expression ((Before GROUP BY + Change column names to column identifiers))
       │  I/O: rows 1.00 million → 1.00 million · 8.00 MB → 1.00 MB
-      │    time 677.07 us (15.9%) · parallelism 4.31/15
+      │  Time: step 2.02 ms (13.78%) · branch 2.76 ms (18.81%)
+      │  Concurrency: step 7.13/16 · branch 5.87/16
+      │    time 2.02 ms (13.81%) · parallelism 2.26/11
       └──ReadFromSystemNumbers
             Output: number
             I/O: rows 0 → 1.00 million · 0 B → 8.00 MB
-              time 993.94 us (23.3%) · parallelism 7.52/15
+            Time: step 2.58 ms (17.57%) · branch 2.58 ms (17.57%)
+            Concurrency: step 5.98/16 · branch 5.98/16
+              time 2.58 ms (17.58%) · parallelism 3.55/15
 ```
 
 Examinons la sortie. Commençons par l’en-tête.
@@ -779,11 +789,13 @@ Examinons la sortie. Commençons par l’en-tête.
 ```txt
    Query summary:
      Time:        <total> (planning <planning> · execution <execution>)
+     Execution:   in steps <t> (<share>%) · outside steps <t> (<share>%) · idle <t> (<share>%)
      Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
      Peak memory: <peak>
 ```
 
 * `Time` — temps total, réparti entre les phases de planification (c.-à-d. création du plan + optimisation du plan + construction du pipeline) et d’exécution (exécution du pipeline).
+* `Execution` — non affiché lorsque `time = 0`. Découpe le temps d’exécution en `in steps`, `outside steps` et `idle`. La somme de ces composantes correspond à `execution`. Voir [Temps d’horloge et niveaux de concurrence des étapes et des branches](#explain-analyze-concurrency).
 * `Read` — lignes et octets non compressés lus dans les tables, avec leur débit — les mêmes valeurs que celles indiquées dans le pied de page d’une requête classique sous la forme &quot;Processed&quot;.
 * `Peak memory` — mémoire maximale utilisée par la requête.
 
@@ -799,11 +811,11 @@ Le nombre de lignes et d’octets est indiqué une seule fois pour l’ensemble 
 * `rows <in> → <out>` — lignes entrées dans l’étape et qui en sont sorties ; (`<selectivity>`%) indique dans quelle mesure l’étape a filtré (`out/in`) ou étendu les données. Cette information est masquée lorsque le nombre de lignes en entrée est égal au nombre de lignes en sortie, ainsi que lorsque le nombre de lignes en entrée est égal à `0`.
 * `<bytes_in> → <bytes_out>` — octets en mémoire non compressés traversant l’étape (omis lorsque les deux valeurs sont nulles).
 * `time <t> (<share>%)` — temps d’horloge pendant lequel l’étape a été active, ainsi que sa part du temps d’exécution de la requête (c.-à-d. hors temps de build). Notez que les parts peuvent totaliser plus de 100 % car les étapes et les étapes s’exécutent en parallèle.
-* `parallelism <avg>/<max>` — nombre moyen de threads CPU travaillant simultanément dans cette étape, par rapport au maximum qu’elle pouvait utiliser. Une valeur proche du maximum signifie que l’étape a été bien parallélisée ; une valeur proche de 1 signifie qu’elle s’est exécutée principalement en série.
+* `parallelism <avg>/<max>` — nombre moyen de threads CPU travaillant simultanément dans cette étape, par rapport au maximum qu’elle pouvait utiliser. Cette métrique est propre à l’étape : les threads travaillant au même moment sur d’autres étapes de la requête ne sont pas comptabilisés. Une valeur proche du maximum signifie que l’étape a été bien parallélisée ; une valeur proche de 1 signifie qu’elle s’est exécutée principalement en série.
 * `Stage (<stage>)` — le nom de l’étape. Une étape avec une seule étape affiche directement la ligne de temps, sans libellé `Stage (...)`. Les étapes comportant plusieurs étapes affichent une ligne libellée par étape ; par exemple, `Aggregating` affiche `Stage (partial aggregation)` et `Stage (final aggregation)`, et un hash join affiche `Stage (build)` et `Stage (probe)`.
 
 <Note>
-  ClickHouse parallélise non seulement l’exécution des tâches au sein d’une étape du plan, mais aussi l’exécution des étapes du plan. La métrique `parallelism` ne reflète que le travail de cette étape. D’autres étapes peuvent s’exécuter en parallèle ; ce nombre n’indique donc pas comment le parallélisme de l’étape se compare à celui de l’ensemble de la requête.
+  ClickHouse parallélise non seulement l’exécution des tâches au sein d’une étape du plan, mais aussi l’exécution des étapes du plan. La métrique `parallelism` ne reflète que le travail de cette étape. D’autres étapes peuvent s’exécuter en parallèle ; ce nombre n’indique donc pas comment le parallélisme de l’étape se compare à celui de l’ensemble de la requête. Pour une vue à l’échelle de la requête, consultez la métrique `Concurrency` affichée avec `time = 1` ([Temps d’horloge et niveaux de concurrence des étapes et des branches](#explain-analyze-concurrency)).
 </Note>
 
 <Note>
@@ -813,7 +825,7 @@ Le nombre de lignes et d’octets est indiqué une seule fois pour l’ensemble 
   2. le nombre maximal de threads de traitement des requêtes défini dans `max_threads`.
 </Note>
 
-#### Étapes de jointure
+#### Étapes de jointure {#explain-analyze-join-steps}
 
 Pour une étape de jointure, `EXPLAIN ANALYZE` affiche des lignes comparant les estimations de l’optimiseur d’ordre de jointure avec ce qui s’est réellement produit (voir [Métriques de jointure estimées et réelles](#explain-analyze-join-estimation)), ainsi que, pour chaque côté, des lignes de *participation* — `Left` et `Right` — suivies des éventuelles lignes propres à l’implémentation de la jointure. Toutes les valeurs de [`join_algorithm`](/fr/reference/settings/session-settings/join#join_algorithm) sont prises en charge (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), de même que les deux implémentations que ce paramètre ne peut pas sélectionner : les jointures `CROSS` ou `COMMA`, ainsi que toute section `ON` sans égalité de clés, et le moteur de table [`Join`](/fr/reference/engines/table-engines/special/join). La plupart indiquent les deux côtés ; certaines n’indiquent que le côté qu’elles matérialisent (par exemple, `direct` affiche uniquement `Left:`).
 
@@ -834,7 +846,7 @@ Pour chaque côté, `EXPLAIN ANALYZE` indique :
 
 Toute valeur qui ne peut pas être calculée exactement est indiquée par `not collected` plutôt que par `0`. `match rate` et `fanout` sont calculés à partir de `matched` ; par conséquent, pour un côté dépourvu de cette valeur, ces trois valeurs sont indiquées comme `not collected`.
 
-#### Métriques de join estimées et réelles
+#### Métriques de join estimées et réelles {#explain-analyze-join-estimation}
 
 Une étape de jointure contient les estimations de l&#39;optimiseur d’ordre de jointure — les mêmes que celles affichées par `EXPLAIN PLAN` (voir la section [EXPLAIN PLAN](#explain-plan)) — et `EXPLAIN ANALYZE` affiche chacune d&#39;elles à côté de la valeur mesurée :
 
@@ -872,7 +884,7 @@ Join (JOIN FillRightFirst)
 │    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
 ```
 
-#### Fanout
+#### Fanout {#explain-analyze-fanout}
 
 `fanout` mesure la multiplication des lignes :
 
@@ -887,7 +899,7 @@ Une jointure externe produit une ligne de sortie complétée par des `NULL` pour
 * `fanout = 1` — une jointure 1:1 sans duplication ; chaque ligne correspondante a produit exactement une ligne de sortie.
 * `fanout > 1` — une jointure 1:N ; des clés dupliquées de l’autre côté ont multiplié les lignes. Une valeur élevée des deux côtés simultanément indique une explosion cartésienne involontaire.
 
-#### Cas où les nombres nécessitent `matches = 1`
+#### Cas où les nombres nécessitent `matches = 1` {#explain-analyze-matches}
 
 La plupart de ces nombres résultent des données que la jointure produit déjà et sont rapportés par un simple `EXPLAIN ANALYZE`. Les autres nécessitent un suivi que la jointure n’effectuerait pas autrement et ne sont donc rapportés qu’avec `EXPLAIN ANALYZE matches = 1`. Les cas concernés dépendent de l’algorithme ; dans la famille hash, il y en a deux :
 
@@ -936,7 +948,7 @@ Le moteur de table [`Join`](/fr/reference/engines/table-engines/special/join) su
 
 Lorsque les deux algorithmes renvoient un nombre, les résultats concordent. Les algorithmes de fusion disposent simplement de davantage d’informations ; ils ne diffèrent pas quant à la définition d’une correspondance.
 
-#### Lignes spécifiques à l’algorithme
+#### Lignes spécifiques à l’algorithme {#explain-analyze-join-algorithm-lines}
 
 Examinons les lignes supplémentaires ajoutées par chaque implémentation de jointure.
 
@@ -993,7 +1005,7 @@ Les deux côtés indiquent ici `matched not collected` : un prédicat constant a
 
 Pour une jointure utilisant le moteur de table [`Join`](/fr/reference/engines/table-engines/special/join), les deux côtés sont indiqués, ainsi que la ligne `Hash table:` qui décrit la table préconstruite. Le côté droit comptabilise les lignes stockées dans le moteur, et non celles créées pour chaque requête.
 
-#### Temps par processeur
+#### Temps par processeur {#explain-analyze-processors}
 
 Avec `processors = 1`, une ligne supplémentaire est affichée sous chaque étape, montrant la répartition du temps écoulé entre les processeurs de l’étape :
 
@@ -1003,7 +1015,35 @@ Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
 
 `<n>` correspond au nombre de processeurs dans l’étape. Un écart important entre `median` et `max` indique un déséquilibre de charge entre les processeurs parallèles.
 
-### EXPLAIN ESTIMATE
+#### Temps d’horloge et niveaux de concurrence des étapes et des branches {#explain-analyze-concurrency}
+
+Sauf si `time = 0`, deux lignes supplémentaires sont affichées pour chaque étape du plan de requête :
+
+```txt
+Time: step <t> (<share>%) · branch <t> (<share>%)
+Concurrency: step <n>/<m> · branch <n>/<m>
+```
+
+Ici, `step` désigne l’étape elle-même. `branch` désigne le sous-arbre dont cette étape est la racine : l’étape et toutes celles qui se trouvent en dessous dans le plan.
+
+* `Time` — la durée pendant laquelle au moins un thread a travaillé sur l’étape (`step`) ou sur une étape de son sous-arbre (`branch`). `<share>` exprime cette durée en pourcentage du temps d’exécution de la requête.
+* `Concurrency` — le nombre moyen de threads occupés à exécuter *n’importe quelle* étape de la requête, et pas seulement celle-ci, pendant que l’étape (`step`) ou son sous-arbre (`branch`) était actif. `<m>` est le nombre maximal de threads que la requête pouvait utiliser. Les étapes qui ne possèdent aucun processeur, par exemple `Union` lorsque ses entrées ont déjà le même en-tête, affichent `Unknown` pour `step` : il n’y a aucun travail à mesurer. La valeur de `branch` reste indiquée.
+
+Ces deux métriques sont calculées à partir des intervalles de travail. Chaque fois qu’un thread termine une tâche, l’executor enregistre un intervalle : l’horodatage de début, l’horodatage de fin et l’étape à laquelle appartient ce travail.
+
+La valeur `Time` d’une étape correspond à la durée de l’union de ses intervalles. Les périodes pendant lesquelles aucun thread ne travaille sur l’étape ne sont pas comptabilisées. Pour calculer la valeur `Time` d’une branche, on réunit d’abord les intervalles de toutes les étapes de son sous-arbre.
+
+Le `branch` de l’étape racine couvre l’ensemble du plan, mais sa part est normalement inférieure à 100 %. La ligne `Execution` du récapitulatif de la requête indique à quoi correspond le reste du temps d’exécution (voir le récapitulatif de la requête dans l’exemple ci-dessus) :
+
+* `in steps` — l’union des intervalles de toutes les étapes du plan. Il s’agit de la durée `branch` de l’étape racine, et la part indiquée est identique.
+* `outside steps` — le temps pendant lequel au moins un thread exécutait un processeur, sans qu’aucun de ces processeurs n’appartienne à une étape de ce plan : le sink de sortie, `Resize`, les transformations de conversion et les étapes de plans non accessibles depuis celui-ci.
+* `idle` — le temps pendant lequel aucun thread n’exécutait de processeur : le démarrage et l’arrêt de l’executor, ainsi que les moments où tous les threads étaient en attente.
+
+Les parts de `Time`, les parts de `time` par étape et les parts de `Execution` utilisent le même dénominateur ; elles peuvent donc être comparées entre elles.
+
+La valeur `Concurrency` correspond au temps d’activité cumulé de tous les threads de la requête pendant cette union, divisé par la durée de l’union. Elle compte les threads occupés à exécuter *n’importe quelle* étape de la requête, contrairement à la métrique `parallelism` par étape, qui ne compte que les threads de l’étape concernée. Elle répond à la question : &quot;pendant que cette étape (ou branche) était active, dans quelle mesure la requête dans son ensemble mobilisait-elle ses threads ?&quot; Une valeur proche de `<m>` signifie que la requête est restée entièrement parallélisée pendant que cette étape était active. Une valeur proche de `1` signifie que la requête s’exécutait de manière sérialisée pendant cette période : pour `step`, le seul thread occupé travaillait sur cette étape elle-même, ce qui en fait un point de sérialisation ; pour `branch`, le thread travaillait quelque part dans le sous-arbre, pas nécessairement sur cette étape. Une étape sérialisée ne constitue un véritable goulot d’étranglement que si sa part de `Time` est également significative.
+
+### EXPLAIN ESTIMATE {#explain-estimate}
 
 Affiche le nombre estimé de lignes, de marks et de parts à lire dans les tables lors du traitement de la requête. Fonctionne avec les tables de la famille [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -1027,11 +1067,11 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
-### EXPLAIN WHATIF
+### EXPLAIN WHATIF {#explain-whatif}
 
-Estime le bénéfice qu’un index de saut de données hypothétique apporterait à une requête `SELECT`, *sans* matérialiser l’index sur le disque. Définissez un ou plusieurs candidats avec [`CREATE HYPOTHETICAL INDEX`](/fr/reference/statements/hypothetical-index#create-hypothetical-index), puis exécutez `EXPLAIN WHATIF SELECT ...` pour voir, pour chaque candidat : son applicabilité, le nombre estimé de marks lus, le volume estimé en octets et le taux d’exclusion.
+Estime le bénéfice qu’un index de saut hypothétique apporterait à une requête `SELECT`, *sans* matérialiser l’index sur disque. Définissez un ou plusieurs candidats avec [`CREATE HYPOTHETICAL INDEX`](/fr/reference/statements/hypothetical-index#create-hypothetical-index), puis exécutez `EXPLAIN WHATIF SELECT ...` pour obtenir, pour chaque candidat : l’applicabilité, le nombre estimé de marques lues, le nombre estimé d’octets et le taux d’exclusion.
 
-Les projections hypothétiques définies avec [`CREATE HYPOTHETICAL PROJECTION`](/fr/reference/statements/hypothetical-projection#create-hypothetical-projection) sont elles aussi listées comme candidates, mais leur bénéfice n’est pas encore estimé : chacune est signalée avec `status: not_applicable`. Une projection dont la définition ne s’applique plus à la table — colonne supprimée, ou modification d’un paramètre qui désactive les fonctionnalités dont elle a besoin — est signalée avec cette raison à la place.
+Les projections hypothétiques définies avec [`CREATE HYPOTHETICAL PROJECTION`](/fr/reference/statements/hypothetical-projection#create-hypothetical-projection) sont également des candidats. Une projection normale est estimée en construisant son index primaire en mémoire sur les parts que la requête lirait, puis en l’élaguant comme le serait une projection matérialisée. Le rapport indique les marques et les lignes que la lecture de la projection toucherait, un `read_ratio` par rapport à la lecture de la table de base (en dessous de `1x`, le travail est moindre ; au-dessus, il est plus important) ainsi qu’un `verdict` accompagné de sa justification, selon la règle de l’optimiseur de requêtes : la projection l’emporte lorsqu’elle lit moins de marques que la table de base, ou autant tout en satisfaisant un `ORDER BY` externe. Sont listées avec `status: not_applicable` et ne sont pas encore estimées : les projections d’agrégation, les projections comportant une clause `WHERE` ou leurs propres index de saut (`WITH SETTINGS add_minmax_index_*`), les projections triées selon l’ordre de commit (`TYPE commit_order` et sa forme de requête `_block_number, _block_offset`), les projections dont la clé de tri ne figure pas parmi les colonnes qu’elles stockent (par exemple `ORDER BY _part_offset`), les projections qui stockent `_block_number` (le rédacteur ne les construit que lors de la fusion d’une part), ainsi que les projections qui ne fournissent pas toutes les colonnes lues par la requête. `force_optimize_projection`, `force_optimize_projection_name` et `preferred_optimize_projection_name` sont ignorés. Le nombre de marques est modélisé en dimensionnant les granules comme le fait le rédacteur, avec une taille de granule par bloc qui lui est transmis. Ces blocs dépendent du chemin d’écriture de la part de projection — un seul bloc agrégé pour une insertion ou une matérialisation, des séries de `merge_max_block_size` pour une fusion — et aucune part n’en garde la trace ; l’estimation est donc calculée pour chacune de ces dispositions. Lorsqu’elles divergent sur la comparaison avec la lecture de base, le rapport indique la plage de valeurs et `verdict: too close to call` au lieu d’une décision. Une projection dont la définition ne correspond plus à la table est signalée avec la raison correspondante.
 
 **Syntaxe**
 
@@ -1041,7 +1081,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 
 **Paramètres**
 
-* `empirical` — `1` (par défaut) exécute l’index en mémoire sur les granules élaguées par rapport à la référence afin de mesurer le taux d’exclusion (une borne supérieure). `0` ignore cette voie. Dans tous les cas, si `empirical` ne produit pas de résultat (désactivé, ou si l’index ne peut pas être évalué en mémoire), l’estimateur se rabat sur les [statistiques de colonne](/fr/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), puis, en dernier recours, sur un résumé limité à l’applicabilité si aucune des deux options n’est disponible.
+* `empirical` — `1` (par défaut) évalue l’index en mémoire sur les granules restant après le filtrage initial pour mesurer le taux d’exclusion (une borne supérieure). `0` saute cette étape. Dans les deux cas, si `empirical` ne produit aucun résultat (parce qu’il est désactivé ou que l’index ne peut pas être évalué en mémoire), l’estimateur utilise les [statistiques](/fr/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) des colonnes. Si elles ne sont pas disponibles non plus, il fournit un résumé indiquant uniquement si l’index est applicable.
 
 **Sortie**
 
@@ -1050,6 +1090,7 @@ Baseline (after PK + partition + existing indexes):
   table:       db.t
   parts:       1
   marks:       100
+  rows:        10000
   est_bytes:   1.50 MiB             (only when the query reads rows)
 
 With idx_b (minmax, hypothetical):
@@ -1071,7 +1112,7 @@ Estimation:
   * `empirical` : l’index a été construit en mémoire sur les granules conservés après l’élagage de référence, puis les granules que l’index permettrait d’ignorer ont été comptés. Il s’agit d’une borne supérieure — voir les limites dans [`CREATE HYPOTHETICAL INDEX`](/fr/reference/statements/hypothetical-index#limitations).
   * `statistical` : dérivée des statistiques de colonnes. Utilisée lorsque l’estimation empirique est désactivée (`empirical = 0`) ou n’a pas pu produire de résultat, et que des statistiques de colonnes sont définies sur les colonnes concernées.
   * `applicability_only` : l’index s’applique au prédicat, mais ni l’estimation empirique ni l’estimation statistique n’ont produit de résultat (par ex. `empirical = 0` et aucune statistique de colonnes définie). Indique `skip_ratio: 0.0%` comme borne prudente.
-* `empirical_reason` — indique pourquoi l’estimation empirique n’a pas pu être exécutée. Affiché uniquement avec `empirical_status: unsupported`. Par exemple, une valeur non nulle de `merge_tree_min_rows_for_seek` ou de `merge_tree_min_bytes_for_seek` entraîne le regroupement des plages de marks lors d’une lecture réelle, ce que le comptage par granule ne modélise pas ; l’estimation se rabat donc sur `statistical` ou `applicability_only`.
+* `empirical_reason` — indique pourquoi l’estimation empirique n’a pas pu être exécutée. Affiché uniquement avec `empirical_status: unsupported`. Par exemple, une valeur non nulle de `merge_tree_min_rows_for_seek` ou de `merge_tree_min_bytes_for_seek` entraîne le regroupement des plages de marques lors d’une lecture réelle, ce que le comptage par granule ne modélise pas ; l’estimation se rabat donc sur `statistical` ou `applicability_only`.
 * `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Indique quelle fraction de la table reste après l’élagage par la PK, la partition et les index existants, c.-à-d. l’entrée de l’index hypothétique.
 * `est_bytes` — estimation du nombre d’octets lus, dérivée de la taille moyenne des lignes de la table ; elle est donc approximative et varie selon le stockage et la compression. La ligne de référence n’apparaît que lorsque la requête lit des lignes ; la ligne par candidat n’apparaît que lorsque l’estimation de référence des octets est connue.
 
@@ -1081,9 +1122,9 @@ Si ni index hypothétiques ni projections hypothétiques ne sont définis pour l
 
 **Ligne combinée (plusieurs candidats)**
 
-Lorsque deux candidats ou plus sont évalués empiriquement, `EXPLAIN WHATIF` ajoute un bloc supplémentaire nommé `(combined: idx_a, idx_b, ...)` après les lignes par candidat. Il indique le bénéfice conjoint de disposer de *tous* ces index à la fois : une lecture réelle ne conserve un granule que s’il survit à *chaque* index de saut de données, si bien que l’estimation combinée est l’intersection des granules survivants des candidats. Son `skip_ratio` est donc au moins aussi élevé que celui du meilleur candidat isolé — des index complémentaires élaguent davantage ensemble, tandis que des index redondants le laissent inchangé.
+Lorsque deux candidats ou plus sont évalués de manière empirique, `EXPLAIN WHATIF` ajoute un bloc nommé `(combined: idx_a, idx_b, ...)` après les lignes de chaque candidat. Ce bloc indique le bénéfice cumulé de *tous* ces index : une lecture réelle ne conserve un granule que s’il n’est écarté par *aucun* des index de saut. L’estimation combinée correspond donc à l’intersection des granules conservés par les candidats. Son `skip_ratio` est ainsi au moins aussi élevé que celui du meilleur candidat pris isolément : des index complémentaires élaguent davantage de données ensemble, tandis que des index redondants ne le modifient pas.
 
-Seuls les candidats avec `source: empirical` contribuent, car la ligne combinée est construite en intersectant leurs ensembles de survie par granule. Les candidats estimés comme `statistical` ou `applicability_only` n’ont pas de données par granule et sont exclus ; par conséquent, le bloc combiné n’apparaît que lorsqu’au moins deux candidats ont produit une estimation empirique, et il est omis dans le cas contraire (par exemple avec `empirical = 0`). Les champs de son estimation sont les mêmes que pour un bloc empirique par candidat, à ceci près que `elapsed_us` vaut `0` — l’estimation combinée est dérivée des analyses par candidat, et non d’une nouvelle analyse. Le nom synthétique `(combined: ...)` n’est qu’une étiquette de rapport et ne peut pas être utilisé avec `force_data_skipping_indices`.
+Seuls les candidats avec `source: empirical` sont pris en compte, car la ligne combinée est construite en calculant l’intersection de leurs ensembles de granules conservés. Les candidats estimés avec `statistical` ou `applicability_only` ne disposent pas de données par granule et sont exclus ; le bloc combiné n’apparaît donc que si au moins deux candidats ont produit une estimation empirique. Dans les autres cas, il est omis (par exemple avec `empirical = 0`). Ses champs d’estimation sont identiques à ceux d’un bloc empirique par candidat, sauf `elapsed_us`, qui vaut `0` : l’estimation combinée est dérivée des parcours effectués pour chaque candidat, et non d’un nouveau parcours. Le nom synthétique `(combined: ...)` sert uniquement de libellé dans le rapport et ne peut pas être utilisé avec `force_data_skipping_indices`.
 
 **Exemple empirique**
 
@@ -1103,6 +1144,7 @@ Baseline (after PK + partition + existing indexes):
   table:       default.t
   parts:       1
   marks:       100
+  rows:        10000
   est_bytes:   85.52 KiB
 
 With idx_b (minmax, hypothetical):
@@ -1118,7 +1160,7 @@ Estimation:
   sampled_marks:    100 / 100
 ```
 
-Le `minmax` hypothétique réduirait 100 marks à 1 — `skip_ratio: 99.0%`. (`est_bytes` est une estimation basée sur la taille moyenne des lignes, donc la valeur exacte peut varier.)
+L’index hypothétique `minmax` ramènerait le nombre de marques à lire de 100 à 1 — `skip_ratio: 99.0%`. (`est_bytes` est une estimation fondée sur la taille moyenne des lignes ; sa valeur exacte peut donc varier.)
 
 **Exemple statistique**
 
@@ -1151,7 +1193,44 @@ Le nombre provient de la sélectivité des statistiques de colonne pour `b < 10`
 
 Si aucun des deux mécanismes n’est disponible (par ex. `empirical = 0` et aucune statistique de colonne définie), l’estimateur indique `source: applicability_only` ainsi qu’un `skip_ratio: 0.0%` conservateur.
 
-### EXPLAIN TABLE OVERRIDE
+**Projections hypothétiques**
+
+Une projection classique est estimée de la même manière, sur les parts que la requête lirait après élagage par clé primaire et par partition :
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
+INSERT INTO t SELECT number, number % 100, number FROM numbers(10000);
+CREATE HYPOTHETICAL PROJECTION p_b ON t (SELECT a, b, v ORDER BY b);
+EXPLAIN WHATIF SELECT count() FROM t WHERE b = 42;
+```
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  rows:        10000
+  est_bytes:   80.79 KiB
+
+With p_b (normal projection, hypothetical):
+  status:       applicable
+  marks:        2
+  rows:         200
+  read_ratio:   0.02x
+  verdict:      chosen
+  reason:       2 marks would be read instead of 100 from the base table
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+  elapsed_us:       1126
+```
+
+`marks` et `rows` indiquent le nombre de marques et de lignes que la lecture de la projection parcourrait elle-même, et non une fraction de la lecture de la table de base, car un granule de projection contient d’autres lignes qu’un granule de base. `read_ratio` rapporte ce nombre de marques à celui de la table de base : `0.02x` correspond donc à cinquante fois moins de travail, et `15x` à quinze fois plus. `verdict` applique la règle de l’optimiseur de requêtes : moins de marques que pour la table de base, ou autant lorsque la projection répond au `ORDER BY` de la requête. Un candidat peut donc être `applicable` sans être retenu.
+
+### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 
 Affiche le résultat d&#39;une surcharge de table appliquée au schéma d&#39;une table accessible via une fonction de table.
 Effectue également certaines vérifications et lève une exception si la surcharge aurait entraîné un échec.

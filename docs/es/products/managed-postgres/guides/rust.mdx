@@ -1,0 +1,327 @@
+---
+slug: /cloud/managed-postgres/guides/rust
+sidebarTitle: 'Rust (sqlx)'
+title: 'Usar Rust (sqlx) con ClickHouse Managed Postgres'
+description: 'Conecte una aplicación Rust a ClickHouse Managed Postgres con sqlx y axum, ejecute migraciones con sqlx-cli y realice consultas a través de TLS verificado'
+keywords: ['managed postgres', 'rust', 'sqlx', 'sqlx-cli', 'axum', 'tokio', 'rustls', 'migrations', 'pgbouncer', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-rust-beta" />
+
+[sqlx](https://github.com/launchbadge/sqlx) es un kit de herramientas SQL asíncrono, escrito íntegramente en Rust, que incluye de serie un grupo de conexiones y soporte para migraciones. En esta guía, creará una tabla `todos` mediante una migración de `sqlx-cli` y atenderá consultas de creación, lectura, actualización y eliminación desde un pequeño servidor [axum](https://github.com/tokio-rs/axum). Todas las conexiones utilizan TLS con verificación completa de certificados.
+
+## Requisitos previos {#prerequisites}
+
+* [Rust](https://www.rust-lang.org/tools/install) 1.94 o posterior. Esta guía se ha probado con Rust 1.98.1, `sqlx` 0.9.0, `sqlx-cli` 0.9.0 y `axum` 0.8.9.
+* Una cuenta de ClickHouse Cloud
+* [`psql`](https://www.postgresql.org/download/), para crear la base de datos. También puede ejecutar la sentencia `CREATE DATABASE` en la [consola SQL](/es/integrations/connectors/sql-clients/sql-console).
+
+## Crear un servicio de ClickHouse Managed Postgres {#create-service}
+
+En la consola de ClickHouse Cloud, haga clic en **New service** y seleccione **Postgres**. La instancia estará lista en unos minutos. Consulte la [guía de inicio rápido](/es/products/managed-postgres/quickstart) para ver las instrucciones paso a paso.
+
+## Obtén los detalles de conexión {#connection-details}
+
+Haz clic en **Conectar** en la barra lateral izquierda de tu servicio. Deja seleccionada la opción **Directly** y activa **Use SSL**. La URL de conexión de la pestaña **url** termina ahora en `sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem` y el puerto es `5432`.
+
+Haz clic en **Download CA certificate**. También puedes descargarlo más adelante desde **Settings → CA Certificate**. El certificado es exclusivo de tu instancia, por lo que el controlador puede usarlo para verificar que se está comunicando con tu servidor.
+
+Esta guía se conecta **directamente** a Postgres en el puerto `5432`, tanto desde la aplicación como desde `sqlx-cli`. Un servidor axum es un proceso de larga duración y `PgPool` mantiene su propio grupo de conexiones, por lo que no hace falta un segundo pooler delante de Postgres. Las migraciones deben usar siempre la conexión directa. Si ejecutas muchas instancias de la aplicación, consulta [Usar PgBouncer](#pgbouncer).
+
+## Configurar el proyecto {#project-setup}
+
+Cree un proyecto y agregue `sqlx` con el controlador de Postgres, el tiempo de ejecución de Tokio y el backend TLS `rustls`, además de axum y algunos crates auxiliares:
+
+```bash
+cargo new todo-api && cd todo-api
+cargo add sqlx --features postgres,runtime-tokio,tls-rustls,chrono
+cargo add axum dotenvy
+cargo add tokio --features full
+cargo add serde --features derive
+cargo add chrono --features serde
+```
+
+Instala `sqlx-cli` con el mismo backend de TLS:
+
+```bash
+cargo install sqlx-cli --no-default-features --features rustls,postgres
+```
+
+<Warning>
+  **En macOS, use `rustls` en lugar de `native-tls`**
+
+  ClickHouse Managed Postgres solo acepta TLS 1.3. En macOS, el backend `native-tls` utiliza la biblioteca Secure Transport del sistema, que no admite TLS 1.3. Un `cargo install sqlx-cli` sin más opciones utiliza `native-tls`, y a partir de ahí todos los comandos fallan con `error occurred while attempting to establish a TLS connection: One or more parameters passed to a function were not valid.` (o `bad protocol version`). Lo mismo ocurre con una aplicación compilada con la feature `tls-native-tls`. En Linux, `native-tls` utiliza OpenSSL y consigue conectarse, pero solo carga el primer certificado de `ca-certificate.pem`. `rustls` admite TLS 1.3 en todas las plataformas y carga todos los certificados del archivo.
+</Warning>
+
+<Tip>
+  **¿Va a añadirlo a una aplicación existente?**
+
+  Omita `cargo new`. En su proyecto, ejecute los comandos `cargo add` y `cargo install` anteriores y continúe con [Configurar la conexión](#configure-connection). Si la aplicación utiliza sqlx con SQLite:
+
+  * Elimine `sqlite` de las features de `sqlx` en `Cargo.toml` y sustituya `SqlitePool` por `PgPool`.
+  * Cambie los marcadores de posición `?` por `$1`, `$2`, etc.
+  * Reescriba sus migraciones con la sintaxis de Postgres; por ejemplo, `bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` en lugar de `INTEGER PRIMARY KEY AUTOINCREMENT`.
+</Tip>
+
+## Configurar la conexión {#configure-connection}
+
+Mueva el certificado de CA que descargó al directorio del proyecto y cámbiele el nombre a `ca-certificate.pem`.
+
+Cree una base de datos para la aplicación. Sustituya `<PASSWORD>` y el host por los valores que aparecen en el cuadro modal **Conectar**:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_rust;"
+```
+
+```text
+CREATE DATABASE
+```
+
+Cree un archivo `.env` en la raíz del proyecto, o actualice `DATABASE_URL` en el que ya tenga, para que apunte a la base de datos `guide_rust`. Tanto la aplicación como `sqlx-cli` leen `DATABASE_URL` de este archivo:
+
+```bash title=".env"
+DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_rust?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+```
+
+sqlx lee `sslmode` y `sslrootcert` de la URL. Con `verify-full`, comprueba que el certificado del servidor esté firmado por la CA de su instancia y que coincida con el nombre del host. La ruta de `sslrootcert` se resuelve en relación con el directorio desde el que ejecuta los comandos. Mantenga `.env` fuera del control de versiones y, si su contraseña contiene caracteres como `@`, `/` o `#`, aplíqueles codificación porcentual.
+
+<Warning>
+  **Establezca siempre `sslmode=verify-full`**
+
+  Si no se indica `sslmode`, sqlx usa `prefer`: cifra la conexión, pero acepta cualquier certificado, aunque se haya configurado `sslrootcert`. Con `verify-full`, si el certificado de CA falta o es incorrecto, se produce el error `UnknownIssuer`, y si el host no coincide con el certificado (por ejemplo, una dirección IP), se produce el error `NotValidForNameContext` (`certificate not valid for name` en `sqlx-cli`). Si la ruta de `sslrootcert` es incorrecta, se produce el error `No such file or directory`.
+</Warning>
+
+## Crear la tabla mediante una migración {#migrations}
+
+Cree un archivo de migración:
+
+```bash
+sqlx migrate add create_todos
+```
+
+```text
+Creating migrations/20261001142218_create_todos.sql
+```
+
+Abra el nuevo archivo en el directorio `migrations` y añada la definición de la tabla:
+
+```sql title="migrations/<timestamp>_create_todos.sql"
+CREATE TABLE todos (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    title      text NOT NULL,
+    done       boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+Aplíquela:
+
+```bash
+sqlx migrate run
+```
+
+```text
+Applied 20261001142218/migrate create todos (233.971666ms)
+```
+
+`sqlx migrate run` registra las migraciones aplicadas en la tabla `_sqlx_migrations` y, en llamadas posteriores, solo ejecuta las nuevas. Haga commit del directorio `migrations` junto con su código. Si prefiere aplicar las migraciones al iniciar la aplicación, llame a `sqlx::migrate!().run(&pool).await?` en `main`, siempre que el grupo de conexiones utilice la conexión directa.
+
+## Crear la API {#query}
+
+Sustituya `src/main.rs` por un pequeño servidor axum que ejecute una consulta por ruta. En una aplicación existente, cree el grupo de la misma forma que en `main` y añada el struct `Todo`, los handlers y las rutas a su propio enrutador:
+
+```rust title="src/main.rs"
+use std::str::FromStr;
+
+use axum::{
+    Json, Router,
+    extract::{Path, State},
+    http::StatusCode,
+    routing::{get, patch},
+};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+
+#[derive(Serialize, sqlx::FromRow)]
+struct Todo {
+    id: i64,
+    title: String,
+    done: bool,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+struct NewTodo {
+    title: String,
+}
+
+type ApiResult<T> = Result<Json<T>, (StatusCode, String)>;
+
+// Return 404 when no row matches, and 500 for any other database error.
+fn db_error(err: sqlx::Error) -> (StatusCode, String) {
+    match err {
+        sqlx::Error::RowNotFound => (StatusCode::NOT_FOUND, "Not found\n".into()),
+        err => {
+            eprintln!("Database error: {err}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Database error\n".into())
+        }
+    }
+}
+
+// Read
+async fn list_todos(State(pool): State<PgPool>) -> ApiResult<Vec<Todo>> {
+    let todos = sqlx::query_as::<_, Todo>("SELECT * FROM todos ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .map_err(db_error)?;
+    Ok(Json(todos))
+}
+
+// Create
+async fn create_todo(State(pool): State<PgPool>, Json(new): Json<NewTodo>) -> ApiResult<Todo> {
+    let todo = sqlx::query_as::<_, Todo>("INSERT INTO todos (title) VALUES ($1) RETURNING *")
+        .bind(new.title)
+        .fetch_one(&pool)
+        .await
+        .map_err(db_error)?;
+    Ok(Json(todo))
+}
+
+// Update: toggle the done flag
+async fn toggle_todo(State(pool): State<PgPool>, Path(id): Path<i64>) -> ApiResult<Todo> {
+    let todo = sqlx::query_as::<_, Todo>("UPDATE todos SET done = NOT done WHERE id = $1 RETURNING *")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .map_err(db_error)?;
+    Ok(Json(todo))
+}
+
+// Delete
+async fn delete_todo(State(pool): State<PgPool>, Path(id): Path<i64>) -> ApiResult<Todo> {
+    let todo = sqlx::query_as::<_, Todo>("DELETE FROM todos WHERE id = $1 RETURNING *")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .map_err(db_error)?;
+    Ok(Json(todo))
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load DATABASE_URL from .env, if the variable isn't already set
+    dotenvy::dotenv().ok();
+
+    // sslmode and sslrootcert come from the URL. Not sending extra_float_digits
+    // lets the same code also connect through PgBouncer, which rejects it.
+    let options = PgConnectOptions::from_str(&std::env::var("DATABASE_URL")?)?
+        .extra_float_digits(None);
+    let pool = PgPoolOptions::new()
+        .max_connections(10)
+        .connect_with(options)
+        .await?;
+
+    // Confirm that the connection is encrypted
+    let tls: Option<String> =
+        sqlx::query_scalar("SELECT version FROM pg_stat_ssl WHERE pid = pg_backend_pid()")
+            .fetch_one(&pool)
+            .await?;
+    println!("Connected to Postgres, TLS version: {}", tls.as_deref().unwrap_or("none"));
+
+    let app = Router::new()
+        .route("/todos", get(list_todos).post(create_todo))
+        .route("/todos/{id}", patch(toggle_todo).delete(delete_todo))
+        .with_state(pool);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3117").await?;
+    println!("Listening on http://localhost:3117/todos");
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+```
+
+Los valores siempre se pasan con `.bind` como parámetros (`$1`) y nunca se formatean dentro de la cadena SQL. Cada cadena SQL distinta se prepara una sola vez por conexión y se guarda en una caché de sentencias con capacidad para 100, que sqlx cierra al desalojarlas.
+
+<Tip>
+  **Consultas comprobadas en tiempo de compilación**
+
+  Esta guía utiliza la función `query_as`, que comprueba el SQL en tiempo de ejecución, por lo que `cargo build` no necesita una base de datos. Las macros `query!` y `query_as!`, en cambio, comprueban el SQL y los tipos de columna contra la base de datos en tiempo de compilación. Leen `DATABASE_URL` desde `.env` durante el build, así que asegúrese de que apunte a la conexión directa. Para compilar sin una base de datos, por ejemplo en CI, ejecute `cargo sqlx prepare`, haga commit del directorio `.sqlx` generado y establezca `SQLX_OFFLINE=true`.
+</Tip>
+
+## Ejecutar y verificar {#verify}
+
+Inicie el servidor:
+
+```bash
+cargo run
+```
+
+```text
+Connected to Postgres, TLS version: TLSv1.3
+Listening on http://localhost:3117/todos
+```
+
+La primera línea proviene de `pg_stat_ssl` y confirma que la sesión está cifrada. En otra terminal, cree dos tareas, marque la primera como completada y elimine la segunda:
+
+```bash
+curl -w '\n' -X POST localhost:3117/todos -H 'content-type: application/json' -d '{"title": "Try sqlx"}'
+curl -w '\n' -X POST localhost:3117/todos -H 'content-type: application/json' -d '{"title": "Write a migration"}'
+curl -w '\n' -X PATCH localhost:3117/todos/1
+curl -w '\n' -X DELETE localhost:3117/todos/2
+```
+
+Cada solicitud devuelve la fila afectada. La opción `-w '\n'` simplemente añade un salto de línea después de cada respuesta:
+
+```text
+{"id":1,"title":"Try sqlx","done":false,"created_at":"2026-10-01T14:22:32.475739Z"}
+{"id":2,"title":"Write a migration","done":false,"created_at":"2026-10-01T14:22:32.627680Z"}
+{"id":1,"title":"Try sqlx","done":true,"created_at":"2026-10-01T14:22:32.475739Z"}
+{"id":2,"title":"Write a migration","done":false,"created_at":"2026-10-01T14:22:32.627680Z"}
+```
+
+Abra `http://localhost:3117/todos` en su navegador para ver la lista de tareas pendientes:
+
+```json
+[{"id":1,"title":"Try sqlx","done":true,"created_at":"2026-10-01T14:22:32.475739Z"}]
+```
+
+Para ver los datos en la consola, abra **consola SQL** en la barra lateral izquierda de su servicio, expanda `guide_rust` y luego `public`, y haga clic en la tabla `todos`. La tabla `_sqlx_migrations`, situada a su lado, almacena el historial de migraciones. La tabla `todos` contiene la fila restante:
+
+| id | title    | done | created&#95;at                |
+| -- | -------- | ---- | ----------------------------- |
+| 1  | Try sqlx | true | 2026-10-01 14:22:32.475739+00 |
+
+## Usar PgBouncer {#pgbouncer}
+
+Para conectar la aplicación a través del [PgBouncer](/es/products/managed-postgres/connection#pgbouncer) incluido, seleccione **via PgBouncer** en el cuadro de diálogo **Conectar** y use el puerto `6432` en la `DATABASE_URL` de la aplicación. El mismo certificado de CA sigue siendo válido. Por ejemplo, mantenga `.env` con la conexión directa para `sqlx-cli` y defina la variable al iniciar la aplicación:
+
+```bash
+DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/guide_rust?sslmode=verify-full&sslrootcert=ca-certificate.pem" cargo run
+```
+
+```text
+Connected to Postgres, TLS version: none
+Listening on http://localhost:3117/todos
+```
+
+A través de PgBouncer, `pg_stat_ssl` informa sobre la propia conexión de PgBouncer con Postgres, por lo que la comprobación muestra `none`. La conexión de su aplicación con PgBouncer se sigue verificando: un certificado de CA incorrecto falla igualmente con `UnknownIssuer`.
+
+PgBouncer se ejecuta en modo de agrupación por transacción, por lo que cada transacción puede ejecutarse en una conexión de Postgres distinta. Con sqlx:
+
+* **Para conectarse** se requiere `.extra_float_digits(None)`, como en `main.rs`. De forma predeterminada, sqlx envía `extra_float_digits` como parámetro de inicio, y PgBouncer rechaza la conexión con `unsupported startup parameter: extra_float_digits`. Por el mismo motivo, `PgConnectOptions::options` falla con `unsupported startup parameter in options`.
+* **Las sentencias preparadas** funcionan con la configuración predeterminada. sqlx libera las sentencias que desaloja de su caché mediante un mensaje `Close` a nivel de protocolo, que PgBouncer gestiona incluso dentro de transacciones. No establezca `statement_cache_capacity(0)`: no es necesario y, con la caché desactivada, sqlx sigue preparando sentencias con nombre, pero nunca las cierra.
+* **No utilice `.persistent(false)`** en consultas que se ejecuten fuera de una transacción. En ese caso, sqlx prepara una sentencia sin nombre y la ejecuta en un segundo viaje de ida y vuelta, que PgBouncer puede enviar a otra conexión de Postgres. La consulta puede fallar con `unnamed prepared statement does not exist`, o bien ejecutar sin avisar la sentencia de otro cliente y devolver resultados incorrectos.
+* **La configuración de sesión** establecida con `SET`, incluso en el hook `after_connect` de un grupo, no se mantiene en su conexión y puede filtrarse a otros clientes. Utilice en su lugar `SET LOCAL` dentro de una transacción.
+* **Las migraciones** deben usar la conexión directa. `sqlx-cli` y las macros `query!` no pueden conectarse a través de PgBouncer, porque siempre envían `extra_float_digits`. `sqlx::migrate!` adquiere un bloqueo consultivo a nivel de sesión (`pg_advisory_lock`) y, a través de PgBouncer, la liberación puede llegar a otra conexión de Postgres. En ese caso, el bloqueo sigue retenido en una conexión del grupo, y las migraciones posteriores, incluso las que usan la conexión directa, se quedan colgadas hasta que PgBouncer cierra esa conexión.
+
+## Próximos pasos {#next-steps}
+
+* [Conexión](/es/products/managed-postgres/connection): cadenas de conexión, PgBouncer y TLS
+* [Configuración](/es/products/managed-postgres/settings): parámetros de Postgres y PgBouncer, como `max_connections`
+* [Réplicas de lectura](/es/products/managed-postgres/read-replicas): envíe consultas de solo lectura a una réplica mediante un segundo `PgPool`
+* [Seguridad](/es/products/managed-postgres/security): listas de acceso por IP y redes privadas

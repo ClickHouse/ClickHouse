@@ -89,6 +89,7 @@
               "pages": [
                 "ja/concepts/features/operations/insert/inserting-data",
                 "ja/concepts/features/operations/insert/asyncinserts",
+                "ja/concepts/features/operations/insert/async-insert-select",
                 "ja/concepts/features/operations/insert/bulkinserts",
                 "ja/concepts/features/operations/insert/deduplication",
                 "ja/concepts/features/operations/insert/deduplicating-inserts-on-retries",

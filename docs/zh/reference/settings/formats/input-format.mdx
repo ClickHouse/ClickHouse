@@ -99,7 +99,7 @@ ClickHouse 便可只读取所需的字节范围，从而减少内存使用。
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1000"},{"label": "新增一个设置，用于控制解码二进制类型时允许的最大类型节点数。可防止恶意输入。"}]}]} />
 
-解码二进制类型时允许的最大类型节点数 (不是深度，而是节点总数) 。`Map(String, UInt32)` = 3 个节点。可防止恶意输入。0 = 不限制。
+解码二进制类型时允许的最大类型节点数 (不是深度，而是节点总数) 。`Map(String, UInt32)` = 3 个节点。`AggregateFunction` 类型的参数按每个值计为一个节点，嵌套的参数也计算在内。可防止恶意输入。0 = 不限制。
 
 ## input_format_binary_read_json_as_string {#input_format_binary_read_json_as_string}
 
@@ -301,6 +301,14 @@ ClickHouse 便可只读取所需的字节范围，从而减少内存使用。
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "0"},{"label": "在需要时禁用被省略字段的类型默认值"}]}]} />
 
 强制将被省略的字段初始化为 NULL 值
+
+## input_format_freeform_max_search_steps {#input_format_freeform_max_search_steps}
+
+<SettingsInfoBlock type="UInt64" default_value="4096" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "4096"},{"label": "新增设置，用于限制 `Freeform` 行结构的搜索范围。此前该搜索没有上限，遇到由字符串构成的宽行时可能耗尽内存；设为 0 可恢复此前的行为。"}]}]} />
+
+在 `Freeform` 格式中搜索行结构时允许的最大步数。如果多种转义规则对某个字段的读取结果相同 (例如，制表符分隔行中的单词，按 `Raw` 规则和 `Escaped` 规则读取的结果一致) ，搜索就会在该字段处产生分支，因此由字符串构成的宽行会产生指数级数量的候选结构。当搜索步数超过此值时，将抛出异常，以避免耗尽内存和时间。0 表示不限制。
 
 ## input_format_geojson_unsupported_geometry_handling {#input_format_geojson_unsupported_geometry_handling}
 
@@ -901,6 +909,14 @@ ORC 行读取器使用的时区名称，默认时区为 GMT。
 
 读取 Parquet 文件时，会根据 WHERE/PREWHERE 表达式以及 Parquet 元数据中的最小值/最大值统计信息，跳过整个行组。
 
+## input_format_parquet_footer_read_size {#input_format_parquet_footer_read_size}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置，用于以固定字节数覆盖自适应的 Parquet footer 初始读取大小；设为 0 时保持自适应行为。"}]}]} />
+
+使用 v3 读取器打开文件时，用于拉取 Parquet footer (`FileMetaData`) 的初始尾部读取大小 (以字节为单位) 。`0` (默认值) 表示根据文件大小自适应地确定读取大小：取文件大小的 1%，并限制在 `[128 KiB, 2 MiB]` 范围内。因此，即使是包含数百列的宽文件，通常也只需一次读取即可获取完整的 footer。设置为非零值时，将强制使用固定的初始读取大小，而不再自适应调整；对于延迟极高的对象存储，这一设置非常有用，因为预先读取更大的尾部数据可以省去第二次往返。该值不会超过文件大小。
+
 ## input_format_parquet_local_file_min_bytes_for_seek {#input_format_parquet_local_file_min_bytes_for_seek}
 
 <SettingsInfoBlock type="UInt64" default_value="8192" />
@@ -1065,6 +1081,12 @@ Parquet 读取器 输出的平均块字节数
 
 * 0 — 已禁用。
 * 1 — 已启用。
+
+## input_format_sqlite_table_name {#input_format_sqlite_table_name}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "`SQLite` 输入格式的新增设置：要读取的表名。"}]}]} />
+
+指定从 SQLite 输入中读取数据的表名。如果为空，则使用 SQLite 数据库中的第一个表。
 
 ## input_format_try_infer_dates {#input_format_try_infer_dates}
 

@@ -28,9 +28,7 @@ El primer umbral que se alcanza desencadena el vaciado.
 
 Este proceso de agrupación por lotes es invisible para los clientes y ayuda a ClickHouse a fusionar de forma eficiente el tráfico de inserción procedente de múltiples fuentes. Sin embargo, hasta que no se produce un vaciado, los datos no pueden consultarse. Es importante destacar que existen múltiples búferes por combinación de forma de inserción y configuración y que, en los clústeres, los búferes se mantienen por nodo, lo que permite un control detallado en entornos multiinquilino. Por lo demás, la mecánica de inserción es idéntica a la descrita para las [inserciones síncronas](/es/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default).
 
-<div id="choosing-a-return-mode">
-  ### Elegir un modo de retorno
-</div>
+### Elegir un modo de retorno {#choosing-a-return-mode}
 
 El comportamiento de las inserciones asíncronas se ajusta aún más mediante la configuración [`wait_for_async_insert`](/es/reference/settings/session-settings/wait-for#wait_for_async_insert).
 
@@ -46,19 +44,17 @@ Los [benchmarks también demuestran](https://clickhouse.com/blog/asynchronous-da
 
 Nuestra recomendación firme es usar `async_insert=1,wait_for_async_insert=1` si utiliza inserciones asíncronas. Usar `wait_for_async_insert=0` es muy arriesgado porque es posible que su cliente de INSERT no detecte si hay errores, y además puede provocar una posible sobrecarga si su cliente sigue escribiendo rápidamente en una situación en la que el ClickHouse server necesita ralentizar las escrituras y crear cierta contrapresión para garantizar la fiabilidad del service.
 
-<div id="adaptive-async-inserts">
-  ### Inserciones asíncronas adaptativas
-</div>
+### Inserciones asíncronas adaptativas {#adaptive-async-inserts}
 
 Desde la versión 24.2, ClickHouse usa de forma predeterminada tiempos de espera de vaciado adaptativos ([`async_insert_use_adaptive_busy_timeout`](/es/reference/settings/session-settings/async-insert#async_insert_use_adaptive_busy_timeout)). En lugar de un intervalo de vaciado fijo, el tiempo de espera se ajusta dinámicamente entre un mínimo ([`async_insert_busy_timeout_min_ms`](/es/reference/settings/session-settings/async-insert#async_insert_busy_timeout_min_ms), 50 ms de forma predeterminada) y un máximo ([`async_insert_busy_timeout_max_ms`](/es/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms), 200 ms de forma predeterminada o 1000 ms en Cloud) en función de la tasa de llegada de datos.
 
 Cuando los datos llegan con frecuencia, el tiempo de espera se mantiene más cerca del mínimo para vaciar antes y reducir la latencia de extremo a extremo. Cuando los datos son dispersos, aumenta hacia el máximo para acumular lotes más grandes. Esto resulta especialmente útil en el modo predeterminado (`wait_for_async_insert=1`), donde un tiempo de espera fijo alto obligaría a los client a bloquearse durante todo el intervalo incluso cuando los datos ya están listos para vaciarse.
 
-<div id="error-handling">
-  ### Manejo de errores
-</div>
+### Manejo de errores {#error-handling}
 
 La validación del esquema y el análisis de los datos se realizan durante el vaciado del búfer, no cuando se recibe la inserción. Si alguna fila de una consulta de inserción tiene un error de análisis o de tipo, **no se vacía ningún dato de esa consulta** — se rechaza toda la carga útil de la consulta. En el modo predeterminado (`wait_for_async_insert=1`), el error se devuelve al cliente. En el modo fire-and-forget, los errores se escriben en los logs del servidor y en la tabla [`system.asynchronous_inserts`](/es/reference/system-tables/asynchronous_inserts).
+
+La búsqueda del destino y la autorización también se vuelven a evaluar en el momento del vaciado, según el catálogo y el estado del control de acceso vigentes en ese momento, no según los vigentes cuando se recibió la inserción. Si se adjunta una vista materializada al destino o se revoca un privilegio entre la recepción de la inserción y el vaciado de su búfer, esto afecta al vaciado.
 
 Cada vaciado crea al menos una parte por cada valor distinto de la clave de partición en el búfer. Incluso en tablas sin clave de partición, un solo vaciado puede producir varias partes si los datos almacenados en el búfer superan [`max_insert_block_size`](/es/reference/settings/session-settings/max-insert#max_insert_block_size) (valor predeterminado: ~1 millón de filas).
 
@@ -66,9 +62,7 @@ Cada vaciado crea al menos una parte por cada valor distinto de la clave de part
   Aunque uses inserciones asíncronas, puedes seguir encontrándote con errores de [&quot;too many parts&quot;](/es/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) si la clave de particionamiento tiene una cardinalidad alta.
 </Note>
 
-<div id="deduplication-and-reliability">
-  ### Deduplicación y fiabilidad
-</div>
+### Deduplicación y fiabilidad {#deduplication-and-reliability}
 
 Desde la versión 26.2, ClickHouse realiza la deduplicación automática tanto para las inserciones asíncronas como para los síncronos, lo que permite reintentar de forma segura las operaciones en tablas que mantienen un registro de deduplicación. Los motores `*ReplicatedMergeTree` mantienen uno de forma predeterminada; una tabla `MergeTree` sin replicación requiere que `non_replicated_deduplication_window` tenga un valor positivo. Ambos tipos de insert se controlan mediante [`deduplicate_insert`](/es/reference/settings/session-settings/deduplicate-insert#deduplicate_insert), cuyo valor predeterminado es `enable`. Se admiten vistas materializadas dependientes.
 
@@ -76,20 +70,22 @@ En la práctica, si se reintenta el mismo insert —por ejemplo, debido a un tim
 
 Para obtener más información, incluida la única restricción aplicable a las vistas materializadas con inserciones asíncronas, consulte [Deduplicación de inserts en reintentos](/es/concepts/features/operations/insert/deduplicating-inserts-on-retries#deduplication-for-asynchronous-inserts).
 
-<div id="enabling-asynchronous-inserts">
-  ### Habilitación de inserciones asíncronas
-</div>
+### Habilitación de inserciones asíncronas {#enabling-asynchronous-inserts}
 
 Las inserciones asíncronas se pueden habilitar para un usuario concreto o para una consulta específica:
 
 * Habilitación de inserciones asíncronas a nivel de usuario. Este ejemplo usa el usuario `default`; si crea un usuario distinto, sustituya ese nombre de usuario:
+
   ```sql
   ALTER USER default SETTINGS async_insert = 1
   ```
+
 * Puede especificar la configuración de las inserciones asíncronas mediante la cláusula SETTINGS de las consultas de inserción:
+
   ```sql
   INSERT INTO YourTable SETTINGS async_insert=1, wait_for_async_insert=1 VALUES (...)
   ```
+
 * También puede especificar la configuración de las inserciones asíncronas como parámetros de conexión al usar un cliente de ClickHouse para un lenguaje de programación.
 
   Por ejemplo, así puede hacerlo dentro de una connection string de JDBC cuando usa el JDBC driver de Java de ClickHouse para conectarse a ClickHouse Cloud:
@@ -99,11 +95,11 @@ Las inserciones asíncronas se pueden habilitar para un usuario concreto o para 
   ```
 
 <Note>
-  Las inserciones asíncronas no se aplican a las consultas `INSERT INTO ... SELECT`. Cuando la inserción contiene una cláusula `SELECT`, la consulta siempre se ejecuta de forma síncrona, independientemente de la configuración de `async_insert`.
+  `INSERT ... SELECT` también puede procesarse a través de la cola de inserciones asíncronas cuando `async_insert = 1` y el resultado completo cabe en un único bloque de tamaño no superior a `async_insert_max_data_size`; de lo contrario, se ejecuta de forma síncrona. Esta vía tiene sus propios criterios de aplicación y su propio comportamiento en cuanto a la contabilización de escrituras y la cancelación. Consulte [INSERT ... SELECT asíncrono](/es/concepts/features/operations/insert/async-insert-select) para obtener más información.
 </Note>
 
 <div id="flushing-buffers-on-shutdown">
-  ### Vaciado de búferes al apagar
+  ### Vaciado de búferes al apagar {#flushing-buffers-on-shutdown}
 </div>
 
 Para vaciar todos los búferes pendientes de inserción asíncrona —por ejemplo, durante un apagado controlado o antes de una tarea de mantenimiento—, ejecute:
@@ -115,7 +111,7 @@ SYSTEM FLUSH ASYNC INSERT QUEUE
 Esto garantiza que los datos almacenados en el búfer se escriban en el almacenamiento antes de que el servidor se detenga.
 
 <div id="comparison-with-buffer-tables">
-  ### Comparación con las tablas Buffer
+  ### Comparación con las tablas Buffer {#comparison-with-buffer-tables}
 </div>
 
 Las inserciones asíncronas son el sustituto moderno de las [tablas Buffer](/es/reference/engines/table-engines/special/buffer). Diferencias clave:

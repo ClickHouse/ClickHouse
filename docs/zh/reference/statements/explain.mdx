@@ -60,7 +60,7 @@ Union
             Output: number
 ```
 
-## EXPLAIN 类型
+## EXPLAIN 类型 {#explain-types}
 
 * `AST` — 抽象语法树。
 * `SYNTAX` — 经 AST 层级优化后的查询文本。
@@ -71,7 +71,7 @@ Union
 * `ESTIMATE` — 处理查询时，将从表中读取的预估行数、标记数和 parts 数量。
 * `TABLE OVERRIDE` — 表函数 schema 上表覆盖的已验证结果。
 
-### EXPLAIN AST
+### EXPLAIN AST {#explain-ast}
 
 转储查询的 AST。支持所有类型的查询，不仅限于 `SELECT`。
 
@@ -109,7 +109,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
         ExpressionList
 ```
 
-### EXPLAIN SYNTAX
+### EXPLAIN SYNTAX {#explain-syntax}
 
 显示查询在语法分析后的抽象语法树 (AST) 。
 
@@ -150,7 +150,7 @@ ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
 ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
 ```
 
-### EXPLAIN QUERY TREE
+### EXPLAIN QUERY TREE {#explain-query-tree}
 
 设置：
 
@@ -179,7 +179,7 @@ QUERY id: 0
     TABLE id: 3, table_name: default.test_table
 ```
 
-### EXPLAIN PLAN
+### EXPLAIN PLAN {#explain-plan}
 
 转储查询计划步骤。
 
@@ -663,7 +663,7 @@ Join (JOIN FillRightFirst)
          Output: id, value
 ```
 
-### EXPLAIN PIPELINE
+### EXPLAIN PIPELINE {#explain-pipeline}
 
 设置：
 
@@ -703,7 +703,7 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
-### EXPLAIN ANALYZE
+### EXPLAIN ANALYZE {#explain-analyze}
 
 `EXPLAIN ANALYZE` 会实际执行查询，丢弃结果行，并输出与 `EXPLAIN PLAN` 相同的计划树，同时为每个步骤标注其在运行时的实际执行情况。
 
@@ -722,7 +722,8 @@ ExpressionTransform
 * `compact` — 见 [EXPLAIN PLAN](#explain-plan) 小节。默认值：1。
 * `pretty` — 见 [EXPLAIN PLAN](#explain-plan) 小节。默认值：1。
 * `processors` — 对于 `EXPLAIN ANALYZE`，会为每个阶段额外输出一行，显示各处理器耗时的分布：`min`、`median`、`max` 和 `sum`。这有助于发现并行处理器之间的负载不均。默认值：0。
-* `matches` — 对于 `EXPLAIN ANALYZE`，当无法从 join 产生的结果中推导出 `matched`、`match rate` 和 `fanout` 指标时，会使 join 步骤执行生成这些指标所需的额外记录工作。可以推导出时，无需此选项也会报告这些指标。请参见 [Join steps](#explain-analyze-join-steps)。默认值：0。
+* `matches` — 对于 `EXPLAIN ANALYZE`，当无法从连接产生的结果中推导出 `matched`、`match rate` 和 `fanout` 指标时，会使连接步骤执行生成这些指标所需的额外记录工作。可以推导出时，无需此选项也会报告这些指标。请参见 [连接 steps](#explain-analyze-join-steps)。默认值：0。
+* `time` — 对于 `EXPLAIN ANALYZE`，会为每个步骤输出 `Time` 和 `Concurrency` 行，显示该步骤及其分支的挂钟时间和并发级别。请参见 [步骤和分支的挂钟时间与并发级别](#explain-analyze-concurrency)。默认值：1。
 
 <Note>
   由于 `EXPLAIN ANALYZE` 会实际执行被包装的查询，因此它在多个方面的行为都与该
@@ -748,29 +749,38 @@ EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP 
 
 ```text
 Query summary:
-  Time:        10.72 ms (planning 6.45 ms · execution 4.26 ms)
-  Read:        1.00 million rows, 8.00 MB (234.49 million rows/s., 1.88 GB/s.)
-  Peak memory: 28.98 KiB
+  Time:        22.65 ms (planning 7.98 ms · execution 14.66 ms)
+  Execution:   in steps 3.46 ms (23.60%) · outside steps 16.60 us (0.11%) · idle 11.19 ms (76.29%)
+  Read:        1.00 million rows, 8.00 MB (68.20 million rows/s., 545.59 MB/s.)
+  Peak memory: 16.00 KiB
 
 Output: number MOD 10, count()
 
 Expression ((Project names + Projection))
 │  I/O: rows 10 → 10 · 90 B → 90 B
-│    time 21.82 us (0.5%) · parallelism 0.98/1
+│  Time: step 12.09 us (0.08%) · branch 3.46 ms (23.60%)
+│  Concurrency: step 1.00/16 · branch 4.96/16
+│    time 12.36 us (0.08%) · parallelism 0.98/1
 └──Aggregating
    │  Keys: number MOD 10
    │  Aggregates: count()
    │  Skip merging: 0
    │  I/O: rows 1.00 million → 10 (0.00%) · 1.00 MB → 90 B
-   │    Stage (partial aggregation): time 868.45 us (20.4%) · parallelism 3.80/15
-   │    Stage (final aggregation): time 445.27 us (10.4%) · parallelism 1.11/16
+   │  Time: step 2.03 ms (13.85%) · branch 3.45 ms (23.52%)
+   │  Concurrency: step 5.93/16 · branch 4.97/16
+   │    Stage (partial aggregation): time 1.69 ms (11.50%) · parallelism 1.80/15
+   │    Stage (final aggregation): time 351.39 us (2.40%) · parallelism 1.10/16
    └──Expression ((Before GROUP BY + Change column names to column identifiers))
       │  I/O: rows 1.00 million → 1.00 million · 8.00 MB → 1.00 MB
-      │    time 677.07 us (15.9%) · parallelism 4.31/15
+      │  Time: step 2.02 ms (13.78%) · branch 2.76 ms (18.81%)
+      │  Concurrency: step 7.13/16 · branch 5.87/16
+      │    time 2.02 ms (13.81%) · parallelism 2.26/11
       └──ReadFromSystemNumbers
             Output: number
             I/O: rows 0 → 1.00 million · 0 B → 8.00 MB
-              time 993.94 us (23.3%) · parallelism 7.52/15
+            Time: step 2.58 ms (17.57%) · branch 2.58 ms (17.57%)
+            Concurrency: step 5.98/16 · branch 5.98/16
+              time 2.58 ms (17.58%) · parallelism 3.55/15
 ```
 
 我们来看看输出。首先看一下请求头。
@@ -778,11 +788,13 @@ Expression ((Project names + Projection))
 ```txt
    Query summary:
      Time:        <total> (planning <planning> · execution <execution>)
+     Execution:   in steps <t> (<share>%) · outside steps <t> (<share>%) · idle <t> (<share>%)
      Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
      Peak memory: <peak>
 ```
 
 * `Time` — 总时间，分为规划阶段 (即创建计划 + 优化计划 + 构建管道) 和执行阶段 (运行管道) 。
+* `Execution` — 当 `time = 0` 时不显示。将执行时间分为 `in steps`、`outside steps` 和 `idle`，各部分之和等于 `execution`。请参阅[步骤和分支的挂钟时间及并发级别](#explain-analyze-concurrency)。
 * `Read` — 从表中读取的行数和未压缩字节数，以及吞吐量 —— 与普通查询 footer 中显示为 &quot;Processed&quot; 的数字相同。
 * `Peak memory` — 查询使用的峰值内存占用。
 
@@ -798,11 +810,11 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
 * `rows <in> → <out>` — 进入和离开该步骤的行数； (`<selectivity>`%) 表示该步骤对数据的过滤 (`out/in`) 或扩张程度；当输入行数等于输出行数，或输入行数为 `0` 时会隐藏。
 * `<bytes_in> → <bytes_out>` — 流经该步骤的内存中未压缩字节数 (当两者都为零时省略) 。
 * `time <t> (<share>%)` — 该阶段处于活跃状态的挂钟时间，以及其占查询执行时间的比例 (即不包含 build 时间) 。请注意，由于阶段和步骤会并发运行，这些占比相加可能超过 100%。
-* `parallelism <avg>/<max>` — 该阶段内同时工作的 CPU 线程平均数量，以及它可使用的最大数量。数值接近最大值表示该阶段并行化良好；接近 1 则表示它大多是串行运行的。
+* `parallelism <avg>/<max>` — 该阶段内同时工作的 CPU 线程平均数量，以及它可使用的最大数量。此指标仅统计该阶段：同时处理查询中其他步骤的线程不计入其中。数值接近最大值表示该阶段并行化良好；接近 1 则表示它大多是串行运行的。
 * `Stage (<stage>)` — 阶段名称。只有单个阶段的步骤会直接打印时间行，而不带 `Stage (...)` 标签。包含多个阶段的步骤则会为每个阶段分别打印一行带标签的内容，例如 `Aggregating` 会显示 `Stage (partial aggregation)` 和 `Stage (final aggregation)`，而 hash 连接 会显示 `Stage (build)` 和 `Stage (probe)`。
 
 <Note>
-  ClickHouse 不仅会并行执行计划步骤内的任务，也会并行执行各个计划步骤。`parallelism` 指标仅反映此步骤本身的工作情况。其他步骤也可能同时运行，因此这个数值并不能体现该步骤的并行度相对于整个查询的情况。
+  ClickHouse 不仅会并行执行计划步骤内的任务，也会并行执行各个计划步骤。`parallelism` 指标仅反映此步骤本身的工作情况。其他步骤也可能同时运行，因此这个数值并不能体现该步骤的并行度相对于整个查询的情况。如需了解整个查询的并发情况，请参阅在 `time = 1` 时输出的 `Concurrency` 指标 ([步骤和分支的挂钟时间及并发级别](#explain-analyze-concurrency)) 。
 </Note>
 
 <Note>
@@ -812,7 +824,7 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
   2. `max_threads` 中设置的最大查询处理线程数。
 </Note>
 
-#### Join 步骤
+#### Join 步骤 {#explain-analyze-join-steps}
 
 对于 JOIN 步骤，`EXPLAIN ANALYZE` 会输出用于比较 JOIN 顺序优化器估算值与实际结果的行 (请参阅[估算值与实际 JOIN 指标](#explain-analyze-join-estimation)) ，以及每一侧的*参与*行——`Left` 和 `Right`——后面跟着所有特定于该 JOIN 实现的行。涵盖了 [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm) 的所有取值 (`hash`、`parallel_hash`、`grace_hash`、`partial_merge`、`full_sorting_merge`、`parallel_full_sorting_merge`、`direct`) ，以及该设置无法选择的两种实现：`CROSS` 或 `COMMA` JOIN、任何不含键相等条件的 `ON` 子句，以及 [`Join`](/zh/reference/engines/table-engines/special/join) 表引擎。大多数实现都会报告两侧；有些仅报告其物化的一侧 (例如，`direct` 只输出 `Left:`) 。
 
@@ -833,7 +845,7 @@ Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <ma
 
 无法精确推导的数值会报告为 `not collected`，而不是 `0`。`match rate` 和 `fanout` 都由 `matched` 推导而来，因此没有 `matched` 的一侧会将这三项均报告为 `not collected`。
 
-#### 估算值与实际 JOIN 指标
+#### 估算值与实际 JOIN 指标 {#explain-analyze-join-estimation}
 
 join 步骤包含 join 顺序优化器的估算值——即 `EXPLAIN PLAN` 显示的估算值 (请参阅 [EXPLAIN PLAN](#explain-plan) 部分) ——而 `EXPLAIN ANALYZE` 会将每项估算值与实测值并列输出：
 
@@ -871,7 +883,7 @@ Join (JOIN FillRightFirst)
 │    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
 ```
 
-#### 扇出
+#### 扇出 {#explain-analyze-fanout}
 
 `fanout` 用于衡量行数的倍增情况：
 
@@ -886,7 +898,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 * `fanout = 1` — 完整的 1:1 JOIN；每个匹配行恰好产生一个结果行。
 * `fanout > 1` — 1:N JOIN；另一侧的重复键导致行数倍增。两侧同时出现较大值，表明发生了非预期的 Cartesian 膨胀。
 
-#### 何时需要 `matches = 1` 才能获取数值
+#### 何时需要 `matches = 1` 才能获取数值 {#explain-analyze-matches}
 
 这些数值大多来自 JOIN 本身就会生成的数据，普通的 `EXPLAIN ANALYZE` 即会报告。其余数值需要执行 JOIN 原本不会进行的额外记录操作，因此只有在使用 `EXPLAIN ANALYZE matches = 1` 时才会报告。具体哪些数值属于这种情况取决于算法；对于哈希家族，有以下两种情况：
 
@@ -933,7 +945,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 
 当两种算法都报告数值时，结果是一致的。合并算法只是掌握了更多信息；对于何谓匹配，它们并无分歧。
 
-#### 算法特定行
+#### 算法特定行 {#explain-analyze-join-algorithm-lines}
 
 下面来看各 JOIN 实现额外添加的行。
 
@@ -990,7 +1002,7 @@ Spill: yes · right spilled <right_spilled_bytes>
 
 对于与 [`Join`](/zh/reference/engines/table-engines/special/join) 表引擎进行的 JOIN，会同时报告两侧的信息，并附带描述预构建表的 `Hash table:` 行。右侧统计的是存储在引擎中的行数，而非某次查询中构建的行数。
 
-#### 每个处理器的耗时
+#### 每个处理器的耗时 {#explain-analyze-processors}
 
 当 `processors = 1` 时，会在每个阶段下方额外打印一行，显示该阶段各处理器的耗时分布：
 
@@ -1000,7 +1012,35 @@ Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
 
 `<n>` 是该阶段中的处理器数量。`median` 和 `max` 之间差距较大，说明并行处理器之间存在负载不均。
 
-### EXPLAIN ESTIMATE
+#### 步骤和分支的挂钟时间及并发级别 {#explain-analyze-concurrency}
+
+除非 `time = 0`，否则每个查询计划步骤还会输出两行：
+
+```txt
+Time: step <t> (<share>%) · branch <t> (<share>%)
+Concurrency: step <n>/<m> · branch <n>/<m>
+```
+
+此处 `step` 指步骤本身。`branch` 指以该步骤为根的子树，即该步骤及计划中位于其下方的所有步骤。
+
+* `Time` — 至少有一个线程在为该步骤 (`step`) 或子树中任一步骤 (`branch`) 执行工作的挂钟时间。`<share>` 是该时间占查询执行时间的百分比。
+* `Concurrency` — 在该步骤 (`step`) 或其子树 (`branch`) 处于活动状态期间，忙于查询中*任意*步骤 (而不仅是当前步骤) 的平均线程数。`<m>` 是查询可使用的最大线程数。不拥有任何处理器的步骤 (例如输入已具有相同 header 时的 `Union`) 会在 `step` 处输出 `Unknown`，因为没有可测量的工作。`branch` 仍会照常报告。
+
+这两个指标均由工作区间推导而来。每当某个线程完成一段工作，executor 就会记录一个区间，包括开始时间、结束时间以及该工作所属的步骤。
+
+步骤的 `Time` 是该步骤所有区间并集的长度。没有任何线程处理该步骤的空缺不计入在内。分支的 `Time` 则会先将子树中所有步骤的区间合并。
+
+根步骤的 `branch` 即整个计划，但其占比通常低于 100%。查询摘要中的 `Execution` 行展示了其余执行时间的去向 (参见上方示例中的查询摘要) ：
+
+* `in steps` — 计划中所有步骤区间的并集。它就是根步骤的 `branch` 时间，占比也相同。
+* `outside steps` — 至少有一个线程在运行处理器，但这些处理器均不属于本计划中任何步骤的时间，包括输出 sink、`Resize`、转换类 transform，以及从本计划无法到达的其他计划中的步骤。
+* `idle` — 没有任何线程运行处理器的时间，包括 executor 的启动与关闭，以及所有线程都在等待的时刻。
+
+`Time` 占比、各阶段的 `time` 占比以及 `Execution` 占比使用相同的分母，因此可以相互比较。
+
+`Concurrency` 是所有查询线程在该并集内的总忙碌时间除以并集长度。它统计的是忙于查询中*任意*步骤的线程，这一点与各阶段的 `parallelism` 指标不同，后者只统计该阶段自身的线程。它回答的问题是：“在该步骤 (分支) 处于活动状态期间，整个查询的繁忙程度如何？”数值接近 `<m>` 表示查询在该步骤的生命周期内始终保持完全并行。数值接近 `1` 表示查询在此期间退化为串行：对于 `step`，唯一忙碌的线程正在处理该步骤本身，因此该步骤是一个串行化点；对于 `branch`，该线程在子树中的某处工作，不一定是在该步骤上。只有当串行化步骤的 `Time` 占比同样可观时，它才是真正的瓶颈。
+
+### EXPLAIN ESTIMATE {#explain-estimate}
 
 显示在处理查询时，将从表中读取的预估行数、标记数和 parts 数量。适用于 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 家族的表。
 
@@ -1024,11 +1064,11 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
-### EXPLAIN WHATIF
+### EXPLAIN WHATIF {#explain-whatif}
 
-在*不*将索引物化到磁盘上的情况下，估算假设性跳过索引对 `SELECT` 查询的潜在收益。使用 [`CREATE HYPOTHETICAL INDEX`](/zh/reference/statements/hypothetical-index#create-hypothetical-index) 定义一个或多个候选项，然后运行 `EXPLAIN WHATIF SELECT ...`，即可查看每个候选项的以下信息：是否适用、预估读取的标记数、预估字节数以及跳过比率。
+在*不*将索引物化到磁盘的前提下，估算假设的跳过索引能为 `SELECT` 查询带来的收益。先使用 [`CREATE HYPOTHETICAL INDEX`](/zh/reference/statements/hypothetical-index#create-hypothetical-index) 定义一个或多个候选索引，再运行 `EXPLAIN WHATIF SELECT ...`，即可查看每个候选索引的以下信息：是否适用、预计读取的标记数、预计字节数以及跳过比例。
 
-使用 [`CREATE HYPOTHETICAL PROJECTION`](/zh/reference/statements/hypothetical-projection#create-hypothetical-projection) 定义的假设性 PROJECTION 也会作为候选项列出，但目前尚不会估算它们的收益：每一项都会以 `status: not_applicable` 报告。如果某个 PROJECTION 的定义已不再适用于该表——例如列已被删除，或某项设置变更禁用了它所需的功能——则会改为报告相应的原因。
+使用 [`CREATE HYPOTHETICAL PROJECTION`](/zh/reference/statements/hypothetical-projection#create-hypothetical-projection) 定义的假设投影同样可以作为候选项。对于普通投影，系统会基于查询将要读取的数据分片，在内存中构建其主索引，并按照已物化投影的裁剪方式进行裁剪，从而完成估算。报告会给出读取该投影所涉及的标记数和行数、相对于基表读取的 `read_ratio` (低于 `1x` 表示工作量更少，高于则表示更多) ，以及 `verdict` 及其依据。判定遵循优化器的规则：若投影读取的标记数少于基表，或标记数相同但能满足外层 `ORDER BY`，则选用投影。以下投影会被标记为 `status: not_applicable`，目前暂不支持估算：聚合投影；带有 `WHERE` 子句或自带跳过索引 (`WITH SETTINGS add_minmax_index_*`) 的投影；按提交顺序排序的投影 (`TYPE commit_order` 及其 `_block_number, _block_offset` 查询形式) ；排序键不在其存储列中的投影 (例如 `ORDER BY _part_offset`) ；存储了 `_block_number` 的投影 (写入器仅在数据分片合并时才会构建此类投影) ；以及未提供查询所需全部列的投影。`force_optimize_projection`、`force_optimize_projection_name` 和 `preferred_optimize_projection_name` 会被忽略。标记数的建模方式与写入器划分粒度的方式一致：写入器每接收一个块，就按一个粒度大小进行划分。至于具体接收哪些块，则取决于写入投影分片的路径——插入或物化时为一个经过合并压缩的块，合并时则为一系列 `merge_max_block_size` 大小的块——而数据分片并不会记录这些信息，因此系统会针对每种布局分别计算估算值。若不同布局与基表读取的比较结论不一致，报告将给出取值范围并返回 `verdict: too close to call`，而不给出明确判定。如果某个投影的定义已不再适配该表，报告会注明相应原因。
 
 **语法**
 
@@ -1038,7 +1078,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 
 **设置**
 
-* `empirical` — `1` (默认值) 会在内存中对经过基线剪枝的粒度运行索引，以测量跳过比率 (上界) 。`0` 则会跳过该路径。无论哪种情况，如果 empirical 未产生结果 (已禁用，或索引无法在内存中求值) ，估算器都会回退到列[统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)；如果两者都不可用，则最终回退到仅包含适用性的摘要。
+* `empirical` — `1` (默认值) 在内存中对基线裁剪后剩余的粒度应用索引，以测量跳过率 (上界) 。`0` 不执行这一步。无论取何值，如果经验估算未得出结果 (因为已禁用，或无法在内存中评估索引) ，估算器就会改用列[统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)；如果两者都不可用，最终仅汇总索引是否适用。
 
 **输出**
 
@@ -1047,6 +1087,7 @@ Baseline (after PK + partition + existing indexes):
   table:       db.t
   parts:       1
   marks:       100
+  rows:        10000
   est_bytes:   1.50 MiB             (only when the query reads rows)
 
 With idx_b (minmax, hypothetical):
@@ -1076,13 +1117,13 @@ Estimation:
 
 如果该表既没有定义任何假设索引，也没有定义任何假设 PROJECTION，`EXPLAIN WHATIF` 会报告 `status: not_applicable`，并提示你创建一个。
 
-**组合行 (多个候选项)&#x20;**
+**组合行 (多个候选项)**
 
-当有两个或更多候选项以经验方式进行评估时，`EXPLAIN WHATIF` 会在各候选项行之后追加一个名为 `(combined: idx_a, idx_b, ...)` 的额外块。它报告的是同时拥有*所有*这些索引时的联合收益：实际读取只有在某个粒度通过*每一个*跳过索引时才会保留它，因此组合估算就是各候选项存活粒度的交集。所以它的 `skip_ratio` 至少不低于最佳的单个候选项——互补的索引组合起来能裁减更多数据，而冗余的索引则不会带来变化。
+当有两个或更多候选项以经验方式评估时，`EXPLAIN WHATIF` 会在各候选项的行之后追加一个名为 `(combined: idx_a, idx_b, ...)` 的额外块，用于报告同时拥有*所有*这些索引时的联合收益：在实际读取中，只有通过*每一个*跳过索引的粒度才会被保留，因此组合估算是各候选项保留粒度的交集。也正因如此，其 `skip_ratio` 至少不低于最佳的单个候选项——互补的索引组合起来能剪枝更多数据，而冗余的索引则不会改变该值。
 
-只有 `source: empirical` 的候选项会参与计算，因为组合行是通过对它们各自按粒度划分的存活集合求交集构建出来的。估算为 `statistical` 或 `applicability_only` 的候选项没有按粒度划分的数据，因此会被排除；因此，只有当至少两个候选项生成了经验估算时，组合块才会出现，否则将被省略 (例如在 `empirical = 0` 时) 。它的估算字段与单个候选项的经验块相同，但 `elapsed_us` 为 `0`——组合估算是根据各候选项的扫描结果推导得出的，而不是一次新的扫描。合成的 `(combined: ...)` 名称仅用作报告标签，不能与 `force_data_skipping_indices` 一起使用。
+只有 `source: empirical` 的候选项才会参与计算，因为组合行是通过对它们按粒度的保留集合求交集构建而成的。以 `statistical` 或 `applicability_only` 方式估算的候选项没有按粒度的数据，因此会被排除；所以只有当至少两个候选项得出了经验估算时，才会显示组合块，否则将省略该块 (例如在 `empirical = 0` 时) 。其估算字段的含义与单个候选项的经验块相同，只是 `elapsed_us` 为 `0`——组合估算是由各候选项的扫描结果推导得出的，并未执行新的扫描。合成的 `(combined: ...)` 名称仅用作报告标签，不能用于 `force_data_skipping_indices`。
 
-**经验示例**
+**经验估算示例**
 
 ```sql
 CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
@@ -1100,6 +1141,7 @@ Baseline (after PK + partition + existing indexes):
   table:       default.t
   parts:       1
   marks:       100
+  rows:        10000
   est_bytes:   85.52 KiB
 
 With idx_b (minmax, hypothetical):
@@ -1115,9 +1157,9 @@ Estimation:
   sampled_marks:    100 / 100
 ```
 
-假设使用 `minmax`，可将 100 个标记裁减到只剩 1 个——`skip_ratio: 99.0%`。 (`est_bytes` 是根据平均行大小估算得出的，因此具体数值会有所不同。)
+假设性 `minmax` 会将标记数从 100 个剪枝至 1 个——`skip_ratio: 99.0%`。 (`est_bytes` 根据平均行大小估算，因此具体数值会有所不同。)
 
-**统计示例**
+**统计估算示例**
 
 列[统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)默认处于关闭状态。要触发 `statistical` 路径，请先在相关列上定义统计信息，然后等待物化变更完成：
 
@@ -1148,7 +1190,44 @@ Estimation:
 
 如果这两种路径都不可用 (例如 `empirical = 0` 且未定义列统计信息) ，估算器会报告 `source: applicability_only`，以及保守的 `skip_ratio: 0.0%`。
 
-### EXPLAIN TABLE OVERRIDE
+**假设投影**
+
+普通投影也采用相同的方式估算，即基于查询在经过主键和分区裁剪后将要读取的 parts 进行估算：
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
+INSERT INTO t SELECT number, number % 100, number FROM numbers(10000);
+CREATE HYPOTHETICAL PROJECTION p_b ON t (SELECT a, b, v ORDER BY b);
+EXPLAIN WHATIF SELECT count() FROM t WHERE b = 42;
+```
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  rows:        10000
+  est_bytes:   80.79 KiB
+
+With p_b (normal projection, hypothetical):
+  status:       applicable
+  marks:        2
+  rows:         200
+  read_ratio:   0.02x
+  verdict:      chosen
+  reason:       2 marks would be read instead of 100 from the base table
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+  elapsed_us:       1126
+```
+
+`marks` 和 `rows` 指投影自身读取时会涉及的标记和行，而不是基表读取量中的一部分，因为投影粒度与基表粒度包含的行不同。`read_ratio` 是这些标记数与基表标记数之比，因此 `0.02x` 表示读取工作量只有基表的五十分之一，`15x` 表示是基表的十五倍。`verdict` 按照优化器自身的规则判定——标记数少于基表，或标记数相同且投影能满足查询的 `ORDER BY` 要求——因此候选项即使是 `applicable`，也未必会被选中。
+
+### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 
 显示通过 table function 访问的表 schema 上应用表覆盖后的结果。
 还会进行一些验证；如果该覆盖会导致某种失败，则会抛出异常。

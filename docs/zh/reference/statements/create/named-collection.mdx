@@ -17,22 +17,26 @@ doc_type: 'reference'
 **语法**
 
 ```sql
-CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
+CREATE [OR REPLACE] NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
 key_name1 = 'some value' [[NOT] OVERRIDABLE],
 key_name2 = 'some value' [[NOT] OVERRIDABLE],
 key_name3 = 'some value' [[NOT] OVERRIDABLE],
 ...
 ```
 
+`OR REPLACE` 与 `IF NOT EXISTS` 不能同时使用。对已存在的命名集合执行 `CREATE OR REPLACE`
+会将其整体替换：新定义中未包含的键及可覆盖性标志都将被移除。
+
 **示例**
 
 ```sql
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
+CREATE OR REPLACE NAMED COLLECTION foobar AS a = '2', c = '3';
 ```
 
 **相关语句**
 
-* [CREATE NAMED COLLECTION](/zh/reference/statements/alter/named-collection)
+* [ALTER NAMED COLLECTION](/zh/reference/statements/alter/named-collection)
 * [DROP NAMED COLLECTION](/zh/reference/statements/drop#drop-function)
 
 **另请参阅**

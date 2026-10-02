@@ -10,11 +10,11 @@ doc_type: 'guide'
 本指南介绍如何使用该 Operator 配置 ClickHouse 和 Keeper 集群。
 
 <div id="clickhousecluster-configuration">
-  ## ClickHouseCluster 配置
+  ## ClickHouseCluster 配置 {#clickhousecluster-configuration}
 </div>
 
 <div id="basic-configuration">
-  ### 基本配置
+  ### 基本配置 {#basic-configuration}
 </div>
 
 ```yaml
@@ -34,7 +34,7 @@ spec:
 ```
 
 <div id="replicas-and-shards">
-  ### 副本和分片
+  ### 副本和分片 {#replicas-and-shards}
 </div>
 
 * **副本**：每个分片中的 ClickHouse 实例数 (用于高可用)
@@ -49,7 +49,7 @@ spec:
 一个配置为 `replicas: 3`、`shards: 2` 的集群将总共创建 6 个 ClickHouse pod (容器组) 。
 
 <div id="keeper-integration">
-  ### Keeper 集成
+  ### Keeper 集成 {#keeper-integration}
 </div>
 
 每个 ClickHouse 集群都必须引用一个 KeeperCluster，以进行协调：
@@ -64,7 +64,7 @@ spec:
 当设置了 `keeperClusterRef.namespace` 时，operator 必须同时监听这两个命名空间。如果配置了 `WATCH_NAMESPACE`，请将 ClickHouse 和 Keeper 所在的命名空间都包含在该列表中。
 
 <div id="keepercluster-configuration">
-  ## KeeperCluster 配置
+  ## KeeperCluster 配置 {#keepercluster-configuration}
 </div>
 
 ```yaml
@@ -80,8 +80,33 @@ spec:
         storage: 5Gi
 ```
 
+### 终止时的 leader 身份移交 {#keeper-leadership-handover}
+
+Keeper 容器带有一个默认的 `preStop` hook，它会在副本停止前要求其移交 Raft
+leader 身份，并等待移交完成后才允许
+容器终止。容器每次正常停止时都会执行该 hook，而不仅限于
+operator 发起的滚动发布：descheduler 驱逐、节点排空或 自动扩缩器
+操作都会触发同一个 hook，因为它是 kubelet 节点代理级别的 `preStop` handler，而
+不是调和循环中的逻辑。
+
+如果没有该 hook，重启当前 leader 会导致 ensemble 在新一轮选举完成之前
+处于无 leader 状态；在高负载下，选举可能需要数秒，在
+ClickHouse 侧则表现为 Keeper 连接丢失以及查询延迟升高。该 hook 会要求
+副本让出 leader 身份 (通过
+`http_control` 端口发送 Keeper 的 `ydld` 四字命令) ，然后轮询副本的状态，直到其不再是
+leader 为止，而不是发出请求后立即让容器停止。在写入负载下，
+发出即忘式的请求仍可能在与 `SIGTERM` 的竞争中落败，因此
+正是这一等待过程确保了无 leader 窗口的时长可控。
+
+该 hook 无需任何配置，并且能够平稳降级：早于
+26.3 的 Keeper 版本尚不支持此处使用的 leader 身份相关命令，此时该请求为空操作，
+容器会像没有该 hook 时一样停止。该 hook 运行的是 shell 脚本，因此要求镜像中包含
+`bash`；如果您使用的是 distroless 或 scratch 类型的 Keeper 镜像，请通过 `containerTemplate.lifecycle` 覆盖或移除
+该 hook，详见
+[API 参考文档](/zh/products/kubernetes-operator/reference/api-reference#containertemplatespec)。
+
 <div id="storage-configuration">
-  ## 存储配置
+  ## 存储配置 {#storage-configuration}
 </div>
 
 使用 `dataVolumeClaimSpec` (标准 Kubernetes
@@ -105,7 +130,7 @@ spec:
 [存储和卷指南](/zh/products/kubernetes-operator/guides/storage)。
 
 <div id="cluster-domain">
-  ## 集群域
+  ## 集群域 {#cluster-domain}
 </div>
 
 `spec.clusterDomain` 用于设置 operator 在构建并写入 ClickHouse server
@@ -132,7 +157,7 @@ Keeper 节点会通过其无头 Service 使用 pod 名称：`<pod>.<headless-ser
 </Note>
 
 <div id="pod-configuration">
-  ## pod (容器组)  配置
+  ## pod (容器组)  配置 {#pod-configuration}
 </div>
 
 ### 自动拓扑分散与亲和性 {#automatic-topology-spread-and-affinity}
@@ -166,7 +191,7 @@ spec:
 </Note>
 
 <div id="manual-configuration">
-  ### 手动配置
+  ### 手动配置 {#manual-configuration}
 </div>
 
 可以指定任意的 pod (容器组) 亲和性/反亲和性规则以及拓扑分布约束条件。
@@ -181,11 +206,11 @@ spec:
 ```
 
 <div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencepodtemplatespec-for-all-supported-pod-template-options">
-  ### 所有受支持的 pod (容器组)  模板选项，请参见 [API 参考文档](/zh/products/kubernetes-operator/reference/api-reference#podtemplatespec)。
+  ### 所有受支持的 pod (容器组)  模板选项，请参见 [API 参考文档](/zh/products/kubernetes-operator/reference/api-reference#podtemplatespec)。 {#see-api-reference-for-all-supported-pod-template-options}
 </div>
 
 <div id="pod-disruption-budgets">
-  ## pod (容器组) 中断预算
+  ## pod (容器组) 中断预算 {#pod-disruption-budgets}
 </div>
 
 Operator 会为每个集群创建一个 [PodDisruptionBudget](https://kubernetes.io/docs/concepts/workloads/pods/disruptions/) (PDB) ，以确保自愿中断 (如节点排空、滚动升级、自动扩缩容驱逐) 不会导致过多 pod (容器组)  下线，从而失去仲裁或影响可用性。
@@ -193,7 +218,7 @@ Operator 会为每个集群创建一个 [PodDisruptionBudget](https://kubernetes
 对于拥有多个分片的 ClickHouse 集群，**每个分片都会创建一个 PDB**，这样一个分片中的中断就不会计入另一个分片。
 
 <div id="pdb-defaults">
-  ### 默认值
+  ### 默认值 {#pdb-defaults}
 </div>
 
 operator 会根据集群规模选择安全的默认值，因此即使首次执行 `apply`，也能避免意外丢失仲裁。
@@ -208,7 +233,7 @@ operator 会根据集群规模选择安全的默认值，因此即使首次执�
 对于一个包含 3 个分片且 `replicas: 3` 的 ClickHouseCluster，operator 会创建 3 个 PDB，每个分片 1 个，且每个都设置为 `minAvailable: 1`。
 
 <div id="pdb-overrides">
-  ### 覆盖默认设置
+  ### 覆盖默认设置 {#pdb-overrides}
 </div>
 
 使用 `spec.podDisruptionBudget` 覆盖 `minAvailable` **或** `maxUnavailable` (两者只能指定一个) ：
@@ -244,7 +269,7 @@ spec:
 ```
 
 <div id="pdb-policies">
-  ### 策略
+  ### 策略 {#pdb-policies}
 </div>
 
 `spec.podDisruptionBudget.policy` 允许你选择 operator 以**多大力度**管理 PDB：
@@ -272,7 +297,7 @@ spec:
 ```
 
 <div id="pdb-cluster-wide-disable">
-  ### 集群范围内停用
+  ### 集群范围内停用 {#pdb-cluster-wide-disable}
 </div>
 
 也可以通过 operator 的 `ENABLE_PDB` 环境变量，在整个集群范围内停用 PDB 管理。设置 `ENABLE_PDB=false` 后，无论 `spec.podDisruptionBudget.policy` 如何，operator 都会跳过 **所有** ClickHouseCluster 和 KeeperCluster 的 PDB reconcile 步骤，并且**完全不监视** `PodDisruptionBudget` 资源。因此，operator 的 ServiceAccount 无需具备 `poddisruptionbudgets.policy/v1` 的 RBAC 权限；当 operator 以受限的 ServiceAccount 运行，且该账户刻意不包含这些权限时，这一点尤其有用。
@@ -287,11 +312,11 @@ env:
 这适用于自行实施中断策略 (例如通过 Gatekeeper / Kyverno) 的环境，并希望将 operator 完全排除在外。
 
 <div id="container-configuration">
-  ## 容器配置
+  ## 容器配置 {#container-configuration}
 </div>
 
 <div id="custom-image">
-  ### 自定义镜像
+  ### 自定义镜像 {#custom-image}
 </div>
 
 使用指定的 ClickHouse 镜像：
@@ -306,7 +331,7 @@ spec:
 ```
 
 <div id="container-resources">
-  ### 容器资源
+  ### 容器资源 {#container-resources}
 </div>
 
 为 ClickHouse 容器配置 CPU 和内存：
@@ -325,7 +350,7 @@ spec:
 ```
 
 <div id="environment-variables">
-  ### 环境变量
+  ### 环境变量 {#environment-variables}
 </div>
 
 添加自定义的环境变量：
@@ -339,7 +364,7 @@ spec:
 ```
 
 <div id="volume-mounts">
-  ### 卷挂载
+  ### 卷挂载 {#volume-mounts}
 </div>
 
 添加更多卷挂载：
@@ -359,15 +384,15 @@ spec:
 </Note>
 
 <div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
-  ### 有关所有受支持的容器模板选项，请参见 [API 参考文档](/zh/products/kubernetes-operator/reference/api-reference#containertemplatespec)。
+  ### 有关所有受支持的容器模板选项，请参见 [API 参考文档](/zh/products/kubernetes-operator/reference/api-reference#containertemplatespec)。 {#see-api-reference-for-all-supported-container-template-options}
 </div>
 
 <div id="tls-ssl-configuration">
-  ## TLS/SSL 配置
+  ## TLS/SSL 配置 {#tls-ssl-configuration}
 </div>
 
 <div id="configure-secure-endpoints">
-  ### 配置安全端点
+  ### 配置安全端点 {#configure-secure-endpoints}
 </div>
 
 引用包含 TLS 证书的 Kubernetes Secret，以启用安全端点
@@ -383,7 +408,7 @@ spec:
 ```
 
 <div id="ssl-certificate-secret-format">
-  ### SSL 证书 Secret 格式
+  ### SSL 证书 Secret 格式 {#ssl-certificate-secret-format}
 </div>
 
 该 Secret 应包含服务器密钥对：
@@ -396,7 +421,7 @@ spec:
 </Note>
 
 <div id="clickhouse-keeper-communication-over-tls">
-  ### 通过 TLS 进行 ClickHouse-Keeper 通信
+  ### 通过 TLS 进行 ClickHouse-Keeper 通信 {#clickhouse-keeper-communication-over-tls}
 </div>
 
 如果 KeeperCluster 启用了 TLS，ClickHouseCluster 会自动使用与 Keeper 节点的安全连接。
@@ -415,7 +440,7 @@ spec:
 ```
 
 <div id="external-secret">
-  ## 外部 Secret
+  ## 外部 Secret {#external-secret}
 </div>
 
 默认情况下，operator 会创建并管理一个 Secret，其中包含集群的内部凭据 (interserver 密码、管理密码、Keeper 身份、集群 secret、named-collections 密钥) 。该 Secret 以集群名称命名，并位于集群所在的命名空间中。
@@ -445,7 +470,7 @@ spec:
 </Note>
 
 <div id="external-secret-required-keys">
-  ### 必需的键
+  ### 必需的键 {#external-secret-required-keys}
 </div>
 
 Secret 必须包含以下键：
@@ -478,7 +503,7 @@ stringData:
 ```
 
 <div id="external-secret-policy">
-  ### 策略：Observe 与 Manage
+  ### 策略：Observe 与 Manage {#external-secret-policy}
 </div>
 
 `spec.externalSecret.policy` 用于控制 Operator 如何处理缺失的必需键：
@@ -495,7 +520,7 @@ stringData:
 当外部系统 (Vault、ESO、sealed-secrets、GitOps) 是事实来源，且你希望 Operator 在配置错误时明确报错时，请选择 `Observe`。当你希望实现自给自足的引导，同时仍保留对 Secret 对象本身的所有权 (例如为了备份) 时，请选择 `Manage`。
 
 <div id="external-secret-status">
-  ### 状态条件和故障排查
+  ### 状态条件和故障排查 {#external-secret-status}
 </div>
 
 Operator 会在 `ClickHouseCluster.status.conditions` 中暴露 `ExternalSecretValid` 条件。协调过程看起来卡住时，请检查它：
@@ -526,7 +551,7 @@ kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
 </Note>
 
 <div id="additional-ports">
-  ## 附加端口
+  ## 附加端口 {#additional-ports}
 </div>
 
 该 Operator 会在每个 ClickHouse pod (容器组) 及其公网无头 Service 上暴露一组固定端口：`8123` HTTP、`9000` native、`9009` interserver、`9001`/`9002` management、`9363` Prometheus 指标，以及启用 TLS 时对应的 `8443`/`9440` TLS 端口变体。`interserver` 和 management 端口还会通过每个副本的内部 Service 暴露，以便副本和 operator 能够在副本就绪前进行通信。若要让 ClickHouse 监听更多协议 (如 MySQL、PostgreSQL、gRPC 或其他自定义端口) ，请在 `spec.additionalPorts` 中声明：
@@ -550,7 +575,7 @@ operator 会将这些端口添加到 Pod 的 `containerPorts` 和公网无头 Se
 </Warning>
 
 <div id="additional-ports-mysql-example">
-  ### 端到端示例：MySQL wire 协议
+  ### 端到端示例：MySQL wire 协议 {#additional-ports-mysql-example}
 </div>
 
 要通过 MySQL wire 协议在端口 `9004` 上对外暴露 ClickHouse：
@@ -592,7 +617,7 @@ kubectl exec sample-clickhouse-0-0-0 -- \
 ```
 
 <div id="additional-ports-constraints">
-  ### 字段约束
+  ### 字段约束 {#additional-ports-constraints}
 </div>
 
 | 字段     | 规则                                                                                           |
@@ -601,7 +626,7 @@ kubectl exec sample-clickhouse-0-0-0 -- \
 | `port` | `[1, 65535]` 范围内的整数。webhook 会拒绝列表中重复的端口号。                                                    |
 
 <div id="additional-ports-reserved">
-  ### 保留端口和名称
+  ### 保留端口和名称 {#additional-ports-reserved}
 </div>
 
 validating webhook 会拒绝与 operator 自身绑定端口发生冲突的 `additionalPorts` 条目。所有与 TLS 相关的端口都会被**无条件**保留，以确保后续切换 `spec.settings.tls.enabled` 时，不会破坏原本有效的集群。
@@ -636,7 +661,7 @@ spec.additionalPorts[0].name: "http" is reserved by the operator
 ```
 
 <div id="version-probe-and-upgrade-channel">
-  ## 版本探测与升级通道
+  ## 版本探测与升级通道 {#version-probe-and-upgrade-channel}
 </div>
 
 operator 会针对 cluster 版本执行两项彼此独立的操作：
@@ -645,7 +670,7 @@ operator 会针对 cluster 版本执行两项彼此独立的操作：
 2. **升级通道** — 定期检查公开的 ClickHouse 发布源 (`https://clickhouse.com/data/version_date.tsv`) 。operator 会通过 `VersionUpgraded` status condition 报告是否有新版本可用。它绝不会自行升级 cluster——镜像标签始终由用户控制。
 
 <div id="upgrade-channel-choosing">
-  ### 选择发布渠道
+  ### 选择发布渠道 {#upgrade-channel-choosing}
 </div>
 
 `spec.upgradeChannel` 用于指定 operator 要对照比较的上游发行版集合。`ClickHouseCluster` 和 `KeeperCluster` 都有这个相同的字段。
@@ -667,7 +692,7 @@ spec:
 对于生产环境，通常更建议将通道固定为明确的 `<major>.<minor>` (例如 `25.8`) 。这样可以把集群锁定在预期的 major 发行线上，并且当某个副本因某种原因漂移到其他 major 版本时，Operator 会显示 `WrongReleaseChannel` 警告——这一点在镜像通过摘要 (`@sha256:...`) 而不是便于人类阅读的标签引用时尤其重要。对于不担心 major 版本跳变的开发集群，默认的空值也完全适用。
 
 <div id="version-status-conditions">
-  ### 状态条件
+  ### 状态条件 {#version-status-conditions}
 </div>
 
 两个 conditions 会体现探测和升级检查的结果：
@@ -692,7 +717,7 @@ kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
 ```
 
 <div id="version-probe-template">
-  ### 覆盖版本探测 Job
+  ### 覆盖版本探测 Job {#version-probe-template}
 </div>
 
 这仅适用于 `ClickHouseCluster`。`KeeperCluster` 不再运行版本探测 Job——它的版本会直接从正在运行的 Keeper 副本中读取——因此 `spec.versionProbeTemplate` 已弃用，在那里不会产生任何效果。
@@ -724,7 +749,7 @@ spec:
 容器名称 `version-probe` 是 operator 的默认名称——`containers:` 下对应的条目会按名称与其匹配，因此 operator 会在默认配置的基础上，将用户提供的字段深度合并进去。
 
 <div id="version-operator-flags">
-  ### Operator 级别的控制
+  ### Operator 级别的控制 {#version-operator-flags}
 </div>
 
 Operator 管理器上的两个标志可在全局范围内控制升级检查循环：
@@ -737,11 +762,11 @@ Operator 管理器上的两个标志可在全局范围内控制升级检查循�
 在隔离网络环境中，或者不允许访问 `clickhouse.com` 出站流量时，请设置 `--disable-version-update-checks=true`。
 
 <div id="clickhouse-settings">
-  ## ClickHouse 设置
+  ## ClickHouse 设置 {#clickhouse-settings}
 </div>
 
 <div id="default-user-password">
-  ### 默认用户密码
+  ### 默认用户密码 {#default-user-password}
 </div>
 
 `spec.settings.defaultUserPassword` 用于为内置 `default`
@@ -762,7 +787,7 @@ spec:
 和 `key` (保存密码的条目) 。
 
 <div id="password-types">
-  #### 密码类型
+  #### 密码类型 {#password-types}
 </div>
 
 `passwordType` 用于告知 ClickHouse 如何解析该值。其默认值为
@@ -772,7 +797,7 @@ spec:
 [ClickHouse user settings](https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword)。
 
 <div id="default-password-secret-example">
-  #### 使用 Secret 的完整示例
+  #### 使用 Secret 的完整示例 {#default-password-secret-example}
 </div>
 
 先创建 Secret，再引用其中的键：
@@ -820,7 +845,7 @@ spec:
 ```
 
 <div id="using-configmap-for-user-passwords">
-  #### 使用 ConfigMap
+  #### 使用 ConfigMap {#using-configmap-for-user-passwords}
 </div>
 
 ConfigMap 的作用方式与 Secret 相同，但其内容不像 Secret 那样受到保护。
@@ -896,7 +921,7 @@ spec:
 ```
 
 <div id="database-sync">
-  ### 数据库同步
+  ### 数据库同步 {#database-sync}
 </div>
 
 为新副本启用数据库自动同步：
@@ -915,11 +940,9 @@ Operator 绝不会删除已填充数据的非 Replicated `default` 数据库。�
 
 在缩容移除副本之前，Operator 会先将客户端流量从该副本卸载，等待其停止对外发布，将其剩余数据复制到存活副本，然后才将其删除。
 
-<div id="server-logging">
-  ### 服务器日志
-</div>
+### 服务器日志 {#server-logging}
 
-通过 `spec.settings.logger` 配置 ClickHouse 服务器日志。每个字段都是可选的，并且都有安全的默认值，因此即使你从未改动过，集群也会默认以 `trace` 级别同时将日志输出到容器控制台和磁盘上的轮转文件。
+通过 `spec.settings.logger` 配置 ClickHouse 服务器日志。每个字段都是可选的，并且都有安全的默认值，因此即使你从未改动过，集群也会默认以 `information` 级别同时将日志输出到容器控制台和磁盘上的轮转文件。
 
 ```yaml
 spec:
@@ -927,43 +950,79 @@ spec:
     logger:
       logToFile: true   # Default: true. Set false to log only to the console
       jsonLogs: false   # Default: false. Set true for structured JSON log lines
-      level: trace      # Default: trace
-      size: 1000M       # Default: 1000M. Rotate a log file once it reaches this size
-      count: 50         # Default: 50. Number of rotated files to keep
+      level: information # Default: information
+      size: 100M        # Default: 100M. Rotate a log file once it reaches this size
+      count: 10         # Default: 10. Number of rotated files to keep
 ```
 
-| 字段          | 默认值     | 描述                                                                                               |
-| ----------- | ------- | ------------------------------------------------------------------------------------------------ |
-| `logToFile` | `true`  | 当为 `false` 时，operator 会移除文件输出目标，server 只向容器控制台输出日志。                                              |
-| `jsonLogs`  | `false` | 当为 `true` 时，operator 会添加 `formatting.type: json`，使每一行都成为一个 JSON 对象。                              |
-| `level`     | `trace` | 日志详细级别。可选值包括 `test`、`trace`、`debug`、`information`、`notice`、`warning`、`error`、`critical`、`fatal`。 |
-| `size`      | `1000M` | 单个日志文件在轮转前的最大大小。                                                                                 |
-| `count`     | `50`    | server 保留的轮转后日志文件数量。                                                                             |
+| 字段          | 默认值           | 描述                                                                                               |
+| ----------- | ------------- | ------------------------------------------------------------------------------------------------ |
+| `logToFile` | `true`        | 当为 `false` 时，operator 会移除文件输出目标，服务器只向容器控制台输出日志。                                              |
+| `jsonLogs`  | `false`       | 当为 `true` 时，operator 会添加 `formatting.type: json`，使每一行都成为一个 JSON 对象。                              |
+| `level`     | `information` | 日志详细级别。可选值包括 `test`、`trace`、`debug`、`information`、`notice`、`warning`、`error`、`critical`、`fatal`。 |
+| `size`      | `100M`        | 单个日志文件在轮转前的最大大小。                                                                                 |
+| `count`     | `10`          | 服务器保留的轮转后日志文件数量。                                                                             |
 
 operator 始终会保持控制台日志开启，以确保 `kubectl logs` 可用；当 `logToFile` 为 `true` 时，还会额外启用文件日志。使用默认值的集群会生成如下 `logger` 块：
 
 ```yaml
 logger:
   console: true
-  level: trace
+  level: information
   log: /var/log/clickhouse-server/clickhouse-server.log
   errorlog: /var/log/clickhouse-server/clickhouse-server.err.log
-  size: 1000M
-  count: 50
+  size: 100M
+  count: 10
 ```
 
-同样的 `spec.settings.logger` 块也适用于 `KeeperCluster`；不过，operator 会改为将日志文件写入 `/var/log/clickhouse-keeper/`。
+同样的 `spec.settings.logger` 块也适用于 `KeeperCluster`；不过，operator 会改为将日志文件写入 `/var/log/clickhouse-keeper/`，并将 Raft 日志记录器 (`raft_logs_level`) 设置为相同的 `level`。
 
 <Note>
   无论 `logToFile` 如何设置，控制台日志始终保持开启，因此即使禁用文件日志，`kubectl logs` 仍可正常使用。将日志发送到可解析 JSON 的结构化日志存储时，请设置 `jsonLogs: true`。
 </Note>
 
+### 系统日志表 {#system-log-tables}
+
+Operator 会启用 `query_log`、`part_log`、`text_log`、`metric_log` 和 `asynchronous_metric_log` 系统表。由于这些表与您的数据位于同一个卷上，`spec.settings.systemLogsTTLDays` 会通过表生存时间 (TTL) 限制它们的保留时长。如果创建集群时未指定该字段，defaulting webhook 会将其设为 `30`。将其设为 `0` 可显式禁用生存时间 (TTL)。
+
+```yaml
+spec:
+  settings:
+    systemLogsTTLDays: 14
+```
+
+<Note>
+  默认值仅适用于新建集群。在 `systemLogsTTLDays` 引入之前创建的集群，其系统日志表不会自动设置生存时间 (TTL)，需要你手动设置该字段。
+</Note>
+
+生存时间 (TTL) 会在服务器下次重启时生效。你可以通过 `extraConfig` 为各个表单独调整 TTL、调整其他系统日志设置，或使用 `@remove` 属性彻底禁用某个表：
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      text_log:
+        ttl: event_date + INTERVAL 90 DAY DELETE
+      metric_log:
+        collect_interval_milliseconds: 60000
+      part_log:
+        "@remove": "1"
+```
+
+<Note>
+  禁用表并不会删除该表：现有数据会一直保留在磁盘上，直到你手动删除该表。
+</Note>
+
+<Note>
+  系统表的生存时间 (TTL) 发生变化时，ClickHouse 会重新创建该系统表，并将旧数据保留在重命名后的表中，例如 `system.text_log_0`。不再需要历史数据时，请删除这些表。
+</Note>
+
 <div id="custom-configuration">
-  ## 自定义配置
+  ## 自定义配置 {#custom-configuration}
 </div>
 
 <div id="embedded-extra-configuration">
-  ### 内嵌额外配置
+  ### 内嵌额外配置 {#embedded-extra-configuration}
 </div>
 
 无需挂载自定义配置文件，也可以直接指定额外的 ClickHouse 配置选项。
@@ -978,14 +1037,34 @@ spec:
 ```
 
 <div id="useful-links">
-  #### 有用链接：
+  #### 有用链接： {#useful-links}
 </div>
 
 * [YAML 配置示例](/zh/concepts/features/configuration/server-config/configuration-files#example-1)
 * [所有服务器设置](/zh/reference/settings/server-settings/settings)
 
+### 可重新加载的额外配置 {#reloadable-extra-configuration}
+
+对 `extraConfig` 的任何更改都会导致 ClickHouse Pod (容器组) 重启，因为 operator 无法确定哪些设置可在运行时重新加载。对于 ClickHouse 支持动态重新加载的设置 (常见的是 `named_collections`) ，请改用 `extraReloadableConfig`。operator 会通过重新加载配置来应用更改，无需重启 Pod (容器组) ：
+
+```yaml
+spec:
+  settings:
+    extraReloadableConfig:
+      named_collections:
+        customers:
+          url: "http://my-service.my-ns.svc:5400/Customers"
+          format: "JSONEachRow"
+```
+
+确保每个顶层配置节只出现在 `extraConfig` 和 `extraReloadableConfig` 其中一处；如果两者包含相同的配置节，Operator 会发出警告。
+
+<Note>
+  使用 `extraReloadableConfig` 即表示你确认其中的设置可以安全地重新加载。若将必须重启才能生效的设置放在此处，该设置只会在下次重启后生效，且不会报错。
+</Note>
+
 <div id="embedded-extra-users-configuration">
-  ### 嵌入式附加用户配置
+  ### 嵌入式附加用户配置 {#embedded-extra-users-configuration}
 </div>
 
 你也可以使用 `extraUsersConfig` 指定额外的 ClickHouse 用户配置。这对于直接在集群规范中定义用户、profile、配额和授权非常有用。
@@ -1017,11 +1096,11 @@ spec:
 </Note>
 
 <div id="see-documentationconceptsfeaturesconfigurationsettingssettings-users-for-all-supported-clickhouse-users-configuration-options">
-  #### 有关所有受支持的 ClickHouse 用户配置选项，请参阅[文档](/zh/concepts/features/configuration/settings/settings-users)。
+  #### 有关所有受支持的 ClickHouse 用户配置选项，请参阅[文档](/zh/concepts/features/configuration/settings/settings-users)。 {#see-documentation-for-all-supported-clickhouse-users-configuration-options}
 </div>
 
 <div id="configuration-example">
-  ### 配置示例
+  ### 配置示例 {#configuration-example}
 </div>
 
 完整配置示例：
@@ -1095,7 +1174,7 @@ spec:
 
 ## 定期重新同步 {#periodic-resync}
 
-除了响应 Kubernetes 事件之外，operator 还会按固定时间间隔对每个 cluster 重新执行协调。这样可以让 watch 无法观察到的状态 (如 ClickHouse 副本健康状况、Keeper quorum) 对应的 状态条件 保持最新，并重试诸如清理卡住的 pod (容器组) 等修复操作。
+除了响应 Kubernetes 事件之外，operator 还会按固定时间间隔对每个集群重新执行协调。这样可以让 watch 无法观察到的状态 (如 ClickHouse 副本健康状况、Keeper quorum) 对应的 状态条件 保持最新，并重试诸如清理卡住的 pod (容器组) 等修复操作。
 
 该时间间隔由 operator 的 `RESYNC_PERIOD` environment variable 控制 (默认为 `30s`) 。它适用于 `KeeperCluster` 资源，设为 `0` 即可禁用定期重新同步。`ClickHouseCluster` 资源每 30 秒轮询一次 ClickHouse 的 `system.warnings`，这本身就会重新触发协调，因此 `RESYNC_PERIOD` 目前对其不起作用。
 
@@ -1104,4 +1183,16 @@ spec:
 env:
 - name: RESYNC_PERIOD
   value: "1m"
+```
+
+operator 会并发协调多个集群；每个控制器可并行执行的协调操作数量由 `MAX_CONCURRENT_RECONCILES` 设置 (默认为 `4`) 。
+
+## 暂停协调 {#pausing-reconciliation}
+
+在 `ClickHouseCluster` 或 `KeeperCluster` 上设置 `clickhouse.com/pause-reconciliation: "true"` 注解，即可让 operator 停止对其进行协调。operator 会在已暂停的资源上报告 `ReconcileSucceeded=False`，原因为 `ReconciliationPaused`，除此之外不会对该资源做任何改动。如果 operator 会覆盖您的手动更改，可借此进行人工干预。暂停期间，operator 会将所有状态条件 (包括 `Ready` 和 `Healthy`) 报告为 `Unknown`，原因为 `ReconciliationPaused`，因为此时它不会观测该集群。移除该注解即可恢复协调；待处理的 spec 变更将在下一次协调时生效。
+
+```bash
+kubectl annotate clickhousecluster my-cluster clickhouse.com/pause-reconciliation=true
+# ... manual surgery ...
+kubectl annotate clickhousecluster my-cluster clickhouse.com/pause-reconciliation-
 ```

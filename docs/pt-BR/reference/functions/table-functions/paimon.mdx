@@ -15,9 +15,7 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 Fornece uma interface semelhante a uma tabela, somente leitura, para tabelas Apache [Paimon](https://paimon.apache.org/) no Amazon S3, Azure, HDFS ou armazenadas localmente.
 
-<div id="syntax">
-  ## Sintaxe
-</div>
+## Sintaxe {#syntax}
 
 ```sql
 paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
@@ -31,24 +29,24 @@ paimonHDFS(path_to_table, [,format] [,compression_method])
 paimonLocal(path_to_table, [,format] [,compression_method])
 ```
 
-<div id="arguments">
-  ## Argumentos
-</div>
+## Argumentos {#arguments}
 
 A descrição dos argumentos é a mesma das funções de tabela `s3`, `azureBlobStorage`, `HDFS` e `file`, respectivamente.
 `format` indica o formato dos arquivos de dados na tabela Paimon.
 
 Para `paimonS3`, é possível usar um parâmetro opcional `extra_credentials` para fornecer um `role_arn` para controle de acesso baseado em função no ClickHouse Cloud. Consulte [Secure S3](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver as etapas de configuração.
 
-<div id="returned-value">
-  ### Valor retornado
-</div>
+### Valor retornado {#returned-value}
 
 Uma tabela com a estrutura especificada para ler dados da tabela Paimon informada.
 
-<div id="defining-a-named-collection">
-  ## Definindo uma coleção nomeada
-</div>
+## Limitações {#limitations}
+
+A mesclagem durante a leitura não foi implementada. Por isso, **não é possível ler tabelas com chave primária**: o leitor retorna a união dos arquivos de dados do snapshot
+sem processamento adicional, incluindo versões de linhas substituídas por upserts posteriores. Assim, a tentativa de ler uma tabela cujo schema
+declara `primary-key` lança uma exceção.
+
+## Definindo uma coleção nomeada {#defining-a-named-collection}
 
 Aqui está um exemplo de configuração de uma coleção nomeada para armazenar a URL e as credenciais:
 
@@ -71,15 +69,11 @@ SELECT * FROM paimonS3(paimon_conf, filename = 'test_table')
 DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 ```
 
-<div id="aliases">
-  ## Aliases
-</div>
+## Aliases {#aliases}
 
 A função de tabela `paimon` agora é um alias para `paimonS3`.
 
-<div id="virtual-columns">
-  ## Colunas virtuais
-</div>
+## Colunas virtuais {#virtual-columns}
 
 * `_path` — Caminho do arquivo. Tipo: `LowCardinality(String)`.
 * `_file` — Nome do arquivo. Tipo: `LowCardinality(String)`.
@@ -87,13 +81,11 @@ A função de tabela `paimon` agora é um alias para `paimonS3`.
 * `_time` — Data e hora da última modificação do arquivo. Tipo: `Nullable(DateTime)`. Se a data e hora forem desconhecidas, o valor será `NULL`.
 * `_etag` — O etag do arquivo. Tipo: `LowCardinality(String)`. Se o etag for desconhecido, o valor será `NULL`.
 
-<div id="data-types-supported">
-  ## Tipos de dados compatíveis
-</div>
+## Tipos de dados compatíveis {#data-types-supported}
 
 | Tipo de dado do Paimon            | Tipo de dado do ClickHouse |
 | --------------------------------- | -------------------------- |
-| BOOLEAN                           | Int8                       |
+| BOOLEAN                           | Bool                       |
 | TINYINT                           | Int8                       |
 | SMALLINT                          | Int16                      |
 | INTEGER                           | Int32                      |
@@ -111,9 +103,7 @@ A função de tabela `paimon` agora é um alias para `paimonS3`.
 | ARRAY                             | Array                      |
 | MAP                               | Map                        |
 
-<div id="partition-supported">
-  ## Partições compatíveis
-</div>
+## Partições compatíveis {#partition-supported}
 
 Tipos de dados compatíveis com chaves de partição no Paimon:
 
@@ -132,9 +122,7 @@ Tipos de dados compatíveis com chaves de partição no Paimon:
 * `FLOAT`
 * `DOUBLE`
 
-<div id="see-also">
-  ## Veja também
-</div>
+## Veja também {#see-also}
 
 * [função de tabela de cluster do Paimon](/pt-BR/reference/functions/table-functions/paimonCluster)
 

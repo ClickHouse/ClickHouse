@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "إعدادات الجلسة",
+  "group": "إعدادات session",
   "pages": [
     "ar/reference/settings/session-settings/additional",
     "ar/reference/settings/session-settings/aggregate",

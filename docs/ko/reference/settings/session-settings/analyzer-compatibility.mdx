@@ -21,13 +21,26 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 Nested에 복합 식별자를 추가할 수 있도록 합니다. 이 설정을 사용하면 쿼리 결과가 변경되므로 compatibility 설정입니다. 비활성화되면 `SELECT a.b.c FROM table ARRAY JOIN a`는 동작하지 않으며, `SELECT a FROM table`의 `Nested a` 결과에 `a.b.c` 컬럼이 포함되지 않습니다.
 
+## analyzer_compatibility_allow_cte_redefinition {#analyzer_compatibility_allow_cte_redefinition}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "새로운 compatibility 설정입니다. 활성화하면 분석기는 하나의 `WITH` 절에서 두 번 이상 정의된 CTE 이름을 허용하며, v24.3 이전의 쿼리 분석과 마찬가지로 나중 정의가 앞선 정의를 가리도록 합니다."}]}]} />
+
+하나의 `WITH` 절에서 공통 테이블 표현식(Common Table Expression) 이름을 두 번 이상 정의할 수 있도록 허용합니다. 이러한 이름에 대한 참조는 그 시점에 해석 중이지 않은 가장 최근 정의에 바인딩됩니다. 즉, 재정의에서는 같은 이름의 이전 정의를 읽을 수 있으며, 쿼리 본문에서는 마지막 정의를 읽습니다. 이는 ClickHouse가 v24.3 이전에 사용하던 쿼리 분석 방식과 동일하며, 당시에는 나중 정의가 앞선 정의를 아무런 경고 없이 가렸습니다. 다만 한 가지 형태에서는 이전 분석 방식과 동작이 다릅니다. 같은 이름의 두 정의 사이에 선언된 CTE도 마지막 정의에 바인딩되지만, 이전 분석 방식에서는 해당 CTE가 선언 시점에 보이던 정의에 바인딩되었습니다. 기본적으로 재정의는 `MULTIPLE_EXPRESSIONS_FOR_ALIAS` 오류와 함께 거부됩니다. `MATERIALIZED`로 선언된 CTE와 `WITH RECURSIVE` 절의 CTE는 이 설정을 활성화하더라도 재정의할 수 없습니다.
+
+가능한 값:
+
+* 0 - CTE 이름은 `WITH` 절에서 한 번만 정의할 수 있습니다.
+* 1 - CTE 이름의 나중 정의가 앞선 정의를 가립니다.
+
 ## analyzer_compatibility_allow_non_aggregate_in_having {#analyzer_compatibility_allow_non_aggregate_in_having}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "새 compatibility 설정입니다. 활성화하면 분석기는 `NOT_AN_AGGREGATE`를 발생시키는 대신 비집계 AND 조건에 대해 기존 `HAVING`-to-`WHERE` 재작성을 모방합니다."}]}]} />
 
-활성화하면 분석기는 `NOT_AN_AGGREGATE`를 발생시키는 대신 비집계 AND 조건을 `HAVING`에서 `WHERE`로 이동시키는 기존 동작을 모방합니다. SQL 표준을 따르는 거부 동작이 기본값이며, 이는 ClickHouse가 v24.3 이전에 사용했던 쿼리 분석에서 별다른 오류 없이 허용되던 쿼리를 위한 마이그레이션 보조 수단입니다. 집계, `grouping` 또는 비결정적 함수를 포함한 조건은 `HAVING`에 그대로 유지됩니다. 어떤 조건이든 윈도 함수 또는 상태 저장 함수(예: `rowNumberInBlock`)를 포함하면 전체 `HAVING`에 대해 재작성이 비활성화되며, 이는 기존 `PredicateExpressionsOptimizer` 동작과 일치합니다. 또한 `GROUP BY`에서 `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS` 또는 `GROUPING SETS`를 사용하는 경우 이 설정은 무시됩니다.
+활성화하면 분석기는 `NOT_AN_AGGREGATE`를 발생시키는 대신 비집계 AND 조건을 `HAVING`에서 `WHERE`로 이동시키는 기존 동작을 모방합니다. SQL 표준을 따르는 거부 동작이 기본값이며, 이는 ClickHouse가 v24.3 이전에 사용했던 쿼리 분석에서 별다른 오류 없이 허용되던 쿼리를 위한 마이그레이션 보조 수단입니다. 집계, `grouping` 또는 비결정적 함수를 포함한 조건은 `HAVING`에 그대로 유지됩니다. 어떤 조건이든 윈도 함수 또는 상태 저장 함수(예: `rowNumberInBlock`)를 포함하면 전체 `HAVING`에 대해 재작성이 비활성화되며, 이는 이전 쿼리 분석의 동작과 일치합니다. 또한 `GROUP BY`에서 `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS` 또는 `GROUPING SETS`를 사용하는 경우 이 설정은 무시됩니다.
 
 ## analyzer_compatibility_apply_final_to_all_joined_tables {#analyzer_compatibility_apply_final_to_all_joined_tables}
 

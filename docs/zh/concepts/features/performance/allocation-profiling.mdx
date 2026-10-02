@@ -342,15 +342,15 @@ ORDER BY b.waste DESC, s.est_old_objects DESC
 SETTINGS allow_introspection_functions=1
 ```
 
-### 示例：生成碎片化火焰图 {#example-fragmentation-flamegraph}
+### 示例：生成内存碎片火焰图 {#example-fragmentation-flamegraph}
 
-同一个查询还可以按各回溯 (backtrace) 中较旧分配 (allocation) 数量的比例，将每个大小类的浪费量分摊到这些回溯上，并以 `flamegraph.pl` 所需的 collapsed 格式输出结果。存在浪费但没有足够旧的样本的大小类会被归入 `[unattributed]` 帧，因此火焰图的总量即为总浪费量。每个查询只应读取一次 `system.jemalloc_sampled_allocations`：每次读取都会刷写一份新的 profile，因此两个子查询看到的数据会不一致。
+同一个查询还可以按各调用栈 (backtrace) 中较旧分配 (allocation) 数量的比例，将每个大小类的浪费量分摊到这些调用栈上，并以 `flamegraph.pl` 所需的 collapsed 格式输出结果。存在浪费但没有足够旧的样本 (samples) 的大小类会被归入 `[unattributed]` 帧，因此火焰图的总量即为总浪费量。每个查询只应读取一次 `system.jemalloc_sampled_allocations`：每次读取都会刷写一份新的 profile，因此两个子查询看到的数据会不一致。
 
 ```sql
 WITH 60e9 AS min_age_ns
 SELECT format('{} {}',
     if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))),
-    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste))))
+    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), toFloat64(b.waste)))))
 FROM system.jemalloc_arena_bins AS b
 LEFT JOIN
 (

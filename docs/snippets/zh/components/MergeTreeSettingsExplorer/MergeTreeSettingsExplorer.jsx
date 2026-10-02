@@ -499,7 +499,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "min_*",
-      count: 9,
+      count: 10,
       settings: [
         { name: "min_absolute_delay_to_close", path: "/min#min_absolute_delay_to_close", default: "0" },
         { name: "min_columns_to_activate_adaptive_write_buffer", path: "/min#min_columns_to_activate_adaptive_write_buffer", default: "500" },
@@ -509,7 +509,8 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "min_merge_bytes_to_use_direct_io", path: "/min#min_merge_bytes_to_use_direct_io", default: "10737418240" },
         { name: "min_partition_age_to_force_merge_seconds", path: "/min#min_partition_age_to_force_merge_seconds", default: "0" },
         { name: "min_parts_to_merge_at_once", path: "/min#min_parts_to_merge_at_once", default: "0" },
-        { name: "min_replicated_logs_to_keep", path: "/min#min_replicated_logs_to_keep", default: "10" }
+        { name: "min_replicated_logs_to_keep", path: "/min#min_replicated_logs_to_keep", default: "10" },
+        { name: "min_unreserved_disk_space_for_merge", path: "/min#min_unreserved_disk_space_for_merge", default: "0" }
       ],
       children: []
     },
@@ -900,7 +901,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "其他",
-      count: 53,
+      count: 54,
       settings: [
         { name: "adaptive_write_buffer_initial_size", path: "/other#adaptive_write_buffer_initial_size", default: "16384" },
         { name: "add_implicit_sign_column_constraint_for_collapsing_engine", path: "/other#add_implicit_sign_column_constraint_for_collapsing_engine", default: "0" },
@@ -953,6 +954,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "temporary_directories_lifetime", path: "/other#temporary_directories_lifetime", default: "86400" },
         { name: "try_fetch_recompressed_part_timeout", path: "/other#try_fetch_recompressed_part_timeout", default: "7200" },
         { name: "ttl_only_drop_parts", path: "/other#ttl_only_drop_parts", default: "0" },
+        { name: "unique_key_conflict_action", path: "/other#unique_key_conflict_action", default: "overwrite" },
         { name: "wait_for_unique_parts_send_before_shutdown_ms", path: "/other#wait_for_unique_parts_send_before_shutdown_ms", default: "0" },
         { name: "zookeeper_session_expiration_check_period", path: "/other#zookeeper_session_expiration_check_period", default: "60" }
       ],

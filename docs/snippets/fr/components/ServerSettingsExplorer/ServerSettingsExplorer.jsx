@@ -364,7 +364,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       label: "http_*",
       count: 4,
       settings: [
-        { name: "http_allow_path_requests", path: "/http#http_allow_path_requests", default: "0" },
+        { name: "http_allow_path_requests", path: "/http#http_allow_path_requests", default: "1" },
         { name: "http_handlers", path: "/http#http_handlers" },
         { name: "http_options_response", path: "/http#http_options_response" },
         { name: "http_server_default_response", path: "/http#http_server_default_response", default: '"Ok.\\n"' }
@@ -774,7 +774,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       label: "memory_worker_*",
       count: 8,
       settings: [
-        { name: "memory_worker_correct_memory_tracker", path: "/memory-worker#memory_worker_correct_memory_tracker", default: "0" },
+        { name: "memory_worker_correct_memory_tracker", path: "/memory-worker#memory_worker_correct_memory_tracker", default: "1" },
         { name: "memory_worker_decay_adjustment_period_ms", path: "/memory-worker#memory_worker_decay_adjustment_period_ms", default: "5000" },
         { name: "memory_worker_dynamic_hard_limit", path: "/memory-worker#memory_worker_dynamic_hard_limit", default: "1" },
         { name: "memory_worker_period_ms", path: "/memory-worker#memory_worker_period_ms", default: "0" },
@@ -1323,7 +1323,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "Autres",
-      count: 121,
+      count: 123,
       settings: [
         { name: "abort_on_logical_error", path: "/other#abort_on_logical_error", default: "0" },
         { name: "allowed_disks_for_table_engines", path: "/other#allowed_disks_for_table_engines", default: '""' },
@@ -1423,6 +1423,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "part_log", path: "/other#part_log" },
         { name: "path", path: "/other#path", default: "/var/lib/clickhouse/" },
         { name: "per_cpu_untracked_memory_thread_buffer", path: "/other#per_cpu_untracked_memory_thread_buffer", default: "32768" },
+        { name: "placement", path: "/other#placement" },
         { name: "point_in_polygon_cache_size", path: "/other#point_in_polygon_cache_size", default: "268435456" },
         { name: "prefixes_deserialization_thread_pool_thread_pool_queue_size", path: "/other#prefixes_deserialization_thread_pool_thread_pool_queue_size", default: "10000" },
         { name: "prepare_system_log_tables_on_startup", path: "/other#prepare_system_log_tables_on_startup", default: "0" },
@@ -1435,6 +1436,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "replica_group_name", path: "/other#replica_group_name", default: '""' },
         { name: "replicated_merge_tree", path: "/other#replicated_merge_tree" },
         { name: "restore_threads", path: "/other#restore_threads", default: "16" },
+        { name: "seccomp", path: "/other#seccomp", default: "log" },
         { name: "send_crash_reports", path: "/other#send_crash_reports" },
         { name: "series_keeper_path", path: "/other#series_keeper_path", default: "/clickhouse/series" },
         { name: "ssh_server", path: "/other#ssh_server" },

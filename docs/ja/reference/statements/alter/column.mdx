@@ -19,6 +19,14 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 クエリでは、カンマ区切りで 1 つ以上のアクションのリストを指定します。
 各アクションは、カラムに対して実行する操作です。
 
+たとえば、1 つのステートメントで、あるカラムを削除し、別のカラムを追加できます。
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, ADD COLUMN referrer String;
+```
+
+このようなクエリが既存データに対する処理の完了を待たずに返るかどうかは、[`alter_sync`](/ja/reference/settings/session-settings/alter#alter_sync) の設定によって決まります。この設定は、`DROP COLUMN` または `MODIFY COLUMN` による型変更で作成されるミューテーションにも適用されます。一方、ミューテーションの経路で実行される [MATERIALIZE COLUMN](#materialize-column) には [`mutations_sync`](/ja/reference/settings/session-settings/mutations#mutations_sync) が適用されます。両方の設定については、[ALTER クエリの同期性](/ja/reference/statements/alter/index#synchronicity-of-alter-queries) で説明しています。
+
 サポートされているアクションは次のとおりです。
 
 * [ADD COLUMN](#add-column) — テーブルに新しいカラムを追加します。
@@ -34,9 +42,7 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 * [MATERIALIZE COLUMN](#materialize-column) — カラムが存在しないパーツで、そのカラムをマテリアライズします。
   これらのアクションについては、以下で詳しく説明します。
 
-<div id="add-column">
-  ## ADD COLUMN
-</div>
+## ADD COLUMN {#add-column}
 
 ```sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
@@ -72,9 +78,7 @@ ToDrop  UInt32
 Added3  UInt32
 ```
 
-<div id="drop-column">
-  ## DROP COLUMN
-</div>
+## DROP COLUMN {#drop-column}
 
 ```sql
 DROP COLUMN [IF EXISTS] name
@@ -94,9 +98,7 @@ DROP COLUMN [IF EXISTS] name
 ALTER TABLE visits DROP COLUMN browser
 ```
 
-<div id="rename-column">
-  ## RENAME COLUMN
-</div>
+## RENAME COLUMN {#rename-column}
 
 ```sql
 RENAME COLUMN [IF EXISTS] name to new_name
@@ -112,9 +114,7 @@ RENAME COLUMN [IF EXISTS] name to new_name
 ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 ```
 
-<div id="clear-column">
-  ## CLEAR COLUMN
-</div>
+## CLEAR COLUMN {#clear-column}
 
 ```sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
@@ -130,9 +130,7 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
-<div id="comment-column">
-  ## COMMENT COLUMN
-</div>
+## COMMENT COLUMN {#comment-column}
 
 ```sql
 COMMENT COLUMN [IF EXISTS] name 'Text comment'
@@ -150,9 +148,7 @@ COMMENT COLUMN [IF EXISTS] name 'Text comment'
 ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used for accessing the site.'
 ```
 
-<div id="modify-column">
-  ## MODIFY COLUMN
-</div>
+## MODIFY COLUMN {#modify-column}
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name
@@ -187,7 +183,7 @@ ALTER COLUMN [IF EXISTS] name
 
 `IF EXISTS` 句が指定されている場合、カラムが存在しなくても、このクエリはエラーを返しません。
 
-型を変更する場合、値は [toType](/ja/reference/functions/regular-functions/type-conversion-functions) 関数を適用した場合と同様に変換されます。デフォルト式のみを変更する場合、このクエリは複雑な処理を行わず、ほぼ瞬時に完了します。
+型を変更する場合、値は [toType](/ja/reference/functions/regular-functions/type-conversion-functions) 関数を適用した場合と同様に変換されます。デフォルト式のみを変更する場合、このクエリはメタデータのみを変更します。
 
 例:
 
@@ -195,7 +191,9 @@ ALTER COLUMN [IF EXISTS] name
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
-カラム型の変更だけが複雑な操作であり、データを含むファイルの内容も変更されます。大規模なテーブルでは、これに時間がかかる場合があります。
+一部の型変更は、ディスク上の表現が変わらないため、メタデータのみの変更で済みます。たとえば、enum の拡張や、`Date` と `UInt16` 間、`DateTime` と `UInt32` 間の変換がこれに該当します。この規則は `Array` 型および `Nullable` 型の内部にも再帰的に適用されます。また、JSON 型のヒントの一部の変更や名前付きタプルへの要素追加も、対応する設定が有効になっていれば、即時の書き換えを回避できます。
+
+それ以外の型変更では、既存のパーツ内の対象カラムを書き換える `READ_COLUMN` ミューテーションが作成されます。待機の挙動は [`alter_sync`](/ja/reference/settings/session-settings/alter#alter_sync) に従います。デフォルト値は ClickHouse では `1`、ClickHouse Cloud では `0` です。進捗状況は [`system.mutations`](/ja/reference/system-tables/mutations) で確認してください。
 
 このクエリでは、`FIRST | AFTER` 句を使用してカラムの順序を変更することもできます。詳しくは [ADD COLUMN](#add-column) の説明を参照してください。ただし、この場合はカラム型の指定が必須です。
 
@@ -236,12 +234,10 @@ DESCRIBE users;
 カラムを変更するための `ALTER` クエリはレプリケートされます。指示は ZooKeeper に保存され、その後各レプリカで適用されます。すべての `ALTER` クエリは同じ順序で実行されます。クエリは、他のレプリカで必要な処理が完了するまで待機します。ただし、レプリケートテーブルのカラムを変更するクエリは途中で中断される場合があり、すべての処理は非同期に実行されます。
 
 <Note>
-  Nullable カラムを Non-Nullable に変更する際は、十分注意してください。NULL 値が含まれていないことを確認してください。含まれていると、そのカラムの読み取り時に問題が発生します。その場合の回避策は、mutation を Kill し、カラムを Nullable 型に戻すことです。
+  Nullable カラムを Non-Nullable に変更する際は、十分注意してください。NULL 値が含まれていないことを確認してください。含まれていると、そのカラムの読み取り時に問題が発生します。その場合の回避策は、ミューテーションを Kill し、カラムを Nullable 型に戻すことです。
 </Note>
 
-<div id="modify-column-remove">
-  ## MODIFY COLUMN REMOVE
-</div>
+## MODIFY COLUMN REMOVE {#modify-column-remove}
 
 カラムのプロパティのいずれか 1 つ (`DEFAULT`、`ALIAS`、`MATERIALIZED`、`CODEC`、`COMMENT`、`TTL`、`SETTINGS`) を削除します。
 
@@ -263,9 +259,7 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 * [REMOVE TTL](/ja/reference/statements/alter/ttl).
 
-<div id="modify-column-modify-setting">
-  ## MODIFY COLUMN MODIFY SETTING
-</div>
+## MODIFY COLUMN MODIFY SETTING {#modify-column-modify-setting}
 
 カラム設定を変更します。
 
@@ -283,9 +277,7 @@ ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING name=value,...;
 ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING max_compress_block_size = 1048576;
 ```
 
-<div id="modify-column-reset-setting">
-  ## MODIFY COLUMN RESET SETTING
-</div>
+## MODIFY COLUMN RESET SETTING {#modify-column-reset-setting}
 
 カラム設定をリセットします。また、テーブルのCREATEクエリ内のカラム式から設定の宣言も削除します。
 
@@ -303,9 +295,7 @@ ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING name,...;
 ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_block_size;
 ```
 
-<div id="modify-column-add-enum-values">
-  ## MODIFY COLUMN ADD ENUM VALUES
-</div>
+## MODIFY COLUMN ADD ENUM VALUES {#modify-column-add-enum-values}
 
 `Enum`、`Enum8`、`Enum16`、`Nullable(Enum)`、`Nullable(Enum8)`、`Nullable(Enum16)` 型のカラムに新しい値を追加します。
 
@@ -323,9 +313,7 @@ ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('EnumName
 ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('Hundred' = 100, 'HundredOne');
 ```
 
-<div id="materialize-column">
-  ## MATERIALIZE COLUMN
-</div>
+## MATERIALIZE COLUMN {#materialize-column}
 
 `DEFAULT` または `MATERIALIZED` の値式を持つカラムをマテリアライズします。`ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED` を使用してマテリアライズドカラムを追加した場合、マテリアライズされた値を持たない既存の行は自動的には補完されません。`MATERIALIZE COLUMN` ステートメントは、`DEFAULT` または `MATERIALIZED` 式を追加または更新した後に、既存のカラムデータを書き換えるために使用できます (この操作で更新されるのはメタデータのみで、既存データ自体は変更されません) 。なお、ソートキーに含まれるカラムをマテリアライズすることは、ソート順序が壊れる可能性があるため無効な操作です。
 これは [mutation](/ja/reference/statements/alter/index#mutations) として実装されています。
@@ -396,9 +384,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 * [MATERIALIZED](/ja/reference/statements/create/view#materialized-view)。
 * [MATERIALIZE INDEX](/ja/reference/statements/alter/skipping-index#materialize-index)。
 
-<div id="limitations">
-  ## 制限事項
-</div>
+## 制限事項 {#limitations}
 
 `ALTER` クエリでは、ネストされたデータ構造内の個別の要素 (カラム) は作成および削除できますが、ネストされたデータ構造全体は作成または削除できません。ネストされたデータ構造を追加するには、`name.nested_name` のような名前と `Array(T)` 型を持つカラムを追加します。ネストされたデータ構造は、ドットの前に同じプレフィックスを持つ複数の配列カラムと等価です。
 

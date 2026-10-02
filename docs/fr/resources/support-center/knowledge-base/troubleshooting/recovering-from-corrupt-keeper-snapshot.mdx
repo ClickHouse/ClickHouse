@@ -12,19 +12,13 @@ Des snapshots ClickHouse Keeper corrompus ou défectueux peuvent provoquer une f
 * [Comment le problème se manifeste](#symptoms)
 * [Les stratégies de récupération possibles](#recovery-strategies) et ce que chacune d’elles implique
 
-<div id="overview">
-  ## Vue d’ensemble des snapshots de Keeper
-</div>
+## Vue d’ensemble des snapshots de Keeper {#overview}
 
-<div id="what-is-snapshot">
-  ### Qu’est-ce qu’un snapshot ?
-</div>
+### Qu’est-ce qu’un snapshot ? {#what-is-snapshot}
 
 Un snapshot est un état sérialisé des données internes de Keeper (comme les métadonnées sur les clusters, les chemins de coordination des tables et les configurations) à un instant donné. Les snapshots sont essentiels pour resynchroniser les nœuds Keeper au sein d’un cluster, restaurer les métadonnées en cas de défaillance, ainsi que pour les processus de démarrage ou de redémarrage qui s’appuient sur un état valide connu de Keeper.
 
-<div id="where-to-find-snapshots">
-  ### Où puis-je trouver des snapshots ?
-</div>
+### Où puis-je trouver des snapshots ? {#where-to-find-snapshots}
 
 Les snapshots sont stockés sous forme de fichiers sur le système de fichiers local des nœuds Keeper. Par défaut, ils sont enregistrés dans `/var/lib/clickhouse/coordination/snapshots/`, ou dans le chemin personnalisé défini par `snapshot_storage_path` dans votre fichier `keeper_server.xml`. Les snapshots sont numérotés de manière incrémentielle (par exemple, snapshot.23), les plus récents portant des numéros plus élevés.
 
@@ -34,9 +28,7 @@ Dans les clusters multinœuds, chaque nœud Keeper possède son propre répertoi
   La cohérence des snapshots entre les nœuds est essentielle à la récupération.
 </Note>
 
-<div id="symptoms">
-  ## Principaux symptômes et manifestations de snapshots Keeper corrompus
-</div>
+## Principaux symptômes et manifestations de snapshots Keeper corrompus {#symptoms}
 
 Le tableau ci-dessous présente quelques symptômes et manifestations courants de snapshots Keeper corrompus :
 
@@ -62,9 +54,7 @@ Avant de diagnostiquer une corruption de snapshot, vérifiez les **logs Keeper**
 | **Erreurs de corruption de snapshot** | • `Aborting because of failure to load from latest snapshot with index`<br />• `Failure to load from latest snapshot with index {}: {}. Manual intervention is necessary for recovery`<br />• `Failed to preprocess stored log at index {}, aborting to avoid inconsistent state`<br />• Échecs de sérialisation/chargement du snapshot au démarrage |
 | **Autres problèmes Keeper**           | • `Coordination::Exception`<br />• `Zookeeper::Session Timeout`<br />• Problèmes de synchronisation ou d&#39;élection<br />• Race conditions lors de la compaction des logs                                                                                                                                                                          |
 
-<div id="recovery-strategies">
-  ## Récupération après des snapshots Keeper corrompus
-</div>
+## Récupération après des snapshots Keeper corrompus {#recovery-strategies}
 
 Avant de toucher aux fichiers, veillez toujours à :
 
@@ -74,9 +64,7 @@ Avant de toucher aux fichiers, veillez toujours à :
 
 ***
 
-<div id="restore-from-existing-backup">
-  ### 1. Restaurer à partir d’une sauvegarde existante
-</div>
+### 1. Restaurer à partir d’une sauvegarde existante {#restore-from-existing-backup}
 
 Suivez cette procédure si :
 
@@ -98,9 +86,7 @@ Suivez les étapes ci-dessous pour restaurer une sauvegarde existante :
 
 ***
 
-<div id="rollback-to-older-snapshot">
-  ### 2. Revenir à un snapshot plus ancien
-</div>
+### 2. Revenir à un snapshot plus ancien {#rollback-to-older-snapshot}
 
 Suivez cette procédure dans les cas suivants :
 
@@ -121,9 +107,7 @@ Suivez les étapes ci-dessous pour revenir à un snapshot plus ancien :
 
 ***
 
-<div id="restore-metadata-with-system-restore-replica">
-  ### 3. Restaurer les métadonnées à l’aide de `SYSTEM RESTORE REPLICA`
-</div>
+### 3. Restaurer les métadonnées à l’aide de `SYSTEM RESTORE REPLICA` {#restore-metadata-with-system-restore-replica}
 
 Vous devez suivre ce processus dans les cas suivants :
 
@@ -170,9 +154,7 @@ SYSTEM SYNC REPLICA [db.]table_name;
 
 ***
 
-<div id="drop-and-recreate-replica-metadata">
-  ### 4. Supprimer et recréer les métadonnées de la réplique dans Keeper
-</div>
+### 4. Supprimer et recréer les métadonnées de la réplique dans Keeper {#drop-and-recreate-replica-metadata}
 
 Vous devez suivre cette procédure dans les cas suivants :
 
@@ -251,19 +233,17 @@ Cette approche est utile lorsque plusieurs tables doivent être restaurées simu
 
 ***
 
-<div id="rebuild-keeper-cluster">
-  ### 5. Reconstruire le cluster Keeper
-</div>
+### 5. Reconstruire le cluster Keeper {#rebuild-keeper-cluster}
 
-Vous devez suivre ce processus lorsque :
+Vous devez suivre ce processus lorsque :
 
-* Ni snapshots, ni logs, ni sauvegardes valides ne sont disponibles pour la restauration.
+* Ni snapshots, ni journaux, ni sauvegardes valides ne sont disponibles pour la restauration.
 * Vous devez recréer l’intégralité du cluster Keeper et de ses métadonnées.
 
-Suivez les étapes ci-dessous pour reconstruire le cluster Keeper :
+Suivez les étapes ci-dessous pour reconstruire le cluster Keeper :
 
 1. Arrêtez complètement les clusters ClickHouse et Keeper.
-2. Réinitialisez chaque nœud Keeper en nettoyant les répertoires de snapshots et de logs.
+2. Réinitialisez chaque nœud Keeper en nettoyant les répertoires de snapshots et de journaux.
 3. Initialisez un nœud Keeper comme leader, puis ajoutez progressivement les autres nœuds.
 4. Réimportez les métadonnées si elles sont disponibles depuis des enregistrements externes.
 
@@ -272,3 +252,68 @@ Suivez les étapes ci-dessous pour reconstruire le cluster Keeper :
 
   Ce processus est long et comporte un risque d’indisponibilité prolongée. Une reconstruction complète des données est requise.
 </Warning>
+
+***
+
+### 6. Supprimer les nœuds orphelins du snapshot au démarrage {#remove-orphaned-nodes-on-startup}
+
+Un nœud *orphelin* est un nœud dont le parent est absent du snapshot. Keeper refuse de charger un tel
+snapshot et consigne le message `Failure to load from latest snapshot with index` dans le journal.
+
+Suivez cette procédure lorsque :
+
+* Le snapshot présente précisément ce type de corruption structurelle, et
+* Aucune sauvegarde valide ni aucun snapshot plus ancien n&#39;est disponible (privilégiez les stratégies 1 et 2 chaque fois qu&#39;elles sont applicables).
+
+Définissez les deux paramètres suivants dans `<keeper_server>`, puis redémarrez le nœud :
+
+```xml
+<keeper_server>
+    <remove_orphaned_nodes_on_startup>true</remove_orphaned_nodes_on_startup>
+    <digest_enabled>false</digest_enabled>
+</keeper_server>
+```
+
+<Note>
+  **Nécessite le stockage des nœuds en mémoire**
+
+  Le nettoyage n&#39;est implémenté que par le stockage des nœuds en mémoire. Si `use_lsmt_storage` est activé dans
+  `<coordination_settings>`, Keeper refuse de démarrer lorsque `remove_orphaned_nodes_on_startup` est défini : désactivez
+  `use_lsmt_storage` pour le redémarrage de récupération, puis réactivez-le une fois le démarrage réussi.
+</Note>
+
+Keeper supprime alors les sous-arbres orphelins, puis démarre. La suppression est signalée dans le journal au niveau `WARNING`
+sous la forme de deux lignes : l&#39;une indique le nombre total de nœuds supprimés ainsi que les racines des sous-arbres orphelins
+supprimés, l&#39;autre les paths absents du snapshot qui délimitent la région endommagée. Les descendants
+situés sous ces racines sont également supprimés, mais ne sont pas listés individuellement.
+
+<Warning>
+  **Répare uniquement l&#39;état local**
+
+  Cette opération supprime des nœuds de la copie des données de *ce* nœud. Les pairs qui détiennent encore ces nœuds divergeront
+  de celle-ci, et lorsque `digest_enabled` est défini sur `false`, rien ne permet ensuite de détecter cette divergence. Réservez cette opération
+  à la récupération d&#39;un seul nœud, ou appliquez-la à tous les nœuds du cluster. Rétablissez les valeurs par défaut des deux paramètres
+  une fois le nœud opérationnel.
+</Warning>
+
+Keeper refuse délibérément de démarrer si une entrée de journal locale postérieure au snapshot fait référence à la région
+endommagée : un nœud supprimé, tout élément situé en dessous, ou le parent direct d&#39;un sous-arbre supprimé. Le parent direct
+est considéré comme un conflict, car son ensemble d&#39;enfants ne correspond plus à l&#39;arbre à partir duquel le journal a été écrit ;
+ainsi, même une entrée qui ne fait que le modifier — y compris la création ou la suppression d&#39;un nœud *frère* sous celui-ci, qui
+met à jour ses compteurs d&#39;enfants réparés — pourrait être rejouée différemment. Les entrées qui n&#39;examinent que l&#39;existence,
+la version ou les identifiants de modification du parent, comme un `Check`, un `CheckNotExists`, un `CheckStat` qui ne compare ni `numChildren` ni `cversion`,
+un `Set` ou `SetACL` qui réécrit uniquement les données ou l&#39;ACL propres au parent, ou encore
+les watches de données, d&#39;enfants et d&#39;existence qu&#39;un client réenregistre après une reconnexion, ne sont pas concernées et ne bloquent
+pas la récupération ; les watches persistants réenregistrés par un client ne consultent jamais l&#39;arbre et ne la bloquent donc jamais.
+Les nœuds situés plus haut dans la chaîne ne sont pas
+concernés : ils conservent exactement les mêmes données, version et enfants que sur un pair sain, de sorte qu&#39;une entrée qui
+ne modifie qu&#39;un tel nœud est rejouée à l&#39;identique et ne bloque pas la récupération. Font exception les entrées qui
+parcourent l&#39;intégralité du sous-arbre situé sous leur path, comme une suppression récursive ou une énumération récursive : celles-ci
+voient bel et bien les nœuds supprimés et entrent en conflict quelle que soit la hauteur, sauf si Keeper rejette la requête avant d&#39;examiner
+l&#39;arbre (par exemple, une suppression récursive de `/`). Il en va de même pour une fermeture de session
+(`Close`) en fin de journal lorsque cette session possédait un nœud éphémère supprimé, ou possède un nœud éphémère subsistant
+directement sous un tel parent : la fermeture de la session supprime ses nœuds éphémères et met à jour les compteurs de leurs
+parents. Rejouer une telle entrée sur
+l&#39;arbre réparé produirait silencieusement un état différent. Dans ce cas, récupérez plutôt le nœud à partir d&#39;un pair
+sain : arrêtez-le, videz son répertoire de coordination et laissez-le se resynchroniser depuis le leader, ou appliquez
+la stratégie 1 ou 2.

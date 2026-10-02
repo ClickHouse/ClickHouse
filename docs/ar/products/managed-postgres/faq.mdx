@@ -53,43 +53,107 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 ## تجميع الاتصالات {#connection-pooling}
 
-### لماذا تظهر لي أخطاء `prepared statement does not exist` عند استخدام PgBouncer؟ {#prepared-statement-errors}
+### لماذا تظهر لي أخطاء `prepared statement does not exist` عند المرور عبر PgBouncer؟ {#prepared-statement-errors}
 
-يُشغِّل ClickHouse Managed Postgres ‏PgBouncer في وضع **تجميع المعاملات**. في هذا الوضع، لا يُخصَّص اتصال Postgres خلفي لعميلك إلا طوال مدة معاملة واحدة، ثم يُعاد إلى المجمّع — وقد تُوجَّه المعاملة التالية من العميل نفسه إلى backend مختلف.
+يشغّل ClickHouse Managed Postgres أداة PgBouncer في وضع **تجميع المعاملات** (transaction pooling). في هذا الوضع، لا يُخصَّص اتصال Postgres الخلفي لعميلك إلا طوال مدة معاملة واحدة، ثم يُعاد إلى مجمّع الاتصالات، وقد تُوجَّه المعاملة التالية من العميل نفسه إلى اتصال خلفي مختلف.
 
-وهذا يُعطّل **العبارات المُحضّرة من جهة الخادم**، لأنها تكون مرتبطةً بالـ backend المحدد الذي نفّذ `PREPARE` (أو `Parse` في الاستعلام الموسَّع). وعندما يصل `EXECUTE` المقابل إلى backend مختلف، تظهر أخطاء مثل:
+يتتبّع PgBouncer **العبارات المُحضَّرة على مستوى البروتوكول**، وهي العبارات التي ترسلها معظم المشغّلات عبر بروتوكول الاستعلام الموسّع (رسائل `Parse` و`Bind` و`Execute`). وعندما تُنفَّذ عبارة على اتصال خلفي لم يسبق له التعامل معها، يُعِدّها PgBouncer عليه أولًا. ويحتفظ كل اتصال خلفي بما يصل إلى `max_prepared_statements` منها، والقيمة الافتراضية `200`. ولهذا تعمل معظم المشغّلات عبر PgBouncer بإعداداتها الافتراضية.
+
+ما لا يعمل عبر PgBouncer:
+
+* **العبارات المُحضَّرة على مستوى SQL.** لا يتتبّع PgBouncer العبارتين `PREPARE` و`EXECUTE` المُرسلتين بصيغة SQL، لذا قد تصل عبارة `EXECUTE` إلى اتصال خلفي لم يُنفّذ `PREPARE` قط.
+* **تحرير العبارات باستخدام `DEALLOCATE` في SQL.** يعيد PgBouncer تسمية العبارات على الاتصال الخلفي، ولذلك يفشل تنفيذ `DEALLOCATE` على اسم العبارة كما يعرفه العميل. وإذا حدث ذلك داخل معاملة، فإنها تُلغى، وتفشل العبارات اللاحقة بالخطأ `current transaction is aborted`. أما المشغّلات المبنية على libpq 17 أو أحدث، فتحرّر العبارات برسالة `Close` على مستوى البروتوكول بدلًا من ذلك، وهي رسالة يدعمها PgBouncer.
+* **العبارات غير المسمّاة الموزّعة على عدة رحلات ذهاب وإياب.** ترسل بعض أوضاع المشغّلات رسالة `Parse` الخاصة بعبارة غير مسمّاة في رحلة ذهاب وإياب، ثم رسالة `Bind` الخاصة بها في الرحلة التالية. وقد يُنفّذ PgBouncer الرحلة الثانية على اتصال خلفي مختلف، فتفشل بالخطأ `unnamed prepared statement does not exist`، أو يُنفّذ بصمت عبارة تخص عميلًا آخر ويُعيد نتائجها.
+
+وفي هذه الحالات تظهر أخطاء مثل:
 
 ```text
 ERROR:  prepared statement "..." does not exist
 ERROR:  unnamed prepared statement does not exist
+ERROR:  prepared statement did not exist
 ```
 
-الأعراض التي غالبًا ما ترجع إلى هذا السبب الجذري نفسه:
+من الأعراض التي تعود غالبًا إلى السبب الجذري نفسه:
 
-* دفعات من أخطاء `prepared statement does not exist`، خاصة أثناء عمليات backfill أو الكتابات عالية التزامن
-* عمليات insert التي تبدو وكأنها &quot;تفشل بصمت&quot; — يفشل الـ statement، ويُعيد الـ driver المحاولة، وقد ينتهي الأمر بتطبيق الـ batch جزئيًا أو إسقاطها
-* Returned values بنوع غير صحيح (على سبيل المثال، فك ترميز عمود `BIGINT` باعتباره نمط bit من نوع `float64`) — يحدث هذا عندما تعيد plan مخزنة مؤقتًا على جهة العميل استخدام رموز type/format قديمة مع backend لم يُرسل إليه `Parse` المطابق أصلًا
+* موجات متلاحقة من أخطاء `prepared statement does not exist`، لا سيما أثناء عمليات ملء البيانات التاريخية أو عمليات الكتابة عالية التزامن
+* عمليات إدراج تبدو وكأنها &quot;تفشل بصمت&quot;، إذ تفشل العبارة فيعيد المشغّل المحاولة، وقد ينتهي الأمر بتطبيق الدفعة جزئيًا أو بفقدانها
+* معاملات تفشل بالخطأ `current transaction is aborted` بعد تحرير إحدى العبارات
+* صفوف تعود إلى استعلام آخر
 
-**الحل: عطّل العبارات المُحضّرة من جهة الخادم في الـ driver الذي تستخدمه.** يعتمد الإعداد الدقيق على مكتبة الـ client لديك:
+**الحل: استخدم الإعداد الخاص بمشغّلك الموضّح أدناه.** إذا لم يكن مشغّلك مدرجًا، فحدّثه إلى إصدار يستخدم libpq 17 أو أحدث، أو عطّل فيه العبارات المُحضَّرة مسبقًا على جانب الخادم.
 
-| Driver                           | Setting                                                                                |
-| -------------------------------- | -------------------------------------------------------------------------------------- |
-| **pgx** (Go)                     | `statement_cache_capacity=0` and `default_query_exec_mode=exec` (or `simple_protocol`) |
-| **psycopg3** (Python)            | `prepare_threshold=None`                                                               |
-| **asyncpg** (Python)             | `statement_cache_size=0`                                                               |
-| **JDBC** (Java)                  | `prepareThreshold=0`                                                                   |
-| **node-postgres / pg** (Node.js) | لا تمرّر `name` إلى `query()` (فالاستعلامات المُسمّاة تصبح مُحضّرة على الخادم)         |
+| المشغّل                            | عبر PgBouncer                                                                                                                                                                                                                                         |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **node-postgres / pg** (Node.js)   | لا يلزم أي تغيير.                                                                                                                                                                                                                                     |
+| **Bun.sql** (Bun)                  | لا يلزم أي تغيير. إذا ظهر لك الخطأ `prepared statement does not exist`، فاضبط `prepare: false`.                                                                                                                                                       |
+| **Prisma** مع `@prisma/adapter-pg` | لا يلزم أي تغيير. ليس لمعلمة URL ‏`pgbouncer=true` أي تأثير في Prisma 7.                                                                                                                                                                              |
+| **psycopg 3** (بايثون، Django)     | لا يلزم أي تغيير عند استخدام `psycopg[binary]` أو libpq 17 أو أحدث. أما مع إصدار أقدم من libpq، فاضبط `prepare_threshold=None`. يستخدم Django الربط من جهة العميل افتراضيًا، لذا لا يحتاج إلى أي تغيير.                                               |
+| **asyncpg** (بايثون، SQLAlchemy)   | لا يلزم أي تغيير. إذا عطّلت ذاكرة التخزين المؤقت للعبارات باستخدام `statement_cache_size=0` ضمن SQLAlchemy، فاضبط أيضًا `prepared_statement_cache_size=0` في عنوان URL.                                                                               |
+| **pgjdbc** (Java)                  | لا يلزم أي تغيير. استخدم pgjdbc 42.7.5 أو أحدث؛ إذ تعجز الإصدارات الأقدم عن الاتصال عبر PgBouncer. راجع [`unsupported startup parameter`](#unsupported-startup-parameter).                                                                            |
+| **Npgsql** (.NET)                  | لا يلزم أي تغيير، فالتحضير التلقائي معطّل افتراضيًا. لا تفعّل `Max Auto Prepare` ولا تستدعِ `Prepare` عبر PgBouncer؛ وإن اضطررت إلى ذلك، فاضبط أيضًا `No Reset On Close=true`.                                                                        |
+| **pgx** (Go)                       | اضبط `default_query_exec_mode=cache_describe` (أو `exec`). لا تستخدم `describe_exec` إطلاقًا، لأنه يوزّع العبارات غير المسماة على أكثر من رحلة ذهاب وإياب.                                                                                            |
+| **Postgrex / Ecto** (Elixir)       | اضبط `prepare: :unnamed` في إعداد المستودع لديك. فمع العبارات المسماة، قد يتعلّق استعلام يبلغ حجمه نحو 4 كيلوبايت عند تمريره عبر PgBouncer.                                                                                                           |
+| **sqlx** (Rust)                    | لا حاجة إلى أي إعداد خاص بالعبارات المُحضّرة. لا تستخدم `.persistent(false)` أو `statement_cache_capacity(0)`. ولكي يتسنى الاتصال من الأساس، اضبط `extra_float_digits(None)`؛ راجع [`unsupported startup parameter`](#unsupported-startup-parameter). |
+| **Active Record** (Ruby on Rails)  | لا يلزم أي تغيير عند استخدام حزمة `pg` بالإصدار 1.6 أو أحدث مع libpq 17 أو أحدث. وإلا، فاضبط `prepared_statements: false` في `config/database.yml`.                                                                                                   |
+| **PDO** (PHP، Laravel)             | لا يلزم أي تغيير إذا كان `pdo_pgsql` مُصرَّفًا مع libpq 17 أو أحدث. وإلا، فاضبط `PDO::ATTR_EMULATE_PREPARES => true`.                                                                                                                                 |
 
-إذا كانت الـ workload لديك تعتمد على العبارات المُحضّرة، فاتصل **مباشرةً بـ PostgreSQL** (المنفذ 5432) بدلًا من PgBouncer pooler — فالاتصالات المباشرة تدعم العبارات المُحضّرة بشكل طبيعي. راجع [الاتصال](/ar/products/managed-postgres/connection) للحصول على تفاصيل حول الاختيار بين endpoints المجمّعة والمباشرة.
+إذا كان عبء العمل لديك يعتمد على `PREPARE` على مستوى SQL، فاتصل **مباشرةً بـ PostgreSQL** (المنفذ 5432) بدلًا من المرور عبر وسيط تجميع الاتصالات PgBouncer. راجع [الاتصال](/ar/products/managed-postgres/connection) لمزيد من التفاصيل حول المفاضلة بين نقطة النهاية المجمّعة ونقطة النهاية المباشرة.
+
+### لماذا تفشل الاستعلامات بالخطأ `cached plan must not change result type` بعد الترحيل؟ {#cached-plan-result-type}
+
+يحتفظ PgBouncer بالعبارات المُحضَّرة على اتصالاته بـ Postgres، ويعيد استخدامها عند تكرار نص SQL نفسه. لذا، بعد أي تغيير في المخطط يُغيّر نوع عمود يُرجعه استعلام ما، كتغييره مثلًا من `integer` إلى `bigint`، يظل ذلك الاستعلام يفشل عبر PgBouncer بالخطأ `cached plan must not change result type`. ويستمر الفشل حتى مع اتصالات العميل الجديدة، إلى أن يستبدل PgBouncer اتصالاته بـ Postgres. وقد لا تُظهر بعض المشغّلات أي خطأ، بل تفكّ ترميز النتائج وفق الأنواع القديمة وتُرجع قيمًا خاطئة. أما عبر الاتصال المباشر، فيفشل كل اتصال مرة واحدة على الأكثر ثم يعود إلى العمل بشكل طبيعي.
+
+لحل المشكلة، أغلق اتصالات PgBouncer بـ Postgres الخاصة بقاعدة البيانات تلك، وسيفتح PgBouncer اتصالات جديدة تلقائيًا. ونظرًا لأن PgBouncer يتصل بـ Postgres محليًا، فلا تحمل اتصالاته قيمة `client_addr`. نفّذ ما يلي عبر الاتصال المباشر (المنفذ `5432`)، مستخدمًا المستخدم نفسه الذي يتصل به تطبيقك. يُنهي هذا الأمر اتصالات PgBouncer الخاصة بمستخدم تطبيقك فقط، لذا ستفشل المعاملات الجارية عبر PgBouncer في تلك اللحظة، بينما لن تتأثر الاتصالات المباشرة:
+
+```sql
+SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+WHERE datname = '<your_database>' AND usename = current_user
+  AND client_addr IS NULL AND backend_type = 'client backend'
+  AND pid <> pg_backend_pid();
+```
+
+لا تتأثر المشغّلات التي تستخدم عبارات غير مسمّاة، مثل Npgsql بإعداداته الافتراضية، وPostgrex مع `prepare: :unnamed`، وpgx مع `cache_describe`.
+
+### لماذا يظهر الخطأ `unsupported startup parameter` عند الاتصال عبر PgBouncer؟ {#unsupported-startup-parameter}
+
+يرفض PgBouncer الإعدادات المُمرَّرة عند إنشاء الاتصال إذا تعذّر عليه تطبيقها بشكل متّسق على جميع اتصالات Postgres في مجمّع الاتصالات الخاص به، فيفشل الاتصال بالخطأ `FATAL: unsupported startup parameter: ...` أو `unsupported startup parameter in options: ...`. وأكثر الحالات شيوعاً:
+
+* **`extra_float_digits`**: يرسله مع كل اتصال كلٌّ من sqlx وpgjdbc بالإصدار 42.7.4 وما قبله (مثلاً عند استخدامه مع Spring Boot 3). لحل المشكلة، رقِّ pgjdbc إلى الإصدار 42.7.5 أو أحدث. أما في sqlx، فاضبط `extra_float_digits(None)` على `PgConnectOptions`.
+* **`search_path` وغيره من الإعدادات المضمَّنة في سلسلة الاتصال**، مثل `currentSchema` في عنوان URL الخاص بـ JDBC، أو `Search Path` في سلسلة اتصال Npgsql، أو `options=-c ...`، أو `OPTIONS["options"]` في Django. بدلاً من ذلك، اضبط القيمة الافتراضية باستخدام `ALTER ROLE ... SET` أو `ALTER DATABASE ... SET`، أو استخدم `SET LOCAL` داخل معاملة، أو اتصل مباشرةً دون المرور عبر PgBouncer.
+
+أما الإعدادان `application_name` و`TimeZone` فمدعومان.
+
+### لماذا لا يستمر تأثير أوامر `SET` عبر PgBouncer؟ {#session-state}
+
+في وضع تجميع المعاملات، يسري الأمر `SET` المنفَّذ على مستوى الـ session على اتصال Postgres الذي نفّذه، لا على العميل الخاص بك. فقد تُنفَّذ المعاملات اللاحقة الصادرة عن عميلك عبر اتصالات أخرى لا يسري عليها هذا الإعداد، بينما قد يستخدم عملاء آخرون الاتصال الذي يسري عليه. وينطبق ذلك أيضًا على `SET ROLE`، ما يعني أن الدور الذي تتولّاه قد يسري على استعلامات عميل آخر. استخدم `SET LOCAL` داخل معاملة، أو اضبط القيم الافتراضية باستخدام `ALTER ROLE ... SET` أو `ALTER DATABASE ... SET`، أو اتصل مباشرةً لتشغيل أعباء العمل التي تعتمد على حالة الـ session.
+
+### لماذا تتعلّق عمليات الترحيل أو تفشل في تحرير قفل استشاري عبر PgBouncer؟ {#migration-advisory-locks}
+
+تحصل كثير من أدوات الترحيل على قفل استشاري على مستوى الـ session لضمان ألّا تعمل سوى عملية ترحيل واحدة في كل مرة، ثم تحرّره بعبارة منفصلة. وعند المرور عبر PgBouncer، قد تُنفَّذ عبارة التحرير على اتصال Postgres مختلف، فيبقى القفل قائمًا على أحد الاتصالات في مجمّع الاتصالات. ونتيجة لذلك، تظل عمليات الترحيل اللاحقة في حالة انتظار أو تفشل بأخطاء مثل `failed to release advisory lock`، حتى عند استخدام الاتصال المباشر. ومن الأدوات التي تستخدم أقفالًا استشارية على مستوى الـ session: golang-migrate وsqlx و`Migrator` في Kysely وRails وFlyway مع `transactional-lock=false` وEcto مع `migration_lock: :pg_advisory_lock`.
+
+شغّل عمليات الترحيل عبر الاتصال المباشر (المنفذ `5432`). يُحتجَز القفل المُسرَّب من قِبل session خاملة، في حين تحتجز عملية الترحيل التي لا تزال قيد التشغيل قفلها من session نشطة. لإزالة الأقفال المُسرَّبة، أنهِ الـ sessions الخاملة وحدها التي تحتجز أقفالًا استشارية في قاعدة بياناتك، وذلك عبر الاتصال المباشر أيضًا:
+
+```sql
+SELECT pg_terminate_backend(l.pid) FROM pg_locks l
+JOIN pg_stat_activity a ON a.pid = l.pid
+WHERE l.locktype = 'advisory' AND a.state = 'idle'
+  AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database());
+```
 
 ### ماذا يعني الإعداد `max_client_conn` في PgBouncer، وكيف يرتبط بـ `max_connections` في Postgres؟ {#pgbouncer-vs-pg-connections}
 
-يتحكم كلٌّ منهما في شيء مختلف:
+يتحكم كلٌّ منهما في شيء مختلف:
 
-* **`max_connections` في Postgres** يحدد الحد الأقصى لعدد اتصالات **backend** إلى PostgreSQL نفسه. وهذا هو الرقم الأعلى كلفة، لأن كل backend يستهلك ذاكرة وحصةً لعملية.
-* **`max_client_conn` في PgBouncer** يحدد الحد الأقصى لعدد اتصالات **client** التي يمكن أن تكون مفتوحة في pooler في الوقت نفسه. ويقوم PgBouncer بتجميع هذا العدد الكبير من اتصالات client فوق مجموعة أصغر بكثير من اتصالات backend.
+* **`max_connections` في Postgres** يحدد الحد الأقصى لعدد الاتصالات **الخلفية** إلى PostgreSQL نفسه. وهذا هو الرقم الأعلى كلفة، لأن كل اتصال خلفي يستهلك ذاكرة وحصةً لعملية.
+* **`max_client_conn` في PgBouncer** يحدد الحد الأقصى لعدد اتصالات **العميل** التي يمكن أن تكون مفتوحة في وسيط تجميع الاتصالات في الوقت نفسه. ويقوم PgBouncer بتجميع هذا العدد الكبير من اتصالات العميل فوق مجموعة أصغر بكثير من الاتصالات الخلفية.
 
-عادةً ما يُضبط مثيل ClickHouse Managed Postgres بحيث يقبل PgBouncer عددًا من اتصالات client يزيد بنحو **10× على عدد backends في Postgres** (مثلًا 5000 client / 500 backend). إذا ظهرت لك أخطاء connection عند pooler، فمن المرجح بدرجة كبيرة أنك وصلت إلى حد backend الخاص بكل pool (`default_pool_size`) لا إلى الحد الإجمالي المعلن لاتصالات client.
+يقبل PgBouncer من اتصالات العميل أضعافَ عدد الاتصالات الخلفية في Postgres. فعلى سبيل المثال، يقبل المثيل الذي ضُبط فيه `max_connections` على `500` ما يصل إلى `2500` اتصال عميل عند وسيط تجميع الاتصالات. إذا ظهرت لك أخطاء اتصال عند وسيط تجميع الاتصالات، فمن المرجح بدرجة كبيرة أنك وصلت إلى حد الاتصالات الخلفية الخاص بكل مجمّع اتصالات (`default_pool_size`، أو `max_db_connections` لكل قاعدة بيانات) لا إلى الحد الإجمالي المعلن لاتصالات العميل.
+
+للاطلاع على القيم الخاصة بمثيلك، اتصل بقاعدة البيانات الخاصة `pgbouncer` عبر PgBouncer (المنفذ `6432`) ونفّذ `SHOW CONFIG`:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/pgbouncer?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "SHOW CONFIG;"
+```
 
 ## إمكانات قاعدة البيانات {#database-capabilities}
 

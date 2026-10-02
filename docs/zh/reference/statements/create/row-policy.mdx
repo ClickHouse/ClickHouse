@@ -57,7 +57,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
 
 `CREATE ROW POLICY` 需要对创建该策略所在的表具有 [CREATE ROW POLICY](/zh/reference/statements/grant#access-management) 权限。`OR REPLACE` 会丢弃同名的现有策略，包括其所适用的角色，因此还需要对该表具有 [DROP ROW POLICY](/zh/reference/statements/grant#access-management) 权限。无论该策略是否已存在，都需要 `DROP ROW POLICY` 权限，因此无法借助该语句来探测哪些策略存在。
 
-## 多个名称和表
+## 多个名称和表 {#multiple-names-and-tables}
 
 有效：
 
@@ -94,11 +94,21 @@ CREATE ROW POLICY p1, p2 ON t1, t2
 CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 ON table2
 ```
 
-## USING 子句
+## USING 子句 {#using-clause}
 
-允许指定用于过滤行的条件。若某一行上的该条件计算结果非零，用户就能看到该行。
+为表定义过滤条件。用户只能看到条件为 true (即求值结果为非零值) 的行。其效果类似于在该用户对此表执行的每个查询中额外添加一个 `WHERE` 条件。
 
-## TO 子句
+例如，以下策略将 `analyst_role` 限制为只能访问来自欧盟的行：
+
+```sql
+CREATE ROW POLICY region_filter ON db.orders
+USING region = 'EU'
+TO analyst_role;
+```
+
+应用此策略后，`SELECT * FROM db.orders` 返回的行与 `SELECT * FROM db.orders WHERE region = 'EU'` 的返回结果相同。
+
+## TO 子句 {#to-clause}
 
 在 `TO` 部分中，您可以指定此策略适用的用户和 角色 列表。例如，`CREATE ROW POLICY ... TO accountant, john@localhost`。
 
@@ -106,7 +116,7 @@ CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 O
 
 `TO` 部分中列出的 角色 (包括 `ALL EXCEPT` 之后的那些) 会与当前用户已启用的 角色 ([`system.enabled_roles`](/zh/reference/system-tables/enabled_roles)) 进行匹配，而非与授予该用户的所有 角色 匹配，因此 [`SET ROLE`](/zh/reference/statements/set-role) 会改变哪些 策略 生效。
 
-## AS 子句
+## AS 子句 {#as-clause}
 
 允许同一用户在同一张表上同时启用多个策略。因此，我们需要一种方式来组合多个策略中的条件。
 
@@ -153,7 +163,13 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 使用户 `peter` 只有在同时满足 `b=1` 且 `c=2` 时才能看到 table1 的行，尽管
 mydb 中的任何其他表对该用户都只会应用 `b=1` 策略。
 
-## Distributed 和由远程服务器支持的表
+## 从其他表读取数据的表 {#tables-that-read-from-other-tables}
+
+行策略在实际读取数据的位置对行进行过滤。`Alias` 表会将其 target table 的行作为自身的行返回，因此通过该别名读取时，target table 的行策略同样生效，并与别名自身的策略以逻辑 `AND` 组合。`Merge` 表会应用其所读取的各个表的策略。但有一个例外：如果匹配到的表以远程方式读取数据 (例如 `Distributed` 表) ，远程服务器会在策略生效之前就处理查询，因为策略作用于该表读取操作的上层，而不是在读取时执行。此类查询可能会失败 (查询执行聚合但未选择策略所涉及的列时) ，也可能返回比策略允许的更少的行 (远程服务器对本应被策略隐藏的行应用 `ORDER BY ... LIMIT` 时) 。因此，请改为在每个远程服务器的底层本地表上定义策略。
+
+但并非所有从其他表读取数据的表都遵循这一机制。`Buffer` 表以及通过其目标端表或 target table 读取数据的 materialized view **不会**继承该表的行策略：策略是基于 target table 的 schema 编写的；而对于使用 `SQL SECURITY DEFINER` 的视图，策略的评估对象也并非执行读取操作的用户，而是另一个用户。在这些情况下，请在用户实际查询的表上定义策略。
+
+## Distributed 和由远程服务器支持的表 {#distributed-and-remote-backed-tables}
 
 行策略会在实际读取表数据的位置过滤行。将读取操作委托给远程服务器的表，例如 [Distributed](/zh/reference/engines/table-engines/special/distributed) 表或其封装 (例如，目标为 `Distributed` 的 materialized view) ，只会将查询文本发送到远程服务器，无法对远程读取应用策略过滤器。为避免过滤器被悄然忽略，策略适用用户对这类表发起的查询会因 `ILLEGAL_PREWHERE` 错误而被拒绝。
 
@@ -168,11 +184,11 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
   此机制仅在查询以文本形式发送时生效，默认即为此方式。使用 [`serialize_query_plan = 1`](/zh/reference/settings/session-settings/serialize#serialize_query_plan) 时，发起节点会改为发送已构建的读取计划；执行该计划的远程服务器不会应用其自身的行策略。因此，通过 `local_table` 读取 `Distributed` 表会返回未过滤的行。对于必须强制执行行策略的用户，请保持 `serialize_query_plan = 0`。参见 [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891)。
 </Warning>
 
-## ON CLUSTER 子句
+## ON CLUSTER 子句 {#on-cluster-clause}
 
 允许在集群中创建行策略，参见 [Distributed DDL](/zh/reference/statements/distributed-ddl)。这也是在集群中每台服务器的本地表上创建策略的便捷方式。
 
-## 示例
+## 示例 {#examples}
 
 `CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`
 

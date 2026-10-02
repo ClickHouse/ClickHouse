@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_async_executor_for_materialized_views">
-  ## use_async_executor_for_materialized_views
-</div>
+## use_async_executor_for_materialized_views {#use_async_executor_for_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -24,9 +22,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Использовать асинхронное и, возможно, многопоточное выполнение запроса materialized view; это может ускорить обработку materialized view при INSERT, но также может увеличить потребление памяти.
 
-<div id="use_cache_for_count_from_files">
-  ## use_cache_for_count_from_files
-</div>
+## use_cache_for_count_from_files {#use_cache_for_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,37 +30,13 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Включено по умолчанию.
 
-<div id="use_client_time_zone">
-  ## use_client_time_zone
-</div>
+## use_client_time_zone {#use_client_time_zone}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Использовать часовой пояс клиента для интерпретации строковых значений DateTime вместо часового пояса сервера.
 
-<div id="use_compact_format_in_distributed_parts_names">
-  ## use_compact_format_in_distributed_parts_names
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "По умолчанию использовать компактный формат для асинхронной INSERT в таблицы Distributed"}]}]} />
-
-Использует компактный формат для хранения блоков при фоновой (`distributed_foreground_insert`) INSERT в таблицы с движком `Distributed`.
-
-Возможные значения:
-
-* 0 — Использует формат каталога `user[:password]@host:port#default_database`.
-* 1 — Использует формат каталога `[shard{shard_index}[_replica{replica_index}]]`.
-
-<Note>
-  - при `use_compact_format_in_distributed_parts_names=0` изменения в определении кластера не будут применяться для фоновой INSERT.
-  - при `use_compact_format_in_distributed_parts_names=1` изменение порядка узлов в определении кластера изменит `shard_index`/`replica_index`, поэтому учитывайте это.
-</Note>
-
-<div id="use_concurrency_control">
-  ## use_concurrency_control
-</div>
+## use_concurrency_control {#use_concurrency_control}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -72,9 +44,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Учитывать управление параллелизмом на сервере (см. глобальные настройки сервера `concurrent_threads_soft_limit_num` и `concurrent_threads_soft_limit_ratio_to_cores`). Если отключено, позволяет использовать больше потоков, даже если сервер перегружен (не рекомендуется для обычной работы и в основном требуется для тестов).
 
-<div id="use_constant_folding_in_index_analysis">
-  ## use_constant_folding_in_index_analysis
-</div>
+## use_constant_folding_in_index_analysis {#use_constant_folding_in_index_analysis}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -95,9 +65,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 * 0 — Отключено.
 * 1 — Включено.
 
-<div id="use_hash_table_stats_for_join_reordering">
-  ## use_hash_table_stats_for_join_reordering
-</div>
+## use_hash_table_stats_for_join_reordering {#use_hash_table_stats_for_join_reordering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -105,9 +73,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 Включает использование собранной статистики хеш-таблиц для оценки мощности при переупорядочивании JOIN
 
-<div id="use_hedged_requests">
-  ## use_hedged_requests
-</div>
+## use_hedged_requests {#use_hedged_requests}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,9 +88,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 Значение по умолчанию в Cloud: `0`.
 
-<div id="use_hive_partitioning">
-  ## use_hive_partitioning
-</div>
+## use_hive_partitioning {#use_hive_partitioning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -132,9 +96,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 Когда настройка включена, ClickHouse обнаруживает секционирование в стиле Hive в пути (`/name=value/`) в табличных движках [File](/ru/reference/functions/table-functions/file#hive-style-partitioning)/[S3](/ru/reference/functions/table-functions/s3#hive-style-partitioning)/[URL](/ru/reference/functions/table-functions/url#hive-style-partitioning)/[HDFS](/ru/reference/functions/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/ru/reference/functions/table-functions/azureBlobStorage#hive-style-partitioning) и позволяет использовать столбцы партиции в запросе как виртуальные столбцы. Эти виртуальные столбцы будут иметь те же имена, что и в секционированном пути, но с префиксом `_`.
 
-<div id="use_indexes_refiner_in_read_pools">
-  ## use_indexes_refiner_in_read_pools
-</div>
+## use_indexes_refiner_in_read_pools {#use_indexes_refiner_in_read_pools}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -144,9 +106,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 В пуле чтения с предварительным чтением отброшенные диапазоны никогда не подвергаются предварительному чтению, однако границы задач и допуск предварительного чтения через `filesystem_prefetch_max_memory_usage` / `filesystem_prefetches_limit` по-прежнему определяются до фильтрации. Поэтому при высокоселективных фильтрах оставшиеся задачи могут оказаться меньше заданного размера, а допуск — излишне консервативным.
 
-<div id="use_join_disjunctions_push_down">
-  ## use_join_disjunctions_push_down
-</div>
+## use_join_disjunctions_push_down {#use_join_disjunctions_push_down}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -157,9 +117,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 Оптимизация не меняет семантику и применяется только тогда, когда каждая OR-ветвь верхнего уровня содержит хотя бы один детерминированный
 предикат для целевой стороны.
 
-<div id="use_legacy_to_time">
-  ## use_legacy_to_time
-</div>
+## use_legacy_to_time {#use_legacy_to_time}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -173,9 +131,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 Устаревшая функция также всегда доступна как `toTimeWithFixedDate` независимо от этой настройки.
 Когда эта настройка включена, используйте `CAST(x AS Time)` или `x::Time` для преобразования в тип `Time`.
 
-<div id="use_lightweight_primary_key_index_analysis">
-  ## use_lightweight_primary_key_index_analysis
-</div>
+## use_lightweight_primary_key_index_analysis {#use_lightweight_primary_key_index_analysis}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -190,9 +146,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 * 0 — Отключено. При анализе индекса обрабатываются все столбцы первичного ключа.
 * 1 — Включено.
 
-<div id="use_parquet_metadata_cache">
-  ## use_parquet_metadata_cache
-</div>
+## use_parquet_metadata_cache {#use_parquet_metadata_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -205,9 +159,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 * 0 - Отключено
 * 1 - Включено
 
-<div id="use_primary_key">
-  ## use_primary_key
-</div>
+## use_primary_key {#use_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -220,9 +172,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 * 0 — Отключено.
 * 1 — Включено.
 
-<div id="use_reader_executor">
-  ## use_reader_executor
-</div>
+## use_reader_executor {#use_reader_executor}
 
 <ExperimentalBadge />
 
@@ -232,9 +182,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 Экспериментально. Маршрутизирует чтение через новый конвейер `ReaderExecutor` вместо устаревшей матрёшки буферов чтения. Для конфигураций, которые исполнитель пока не поддерживает, используется устаревший путь.
 
-<div id="use_roaring_bitmap_iceberg_positional_deletes">
-  ## use_roaring_bitmap_iceberg_positional_deletes
-</div>
+## use_roaring_bitmap_iceberg_positional_deletes {#use_roaring_bitmap_iceberg_positional_deletes}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -242,9 +190,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 Использовать roaring-битмап для позиционных удалений в Iceberg.
 
-<div id="use_streaming_marks_compression">
-  ## use_streaming_marks_compression
-</div>
+## use_streaming_marks_compression {#use_streaming_marks_compression}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -252,9 +198,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 При загрузке marks для частей MergeTree сжимайте их во внутреннее представление в памяти по одному блоку за раз (стриминг) вместо того, чтобы сначала материализовать полный обычный массив marks. Это значительно снижает пиковое использование памяти при загрузке marks для компактных частей с большим количеством substreams (например, для таблиц с JSON-столбцами и включенной настройкой write&#95;marks&#95;for&#95;substreams&#95;in&#95;compact&#95;parts).
 
-<div id="use_strict_insert_block_limits">
-  ## use_strict_insert_block_limits
-</div>
+## use_strict_insert_block_limits {#use_strict_insert_block_limits}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -277,9 +221,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 По умолчанию отключено.
 
-<div id="use_structure_from_insertion_table_in_table_functions">
-  ## use_structure_from_insertion_table_in_table_functions
-</div>
+## use_structure_from_insertion_table_in_table_functions {#use_structure_from_insertion_table_in_table_functions}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -287,9 +229,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 Использовать структуру таблицы назначения вместо автоматического определения схемы по данным. Возможные значения: 0 — отключено, 1 — включено, 2 — автоматически
 
-<div id="use_uncompressed_cache">
-  ## use_uncompressed_cache
-</div>
+## use_uncompressed_cache {#use_uncompressed_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -298,9 +238,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 Для запросов, которые считывают хотя бы относительно большой объем данных (один миллион строк или более), кэш несжатых данных отключается автоматически, чтобы освободить место для действительно небольших запросов. Это означает, что параметр &#39;use&#95;uncompressed&#95;cache&#39; можно всегда оставлять равным 1.
 
-<div id="use_with_fill_by_sorting_prefix">
-  ## use_with_fill_by_sorting_prefix
-</div>
+## use_with_fill_by_sorting_prefix {#use_with_fill_by_sorting_prefix}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

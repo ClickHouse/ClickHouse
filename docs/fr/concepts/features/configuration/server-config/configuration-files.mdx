@@ -28,7 +28,7 @@ Les fichiers de configuration XML doivent utiliser `<clickhouse>...</clickhouse>
 Dans les fichiers de configuration YAML, `clickhouse:` est facultatif ; s’il est absent, le parseur l’insère automatiquement.
 
 <div id="merging">
-  ## Fusion des fichiers de configuration
+  ## Fusion des fichiers de configuration {#merging}
 </div>
 
 Deux fichiers de configuration (généralement le fichier de configuration principal et un autre fichier de configuration provenant de `config.d/`) sont fusionnés comme suit :
@@ -84,7 +84,7 @@ Le fichier de configuration résultant de la fusion sera :
 ```
 
 <div id="from_env_zk">
-  ### Substitution à l’aide de variables d’environnement et de nœuds ZooKeeper
+  ### Substitution à l’aide de variables d’environnement et de nœuds ZooKeeper {#from_env_zk}
 </div>
 
 Pour indiquer que la valeur d’un élément doit être remplacée par celle d’une variable d’environnement, vous pouvez utiliser l’attribut `from_env`.
@@ -137,8 +137,31 @@ Ce qui donne la configuration suivante :
 </clickhouse>
 ```
 
+#### Interprétation des valeurs {#value-interpretation}
+
+`from_env` et `from_zk` n&#39;interprètent pas la valeur substituée de la même manière :
+
+* Une valeur directe substituée via `from_env` est considérée comme du texte littéral. Les caractères spéciaux XML tels que `&`, `<` et `>` sont échappés automatiquement ; une variable d&#39;environnement peut donc contenir n&#39;importe quelle valeur représentable en XML, par exemple `a&b<c>d`, sans casser la configuration (voir la note ci-dessous sur les caractères de contrôle interdits en XML). Une valeur directe n&#39;est jamais interprétée comme du XML, même si elle ressemble à un fragment XML : `<a>1</a>` est substitué par le texte littéral `<a>1</a>`. Cela s&#39;applique également lorsque l&#39;attribut direct est placé sur un conteneur ordinaire tel que `<profiles from_env="…"/>` : une substitution de sous-arbre XML existante doit être migrée vers `<profiles><include from_env="…"/></profiles>`. Pour des raisons de rétrocompatibilité, `<include from_env="…"/>` se comporte différemment : il analyse la variable d&#39;environnement comme un fragment XML et insère ses enfants dans l&#39;élément parent.
+* Le traitement d&#39;une valeur substituée via `from_zk` dépend de ce qu&#39;elle commence ou non par `<`. Une valeur commençant par `<` est toujours analysée comme un fragment XML : c&#39;est ainsi qu&#39;un sous-arbre est inséré dans n&#39;importe quel élément, qu&#39;il s&#39;agisse d&#39;un `<include from_zk="…"/>` structurel ou d&#39;un conteneur ordinaire tel que `<profiles from_zk="…"/>` ; ce comportement est conservé pour des raisons de rétrocompatibilité, car les versions antérieures interprétaient toujours une valeur `from_zk` comme du XML. Une valeur ne commençant pas par `<` n&#39;est analysée comme un sous-arbre YAML qu&#39;avec la forme explicite `<include from_zk="…" yaml="true"/>` ; un YAML mal formé entraîne alors le rejet de la configuration. L&#39;attribut `yaml="true"` active l&#39;analyse YAML partout où la forme générique `<include>` est utilisée, y compris à l&#39;intérieur d&#39;un élément de certificat terminal ; ne l&#39;utilisez donc pas pour un paramètre littéral ou un secret. Sans `yaml="true"`, une valeur ne commençant pas par `<` est traitée comme du texte littéral, y compris lorsqu&#39;elle est utilisée via la forme générique de remplacement de certificat terminal `<password><include from_zk="/secret"/></password>`. Les valeurs qui contiennent de la syntaxe YAML ou qui sont du YAML mal formé, comme `abc # rotated` ou `[1`, sont ainsi préservées. Avec cette forme, les octets exacts ne sont préservés que si l&#39;`<include>` est intégré sans nœud de texte d&#39;espacement autour ; pour les secrets et les paramètres de certificat terminal dont les octets exacts importent, privilégiez la forme directe `<password from_zk="…"/>`. Sur tout autre élément — qu&#39;il s&#39;agisse d&#39;une substitution de certificat terminal telle que `<some_setting from_zk="…"/>` ou `<password from_zk="…"/>`, ou d&#39;un conteneur ordinaire tel que `<profiles from_zk="…"/>` — une valeur ne commençant pas par `<` est également conservée comme texte littéral avec ses octets d&#39;origine exacts (les caractères spéciaux XML sont échappés automatiquement, comme pour `from_env`) ; ainsi, une valeur telle que `abc: def` reste le texte littéral `abc: def` au lieu de devenir un sous-élément `<abc>def</abc>`. Pour insérer un sous-arbre dans un élément ordinaire (plutôt que dans un `<include>` structurel), fournissez-le sous forme de fragment XML (une valeur commençant par `<`).
+
+<Note>
+  **Les valeurs littérales doivent être du texte XML 1.0 valide**
+
+  Une substitution littérale (`from_env`, ou une valeur `from_zk` de certificat terminal ne commençant pas par `<`) préserve les octets exacts de la valeur pour tout caractère que XML 1.0 peut représenter sous forme de texte. Les caractères de contrôle interdits en XML 1.0 — `0x00`–`0x08`, `0x0B`, `0x0C` et `0x0E`–`0x1F` — ne peuvent en aucun cas transiter par une configuration XML (la spécification XML les interdit même sous forme de références de caractères numériques telles que `&#1;`), et toute valeur qui en contient est rejetée lors du traitement de la substitution. La tabulation (`\t`), le saut de ligne (`\n`) et le retour chariot (`\r`) sont autorisés et restitués à l&#39;octet près.
+</Note>
+
+<Note>
+  **Comportement lors de la mise à niveau pour les valeurs de certificat terminal encodées en entités**
+
+  Les versions précédentes réanalysaient chaque valeur `from_env` directe comme du XML : un caractère `&`, `<` ou `>` brut était donc rejeté comme mal formé, et la seule façon d&#39;en inclure un était de l&#39;encoder sous forme d&#39;entité XML. Ainsi, une variable d&#39;environnement définie à `a&amp;b` était décodée en `a&b`, `&lt;a&gt;1&lt;/a&gt;` était décodé en `<a>1</a>`, et `&#13;` était décodé en retour chariot. Une valeur `from_env` directe est désormais traitée comme du texte littéral : ces mêmes valeurs d&#39;environnement sont donc résolues littéralement en `a&amp;b`, `&lt;a&gt;1&lt;/a&gt;` et `&#13;`. Autrement dit, seules les valeurs en *texte brut* conservent leur signification antérieure : une valeur d&#39;environnement encodée en entités pour l&#39;ancien chemin XML doit désormais être définie sous forme brute (par exemple, définissez `a&b`, que l&#39;ancien chemin rejetait mais que le nouveau accepte comme le texte littéral `a&b`).
+
+  Les versions précédentes réanalysaient chaque valeur de certificat terminal `from_zk` comme du XML : un caractère `&`, `<` ou `>` brut était donc rejeté comme mal formé, et la seule façon d&#39;en inclure un était de l&#39;encoder sous forme d&#39;entité XML. Ainsi, une valeur stockée sous la forme `a&amp;b` était décodée en `a&b`, `&lt;a&gt;1&lt;/a&gt;` était décodé en `<a>1</a>`, et `&#13;` était décodé en retour chariot. Une valeur de certificat terminal ne commençant pas par `<` est désormais conservée telle quelle, octet pour octet : ces mêmes nœuds sont donc résolus littéralement en `a&amp;b`, `&lt;a&gt;1&lt;/a&gt;` et `&#13;`. Autrement dit, seuls les scalaires en *texte brut* conservent leur signification antérieure : une valeur de certificat terminal encodée en entités pour l&#39;ancien chemin XML doit désormais être stockée sous forme brute (par exemple, stockez `a&b`, que l&#39;ancien chemin rejetait mais que le nouveau accepte comme le texte littéral `a&b`).
+
+  Le même changement s&#39;applique à un scalaire simple substitué via un `<include from_zk="…"/>` intégré sous un paramètre de certificat terminal ou un secret, par exemple `<password><include from_zk="/secret"/></password>` : là aussi, un scalaire est désormais conservé tel quel, octet pour octet. Ainsi, `/secret = a&amp;b` (auparavant décodé en `a&b`) est désormais résolu littéralement en `a&amp;b` et doit être stocké sous forme brute, soit `a&b`. N&#39;entourez pas cette forme d&#39;espaces, car ceux-ci font partie de la valeur du paramètre obtenue ; privilégiez la forme directe `<password from_zk="…"/>` lorsque la valeur exacte à l&#39;octet près est importante. (Une valeur `from_zk` commençant par `<`, ou un sous-arbre YAML référencé avec `<include from_zk="…" yaml="true"/>`, n&#39;est pas concerné — seules les valeurs non marquées ne commençant pas par `<` sont conservées littéralement.)
+</Note>
+
 <div id="default-values">
-  #### Valeurs par défaut
+  #### Valeurs par défaut {#default-values}
 </div>
 
 Un élément doté des attributs `from_env` ou `from_zk` peut également avoir l’attribut `replace="1"` (ce dernier doit apparaître avant `from_env`/`from_zk`).
@@ -170,7 +193,7 @@ Ce qui donne la configuration suivante :
 ```
 
 <div id="substitution-with-file-content">
-  ## Substitution avec le contenu d’un fichier
+  ## Substitution avec le contenu d’un fichier {#substitution-with-file-content}
 </div>
 
 Il est également possible de remplacer des parties de la configuration par le contenu de fichiers. Cela peut se faire de deux façons :
@@ -200,7 +223,7 @@ Un exemple est présenté ci-dessous :
 Si vous souhaitez fusionner le contenu de substitution avec la configuration existante au lieu de l’ajouter, vous pouvez utiliser l’attribut `merge="true"`. Par exemple : `<include from_zk="/some_path" merge="true">`. Dans ce cas, la configuration existante sera fusionnée avec le contenu de la substitution, et les paramètres de la configuration existante seront remplacés par les valeurs issues de la substitution.
 
 <div id="encryption">
-  ## Chiffrement et masquage de la configuration
+  ## Chiffrement et masquage de la configuration {#encryption}
 </div>
 
 Vous pouvez utiliser le chiffrement symétrique pour chiffrer un élément de configuration, par exemple un mot de passe en clair ou une clé privée.
@@ -322,7 +345,7 @@ Par exemple :
 ```
 
 <div id="user-settings">
-  ## Paramètres utilisateur
+  ## Paramètres utilisateur {#user-settings}
 </div>
 
 Le fichier `config.xml` peut spécifier une configuration distincte avec des paramètres utilisateur, des profils et des quotas. Le chemin relatif vers cette configuration est défini dans l’élément `users_config`. Par défaut, il s’agit de `users.xml`. Si `users_config` est omis, les paramètres utilisateur, les profils et les quotas sont spécifiés directement dans `config.xml`.
@@ -335,7 +358,7 @@ Les fragments de configuration utilisateur sont fusionnés selon l’ordre lexic
 Notez que les fichiers de configuration sont d’abord [fusionnés](#merging) en tenant compte des paramètres, puis les inclusions sont traitées.
 
 <div id="example">
-  ## Exemple XML
+  ## Exemple XML {#example}
 </div>
 
 Par exemple, vous pouvez avoir un fichier de configuration distinct pour chaque utilisateur :
@@ -475,7 +498,7 @@ XML correspondant :
 ```
 
 <div id="implementation-details">
-  ## Détails d’implémentation
+  ## Détails d’implémentation {#implementation-details}
 </div>
 
 Pour chaque fichier de configuration, le serveur génère également au démarrage des fichiers `file-preprocessed.xml`. Ces fichiers contiennent toutes les substitutions et surcharges effectuées, et sont fournis à titre informatif. Si des substitutions ZooKeeper ont été utilisées dans les fichiers de configuration mais que ZooKeeper n’est pas disponible au démarrage du serveur, le serveur charge la configuration à partir du fichier prétraité.

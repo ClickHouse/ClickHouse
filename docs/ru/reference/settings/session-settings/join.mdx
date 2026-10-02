@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## join_algorithm
+## join_algorithm {#join_algorithm}
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
@@ -23,7 +23,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Можно указать несколько алгоритмов; для конкретного запроса будет выбран доступный вариант в зависимости от kind/strictness и движка таблицы.
 
-Будет ли алгоритм на основе hash сбрасывать данные на диск, этим выбором не определяется: [`max_bytes_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) служат порогом сброса для всех из них (а как только одно из этих двух значений становится ненулевым, `enable_adaptive_memory_spill_scheduler` может сбросить JOIN на диск ещё раньше, при нехватке памяти), а [`max_rows_in_join`](/ru/reference/settings/session-settings/max-rows#max_rows_in_join) / [`max_bytes_in_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_in_join) — жёстким ограничением для всех из них, если только `legacy_join_size_limits_trigger_spilling` не превращает эти два ограничения обратно в триггеры сброса данных на диск. Выбранное значение определяет, как именно JOIN сбрасывает данные: `grace_hash` разбивает правую таблицу на партиции начиная с первого блока, а `hash` и `parallel_hash` собирают её в памяти и переключаются после превышения порога.
+Сброс данных на диск для алгоритмов, основанных на хешировании, настраивается отдельно от `join_algorithm`. Все алгоритмы, основанные на хешировании, используют [`max_bytes_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) и [`max_bytes_ratio_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) в качестве порогов сброса.
 
 Большинство алгоритмов влияют на запрос только тогда, когда именно они выбраны для его выполнения. Однако некоторые изменяют планирование уже при самом наличии в списке — даже как резервный вариант с более низким приоритетом, который в итоге не выбирается, — поскольку решение принимается до выбора алгоритма. Есть два таких эффекта:
 
@@ -37,6 +37,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * grace&#95;hash
 
 Используется [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join). Grace hash — это вариант алгоритма, обеспечивающий производительное выполнение сложных JOIN при ограниченном потреблении памяти.
+Явный выбор `grace_hash` предназначен в первую очередь для диагностики. Чтобы включить сброс данных JOIN на диск, задайте вместо этого [`max_bytes_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) или [`max_bytes_ratio_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
 
 `grace_hash` является внешним начиная с первого блока: правая таблица сразу разбивается на партиции, тогда как `hash` и `parallel_hash` сначала собирают её в памяти и разбивают на партиции только после превышения порога сброса. Выбирайте его, когда заранее известно, что правая сторона не поместится в память, и хочется пропустить фазу работы в памяти. Сам порог сброса — тот же, что используют все алгоритмы на основе hash: [`max_bytes_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join), и одно из этих двух значений должно быть ненулевым, если только не включён `legacy_join_size_limits_trigger_spilling`. Без порога `grace_hash` пропускается в пользу следующего алгоритма из списка, а если он единственный — отклоняется.
 
@@ -110,7 +111,7 @@ ClickHouse всегда пытается использовать JOIN `partial_
 Устаревшее значение, больше не используйте.
 То же, что `direct,hash`, то есть сначала попробуйте использовать direct JOIN, затем hash JOIN (в таком порядке).
 
-## join_any_take_last_row
+## join_any_take_last_row {#join_any_take_last_row}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,7 +134,7 @@ ClickHouse всегда пытается использовать JOIN `partial_
 * [движок таблицы Join](/ru/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/ru/reference/settings/session-settings/join#join_default_strictness)
 
-## join_default_strictness
+## join_default_strictness {#join_default_strictness}
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -146,7 +147,7 @@ ClickHouse всегда пытается использовать JOIN `partial_
 * `ASOF` — Для соединения последовательностей с неточным совпадением.
 * `Empty string` — Если в запросе не указаны `ALL` или `ANY`, ClickHouse генерирует исключение.
 
-## join_on_disk_max_files_to_merge
+## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -158,7 +159,7 @@ ClickHouse всегда пытается использовать JOIN `partial_
 
 * Любое положительное целое число, начиная с 2.
 
-## join_output_by_rowlist_perkey_rows_threshold
+## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -166,7 +167,7 @@ ClickHouse всегда пытается использовать JOIN `partial_
 
 Нижний порог среднего числа строк на ключ в правой таблице, определяющий, следует ли использовать вывод по списку строк при hash JOIN.
 
-## join_overflow_mode
+## join_overflow_mode {#join_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -196,7 +197,7 @@ ClickHouse всегда пытается использовать JOIN `partial_
 * [предложение JOIN](/ru/reference/statements/select/join)
 * [движок таблицы Join](/ru/reference/engines/table-engines/special/join)
 
-## join_use_nulls
+## join_use_nulls {#join_use_nulls}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

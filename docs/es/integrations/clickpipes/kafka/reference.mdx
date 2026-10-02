@@ -13,9 +13,7 @@ integration:
 import { Image } from "/snippets/es/components/Image.jsx";
 import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<div id="supported-data-sources">
-  ## Fuentes de datos compatibles
-</div>
+## Fuentes de datos compatibles {#supported-data-sources}
 
 | Nombre           | Logotipo                                                                                                    | Tipo      | Estado  | Descripción                                                                                           |
 | ---------------- | ----------------------------------------------------------------------------------------------------------- | --------- | ------- | ----------------------------------------------------------------------------------------------------- |
@@ -26,14 +24,12 @@ import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/Exp
 | Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Logotipo de Azure Event Hubs" width="32" /> | Streaming | Estable | Configure ClickPipes y comience a ingerir datos en streaming de Azure Event Hubs en ClickHouse Cloud. |
 | WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="Logotipo de WarpStream" width="32" />             | Streaming | Estable | Configure ClickPipes y comience a ingerir datos en streaming de WarpStream en ClickHouse Cloud.       |
 
-<div id="isolation-level">
-  ## Nivel de aislamiento
-</div>
+## Nivel de aislamiento {#isolation-level}
 
 El nivel de aislamiento del consumidor de Kafka determina si un ClickPipe lee e inserta únicamente los mensajes confirmados por una transacción de Kafka. Habilite la configuración `kafka_read_committed` para usar `read_committed` y omitir los mensajes de transacciones de Kafka canceladas. Deshabilítela para usar `read_uncommitted` y leer todos los mensajes. Puede configurar esta opción en **Configuración avanzada**.
 
 <div id="supported-data-formats">
-  ## Formatos de datos admitidos
+  ## Formatos de datos admitidos {#supported-data-formats}
 </div>
 
 Los formatos admitidos son:
@@ -43,11 +39,11 @@ Los formatos admitidos son:
 * [Protobuf](/es/reference/formats/Protobuf/Protobuf)
 
 <div id="supported-data-types">
-  ## Tipos de datos compatibles
+  ## Tipos de datos compatibles {#supported-data-types}
 </div>
 
 <div id="standard-types-support">
-  ### Tipos estándar
+  ### Tipos estándar {#standard-types-support}
 </div>
 
 Actualmente, ClickPipes admite los siguientes tipos de datos estándar de ClickHouse:
@@ -71,9 +67,7 @@ Actualmente, ClickPipes admite los siguientes tipos de datos estándar de ClickH
 * Tuple y Array con elementos que usan cualquiera de los tipos anteriores (incluidos los Nullable, solo un nivel de profundidad)
 * tipos SimpleAggregateFunction (para destinos AggregatingMergeTree o SummingMergeTree)
 
-<div id="variant-type-support">
-  ### Compatibilidad con el tipo Variant
-</div>
+### Compatibilidad con el tipo Variant {#variant-type-support}
 
 ClickPipes admite el tipo Variant en las siguientes circunstancias:
 
@@ -81,7 +75,7 @@ ClickPipes admite el tipo Variant en las siguientes circunstancias:
 * Campos JSON. Puede especificar manualmente un tipo Variant (como `Variant(String, Int64, DateTime)`) para cualquier campo JSON en el flujo de datos de origen. No se admiten subtipos complejos (arrays/maps/tuples). Además, debido a la forma en que ClickPipes determina el subtipo Variant correcto que debe usar, en la definición de Variant solo puede usarse un tipo entero o de fecha y hora; por ejemplo, `Variant(Int64, UInt32)` no se admite.
 
 <div id="json-type-support">
-  ### Compatibilidad con el tipo JSON
+  ### Compatibilidad con el tipo JSON {#json-type-support}
 </div>
 
 ClickPipes admiten el tipo JSON en los siguientes casos:
@@ -94,18 +88,14 @@ ClickPipes admiten el tipo JSON en los siguientes casos:
 Ten en cuenta que tendrás que cambiar manualmente la columna de destino al tipo JSON deseado, incluidas las rutas fijas o omitidas.
 
 <div id="avro">
-  ### Avro
+  ### Avro {#avro}
 </div>
 
-<div id="supported-avro-data-types">
-  #### Tipos de datos Avro compatibles
-</div>
+#### Tipos de datos Avro compatibles {#supported-avro-data-types}
 
 ClickPipes admite todos los tipos primitivos y complejos de Avro, así como todos los tipos lógicos de Avro, excepto `local-timestamp-millis` y `local_timestamp-micros`. Los tipos `record` de Avro se convierten en Tuple, los tipos `array` en Array y `map` en Map (solo claves de cadena). En general, están disponibles las conversiones indicadas [aquí](/es/concepts/features/interfaces/schema-inference#avro). Recomendamos usar una correspondencia exacta de tipos para los tipos numéricos de Avro, ya que ClickPipes no comprueba el overflow ni la pérdida de precisión durante la conversión de tipos. Como alternativa, todos los tipos de Avro se pueden insertar en una columna `String` y, en ese caso, se representarán como una cadena JSON válida.
 
-<div id="nullable-types-and-avro-unions">
-  #### Tipos Nullable y uniones de Avro
-</div>
+#### Tipos Nullable y uniones de Avro {#nullable-types-and-avro-unions}
 
 Los tipos Nullable en Avro se definen mediante un esquema union de `(T, null)` o `(null, T)`, donde T es el tipo base de Avro. Durante la inferencia de esquemas, estas uniones se asignan a una columna &quot;Nullable&quot; de ClickHouse. Ten en cuenta que ClickHouse no admite los tipos `Nullable(Array)`, `Nullable(Map)` ni `Nullable(Tuple)`. Las uniones con null de Avro para estos tipos se asignan a versiones no anulables (los tipos Record de Avro se asignan a un Tuple con nombre de ClickHouse). Los valores &quot;null&quot; de Avro para estos tipos se insertarán como:
 
@@ -114,12 +104,10 @@ Los tipos Nullable en Avro se definen mediante un esquema union de `(T, null)` o
 * Un Tuple con nombre con todos los valores predeterminados o cero para un Record de Avro nulo
 
 <div id="protobuf">
-  ### Protobuf
+  ### Protobuf {#protobuf}
 </div>
 
-<div id="supported-protobuf-data-types">
-  #### Tipos de datos de Protobuf compatibles
-</div>
+#### Tipos de datos de Protobuf compatibles {#supported-protobuf-data-types}
 
 ClickPipes admite todos los tipos de Protobuf 2 y 3, excepto el tipo `group` de proto 2, que lleva tiempo obsoleto. Las conversiones básicas de tipos usan las siguientes correspondencias:
 
@@ -160,42 +148,40 @@ También se admiten los siguientes [tipos conocidos](https://protobuf.dev/refere
 | `google.protobuf.DoubleValue`                                                                | `Nullable(Float64)`      |
 | `google.protobuf.BoolValue`                                                                  | `Nullable(UInt8)`        |
 
-<div id="protobuf-one-ofs">
-  #### Protobuf `oneof`
-</div>
+#### Protobuf `oneof` {#protobuf-one-ofs}
 
 Durante la inferencia de esquemas, los campos `oneof` de Protobuf se asignan de forma predeterminada a un `Tuple` con nombre, donde como máximo un campo contendrá un valor distinto del predeterminado. Estos campos también pueden asignarse automáticamente a una columna `Variant`, donde el valor activo adopta el tipo del campo constituyente que esté establecido. Como alternativa, cada campo constituyente puede asignarse manualmente a su propia columna de ClickHouse; dado que los campos `oneof` son mutuamente excluyentes, solo se rellenará una columna por registro.
 
 <div id="protobuf-message-lists">
-  #### Listas de mensajes
+  #### Listas de mensajes {#protobuf-message-lists}
 </div>
 
 Si el esquema Protobuf de nivel superior definido para el ClickPipe contiene un único campo repetido que a su vez es un Message de protobuf, la inferencia de esquemas y la asignación de columnas se basarán en el campo Message «contenido». El mensaje de Kafka se procesará como una lista de esos mensajes, y un único mensaje de Kafka se desglosará en múltiples filas de ClickHouse.
 
-<div id="kafka-virtual-columns">
-  ## Columnas virtuales de Kafka
-</div>
+## Columnas virtuales de Kafka {#kafka-virtual-columns}
 
 Las siguientes columnas virtuales son compatibles con las fuentes de datos de streaming compatibles con Kafka. Al crear un nuevo destino, se pueden añadir columnas virtuales a la tabla de destino mediante el botón `Add Column`.
 
-| Nombre           | Descripción                                             | Tipo de dato recomendado |
-| ---------------- | ------------------------------------------------------- | ------------------------ |
-| `_key`           | Clave del mensaje de Kafka                              | `String`                 |
-| `_timestamp`     | Marca temporal de Kafka (precisión de milisegundos)     | `DateTime64(3)`          |
-| `_partition`     | Partición de Kafka                                      | `Int32`                  |
-| `_offset`        | Offset de Kafka                                         | `Int64`                  |
-| `_topic`         | Topic de Kafka                                          | `String`                 |
-| `_header_keys`   | Array paralelo de claves en las cabeceras del registro  | `Array(String)`          |
-| `_header_values` | Array paralelo de valores en las cabeceras del registro | `Array(String)`          |
-| `_raw_message`   | Mensaje completo de Kafka                               | `String`                 |
+| Nombre           | Descripción                                              | Tipo de dato recomendado |
+| ---------------- | -------------------------------------------------------- | ------------------------ |
+| `_key`           | Clave del mensaje de Kafka                               | `String`                 |
+| `_timestamp`     | Marca temporal de Kafka (precisión de milisegundos)      | `DateTime64(3)`          |
+| `_partition`     | Partición de Kafka                                       | `Int32`                  |
+| `_offset`        | Offset de Kafka                                          | `Int64`                  |
+| `_topic`         | Topic de Kafka                                           | `String`                 |
+| `_header_keys`   | Array paralelo de claves en las cabeceras del registro   | `Array(String)`          |
+| `_header_values` | Array paralelo de valores en las cabeceras del registro  | `Array(String)`          |
+| `_raw_message`   | Mensaje completo de Kafka                                | `String`                 |
+| `_is_deleted`    | Indica si el registro es una marca de eliminación lógica | `Bool`                   |
 
 Ten en cuenta que la columna `_raw_message` solo se recomienda para datos JSON.
 En los casos de uso en los que solo se necesita la cadena JSON (por ejemplo, al usar las funciones [`JsonExtract*`](/es/reference/functions/regular-functions/json-functions#jsonextract-functions) de ClickHouse para
 poblar una vista materializada de destino), eliminar todas las columnas &quot;no virtuales&quot; puede mejorar el rendimiento de ClickPipes.
 
-<div id="structured-message-keys">
-  ### Claves de mensajes estructurados
-</div>
+La columna `_is_deleted` está disponible cuando la gestión de marcas de eliminación se configura como eliminación lógica.
+Su valor es `true` para las marcas de eliminación de Kafka y `false` para los mensajes normales.
+
+### Claves de mensajes estructurados {#structured-message-keys}
 
 La asignación de `_key` a una columna `String` almacena la clave original del mensaje de Kafka. Esta asignación omite la decodificación de la clave y la consulta del esquema. Para extraer campos de una clave estructurada, asigne campos de origen que comiencen por `_key.`. Por ejemplo, para la clave JSON `{"customer":{"id":42}}`, asigne `_key.customer.id` a una columna de destino como `customer_id`.
 

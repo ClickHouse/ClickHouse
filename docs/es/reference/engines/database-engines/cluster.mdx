@@ -1,0 +1,68 @@
+---
+description: 'Proporciona acceso en tiempo real a las tablas de una base de datos de un cluster definido en la configuración del servidor y reenvía a ese cluster las consultas `SELECT` e `INSERT`.'
+sidebarTitle: 'Cluster'
+slug: /engines/database-engines/cluster
+title: 'Cluster'
+doc_type: 'reference'
+---
+
+El motor de base de datos `Cluster` proporciona acceso en tiempo real a las tablas de una base de datos de un cluster definido en la configuración del servidor. Es el equivalente de [`Remote`](/es/reference/engines/database-engines/remote) para un cluster con nombre, del mismo modo que la función de tabla [`cluster`](/es/reference/functions/table-functions/cluster) es el equivalente de la función de tabla [`remote`](/es/reference/functions/table-functions/remote).
+
+La lista de tablas y su estructura se obtienen del cluster cuando se necesitan, de modo que la base de datos siempre refleja el estado actual del cluster. Cada tabla se expone mediante el motor de almacenamiento [`Distributed`](/es/reference/engines/table-engines/special/distributed), que reenvía las consultas `SELECT` e `INSERT` al cluster con nombre.
+
+Esto resulta útil para federar varios clusters de ClickHouse o conectar un cluster completo a `clickhouse-local` o a otro cluster sin tener que indicar sus direcciones: basta con definir el cluster una vez en la configuración, junto con las credenciales de cada réplica, las conexiones seguras y el secreto entre servidores.
+
+## Creación de una base de datos {#creating-a-database}
+
+```sql
+CREATE DATABASE cluster_db
+ENGINE = Cluster('cluster_name', 'database');
+```
+
+**Parámetros del motor**
+
+* `cluster_name` — El nombre de un cluster definido en la configuración del servidor (consulte [Clusters](/es/reference/engines/table-engines/special/distributed#distributed-clusters)), como en el motor de tabla `Distributed`. Se admiten [macros](/es/reference/settings/server-settings/settings/other#macros) como `{cluster}`, que se expanden en cada acceso.
+* `database` — El nombre de la base de datos en el cluster.
+
+A diferencia del motor de base de datos `Remote`, el motor `Cluster` no acepta argumentos de credenciales ni almacena secretos: las conexiones utilizan los ajustes de cada réplica definidos en la configuración del cluster (usuario, contraseña, conexiones seguras, compresión y secreto entre servidores). El cluster se vuelve a resolver a partir de la configuración en cada acceso, por lo que la base de datos refleja las recargas de la configuración y el [descubrimiento automático de clusters](/es/guides/oss/deployment-and-scaling/cluster-discovery), igual que una tabla `Distributed`. El cluster debe existir cuando se crea la base de datos; si después desaparece de la configuración, el servidor sigue arrancando y la base de datos indica que falta el cluster hasta que vuelve a figurar en la configuración.
+
+Una réplica que apunta al servidor actual se trata como un segmento local: `SELECT` e `INSERT` se ejecutan directamente con el usuario actual —que, por tanto, necesita los privilegios correspondientes sobre la base de datos subyacente y sus tablas—, y las credenciales configuradas para el cluster solo se utilizan con réplicas remotas. Si la réplica local de un segmento no tiene la base de datos o una tabla, la búsqueda recurre a las réplicas remotas del segmento, igual que una tabla [`Distributed`](/es/reference/engines/table-engines/special/distributed).
+
+Cuando el cluster tiene varios segmentos, cada tabla proxy lee de todos ellos, pero los metadatos —la lista de tablas y su estructura— se obtienen de un segmento cualquiera (con preferencia por uno local), igual que hace la función de tabla [`cluster`](/es/reference/functions/table-functions/cluster). Así, listar las tablas requiere una sola consulta en lugar de una por segmento. Por tanto, se espera que los segmentos de un cluster contengan el mismo conjunto de tablas; si una tabla solo existe en algunos de ellos, su proxy dará error al consultar los segmentos que no la tienen. Un `INSERT` en una tabla de una base de datos con varios segmentos envía cada fila a un segmento aleatorio (las tablas proxy `Distributed` tienen una clave de distribución implícita `rand()` que respeta los pesos configurados para los segmentos); para elegir el segmento de una consulta, establezca [`insert_shard_id`](/es/reference/settings/session-settings/insert#insert_shard_id). La clave implícita solo distribuye las filas insertadas: en las lecturas, la tabla se comporta como una tabla `Distributed` sin clave de distribución (en particular, [`optimize_skip_unused_shards`](/es/reference/settings/session-settings/optimize-skip#optimize_skip_unused_shards) y [`force_optimize_skip_unused_shards`](/es/reference/settings/session-settings/force-optimize#force_optimize_skip_unused_shards) no la tratan como una clave para excluir segmentos innecesarios).
+
+En particular, una tabla que solo existe en un segmento distinto del elegido para resolver los metadatos no aparece en `SHOW TABLES` ni en `EXISTS TABLE`, y buscarla por su nombre devuelve `UNKNOWN_TABLE`; no tiene una tabla proxy que se pueda consultar. Una tabla que existe en el segmento elegido, pero no en otro, es visible, aunque las consultas a través del proxy pueden fallar en ese otro segmento.
+
+No existe una definición equivalente que pueda volver a ejecutarse para una tabla proxy de `Cluster`, por lo que `SHOW CREATE TABLE` devuelve el error `THERE_IS_NO_QUERY`. Esto incluye los siguientes casos:
+
+* La tabla se sirve actualmente recurriendo a las réplicas remotas como se ha descrito antes (la réplica local de un segmento no tiene la base de datos o la tabla). Una tabla `Distributed` que abarca todo el cluster no recurre a esas réplicas como alternativa, y el subconjunto del cluster utilizado de este modo no tiene nombre propio.
+* El nombre del cluster de la base de datos contiene macros. `Cluster` expande esas macros en cada acceso, mientras que `Distributed` solo las expande al crear la tabla. Por ello, recrear la tabla con la expresión de la macro o con su expansión actual daría lugar a un comportamiento distinto tras un cambio de configuración.
+* Una recarga de la configuración puede convertir un cluster de un solo segmento en uno de varios segmentos. El proxy activo adquiere entonces una clave implícita `rand()` para distribuir las filas de `INSERT`, mientras que una tabla serializada antes de la recarga no tiene clave. Serializar siempre la clave tampoco es equivalente, porque haría que una tabla `Distributed` independiente la utilizara para excluir segmentos en las lecturas; `CREATE TABLE` no permite expresar una clave de distribución exclusiva para las inserciones.
+
+## Notas {#notes}
+
+* El motor ofrece una vista que lee directamente del cluster: no se admiten `CREATE TABLE`, `DROP TABLE`, `ALTER` ni otras sentencias DDL similares sobre la base de datos `Cluster`. Administre el esquema directamente en el cluster, por ejemplo, mediante consultas DDL con [`ON CLUSTER`](/es/reference/statements/distributed-ddl).
+* Los derechos de acceso se comprueban en los servidores remotos para los usuarios configurados en la definición del cluster (o para el usuario actual si el cluster utiliza un secreto entre servidores) y, a nivel local, mediante los privilegios habituales sobre la base de datos y sus tablas.
+* Las particularidades del motor de base de datos `Remote` —las reglas de visibilidad de las tablas de un segmento local, si la enumeración es completa, cómo se notifican los errores cuando un cluster no está disponible y las cadenas de bases de datos proxy— también se aplican al motor `Cluster`; consulte las [notas](/es/reference/engines/database-engines/remote#notes) de ese motor.
+
+## Ejemplo {#example}
+
+Cree una base de datos `Cluster` que apunte a la base de datos `default` del cluster `test_shard_localhost` especificado en la configuración del servidor y úsela:
+
+```sql
+CREATE DATABASE cluster_db
+ENGINE = Cluster('test_shard_localhost', 'default');
+```
+
+```sql
+SHOW TABLES FROM cluster_db;
+```
+
+```text
+┌─name─┐
+│ t    │
+└──────┘
+```
+
+```sql
+SELECT * FROM cluster_db.t;
+```

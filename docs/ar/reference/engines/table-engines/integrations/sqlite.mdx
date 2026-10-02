@@ -15,7 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 يتيح هذا المحرك استيراد البيانات إلى SQLite وتصديرها منه، كما يدعم الاستعلام عن جداول SQLite مباشرةً من ClickHouse.
 
-## إنشاء جدول
+## إنشاء جدول {#creating-a-table}
 
 ```sql
     CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -30,24 +30,24 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 * `db_path` — مسار ملف SQLite الذي يحتوي على قاعدة البيانات.
 * `table` — اسم جدول في قاعدة بيانات SQLite، أو استعلام يُمرَّر إلى SQLite كما هو (انظر [تمرير استعلام بدلًا من اسم جدول](#passing-a-query)).
 
-## تمرير استعلام بدلًا من اسم جدول
+## تمرير استعلام بدلاً من اسم جدول {#passing-a-query}
 
-بدلًا من اسم الجدول، يمكن أن تكون قيمة الوسيطة `table` استعلام `SELECT` يُمرَّر إلى SQLite كما هو. ويُستدل على بنية الجدول من نتيجة الاستعلام. ويمكن كتابة الاستعلام إما كاستعلام فرعي أو بتغليفه داخل الدالة `query`:
+يمكن أن تكون الوسيطة `table`، بدلاً من اسم الجدول، استعلام `SELECT` يُمرَّر إلى SQLite كما هو. تُستنتَج بنية الجدول من نتيجة الاستعلام. لا يُبلغ SQLite عن نوع مُصرَّح به إلا لعمود النتيجة الذي يكون عموداً مباشراً من جدول، أما التعبير أو القيمة الحرفية أو التجميع فلا يُبلغ لها عن شيء. ويُستخدَم النوع المُصرَّح به الذي يقابله `String` (راجع [مطابقة الأنواع](/ar/reference/engines/database-engines/sqlite#data_types-support)) كما هو. أما كل عمود آخر - سواء أكان ذا نوع عددي مُصرَّح به أم لا يملك نوعاً مُصرَّحاً به - فيُحدَّد نوعه وفقاً لفئة التخزين الخاصة بقيمته في الصف الأول من نتيجة الاستعلام: فالقيمة `INTEGER` تُنتج `Int64`، والقيمة `REAL` تُنتج `Float64`، وأي قيمة أخرى (`TEXT` أو `BLOB` أو `NULL`)، وكذلك النتيجة الفارغة، تُنتج `String`. ولا يُحتفَظ بالنوع العددي المُصرَّح به إلا إذا توافقت معه فئة التخزين في ذلك الصف، لأن SQLite يُبلغ أيضاً عن نوع مُصرَّح به لاستعلام `SELECT` المركّب، يأخذه من أحد فروعه، في حين تأتي الصفوف من الفروع جميعها؛ وفيما عدا ذلك يُحدَّد نوع العمود وفقاً لفئة التخزين، تماماً كالعمود غير المُصرَّح بنوعه. وعليه، فإن النوع المُستنتَج لا يُوسَّع إلا توسيعاً، ولا يُضيَّق أبداً. ويؤدي استنتاج نوع عمود كهذا إلى بدء تنفيذ الاستعلام في SQLite. ولا يُعبّر الصف الأول بالضرورة عن بقية الصفوف، إذ يحق لـ SQLite أن يُرجع فئة تخزين مختلفة في كل صف (مثل `CASE WHEN id = 1 THEN 1 ELSE 1.5 END`)، ولذلك تتبع القراءة المستندة إلى استعلام مبدأ الإغلاق عند الفشل (fail-closed) لكل عمود يُقرأ عبر نوع عددي، لا للأعمدة التي لا تملك نوعاً مُصرَّحاً به فحسب. فالقيمة التي لا تطابق فئةُ تخزينها ذلك النوع، أو التي يتعذّر تمثيلها فيه بدقة (كخلية `INTEGER` قيمتها `300` في عمود `UInt8`، أو خلية `REAL` قيمتها `16777217` في عمود `Float32`)، تتسبّب في فشل القراءة بدلاً من تحويلها بصمت. ولقراءة عمود يحتوي على قيم من فئات تخزين مختلطة، صرِّح بنوعه على أنه `String` أو حوِّله إلى نص داخل استعلام SQLite. وتكون جميع الأعمدة المُستنتَجة من النوع `Nullable`. ويمكن كتابة الاستعلام إما على هيئة استعلام فرعي، وإما بتغليفه داخل الدالة `query`:
 
 ```sql
 CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1));
 CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col2 > 1'));
 ```
 
-مثل هذا الجدول للقراءة فقط: لا يُسمح بتنفيذ `INSERT` فيه. وتدعم دالة الجدول [`sqlite`](/ar/reference/functions/table-functions/sqlite) الصياغة نفسها.
+مثل هذا الجدول للقراءة فقط، إذ لا يُسمح بتنفيذ `INSERT` فيه. وتدعم دالة الجدول [`sqlite`](/ar/reference/functions/table-functions/sqlite) الصيغة نفسها.
 
 <Note>
-  يُحلَّل شكل الاستعلام الفرعي `(SELECT ...)` بواسطة ClickHouse، ثم يُعاد تسلسله قبل إرساله إلى SQLite. لذلك يجب أن يكون صالحًا في ClickHouse SQL. ولتمرير صياغة خاصة بـ SQLite لا يحلّلها ClickHouse، استخدم صيغة `query('...')`، إذ يُرسَل نصها إلى SQLite كما هو.
+  يُحلَّل شكل الاستعلام الفرعي `(SELECT ...)` بواسطة ClickHouse، ثم يُعاد تسلسله قبل إرساله إلى SQLite. لذلك يجب أن يكون صالحًا في ClickHouse SQL. ولتمرير صيغة خاصة بـ SQLite لا يحلّلها ClickHouse، استخدم صيغة `query('...')`، إذ يُرسَل نصها إلى SQLite كما هو.
 
-  أي `WHERE` أو `LIMIT` أو aggregation أو غير ذلك من عناصر استعلام ClickHouse المحيط **لا** يُدفَع إلى داخل الاستعلام المُمرَّر — بل يُطبَّق في ClickHouse بعد جلب نتيجة الاستعلام كاملةً. ولتقييد البيانات المقروءة من SQLite، ضع filter داخل الاستعلام المُمرَّر. ومع [`external_table_strict_query = 1`](/ar/reference/settings/session-settings/external-table#external_table_strict_query)، يُرفَض أي filter خارجي على أعمدة الجدول عبر exception بدلًا من تطبيقه محليًا، لأنه لا يمكن دفعه إلى داخل الاستعلام المُمرَّر. ويشمل هذا الفحص predicate الخاص بـ `WHERE` في المستوى الأعلى وكل عامل من عوامل `AND` في المستوى الأعلى. أما `PREWHERE` على أعمدة هذا الجدول فلا يخضع لهذا الإعداد: فمحرّك الجدول هذا لا يدعم `PREWHERE`، ويُرفَض مثل هذا الاستعلام بالخطأ `ILLEGAL_PREWHERE` بصرف النظر عن الإعداد. ولا يُجرى الفحص إلا حيث يمكن دفع filter أصلًا: عندما يكون هذا الجدول هو الجدول الوحيد في الاستعلام، أو على أي من جانبي `INNER JOIN`، أو على الجانب المحفوظ من outer join (الجانب الأيسر في `LEFT JOIN`، والجانب الأيمن في `RIGHT JOIN`). وعلى الجانب غير المحفوظ من `LEFT`/`RIGHT JOIN` وعلى أي من جانبي `FULL JOIN` لا يُدفَع شيء ولا يُفحَص شيء، لذا يُطبَّق filter على أعمدة هذا الجدول محليًا بعد الـ join حتى في الوضع الصارم. وحيث يُجرى الفحص، فإن predicate يشير إلى جداول أخرى مضمومة في الاستعلام المحيط لا يُدفَع ويُستثنى من الفحص، سواء أشار إلى الجانب المضموم فقط أو خلطه مع هذا الجدول داخل تعبير واحد ليس `AND` (مثل `OR`)؛ ويحتفظ مثل هذا الـ predicate بنقطة تقييمه المعتادة في ClickHouse (`WHERE` بعد الـ join، و`PREWHERE` قبله) ولا يُرفَض.
+  أي `WHERE` أو `LIMIT` أو تجميع أو غير ذلك من عناصر استعلام ClickHouse المحيط **لا** يُدفَع إلى داخل الاستعلام المُمرَّر — بل يُطبَّق في ClickHouse بعد جلب نتيجة الاستعلام كاملةً. ولتقييد البيانات المقروءة من SQLite، ضع filter داخل الاستعلام المُمرَّر. ومع [`external_table_strict_query = 1`](/ar/reference/settings/session-settings/external-table#external_table_strict_query)، يُرفَض أي filter خارجي على أعمدة الجدول عبر إطلاق استثناء بدلًا من تطبيقه محليًا، لأنه لا يمكن دفعه إلى داخل الاستعلام المُمرَّر. ويشمل هذا الفحص predicate الخاص بـ `WHERE` في المستوى الأعلى وكل عامل من عوامل `AND` في المستوى الأعلى. أما `PREWHERE` على أعمدة هذا الجدول فلا يخضع لهذا الإعداد: فمحرّك الجدول هذا لا يدعم `PREWHERE`، ويُرفَض مثل هذا الاستعلام بالخطأ `ILLEGAL_PREWHERE` بصرف النظر عن الإعداد. ولا يُجرى الفحص إلا حيث يمكن دفع filter أصلًا: عندما يكون هذا الجدول هو الجدول الوحيد في الاستعلام، أو على أي من جانبي `INNER JOIN`، أو على الجانب المحفوظ من outer join (الجانب الأيسر في `LEFT JOIN`، والجانب الأيمن في `RIGHT JOIN`). وعلى الجانب غير المحفوظ من `LEFT`/`RIGHT JOIN` وعلى أي من جانبي `FULL JOIN` لا يُدفَع شيء ولا يُفحَص شيء، لذا يُطبَّق filter على أعمدة هذا الجدول محليًا بعد الـ join حتى في الوضع الصارم. وحيث يُجرى الفحص، فإن predicate يشير إلى جداول أخرى مضمومة في الاستعلام المحيط لا يُدفَع ويُستثنى من الفحص، سواء أشار إلى الجانب المضموم فقط أو خلطه مع هذا الجدول داخل تعبير واحد ليس `AND` (مثل `OR`)؛ ويحتفظ مثل هذا الـ predicate بنقطة تقييمه المعتادة في ClickHouse (`WHERE` بعد الـ join، و`PREWHERE` قبله) ولا يُرفَض.
 </Note>
 
-## دعم أنواع البيانات
+## دعم أنواع البيانات {#data-types-support}
 
 عند تحديد أنواع أعمدة ClickHouse صراحةً في تعريف الجدول، يمكن تحليل أنواع ClickHouse التالية من أعمدة TEXT في SQLite:
 
@@ -57,12 +57,14 @@ CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 
 * [Enum8, Enum16](/ar/reference/data-types/enum)
 * [Decimal32, Decimal64, Decimal128, Decimal256](/ar/reference/data-types/decimal)
 * [FixedString](/ar/reference/data-types/fixedstring)
-* جميع أنواع الأعداد الصحيحة ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/ar/reference/data-types/int-uint))
+* جميع أنواع الأعداد الصحيحة ([UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](/ar/reference/data-types/int-uint))
 * [Float32, Float64](/ar/reference/data-types/float)
 
 راجع [محرك قاعدة بيانات SQLite](/ar/reference/engines/database-engines/sqlite#data_types-support) للاطّلاع على مطابقة الأنواع الافتراضية.
 
-## مثال على الاستخدام
+تؤدي قراءة قيمة `NULL` من SQLite إلى عمود ClickHouse مُعرَّف صراحةً بنوع غير `Nullable` إلى إطلاق الاستثناء `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN`. لقراءة قيم `NULL`، عرِّف العمود بالنوع [Nullable](/ar/reference/data-types/nullable). أما المخطط المستنتج فيتبع البيانات الوصفية في SQLite، إذ يكون العمود `Nullable` ما لم يُعرَّف بأنه `NOT NULL`.
+
+## مثال على الاستخدام {#usage-example}
 
 يعرض استعلامًا لإنشاء جدول SQLite:
 
@@ -73,7 +75,7 @@ SHOW CREATE TABLE sqlite_db.table2;
 ```text
 CREATE TABLE SQLite.table2
 (
-    `col1` Nullable(Int32),
+    `col1` Nullable(Int64),
     `col2` Nullable(String)
 )
 ENGINE = SQLite('sqlite.db','table2');

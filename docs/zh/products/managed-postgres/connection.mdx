@@ -18,9 +18,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   本页介绍如何将生产系统连接到 Postgres。如果您想快速运行查询，也可以通过 [SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console) 进行连接，方式与连接 ClickHouse 实例相同。
 </Tip>
 
-<div id="accessing-connection-details">
-  ## 查看连接详细信息
-</div>
+## 查看连接详细信息 {#accessing-connection-details}
 
 要将应用程序连接到 ClickHouse Managed Postgres，请前往实例左侧边栏中的 **Connect** 视图。
 
@@ -40,7 +38,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 ClickHouse Managed Postgres 为您的数据库提供 superuser 访问权限。请使用这些凭据以 superuser 身份连接，这样您就可以创建其他用户并管理数据库对象。
 
 <div id="connection-string">
-  ## 连接字符串格式
+  ## 连接字符串格式 {#connection-string}
 </div>
 
 **连接方式**选项卡会以多种格式提供您的连接字符串，以满足应用程序的要求：
@@ -55,9 +53,7 @@ ClickHouse Managed Postgres 为您的数据库提供 superuser 访问权限。�
 
 出于安全考虑，连接字符串中的密码默认会被遮盖。点击任意字段或连接字符串旁边的复制图标，即可直接将其复制到剪贴板。
 
-<div id="pgbouncer">
-  ## PgBouncer 连接池
-</div>
+## PgBouncer 连接池 {#pgbouncer}
 
 ClickHouse Managed Postgres 内置了一个 [PgBouncer](https://www.pgbouncer.org/) 实例，用于服务器端连接池。PgBouncer 有助于改善连接管理、提升性能和资源利用率，尤其适合以下应用程序：
 
@@ -70,19 +66,19 @@ ClickHouse Managed Postgres 内置了一个 [PgBouncer](https://www.pgbouncer.or
 <Tip>
   **何时使用 PgBouncer**
 
-  如果你的应用程序会建立大量短生命周期连接，请使用 PgBouncer。对于长时间保持的连接，或者使用了与连接池不兼容的 PostgreSQL 功能 (例如跨事务的预处理语句) 的应用程序，请直接连接。
+  如果你的应用程序会建立大量短生命周期连接，请使用 PgBouncer。协议级预处理语句可以通过 PgBouncer 正常使用，详见[通过 PgBouncer 使用预处理语句](/zh/products/managed-postgres/faq#prepared-statement-errors)。对于长时间保持的连接、迁移操作，以及依赖会话级功能 (例如会话级 `SET` 命令、会话级咨询锁、`LISTEN` 或 SQL 级 `PREPARE`) 而这些功能在事务池模式下无法使用的应用程序，请直接连接。
 
   不支持通过 PgBouncer 使用 ClickPipes 将数据导入 ClickHouse。
 </Tip>
 
 <div id="tls">
-  ## TLS 配置
+  ## TLS 配置 {#tls}
 </div>
 
 所有 ClickHouse Managed Postgres 实例均受 TLS 保护。支持的最低版本为 **TLS 1.3**。
 
 <div id="quick-connection">
-  ### 快速连接 (TLS 加密)
+  ### 快速连接 (TLS 加密) {#quick-connection}
 </div>
 
 默认情况下，连接会使用 TLS 加密，但不会验证证书：
@@ -91,9 +87,7 @@ ClickHouse Managed Postgres 内置了一个 [PgBouncer](https://www.pgbouncer.or
 psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres'
 ```
 
-<div id="verified-tls">
-  ### 已验证的 TLS 连接 (推荐用于生产环境)
-</div>
+### 已验证的 TLS 连接 (推荐用于生产环境) {#verified-tls}
 
 对于生产环境中的 workloads，我们建议使用已验证的 TLS 连接，以确保你连接的是正确的 server。为此，请在 **Settings** 选项卡中下载 CA 证书包，并将其添加到数据库客户端的受信任证书中。
 

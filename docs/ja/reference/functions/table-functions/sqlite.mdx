@@ -10,39 +10,39 @@ doc_type: 'reference'
 
 [SQLite](/ja/reference/engines/database-engines/sqlite) データベースに格納されているデータに対してクエリを実行できます。
 
-## 構文
+## 構文 {#syntax}
 
 ```sql
 sqlite('db_path', 'table_name')
 ```
 
-## 引数
+## 引数 {#arguments}
 
 * `db_path` — SQLite データベースを含むファイルへのパス。[String](/ja/reference/data-types/string)。
 * `table_name` — SQLite データベース内のテーブル名、または SQLite にそのまま渡されるクエリ ([テーブル名の代わりにクエリを渡す](#passing-a-query) を参照) 。[String](/ja/reference/data-types/string)。
 
-## 戻り値
+## 戻り値 {#returned-value}
 
 * 元の`SQLite`テーブルと同じカラムを持つテーブルオブジェクト。
 
-## テーブル名の代わりにクエリを渡す
+## テーブル名の代わりにクエリを渡す {#passing-a-query}
 
-第2引数には、テーブル名の代わりに、そのまま SQLite に渡される `SELECT` クエリを指定できます。生成されるテーブルの構造は、クエリ結果から推論されます。クエリは、サブクエリとして記述することも、`query` 関数で囲むこともできます。
+第2引数には、テーブル名の代わりに `SELECT` クエリを指定することもでき、このクエリはそのまま SQLite に渡されます。結果テーブルの構造はクエリ結果から推論されます。SQLite が宣言型を報告するのは、テーブルのカラムを直接参照する結果カラムに対してのみで、式、リテラル、集約については何も報告しません。`String` にマッピングされる宣言型 ([型マッピング](/ja/reference/engines/database-engines/sqlite#data_types-support)を参照) は、そのまま使用されます。それ以外のすべてのカラム (数値の宣言型を持つカラムと、宣言型を持たないカラム) の型は、クエリ結果の最初の行にある値のストレージクラスに基づいて解決されます。`INTEGER` の値は `Int64`、`REAL` の値は `Float64` となり、それ以外の値 (`TEXT`、`BLOB`、`NULL`) の場合や結果が空の場合は `String` となります。数値の宣言型が維持されるのは、その行のストレージクラスがそれと一致する場合のみです。SQLite は複合 `SELECT` に対しても宣言型を報告しますが、その宣言型はいずれか 1 つの分岐から取得される一方、行はすべての分岐から返されるためです。それ以外の場合、そのカラムの型は、宣言型のないカラムと同様にストレージクラスから決まります。したがって、推論される型が拡張されることはあっても、変換される (縮小される) ことはありません。このようなカラムの型を推論する際には、SQLite 上でクエリの実行が開始されます。なお、最初の行が残りの行を代表するとは限りません。SQLite は行ごとに異なるストレージクラスを返す場合があるため (例: `CASE WHEN id = 1 THEN 1 ELSE 1.5 END`) 、クエリに基づく読み取りは、宣言型のないカラムに限らず、数値型として読み取られるすべてのカラムについてフェイルクローズドとなります。ストレージクラスがその型と一致しない値や、その型で正確に表現できない値 (`UInt8` カラムにおける `300` という `INTEGER` のセル、`Float32` カラムにおける `16777217` という `REAL` のセルなど) は、暗黙的に強制変換されることなく、読み取りエラーとなります。ストレージクラスが混在するカラムを読み取るには、そのカラムを `String` として宣言するか、SQLite のクエリ内でテキストにキャストしてください。推論されたカラムはすべて `Nullable` になります。クエリは、サブクエリとして記述することも、`query` 関数でラップして指定することもできます。
 
 ```sql
 SELECT * FROM sqlite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1));
 SELECT * FROM sqlite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col2 > 1'));
 ```
 
-このようなテーブルは読み取り専用で、`INSERT` はできません。同じ構文は [`SQLite`](/ja/reference/engines/table-engines/integrations/sqlite) テーブルエンジンでもサポートされています。
+このようなテーブルは読み取り専用であり、`INSERT` による挿入はできません。同じ構文は [`SQLite`](/ja/reference/engines/table-engines/integrations/sqlite) テーブルエンジンでもサポートされています。
 
 <Note>
   サブクエリ形式 `(SELECT ...)` は ClickHouse で解析され、SQLite に送信される前に再シリアル化されます。そのため、有効な ClickHouse SQL である必要があります。ClickHouse が解析しない SQLite 固有の構文を渡すには、`query('...')` 形式を使用してください。この形式では、テキストがそのまま SQLite に送信されます。
 
-  また、渡されたクエリには、外側の ClickHouse クエリの `WHERE`、`LIMIT`、aggregation などは **プッシュダウンされず**、クエリ結果全体を取得した後に ClickHouse 側で適用されます。SQLite から読み取るデータを制限するには、渡すクエリ内に filter を記述してください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings/external-table#external_table_strict_query) を指定すると、テーブル関数のカラムに対する外側の filter は渡されたクエリ内にプッシュできないため、ローカルで適用されず、代わりに例外として拒否されます。この check は、トップレベルの `WHERE` predicate と、トップレベルの `AND` の各項を対象とします。このテーブルのカラムに対する `PREWHERE` はこの設定の対象ではありません。このテーブルエンジンは `PREWHERE` をサポートしておらず、そのようなクエリは設定に関わらず `ILLEGAL_PREWHERE` で拒否されます。この check は filter がプッシュダウンされ得る場所でのみ実行されます。すなわち、このテーブルがクエリ内の唯一のテーブルである場合、`INNER JOIN` のいずれかの側にある場合、または OUTER JOIN の保持側 (`LEFT JOIN` の左側、`RIGHT JOIN` の右側) にある場合です。`LEFT`/`RIGHT JOIN` の非保持側や `FULL JOIN` のいずれの側でも何もプッシュダウンされず、check も行われないため、このテーブルのカラムに対する filter は厳格モードであっても join 後にローカルで適用されます。check が実行される箇所では、外側のクエリで join されている他のテーブルを参照する predicate はプッシュダウンされず、check の対象から除外されます。これは、その predicate が join 側のみを参照する場合でも、`AND` 以外の単一の expression (たとえば `OR`) 内でこのテーブルと混在している場合でも同様です。そのような predicate は通常の ClickHouse の評価タイミング (join 後の `WHERE`、join 前の `PREWHERE`) を保持し、拒否されません。
+  また、渡されたクエリには、外側の ClickHouse クエリの `WHERE`、`LIMIT`、集約 などは **プッシュダウンされず**、クエリ結果全体を取得した後に ClickHouse 側で適用されます。SQLite から読み取るデータを制限するには、渡すクエリ内に filter を記述してください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings/external-table#external_table_strict_query) を指定すると、テーブル関数のカラムに対する外側の filter は渡されたクエリ内にプッシュできないため、ローカルで適用されず、代わりに例外として拒否されます。この check は、トップレベルの `WHERE` predicate と、トップレベルの `AND` の各項を対象とします。このテーブルのカラムに対する `PREWHERE` はこの設定の対象ではありません。このテーブルエンジンは `PREWHERE` をサポートしておらず、そのようなクエリは設定に関わらず `ILLEGAL_PREWHERE` で拒否されます。この check は filter がプッシュダウンされ得る場所でのみ実行されます。すなわち、このテーブルがクエリ内の唯一のテーブルである場合、`INNER JOIN` のいずれかの側にある場合、または OUTER JOIN の保持側 (`LEFT JOIN` の左側、`RIGHT JOIN` の右側) にある場合です。`LEFT`/`RIGHT JOIN` の非保持側や `FULL JOIN` のいずれの側でも何もプッシュダウンされず、check も行われないため、このテーブルのカラムに対する filter は厳格モードであっても join 後にローカルで適用されます。check が実行される箇所では、外側のクエリで join されている他のテーブルを参照する predicate はプッシュダウンされず、check の対象から除外されます。これは、その predicate が join 側のみを参照する場合でも、`AND` 以外の単一の expression (たとえば `OR`) 内でこのテーブルと混在している場合でも同様です。そのような predicate は通常の ClickHouse の評価タイミング (join 後の `WHERE`、join 前の `PREWHERE`) を保持し、拒否されません。
 </Note>
 
-## 例
+## 例 {#example}
 
 ```sql title="Query"
 SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
@@ -56,7 +56,7 @@ SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
 └───────┴──────┘
 ```
 
-## 関連
+## 関連 {#related}
 
 * [SQLite](/ja/reference/engines/table-engines/integrations/sqlite) テーブルエンジン
 * [SQLite database engine](/ja/reference/engines/database-engines/sqlite) — データ型サポートのセクション

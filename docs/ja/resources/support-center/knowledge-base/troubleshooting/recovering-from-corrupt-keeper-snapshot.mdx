@@ -12,19 +12,13 @@ description: 'この記事では、破損した Keeper スナップショット�
 * [問題がどのように現れるか](#symptoms)
 * [考えられる復旧戦略](#recovery-strategies) と、それぞれが何を意味するのか
 
-<div id="overview">
-  ## Keeper スナップショットの概要
-</div>
+## Keeper スナップショットの概要 {#overview}
 
-<div id="what-is-snapshot">
-  ### スナップショットとは？
-</div>
+### スナップショットとは？ {#what-is-snapshot}
 
 スナップショットは、ある時点における Keeper の内部データ (クラスターに関するメタデータ、テーブルの協調に使用されるパス、設定など) をシリアライズした状態です。スナップショットは、クラスター内の Keeper ノードの再同期、障害発生時のメタデータ復旧、そして既知の正常な Keeper の状態に依存する起動・再起動処理において重要です。
 
-<div id="where-to-find-snapshots">
-  ### スナップショットはどこにありますか？
-</div>
+### スナップショットはどこにありますか？ {#where-to-find-snapshots}
 
 スナップショットは、Keeper ノードのローカルファイルシステム上にファイルとして保存されます。デフォルトでは `/var/lib/clickhouse/coordination/snapshots/` に保存され、`keeper_server.xml` ファイルの `snapshot_storage_path` でカスタムパスを指定している場合は、そちらに保存されます。スナップショットには連番の名前 (例: snapshot.23) が付けられ、新しいものほど番号が大きくなります。
 
@@ -34,9 +28,7 @@ description: 'この記事では、破損した Keeper スナップショット�
   復旧には、ノード間でスナップショットの整合性が保たれていることが極めて重要です。
 </Note>
 
-<div id="symptoms">
-  ## 破損した Keeper スナップショットの主な症状と兆候
-</div>
+## 破損した Keeper スナップショットの主な症状と兆候 {#symptoms}
 
 以下の表は、破損した Keeper スナップショットでよく見られる主な症状と兆候を示しています。
 
@@ -62,9 +54,7 @@ description: 'この記事では、破損した Keeper スナップショット�
 | **スナップショット破損エラー**   | • `Aborting because of failure to load from latest snapshot with index`<br />• `Failure to load from latest snapshot with index {}: {}. Manual intervention is necessary for recovery`<br />• `Failed to preprocess stored log at index {}, aborting to avoid inconsistent state`<br />• 起動時のスナップショットのシリアライゼーションまたは読み込みの失敗 |
 | **その他の Keeper の問題** | • `Coordination::Exception`<br />• `Zookeeper::Session Timeout`<br />• 同期またはリーダー選出の問題<br />• ログコンパクション時の競合状態                                                                                                                                                                                                               |
 
-<div id="recovery-strategies">
-  ## 破損した Keeper スナップショットからの復旧
-</div>
+## 破損した Keeper スナップショットからの復旧 {#recovery-strategies}
 
 ファイルに手を加える前に、必ず次の対応を行ってください:
 
@@ -74,9 +64,7 @@ description: 'この記事では、破損した Keeper スナップショット�
 
 ***
 
-<div id="restore-from-existing-backup">
-  ### 1. 既存のバックアップから復元する
-</div>
+### 1. 既存のバックアップから復元する {#restore-from-existing-backup}
 
 次のいずれかに該当する場合は、この手順に従ってください。
 
@@ -98,9 +86,7 @@ description: 'この記事では、破損した Keeper スナップショット�
 
 ***
 
-<div id="rollback-to-older-snapshot">
-  ### 2. 古いスナップショットへのロールバック
-</div>
+### 2. 古いスナップショットへのロールバック {#rollback-to-older-snapshot}
 
 次のような場合は、この手順に従ってください。
 
@@ -121,9 +107,7 @@ description: 'この記事では、破損した Keeper スナップショット�
 
 ***
 
-<div id="restore-metadata-with-system-restore-replica">
-  ### 3. `SYSTEM RESTORE REPLICA` を使用したメタデータの復元
-</div>
+### 3. `SYSTEM RESTORE REPLICA` を使用したメタデータの復元 {#restore-metadata-with-system-restore-replica}
 
 次のような場合は、この手順に従ってください。
 
@@ -170,9 +154,7 @@ SYSTEM SYNC REPLICA [db.]table_name;
 
 ***
 
-<div id="drop-and-recreate-replica-metadata">
-  ### 4. Keeper 内のレプリカのメタデータを削除して再作成する
-</div>
+### 4. Keeper 内のレプリカのメタデータを削除して再作成する {#drop-and-recreate-replica-metadata}
 
 次のような場合は、この手順に従ってください。
 
@@ -251,9 +233,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 ***
 
-<div id="rebuild-keeper-cluster">
-  ### 5. Keeper クラスターを再構築する
-</div>
+### 5. Keeper クラスターを再構築する {#rebuild-keeper-cluster}
 
 次の場合は、この手順に従ってください。
 
@@ -272,3 +252,64 @@ Keeper クラスターを再構築するには、以下の手順に従ってく�
 
   このプロセスには時間がかかり、長時間の停止につながるおそれがあります。データ全体を再構築する必要があります。
 </Warning>
+
+***
+
+### 6. 起動時にスナップショットから孤立したノードを削除する {#remove-orphaned-nodes-on-startup}
+
+*孤立した*ノードとは、親ノードがスナップショット内に存在しないノードのことです。Keeper はこのような
+スナップショットの読み込みを拒否し、`Failure to load from latest snapshot with index` というログを出力します。
+
+この手順は、次の条件をすべて満たす場合に実施してください。
+
+* スナップショットがまさにこの形で構造的に破損している
+* 有効なバックアップや古いスナップショットが利用できない (戦略 1 および 2 を適用できる場合は、常にそちらを優先してください) 
+
+`<keeper_server>` の下に次の 2 つの設定をいずれも追加し、ノードを再起動します。
+
+```xml
+<keeper_server>
+    <remove_orphaned_nodes_on_startup>true</remove_orphaned_nodes_on_startup>
+    <digest_enabled>false</digest_enabled>
+</keeper_server>
+```
+
+<Note>
+  **インメモリのノードストレージが必要です**
+
+  このクリーンアップは、インメモリのノードストレージでのみ実装されています。`<coordination_settings>` で `use_lsmt_storage` が有効になっている場合、
+  `remove_orphaned_nodes_on_startup` を設定した状態では Keeper は起動を拒否します。復旧のために再起動する際は
+  `use_lsmt_storage` を無効にし、起動に成功した後で再度有効にしてください。
+</Note>
+
+その後、Keeper は孤立したサブツリーを削除してから起動します。削除内容は `WARNING`
+レベルで 2 行にわたってログに出力されます。1 行目には削除されたノードの総数と、削除された孤立サブツリーのルートが、
+2 行目には損傷領域の境界となる、スナップショットに存在しないパスが出力されます。これらのルートより下位の子孫ノードも
+削除されますが、個別には列挙されません。
+
+<Warning>
+  **ローカルの状態のみを修復します**
+
+  この操作は、*このノード*が保持するデータのコピーからノードを削除します。削除対象のノードを保持したままのピアとは状態が乖離し、
+  `digest_enabled` が `false` に設定されている場合、その後この乖離は検出されません。この操作は単一ノードの復旧として扱うか、
+  クラスター内のすべてのノードに適用してください。ノードが起動したら、両方の設定をデフォルトに戻してください。
+</Warning>
+
+スナップショットより後のローカルのログエントリが損傷領域 (削除されたノード、その配下のノード、または削除されたサブツリーの直接の親) を参照している場合、
+Keeper は意図的に起動を拒否します。直接の親が競合と見なされるのは、その子ノードの集合が、ログが書き込まれた時点のツリーと一致しなくなっているためです。
+そのため、親にしか触れないエントリであっても (親の配下にある*兄弟*ノードの create や remove など、修復済みの子ノードカウンターを更新するものも含む)、
+再生結果が変わる可能性があります。一方、親の存在、バージョン、または変更 ID のみを参照するエントリは影響を受けず、
+復旧を妨げません。具体的には、`Check`、`CheckNotExists`、`numChildren` と `cversion` のいずれも比較しない `CheckStat`、
+親自身のデータまたは ACL のみを書き換える `Set` や `SetACL`、
+クライアントが再接続後に再登録するデータウォッチ、子ウォッチ、存在ウォッチなどが該当します。クライアントが再登録する永続ウォッチはツリーを参照しないため、復旧を妨げることはありません。
+さらに上位のノードは
+影響を受けません。これらのノードは正常なピア上とまったく同じデータ、バージョン、子ノードを保持しているため、
+そうしたノードにのみ触れるエントリは同一の結果で再生され、復旧を妨げません。ただし例外として、
+パス配下のサブツリー全体を走査するエントリ (再帰的な削除や再帰的な一覧取得など) があります。これらは
+削除されたノードを参照するため、階層の深さに関係なく競合します。ただし、Keeper がツリーを参照する前にリクエストを拒否する場合は除きます
+(たとえば `/` の再帰的な削除)。ログ末尾にある session のクローズ
+(`Close`) も同様で、その session が削除されたエフェメラルノードを所有していた場合、またはそのような親の直下に残っているエフェメラル
+ノードを所有している場合に競合します。session をクローズするとそのエフェメラルノードが削除され、親のカウンターが更新されるためです。
+このようなエントリを修復済みのツリーに対して再生すると、気付かないうちに異なる状態になってしまいます。この場合は、代わりに正常な
+ピアからノードを復旧してください。ノードを停止し、その協調用ディレクトリを空にしてリーダーから再同期させるか、
+戦略 1 または 2 を使用してください。
