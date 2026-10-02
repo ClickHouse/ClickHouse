@@ -116,8 +116,9 @@ SELECT flattenTuple(t) FROM tab;
         )",
         R"(
 ┌─flattenTuple(t)─┐
-│ (3,'c',4)       │
-└─────────────────┘
+├──a─┬─b.c──┬─b.d─┤
+│  3 │ c    │   4 │
+└────┴──────┴─────┘
         )"
     }
     };

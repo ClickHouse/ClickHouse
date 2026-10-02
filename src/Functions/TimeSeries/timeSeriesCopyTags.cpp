@@ -71,13 +71,16 @@ public:
     {
         auto dest_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0, /* return_single_element_if_const_column = */ true);
         auto src_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 1, /* return_single_element_if_const_column = */ true);
-        chassert((dest_groups.size() == input_rows_count) || (src_groups.size() == input_rows_count));
+        chassert((dest_groups.size() == input_rows_count) || (dest_groups.size() == 1));
+        chassert((src_groups.size() == input_rows_count) || (src_groups.size() == 1));
 
         auto tags_to_copy = TimeSeriesTagsFunctionHelpers::extractConstTagNamesFromArgument(name, arguments, 2);
 
         VectorWithMemoryTracking<Group> new_groups;
 
-        if (dest_groups.size() == 1)
+        if ((dest_groups.size() == 1) && (src_groups.size() == 1))
+            new_groups.assign(input_rows_count, tags_collector->copyTags(dest_groups[0], src_groups[0], tags_to_copy));
+        else if (dest_groups.size() == 1)
             new_groups = tags_collector->copyTags(dest_groups[0], src_groups, tags_to_copy);
         else if (src_groups.size() == 1)
             new_groups = tags_collector->copyTags(dest_groups, src_groups[0], tags_to_copy);
