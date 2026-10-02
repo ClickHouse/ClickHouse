@@ -140,3 +140,30 @@ SELECT count() FROM (SELECT * FROM t_pk_tuple_nan_inside WHERE t >= (2, 0.));
 SELECT sum(x) FROM t_pk_tuple_nan_inside WHERE t >= (2, 0.);
 
 DROP TABLE t_pk_tuple_nan_inside;
+
+SELECT 'a range bounded above by an ordinary value excludes a nested NULL or NaN on both sides';
+
+-- Key order puts `(2, NULL)` and `(2, nan)` above `(2, 5)`, and the row-level comparison against `(2, 5)`
+-- is `NULL` or false, so such a range keeps its exactness and still agrees with the rows.
+
+CREATE TABLE t_pk_tuple_null_upper (t Tuple(Int32, Nullable(Int32)), x Int32) ENGINE = MergeTree ORDER BY t
+SETTINGS index_granularity = 3, allow_nullable_key = 1;
+
+INSERT INTO t_pk_tuple_null_upper VALUES ((2,1),1),((2,NULL),1),((3,0),1),((4,NULL),1),((4,4),1),((5,1),1);
+
+SELECT count(), sum(x) FROM t_pk_tuple_null_upper WHERE t <= (2, 5);
+SELECT count(), sum(x) FROM t_pk_tuple_null_upper WHERE t <= (4, 5);
+SELECT count(), sum(x) FROM t_pk_tuple_null_upper WHERE t != (2, 1);
+
+DROP TABLE t_pk_tuple_null_upper;
+
+CREATE TABLE t_pk_tuple_nan_upper (t Tuple(Int32, Float64), x Int32) ENGINE = MergeTree ORDER BY t
+SETTINGS index_granularity = 3;
+
+INSERT INTO t_pk_tuple_nan_upper VALUES ((2,1.),1),((2,nan),1),((3,0.),1),((4,nan),1),((4,4.),1),((5,1.),1);
+
+SELECT count(), sum(x) FROM t_pk_tuple_nan_upper WHERE t <= (2, 5.);
+SELECT count(), sum(x) FROM t_pk_tuple_nan_upper WHERE t <= (4, 5.);
+SELECT count(), sum(x) FROM t_pk_tuple_nan_upper WHERE t != (2, 1.);
+
+DROP TABLE t_pk_tuple_nan_upper;

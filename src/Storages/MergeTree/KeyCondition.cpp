@@ -6603,17 +6603,30 @@ bool keyTypeMayHoldNestedNullOrNaN(const DataTypePtr & key_type)
     return result;
 }
 
-/// Whether the analysed range of a key column may hold a NULL value. A NULL key value is analysed as
-/// the `+inf` stand-in of the `NULLS LAST` order, so every range that reaches `+inf` may hold one. A
-/// `NULL` or a `NaN` nested in a composite key value may sit anywhere inside the range.
-bool rangeOfKeyColumnMayHoldNull(const Range & key_range, const DataTypes & key_types, size_t key_position)
+/// Whether a range atom can be wrong about a key value that carries a nested `NULL` or `NaN`. Key order
+/// puts such a value above every value that shares its prefix, and a row whose first differing position
+/// holds one compares greater than the constant at row level too, or is `NULL`, which `WHERE` rejects
+/// as well. So a range bounded above by an ordinary value excludes it on both sides, and only a range
+/// that reaches `+inf` can claim it as matching. The other atoms - a negated range, a set, a polygon -
+/// may claim it either way.
+bool atomMayClaimNestedNullOrNaN(const KeyCondition::RPNElement & element)
+{
+    return element.function != KeyCondition::RPNElement::FUNCTION_IN_RANGE || element.range.right.isPositiveInfinity();
+}
+
+/// Whether the analysed range of a key column, read by `element`, may hold a NULL value. A NULL key
+/// value is analysed as the `+inf` stand-in of the `NULLS LAST` order, so every range that reaches
+/// `+inf` may hold one. A `NULL` or a `NaN` nested in a composite key value may sit anywhere inside the
+/// range, see `atomMayClaimNestedNullOrNaN` for which atoms that matters for.
+bool rangeOfKeyColumnMayHoldNull(
+    const KeyCondition::RPNElement & element, const Range & key_range, const DataTypes & key_types, size_t key_position)
 {
     if (key_position >= key_types.size() || !key_types[key_position])
         return false;
 
     const auto & key_type = key_types[key_position];
     return (key_range.right.isPositiveInfinity() && isNullableOrLowCardinalityNullable(key_type))
-        || keyTypeMayHoldNestedNullOrNaN(key_type);
+        || (atomMayClaimNestedNullOrNaN(element) && keyTypeMayHoldNestedNullOrNaN(key_type));
 }
 
 /// Whether the atom answers NULL - and hence "not true" to `WHERE` - for a NULL argument, instead of
@@ -6661,7 +6674,7 @@ bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, co
             continue;
 
         for (size_t key_column : element.key_columns)
-            if (key_column < hyperrectangle.size() && rangeOfKeyColumnMayHoldNull(hyperrectangle[key_column], key_types, key_column))
+            if (key_column < hyperrectangle.size() && rangeOfKeyColumnMayHoldNull(element, hyperrectangle[key_column], key_types, key_column))
                 return true;
     }
 
@@ -6685,7 +6698,7 @@ bool KeyCondition::mayReadNullKeyValue(
 
             const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[key_column]);
             if (sparse_pos < sparse_hyperrectangle.size()
-                && rangeOfKeyColumnMayHoldNull(sparse_hyperrectangle[sparse_pos], sparse_key_types, sparse_pos))
+                && rangeOfKeyColumnMayHoldNull(element, sparse_hyperrectangle[sparse_pos], sparse_key_types, sparse_pos))
                 return true;
         }
     }

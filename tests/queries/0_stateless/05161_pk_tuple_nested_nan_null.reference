@@ -43,3 +43,10 @@ a NULL or a NaN nested inside a granule whose bounds are ordinary
 2
 2
 2
+a range bounded above by an ordinary value excludes a nested NULL or NaN on both sides
+1	1
+4	4
+4	4
+1	1
+4	4
+5	5
