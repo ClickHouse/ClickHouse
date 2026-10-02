@@ -685,7 +685,7 @@ public:
 
     void clear()
     {
-        m1.clearHasZero();
+        m0.clearHasZero();
         m1.clear();
         m2.clear();
         m3.clear();
@@ -694,7 +694,7 @@ public:
 
     void clearAndShrink()
     {
-        m1.clearHasZero();
+        m0.clearHasZero();
         m1.clearAndShrink();
         m2.clearAndShrink();
         m3.clearAndShrink();
