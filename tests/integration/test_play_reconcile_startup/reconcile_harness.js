@@ -491,36 +491,48 @@ function extractTopLevelFunction(js, name) {
 function checkAuthHeaderTransport(js) {
     const canSendRawSource = extractTopLevelFunction(js, 'canSendRawAuthHeader');
     const getAuthHeadersSource = extractTopLevelFunction(js, 'getAuthHeaders');
+    const location = {
+        protocol: 'https:',
+        origin: 'https://play.example',
+        href: 'https://play.example/play',
+    };
     const getAuthHeaders = vm.runInNewContext(
         `${canSendRawSource}\n${getAuthHeadersSource}\ngetAuthHeaders`,
-        { Headers },
+        { Headers, URL, location },
     );
     const cases = [
-        ['named-user', 'alice', 'p&?#%', {
+        ['named-user', 'alice', 'p&?#%', 'https://play.example', {
             Authorization: 'never',
             'X-ClickHouse-User': 'alice',
             'X-ClickHouse-Key': 'p&?#%',
         }],
-        ['utf8-and-spaces', 'play:юзер', '  päss 密码  ', {
+        ['utf8-and-spaces', 'play:юзер', '  päss 密码  ', 'https://play.example', {
             Authorization: 'ClickHouse-Play',
             'X-ClickHouse-User': 'play%3A%D1%8E%D0%B7%D0%B5%D1%80',
             'X-ClickHouse-Key': '%20%20p%C3%A4ss%20%E5%AF%86%E7%A0%81%20%20',
         }],
-        ['ascii-edge-spaces', 'alice', ' secret ', {
+        ['ascii-edge-spaces', 'alice', ' secret ', 'https://play.example', {
             Authorization: 'ClickHouse-Play',
             'X-ClickHouse-User': 'alice',
             'X-ClickHouse-Key': '%20secret%20',
         }],
-        ['empty-password', 'alice', '', { Authorization: 'never', 'X-ClickHouse-User': 'alice' }],
-        ['default-user', '', 'secret', {
+        ['empty-password', 'alice', '', 'https://play.example', {
+            Authorization: 'never',
+            'X-ClickHouse-User': 'alice',
+        }],
+        ['default-user-same-origin', '', 'secret', 'https://play.example', {
+            Authorization: 'never',
+            'X-ClickHouse-Key': 'secret',
+        }],
+        ['default-user-remote-legacy', '', 'secret', 'https://old.example', {
             Authorization: 'never',
             'X-ClickHouse-User': 'default',
             'X-ClickHouse-Key': 'secret',
         }],
-        ['default-credentials', '', '', { Authorization: 'never' }],
+        ['default-credentials', '', '', 'https://play.example', { Authorization: 'never' }],
     ];
-    for (const [name, user, password, expected] of cases) {
-        const actual = getAuthHeaders(user, password);
+    for (const [name, user, password, server_address, expected] of cases) {
+        const actual = getAuthHeaders(user, password, server_address);
         check('auth-header-cases', `${name} uses the expected headers`,
             JSON.stringify(actual) === JSON.stringify(expected), actual);
 
@@ -529,7 +541,8 @@ function checkAuthHeaderTransport(js) {
             Object.entries(actual).every(([header, value]) => browserHeaders.get(header) === value), actual);
 
         const encoded = actual.Authorization === 'ClickHouse-Play';
-        const expected_user = user || (password && !encoded ? 'default' : '');
+        const remote = new URL(server_address, location.href).origin !== location.origin;
+        const expected_user = user || (password && !encoded && remote ? 'default' : '');
         check('auth-header-cases', `${name} round-trips the transmitted credentials`,
             (!actual['X-ClickHouse-User']
                 || (encoded ? decodeURIComponent(actual['X-ClickHouse-User']) : actual['X-ClickHouse-User']) === expected_user)
@@ -539,10 +552,10 @@ function checkAuthHeaderTransport(js) {
     }
 
     const requestFunctions = [
-        ['auxiliaryQuery', 'headers: getAuthHeaders(user, password)'],
-        ['getServerStatus', 'headers: getAuthHeaders(user, password)'],
-        ['postImpl', 'headers: getAuthHeaders(user, password)'],
-        ['loadCompletions', 'headers: getAuthHeaders(user_elem.value, password_elem.value)'],
+        ['auxiliaryQuery', 'headers: getAuthHeaders(user, password, server_address)'],
+        ['getServerStatus', 'headers: getAuthHeaders(user, password, server_address)'],
+        ['postImpl', 'headers: getAuthHeaders(user, password, server_address)'],
+        ['loadCompletions', 'headers: getAuthHeaders(user_elem.value, password_elem.value, url_elem.value)'],
     ];
     for (const [name, headerCall] of requestFunctions) {
         const source = extractTopLevelFunction(js, name);
