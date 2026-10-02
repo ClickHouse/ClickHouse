@@ -88,7 +88,6 @@ FileSegment::FileSegment(
 #ifdef DEBUG_OR_SANITIZER_BUILD
     , log(getLogger(fmt::format("FileSegment({}) : {}", key_.toString(), range().toString())))
 #endif
-    , efficiency_granule_size(std::max<size_t>(1, (size_ + EFFICIENCY_GRANULES - 1) / EFFICIENCY_GRANULES))
 {
     /// The size is encoded into the file name only for fully downloaded regular segments
     /// (see `renameToIncludeSizeInNameUnlocked`), so on creation it can be set only together
@@ -1516,6 +1515,9 @@ void FileSegment::markRead(size_t offset, size_t size)
             return;
         if (efficiency_window_id.load() != window)
         {
+            const size_t range_size = range().size();
+            efficiency_granule_size.store(std::max<size_t>(1, (range_size + EFFICIENCY_GRANULES - 1) / EFFICIENCY_GRANULES));
+            efficiency_window_range_size.store(range_size);
             active_granules[0].store(0);
             active_granules[1].store(0);
             efficiency_window_id.store(window, std::memory_order_release);
@@ -1524,16 +1526,17 @@ void FileSegment::markRead(size_t offset, size_t size)
     }
 
     /// `range().left` never changes; the right end is cut at the current range.
+    const size_t granule_size = efficiency_granule_size.load();
     const size_t left = range().left;
     const size_t end = std::min(offset + size, left + range().size());
     if (end <= std::max(offset, left))
         return;
-    const size_t first = (std::max(offset, left) - left) / efficiency_granule_size;
-    const size_t last = std::min((end - 1 - left) / efficiency_granule_size, EFFICIENCY_GRANULES - 1);
+    const size_t first = (std::max(offset, left) - left) / granule_size;
+    const size_t last = std::min((end - 1 - left) / granule_size, EFFICIENCY_GRANULES - 1);
     if (first > last)
         return;
 
-    size_t new_granules = 0;
+    UInt64 new_bits[2] = {0, 0};
     for (size_t word = 0; word < 2; ++word)
     {
         const size_t word_first = word * 64;
@@ -1545,9 +1548,26 @@ void FileSegment::markRead(size_t offset, size_t size)
         const UInt64 high_mask = hi == 63 ? ~UInt64(0) : (UInt64(1) << (hi + 1)) - 1;
         const UInt64 mask = high_mask & ~((UInt64(1) << lo) - 1);
         const UInt64 old = active_granules[word].fetch_or(mask);
-        new_granules += std::popcount(mask & ~old);
+        new_bits[word] = mask & ~old;
     }
-    efficiency.addActiveBytes(window, static_cast<Int64>(new_granules * efficiency_granule_size));
+    efficiency.addActiveBytes(window, static_cast<Int64>(granulesToBytes(new_bits[0], new_bits[1])));
+}
+
+size_t FileSegment::granulesToBytes(UInt64 low, UInt64 high) const
+{
+    const size_t granule_size = efficiency_granule_size.load();
+    const size_t range_size = efficiency_window_range_size.load();
+    size_t bytes = (std::popcount(low) + std::popcount(high)) * granule_size;
+
+    /// Cut the last granule at the segment end.
+    if (range_size)
+    {
+        const size_t last_granule = std::min((range_size - 1) / granule_size, EFFICIENCY_GRANULES - 1);
+        const UInt64 word = last_granule < 64 ? low : high;
+        if (word & (UInt64(1) << (last_granule % 64)))
+            bytes -= std::min(bytes, (last_granule + 1) * granule_size - range_size);
+    }
+    return bytes;
 }
 
 void FileSegment::addReservedSize(Int64 delta)
@@ -1573,8 +1593,7 @@ void FileSegment::onRemovedFromCache(const FileSegmentGuard::Lock &)
 
 size_t FileSegment::getActiveBytes() const
 {
-    const size_t granules = std::popcount(active_granules[0].load()) + std::popcount(active_granules[1].load());
-    return granules * efficiency_granule_size;
+    return granulesToBytes(active_granules[0].load(), active_granules[1].load());
 }
 
 std::optional<UInt64> FileSegment::getWindowsSinceTouch() const

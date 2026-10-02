@@ -273,8 +273,11 @@ private:
     /// Called when the file segment leaves the cache.
     void onRemovedFromCache(const FileSegmentGuard::Lock &);
 
-    /// Bytes of the set granules in `active_granules`, in whole granules.
+    /// Bytes of the set granules in `active_granules`; the last granule is cut at the segment end.
     size_t getActiveBytes() const;
+    /// Bytes of the granules in the bit masks `low` (granules 0-63) and `high` (64-127), with the
+    /// granule size and range size of the current window.
+    size_t granulesToBytes(UInt64 low, UInt64 high) const;
     /// Windows since the latest window with a read; `nullopt` if never read or not tracked.
     std::optional<UInt64> getWindowsSinceTouch() const;
 
@@ -368,8 +371,11 @@ private:
     static constexpr size_t EFFICIENCY_GRANULES = 128;
     std::atomic<UInt64> efficiency_window_id = FileCacheEfficiency::NEVER_READ;
     std::atomic<UInt64> active_granules[2] = {};
-    /// Fixed at creation, so that a shrink does not move the bits.
-    const size_t efficiency_granule_size;
+    /// Set at the first read of each window from the range size, together with clearing
+    /// `active_granules`, so all bits of one window use one granule size.
+    std::atomic<UInt64> efficiency_granule_size = 1;
+    /// The range size at that moment. The last granule is cut at it.
+    std::atomic<UInt64> efficiency_window_range_size = 0;
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;

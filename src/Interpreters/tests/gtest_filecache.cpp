@@ -4421,3 +4421,51 @@ TEST_F(FileCacheTest, EfficiencyDisabled)
     const auto snapshot = cache.getEfficiency().getSnapshot();
     EXPECT_EQ(snapshot.active_bytes + snapshot.passive_bytes + snapshot.idle_bytes, 0);
 }
+
+TEST_F(FileCacheTest, EfficiencyGranuleFollowsShrink)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_granule_test"));
+    /// 1024-byte file segments: the granule of a full segment is 8 bytes. Alignment 1 makes the
+    /// shrink at completion exact, as the forced shrink of write-through is.
+    auto settings = efficiencyCacheSettings(10);
+    settings[FileCacheSetting::max_size] = 8192;
+    settings[FileCacheSetting::max_file_segment_size] = 1024;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::reserve_granularity] = 0;
+    auto cache = DB::FileCache("efficiency_granule", settings);
+    cache.initialize();
+    const auto & user = FileCache::getCommonOrigin();
+
+    /// A file segment that shrinks to 10 bytes before it is read: the read of all 10 bytes counts
+    /// 10 bytes, not two 8-byte granules of the initial 1024-byte range.
+    auto shrunk_key = FileCacheKey::fromPath("efficiency_granule_shrunk");
+    {
+        auto holder = cache.getOrSet(shrunk_key, 0, 1024, /*file_size=*/4096, {}, 0, user);
+        auto segment = get(holder, 0);
+        ASSERT_EQ(segment->range().size(), 1024);
+        ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+        std::string failure_reason;
+        ASSERT_TRUE(segment->reserve(10, 1000, failure_reason));
+        auto key_str = shrunk_key.toString();
+        fs::create_directories(fs::path(cache_base_path) / key_str.substr(0, 3) / key_str);
+        std::string data(10, '0');
+        segment->write(data.data(), 10, segment->getCurrentWriteOffset());
+    }
+    /// The holder completed the file segment and shrank it to the 10 downloaded bytes.
+    auto holder_shrunk = cache.getOrSet(shrunk_key, 0, 10, /*file_size=*/4096, {}, 0, user);
+    auto shrunk = get(holder_shrunk, 0);
+    ASSERT_EQ(shrunk->range().size(), 10);
+    ASSERT_EQ(shrunk->state(), State::DOWNLOADED);
+    shrunk->markRead(0, 10);
+    EXPECT_EQ(FileSegment::getInfo(shrunk).active_bytes, 10);
+
+    /// A size that is not a multiple of the granule: the last granule is cut at the segment end.
+    auto odd_key = FileCacheKey::fromPath("efficiency_granule_odd");
+    auto holder_odd = cache.getOrSet(odd_key, 0, 1001, /*file_size=*/1001, {}, 0, user);
+    auto odd = get(holder_odd, 0);
+    ASSERT_EQ(odd->range().size(), 1001);
+    download(odd);
+    odd->markRead(0, 1001);
+    EXPECT_EQ(FileSegment::getInfo(odd).active_bytes, 1001);
+}
