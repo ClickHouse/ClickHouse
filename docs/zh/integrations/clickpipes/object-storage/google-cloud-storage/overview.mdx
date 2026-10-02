@@ -44,23 +44,23 @@ GCS ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以�
 
 GCS ClickPipe 假定文件会按词典序添加到存储桶中，并依赖这种隐含顺序依次摄取文件。这意味着，任何新文件的名称**都必须**在词典序上大于最后一个已摄取的文件。例如，名为 `file1`、`file2` 和 `file3` 的文件会依次被摄取；但如果向存储桶中新增一个 `file 0`，它将被**忽略**，因为该文件名在词典序上并不大于最后一个已摄取的文件。
 
-在这种模式下，GCS ClickPipe 会先对指定路径中的**所有文件**执行初始加载，然后按可配置的时间间隔轮询新文件 (默认每 30 秒一次) 。若要在某个特定文件之后开始持续摄取，请配置 **Start after**。ClickPipes 将跳过在词典序上小于或等于配置值的文件，并从该点继续摄取较新的文件。
+在这种模式下，GCS ClickPipe 会先对指定路径中的**所有文件**执行初始加载，然后按可配置的时间间隔轮询新文件 (默认每 30 秒一次) 。**无法**从某个特定文件或某个时间点开始摄取——ClickPipes 始终都会加载指定路径中的所有文件。
 
 <div id="continuous-ingestion-any-order">
   #### 任意顺序
 </div>
 
 <Tip>
-  请参阅[为持续摄取配置 unordered 模式](/zh/integrations/clickpipes/object-storage/google-cloud-storage/unordered-mode)了解分步说明。
+  请参阅[为持续摄取配置无序模式](/zh/integrations/clickpipes/object-storage/google-cloud-storage/unordered-mode)了解分步说明。
 </Tip>
 
 可以通过设置一个接收存储桶通知的 [Google Cloud Pub/Sub](https://docs.cloud.google.com/storage/docs/pubsub-notifications) 订阅，将 GCS ClickPipe 配置为摄取不具有隐式顺序的文件。这样一来，ClickPipes 就可以监听对象创建事件，并摄取任何新文件，而无需依赖文件命名约定。
 
 <Note>
-  公共存储桶**不**支持 unordered 模式。该模式要求使用**服务账号**身份验证，并且需要一个连接到该存储桶的 [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) 订阅。
+  公共存储桶**不**支持无序模式。该模式要求使用**服务账号**身份验证，并且需要一个连接到该存储桶的 [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) 订阅。
 </Note>
 
-在此模式下，GCS ClickPipe 会先对所选路径中的**所有文件**执行初始加载，然后通过 Pub/Sub 订阅监听与指定路径匹配的 `OBJECT_FINALIZE` 通知。对于先前已处理过的文件、不匹配该路径的文件，或其他类型事件的任何消息，都会被**忽略**。若要仅摄取通过订阅传递的文件，请启用**跳过初始加载**。启用后，ClickPipes 会跳过对所选路径中现有文件的初始扫描，只处理通过 Pub/Sub 订阅传递的文件。
+在此模式下，GCS ClickPipe 会先对所选路径中的**所有文件**执行初始加载，然后通过 Pub/Sub 订阅监听与指定路径匹配的 `OBJECT_FINALIZE` 通知。对于先前已处理过的文件、不匹配该路径的文件，或其他类型事件的任何消息，都会被**忽略**。**无法**从某个特定文件或时间点开始摄取——ClickPipes 始终会加载所选路径中的所有文件。
 
 <div id="file-pattern-matching">
   ### 文件模式匹配
@@ -155,7 +155,7 @@ ClickPipes 使用的服务账号必须在存储桶级别具备以下权限：
   #### HMAC 凭据
 </div>
 
-要使用 [HMAC 密钥](https://docs.cloud.google.com/storage/docs/authentication/hmackeys)进行身份验证，请在设置 ClickPipe 连接时，在 **身份验证方法** 中选择 `Credentials`。然后，分别在 `Access key` 和 `Secret key` 中填写访问密钥 (例如 `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) 和秘密密钥 (例如 `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`)。
+要使用 [HMAC 密钥](https://docs.cloud.google.com/storage/docs/authentication/hmackeys)进行身份验证，请在设置 ClickPipe 连接时，在 **身份验证方法** 中选择 `Credentials`。然后，分别在 `Access key` 和 `Secret key` 中填写访问密钥 (例如 `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) 和秘密密钥 (例如 `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) 。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp" alt="GCS ClickPipes 的 HMAC 凭据" size="lg" border />
 
@@ -167,7 +167,7 @@ ClickPipes 使用的服务账号必须在存储桶级别具备以下权限：
 
 GCS ClickPipes 分别通过两条不同的网络路径执行元数据发现和数据摄取：对应为 ClickPipes 服务和 ClickHouse Cloud 服务。如果你想额外配置一层网络安全措施 (例如出于合规原因) ，则**必须为这两条路径都配置网络访问**。
 
-* 对于**基于 IP 的访问控制**，你的 GCS 存储桶的 [IP 过滤规则](https://docs.cloud.google.com/storage/docs/ip-filtering-overview) 必须允许 [此处](/zh/integrations/clickpipes/networking/static-ips) 列出的 ClickPipes 服务区域静态 IP，以及 ClickHouse Cloud 服务的[静态 IP](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)。要获取你的 ClickHouse Cloud 区域的静态 IP，请打开终端并运行：
+* 对于**基于 IP 的访问控制**，你的 GCS 存储桶的 [IP 过滤规则](https://docs.cloud.google.com/storage/docs/ip-filtering-overview) 必须允许 [此处](/zh/integrations/clickpipes/home#list-of-static-ips) 列出的 ClickPipes 服务区域静态 IP，以及 ClickHouse Cloud 服务的[静态 IP](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)。要获取你的 ClickHouse Cloud 区域的静态 IP，请打开终端并运行：
 
   ```bash
   # 将 <your-region> 替换为你的 ClickHouse Cloud 区域
@@ -180,20 +180,18 @@ GCS ClickPipes 分别通过两条不同的网络路径执行元数据发现和�
 
 ClickPipes 提供了合理的默认设置，能够满足大多数使用场景的需求。如果您的场景需要进一步微调，可以调整以下设置：
 
-| 设置                                   | 默认值     | 说明                                                                                                                         |
-| ------------------------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB    | 单个插入批次中可处理的字节数。                                                                                                            |
-| `Max file count`                     | 100     | 单个插入批次中可处理的最大文件数。                                                                                                          |
-| `Max threads`                        | auto(3) | 用于文件处理的[最大并发线程数](/zh/reference/settings/session-settings/max-threads#max_threads)。                                            |
-| `Max insert threads`                 | 1       | 用于文件处理的[最大并发插入线程数](/zh/reference/settings/session-settings/max-insert#max_insert_threads)。                                    |
-| `Min insert block size bytes`        | 1GB     | 可插入表中的[块最小字节数](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)。                               |
-| `Max download threads`               | 4       | [最大并发下载线程数](/zh/reference/settings/session-settings/max-download#max_download_threads)。                                       |
-| `Object storage polling interval`    | 30s     | 配置将数据插入 ClickHouse 集群前的最长等待时间。                                                                                             |
-| `Start after`                        | None    | 对于 ordered 持续摄取，跳过按字典序小于或等于所配置文件名或路径的文件。                                                                                   |
-| `Skip initial load`                  | false   | 对于 unordered 模式 持续摄取，跳过对现有文件的初始扫描，仅处理来自所配置 Pub/Sub 订阅的对象通知。                                                                   |
-| `Parallel distributed insert select` | 2       | [Parallel distributed insert select 设置](/zh/reference/settings/session-settings/parallel#parallel_distributed_insert_select)。 |
-| `Parallel view processing`           | false   | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings/parallel#parallel_view_processing)方式推送到已附加视图。                           |
-| `Use cluster function`               | true    | 是否在多个节点间并行处理文件。                                                                                                            |
+| 设置                                   | 默认值     | 说明                                                                                                                |
+| ------------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB    | 单个插入批次中可处理的字节数。                                                                                                   |
+| `Max file count`                     | 100     | 单个插入批次中可处理的最大文件数。                                                                                                 |
+| `Max threads`                        | auto(3) | 用于文件处理的[最大并发线程数](/zh/reference/settings/session-settings#max_threads)。                                               |
+| `Max insert threads`                 | 1       | 用于文件处理的[最大并发插入线程数](/zh/reference/settings/session-settings#max_insert_threads)。                                      |
+| `Min insert block size bytes`        | 1GB     | 可插入表中的[块最小字节数](/zh/reference/settings/session-settings#min_insert_block_size_bytes)。                                 |
+| `Max download threads`               | 4       | [最大并发下载线程数](/zh/reference/settings/session-settings#max_download_threads)。                                           |
+| `Object storage polling interval`    | 30s     | 配置将数据插入 ClickHouse 集群前的最长等待时间。                                                                                    |
+| `Parallel distributed insert select` | 2       | [Parallel distributed insert select 设置](/zh/reference/settings/session-settings#parallel_distributed_insert_select)。 |
+| `Parallel view processing`           | false   | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings#parallel_view_processing)方式推送到已附加视图。                           |
+| `Use cluster function`               | true    | 是否在多个节点间并行处理文件。                                                                                                   |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes 的高级设置" size="lg" border />
 

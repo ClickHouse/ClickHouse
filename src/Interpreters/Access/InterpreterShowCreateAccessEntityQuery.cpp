@@ -67,7 +67,7 @@ namespace
 
         for (const auto & authentication_method : user.authentication_methods)
         {
-            query->authentication_methods.push_back(authentication_method.toAST(attach_mode));
+            query->authentication_methods.push_back(authentication_method.toAST());
         }
 
         if (!user.settings.empty())
@@ -104,7 +104,7 @@ namespace
     ASTPtr getCreateQueryImpl(const Role & role, const AccessControl * access_control, bool attach_mode)
     {
         auto query = make_intrusive<ASTCreateRoleQuery>();
-        query->names = make_intrusive<ASTUserNamesWithHost>(role.getName());
+        query->names.emplace_back(role.getName());
         query->attach = attach_mode;
 
         if (!role.settings.empty())

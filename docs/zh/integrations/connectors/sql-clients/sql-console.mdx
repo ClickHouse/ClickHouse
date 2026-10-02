@@ -10,7 +10,7 @@ integration:
    - category: 'sql_client'
 ---
 
-import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 SQL 控制台是在 ClickHouse Cloud 中浏览和查询数据库最快、最简单的方式。您可以使用 SQL 控制台来：
@@ -60,7 +60,7 @@ Cell Inspector 工具可用于查看单个单元格中的大量数据。要打�
   ### 对表排序
 </div>
 
-要在 SQL 控制台中对表排序，请打开一个表，然后在工具栏中选择“Sort”按钮。点击该按钮会打开一个菜单，您可以在其中配置排序。您可以选择按哪一列排序，并设置排序顺序 (升序或降序) 。选择“应用”或按 Enter，即可对表进行排序。
+要在 SQL 控制台中对表排序，请打开一个表，然后在工具栏中选择“Sort”按钮。点击该按钮会打开一个菜单，您可以在其中配置排序。您可以选择按哪一列排序，并设置排序顺序 (升序或降序) 。选择“Apply”或按 Enter，即可对表进行排序。
 
 <Image img="/images/cloud/sqlconsole/sort-descending-on-column.webp" size="lg" border alt="显示按某一列降序排序配置的排序对话框" />
 
@@ -74,7 +74,7 @@ SQL 控制台还支持为同一个表添加多个排序条件。再次点击“S
 
 <Image img="/images/cloud/sqlconsole/filter-on-radio-column-equal-gsm.webp" size="lg" border alt="显示将 radio 列筛选为等于 GSM 的配置的筛选对话框" />
 
-设置好过滤器后，可以选择“应用”来筛选数据。你还可以像下图所示继续添加更多过滤器。
+设置好过滤器后，可以选择“Apply”来筛选数据。你还可以像下图所示继续添加更多过滤器。
 
 <Image img="/images/cloud/sqlconsole/add-more-filters.webp" size="lg" border alt="显示如何添加一个大于 2000 的范围附加过滤器的对话框" />
 
@@ -84,7 +84,7 @@ SQL 控制台还支持为同一个表添加多个排序条件。再次点击“S
   ### 同时进行过滤和排序
 </div>
 
-SQL 控制台支持同时对表进行过滤和排序。为此，请按照上述步骤添加所需的所有过滤器和排序条件，然后点击“应用”按钮。
+SQL 控制台支持同时对表进行过滤和排序。为此，请按照上述步骤添加所需的所有过滤器和排序条件，然后点击“Apply”按钮。
 
 <Image img="/images/cloud/sqlconsole/filtering-and-sorting-together.webp" size="lg" border alt="显示同时应用了过滤和排序的界面" />
 
@@ -314,7 +314,7 @@ SQL 控制台只需一键即可将您设置的排序和过滤条件直接转换�
   ### 在查询结果中搜索
 </div>
 
-执行查询后，你可以使用结果面板中的搜索框，快速搜索返回的结果集。此功能可用于预览额外添加 `WHERE` 子句后的结果，或仅用于检查结果集中是否包含特定数据。在搜索框中输入值后，结果面板会更新，并返回包含与该输入值匹配条目的记录。在本示例中，我们将在 `hackernews` 表中查找所有 `breakfast` 的出现位置，范围限定为包含 `ClickHouse` 的评论 (不区分大小写)：
+执行查询后，你可以使用结果面板中的搜索框，快速搜索返回的结果集。此功能可用于预览额外添加 `WHERE` 子句后的结果，或仅用于检查结果集中是否包含特定数据。在搜索框中输入值后，结果面板会更新，并返回包含与该输入值匹配条目的记录。在本示例中，我们将在 `hackernews` 表中查找所有 `breakfast` 的出现位置，范围限定为包含 `ClickHouse` 的评论 (不区分大小写) ：
 
 <Image img="/images/cloud/sqlconsole/search-hn.webp" size="lg" border alt="搜索 Hacker News 数据" />
 

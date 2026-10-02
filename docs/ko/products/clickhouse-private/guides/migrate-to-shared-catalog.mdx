@@ -1,0 +1,193 @@
+---
+noindex: true
+title: "Shared Catalog로 마이그레이션"
+description: "Shared Catalog는 ClickHouse Private 인스턴스에서 메타데이터를 관리하는 새로운 방식입니다."
+---
+
+Shared Catalog는 ClickHouse Private 인스턴스에서 메타데이터를 관리하는 새로운 방식입니다. [Replicated](https://clickhouse.com/docs/engines/database-engines/replicated) 엔진을 사용하는 데이터베이스는 모든 레플리카에 DDL SQL 문이 적용되도록 ClickHouse Keeper의 DDL 큐를 사용합니다. 반면 [Shared](https://clickhouse.com/docs/engines/database-engines/shared) 공유 데이터베이스 엔진은 모든 메타데이터를 Keeper 자체에 저장하므로 레플리카 간에 DDL SQL 문을 동기화할 필요가 없습니다.
+
+Shared Catalog는 다음과 같은 이점을 제공합니다:
+
+* 모든 레플리카에서 일관된 상태 유지
+* 컴퓨트 노드의 무상태성(무상태 Server 노드 지원)
+* 원자적 `CREATE TABLE ... AS SELECT`
+* `UNDROP` 지원
+* 데이터베이스 간 `RENAME`/`TABLE` 이동
+* 빠르고 안정적인 레플리카 부트스트래핑(wake, start 및 Provisioning 시간 단축)
+
+하지만 인스턴스를 처음 배포할 때 Shared Catalog로 설정하지 않았다면 마이그레이션이 필요합니다. 운영 환경의 인스턴스를 마이그레이션하기 전에 먼저 테스트 환경에서 마이그레이션을 검증할 것을 권장합니다.
+
+<div id="migration-requirements">
+  ## 마이그레이션 요구 사항
+</div>
+
+마이그레이션을 시작하기 전에 다음 필수 조건을 확인하십시오:
+
+<Steps>
+  <Step>
+    ### 1. 최소 2개의 서버 레플리카
+
+    Operator는 데이터베이스를 새 공유 데이터베이스 엔진으로 마이그레이션하기 위해 롤링 업그레이드를 수행합니다. `server.replicas` helm 값을 2 이상으로 설정하십시오.
+  </Step>
+
+  <Step>
+    ### 2. 모든 데이터베이스가 Replicated 엔진을 사용함
+
+    모든 데이터베이스(`system` 제외)는 Replicated 데이터베이스 엔진을 사용해야 합니다. 다음 쿼리로 확인하십시오:
+
+    ```sql
+    SELECT DISTINCT
+        name,
+        engine
+    FROM clusterAllReplicas('default', system.databases)
+    WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+      AND (engine != 'Replicated')
+    ```
+
+    쿼리 결과로 행이 반환되지 않아야 합니다.
+  </Step>
+
+  <Step>
+    ### 3. 모든 테이블이 비복제 테이블 엔진을 사용함
+
+    어떤 테이블도(`system` 제외) 복제된 테이블 엔진이나 레거시 테이블 엔진을 사용해서는 안 됩니다. 다음 쿼리로 확인하십시오:
+
+    ```sql
+    SELECT
+        name,
+        engine,
+        database
+    FROM system.tables
+    WHERE ((engine LIKE '%Replicated%') OR (engine IN ('Ordinary', 'Atomic')))
+      AND (database != 'system')
+    ```
+
+    쿼리 결과로 행이 반환되지 않아야 합니다.
+  </Step>
+
+  <Step>
+    ### 4. 분리된 테이블이 없어야 함
+
+    ```sql
+    SELECT * FROM system.detached_tables
+    ```
+
+    쿼리 결과로 행이 반환되지 않아야 합니다.
+
+    모든 요구 사항이 충족되면 마이그레이션을 시작할 수 있습니다. 충족되지 않은 요구 사항이 있으면 ClickHouse 지원팀에 문의하십시오.
+  </Step>
+</Steps>
+
+<div id="performing-the-migration">
+  ## 마이그레이션 수행
+</div>
+
+<Warning>
+  Hydra 인스턴스는 하위 인스턴스를 마이그레이션하기 전에 먼저 상위 인스턴스부터 마이그레이션하십시오. 상위 인스턴스 마이그레이션이 완료되면 각 하위 인스턴스에 대해 아래 단계를 반복하십시오.
+</Warning>
+
+<Steps>
+  <Step>
+    ### 1. Shared Catalog 구성 활성화
+
+    Helm values에서 `featureFlags.enableSharedCatalog`를 `true`로 설정하십시오. 이렇게 하면 구성이 활성화되지만 데이터베이스 마이그레이션이 시작되지는 않습니다. 이 플래그를 `true`로 설정한 채 기존 복제된 데이터베이스를 마이그레이션하지 않고 ClickHouse 클러스터를 배포하면 ClickHouse 클러스터가 시작되지 않습니다.
+  </Step>
+
+  <Step>
+    ### 2. 마이그레이션 마커 추가
+
+    Helm values에서 `featureFlags.migrateToSharedCatalog`를 `true`로 설정하십시오. 그러면 다음이 수행됩니다.
+
+    * ClickHouse에 `shared_database_catalog.migration_from_database_replicated` 설정을 추가하여, Shared Catalog 모드로 실행되는 동안 기존 `Replicated` 데이터베이스가 있을 것으로 예상하도록 합니다
+    * ClickHouseCluster Kubernetes 리소스에 `clickhouse.com/start-shared-catalog-migration: "true"` annotation을 추가하여, Operator에 이 클러스터를 마이그레이션하도록 알립니다
+
+    배포가 완료되면 Operator가 Server 노드의 롤링 업그레이드를 시작합니다. 이 과정에서 모든 데이터베이스의 유형도 `Shared`로 변경됩니다.
+  </Step>
+
+  <Step>
+    ### 3. 상태가 Ready가 될 때까지 기다리기
+
+    ```bash
+    kubectl get ClickHouseCluster <instance-name>
+    ```
+  </Step>
+
+  <Step>
+    ### 4. 마이그레이션 마커 제거
+
+    상태가 Ready가 되면 Helm values에서 `featureFlags.migrateToSharedCatalog`를 `false`로 설정하십시오. 이제 모든 데이터베이스가 `Replicated`가 아니라 `Shared` 유형으로 마이그레이션되었으므로, 마이그레이션 설정은 더 이상 필요하지 않습니다.
+  </Step>
+
+  <Step>
+    ### 5. 모든 데이터베이스가 마이그레이션되었는지 확인
+
+    system 데이터베이스를 제외한 모든 데이터베이스가 Shared 엔진을 사용하는지 확인하십시오.
+
+    ```sql
+    SELECT DISTINCT
+        name,
+        engine
+    FROM clusterAllReplicas('default', system.databases)
+    WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+      AND (engine != 'Shared')
+    ```
+
+    이 쿼리는 어떤 행도 반환하지 않아야 합니다. 이 시점에서 해당 인스턴스는 Shared Catalog로 마이그레이션된 상태입니다.
+  </Step>
+</Steps>
+
+<div id="rollback">
+  ## 롤백
+</div>
+
+Shared Catalog에서 문제가 발생한 경우 이전 상태로 롤백할 수 있습니다.
+
+<Steps>
+  <Step>
+    ### 1. 마이그레이션 마커 제거
+
+    helm values에서 `featureFlags.migrateToSharedCatalog`를 `false`로 설정합니다.
+  </Step>
+
+  <Step>
+    ### 2. Shared Catalog 설정 제거
+
+    helm values에서 `featureFlags.enableSharedCatalog`를 `false`로 설정합니다. 그러면 Operator가 변경 사항을 되돌리기 시작합니다.
+  </Step>
+
+  <Step>
+    ### 3. Keeper에서 Catalog 제거
+
+    Keeper로 포트 포워딩을 설정하고 keeper-client 세션을 시작합니다(`clickhouse keeper-client` 사용).
+
+    세션이 시작되면 다음 명령을 실행합니다.
+
+    ```text
+    ls '/clickhouse/catalog'
+    # 출력: migration_from_database_replicated_completed names references replicas uuids
+
+    rmr '/clickhouse/catalog'
+    # 경로 /clickhouse/catalog를 재귀적으로 삭제하려고 합니다. 계속하시겠습니까?
+    # [y/n] y
+    ```
+
+    이렇게 하면 Keeper에서 Shared Catalog 상태가 모두 정리됩니다.
+  </Step>
+
+  <Step>
+    ### 4. 롤백 확인
+
+    system 데이터베이스를 제외한 모든 데이터베이스가 다시 Replicated 엔진을 사용하는지 확인합니다.
+
+    ```sql
+    SELECT DISTINCT
+        name,
+        engine
+    FROM clusterAllReplicas('default', system.databases)
+    WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+      AND (engine != 'Replicated')
+    ```
+
+    이 쿼리는 행을 반환하지 않아야 합니다.
+  </Step>
+</Steps>
