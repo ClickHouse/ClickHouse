@@ -242,6 +242,7 @@ static bool isKnownWithoutDefaultUserDiskAccessStorage(const fs::path & director
             }
             catch (...)
             {
+                /// Ok: same as `DiskAccessStorage::readLists`, a list file that cannot be read means the lists are rebuilt from the `.sql` files.
                 lists_are_used = false;
             }
         }
