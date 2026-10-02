@@ -777,6 +777,10 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     child = r.readChildOfType<ASTExpressionList>("dictionary_attributes_list");
     if (child)
     {
+        /// `ParserDictionaryAttributeDeclarationList` reads at least one attribute.
+        if (child->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'dictionary_attributes_list' must be a non-empty list of dictionary attribute declarations during AST JSON deserialization");
         /// Dictionary configuration walks this list and downcasts each child to
         /// `ASTDictionaryAttributeDeclaration` (the only type `ParserDictionaryAttributeDeclarationList` produces).
         for (const auto & attribute : child->children)
@@ -789,6 +793,13 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     child = r.readChildOfType<ASTDictionary>("dictionary");
     if (child)
         set(dictionary, child);
+
+    /// `ParserCreateDictionaryQuery` reads the attributes together with the definition, except for `ATTACH`; no other query has them.
+    const bool expect_definition = is_dictionary && !attach;
+    if ((dictionary_attributes_list != nullptr) != expect_definition || (dictionary != nullptr) != expect_definition)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` must have both 'dictionary_attributes_list' and 'dictionary' in a `CREATE DICTIONARY` and neither "
+            "in other queries during AST JSON deserialization");
 
     child = r.readChildOfType<ASTRefreshStrategy>("refresh_strategy");
     if (child)

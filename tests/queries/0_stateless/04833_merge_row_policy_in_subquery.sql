@@ -29,7 +29,7 @@ SELECT * FROM merge(currentDatabase(), '^mrp_mt$') FINAL ORDER BY id;
 
 SELECT 'plain, prewhere disabled';
 SELECT * FROM merge(currentDatabase(), '^mrp_mt$') ORDER BY id
-SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+SETTINGS optimize_move_to_prewhere = 0;
 
 SELECT 'global in';
 -- Permissive policies are OR-ed, so 04833_mt is dropped for the next two arms: it accepts the
@@ -65,7 +65,7 @@ DROP ROW POLICY 04833_mt ON mrp_mt;
 SELECT 'key column, index for in disabled';
 CREATE ROW POLICY 04833_mt_k ON mrp_mt FOR SELECT USING id IN (SELECT 5) TO ALL;
 SELECT * FROM merge(currentDatabase(), '^mrp_mt$') ORDER BY id
-SETTINGS use_index_for_in_with_subqueries = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+SETTINGS use_index_for_in_with_subqueries = 0, optimize_move_to_prewhere = 0;
 DROP ROW POLICY 04833_mt_k ON mrp_mt;
 
 SELECT 'nullable, nullIn';
@@ -107,14 +107,14 @@ CREATE ROW POLICY 04833_ord ON mrp_ord FOR SELECT USING tag IN (SELECT v FROM mr
 -- optimize_read_in_order is randomized by the test runner, and on a 0 draw the order prefix is
 -- never requested, so both arms below are pinned to keep them meaningful in every run.
 SELECT * FROM merge(currentDatabase(), '^mrp_ord$') ORDER BY id
-SETTINGS read_in_order_two_level_merge_threshold = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
-    optimize_read_in_order = 1, query_plan_read_in_order = 1;
+SETTINGS read_in_order_two_level_merge_threshold = 0, optimize_move_to_prewhere = 0,
+    optimize_read_in_order = 1;
 SELECT count() > 0 FROM (EXPLAIN SELECT * FROM merge(currentDatabase(), '^mrp_ord$') ORDER BY id
-    SETTINGS read_in_order_two_level_merge_threshold = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
-        optimize_read_in_order = 1, query_plan_read_in_order = 1) WHERE explain ILIKE '%Read type: InOrder%';
+    SETTINGS read_in_order_two_level_merge_threshold = 0, optimize_move_to_prewhere = 0,
+        optimize_read_in_order = 1) WHERE explain ILIKE '%Read type: InOrder%';
 SELECT count() > 0 FROM (EXPLAIN SELECT * FROM merge(currentDatabase(), '^mrp_ord$') ORDER BY id
-    SETTINGS read_in_order_two_level_merge_threshold = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
-        optimize_read_in_order = 0, query_plan_read_in_order = 1) WHERE explain ILIKE '%Read type: InOrder%';
+    SETTINGS read_in_order_two_level_merge_threshold = 0, optimize_move_to_prewhere = 0,
+        optimize_read_in_order = 0) WHERE explain ILIKE '%Read type: InOrder%';
 DROP ROW POLICY 04833_ord ON mrp_ord;
 
 SELECT 'no subquery in policy';
