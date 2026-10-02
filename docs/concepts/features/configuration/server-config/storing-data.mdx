@@ -624,7 +624,7 @@ Example of disk configuration:
 It is possible to configure local cache over disks in storage configuration starting from version 22.3.
 For versions 22.3 - 22.7 cache is supported only for `s3` disk type. For versions >= 22.8 cache is supported for any disk type: S3, Azure, Local, Encrypted, etc.
 For versions >= 23.5 cache is supported only for remote disk types: S3, Azure, HDFS (unsupported).
-Cache uses the [`cache_policy`](/operations/system-tables/filesystem_cache_settings#cache_policy) setting (default `SLRU`) for eviction. The full list of cache-disk settings is in [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings).
+Cache uses the `cache_policy` setting (default `SLRU`) for eviction, listed on [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings). The full list of cache-disk settings is in [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings).
 
 Example of configuration for versions later or equal to 22.8:
 
