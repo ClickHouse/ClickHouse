@@ -54,6 +54,12 @@ FROM (EXPLAIN WHATIF SELECT * FROM v_whatif_forced WHERE a = 42 AND b = 42)
 WHERE match(line, '^(status|verdict|reason):');
 DROP VIEW v_whatif_forced;
 
+SELECT '-- force with make_distributed_plan, the plan stays local as for the real optimizer';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_whatif_force_nested WHERE a = 42 AND b = 42
+      SETTINGS force_optimize_projection = 1, make_distributed_plan = 1)
+WHERE match(line, '^(status|verdict):');
+
 SELECT '-- forced for the session';
 SET force_optimize_projection = 1;
 SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
