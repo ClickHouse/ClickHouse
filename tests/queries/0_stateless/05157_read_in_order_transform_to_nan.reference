@@ -55,3 +55,10 @@ nan
 0	100
 1	0
 prefix covers y	0
+finite ranges
+x / inf	Granules: 0/4
+x * 0.	Granules: 0/4
+0
+1
+1
+1
