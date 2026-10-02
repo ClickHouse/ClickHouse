@@ -236,9 +236,9 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["FilesystemCacheActiveBytes"] = { active_bytes,
             "Unique bytes of the `cache` virtual filesystem served from the cache in the last full efficiency window (`efficiency_window_sec`), rounded up to granules. Only bytes served from the cache count; a read that fills the cache does not. A hit counts the bytes that the cache fills into the read buffer (at least one buffer, `prefetch_buffer_size` by default), not the bytes that the query decompresses. Active, passive and idle bytes add up to the cache size at the window rotation, at most one asynchronous metrics update after the window ends." };
         new_values["FilesystemCachePassiveBytes"] = { passive_bytes,
-            "Bytes of the `cache` virtual filesystem not read in the last full efficiency window, in file segments that had at least one read in it. Cache efficiency is active / (active + passive)." };
+            "Bytes of the `cache` virtual filesystem not served from the cache in the last full efficiency window, in file segments with at least one cache hit in it. Cache efficiency is active / (active + passive)." };
         new_values["FilesystemCacheIdleBytes"] = { idle_bytes,
-            "Bytes of the `cache` virtual filesystem in file segments with no read in the last full efficiency window." };
+            "Bytes of the `cache` virtual filesystem in file segments with no cache hit in the last full efficiency window." };
     }
 
     /// Experimental ReaderExecutor read-path efficiency KPI: modeled cost (ms) per MiB of

@@ -9,9 +9,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Per-segment reuse coverage of the filesystem cache with `use_reader_executor = 1`: `active_bytes`, `passive_bytes`, `idle_bytes`
-# in `system.filesystem_cache`. Only bytes served from the cache count; filling the cache does not. A private cache keeps other cache users out of the result. Its
-# efficiency window (`efficiency_window_sec`, default 600 s) counts from cache creation, so the
-# whole test runs inside window 0.
+# in `system.filesystem_cache`. Only bytes served from the cache count; filling the cache does not.
+# A private cache keeps other cache users out of the result. Its efficiency window
+# (`efficiency_window_sec`, default 600 s) counts from cache creation, so the whole test runs
+# inside window 0.
 cache_name="cache_efficiency_executor_${CLICKHOUSE_DATABASE}"
 
 disk="disk(
@@ -27,9 +28,9 @@ disk="disk(
     disk = 'local_disk')"
 
 # Strictly synchronous reads that always go through the cache, also on a repeated read (no
-# uncompressed cache). A read counts at least one read
-# buffer, so pin a small one: with the cache, `filesystem_cache_prefer_bigger_buffer_size` would
-# raise it to `prefetch_buffer_size`, and a short forward seek would read through the gap.
+# uncompressed cache). A cache hit counts at least one read buffer, so pin a small one: with the
+# cache, `filesystem_cache_prefer_bigger_buffer_size` would raise it to `prefetch_buffer_size`,
+# and a short forward seek would read through the gap.
 read_settings=(
     --max_threads 1
     --enable_filesystem_cache 1
@@ -73,7 +74,7 @@ $CLICKHOUSE_CLIENT --query "SELECT DISTINCT queue_entry_type FROM system.filesys
 
 # 3. A second scan reads from the cache: it reuses almost every byte of the segments it reads, and
 # its hits move the data segments to protected. Marks come from the mark cache, so their small
-# segments get no read.
+# segments get no hit.
 $CLICKHOUSE_CLIENT "${read_settings[@]}" --query "SELECT sum(key), sum(value) FROM t_efficiency_executor FORMAT Null"
 $CLICKHOUSE_CLIENT --query "
     SELECT sum(active_bytes) > 0,

@@ -4339,14 +4339,14 @@ TEST_F(FileCacheTest, EfficiencyWindow)
         std::string failure_reason;
         ASSERT_TRUE(c->reserve(16, 1000, failure_reason));   /// reserves 32 (`reserve_granularity`)
         write16();
-        c->markRead(256, 16);                                /// S = 32, U = 16
+        c->markRead(256, 16);                                /// active 16, passive 16
         ASSERT_TRUE(c->reserve(16, 1000, failure_reason));   /// fits into the reserved 32
         write16();
-        ASSERT_TRUE(c->reserve(16, 1000, failure_reason));   /// reserves 32 more: S = 64
+        ASSERT_TRUE(c->reserve(16, 1000, failure_reason));   /// reserves 32 more: passive 48
         write16();
         ASSERT_EQ(c->getReservedSize(), 64);
     }
-    /// The shrink at completion returns 16 bytes: S = 48.
+    /// The shrink at completion returns 16 bytes: passive 32.
     expect(next_window(), 16, 32);
 
     /// Window 6: a read past the end of a 100-byte file segment stops at its end.

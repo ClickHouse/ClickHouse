@@ -67,7 +67,7 @@ TEST(FileCacheEfficiency, WindowsWithoutRotation)
     t.used_size = 100;
     t.efficiency.addPassiveBytes(t.efficiency.currentWindow(), 100);
 
-    /// Windows 1 and 2 pass with no call; the last full window (2) had no reads.
+    /// Windows 1 and 2 pass with no call; the last full window (2) had no hits.
     t.advance(30);
     expectSnapshot(t.efficiency.getSnapshot(), 0, 0, 100);
 }

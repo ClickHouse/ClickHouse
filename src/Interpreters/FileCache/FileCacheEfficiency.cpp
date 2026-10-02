@@ -45,7 +45,7 @@ void FileCacheEfficiency::rotateIfNeeded(Window now_window)
     }
     else
     {
-        /// No reads in the last full window.
+        /// No cache hits in the last full window.
         snapshot = Snapshot{.active_bytes = 0, .passive_bytes = 0, .idle_bytes = static_cast<UInt64>(used)};
     }
 

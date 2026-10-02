@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `FilesystemCacheEvictedNoHitBytes` counts bytes evicted from file segments that had no hit.
+# `FilesystemCacheEvictedNoHitBytes` counts bytes evicted from file segments that the cache never served.
 # The private LRU cache holds one table but not two. With SLRU new segments would compete only
 # inside the probationary queue, and the query would evict its own new segments.
 cache_name="cache_no_hit_${CLICKHOUSE_DATABASE}"
@@ -47,7 +47,7 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM DROP FILESYSTEM CACHE '$cache_name';
 "
 
-# Read A, then B: B evicts segments of A that had no hit.
+# Read A, then B: B evicts segments of A that the cache never served.
 $CLICKHOUSE_CLIENT "${read_settings[@]}" --query "SELECT sum(x) FROM t_no_hit_a FORMAT Null"
 $CLICKHOUSE_CLIENT "${read_settings[@]}" --query_id "${CLICKHOUSE_DATABASE}_b_first" --query "SELECT sum(x) FROM t_no_hit_b FORMAT Null"
 # Start again and read B twice, so its data segments get a hit and are the oldest entries. Then A evicts them.
