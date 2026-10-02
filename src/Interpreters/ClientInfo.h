@@ -54,7 +54,6 @@ public:
         PROMETHEUS = 8,
         BACKGROUND = 9, // e.g. queries from refreshable materialized views
         ARROW_FLIGHT = 10,
-        ICEBERG_REST_CATALOG = 11,
     };
 
     enum class HTTPMethod : uint8_t
@@ -206,12 +205,6 @@ public:
     /// on the next hop do not misfire during a rolling upgrade. No-op when the client version is
     /// already known or the connection version is not.
     void setClientVersionFromConnectionIfUnknown();
-
-    void setClientVersion(UInt64 client_version_major_, UInt64 client_version_minor_, UInt64 client_version_patch_, unsigned client_tcp_protocol_version_);
-
-    /// A query without a client-reported version (server-initiated, or from an interface such as HTTP
-    /// that does not send one) has this server as its initiator: fill in this server's version.
-    void setInitiatorVersionIfUnset();
 
     /// Initialize parameters related to HTTP request.
     void setFromHTTPRequest(const Poco::Net::HTTPRequest & request);

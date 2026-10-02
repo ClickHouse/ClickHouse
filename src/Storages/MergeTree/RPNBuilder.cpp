@@ -36,6 +36,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace ErrorCodes
@@ -46,7 +47,7 @@ namespace ErrorCodes
 namespace
 {
 
-void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, const ContextPtr & context, bool legacy = false);
+void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, const ContextPtr & context, bool use_analyzer, bool legacy = false);
 
 /// Produces the lambda's column name in the AST format `lambda(tuple(args), body)`.
 /// Used both for live FUNCTION nodes wrapping `ExecutableFunctionCapture`/`FunctionCapture` and for
@@ -57,6 +58,7 @@ void appendLambdaColumnName(
     ActionsDAG capture_dag,
     WriteBuffer & out,
     const ContextPtr & context,
+    bool use_analyzer,
     bool legacy)
 {
     writeString("lambda(tuple(", out);
@@ -74,7 +76,7 @@ void appendLambdaColumnName(
     /// The lambda body is a value expression whose reconstructed name must match the original
     /// expression exactly, so truthiness-only rewrites must not apply.
     ActionsDAGWithInversionPushDown inverted_capture_dag(capture_dag.getOutputs().at(0), context, /* boolean_context */ false);
-    appendColumnNameWithoutAlias(*inverted_capture_dag.predicate, out, context, legacy);
+    appendColumnNameWithoutAlias(*inverted_capture_dag.predicate, out, context, use_analyzer, legacy);
     writeChar(')', out);
 }
 
@@ -84,6 +86,7 @@ bool tryAppendConstantFunctionColumnName(
     const ActionsDAG::Node & node,
     WriteBuffer & out,
     const ContextPtr & context,
+    bool use_analyzer,
     bool legacy)
 {
     const auto * column_const = node.column.get();
@@ -126,11 +129,11 @@ bool tryAppendConstantFunctionColumnName(
         capture_dag = ActionsDAG::merge(std::move(captured_columns_dag), std::move(capture_dag));
     }
 
-    appendLambdaColumnName(capture, std::move(capture_dag), out, context, legacy);
+    appendLambdaColumnName(capture, std::move(capture_dag), out, context, use_analyzer, legacy);
     return true;
 }
 
-void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, const ContextPtr & context, bool legacy)
+void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, const ContextPtr & context, bool use_analyzer, bool legacy)
 {
     switch (node.type)
     {
@@ -142,18 +145,24 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
             /// A constant-folded lambda is a `ColumnConst` of a `ColumnFunction`. Recover the
             /// `lambda(tuple(args), body)` AST form so the name aligns with what the index sample
             /// block produced for the same expression (the index goes through the old analyzer).
-            if (tryAppendConstantFunctionColumnName(node, out, context, legacy))
+            if (tryAppendConstantFunctionColumnName(node, out, context, use_analyzer, legacy))
                 break;
 
-            writeString(node.result_name, out);
+            /// If it was created from ASTLiteral, then result_name can be an alias.
+            /// We need to convert value back to string here.
+            const auto * column_const = node.column.get();
+            if (column_const && !use_analyzer)
+                writeString(applyVisitor(FieldVisitorToString(), column_const->getField()), out);
+            else
+                writeString(node.result_name, out);
             break;
         }
         case ActionsDAG::ActionType::ALIAS:
-            appendColumnNameWithoutAlias(*node.children.front(), out, context, legacy);
+            appendColumnNameWithoutAlias(*node.children.front(), out, context, use_analyzer, legacy);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
             writeCString("arrayJoin(", out);
-            appendColumnNameWithoutAlias(*node.children.front(), out, context, legacy);
+            appendColumnNameWithoutAlias(*node.children.front(), out, context, use_analyzer, legacy);
             writeChar(')', out);
             break;
         case ActionsDAG::ActionType::FUNCTION:
@@ -172,7 +181,7 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
                     capture_dag = ActionsDAG::merge(std::move(captured_columns_dag), std::move(capture_dag));
                 }
 
-                appendLambdaColumnName(*capture, std::move(capture_dag), out, context, legacy);
+                appendLambdaColumnName(*capture, std::move(capture_dag), out, context, use_analyzer, legacy);
                 break;
             }
             else
@@ -193,7 +202,7 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
                     writeCString(", ", out);
                 first = false;
 
-                appendColumnNameWithoutAlias(*arg, out, context, legacy);
+                appendColumnNameWithoutAlias(*arg, out, context, use_analyzer, legacy);
             }
             writeChar(')', out);
             break;
@@ -204,10 +213,10 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
     }
 }
 
-String getColumnNameWithoutAlias(const ActionsDAG::Node & node, const ContextPtr & context, bool legacy = false)
+String getColumnNameWithoutAlias(const ActionsDAG::Node & node, const ContextPtr & context, bool use_analyzer, bool legacy = false)
 {
     WriteBufferFromOwnString out;
-    appendColumnNameWithoutAlias(node, out, context, legacy);
+    appendColumnNameWithoutAlias(node, out, context, use_analyzer, legacy);
 
     return std::move(out.str());
 }
@@ -239,14 +248,14 @@ const Settings & RPNBuilderTreeContext::getSettings() const
     return query_context->getSettingsRef();
 }
 
-RPNBuilderTreeNode::RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, RPNBuilderTreeContext & tree_context_)
+RPNBuilderTreeNode::RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, const RPNBuilderTreeContext & tree_context_)
     : dag_node(dag_node_)
     , tree_context(tree_context_)
 {
     chassert(dag_node);
 }
 
-RPNBuilderTreeNode::RPNBuilderTreeNode(const IAST * ast_node_, RPNBuilderTreeContext & tree_context_)
+RPNBuilderTreeNode::RPNBuilderTreeNode(const IAST * ast_node_, const RPNBuilderTreeContext & tree_context_)
     : ast_node(ast_node_)
     , tree_context(tree_context_)
 {
@@ -258,7 +267,7 @@ std::string RPNBuilderTreeNode::getColumnName() const
     if (ast_node)
         return ast_node->getColumnNameWithoutAlias();
 
-    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getQueryContext());
+    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getQueryContext(), getTreeContext().getSettings()[Setting::allow_experimental_analyzer]);
 }
 
 std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
@@ -270,7 +279,7 @@ std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
         return adjusted_ast->getColumnNameWithoutAlias();
     }
 
-    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getQueryContext(), true /*legacy*/);
+    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getQueryContext(), getTreeContext().getSettings()[Setting::allow_experimental_analyzer], true /*legacy*/);
 }
 
 bool RPNBuilderTreeNode::isFunction() const
@@ -362,6 +371,16 @@ ColumnWithTypeAndName RPNBuilderTreeNode::getConstantColumn() const
     return result;
 }
 
+/// A `Field` is the plain value of a constant: `LowCardinality` is only an encoding of the column,
+/// and a value that is not NULL has no `Nullable` type.
+static DataTypePtr getTypeOfConstantValue(const Field & value, const DataTypePtr & type)
+{
+    auto value_type = removeLowCardinality(type);
+    if (!value.isNull())
+        value_type = removeNullable(value_type);
+    return value_type;
+}
+
 bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & output_type) const
 {
     if (ast_node)
@@ -380,12 +399,7 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
 
             /// Simple literal
             output_value = literal->value;
-            output_type = block_with_constants.getByName(column_name).type;
-
-            /// If constant is not Null, we can assume it's type is not Nullable as well.
-            if (!output_value.isNull())
-                output_type = removeNullable(output_type);
-
+            output_type = getTypeOfConstantValue(output_value, block_with_constants.getByName(column_name).type);
             return true;
         }
         if (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column))
@@ -393,11 +407,7 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
             /// An expression which is dependent on constants only
             const auto & constant_column = block_with_constants.getByName(column_name);
             output_value = (*constant_column.column)[0];
-            output_type = constant_column.type;
-
-            if (!output_value.isNull())
-                output_type = removeNullable(output_type);
-
+            output_type = getTypeOfConstantValue(output_value, constant_column.type);
             return true;
         }
     }
@@ -408,11 +418,7 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
         if (node_without_alias->column)
         {
             output_value = node_without_alias->column->getField();
-            output_type = node_without_alias->result_type;
-
-            if (!output_value.isNull())
-                output_type = removeNullable(output_type);
-
+            output_type = getTypeOfConstantValue(output_value, node_without_alias->result_type);
             return true;
         }
     }

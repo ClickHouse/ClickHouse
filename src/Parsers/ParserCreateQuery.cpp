@@ -714,11 +714,10 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         }
 
-        /// SETTINGS without ENGINE is allowed for both TABLE and DATABASE, so that the engine can come
-        /// from `default_table_engine` for a table and from the only default database engine (`Atomic`)
-        /// for a database. Special handling is provided in `InterpreterSetQuery::applySettingsFromQuery`
-        /// to differentiate between engine and query settings.
-        if (s_settings.ignore(pos, expected))
+        /// For TABLE we only allow SETTINGS without ENGINE in order to support default_table_engine
+        /// Special handling is provided in InterpreterSetQuery::applySettingsFromQuery to differentiate between engine and query settings
+        /// For DATABASE we currently don't allow SETTINGS without ENGINE (it could be implemented in a similar fashion if necessary)
+        if ((engine_kind == TABLE_ENGINE || parsed_engine_keyword) && s_settings.ignore(pos, expected))
         {
             if (!settings_p.parse(pos, settings, expected))
                 return false;
@@ -2015,23 +2014,6 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 
 ### SETTINGS {#settings}
 
-The `SETTINGS` clause may be used without an `ENGINE` clause, in which case the default database engine
-(`Atomic`) is used. It may hold both settings of the database engine and ordinary query settings; each
-name is dispatched to whichever of the two it belongs to.
-
-#### disk {#disk}
-
-The disk used to store the table metadata files of the database. It can name a disk from the server
-configuration, or define one inline with the `disk` function, the same way a single table does:
-
-```sql
-CREATE DATABASE db_name SETTINGS disk = 'db_disk';
-CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
-```
-
-Applies to database engines that store table metadata on disk (`Atomic`, `Ordinary`). If unspecified,
-the disk defined in the `database_disk.disk` server setting is used.
-
 #### lazy_load_tables {#lazy-load-tables}
 
 When enabled, tables are not fully loaded during database startup. Instead, a lightweight proxy is created for each table and the real table engine is materialized on first access. This reduces startup time and memory usage for databases with many tables where only a subset is actively queried.
@@ -2993,7 +2975,7 @@ ENGINE = MergeTree ORDER BY x;
 
 <ExperimentalBadge/>
 
-The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it.
+The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type.
 
 <Note>
 Specialized codecs are currently chosen for integers up to 64 bits, enums, dates and times, `Decimal32`/`Decimal64`, `IPv4`, and `Float32`/`Float64`. Other columns select between the default codec and `NONE` for their values.
@@ -3015,7 +2997,7 @@ INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number
 OPTIMIZE TABLE adaptive FINAL;
 ```
 
-You can observe how it works with the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/mergeTreeCodecBlockCounts) table function. Here `time` grows steadily, so `T64`, which stores only the bits that vary within a block, followed by the default `LZ4` squeezing the regular pattern those bits form, beat the default alone on every block. `user_id` holds hashes that no codec can shrink, so its blocks were stored raw:
+You can observe how it works with the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/mergeTreeCodecBlockCounts) table function. Here `time` grows steadily, so `T64`, which stores only the bits that vary within a block, beat the default codec on every block. `user_id` holds hashes that no codec can shrink, so its blocks were stored raw:
 
 ```sql
 SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase(), 'adaptive');
@@ -3023,7 +3005,7 @@ SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase
 
 ```text
    ┌─column──┬─codec_block_counts─┐
-1. │ time    │ {'T64, LZ4':62}    │
+1. │ time    │ {'T64':62}         │
 2. │ user_id │ {'NONE':123}       │
    └─────────┴────────────────────┘
 ```
@@ -3339,8 +3321,6 @@ Typically the first refresh is started immediately after the materialized view i
 ### In Replicated DB {#in-replicated-db}
 
 If the refreshable materialized view is in a [Replicated database](/reference/engines/database-engines/replicated), the replicas coordinate with each other such that only one replica performs the refresh at each scheduled time. [ReplicatedMergeTree](/reference/engines/table-engines/mergetree-family/replication) table engine is required, so that all replicas see the data produced by the refresh.
-
-`RANDOMIZE FOR` is applied by each replica independently, so the replicas do not agree on the exact time of the next refresh and whichever one comes first performs it. This means a random replica refreshes each time, and that `next_refresh_time` in [`system.view_refreshes`](/reference/system-tables/view_refreshes) reports the time this replica would refresh at, not necessarily the time the refresh actually happens. Because the earliest of several random times is earlier than one random time on average, refreshes happen slightly earlier inside the `RANDOMIZE FOR` window the more replicas there are.
 
 In `APPEND` mode, coordination can be disabled using `SETTINGS all_replicas = 1`. This makes replicas do refreshes independently of each other. In this case ReplicatedMergeTree is not required.
 
@@ -3800,7 +3780,6 @@ If the table was detached permanently, it won't be reattached at the server star
 ### With Specified Path to Table Data {#with-specified-path-to-table-data}
 
 The query creates a new table with provided structure and attaches table data from the provided directory in `user_files`.
-The user needs the `READ ON FILE` and `WRITE ON FILE` privileges for this query: it reads the directory and moves it to the data path of the new table.
 
 **Syntax**
 

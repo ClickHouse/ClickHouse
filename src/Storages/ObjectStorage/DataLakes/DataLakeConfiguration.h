@@ -108,12 +108,6 @@ public:
 
     const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
 
-    void setExplicitMetadataFilePath(const String & path) override
-    {
-        if (auto metadata = tryGetMetadata())
-            metadata->setExplicitMetadataFilePath(path);
-    }
-
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
 
     StorageObjectStorageConfiguration::Path getRawPath() const override
@@ -210,21 +204,6 @@ public:
     {
         lazyInitializeIfNeeded(object_storage, context);
         getMetadata()->checkAlterIsPossible(commands);
-    }
-
-    void checkAlterPartitionIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const PartitionCommands & commands) override
-    {
-        lazyInitializeIfNeeded(object_storage, context);
-        getMetadata()->checkAlterPartitionIsPossible(commands);
-    }
-
-    Pipe alterPartition(
-        const PartitionCommands & commands,
-        ContextPtr context,
-        std::shared_ptr<DataLake::ICatalog> catalog,
-        StorageID storage_id) override
-    {
-        return getMetadata()->alterPartition(commands, context, std::move(catalog), std::move(storage_id));
     }
 
     void alter(
@@ -441,13 +420,8 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not allowed for usage in storage engines. The list of allowed disks is defined by server setting `allowed_disks_for_table_engines`", disk_name);
 
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
-        this->source_disk_name = disk_name;
         auto disk = context->getDisk(disk_name);
-        /// The table works through a private copy of the disk's object storage: the decorators
-        /// (e.g. `CachedObjectStorage`), connection settings and the disk's IO scheduling resources
-        /// stay in effect for the table, while per-table setting updates (see `update`) cannot
-        /// corrupt the disk's own storage.
-        ready_object_storage = disk->getObjectStorage()->clone();
+        ready_object_storage = disk->getObjectStorage();
     }
 
     bool supportsPrewhere() const override

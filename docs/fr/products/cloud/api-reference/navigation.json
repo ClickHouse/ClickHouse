@@ -1,9 +1,9 @@
 [
   {
-    "group": "Organisation",
+    "group": "Organization",
     "pages": [
       {
-        "group": "Organisation",
+        "group": "Organization",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -14,14 +14,12 @@
           "GET /v1/organizations/{organizationId}/activities/{activityId}",
           "products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
           "POST /v1/organizations/{organizationId}/byocInfrastructure",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
-          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get"
+          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}"
         ]
       },
       {
-        "group": "Facturation",
+        "group": "Billing",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
           "products/cloud/api-reference/billing/active-balances-get",
@@ -29,7 +27,7 @@
         ]
       },
       {
-        "group": "Gestion des utilisateurs",
+        "group": "User management",
         "pages": [
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
@@ -42,7 +40,7 @@
         ]
       },
       {
-        "group": "Gestion des rôles",
+        "group": "Role Management",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -121,9 +119,7 @@
         "group": "Snapshot",
         "pages": [
           "products/cloud/api-reference/snapshot/snapshot-get-list",
-          "products/cloud/api-reference/snapshot/snapshot-get",
-          "products/cloud/api-reference/snapshot/snapshot-configuration-get",
-          "products/cloud/api-reference/snapshot/snapshot-configuration-update"
+          "products/cloud/api-reference/snapshot/snapshot-get"
         ]
       },
       {
@@ -139,7 +135,7 @@
     ]
   },
   {
-    "group": "Clés API",
+    "group": "API keys",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",

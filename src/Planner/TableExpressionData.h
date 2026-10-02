@@ -93,6 +93,24 @@ public:
             selected_column_names.push_back(column_name);
     }
 
+    /** Mark a column that the user references explicitly, but that never becomes a selected column.
+      *
+      * This is needed for columns that the planner resolves away before the access check runs :
+      * an ALIAS column inlined into PREWHERE and a column used only as an indexHint argument.
+      */
+    void markColumnForAccessCheck(const std::string & column_name)
+    {
+        auto [_, inserted] = access_checked_column_names_set.emplace(column_name);
+        if (inserted)
+            access_checked_column_names.push_back(column_name);
+    }
+
+    /// Get columns that are not selected, but still require a SELECT privilege check
+    const Names & getAccessCheckedColumnsNames() const
+    {
+        return access_checked_column_names;
+    }
+
     /// Get columns that are requested from table expression, including ALIAS columns
     const Names & getSelectedColumnsNames() const
     {
@@ -202,19 +220,6 @@ public:
         return &it->second;
     }
 
-    /** Identifier of the column synthesized only to learn the row count, set when the query
-      * references no column of this table expression. It carries no value the query asked for.
-      */
-    const std::optional<ColumnIdentifier> & getRowCountOnlyColumnIdentifier() const
-    {
-        return row_count_only_column_identifier;
-    }
-
-    void setRowCountOnlyColumnIdentifier(const ColumnIdentifier & column_identifier)
-    {
-        row_count_only_column_identifier = column_identifier;
-    }
-
     /** Returns true if storage is remote, false otherwise.
       *
       * Valid only for table and table function node.
@@ -258,12 +263,6 @@ public:
     void setPrewhereFilterActions(ActionsDAG prewhere_filter_actions_value)
     {
         prewhere_filter_actions = std::move(prewhere_filter_actions_value);
-    }
-
-    /// Drop initiator-side `PREWHERE` actions after the predicate has been moved onto a subquery.
-    void resetPrewhereFilterActions()
-    {
-        prewhere_filter_actions.reset();
     }
 
     const std::optional<ActionsDAG> & getFilterActions() const
@@ -311,6 +310,11 @@ private:
     /// To deduplicate columns in `selected_column_names`
     NameSet selected_column_names_set;
 
+    /// Columns that the user references explicitly, but that are resolved away before access check.
+    Names access_checked_column_names;
+    /// To deduplicate columns in above
+    NameSet access_checked_column_names_set;
+
     /// Expression to calculate ALIAS columns
     /// Keep alias name (String) + expression (ActionsDAG) pairs; vector preserves insertion order.
     AliasColumnExpressions alias_column_expressions;
@@ -337,10 +341,6 @@ private:
 
     /// Valid for table, table function
     std::optional<ActionsDAG> row_level_filter_actions;
-
-    /// Set only when the column was synthesized because the query reads no column of this
-    /// table expression, so no output can legitimately depend on it.
-    std::optional<ColumnIdentifier> row_count_only_column_identifier;
 
     /// Is storage remote
     bool is_remote = false;

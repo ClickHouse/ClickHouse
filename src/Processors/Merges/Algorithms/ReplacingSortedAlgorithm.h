@@ -87,11 +87,8 @@ private:
     /// Sources of rows with the current primary key.
     PODArray<RowSourcePart> current_row_sources;
 
-    bool isSelectedRowSkipped() const;
     void insertRow();
     void insertRowImpl();
-    void flushCurrentRowSources(bool keep_selected_row);
-    void insertChunk(size_t source_num, Chunk chunk);
 
     /// Method for using in skipping FINAL logic
     /// Skipping FINAL doesn't merge rows to new chunks but marks selected rows in input chunks and emit them
