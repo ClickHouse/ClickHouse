@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- ^ failpoint
 
 SET explain_query_plan_default = 'legacy';
