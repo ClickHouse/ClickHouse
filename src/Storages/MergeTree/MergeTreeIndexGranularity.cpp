@@ -159,39 +159,6 @@ size_t computeIndexGranularity(
     return index_granularity_for_block;
 }
 
-void fillIndexGranularityForWidePart(
-    MergeTreeIndexGranularity & index_granularity, size_t index_offset, size_t index_granularity_for_block, size_t rows_in_block)
-{
-    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
-        index_granularity.appendMark(index_granularity_for_block);
-}
-
-void fillIndexGranularityForCompactPart(
-    MergeTreeIndexGranularity & index_granularity, size_t index_offset, size_t index_granularity_for_block, size_t rows_in_block)
-{
-    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
-    {
-        size_t rows_left_in_block = rows_in_block - current_row;
-
-        /// Try to extend last granule if block is large enough
-        ///  or it isn't first in granule (index_offset != 0).
-        if (rows_left_in_block < index_granularity_for_block &&
-            (rows_in_block >= index_granularity_for_block || index_offset != 0))
-        {
-            // If enough rows are left, create a new granule. Otherwise, extend previous granule.
-            // So, real size of granule differs from index_granularity_for_block not more than 50%.
-            if (rows_left_in_block * 2 >= index_granularity_for_block)
-                index_granularity.appendMark(rows_left_in_block);
-            else
-                index_granularity.addRowsToLastMark(rows_left_in_block);
-        }
-        else
-        {
-            index_granularity.appendMark(index_granularity_for_block);
-        }
-    }
-}
-
 /// Whether the block-uncompressed-bytes figure is actually used to pick the granularity.
 /// It is ignored (a plain adaptive object is returned) for empty/blocks-as-granules/compact
 /// parts and for the non-const adaptive path. Callers use this to avoid computing an

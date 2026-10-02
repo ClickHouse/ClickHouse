@@ -584,7 +584,7 @@ public:
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
 
-    /// a hypothetical projection that the projection optimization weighs together with the projections of the table
+    /// a hypothetical projection that the projection optimization also weighs
     void setHypotheticalProjection(std::shared_ptr<HypotheticalProjection> projection) { hypothetical_projection = std::move(projection); }
     const std::shared_ptr<HypotheticalProjection> & getHypotheticalProjection() const { return hypothetical_projection; }
     bool isTopKPrewhereQueryConditionCacheAllowed() const { return allow_top_k_prewhere_query_condition_cache; }

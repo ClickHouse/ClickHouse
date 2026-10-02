@@ -315,7 +315,38 @@ size_t blockEnd(const PartFromSample & part, size_t row, size_t rows_limit, size
     return row + 1 + static_cast<size_t>(std::ranges::partition_point(longer_ends, fits) - longer_ends.begin());
 }
 
-/// replays the writer over a sequence of blocks, with one granule size for each block and the mark rules of the writer
+/// as `MergeTreeDataPartWriterWide::fillIndexGranularity`
+void fillIndexGranularityForWidePart(
+    MergeTreeIndexGranularity & index_granularity, size_t index_offset, size_t index_granularity_for_block, size_t rows_in_block)
+{
+    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
+        index_granularity.appendMark(index_granularity_for_block);
+}
+
+/// as `MergeTreeDataPartWriterCompact::fillIndexGranularity`
+void fillIndexGranularityForCompactPart(
+    MergeTreeIndexGranularity & index_granularity, size_t index_offset, size_t index_granularity_for_block, size_t rows_in_block)
+{
+    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
+    {
+        const size_t rows_left_in_block = rows_in_block - current_row;
+        /// close the tail of a block that fills a granule or continues an open mark
+        if (rows_left_in_block < index_granularity_for_block && (rows_in_block >= index_granularity_for_block || index_offset != 0))
+        {
+            /// a tail of half a granule or more is its own granule, a shorter one joins the previous
+            if (rows_left_in_block * 2 >= index_granularity_for_block)
+                index_granularity.appendMark(rows_left_in_block);
+            else
+                index_granularity.addRowsToLastMark(rows_left_in_block);
+        }
+        else
+        {
+            index_granularity.appendMark(index_granularity_for_block);
+        }
+    }
+}
+
+/// replays the writer over the blocks, one granule size per block
 std::vector<size_t> simulateWriterMarks(
     const PartFromSample & part,
     MergeTreeDataPartType part_type,
@@ -339,9 +370,9 @@ std::vector<size_t> simulateWriterMarks(
         const size_t granule_rows = computeIndexGranularity(
             block_rows, block_bytes, granularity_bytes, fixed_granularity_rows, /* blocks_are_granules */ false, adaptive_marks);
 
-        /// the rows that still go into the mark that the previous block left open
+        /// rows that go into the mark the previous block left open
         size_t open_rows_missing = granularity.getTotalRows() - written;
-        /// first, the wide writer shrinks an open mark that is wider than the granule of this block
+        /// the wide writer first shrinks an open mark wider than this granule
         if (part_type == MergeTreeDataPartType::Wide && open_rows_missing > granule_rows)
         {
             granularity.adjustLastMark(std::max(granularity.getLastMarkRows() - open_rows_missing, granule_rows));
@@ -355,7 +386,7 @@ std::vector<size_t> simulateWriterMarks(
         written += block_rows;
     }
 
-    /// when the writer closes the part, it trims the last mark to the rows that it got
+    /// the writer trims the last mark when it closes the part
     if (granularity.getTotalRows() > written)
         granularity.adjustLastMark(granularity.getLastMarkRows() - (granularity.getTotalRows() - written));
 
@@ -366,11 +397,9 @@ std::vector<size_t> simulateWriterMarks(
 }
 
 
-/// builds the projection part in memory for each layout that the writer can leave, with its primary index
-/// with rows of one width, the merge block size sets the granule size
-/// with rows of different widths, the merge cuts its blocks at each source, so `uneven_rows` selects the likeliest layout
-/// the parts have the rows of the whole part, `part_rows`, and a sample stands for them as `PartFromSample` shows
-/// returns one part for each layout, with the index of the likeliest layout
+/// builds the projection part in memory, with its primary index, for each layout the writer can leave
+/// the parts have `part_rows` rows, and a sample stands in for them as in `PartFromSample`
+/// returns the parts and the index of the likeliest layout
 std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionParts(
     ProjectionPartData & data,
     const ProjectionDescription & projection,
@@ -392,16 +421,15 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     const PartFromSample whole_part(data, part_rows);
     const auto part_type = merge_tree.choosePartFormat(whole_part.bytes(), whole_part.rows, parent_part->info.level, &projection).part_type;
     const bool adaptive_marks = parent_part->index_granularity_info.mark_type.adaptive;
-    /// a constant granularity object pins one granule size for the whole part, an adaptive one lets
-    /// every block the writer stores size its own granules, so only then do the blocks matter
+    /// only adaptive granularity lets block sizes change the layout
     const bool granularity_per_block = part_type == MergeTreeDataPartType::Compact
         || (adaptive_marks && !mt_settings[MergeTreeSetting::use_const_adaptive_granularity]);
 
-    /// an insert or a materialization writes one squashed block, and a merge writes blocks of `merge_max_block_size`
-    /// a merge also cuts a block at each source, and a part does not record which writer it had, so build all layouts
+    /// an insert writes one block, a merge writes blocks of `merge_max_block_size` cut at each source
+    /// a part does not record which, so build each layout
     const size_t merge_rows = mt_settings[MergeTreeSetting::merge_max_block_size];
     const size_t merge_bytes = mt_settings[MergeTreeSetting::merge_max_block_size_bytes];
-    /// one granule worth of bytes is the shortest run whose width can still move the granule size
+    /// one granule of bytes is the finest block size that matters
     const size_t granule_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
     std::vector<std::pair<size_t, size_t>> chunkings;
     size_t primary = 0;
@@ -410,7 +438,7 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     {
         chunkings.emplace_back(merge_rows, merge_bytes);
         chunkings.emplace_back(merge_rows, granule_bytes);
-        /// the writer writes a level-zero part in one go, and a merged part block by block
+        /// a level-zero part is one block, a merged part is merge blocks, cut at each source when the widths vary
         if (parent_part->info.level > 0)
             primary = uneven_rows ? chunkings.size() - 1 : chunkings.size() - 2;
     }
@@ -440,7 +468,7 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
             index_columns.push_back(std::move(index_column));
         }
 
-        /// `Synthetic` does not change the part directory, but `CreateFresh` can delete a leftover `.tmp_proj`
+        /// `Synthetic` leaves the part directory alone, `CreateFresh` can delete a leftover `.tmp_proj`
         auto part = const_cast<IMergeTreeDataPart &>(*parent_part)
                         .getProjectionPartBuilder(projection.name, &projection, PartDirIntent::Synthetic, /* is_temp_projection */ true)
                         .withPartType(MergeTreeDataPartType::Compact)
@@ -468,7 +496,7 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     return {std::move(built), primary};
 }
 
-/// the reasons of the optimizer start in lower case, but the reasons of `EXPLAIN WHATIF` are sentences
+/// optimizer reasons start in lower case, WHATIF reasons are sentences
 String capitalized(String text)
 {
     if (!text.empty())
@@ -476,7 +504,7 @@ String capitalized(String text)
     return text;
 }
 
-/// the granules to read from each part: all of them, or a sample when the parts have more rows than the budget
+/// the granules to read from each part: all, or a sample past the budget
 struct ScanPlan
 {
     size_t sample_step = 1;
@@ -485,7 +513,7 @@ struct ScanPlan
     UInt64 marks_to_scan = 0;
 };
 
-/// plans the scan, or returns false with the reason when the query does not allow it
+/// plans the scan, or returns false with the reason if a query limit forbids it
 bool planScan(
     WhatIfCandidateResult & result,
     ScanPlan & plan,
@@ -536,7 +564,7 @@ bool planScan(
     return true;
 }
 
-/// a sampled part, kept until the optimizer weighs it, for the error of the estimate
+/// a sampled part, kept for the error estimate
 struct SampledPart
 {
     String name;
@@ -548,8 +576,7 @@ struct SampledPart
     MergeTreeDataPartPtr synthetic;
 };
 
-/// the optimizer weighs the projection as a materialized projection, first with each part in its likeliest layout
-/// then it weighs each layout that the writer can leave, to find if the choice changes with the layout
+/// scenario 0 has every part in its likeliest layout, scenarios 1 to 3 have every part in one layout each
 struct Scenarios
 {
     std::array<HypotheticalProjectionPtr, 4> scenarios;
@@ -560,7 +587,7 @@ struct Scenarios
     std::vector<SampledPart> samples;
 };
 
-/// reads the planned granules of each part and builds its projection parts, or returns false with the reason
+/// reads the planned granules and builds the projection parts, or returns false with the reason
 bool buildScenarios(
     WhatIfCandidateResult & result,
     Scenarios & out,
@@ -604,11 +631,11 @@ bool buildScenarios(
                 = "The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)";
             return false;
         }
-        /// a time limit in `break` mode or a cancelled query stops the read without an error
+        /// a `break` time limit or a cancelled query stops the read silently
         if (part_data.rows != part->index_granularity->getRowsCountInRanges(ranges))
         {
             result.empirical_unsupported_reason = "The projection scan was cut short by a time limit in `break` mode or a cancelled query";
-            /// the same time limit also stops the output, so only the log shows why the estimate is missing
+            /// the limit also drops the output, so log the reason
             LOG_DEBUG(log, "{}", result.empirical_unsupported_reason);
             return false;
         }
@@ -652,7 +679,7 @@ bool buildScenarios(
     return true;
 }
 
-/// widens the mark range by what a sample can move: the ends of the selected ranges and the share of rows selected
+/// widens the mark range by the sampling error: range ends and the selected share
 void widenForSamples(
     const std::vector<SampledPart> & samples, const HypotheticalProjection::Outcome & outcome, UInt64 & marks_low, UInt64 & marks_high)
 {
@@ -721,7 +748,7 @@ void widenForSamples(
 
 }
 
-/// the verdict and its reason, from how the optimizer weighed the projection in each scenario
+/// the verdict and its reason from the scenario outcomes
 void setVerdict(
     WhatIfCandidateResult & result,
     const HypotheticalProjection::Outcome & outcome,
@@ -735,7 +762,7 @@ void setVerdict(
     const UInt64 marks_low = result.estimated_marks_low;
     const UInt64 marks_high = result.estimated_marks_high;
     auto marks_text = [](UInt64 marks) { return fmt::format("{} mark{}", marks, marks == 1 ? "" : "s"); };
-    /// the optimizer prefers the projection to the base table for fewer marks, or for the same marks if it serves the ORDER BY
+    /// the rule against the base table: fewer marks, or the same marks and a served ORDER BY
     auto beats_base = [&](UInt64 marks) { return marks < baseline_marks || (marks == baseline_marks && outcome.serves_order); };
     if (chosen_in == weighed && outcome.forced)
     {
@@ -782,7 +809,7 @@ void setVerdict(
                 "the same {} would be read, and the projection order {}",
                 marks_text(projection_marks),
                 outcome.serves_order ? "serves the ORDER BY" : "serves no ORDER BY");
-        /// the projection is better than the base table, but another projection is better than it
+        /// another projection beats this one
         if (chosen_in == 0 && projection_marks < baseline_marks)
             result.verdict_reason = outcome.reason;
     }
@@ -1040,7 +1067,7 @@ WhatIfCandidateResult evaluateProjection(
     }
     else
     {
-        /// the estimate reads no data, but the optimizer still decides if the query gives the projection something to serve
+        /// without data, the optimizer still decides if the projection has anything to serve
         auto scenario = std::make_shared<HypotheticalProjection>(projection->clone());
         weigh(scenario);
         if (scenario->outcome.nothing_to_serve && relaxing_setting.empty())

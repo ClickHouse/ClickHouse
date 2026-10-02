@@ -298,7 +298,7 @@ struct NormalProjectionCandidate : public ProjectionCandidate
 {
 };
 
-/// records the result of the hypothetical projection, and the loop over the candidates sets the flags
+/// fills the outcome of the hypothetical projection, the candidate loop sets its flags
 static void recordHypotheticalOutcome(
     HypotheticalProjection & hypothetical,
     const UseProjectionsResult & result,
@@ -764,7 +764,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     if (hypothetical)
     {
         recordHypotheticalOutcome(*hypothetical, result, candidates, best_candidate);
-        /// the optimizer weighs a hypothetical projection but never reads it
+        /// never read a hypothetical projection
         if (best_candidate->projection == &hypothetical->projection)
             return result;
     }

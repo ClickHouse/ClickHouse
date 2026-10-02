@@ -155,8 +155,8 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
         stripWhatIfControlledSettings(child.get(), removed_force);
 }
 
-/// a subquery plan cannot see hypothetical projections, so `force_optimize_projection` becomes `prefer_optimize_projection` in each scope
-/// the two settings relax the same checks, but `prefer_optimize_projection` does not throw an exception
+/// subquery plans cannot see hypothetical projections, so plan `force_optimize_projection` as `prefer_optimize_projection`
+/// both relax the same checks, but `prefer_optimize_projection` never throws
 void replaceForceWithPrefer(IAST * node, bool force, bool prefer, bool & force_requested)
 {
     if (auto * select = node->as<ASTSelectQuery>(); select && select->settings())

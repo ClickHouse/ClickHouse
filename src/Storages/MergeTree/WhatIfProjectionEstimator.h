@@ -18,7 +18,7 @@ struct ProjectionDescription;
 struct WhatIfSettings;
 struct HypotheticalProjection;
 
-/// plans the query again so that the optimizer weighs this hypothetical projection and records its result
+/// plans the query again with this hypothetical projection and records its outcome
 using WeighHypotheticalProjection = std::function<void(const std::shared_ptr<HypotheticalProjection> &)>;
 
 /// re-validate a stored definition, empty with a reason if it no longer fits
@@ -30,7 +30,7 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     String & reason);
 
 /// like evaluateIndex, for a hypothetical projection
-/// `force_requested` makes the verdict name `force_optimize_projection`, which the statement plans as `prefer_optimize_projection`
+/// `force_requested` names `force_optimize_projection` in the verdict
 WhatIfCandidateResult evaluateProjection(
     const ProjectionDescription & stored_projection,
     ReadFromMergeTree * read_step,
