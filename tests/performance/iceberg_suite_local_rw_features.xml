@@ -1,4 +1,4 @@
-<test>
+<test run_all_queries="1" profile_all_queries="1">
     <settings>
         <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
         <iceberg_metadata_log_level>none</iceberg_metadata_log_level>

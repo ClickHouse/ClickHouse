@@ -1,4 +1,4 @@
-<test requires_s3="1" requires_s3_read_dataset="1">
+<test requires_s3="1" requires_s3_read_dataset="1" run_all_queries="1" profile_all_queries="1">
     <settings>
         <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
     </settings>
