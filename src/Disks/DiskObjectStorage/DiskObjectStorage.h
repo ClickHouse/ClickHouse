@@ -225,6 +225,8 @@ public:
     /// MergeTree table on this disk.
     bool isWriteOnce() const override;
 
+    bool prefersRecursiveRemoval() const override;
+
     /// Return true if the disk is "shared-compatible", i.e. does not uses local disks
     bool isSharedCompatible() const;
 

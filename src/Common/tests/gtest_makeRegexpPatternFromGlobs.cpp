@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Common/parseGlobs.h>
 #include <Common/re2.h>
 #include <gtest/gtest.h>
@@ -89,4 +90,164 @@ TEST(Common, makeRegexpPatternFromGlobs)
         EXPECT_FALSE(RE2::FullMatch("data/part1.tsv", re));           /// zero directory levels: not matched
         EXPECT_TRUE(RE2::FullMatch("data/sub1/part1.tsv", re));       /// one directory level (name starts with any char)
     }
+}
+
+TEST(Common, expandSelectionGlob)
+{
+    EXPECT_EQ(expandSelectionGlob("file.csv"), std::vector<std::string>({"file.csv"}));
+    EXPECT_EQ(expandSelectionGlob("file{1,2,3}.csv"), std::vector<std::string>({"file1.csv", "file2.csv", "file3.csv"}));
+    EXPECT_EQ(expandSelectionGlob("{a}.csv"), std::vector<std::string>({"a.csv"}));
+    EXPECT_EQ(expandSelectionGlob("{a,b}/{c,d}"), std::vector<std::string>({"a/c", "a/d", "b/c", "b/d"}));
+    EXPECT_EQ(expandSelectionGlob("{a,,b}"), std::vector<std::string>({"a", "", "b"}));
+    EXPECT_EQ(expandSelectionGlob("dir/{ab}{cd}/*.csv"), std::vector<std::string>({"dir/abcd/*.csv"}));
+
+    /// A `{N..M}` range glob is not enumerated here: `makeRegexpPatternFromGlobs` turns it into a regexp.
+    EXPECT_EQ(expandSelectionGlob("file{1..3}.csv"), std::vector<std::string>({"file{1..3}.csv"}));
+    EXPECT_EQ(expandSelectionGlob("{a,b}file{1..3}.csv"), std::vector<std::string>({"{a,b}file{1..3}.csv"}));
+
+    /// `{a,b}{c,d}{e,f}...` is a Cartesian product, so a short pattern must not be allowed to expand
+    /// to an astronomical number of paths, or to an astronomical amount of data.
+    auto repeat = [](const std::string & what, size_t times)
+    {
+        std::string result;
+        for (size_t i = 0; i < times; ++i)
+            result += what;
+        return result;
+    };
+
+    /// Too many paths: 2^20 of them.
+    EXPECT_THROW(expandSelectionGlob(repeat("{a,b}", 20)), DB::Exception);
+    /// Too much data: 2^13 paths of 10 KiB each.
+    EXPECT_THROW(expandSelectionGlob(std::string(10000, 'x') + repeat("{a,b}", 13)), DB::Exception);
+    /// Too many globs: every group is a single element, so this expands to one path, but only after
+    /// looking at every one of the 2000 groups.
+    EXPECT_THROW(expandSelectionGlob(repeat("{ab}", 2000)), DB::Exception);
+
+    /// A single group with an enormous number of alternatives - what a whole file passed as a path
+    /// by `file(file(...))` looks like. The limit has to fire while the group is being scanned: if
+    /// it were checked only after the group has been parsed, the parser would keep one offset and
+    /// one `string_view` per alternative, so the memory it takes would grow with the size of the
+    /// input even though nothing is ever expanded. The scan stops at the comma that makes the group
+    /// exceed the limit, which is why the pattern below - a hundred times more alternatives than
+    /// the limit allows - is rejected with the same message as a small one.
+    std::string one_huge_group = "{" + repeat("a,", 10'000'000) + "a}";
+    try
+    {
+        expandSelectionGlob(one_huge_group);
+        FAIL() << "An oversized group was not rejected.";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_NE(std::string(e.message()).find("expand to more than"), std::string::npos) << e.message();
+    }
+
+    /// A group with one long alternative among many short ones: within every limit, so it must be
+    /// expanded, but holding the whole pattern for each of the short paths would take gigabytes.
+    {
+        std::string one_long_alternative = "{" + std::string(64 * 1024, 'A') + "," + repeat("a,", 19998) + "a}";
+        auto expanded = expandSelectionGlob(one_long_alternative);
+        ASSERT_EQ(expanded.size(), 20000u);
+        EXPECT_EQ(expanded.front().size(), 64u * 1024u);
+        EXPECT_EQ(expanded.back(), "a");
+
+        size_t capacity = 0;
+        for (const auto & one : expanded)
+            capacity += one.capacity();
+        EXPECT_LT(capacity, 4u * 1024 * 1024) << "The expansion holds much more memory than the paths it produced.";
+    }
+}
+
+TEST(Common, expandSelectionGlobFirst)
+{
+    auto repeat = [](const std::string & what, size_t times)
+    {
+        std::string result;
+        for (size_t i = 0; i < times; ++i)
+            result += what;
+        return result;
+    };
+
+    /// It is the first path of the full expansion, wherever the full expansion is possible.
+    for (const auto & pattern : {"file.csv", "file{1,2,3}.csv", "{a}.csv", "{a,b}/{c,d}", "{a,,b}",
+                                 "{,a}", "{}", "dir/{ab}{cd}/*.csv", "file{1..3}.csv", "{a,b}file{1..3}.csv"})
+        EXPECT_EQ(expandSelectionGlobFirst(pattern), expandSelectionGlob(pattern).front()) << pattern;
+
+    /// And it is available for the patterns the full expansion refuses: a reader that matches such
+    /// a pattern as a regexp must not be denied a sample path for hive partitioning.
+    EXPECT_EQ(expandSelectionGlobFirst(repeat("{a,b}", 100)), std::string(100, 'a'));
+    EXPECT_EQ(expandSelectionGlobFirst(repeat("{ab}", 2000)), repeat("ab", 2000));
+    EXPECT_EQ(expandSelectionGlobFirst("dir/{" + repeat("a,", 10'000'000) + "a}.csv"), "dir/a.csv");
+    EXPECT_EQ(expandSelectionGlobFirst("{" + std::string(1024, 'A') + ",b}"), std::string(1024, 'A'));
+
+    /// A malformed glob is refused, the same way the full expansion refuses it.
+    for (const auto & pattern : {"a}b{c,d}", "{a,b}{c{d,e}"})
+    {
+        EXPECT_THROW(expandSelectionGlob(pattern), DB::Exception) << pattern;
+        EXPECT_THROW(expandSelectionGlobFirst(pattern), DB::Exception) << pattern;
+    }
+}
+
+TEST(Common, canExpandSelectionGlobFirst)
+{
+    /// `makeRegexpPatternFromGlobs` reads a doubled brace as a literal brace around an enum, and a
+    /// comma outside a group as literal text, so a pattern the selector glob scanner refuses can
+    /// still be matched by the reader as a regexp. A caller wanting one sample path asks first.
+    for (const auto & pattern : {"{{a,b}}", "dir/{{a,b}}/f.csv", "a,b{c,d}{e,f}", "}{a,b}{c,d}",
+                                 "{a,b}{c{d,e}"})
+    {
+        EXPECT_FALSE(canExpandSelectionGlobFirst(pattern)) << pattern;
+        EXPECT_THROW(expandSelectionGlobFirst(pattern), DB::Exception) << pattern;
+    }
+
+    /// An unterminated group is not a group the scanner ever reaches, and the answer stays "no"
+    /// rather than depending on which of the two spots notices that the pattern is malformed.
+    EXPECT_FALSE(canExpandSelectionGlobFirst("{a,b"));
+
+    /// Everything the scanner does accept, including a literal comma past the last group and a
+    /// pattern without any group at all.
+    for (const auto & pattern : {"file.csv", "a,b.csv", "file{1,2,3}.csv", "{a}.csv", "{a,b}/{c,d}",
+                                 "{a,b}{c,d}.c,d", "{a,,b}", "{,a}", "{}"})
+    {
+        EXPECT_TRUE(canExpandSelectionGlobFirst(pattern)) << pattern;
+        EXPECT_NO_THROW(expandSelectionGlobFirst(pattern)) << pattern;
+    }
+}
+
+TEST(Common, tryExpandSelectionGlobFirstMatchedByRegexp)
+{
+    /// The first alternative of every group, when the regexp reader would read it.
+    EXPECT_EQ(tryExpandSelectionGlobFirstMatchedByRegexp("dir/{a,b}/{c,d}.csv"), "dir/a/c.csv");
+    EXPECT_EQ(tryExpandSelectionGlobFirstMatchedByRegexp("{ab}/{c,d}"), "ab/c");
+
+    /// An empty alternative or group, or a group of one character, is literal text for the regexp, so
+    /// the first alternative is not a path the reader reads; neither are the patterns the selector
+    /// glob scanner refuses.
+    for (const auto & pattern : {"{,a}{b,c}", "{}{a,b}", "{a}{b,c}", "{{a,b}}", "a,b{c,d}{e,f}"})
+        EXPECT_EQ(tryExpandSelectionGlobFirstMatchedByRegexp(pattern), std::nullopt) << pattern;
+}
+
+TEST(Common, rangeGlobIsBounded)
+{
+    /// A `{N..M}` range glob becomes an alternation of every number of the range, so the regexp is
+    /// as long as the range and a 20-byte path can ask for hundreds of gigabytes of it.
+    EXPECT_EQ(makeRegexpPatternFromGlobs("f{1..3}"), "f(1|2|3)");
+    EXPECT_THROW(makeRegexpPatternFromGlobs("f{1..1000000}"), DB::Exception);
+    EXPECT_THROW(makeRegexpPatternFromGlobs("f{1000000..1}"), DB::Exception);
+
+    /// Bounding one range does not bound their sum: each of these is within the per-range limit,
+    /// so a short pattern can still ask for a huge regexp.
+    auto repeat = [](const std::string & what, size_t times)
+    {
+        std::string result;
+        for (size_t i = 0; i < times; ++i)
+            result += what;
+        return result;
+    };
+
+    EXPECT_GT(makeRegexpPatternFromGlobs("{1..100000}").size(), 500000u);
+    EXPECT_THROW(makeRegexpPatternFromGlobs(repeat("{1..100000}", 128)), DB::Exception);
+
+    /// A single-value range at the top of `size_t`: the increment must not wrap.
+    EXPECT_EQ(makeRegexpPatternFromGlobs("{18446744073709551615..18446744073709551615}"),
+              "(18446744073709551615)");
 }
