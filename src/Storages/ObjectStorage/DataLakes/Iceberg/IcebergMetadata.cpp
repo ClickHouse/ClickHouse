@@ -2,6 +2,7 @@
 #include <base/defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <base/sleep.h>
+#include <fmt/ranges.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -185,7 +186,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     LoggerPtr log)
 {
     const auto [metadata_version, metadata_file_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, true);
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, *configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, true);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, std::nullopt);
@@ -230,7 +231,7 @@ void IcebergMetadata::setExplicitMetadataFilePath(const String & path)
 
 DataLakeStorageSettings IcebergMetadata::getMetadataLookupSettings() const
 {
-    DataLakeStorageSettings result = data_lake_settings;
+    DataLakeStorageSettings result = *data_lake_settings;
     if (auto path = explicit_metadata_file_path.get())
         result[DataLakeStorageSetting::iceberg_metadata_file_path] = *path;
     return result;
@@ -264,7 +265,7 @@ IcebergMetadata::IcebergMetadata(
     , write_format(configuration_->format)
 {
     /// TODO: for now it's okay to start/stop the task via constructor/destructor. Once refactored, we'd need to plumb startup/shutdown and schedule the task from there
-    if (persistent_components.metadata_cache && data_lake_settings[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms] != 0)
+    if (persistent_components.metadata_cache && (*data_lake_settings)[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms] != 0)
     {
         background_metadata_prefetch_task = context_->getIcebergSchedulePool()->createTask(
             StorageID("", persistent_components.table_uuid ? *persistent_components.table_uuid : persistent_components.table_path),
@@ -286,7 +287,7 @@ IcebergMetadata::~IcebergMetadata()
 
 void IcebergMetadata::backgroundMetadataPrefetcherThread()
 {
-    size_t interval = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms];
+    size_t interval = (*data_lake_settings)[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms];
     SCOPE_EXIT({
         background_metadata_prefetch_task->scheduleAfter(interval);
     });
@@ -576,7 +577,7 @@ bool IcebergMetadata::optimizeManifestFiles(
         compactIcebergManifests(
             persistent_components,
             object_storage,
-            data_lake_settings,
+            *data_lake_settings,
             sample_block,
             context,
             write_format,
@@ -738,7 +739,7 @@ void IcebergMetadata::mutate(
         metadata_snapshot,
         storage_id,
         object_storage,
-        data_lake_settings,
+        *data_lake_settings,
         persistent_components,
         write_format,
         format_settings,
@@ -777,6 +778,36 @@ void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
 void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
 {
     checkTableRootIsQueriedPath("ALTER");
+
+    if (std::ranges::any_of(commands, [](const AlterCommand & command) { return command.isSettingsAlter(); }))
+    {
+        if (!commands.isSettingsAlter())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Iceberg storage does not support combining MODIFY SETTING or RESET SETTING with other ALTER commands");
+
+        static constexpr std::array<std::string_view, 3> modifiable_settings
+            = {"iceberg_use_version_hint", "iceberg_recent_metadata_file_by_last_updated_ms_field", "iceberg_metadata_async_prefetch_period_ms"};
+
+        auto check_setting = [](std::string_view setting_name)
+        {
+            if (std::find(modifiable_settings.begin(), modifiable_settings.end(), setting_name) == modifiable_settings.end())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Setting '{}' cannot be modified for Iceberg storage. Modifiable settings: {}",
+                    setting_name,
+                    fmt::join(modifiable_settings, ", "));
+        };
+
+        for (const auto & command : commands)
+        {
+            for (const auto & change : command.settings_changes)
+                check_setting(change.name);
+            for (const auto & setting_name : command.settings_resets)
+                check_setting(setting_name);
+        }
+        return;
+    }
 
     for (const auto & command : commands)
     {
@@ -845,7 +876,7 @@ void IcebergMetadata::alterPartitionDropImpl(const PartitionCommand & command, C
         context,
         object_storage,
         persistent_components,
-        data_lake_settings,
+        *data_lake_settings,
         write_format,
         log);
     executor.run();
@@ -865,7 +896,7 @@ void IcebergMetadata::alter(
             "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 
-    Iceberg::alter(params, context, storage_id, object_storage, data_lake_settings, persistent_components, write_format, catalog);
+    Iceberg::alter(params, context, storage_id, object_storage, *data_lake_settings, persistent_components, write_format, catalog);
 }
 
 Pipe IcebergMetadata::executeCommand(
@@ -897,7 +928,7 @@ Pipe IcebergMetadata::executeCommand(
 
         checkTableRootIsQueriedPath("expire_snapshots");
         return Iceberg::executeExpireSnapshots(
-            args, context, object_storage_, data_lake_settings, persistent_components,
+            args, context, object_storage_, *data_lake_settings, persistent_components,
             write_format, catalog_, storage_id.getTableName());
     }
     else if (command_name == "remove_orphan_files")
@@ -912,7 +943,7 @@ Pipe IcebergMetadata::executeCommand(
 
         checkTableRootIsQueriedPath("remove_orphan_files");
         return Iceberg::executeRemoveOrphanFiles(
-            args, context, object_storage_, data_lake_settings, persistent_components,
+            args, context, object_storage_, *data_lake_settings, persistent_components,
             catalog_, storage_id.getTableName());
     }
     else
@@ -975,7 +1006,7 @@ void IcebergMetadata::createInitial(
         location_path = "/" + location_path;
 
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
-        location_path, *columns, partition_by, order_by, local_context, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
+        location_path, *columns, partition_by, order_by, local_context, (*configuration_ptr->getDataLakeSettings())[DataLakeStorageSetting::iceberg_format_version]);
     auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
     auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
 
@@ -1011,7 +1042,7 @@ void IcebergMetadata::createInitial(
             throw;
         }
 
-        if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
+        if ((*configuration_ptr->getDataLakeSettings())[DataLakeStorageSetting::iceberg_use_version_hint].value)
         {
             auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
             writeMessageToFile("1", filename_version_hint, object_storage, local_context, "*", "");

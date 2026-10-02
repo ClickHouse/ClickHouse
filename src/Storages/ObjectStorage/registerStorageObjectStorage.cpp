@@ -103,7 +103,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         && (args.table_id.table_name.ends_with("_s3") || args.table_id.table_name.ends_with("_s3queue")))
         configuration->force_anonymous_load_fallback = true;
 
-    return std::make_shared<StorageObjectStorage>(
+    auto storage = std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
@@ -121,6 +121,16 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         /* distributed_processing */ false,
         partition_by,
         order_by);
+
+    if (configuration->isDataLakeConfiguration() && args.storage_def->settings)
+    {
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        auto metadata = *metadata_snapshot;
+        metadata.settings_changes = args.storage_def->settings->ptr();
+        storage->setInMemoryMetadata(metadata);
+    }
+
+    return storage;
 }
 
 #endif
@@ -1548,6 +1558,15 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 **Note**: Asynchronous metadata prefetching runs at `ICEBERG_SCEDULE_POOL`, which is server-side threadpool for background operations on active `Iceberg` tables. The size of this threadpool is controlled by `iceberg_background_schedule_pool_size` server configuration parameter (default is 10).
 
 **Note**: Current expectation is that metadata cache size is sufficient to hold the latest metadata snapshot in full for all active tables, if asynchronous prefetching is enabled.
+
+## Modifying table settings {#modify-settings}
+
+The settings `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field` and `iceberg_metadata_async_prefetch_period_ms` can be changed for an existing table with `ALTER TABLE ... MODIFY SETTING` and `ALTER TABLE ... RESET SETTING`. The new values take effect for subsequent queries and are stored in the table definition. Other settings cannot be modified, and a settings change cannot be combined with other `ALTER` commands in one query. Tables of a `DataLakeCatalog` database do not support modifying settings.
+
+```sql
+ALTER TABLE example_table MODIFY SETTING iceberg_use_version_hint = 1;
+ALTER TABLE example_table RESET SETTING iceberg_use_version_hint;
+```
 
 ## See also {#see-also}
 

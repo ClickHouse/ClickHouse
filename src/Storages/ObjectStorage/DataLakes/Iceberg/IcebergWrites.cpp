@@ -1124,7 +1124,7 @@ IcebergStorageSink::IcebergStorageSink(
         catalog,
         table_id.getTableName(),
         persistent_table_components.table_path,
-        data_lake_settings,
+        *data_lake_settings,
         persistent_table_components.metadata_cache,
         context_,
         log.get(),
@@ -1453,7 +1453,7 @@ bool IcebergStorageSink::initializeMetadata()
                 catalog,
                 table_id.getTableName(),
                 persistent_table_components.table_path,
-                data_lake_settings,
+                *data_lake_settings,
                 persistent_table_components.metadata_cache,
                 context,
                 getLogger("IcebergWrites").get(),
@@ -1621,7 +1621,7 @@ bool IcebergStorageSink::initializeMetadata()
                         hint_path,
                         object_storage,
                         context,
-                        data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+                        (*data_lake_settings)[DataLakeStorageSetting::iceberg_use_version_hint]))
                 {
                     LOG_DEBUG(log, "Failed to write metadata {}, retrying", metadata_info.path);
                     cleanup(true);

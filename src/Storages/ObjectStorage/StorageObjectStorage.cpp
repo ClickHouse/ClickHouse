@@ -38,6 +38,7 @@
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DatabasesCommon.h>
@@ -649,7 +650,10 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     if (configuration->shouldReloadSchemaForConsistency(query_context))
     {
         if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, query_context))
+        {
             new_metadata = *metadata_snapshot;
+            new_metadata.settings_changes = current_metadata->settings_changes;
+        }
     }
 
     setInMemoryMetadata(new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
@@ -1197,7 +1201,14 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     /// Check that the resulting metadata does not exceed max_query_size before mutating external state.
     checkMetadataDoesNotExceedMaxQuerySize(storage_id, new_metadata, context);
 
-    configuration->alter(object_storage, params, context, getStorageID(), catalog);
+    if (params.isSettingsAlter())
+    {
+        auto new_settings = std::make_shared<DataLakeStorageSettings>();
+        new_settings->loadFromQuery(new_metadata.settings_changes->as<ASTSetQuery &>());
+        configuration->setDataLakeSettings(object_storage, context, std::move(new_settings));
+    }
+    else
+        configuration->alter(object_storage, params, context, getStorageID(), catalog);
 
     if (catalog)
         return;
@@ -1216,6 +1227,9 @@ Pipe StorageObjectStorage::alterPartition(
 
 void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
+    if (catalog && std::ranges::any_of(commands, [](const AlterCommand & command) { return command.isSettingsAlter(); }))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MODIFY SETTING and RESET SETTING are not supported for tables of a data lake catalog");
+
     configuration->checkAlterIsPossible(object_storage, context, commands);
 }
 

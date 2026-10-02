@@ -172,9 +172,9 @@ void StorageObjectStorageConfiguration::initialize(
     std::string disk_name;
     if (configuration_to_initialize.isDataLakeConfiguration())
     {
-        const auto & storage_settings = configuration_to_initialize.getDataLakeSettings();
-        disk_name = storage_settings[DataLakeStorageSetting::disk].changed
-            ? storage_settings[DataLakeStorageSetting::disk].value
+        const auto storage_settings = configuration_to_initialize.getDataLakeSettings();
+        disk_name = (*storage_settings)[DataLakeStorageSetting::disk].changed
+            ? (*storage_settings)[DataLakeStorageSetting::disk].value
             : "";
     }
     if (!disk_name.empty())
