@@ -429,3 +429,22 @@ SELECT * FROM (SELECT toUInt8(2) AS id) AS l LEFT ANTI JOIN (SELECT toUInt16(1) 
 SELECT * FROM (SELECT toUInt8(1) AS id) AS l LEFT JOIN (SELECT toUInt16(1) AS id) AS r USING (id) FORMAT TSVWithNamesAndTypes;
 DROP TABLE t_semi_using_left;
 DROP TABLE t_semi_using_right;
+
+-- A sibling table on the hidden side of an outer SEMI JOIN must not leak into a nested JOIN's ON.
+-- Parenthesized joined-table groups are subqueries and comma joins are folded into the left operand
+-- of the next JOIN, so a table preceding the nested JOIN is part of its own left operand and is visible.
+SELECT *
+FROM (SELECT 1 AS d) AS t4, (SELECT 1 AS b) AS t2
+LEFT SEMI JOIN (SELECT 1 AS c) AS t3 ON t4.d = t2.b
+RIGHT SEMI JOIN (SELECT 1 AS y) AS t6 ON true;
+-- A table joined after the nested JOIN is not visible in its ON, the same as with the settings enabled.
+SELECT *
+FROM (SELECT 1 AS b) AS t2
+LEFT SEMI JOIN (SELECT 1 AS c) AS t3 ON t5.x = t2.b
+INNER JOIN (SELECT 1 AS x) AS t5 ON true
+RIGHT SEMI JOIN (SELECT 1 AS y) AS t6 ON true; -- { serverError UNKNOWN_IDENTIFIER }
+-- The hidden side of an earlier SEMI JOIN stays hidden in the ON of a later JOIN.
+SELECT *
+FROM (SELECT 1 AS a) AS t1
+LEFT SEMI JOIN (SELECT 1 AS y) AS t6 ON true, (SELECT 1 AS d) AS t4, (SELECT 1 AS b) AS t2
+LEFT SEMI JOIN (SELECT 1 AS c) AS t3 ON t4.d = t2.b AND t6.y = 1; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
