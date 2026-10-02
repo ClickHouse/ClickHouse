@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/PipelineExecutionStatus.h>
-#include <Processors/IProcessor_fwd.h>
+#include <Processors/IProcessor.h>
 #include <Processors/Executors/Runtime/ExecutorTasks.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
@@ -55,18 +54,11 @@ public:
     /// Return true if execution should be continued.
     bool executeStep(std::atomic_bool * yield_flag = nullptr);
 
-    using ExecutionStatus = PipelineExecutionStatus;
-
     /// Cancel execution. May be called from another thread.
-    void cancel() { cancel(ExecutionStatus::CancelledByUser); }
+    void cancel(IProcessor::CancelReason reason);
 
     /// Cancel processors which only read data from source. May be called from another thread.
     void cancelReading();
-
-    /// Checks the query time limits (cancelled or timeout). Throws on cancellation or when time limit is reached and the query uses "break"
-    bool checkTimeLimit();
-    /// Same as checkTimeLimit but it never throws. It returns false on cancellation or time limit reached
-    [[nodiscard]] bool checkTimeLimitSoft();
 
     /// Set callback for read progress.
     /// It would be called every time when processor reports read progress.
@@ -109,7 +101,7 @@ private:
     bool trace_processors = false;
     bool trace_cpu_scheduling = false;
 
-    std::atomic<ExecutionStatus> execution_status = ExecutionStatus::NotStarted;
+    std::atomic<IProcessor::CancelReason> cancel_reason = IProcessor::CancelReason::NotCancelled;
     std::atomic_bool cancelled_reading = false;
 
     LoggerPtr log = getLogger("PipelineExecutor");
@@ -132,15 +124,10 @@ private:
     void executeStepImpl(size_t thread_num, WorkloadResources && resources, std::atomic_bool * yield_flag = nullptr);
     void executeSingleThread(size_t thread_num, WorkloadResources && resources);
     void finish();
-    void cancel(ExecutionStatus reason);
 
     // Methods for CPU scheduling
     SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation);
     void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
-
-    /// If execution_status == from, change it to desired.
-    bool tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired);
-
 };
 
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
