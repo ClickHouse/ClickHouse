@@ -1458,18 +1458,25 @@ bool FileCache::doTryReserve(
         throw;
     }
 
+    /// After eviction, so a full cache disk can still admit.
+    if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
+    {
+        /// Undo the reservation, so `main_priority` stays consistent with `FileSegment::reserved_size`.
+        if (added_new_main_entry)
+            main_priority_iterator->invalidate();
+        else
+            main_priority_iterator->decrementSize(size);
+
+        failure_reason = "Failed to create base directory for key, error: " + ec.message();
+        return false;
+    }
+
     /// Mark that size was successfully updated.
     if (added_new_main_entry)
         file_segment.setQueueIterator(main_priority_iterator);
 
     file_segment.reserved_size += size;
     chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
-
-    if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
-    {
-        failure_reason = "Failed to create base directory for key, error: " + ec.message();
-        return false;
-    }
 
     return true;
 }
