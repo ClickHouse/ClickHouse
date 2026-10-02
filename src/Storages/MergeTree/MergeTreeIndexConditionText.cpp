@@ -1086,7 +1086,6 @@ static RPNBuilderTreeNode getJSONPathNode(const RPNBuilderTreeNode & node)
     return isCastFunction(node) ? node.toFunctionNode().getArgumentAt(0) : node;
 }
 
-/// The `JSON` type of the column `name`, which is one of the columns or a subcolumn of one of them.
 static std::shared_ptr<const DataTypeObject> tryGetJSONColumnType(const NamesAndTypesList & columns, const String & name)
 {
     for (const auto & column : columns)
