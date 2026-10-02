@@ -13,3 +13,9 @@ EXPLAIN SELECT number % 2 AS k, count() AS c FROM numbers(10) GROUP BY k WITH TO
 -- without TOTALS, or with arrayJoin only in the projection, it works
 SELECT number % 2 AS k, count() AS c FROM numbers(10) GROUP BY k HAVING arrayJoin([c, c]) > 0 ORDER BY k;
 SELECT number % 2 AS k, arrayJoin([count(), 1]) AS y FROM numbers(10) GROUP BY k WITH TOTALS HAVING count() > 0 ORDER BY k, y;
+
+-- the unnest alias is caught with function name normalization off too
+SET normalize_function_names = 0;
+SELECT n, v FROM (SELECT number * 2 AS n, number AS v FROM numbers(3)) ORDER BY n WITH FILL INTERPOLATE (v AS unnest([v])); -- { serverError UNSUPPORTED_METHOD }
+SELECT number % 2 AS k, count() AS c FROM numbers(10) GROUP BY k WITH TOTALS HAVING unnest([c]) > 0; -- { serverError ILLEGAL_COLUMN }
+
