@@ -2847,7 +2847,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalArchivesSameIndexDuplicates
     auto ctx = makeContextForOrphanRemoval(false, this->enable_compression, "./snapshots", "./logs");
     writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"});
     const auto original_name = snapshotFilesForIdx("./snapshots", 2).at(0);
-    const auto duplicate_name = "snapshot_2_duplicate.bin";
+    const auto * const duplicate_name = "snapshot_2_duplicate.bin";
     fs::copy_file(fs::path("./snapshots") / original_name, fs::path("./snapshots") / duplicate_name);
     fs::copy_file(fs::path("./snapshots") / original_name, fs::path("./latest_snapshots") / original_name);
     ctx->setLatestSnapshotDisk(std::make_shared<DB::DiskLocal>("LatestSnapshotDisk", "./latest_snapshots"));
