@@ -66,6 +66,16 @@ SELECT 'an exact typed path with a typed prefix', count() FROM t_05198_overlap W
 SELECT 'the same without the index', count() FROM t_05198_overlap WHERE json.a.b = 42 SETTINGS use_skip_indexes = 0;
 SELECT 'an absent exact typed path is still pruned', count() FROM t_05198_overlap WHERE json.a.b = 43 SETTINGS force_data_skipping_indices = 'idx';
 
+DROP TABLE IF EXISTS t_05198_nullable;
+CREATE TABLE t_05198_nullable (json Nullable(JSON(a JSON)), INDEX idx JSONAllPaths(json) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
+INSERT INTO t_05198_nullable SELECT '{"a":{"b":42}}' FROM numbers(4);
+
+SELECT 'a nested JSON typed path in Nullable(JSON)', count() FROM t_05198_nullable WHERE json.a.b = 42;
+SELECT 'the same without the index', count() FROM t_05198_nullable WHERE json.a.b = 42 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_05198_nullable WHERE json.a.b = 42 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+
+DROP TABLE t_05198_nullable;
 DROP TABLE t_05198_overlap;
 DROP TABLE t_05198_dynamic;
 DROP TABLE t_05198_scalar;

@@ -24,8 +24,14 @@ JSONIndexArgumentTypes collectJSONIndexArgumentTypes(const ExpressionActions & i
             continue;
 
         const auto & argument_type = node->children.front()->result_type;
-        if (argument_type && typeid_cast<const DataTypeObject *>(argument_type.get()))
-            result.emplace(position, argument_type);
+        if (!argument_type)
+            continue;
+
+        /// `JSONAllPaths` and `JSONAllValues` accept a `Nullable(JSON)` argument through the default
+        /// adapter for `NULL`, and its subcolumns resolve like those of a plain `JSON` column.
+        auto object_type = removeLowCardinalityAndNullable(argument_type);
+        if (typeid_cast<const DataTypeObject *>(object_type.get()))
+            result.emplace(position, object_type);
     }
 
     return result;

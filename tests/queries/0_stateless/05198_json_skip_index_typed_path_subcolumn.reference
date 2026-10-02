@@ -16,3 +16,5 @@ the overlapping granule paths	['a','a.b']
 an exact typed path with a typed prefix	4
 the same without the index	4
 an absent exact typed path is still pruned	0
+a nested JSON typed path in Nullable(JSON)	4
+the same without the index	4
