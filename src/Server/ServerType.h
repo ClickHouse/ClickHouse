@@ -30,6 +30,7 @@ public:
         QUERIES_DEFAULT,
         QUERIES_CUSTOM,
         CLOUD,
+        ICEBERG_REST_CATALOG,
         END
     };
 

@@ -1,5 +1,6 @@
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -73,7 +74,8 @@ void ASTDictionaryAttributeDeclaration::readJSON(const Poco::JSON::Object & json
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`DictionaryAttributeDeclaration` 'attr_type' must be a data type during AST JSON deserialization");
     children.push_back(type);
 
-    default_value = r.readChild("default_value");
+    /// `ParserDictionaryAttributeDeclaration` reads `DEFAULT` as a literal.
+    default_value = r.readChildOfType<ASTLiteral>("default_value");
     if (default_value)
         children.push_back(default_value);
 

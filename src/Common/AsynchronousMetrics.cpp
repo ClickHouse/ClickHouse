@@ -125,7 +125,7 @@ std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(c
 void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
 {
     if (auto path = getCgroupsV2PathContainingFile(filename))
-        openFileIfExists((path.value() + filename).c_str(), out);
+        openFileIfExists((path.value() + "/" + filename).c_str(), out);
 };
 
 #endif
