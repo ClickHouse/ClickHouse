@@ -5,36 +5,14 @@
 -- finalizes it, so `INSERT ... SELECT ... LIMIT 0` used to leave metadata pointing at a cache
 -- segment that was never created, and a later read failed with `FILE_DOESNT_EXIST`.
 
--- First, create a filesystem cache by making a cached disk.
-DROP TABLE IF EXISTS tmp_cache_creator;
-CREATE TABLE tmp_cache_creator (x UInt64)
-ENGINE = MergeTree() ORDER BY x
-SETTINGS disk = disk(
-    type = cache,
-    disk = 'local_disk',
-    name = '04727_cache_creator',
-    path = '04727_borrow_test_cache/',
-    max_size = '100Mi',
-    load_metadata_asynchronously = 0
-);
-
--- Register a named borrow disk. The log family accepts only a named disk (not an inline
--- definition), so the disk is introduced via a throwaway MergeTree table.
-DROP TABLE IF EXISTS tmp_disk_creator;
-CREATE TABLE tmp_disk_creator (x UInt64)
-ENGINE = MergeTree() ORDER BY x
-SETTINGS disk = disk(
-    type = object_storage,
-    object_storage_type = 'borrow_from_cache',
-    metadata_type = 'memory',
-    cache_name = '04727_cache_creator',
-    name = '04727_borrowed_disk'
-);
+-- The named `borrow_from_cache_disk` is defined in the server configuration: the direct-disk engines
+-- accept only a named disk (not an inline definition), and a disk registered by an inline definition of
+-- another table may be unknown when this table is loaded after a server restart.
 
 DROP TABLE IF EXISTS tmp_stripe_log;
 CREATE TABLE tmp_stripe_log (key UInt64, value String)
 ENGINE = StripeLog
-SETTINGS disk = '04727_borrowed_disk';
+SETTINGS disk = 'borrow_from_cache_disk';
 
 -- Empty append into a fresh table: the data files are created but must reference no blob.
 INSERT INTO tmp_stripe_log SELECT number, toString(number) FROM numbers(10) LIMIT 0;
@@ -53,5 +31,3 @@ SELECT count() FROM tmp_stripe_log;
 
 -- Clean up
 DROP TABLE tmp_stripe_log;
-DROP TABLE tmp_disk_creator;
-DROP TABLE tmp_cache_creator;
