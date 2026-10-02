@@ -29,6 +29,7 @@ trap cleanup EXIT
 
 $CLICKHOUSE_CLIENT --multiquery -q "
     DROP TABLE IF EXISTS readonly_outdated_window SYNC;
+    DROP TABLE IF EXISTS outdated_before_detach;
     CREATE TABLE readonly_outdated_window (x UInt64) ENGINE = MergeTree ORDER BY x
     SETTINGS old_parts_lifetime = 3600, min_bytes_for_wide_part = 0;
     SYSTEM STOP CLEANUP readonly_outdated_window;
@@ -38,6 +39,9 @@ $CLICKHOUSE_CLIENT --multiquery -q "
     -- TRUNCATE may leave the merged part for a later cleanup pass; the two inserted parts remain outdated on disk.
     TRUNCATE TABLE readonly_outdated_window;
     ALTER TABLE readonly_outdated_window MODIFY SETTING table_readonly = 1;
+    CREATE TABLE outdated_before_detach (name String) ENGINE = Memory;
+    INSERT INTO outdated_before_detach SELECT name FROM system.parts
+        WHERE database = currentDatabase() AND table = 'readonly_outdated_window' AND NOT active AND rows > 0;
     DETACH TABLE readonly_outdated_window;
     ATTACH TABLE readonly_outdated_window;
     SYSTEM STOP CLEANUP readonly_outdated_window;
@@ -78,15 +82,20 @@ sleep 3
 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT LOADING PARTS readonly_outdated_window"
 echo "outdated parts loaded after failed toggle: $(inactive_parts)"
 
-# A successful toggle loads them. Cleanup is stopped, so the empty cover and both inserted parts exist.
+# A successful toggle loads them. Cleanup is stopped, so the empty cover, both inserted parts and every
+# outdated part from before DETACH exist.
 $CLICKHOUSE_CLIENT -q "ALTER TABLE readonly_outdated_window MODIFY SETTING table_readonly = 0"
 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT LOADING PARTS readonly_outdated_window"
 $CLICKHOUSE_CLIENT -q "SELECT 'parts after successful toggle: ' || toString(countIf(active AND rows = 0)) || ' empty active, '
         || toString(countIf(NOT active AND level = 0)) || ' outdated inserted parts'
+    FROM system.parts WHERE database = currentDatabase() AND table = 'readonly_outdated_window'"
+$CLICKHOUSE_CLIENT -q "SELECT 'outdated parts as before DETACH: ' || toString(arraySort(groupArrayIf(name, NOT active AND rows > 0))
+        = (SELECT arraySort(groupArray(name)) FROM outdated_before_detach))
     FROM system.parts WHERE database = currentDatabase() AND table = 'readonly_outdated_window'"
 echo "rows after successful toggle: $($CLICKHOUSE_CLIENT -q 'SELECT count() FROM readonly_outdated_window')"
 
 $CLICKHOUSE_CLIENT --multiquery -q "
     SYSTEM START CLEANUP readonly_outdated_window;
     DROP TABLE readonly_outdated_window SYNC;
+    DROP TABLE outdated_before_detach;
 "
