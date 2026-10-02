@@ -827,6 +827,7 @@ ALWAYS_INLINE void insertSelectedRows(UInt64 mask, const T * data_pos, Inserter 
     static constexpr size_t MIN_RANGE_COPY_LENGTH = 4;
     static constexpr UInt64 MIN_RANGE_COPY_MASK = (UInt64{1} << MIN_RANGE_COPY_LENGTH) - 1;
     static constexpr size_t MAX_IN_PLACE_RUNS = 4;
+    static constexpr size_t MAX_OUT_OF_PLACE_RANGE_SCORE = 68;
 
     const size_t selected_count = std::popcount(mask);
     const size_t run_count = std::popcount(mask & ~(mask << 1));
@@ -836,6 +837,12 @@ ALWAYS_INLINE void insertSelectedRows(UInt64 mask, const T * data_pos, Inserter 
     bool use_range_copy = selected_count >= MIN_RANGE_COPY_LENGTH * run_count;
     if constexpr (Inserter::IS_IN_PLACE)
         use_range_copy = use_range_copy && run_count <= MAX_IN_PLACE_RUNS;
+    else
+    {
+        /// Dense masks split by isolated holes can pass the average-run check but still pay for many short memcpy calls.
+        /// This keeps the first two runs free and asks for roughly two rejected rows per additional run.
+        use_range_copy = use_range_copy && selected_count + 2 * run_count <= MAX_OUT_OF_PLACE_RANGE_SCORE;
+    }
 
     if (!use_range_copy)
     {
