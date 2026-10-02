@@ -1,0 +1,27 @@
+-- t1_05293 INNER JOIN t2_05293 ON t1_05293.a = t2_05293.a RIGHT JOIN t3_05293 ON t2_05293.b = t3_05293.b
+group of 3
+planned by DPSUB
+same result
+-- t1_05293 INNER JOIN t2_05293 ON t1_05293.a = t2_05293.a FULL JOIN t3_05293 ON t2_05293.b = t3_05293.b
+group of 3
+planned by DPSUB
+same result
+-- t1_05293 FULL JOIN t2_05293 ON t1_05293.a = t2_05293.a INNER JOIN t3_05293 ON t2_05293.b = t3_05293.b
+group of 3
+planned by DPSUB
+same result
+-- t1_05293 LEFT JOIN t2_05293 ON t1_05293.a = t2_05293.a RIGHT SEMI JOIN t3_05293 ON t2_05293.b = t3_05293.b
+group of 3
+planned by DPSUB
+same result
+-- t1_05293 INNER JOIN t2_05293 ON t1_05293.a = t2_05293.a RIGHT ANTI JOIN t3_05293 ON t2_05293.b = t3_05293.b
+group of 3
+planned by DPSUB
+same result
+-- t1_05293 LEFT SEMI JOIN t2_05293 ON t1_05293.a = t2_05293.a FULL JOIN t3_05293 ON t1_05293.p % 6 = t3_05293.b
+group of 3
+planned by DPSUB
+same result
+-- join kinds of t1 CROSS JOIN t3 LEFT SEMI JOIN t2
+Type: cross
+Type: left
