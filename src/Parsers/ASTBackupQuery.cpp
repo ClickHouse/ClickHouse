@@ -853,14 +853,14 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
     /// children (`ParserBackupQuery::parseBackupName` marks them as `BACKUP_NAME`). Restoring them
     /// with the generic child path would let a wrong node type reach `IAST::set` as an internal cast
     /// error; validate by type so malformed `clickhouse_json` is rejected with `BAD_ARGUMENTS`.
-    auto backup_name_child = r.readChildOfType<ASTFunction>("backup_name");
+    auto backup_name_child = r.readBackupLocatorChild("backup_name");
     if (!backup_name_child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'backup_name' for `BackupQuery` during AST JSON deserialization");
     set(backup_name, backup_name_child);
-    auto base_backup_name_child = r.readChildOfType<ASTFunction>("base_backup_name");
+    auto base_backup_name_child = r.readBackupLocatorChild("base_backup_name");
     if (base_backup_name_child)
         set(base_backup_name, base_backup_name_child);
-    auto base_snapshot_name_child = r.readChildOfType<ASTFunction>("base_snapshot_name");
+    auto base_snapshot_name_child = r.readBackupLocatorChild("base_snapshot_name");
     if (base_snapshot_name_child)
     {
         /// `FROM SNAPSHOT` is parser-producible only for `BACKUP` (`ParserBackupQuery` gates it on

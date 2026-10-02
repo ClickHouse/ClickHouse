@@ -904,7 +904,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     if (r.has("offset_to_drop"))
         offset_to_drop = r.getUInt("offset_to_drop");
     backup_name = r.getString("backup_name");
-    backup_source = r.readChild("backup_source");
+    backup_source = r.readBackupLocatorChild("backup_source");
     if (backup_source)
         children.push_back(backup_source);
     /// `scheduled_merge_parts` is a non-empty `ASTExpressionList` of string `ASTLiteral`s
