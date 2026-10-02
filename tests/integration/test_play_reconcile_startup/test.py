@@ -124,7 +124,11 @@ def test_play_auth_headers_preserve_credentials_with_database_path(started_clust
         response = node.http_request(
             "default",
             method="POST",
-            params={"add_http_cors_header": "1"},
+            params={
+                "add_http_cors_header": "1",
+                "http_allow_database_as_path": "1",
+                "http_allow_table_as_file": "0",
+            },
             data="SELECT currentUser()",
             headers={
                 "Authorization": "ClickHouse-Play",
