@@ -2217,13 +2217,13 @@ def test_plain_database_ddl_and_drop_in_startup_window(started_cluster):
 
 
 def test_coordinated_detach_in_startup_window_is_a_no_op_rejection(started_cluster):
-    # In the attach/restart window `tryGetTable` wraps the nested tables on the fly. That wrapper must
-    # carry the coordinated flag exactly like the published wrappers do: otherwise a name-based
-    # DETACH TABLE ... PERMANENTLY (or DROP TABLE) in that window passes the storage-level
-    # `checkTableCanBeDetached` / `checkTableCanBeDropped` guard, and `InterpreterDropQuery` calls
-    # `flushAndShutdown` on the table - shutting the local nested replicated table down - before the
-    # database-level method rejects the statement on the settings. The statement still fails, but the
-    # promised no-op rejection is lost and replication of the table is silently broken.
+    # In the attach/restart window a coordinated table is not visible to user queries: the local nested
+    # table may not hold the complete initial snapshot yet, and only the coordination task can tell once
+    # the replication handler is running. A name-based DETACH TABLE ... PERMANENTLY (or DROP TABLE) in
+    # that window must therefore be rejected without touching the nested table: if it reached
+    # `InterpreterDropQuery`'s `flushAndShutdown`, the local nested replicated table would be shut down
+    # before the statement is rejected, the promised no-op rejection would be lost, and replication of
+    # the table would be silently broken.
     pg_manager.create_postgres_table("test_table")
     instance.query(
         "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(50)"
@@ -2262,7 +2262,11 @@ def test_coordinated_detach_in_startup_window_is_a_no_op_rejection(started_clust
             "DROP TABLE test_database.test_table",
         ]:
             error = instance.query_and_get_error(query)
-            assert "not supported for a coordinated MaterializedPostgreSQL" in error, error
+            assert "UNKNOWN_TABLE" in error, error
+        # Not readable either until this replica is known to have caught up.
+        assert "UNKNOWN_TABLE" in instance.query_and_get_error(
+            "SELECT count() FROM test_database.test_table"
+        )
     finally:
         instance.exec_in_container(["rm", "-f", failpoint_config_path])
         instance.query(
@@ -2270,9 +2274,8 @@ def test_coordinated_detach_in_startup_window_is_a_no_op_rejection(started_clust
         )
 
     # The rejections above must have been true no-ops: once the startup window closes, the nested
-    # table must still accept the consumer's writes. Without the coordinated flag on the on-the-fly
-    # wrapper, the refused DETACH has already shut the nested replicated table down, and this
-    # convergence never happens.
+    # table must still accept the consumer's writes. If a refused DETACH had shut the nested
+    # replicated table down, this convergence would never happen.
     instance.query(
         "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(50, 50)"
     )
