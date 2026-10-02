@@ -123,24 +123,17 @@ tryResolveViewInnerQueryForInspection(const TableNode & table_node, const Contex
     const auto * view = typeid_cast<const StorageView *>(storage.get());
     if (view && !view->isParameterizedView() && !table_node.hasTableExpressionModifiers())
     {
-        try
-        {
-            const auto & storage_snapshot = table_node.getStorageSnapshot();
-            auto view_context = StorageView::getViewSubqueryContext(context, storage_snapshot);
+        const auto & storage_snapshot = table_node.getStorageSnapshot();
+        auto view_context = StorageView::getViewSubqueryContext(context, storage_snapshot);
 
-            ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
-            QueryTreeNodePtr view_query_tree = buildQueryTree(view_ast, view_context);
+        ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
+        QueryTreeNodePtr view_query_tree = buildQueryTree(view_ast, view_context);
 
-            QueryAnalyzer view_analyzer(/*only_analyze_=*/true);
-            view_analyzer.resolve(view_query_tree, {}, view_context);
+        QueryAnalyzer view_analyzer(/*only_analyze_=*/true);
+        view_analyzer.resolve(view_query_tree, {}, view_context);
 
-            if (view_query_tree->as<QueryNode>())
-                result = view_query_tree;
-        }
-        catch (const Exception &)
-        {
-            result = nullptr;
-        }
+        if (view_query_tree->as<QueryNode>())
+            result = view_query_tree;
     }
 
     cache.emplace(&table_node, result);
@@ -214,18 +207,15 @@ tryParseDictFunctionCall(const QueryTreeNodePtr & node, const ContextPtr & conte
         if (!info)
             return std::nullopt;
 
-        try
-        {
-            const String dict_name = info->dict_name_node->getValue().safeGet<String>();
-            auto dict = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
-            if (!context->getAccess()->isGranted(
-                    AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName()))
-                return std::nullopt;
-        }
-        catch (const Exception &)
-        {
+        /// The `dictGet` comes from the view definition, which may run under the definer's rights
+        /// (`SQL SECURITY DEFINER`). After the rewrite the dictionary is read with the invoker's rights,
+        /// so skip the optimization if the invoker is not allowed to use the dictionary directly.
+        /// A missing dictionary is not hidden here: the error propagates, the same as when the view is executed.
+        const String dict_name = info->dict_name_node->getValue().safeGet<String>();
+        auto dict = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
+        if (!context->getAccess()->isGranted(
+                AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName()))
             return std::nullopt;
-        }
 
         const auto & projection_columns = column_definition->source_query_node->getProjectionColumns();
         const auto & projection_nodes = column_definition->source_query_node->getProjection().getNodes();

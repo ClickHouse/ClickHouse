@@ -136,9 +136,8 @@ EXPLAIN indexes = 1
 SELECT id FROM (SELECT id, dictGetString('view_lookup_dict', 'name', id) AS name FROM view_lookup_data) AS view_lookup_sub
 WHERE name = 'match';
 
--- A dictGet(...) whose dictionary was dropped after the view was created must not break the
--- optimization pass itself: the lookup used to check the dictGet grant fails closed (skips the
--- rewrite), and the query fails with the same error regardless of the setting.
+-- A dictGet(...) whose dictionary was dropped after the view was created: the query fails with
+-- the same error regardless of the setting.
 DROP VIEW IF EXISTS view_lookup_missing_dict_v;
 DROP DICTIONARY IF EXISTS view_lookup_missing_dict;
 DROP TABLE IF EXISTS view_lookup_missing_dict_ref;
