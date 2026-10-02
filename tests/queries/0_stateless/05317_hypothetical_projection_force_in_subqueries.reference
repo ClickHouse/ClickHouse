@@ -14,6 +14,10 @@ reason: `force_optimize_projection = 1` overrides the cost; the projection reads
 status: applicable
 verdict: not chosen
 reason: 2 marks would be read instead of 1 from the base table
+-- prefer for the query and force only in the IN subquery, the verdict names prefer
+status: applicable
+verdict: chosen (forced)
+reason: `prefer_optimize_projection = 1` overrides the cost; the projection reads 2 marks instead of 1 from the base table
 -- forced for the session
 status: applicable
 verdict: chosen (forced)

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# when a time limit in `break` mode stops a projection scan, the estimate must not use the partial rows
+# Tags: no-parallel, no-fasttest
+# Tag no-parallel: uses the server-global failpoint whatif_projection_scan_cut_short
+# a projection scan that stops early, as a time limit in `break` mode stops it, must not give an estimate
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,13 +14,12 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_whatif_break SELECT number, cityHash64(number) % 1000 FROM numbers(20000);
 "
 
-# the 1 ms limit always stops the scan at its first read, and then it also stops the output of EXPLAIN,
-# so the test reads the debug log of the estimator
-$CLICKHOUSE_CLIENT --send_logs_level=debug -q "
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT whatif_projection_scan_cut_short"
+$CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_b ON t_whatif_break (SELECT a, b ORDER BY b);
-    EXPLAIN WHATIF projection_scan_budget_rows = 5000 SELECT count() FROM t_whatif_break WHERE b < 100
-    SETTINGS optimize_trivial_count_query = 0, optimize_use_projections = 1,
-        max_execution_time = 0.001, timeout_overflow_mode = 'break';
-" 2>&1 | grep -c 'The projection scan was cut short'
+    EXPLAIN WHATIF SELECT count() FROM t_whatif_break WHERE b < 100
+    SETTINGS optimize_trivial_count_query = 0, optimize_use_projections = 1, prefer_optimize_projection = 0;
+" | grep -E '^\s+empirical_(status|reason):' | awk '{$1=$1; print}'
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT whatif_projection_scan_cut_short"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_whatif_break"

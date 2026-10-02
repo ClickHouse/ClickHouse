@@ -34,6 +34,13 @@ FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_whatif_force_nested
       WHERE a = 42 AND b IN (SELECT b FROM t_whatif_force_nested WHERE b >= 40 SETTINGS force_optimize_projection = 1))
 WHERE match(line, '^(status|verdict|reason):');
 
+SELECT '-- prefer for the query and force only in the IN subquery, the verdict names prefer';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_whatif_force_nested
+      WHERE a = 42 AND b IN (SELECT b FROM t_whatif_force_nested WHERE b >= 40 SETTINGS force_optimize_projection = 1)
+      SETTINGS prefer_optimize_projection = 1)
+WHERE match(line, '^(status|verdict|reason):');
+
 SELECT '-- forced for the session';
 SET force_optimize_projection = 1;
 SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line

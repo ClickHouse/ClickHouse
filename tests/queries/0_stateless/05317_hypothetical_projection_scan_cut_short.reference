@@ -1,1 +1,2 @@
-1
+empirical_status: unsupported
+empirical_reason: The projection scan was cut short by a time limit in `break` mode or a cancelled query
