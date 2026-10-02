@@ -1,4 +1,0 @@
-t_part_log_drop	NewPart	2
-t_part_log_drop	RemovePart	2
-t_part_log_drop_replicated	NewPart	2
-t_part_log_drop_replicated	RemovePart	2

@@ -13,7 +13,7 @@ ClickHouse se puede integrar fácilmente en infraestructuras de bases de datos O
   ## Creación de volcados SQL
 </div>
 
-Los datos pueden exportarse en formato SQL mediante [SQLInsert](/es/reference/formats/SQLInsert). ClickHouse escribirá los datos en la forma `INSERT INTO <table name> VALUES(...` y usará la opción de configuración [`output_format_sql_insert_table_name`](/es/reference/settings/formats/output-format#output_format_sql_insert_table_name) como nombre de la tabla:
+Los datos pueden exportarse en formato SQL mediante [SQLInsert](/es/reference/formats/SQLInsert). ClickHouse escribirá los datos en la forma `INSERT INTO <table name> VALUES(...` y usará la opción de configuración [`output_format_sql_insert_table_name`](/es/reference/settings/formats#output_format_sql_insert_table_name) como nombre de la tabla:
 
 ```sql
 SET output_format_sql_insert_table_name = 'some_table';
@@ -22,7 +22,7 @@ INTO OUTFILE 'dump.sql'
 FORMAT SQLInsert
 ```
 
-Se pueden omitir los nombres de las columnas desactivando la opción [`output_format_sql_insert_include_column_names`](/es/reference/settings/formats/output-format#output_format_sql_insert_include_column_names):
+Se pueden omitir los nombres de las columnas desactivando la opción [`output_format_sql_insert_include_column_names`](/es/reference/settings/formats#output_format_sql_insert_include_column_names):
 
 ```sql
 SET output_format_sql_insert_include_column_names = 0
@@ -36,7 +36,7 @@ mysql some_db < dump.sql
 
 Suponemos que la tabla `some_table` existe en la base de datos MySQL `some_db`.
 
-Algunos DBMS pueden tener límites sobre cuántos valores se pueden procesar en un solo lote. De forma predeterminada, ClickHouse creará lotes de 65k valores, pero eso se puede cambiar con la opción [`output_format_sql_insert_max_batch_size`](/es/reference/settings/formats/output-format#output_format_sql_insert_max_batch_size):
+Algunos DBMS pueden tener límites sobre cuántos valores se pueden procesar en un solo lote. De forma predeterminada, ClickHouse creará lotes de 65k valores, pero eso se puede cambiar con la opción [`output_format_sql_insert_max_batch_size`](/es/reference/settings/formats#output_format_sql_insert_max_batch_size):
 
 ```sql
 SET output_format_sql_insert_max_batch_size = 1000;
@@ -78,7 +78,7 @@ LIMIT 5
 └────────────────────────────────┴────────────┴──────┘
 ```
 
-De forma predeterminada, ClickHouse omitirá las columnas desconocidas (según la opción [input&#95;format&#95;skip&#95;unknown&#95;fields](/es/reference/settings/formats/input-format#input_format_skip_unknown_fields)) y procesará los datos de la primera tabla que encuentre en un volcado (en caso de que se hayan volcado varias tablas en un solo archivo). Se omitirán las sentencias DDL. Para cargar datos de un volcado de MySQL en una tabla (archivo [mysql.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/mysql.sql)):
+De forma predeterminada, ClickHouse omitirá las columnas desconocidas (según la opción [input&#95;format&#95;skip&#95;unknown&#95;fields](/es/reference/settings/formats#input_format_skip_unknown_fields)) y procesará los datos de la primera tabla que encuentre en un volcado (en caso de que se hayan volcado varias tablas en un solo archivo). Se omitirán las sentencias DDL. Para cargar datos de un volcado de MySQL en una tabla (archivo [mysql.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/mysql.sql)):
 
 ```sql
 INSERT INTO some_data
