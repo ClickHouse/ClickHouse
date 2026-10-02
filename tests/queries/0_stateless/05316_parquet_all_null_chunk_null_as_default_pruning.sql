@@ -14,7 +14,7 @@ insert into function file(currentDatabase() || '_all_null.parquet', Parquet)
     select number, if(number < 100, NULL, number) as x from numbers(200)
     settings output_format_parquet_row_group_size = 100, max_block_size = 1000;
 
-set input_format_parquet_filter_push_down = 1, input_format_parquet_page_filter_push_down = 0;
+set input_format_parquet_filter_push_down = 1, input_format_parquet_page_filter_push_down = 0, input_format_parquet_use_native_reader_v3 = 1;
 select count(), sum(number)
     from file(currentDatabase() || '_all_null.parquet', Parquet, 'number UInt64, x UInt64') where indexHint(x = 0);
 select count(), sum(number)
@@ -24,7 +24,7 @@ select count(), sum(number)
 select count(), sum(number)
     from file(currentDatabase() || '_all_null.parquet', Parquet, 'number UInt64, x Nullable(UInt64)') where indexHint(x = 0);
 
-set input_format_parquet_filter_push_down = 0, input_format_parquet_page_filter_push_down = 1;
+set input_format_parquet_filter_push_down = 0, input_format_parquet_page_filter_push_down = 1, input_format_parquet_use_native_reader_v3 = 1;
 select count(), sum(number)
     from file(currentDatabase() || '_all_null.parquet', Parquet, 'number UInt64, x UInt64') where indexHint(x = 0);
 select count(), sum(number)
