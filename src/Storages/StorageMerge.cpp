@@ -2561,6 +2561,21 @@ QueryPlanRawPtrs ReadFromMerge::getChildPlans(bool /*for_explain*/)
     return plans;
 }
 
+QueryPlanRawPtrs ReadFromMerge::getBuiltChildPlans()
+{
+    /// Deliberately does not call `filterTablesAndCreateChildrenPlans`: planning the children here
+    /// would be work done only because someone looked at the plan.
+    if (!child_plans)
+        return {};
+
+    QueryPlanRawPtrs plans;
+    for (auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized())
+            plans.push_back(&child_plan.plan);
+
+    return plans;
+}
+
 std::vector<QueryPlan *> ReadFromMerge::getAllChildPlans()
 {
     filterTablesAndCreateChildrenPlans();

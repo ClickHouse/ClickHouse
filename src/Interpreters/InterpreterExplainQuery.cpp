@@ -1402,7 +1402,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// Build the per-plan pretty-names registry now: buildQueryPipeline below moves the ActionsDAGs
             /// out of the plan steps, so the names must be snapshotted before the pipeline consumes the plan.
             /// EXPLAIN ANALYZE rejects distributed plans above, so this covers the whole plan tree.
-            PrettyNamesPerPlan precomputed_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(plan);
+            PrettyNamesPerPlan precomputed_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(plan, /*only_built_child_plans=*/ false);
 
             plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
@@ -1444,7 +1444,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             planning_ns += watch.elapsed();
 
-            auto step_profiler = std::make_shared<StepProfiler>(plan, analyzed.time);
+            /// EXPLAIN wants the lazily built child plans, so this walk may build them.
+            auto step_profiler = std::make_shared<StepProfiler>(plan, analyzed.time, /*only_built_child_plans=*/ false);
             pipeline.setStepProfiler(step_profiler);
 
             CompletedPipelineExecutor executor(pipeline);

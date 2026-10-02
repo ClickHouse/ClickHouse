@@ -41,11 +41,33 @@ struct ExplainFormatSettings;
 
 using StepProcessors = std::span<IProcessor * const>;
 
+/// Identity of a plan step, unique within a query.
+class PlanStepIndex
+{
+public:
+    PlanStepIndex();
+
+    /// A copy of a step is a different step -- `clone` is `make_unique<Step>(*this)` and both
+    /// copies can end up in the same plan -- so copying takes a fresh index instead of
+    /// duplicating the source's.
+    PlanStepIndex(const PlanStepIndex &) : PlanStepIndex() {}
+    PlanStepIndex & operator=(const PlanStepIndex &) { return *this; } // NOLINT(cert-oop54-cpp) - keeping our own index is self-assignment safe
+
+    /// Moving is the same step changing hands, so the index travels with it.
+    PlanStepIndex(PlanStepIndex &&) noexcept = default;
+    PlanStepIndex & operator=(PlanStepIndex &&) noexcept = default;
+
+    size_t get() const { return value; }
+
+private:
+    size_t value = 0;
+};
+
 /// Single step of query plan.
 class IQueryPlanStep
 {
 public:
-    IQueryPlanStep();
+    IQueryPlanStep() = default;
 
     IQueryPlanStep(const IQueryPlanStep &) = default;
     IQueryPlanStep(IQueryPlanStep &&) = default;
@@ -111,8 +133,15 @@ public:
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
     /// Get child plans contained inside some steps (e.g ReadFromMerge) so that they are visible when doing EXPLAIN.
+    /// Some steps build their child plans here rather than handing over plans they already hold, so this
+    /// changes what the query has done by the time it returns. Callers that only observe a plan must use
+    /// `getBuiltChildPlans` instead.
     /// EXPLAIN sets `for_explain`: a step whose plan runs with privileges the current user does not hold may hide it there.
     virtual QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) { return {}; }
+
+    /// The child plans this step has already built. A step that builds them on demand reports none until
+    /// something else has asked for them, which keeps observing a plan from changing the work a query does.
+    virtual QueryPlanRawPtrs getBuiltChildPlans() { return {}; }
 
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);
@@ -215,7 +244,7 @@ protected:
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 
 private:
-    size_t step_index = 0;
+    PlanStepIndex step_index;
 };
 
 }
