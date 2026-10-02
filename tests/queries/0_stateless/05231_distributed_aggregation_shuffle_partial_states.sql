@@ -25,6 +25,10 @@ SELECT '-- rule-based, setting off: shuffle of the input rows';
 EXPLAIN SELECT k, sum(v) FROM t_shuffle_states GROUP BY k
 SETTINGS enable_cascades_optimizer = 0, distributed_plan_partial_aggregation_before_shuffle = 0;
 
+SELECT '-- rule-based, forced shuffle: shuffle of the input rows, as in the Cascades optimizer';
+EXPLAIN SELECT k, sum(v) FROM t_shuffle_states GROUP BY k
+SETTINGS enable_cascades_optimizer = 0, distributed_plan_force_shuffle_aggregation = 1;
+
 SET param__internal_cascades_cluster_node_count = 4;
 SET param__internal_join_table_stat_hints = '{"t_shuffle_states": {"cardinality": 100000000, "avg_row_bytes": 16, "distinct_keys": {"k": 10000000}}}';
 

@@ -864,7 +864,10 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 
     /// A shuffle of input rows sends every row over the network, even when each node sees each key
     /// many times. Shuffling partial states sends at most one row per group from each node instead.
+    /// `distributed_plan_force_shuffle_aggregation` asks for the shuffle of input rows without a partial
+    /// aggregation, the same as in the Cascades optimizer.
     if (strategy == Shuffle && optimization_settings.distributed_plan_partial_aggregation_before_shuffle
+        && !optimization_settings.distributed_plan_force_shuffle_aggregation
         && can_use_partial_aggregation && !aggregating_step->getParams().overflow_row && !partial_aggregation_reduces_little)
         strategy = ShufflePartialStates;
 

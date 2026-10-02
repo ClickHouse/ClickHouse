@@ -13,6 +13,13 @@ GatherExchange
       ShuffleExchange (by hash([__table1.k]))
         Expression ((Before GROUP BY + Change column names to column identifiers))
           ReadFromMergeTree (default.t_shuffle_states)
+-- rule-based, forced shuffle: shuffle of the input rows, as in the Cascades optimizer
+GatherExchange
+  Expression ((Project names + Projection))
+    Aggregating
+      ShuffleExchange (by hash([__table1.k]))
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.t_shuffle_states)
 -- Cascades, many groups: the merge runs per bucket over shuffled states
 GatherExchange
   Expression ((Project names + Projection))
