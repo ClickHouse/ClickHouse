@@ -27,6 +27,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
@@ -386,9 +387,9 @@ namespace
     }
 
     /// Replace an argument with the partially masked SQL the formatter prints for it: a URL with its
-    /// credentials removed, or the reconstructed `S3(...)` destination of a `Backup` database. The
-    /// finder builds the text from literals it read, so it parses. If it does not, the original node
-    /// must not stay in the tree; the argument is hidden whole (fail closed).
+    /// credentials removed, or the masked locator of a `Backup` database. The original node must not
+    /// stay in the tree, so text that does not parse, or parses into a node that cannot take the
+    /// argument's place (a `COLUMNS(...)` matcher has no alias), hides the argument whole.
     void replaceWithMaskedText(ASTPtr & node, const String & text)
     {
         ParserExpression parser;
@@ -406,7 +407,7 @@ namespace
             DBMS_DEFAULT_MAX_PARSER_DEPTH,
             DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
             /* skip_insignificant= */ true);
-        if (!parsed)
+        if (!parsed || !dynamic_cast<ASTWithAlias *>(parsed.get()))
         {
             hideWholeNode(node);
             return;
