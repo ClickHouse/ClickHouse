@@ -272,8 +272,7 @@ $CLICKHOUSE_LOCAL --path "$NOMV_PATH" --dump-schema --dump-schema-exclude="${DB}
 echo "empty dump, any SET emitted: $(grep -c '^SET ' "$NOMV_DUMP_FILE")"
 rm -rf "$NOMV_PATH" "$NOMV_DUMP_FILE"
 
-# A projection is analyzable query text with no view anywhere: its SELECT is resolved at
-# description time, so the analyzer-side gates must come back for it.
+# A projection's SELECT is analyzed too, but a plain GROUP BY key in it reads no analyzer gate.
 PROJ_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_proj"
 PROJ_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_proj.sql"
 rm -rf "$PROJ_PATH"
