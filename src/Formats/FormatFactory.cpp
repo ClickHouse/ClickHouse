@@ -467,6 +467,17 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     return format_settings;
 }
 
+FormatSettings getNativeWireFormatSettings(const ContextPtr & context)
+{
+    auto format_settings = getFormatSettings(context);
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        format_settings.native.encode_types_in_binary_format = false;
+        format_settings.native.decode_types_in_binary_format = false;
+    }
+    return format_settings;
+}
+
 FileBucketInfoPtr FormatFactory::getFileBucketInfo(const String & format)
 {
     auto creator = getCreators(format);

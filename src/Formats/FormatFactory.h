@@ -64,6 +64,9 @@ using BucketSplitter = std::shared_ptr<IBucketSplitter>;
 
 FormatSettings getFormatSettings(const ContextPtr & context);
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings);
+/// For the `Native` blocks of the native protocol. A secondary query carries type names in both directions,
+/// because a server-side `Connection` never takes format settings.
+FormatSettings getNativeWireFormatSettings(const ContextPtr & context);
 
 /// `output_format_arrow_unsupported_types` supersedes the older boolean
 /// `output_format_arrow_unsupported_types_as_binary` (`0` means `throw`, `1` means `binary`). The boolean is

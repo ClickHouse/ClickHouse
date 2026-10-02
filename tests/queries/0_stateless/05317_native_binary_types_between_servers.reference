@@ -4,7 +4,13 @@ str	String
 parallel replicas
 42	UInt64
 str	String
+1
 remote insert
 7
 file read on a shard
 5
+secondary query from a client
+42	UInt64
+str	String
+7
+8
