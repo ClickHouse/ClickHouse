@@ -26,19 +26,6 @@ bool BlockNestedLoopJoinStep::isSupportedJoinType(JoinKind kind, JoinStrictness 
     return BlockNestedLoopJoinRules::forJoin(kind, strictness).has_value();
 }
 
-/// The position of a condition input in the header it comes from. Two columns of one header may
-/// carry the same name, and then the name does not say which of them the condition reads, so the
-/// name has to name exactly one column rather than merely the first of several.
-static size_t resolvePredicateInputPosition(const Block & header, const String & name)
-{
-    const size_t position = header.getPositionByName(name);
-    for (size_t i = position + 1; i < header.columns(); ++i)
-        if (header.getByPosition(i).name == name)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Block nested loop join condition input {} occurs more than once in [{}]", name, header.dumpNames());
-    return position;
-}
-
 /// Where every required column of the condition comes from, by name: the side and its position in
 /// that side's header. Resolved against the headers the columns are actually read from rather than
 /// once and for all, because a position taken from the plan's header says nothing about the header
@@ -56,7 +43,9 @@ static std::vector<BlockNestedLoopPredicate::Source> resolvePredicateInputs(
                 required_column.name, in_left ? "both" : "neither");
 
         const Block & header = in_left ? left_header : right_header;
-        const size_t position = resolvePredicateInputPosition(header, required_column.name);
+        /// A name that occurs more than once in a header binds to its first column, as an input of
+        /// `ExpressionActions` does.
+        const size_t position = header.getPositionByName(required_column.name);
         /// The column is handed to the condition under the type the condition declares for it, so a
         /// column of another type would be read as one it is not.
         const auto & input_type = header.getByPosition(position).type;
