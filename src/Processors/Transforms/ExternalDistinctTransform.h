@@ -212,7 +212,14 @@ private:
     void readRun(RunWriteProgress & progress);
     void prepareTail(PreparingTail & tail);
     size_t estimateRunWriteMemory(size_t rows, size_t allocated_bytes) const;
+    /// Estimates the reader of a temporary file that is still to be written, whose blocks hold
+    /// `block_rows` rows.
+    size_t estimateNewFileReadMemory(size_t block_rows) const;
     size_t maxRowsInIntermediateMergeBlock() const;
+    /// Returns the temporary-file memory of merging `num_files` files whose reader estimates sum to
+    /// `files_read_memory`, the largest being `max_read_memory`: the readers open at a time under the fan-in
+    /// limit, plus the writer of intermediate merges when the limit requires them.
+    size_t estimateMergeFileMemory(size_t num_files, size_t files_read_memory, size_t max_read_memory) const;
     size_t selectTailSpillPrefix(const CollectingInput & collecting) const;
     void consumeMerged(Merging & merging);
 
@@ -241,9 +248,10 @@ private:
     ExternalMergeSource::Runs suppression_runs;
     ExternalMergeSource::Runs ordinary_runs;
     size_t temporary_files_num = 0;
-    /// Run output sizes estimate the memory needed to read every file at once. With a limited merge
-    /// fan-in the final merge reads fewer files, so this is an upper bound.
+    /// Reader memory of the run files, estimated from each run's output blocks, summed over all files and
+    /// at its largest. `estimateMergeFileMemory` derives the memory of merging the files from both.
     size_t estimated_file_read_memory = 0;
+    size_t max_file_read_memory = 0;
     /// Largest average row width observed before or after deduplication, including the emitted flag.
     size_t max_average_row_bytes = 0;
 

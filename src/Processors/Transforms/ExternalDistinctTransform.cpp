@@ -704,8 +704,9 @@ void ExternalDistinctTransform::readRun(RunWriteProgress & progress)
         }
     }
 
-    estimated_file_read_memory += estimateRunReadMemory(
-        progress.max_block_bytes, tmp_data->getSettings().buffer_size);
+    const size_t read_memory = estimateRunReadMemory(progress.max_block_bytes, tmp_data->getSettings().buffer_size);
+    estimated_file_read_memory += read_memory;
+    max_file_read_memory = std::max(max_file_read_memory, read_memory);
     progress.merger.reset();
 }
 
@@ -728,6 +729,13 @@ size_t ExternalDistinctTransform::estimateRunWriteMemory(size_t rows, size_t all
     return flag_columns_memory + output_memory + write_buffers_memory;
 }
 
+size_t ExternalDistinctTransform::estimateNewFileReadMemory(size_t block_rows) const
+{
+    /// Its blocks hold `block_rows` rows of the largest observed average row width, with twice that size
+    /// allowed for column capacity rounding.
+    return estimateRunReadMemory(2 * max_average_row_bytes * block_rows, tmp_data->getSettings().buffer_size);
+}
+
 size_t ExternalDistinctTransform::maxRowsInIntermediateMergeBlock() const
 {
     /// Intermediate merges write their files under the runs' byte target, sized for the widest observed
@@ -735,11 +743,32 @@ size_t ExternalDistinctTransform::maxRowsInIntermediateMergeBlock() const
     return MergeSorter::calculateMaxMergedBlockSize(max_block_size_rows, preferred_block_bytes, 1, max_average_row_bytes);
 }
 
+size_t ExternalDistinctTransform::estimateMergeFileMemory(size_t num_files, size_t files_read_memory, size_t max_read_memory) const
+{
+    /// The final merge reads every file at once unless there are more files than the fan-in limit.
+    if (!ExternalMergeSource::needsIntermediateMerges(num_files, max_external_merge_fan_in))
+        return files_read_memory;
+
+    /// Otherwise intermediate merges reduce the files first, and at most the limit are read at a time,
+    /// runs or intermediate outputs. The open readers are bounded both by the limit times the largest
+    /// reader and by all runs plus the limit times an output reader. An intermediate merge also needs its
+    /// writer's buffers; its output blocks are no larger than those of the final merge, which the caller
+    /// budgets.
+    const size_t intermediate_read_memory = estimateNewFileReadMemory(maxRowsInIntermediateMergeBlock());
+    const size_t open_files_memory = std::min(
+        max_external_merge_fan_in * std::max(max_read_memory, intermediate_read_memory),
+        files_read_memory + max_external_merge_fan_in * intermediate_read_memory);
+    return open_files_memory + estimateRunWriteBuffersMemory(tmp_data->getSettings().buffer_size);
+}
+
 size_t ExternalDistinctTransform::selectTailSpillPrefix(const CollectingInput & collecting) const
 {
     const auto & chunks = collecting.sorted_chunks;
     if (chunks.empty())
         return 0;
+
+    /// Every written run is registered for the merge before the tail is budgeted.
+    chassert(temporary_files_num == suppression_runs.size() + ordinary_runs.size());
 
     const size_t query_memory = std::max<Int64>(0, getCurrentQueryMemoryUsage());
 
@@ -750,7 +779,9 @@ size_t ExternalDistinctTransform::selectTailSpillPrefix(const CollectingInput & 
 
     /// `MergeSorter` expands the emitted-row flags before merging. Allow capacity rounding for
     /// these byte columns while the original tail chunks remain alive.
-    const size_t merge_memory = estimated_file_read_memory + output_memory + 2 * collecting.sorted_rows;
+    const size_t tail_flags_memory = 2 * collecting.sorted_rows;
+    const size_t merge_memory = estimateMergeFileMemory(temporary_files_num, estimated_file_read_memory, max_file_read_memory)
+        + output_memory + tail_flags_memory;
     if (query_memory + merge_memory <= max_bytes_before_external_distinct)
         return 0;
 
@@ -769,11 +800,15 @@ size_t ExternalDistinctTransform::selectTailSpillPrefix(const CollectingInput & 
         /// rounding, to budget that replacement.
         const size_t block_rows = MergeSorter::calculateMaxMergedBlockSize(
             max_block_size_rows, preferred_block_bytes, prefix_rows, prefix_bytes + prefix_rows);
-        const size_t new_reader_memory = estimateRunReadMemory(
-            2 * max_average_row_bytes * block_rows, tmp_data->getSettings().buffer_size);
+        const size_t new_reader_memory = estimateNewFileReadMemory(block_rows);
+
+        /// The spilled prefix becomes another file of the merge.
+        const size_t merge_memory_with_prefix = estimateMergeFileMemory(
+                temporary_files_num + 1, estimated_file_read_memory + new_reader_memory,
+                std::max(max_file_read_memory, new_reader_memory))
+            + output_memory + tail_flags_memory;
         const size_t released_bytes = prefix_bytes + 2 * prefix_rows;
-        if (query_memory + merge_memory + new_reader_memory
-            <= max_bytes_before_external_distinct + released_bytes)
+        if (query_memory + merge_memory_with_prefix <= max_bytes_before_external_distinct + released_bytes)
             return prefix + 1;
     }
 
@@ -806,10 +841,11 @@ void ExternalDistinctTransform::prepareTail(PreparingTail & tail)
 
         LOG_TRACE(log, "Spilling a DISTINCT tail prefix before merging "
             "(chunks: {}, bytes: {}, remaining chunks: {}, remaining bytes: {}, "
-            "estimated file-reader memory: {}, query memory: {}, spill threshold: {})",
+            "estimated temporary-file memory: {}, query memory: {}, spill threshold: {})",
             prefix_size, formatReadableSizeWithBinarySuffix(prefix_bytes), chunks.size(),
             formatReadableSizeWithBinarySuffix(tail.collecting.sorted_bytes),
-            formatReadableSizeWithBinarySuffix(estimated_file_read_memory),
+            formatReadableSizeWithBinarySuffix(
+                estimateMergeFileMemory(temporary_files_num, estimated_file_read_memory, max_file_read_memory)),
             formatReadableSizeWithBinarySuffix(getCurrentQueryMemoryUsage()),
             formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct));
 
