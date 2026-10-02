@@ -217,7 +217,7 @@ Chunk PostgreSQLSource<T>::generate()
 
     while (!isCancelled() && !stop_requested.load())
     {
-        const std::vector<pqxx::zview> * row{nullptr};
+        const std::vector<std::string_view> * row{nullptr};
         try
         {
             row = stream->read_row();
