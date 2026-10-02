@@ -75,6 +75,29 @@ SELECT 'a nested JSON typed path in Nullable(JSON)', count() FROM t_05198_nullab
 SELECT 'the same without the index', count() FROM t_05198_nullable WHERE json.a.b = 42 SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_05198_nullable WHERE json.a.b = 42 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
+-- The `text` index type has its own matchers for `JSONAllPaths` and `JSONAllValues`. With
+-- `tokenizer = 'array'`, `JSONAllValues` stores the whole value of the typed path `a` as one token,
+-- which never equals the value of `json.a.b`, so such a filter must not use the index either.
+DROP TABLE IF EXISTS t_05198_text_values;
+CREATE TABLE t_05198_text_values (json JSON(a JSON), INDEX idx JSONAllValues(json) TYPE text(tokenizer = 'array') GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
+INSERT INTO t_05198_text_values SELECT '{"a":{"b":42}}' FROM numbers(4);
+
+SELECT 'a text index on JSONAllValues', count() FROM t_05198_text_values WHERE json.a.b = 42;
+SELECT 'the same without the index', count() FROM t_05198_text_values WHERE json.a.b = 42 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_05198_text_values WHERE json.a.b = 42 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+
+DROP TABLE IF EXISTS t_05198_text_paths;
+CREATE TABLE t_05198_text_paths (json JSON(a JSON), INDEX idx JSONAllPaths(json) TYPE text(tokenizer = 'array') GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
+INSERT INTO t_05198_text_paths SELECT '{"a":{"b":42}}' FROM numbers(4);
+
+SELECT 'a text index on JSONAllPaths', count() FROM t_05198_text_paths WHERE json.a.b = 42;
+SELECT 'the same without the index', count() FROM t_05198_text_paths WHERE json.a.b = 42 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_05198_text_paths WHERE json.a.b = 42 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+
+DROP TABLE t_05198_text_paths;
+DROP TABLE t_05198_text_values;
 DROP TABLE t_05198_nullable;
 DROP TABLE t_05198_overlap;
 DROP TABLE t_05198_dynamic;

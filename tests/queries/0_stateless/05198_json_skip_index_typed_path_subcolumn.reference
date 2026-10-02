@@ -18,3 +18,7 @@ the same without the index	4
 an absent exact typed path is still pruned	0
 a nested JSON typed path in Nullable(JSON)	4
 the same without the index	4
+a text index on JSONAllValues	4
+the same without the index	4
+a text index on JSONAllPaths	4
+the same without the index	4
