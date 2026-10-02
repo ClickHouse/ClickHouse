@@ -504,6 +504,9 @@ String capitalized(String text)
     return text;
 }
 
+/// fewer sampled granules can't give an error estimate
+constexpr size_t min_sampled_granules = 30;
+
 /// the granules to read from each part: all, or a sample past the budget
 struct ScanPlan
 {
@@ -532,9 +535,10 @@ bool planScan(
     if (const UInt64 read_limit = query_settings[Setting::max_rows_to_read]; read_limit != 0)
         budget = budget == 0 ? read_limit : std::min(budget, read_limit);
     plan.sample_step = budget != 0 && rows_to_scan > budget ? (rows_to_scan + budget - 1) / budget : 1;
-    /// but keep at least 30 sampled granules, fewer can't give an error estimate: the largest step with ceil(marks / step) >= 30
+    /// the largest step that still samples `min_sampled_granules`
     if (plan.sample_step > 1)
-        plan.sample_step = std::min<size_t>(plan.sample_step, std::max<size_t>(1, (plan.marks_to_scan - 1) / 29));
+        plan.sample_step
+            = std::min<size_t>(plan.sample_step, std::max<size_t>(1, (plan.marks_to_scan - 1) / (min_sampled_granules - 1)));
 
     /// a sample's row offsets are not the part's, so an offset filter can't be applied to it
     if (plan.sample_step > 1 && filters_on_offsets)
@@ -556,9 +560,10 @@ bool planScan(
     if (const UInt64 read_limit = query_settings[Setting::max_rows_to_read]; read_limit != 0 && rows_planned > read_limit)
     {
         result.empirical_unsupported_reason = fmt::format(
-            "The estimate would read {} rows, over max_rows_to_read = {} (a sample keeps at least ~30 granules and one per part)",
+            "The estimate would read {} rows, over max_rows_to_read = {} (a sample keeps at least ~{} granules and one per part)",
             rows_planned,
-            read_limit);
+            read_limit,
+            min_sampled_granules);
         return false;
     }
     return true;
