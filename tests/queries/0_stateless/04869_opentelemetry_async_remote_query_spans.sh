@@ -209,14 +209,14 @@ ${CLICKHOUSE_CLIENT} \
     --query "select * from remote('127.0.0.2', view(select sleep(3) from system.one)) format Null" \
     >/dev/null 2>&1 &
 
-# Wait until the remote leg is in flight before killing: the non-initial SELECT appears in
+# Wait until the remote leg is in flight before killing: the non-initial `SELECT` appears in
 # system.processes (127.0.0.2 loops back to this same server) only after
 # Connection::sendQuery succeeded, and with async_query_sending_for_remote=1 sendQuery
 # runs inside the RemoteQueryExecutorReadContext fiber (span `RemoteQueryExecutor::execute`), so its presence proves the fiber
 # is created and suspended. Waiting only for the initiator query would race with query
 # startup: a kill landing before the first resume finds no fiber to unwind and no task
-# span is ever emitted. remote() over a view first sends a DESC TABLE to infer the
-# structure; that entry is non-initial too and does not mean the SELECT was sent.
+# span is ever emitted. `remote` over a view first sends a `DESC TABLE` to infer the
+# structure; that entry is non-initial too and does not mean the `SELECT` was sent.
 for _retry in {1..100}; do
     started=$(${CLICKHOUSE_CLIENT} -q "select count() from system.processes where initial_query_id = '$kill_query_id' and query_id != initial_query_id and query_kind = 'Select'")
     [[ "$started" -ge 1 ]] && break
@@ -225,11 +225,13 @@ done
 ${CLICKHOUSE_CLIENT} -q "kill query where query_id = '$kill_query_id' sync format Null"
 wait
 
+# The `DESC TABLE` that `remote` sends to infer the structure has its own span; the killed
+# fragment's is the second.
 poll_spans "
     with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
     select countIf(operation_name = 'RemoteQueryExecutor::execute')
     from system.opentelemetry_span_log
-    where finish_date >= yesterday() and trace_id = t" "1" \
+    where finish_date >= yesterday() and trace_id = t" "2" \
 || exit 1
 echo "task span emitted on cancellation: OK"
 
