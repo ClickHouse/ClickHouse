@@ -196,18 +196,10 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
 {
     /// A pinned snapshot is captured in advance for atomic `CREATE MATERIALIZED VIEW ... POPULATE`,
     /// so the population reads exactly the data that existed when the view was subscribed to new inserts.
-    /// The pin is stored on the query context, so consult it as well: the population's read runs under
-    /// contexts derived from the query context rather than the exact context the pin was set on (the same
-    /// reason `MergeTreeData::getStorageSnapshot` consults the query context).
     if (query_context)
     {
         if (auto pinned = query_context->getPinnedStorageSnapshot(getStorageID().uuid))
             return pinned;
-        if (query_context->hasQueryContext())
-        {
-            if (auto pinned = query_context->getQueryContext()->getPinnedStorageSnapshot(getStorageID().uuid))
-                return pinned;
-        }
     }
 
     auto current_data = data.get();
@@ -760,22 +752,12 @@ IStorage::ColumnSizeByName StorageMemory::getColumnSizes() const
     return column_sizes;
 }
 
-bool StorageMemory::supportsTrivialCountOptimization(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr query_context) const
+bool StorageMemory::supportsTrivialCountOptimization(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*query_context*/) const
 {
     /// The table behind a materialized CTE or a `GLOBAL` subquery is filled during query
     /// execution, after the planner would have observed `totalRows` (as zero).
     if (delay_read_for_global_subqueries || getMaterializedCTE())
         return false;
-
-    /// A pinned snapshot (atomic `CREATE MATERIALIZED VIEW ... POPULATE`) must observe the set of
-    /// blocks captured at subscription time, while `totalRows` reflects the latest committed state.
-    if (query_context)
-    {
-        if (query_context->getPinnedStorageSnapshot(getStorageID().uuid))
-            return false;
-        if (query_context->hasQueryContext() && query_context->getQueryContext()->getPinnedStorageSnapshot(getStorageID().uuid))
-            return false;
-    }
     return true;
 }
 
@@ -828,7 +810,7 @@ The Memory engine stores data in RAM, in uncompressed form. Data is stored in ex
 Concurrent data access is synchronized. Locks are short: read and write operations do not block each other.
 Indexes are not supported. Reading is parallelized.
 
-Reads support `PREWHERE`, including the automatic move of `WHERE` conditions controlled by the [`optimize_move_to_prewhere`](/operations/settings/settings#optimize_move_to_prewhere) setting: only the columns of the conditions are read at first, and the remaining columns are read only for the blocks where some rows pass, and only for the passing rows. This is especially beneficial together with `compress = true`, because for a selective condition, most columns are never decompressed. `SELECT count() FROM table` without a filter is served from metadata without reading the data.
+Reads support `PREWHERE`, including the automatic move of `WHERE` conditions controlled by the [`optimize_move_to_prewhere`](/operations/settings/settings#optimize_move_to_prewhere) setting: only the columns of the conditions are read at first, and the remaining columns are read only for the blocks where some rows pass, and only for the passing rows. A conjunction of conditions is evaluated in steps, like in `MergeTree` with the [`enable_multiple_prewhere_read_steps`](/operations/settings/settings#enable_multiple_prewhere_read_steps) setting: the columns of each next condition are read only for the rows that passed the previous ones. This is especially beneficial together with `compress = true`, because for a selective condition, most columns are never decompressed. `SELECT count() FROM table` without a filter is served from metadata without reading the data.
 
 Maximal productivity (over 10 GB/sec) is reached on simple queries, because there is no reading from the disk, decompressing, or deserializing data. (We should note that in many cases, the productivity of the MergeTree engine is almost as high.)
 When restarting a server, data disappears from the table and the table becomes empty.
