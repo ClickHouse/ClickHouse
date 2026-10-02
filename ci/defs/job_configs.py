@@ -21,7 +21,8 @@ LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 # Using nearly all host RAM for the outer container can starve the host runner
 # and lead to "runner lost communication". Reserve a larger margin on the host
 # by capping Keeper to ~70% of physical memory.
-KEEPER_DIND_MEM = Utils.physical_memory() * 70 // 100
+# Whole GiB: docker_in_docker.sh compares it with the page-granular memory.max.
+KEEPER_DIND_MEM = Utils.physical_memory() * 70 // 100 // 1024**3 * 1024**3
 
 # Integration tests run a nested Docker daemon, so `docker_in_docker.sh` splits the job's
 # `--memory` into capped cgroup leaves. `/init`'s cap is a ceiling rather than a share, so the
@@ -49,42 +50,49 @@ INTEGRATION_DIND_INIT_RESERVE = 8 * 1024**3
 # concurrency rather than staying at the daemon's own footprint. An absolute floor, never a
 # fraction of the job limit: too small and the daemons cannot boot at all.
 INTEGRATION_DIND_DAEMON_RESERVE = 2 * 1024**3
-# What the nested test containers may collectively use. Also bounds xdist worker concurrency, so
-# scheduling and containment agree on one number. Clamped at zero because a negative reads to
-# `docker_in_docker.sh`'s validator as a malformed variable rather than a host too small.
-INTEGRATION_NESTED_BUDGET = max(
-    LIMITED_MEM
-    - INTEGRATION_DIND_ROOT_RESERVE
-    - INTEGRATION_DIND_INIT_RESERVE
-    - INTEGRATION_DIND_DAEMON_RESERVE,
-    0,
-)
-# `/init`'s ceiling, not its share: its peak is one test's host-side client fan-out plus the page
-# cache of the logs it reads and archives, and neither is bounded by the reserve above. It
-# overlaps `/docker`, so this cap alone is within the job limit but the three together are not -
-# which is what lets the reserve shrink without `/init` losing any room it actually uses.
-INTEGRATION_DIND_INIT_LIMIT = max(
-    LIMITED_MEM - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_DAEMON_RESERVE,
-    INTEGRATION_DIND_INIT_RESERVE,
-)
-# `/dockerd`'s ceiling, not its share, for the same reason `/init` has one: an image pull writes
-# every layer through this leaf, so the leaf also holds that page cache, and a dirty page cannot be
-# reclaimed until its writeback completes. The reserve stays the daemons' own anon footprint, which
-# is what the other leaves must leave room for. Overlaps `/docker` exactly as `/init` does.
-INTEGRATION_DIND_DAEMON_LIMIT = max(
-    LIMITED_MEM - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_INIT_RESERVE,
-    INTEGRATION_DIND_DAEMON_RESERVE,
-)
-integration_dind_env = (
-    "+--env=CI_DIND_REQUIRE_CGROUP_CONTAINMENT=1"
-    f"+--env=CI_DIND_JOB_MEM={LIMITED_MEM}"
-    f"+--env=CI_DIND_ROOT_RESERVE={INTEGRATION_DIND_ROOT_RESERVE}"
-    f"+--env=CI_DIND_INIT_RESERVE={INTEGRATION_DIND_INIT_RESERVE}"
-    f"+--env=CI_DIND_INIT_LIMIT={INTEGRATION_DIND_INIT_LIMIT}"
-    f"+--env=CI_DIND_DAEMON_RESERVE={INTEGRATION_DIND_DAEMON_RESERVE}"
-    f"+--env=CI_DIND_DAEMON_LIMIT={INTEGRATION_DIND_DAEMON_LIMIT}"
-    f"+--env=CI_DIND_NESTED_BUDGET={INTEGRATION_NESTED_BUDGET}"
-)
+
+
+def dind_containment_env(job_mem):
+    """`run_in_docker` flags that make `docker_in_docker.sh` split `job_mem` into capped cgroup leaves."""
+    # What the nested test containers may collectively use. Also bounds xdist worker concurrency, so
+    # scheduling and containment agree on one number. Clamped at zero because a negative reads to
+    # `docker_in_docker.sh`'s validator as a malformed variable rather than a host too small.
+    nested_budget = max(
+        job_mem
+        - INTEGRATION_DIND_ROOT_RESERVE
+        - INTEGRATION_DIND_INIT_RESERVE
+        - INTEGRATION_DIND_DAEMON_RESERVE,
+        0,
+    )
+    # `/init`'s ceiling, not its share: its peak is one test's host-side client fan-out plus the page
+    # cache of the logs it reads and archives, and neither is bounded by the reserve above. It
+    # overlaps `/docker`, so this cap alone is within the job limit but the three together are not -
+    # which is what lets the reserve shrink without `/init` losing any room it actually uses.
+    init_limit = max(
+        job_mem - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_DAEMON_RESERVE,
+        INTEGRATION_DIND_INIT_RESERVE,
+    )
+    # `/dockerd`'s ceiling, not its share, for the same reason `/init` has one: an image pull writes
+    # every layer through this leaf, so the leaf also holds that page cache, and a dirty page cannot be
+    # reclaimed until its writeback completes. The reserve stays the daemons' own anon footprint, which
+    # is what the other leaves must leave room for. Overlaps `/docker` exactly as `/init` does.
+    daemon_limit = max(
+        job_mem - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_INIT_RESERVE,
+        INTEGRATION_DIND_DAEMON_RESERVE,
+    )
+    return (
+        "+--env=CI_DIND_REQUIRE_CGROUP_CONTAINMENT=1"
+        f"+--env=CI_DIND_JOB_MEM={job_mem}"
+        f"+--env=CI_DIND_ROOT_RESERVE={INTEGRATION_DIND_ROOT_RESERVE}"
+        f"+--env=CI_DIND_INIT_RESERVE={INTEGRATION_DIND_INIT_RESERVE}"
+        f"+--env=CI_DIND_INIT_LIMIT={init_limit}"
+        f"+--env=CI_DIND_DAEMON_RESERVE={INTEGRATION_DIND_DAEMON_RESERVE}"
+        f"+--env=CI_DIND_DAEMON_LIMIT={daemon_limit}"
+        f"+--env=CI_DIND_NESTED_BUDGET={nested_budget}"
+    )
+
+
+integration_dind_env = dind_containment_env(LIMITED_MEM)
 
 BINARY_DOCKER_COMMAND = (
     "clickhouse/binary-builder+--network=host"
@@ -1462,7 +1470,8 @@ class JobConfigs:
         command="python3 ./ci/jobs/keeper_stress_job.py",
         run_in_docker=(
             f"clickhouse/integration-tests-runner+root+--memory={KEEPER_DIND_MEM}+--privileged+--dns-search='.'+"
-            f"--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--ulimit nofile=262144:262144"
+            f"--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=private+--ulimit nofile=262144:262144"
+            f"{dind_containment_env(KEEPER_DIND_MEM)}"
         ),
         digest_config=Job.CacheDigestConfig(
             include_paths=[

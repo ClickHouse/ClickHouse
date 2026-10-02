@@ -7,6 +7,7 @@
 #include <sys/resource.h>
 #endif
 #include <exception>
+#include <Common/Config/getConfigPath.h>
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/getUserHomePath.h>
 #include <Common/CurrentMemoryTracker.h>
@@ -73,7 +74,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
-#include <Parsers/registerStatements.h>
+#include <Parsers/registerParsers.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
@@ -385,8 +386,10 @@ void LocalServer::initialize(Poco::Util::Application & self)
     std::string config_path;
     if (getClientConfiguration().has("config-file"))
         config_path = getClientConfiguration().getString("config-file");
-    else if (fs::exists("config.xml"))
-        config_path = "config.xml";
+    /// A configuration file can be written in XML or in YAML, so `config.xml`, `config.yaml` and
+    /// `config.yml` in the current directory are all picked up.
+    else if (auto path_in_current_directory = tryGetConfigPath("config"))
+        config_path = *path_in_current_directory;
     else
         config_path = getLocalConfigPath(pathToGenericString(home_path)).value_or("");
 
@@ -1290,7 +1293,7 @@ try
     }
 
     registerInterpreters();
-    registerStatements();
+    registerParsers();
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();

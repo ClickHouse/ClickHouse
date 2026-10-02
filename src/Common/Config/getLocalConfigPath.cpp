@@ -1,11 +1,10 @@
 #include <Common/Config/getLocalConfigPath.h>
 #include <base/pathToString.h>
 
-#include <filesystem>
+#include <Common/Config/getConfigPath.h>
+
 #include <vector>
 
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -23,17 +22,8 @@ std::optional<std::string> getLocalConfigPath(const std::string & home_path)
     names.emplace_back("/etc/clickhouse-local/config");
 
     for (const auto & name : names)
-    {
-        for (const auto & extension : {".xml", ".yaml", ".yml"})
-        {
-            fs::path config_path = name;
-            config_path += extension;
-
-            std::error_code ec;
-            if (fs::exists(config_path, ec))
-                return pathToGenericString(config_path);
-        }
-    }
+        if (auto config_path = tryGetConfigPath(pathToString(name)))
+            return config_path;
 
     return std::nullopt;
 }

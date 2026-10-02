@@ -12,6 +12,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SipHash.h>
+#include <Common/maskURIPassword.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
 #include <base/scope_guard.h>
@@ -1392,7 +1393,12 @@ protected:
             return false;
 
         if (uri.getScheme() != "https")
-            throw Exception(ErrorCodes::UNSUPPORTED_URI_SCHEME, "Unsupported scheme in URI '{}'", uri.toString());
+        {
+            std::string masked_uri = uri.toString();
+            maskURIUserinfo(masked_uri);
+            maskPresignedURLParameters(masked_uri);
+            throw Exception(ErrorCodes::UNSUPPORTED_URI_SCHEME, "Unsupported scheme in URI '{}'", masked_uri);
+        }
 
         if (!proxy_configuration.isEmpty())
         {

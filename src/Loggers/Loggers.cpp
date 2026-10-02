@@ -9,6 +9,7 @@
 #include <Loggers/OwnPatternFormatter.h>
 #include <Loggers/OwnSplitChannel.h>
 
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 
@@ -73,6 +74,18 @@ static fs::path renderFileNameTemplate(time_t now, const fs::path & file_path)
     std::ostringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     ss << std::put_time(&buf, pathToGenericString(path.filename()).c_str());
     return path.replace_filename(pathFromString(ss.str()));
+}
+
+/// RFC 5424 APP-NAME: 1-48 printable ASCII characters, no spaces.
+static void validateSyslogProgramName(const std::string & program_name)
+{
+    if (program_name.empty()
+        || program_name.size() > 48
+        || std::any_of(program_name.begin(), program_name.end(), [](char c) { return c < '!' || c > '~'; }))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "logger.syslog.programname must be 1 to 48 printable ASCII characters without spaces, got '{}'",
+            program_name);
 }
 
 Poco::AutoPtr<OwnPatternFormatter> getFormatForChannel(Poco::Util::AbstractConfiguration & config, const std::string & channel, bool color)
@@ -188,7 +201,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         error_log_file = new Poco::FileChannel;
         error_log_file->setProperty(Poco::FileChannel::PROP_PATH, pathToGenericString(fs::weakly_canonical(errorlog_path)));
-        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
+        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.rotation", config.getRawString("logger.size", "100M")));
         error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
         error_log_file->setProperty(Poco::FileChannel::PROP_STREAMCOMPRESS, config.getRawString("logger.stream_compress", "false"));
@@ -212,6 +225,14 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         auto syslog_level = Poco::Logger::parseLevel(config.getString("logger.syslog_level", log_level_string));
         max_log_level = std::max(syslog_level, max_log_level);
 
+        std::string syslog_program_name = cmd_name;
+        const bool has_program_name = config.has("logger.syslog.programname");
+        if (has_program_name)
+        {
+            syslog_program_name = config.getString("logger.syslog.programname");
+            validateSyslogProgramName(syslog_program_name);
+        }
+
         if (config.has("logger.syslog.address"))
         {
             syslog_channel = new Poco::Net::RemoteSyslogChannel();
@@ -221,6 +242,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             {
                 syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_HOST, config.getString("logger.syslog.hostname"));
             }
+            if (has_program_name)
+                syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_NAME, syslog_program_name);
             syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_FORMAT, config.getString("logger.syslog.format", "syslog"));
             syslog_channel->setProperty(
                 Poco::Net::RemoteSyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_USER"));
@@ -238,7 +261,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
                 "Logging to the local syslog is not supported on Windows; set logger.syslog.address to use a remote one");
 #else
             syslog_channel = new Poco::SyslogChannel();
-            syslog_channel->setProperty(Poco::SyslogChannel::PROP_NAME, cmd_name);
+            syslog_channel->setProperty(Poco::SyslogChannel::PROP_NAME, syslog_program_name);
             syslog_channel->setProperty(Poco::SyslogChannel::PROP_OPTIONS, config.getString("logger.syslog.options", "LOG_CONS|LOG_PID"));
             syslog_channel->setProperty(Poco::SyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_DAEMON"));
 #endif

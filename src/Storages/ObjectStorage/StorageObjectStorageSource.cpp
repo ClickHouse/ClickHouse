@@ -1090,6 +1090,12 @@ Chunk StorageObjectStorageSource::generate()
 
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
 {
+    /// The cache key does not include the compression method. Under an explicit `compression_method` the
+    /// same object can decode differently (or fail) through another definition with a different codec,
+    /// so only row counts read with the codec derived from the path are cached.
+    if (!isCompressionMethodHintAuto(configuration->compression_method))
+        return;
+
     const auto cache_key = getKeyForSchemaCache(
         getUniqueStoragePathIdentifier(*configuration, object_info),
         object_info.getFileFormat().value_or(configuration->format),
@@ -1223,6 +1229,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (!schema_cache)
             return std::nullopt;
 
+        /// The cached row count is keyed without the compression method, and answering from it never opens
+        /// the object. It is only valid when the codec follows from the path (see `addNumRowsToCache`), so an
+        /// explicit `compression_method` (including a misspelled one on a table loaded by `ATTACH`, where it is
+        /// not rejected) always reads the object as the actual read would.
+        if (!isCompressionMethodHintAuto(configuration->compression_method))
+            return std::nullopt;
+
         const auto cache_key = getKeyForSchemaCache(
             getUniqueStoragePathIdentifier(*configuration, *object_info),
             object_info->getFileFormat().value_or(configuration->format),
@@ -1303,8 +1316,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
+            ReadSettings read_settings = context_->getReadSettings();
+            /// A from-start read-ahead is wasted on a reader that seeks straight to a footer at the
+            /// tail, but it is exactly what a reader that cannot seek consumes.
+            read_settings.remote_fs_settings.random_access
+                = FormatFactory::instance().checkIfFormatIsRandomAccessInput(format_name, context_, format_settings);
             read_buf = createReadBuffer(
-                object_info->relative_path_with_metadata, object_storage, context_, log, std::nullopt, !headers_requested);
+                object_info->relative_path_with_metadata, object_storage, context_, log,
+                read_settings, !headers_requested);
         }
 
         Block initial_header = read_from_format_info.format_header;
@@ -1829,8 +1848,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
     // For bigger files, parallel reading is more useful.
-    const bool object_too_small = is_size_known
-        && object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
+    // For formats with random access (Parquet), we need footer to understand what we should read.
+    // So, it disabled for random access formats, if prefetch doesn't reach footer. (file size > 1MB)
+
+    const size_t prefetch_size_limit = modified_read_settings.remote_fs_settings.random_access
+        ? modified_read_settings.remote_fs_settings.buffer_size
+        : 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
+    const bool object_too_small = is_size_known && object_size <= prefetch_size_limit;
     const bool use_prefetch = object_too_small
         && modified_read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool
         && modified_read_settings.remote_fs_settings.prefetch;

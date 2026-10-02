@@ -165,6 +165,24 @@ namespace
                 field_name,
                 quoteString(file_name));
     }
+
+    void writeDataFileAndCopiesToArchive(
+        IArchiveWriter & archive_writer, const IBackupWriter & writer, const BackupFileInfo & info, const BackupEntryPtr & entry)
+    {
+        const auto write_file = [&](const String & file_name)
+        {
+            auto out = archive_writer.writeFile(file_name, info.size);
+            auto read_buffer = entry->getReadBuffer(writer.getReadSettings());
+            if (info.base_size != 0)
+                read_buffer->seek(info.base_size, SEEK_SET);
+            copyData(*read_buffer, *out);
+            out->finalize();
+        };
+
+        write_file(info.data_file_name);
+        for (const auto & data_file_copy : info.data_file_copies)
+            write_file(data_file_copy);
+    }
 }
 
 
@@ -1568,47 +1586,28 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 
     /// NOTE: `mutex` must be unlocked during copying otherwise writing will be in one thread maximum and hence slow.
 
-    const auto write_info_to_archive = [&](const auto & file_name)
-    {
-        auto out = archive_writer->writeFile(file_name, info.size);
-        auto read_buffer = entry->getReadBuffer(writer->getReadSettings());
-        if (info.base_size != 0)
-            read_buffer->seek(info.base_size, SEEK_SET);
-        copyData(*read_buffer, *out);
-        out->finalize();
-    };
-
     if (use_archive)
     {
         LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}, adding to archive", info.data_file_name, src_file_desc, info.data_file_index);
-        write_info_to_archive(info.data_file_name);
-    }
-    else if (src_disk && from_immutable_file)
-    {
-        LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
-        writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
+        writeDataFileAndCopiesToArchive(*archive_writer, *writer, info, entry);
     }
     else
     {
-        LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
-        auto create_read_buffer = [entry, read_settings = writer->getReadSettings()] { return entry->getReadBuffer(read_settings); };
-        writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
-    }
-
-    std::function<void(const String &)> copy_file_inside_backup;
-    if (use_archive)
-    {
-        copy_file_inside_backup = write_info_to_archive;
-    }
-    else
-    {
-        copy_file_inside_backup = [&](const auto & data_file_copy)
+        if (src_disk && from_immutable_file)
         {
-            writer->copyFile(data_file_copy, info.data_file_name, info.size - info.base_size);
-        };
-    }
+            LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
+            writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
+        }
+        else
+        {
+            LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
+            auto create_read_buffer = [entry, read_settings = writer->getReadSettings()] { return entry->getReadBuffer(read_settings); };
+            writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
+        }
 
-    std::ranges::for_each(info.data_file_copies, copy_file_inside_backup);
+        for (const auto & data_file_copy : info.data_file_copies)
+            writer->copyFile(data_file_copy, info.data_file_name, info.size - info.base_size);
+    }
 
     {
         std::lock_guard lock{mutex};

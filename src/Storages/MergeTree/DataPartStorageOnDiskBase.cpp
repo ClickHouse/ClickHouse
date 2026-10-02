@@ -1018,9 +1018,9 @@ void DataPartStorageOnDiskBase::clearDirectory(
     /// Sometimes we add something to checksums.files before actually writing checksums and columns on disk.
     /// Also sometimes we write checksums.txt and columns.txt in arbitrary order, so this check becomes complex...
     bool incomplete_temporary_part = is_temp && (!disk->existsFile(pathToGenericString(fs::path(dir) / "checksums.txt")) || !disk->existsFile(pathToGenericString(fs::path(dir) / "columns.txt")));
-    if (checksums.empty() || incomplete_temporary_part)
+    if (checksums.empty() || incomplete_temporary_part || disk->prefersRecursiveRemoval())
     {
-        /// If the part is not completely written, we cannot use fast path by listing files.
+        /// The fast path by listing files cannot be used for an incomplete part and is not faster on this disk.
         try
         {
             disk->removeSharedRecursive(pathToGenericString(fs::path(dir) / ""), !can_remove_shared_data, names_not_to_remove);

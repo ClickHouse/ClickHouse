@@ -50,6 +50,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
+#include <Common/ThreadStatus.h>
 #include <Common/thread_local_rng.h>
 #include <base/sleep.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -1936,6 +1937,13 @@ struct MutationContext
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<MergeTreeIndexPtr> text_indices_to_recalc;
     std::set<MergeTreeIndexPtr> indices_to_drop;
+    /// The expressions of `indices_to_recalc` and `text_indices_to_recalc`, materialized into the
+    /// block so that the writer reuses them instead of evaluating them itself. Held here rather
+    /// than appended where they are collected, because they have to be evaluated on the block the
+    /// TTL has already worked on - a column TTL resets its column, and a `MATERIALIZED` column
+    /// derived from it is recomputed, so an expression evaluated before that describes the old
+    /// values while the part stores the new ones.
+    ASTPtr indices_recalc_expr_list;
     /// True iff at least one index that currently lives inside the source part's skp_idx.packed
     /// is being recomputed or dropped. When set, the mutation rebuilds the archive (writer side)
     /// and stops hardlinking the source's archive (see collectFilesToSkip).
@@ -2547,6 +2555,23 @@ static bool hasAnyIndexFileOnDisk(
     }
 
     return false;
+}
+
+/// Materializes the skip index expressions collected for this mutation into the block. Must run
+/// after the TTL transforms: the writer reuses whatever expression column it finds in the block, so
+/// evaluating it earlier writes an index that describes the pre-TTL values of a column the TTL reset
+/// or of a `MATERIALIZED` column recomputed from one - the index then prunes granules that do match.
+static void addIndicesRecalculationTransform(QueryPipelineBuilder & builder, const MutationContextPtr & ctx)
+{
+    if (!ctx->indices_recalc_expr_list)
+        return;
+
+    auto syntax_result
+        = TreeRewriter(ctx->context).analyze(ctx->indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
+    auto expression = ExpressionAnalyzer(ctx->indices_recalc_expr_list, syntax_result, ctx->context).getActions(false);
+
+    builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), expression));
+    builder.addTransform(std::make_shared<MaterializingTransform>(builder.getSharedHeader()));
 }
 
 class MutateAllPartColumnsTask : public IExecutableTask
@@ -3257,6 +3282,8 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+            addIndicesRecalculationTransform(*builder, ctx);
+
             /// Some columns may be present in the interpreter output only for
             /// projection/index recalculation (e.g. CLEAR COLUMN provides a default
             /// value so that dependent projections are rebuilt correctly). Such columns
@@ -3550,6 +3577,22 @@ MutateTask::MutateTask(
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
+
+    /// Lets the worker threads of long single-block steps (e.g. vector similarity index build) stop on cancellation.
+    /// Same condition as `checkOperationIsNotCanceled`.
+    auto mutation_cancelled = [merges_blocker = ctx->merges_blocker,
+        partition_id = ctx->future_part->part_info.getPartitionId(),
+        mutate_entry = ctx->mutate_entry]
+    {
+        return merges_blocker->isCancelledForPartition(partition_id) || (*mutate_entry)->is_cancelled;
+    };
+    (*ctx->mutate_entry)->thread_group->setQueryCancellationPredicates(
+        mutation_cancelled,
+        [mutation_cancelled]
+        {
+            if (mutation_cancelled())
+                throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+        });
 }
 
 
@@ -3938,17 +3981,12 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
     if ((!ctx->indices_to_recalc.empty() || !ctx->text_indices_to_recalc.empty()) && builder.initialized())
     {
-        auto indices_recalc_syntax
-            = TreeRewriter(ctx->context).analyze(indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
-        auto indices_recalc_expr = ExpressionAnalyzer(indices_recalc_expr_list, indices_recalc_syntax, ctx->context).getActions(false);
-
         /// We can update only one column, but some skip idx expression may depend on several
         /// columns (c1 + c2 * c3). It works because this stream was created with help of
         /// MutationsInterpreter which knows about skip indices and stream 'in' already has
         /// all required columns.
         /// TODO move this logic to single place.
-        builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), indices_recalc_expr));
-        builder.addTransform(std::make_shared<MaterializingTransform>(builder.getSharedHeader()));
+        ctx->indices_recalc_expr_list = indices_recalc_expr_list;
     }
 }
 }
