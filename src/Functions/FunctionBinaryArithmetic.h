@@ -1589,7 +1589,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             const ColumnWithTypeAndName & argument;
             const ColumnDateTime64 * col{};
             ColumnPtr converted_col;
-            UInt64 const_val{};
+            Int64 const_val{};
             bool is_const{};
             UInt64 scale{};
         } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};
@@ -1688,7 +1688,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             const ColumnWithTypeAndName & argument;
             const ColumnTime64 * col{};
             ColumnPtr converted_col;
-            UInt64 const_val{};
+            Int64 const_val{};
             bool is_const{};
             UInt64 scale{};
         } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};

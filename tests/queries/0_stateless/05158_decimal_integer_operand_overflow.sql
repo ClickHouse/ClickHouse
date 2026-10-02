@@ -25,3 +25,11 @@ SELECT toDecimal64(1.5, 4) * 1000000;
 SELECT toDecimal32(1.5, 4) * 100000;
 
 DROP TABLE t_decimal_operand;
+
+-- Negative (pre-epoch) `DateTime64` and `Time64` constants must not be mistaken for overflowing operands.
+
+SELECT toDateTime64('1969-12-31 23:59:59', 0, 'UTC') - toDateTime64('1969-12-31 23:59:58', 0, 'UTC');
+SELECT materialize(toDateTime64('1969-12-31 23:59:59', 0, 'UTC')) - toDateTime64('1969-12-31 23:59:58', 0, 'UTC');
+SELECT toDateTime64('1969-12-31 23:59:59', 0, 'UTC') - materialize(toDateTime64('1969-12-31 23:59:58', 0, 'UTC'));
+SELECT toTime64('-00:00:01', 0) - toTime64('-00:00:02', 0) SETTINGS enable_time_time64_type = 1;
+SELECT materialize(toTime64('-00:00:01', 0)) - toTime64('-00:00:02', 0) SETTINGS enable_time_time64_type = 1;
