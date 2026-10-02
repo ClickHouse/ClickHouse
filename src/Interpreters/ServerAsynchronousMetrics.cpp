@@ -211,12 +211,20 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         size_t total_bytes = 0;
         size_t max_bytes = 0;
         size_t total_files = 0;
+        size_t active_bytes = 0;
+        size_t passive_bytes = 0;
+        size_t idle_bytes = 0;
 
         for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
         {
             total_bytes += cache_data->cache->getUsedCacheSize();
             max_bytes += cache_data->cache->getMaxCacheSize();
             total_files += cache_data->cache->getFileSegmentsNum();
+
+            const auto efficiency = cache_data->cache->getEfficiency().getSnapshot();
+            active_bytes += efficiency.active_bytes;
+            passive_bytes += efficiency.passive_bytes;
+            idle_bytes += efficiency.idle_bytes;
         }
 
         new_values["FilesystemCacheBytes"] = { total_bytes,
@@ -225,6 +233,12 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             "Total capacity in the `cache` virtual filesystem. This cache is hold on disk." };
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
+        new_values["FilesystemCacheActiveBytes"] = { active_bytes,
+            "Unique bytes of the `cache` virtual filesystem read in the last full efficiency window (`efficiency_window_sec`), rounded up to granules. Active, passive and idle bytes add up to the cache size at the end of the window." };
+        new_values["FilesystemCachePassiveBytes"] = { passive_bytes,
+            "Bytes of the `cache` virtual filesystem not read in the last full efficiency window, in file segments that had at least one read in it. Cache efficiency is active / (active + passive)." };
+        new_values["FilesystemCacheIdleBytes"] = { idle_bytes,
+            "Bytes of the `cache` virtual filesystem in file segments with no read in the last full efficiency window." };
     }
 
     /// Experimental ReaderExecutor read-path efficiency KPI: modeled cost (ms) per MiB of
