@@ -462,6 +462,15 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
     Field const_value = value_field;
 
+    /// An absent map key reads ''. `String = FixedString(N)` ignores the zero padding of the constant, while
+    /// the default value of `FixedString(N)` is reported as '', so the constant is compared without its padding.
+    Field value_without_padding = value_field;
+    if (isFixedString(value_type) && value_field.getType() == Field::Types::String)
+    {
+        auto & value = value_without_padding.safeGet<String>();
+        value.resize(value.find_last_not_of('\0') + 1);
+    }
+
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);
     const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", column_name));
@@ -481,7 +490,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
               * We cannot skip keys that does not exist in map if comparison is with default type value because
               * that way we skip necessary granules where map key does not exist.
               */
-            if (value_field == value_type->getDefault())
+            if (value_without_padding == value_type->getDefault())
                 return false;
 
             auto first_argument = key_function_node.getArgumentAt(0);
@@ -524,7 +533,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
             /// Same as arrayElement: skip when comparing with default value because
             /// the subcolumn returns default for keys that don't exist in the map.
-            if (value_field == value_type->getDefault())
+            if (value_without_padding == value_type->getDefault())
                 return false;
 
             if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
