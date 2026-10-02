@@ -209,11 +209,13 @@ struct ConsecutiveKey64GetterForJoin
 
     BaseMethod base;
     UInt64 cached_key = 0;
+    UInt64 last_prefetched_key = 0;
     Mapped * cached_mapped = nullptr;
     size_t cached_offset = 0;
     bool cached_found = false;
     bool cache_enabled = false;
     bool has_cached_key = false;
+    bool has_last_prefetched_key = false;
 
     ConsecutiveKey64GetterForJoin(
         const ColumnRawPtrs & key_columns,
@@ -227,6 +229,7 @@ struct ConsecutiveKey64GetterForJoin
     {
         cache_enabled = enabled;
         has_cached_key = false;
+        has_last_prefetched_key = false;
     }
 
     ALWAYS_INLINE bool probeKeysEqual(size_t lhs, size_t rhs, Arena & pool) const
@@ -237,6 +240,18 @@ struct ConsecutiveKey64GetterForJoin
     ALWAYS_INLINE auto getKeyHolder(size_t row, Arena & pool) const
     {
         return base.getKeyHolder(row, pool);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE void prefetchKey(const Data & data, size_t row, Arena & pool)
+    {
+        const UInt64 key_value = base.getKeyHolder(row, pool);
+        if (!cache_enabled || !has_last_prefetched_key || key_value != last_prefetched_key)
+        {
+            data.prefetch(key_value);
+            last_prefetched_key = key_value;
+            has_last_prefetched_key = true;
+        }
     }
 
     template <typename Data>

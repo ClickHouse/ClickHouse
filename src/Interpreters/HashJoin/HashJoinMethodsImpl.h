@@ -95,6 +95,15 @@ ALWAYS_INLINE bool prepareConsecutiveProbeCache(KeyGetter & key_getter, const Se
 }
 
 /// Drives the adaptive software prefetch logic in the hash join probe loop.
+template <typename KeyGetter, typename Map>
+ALWAYS_INLINE void prefetchJoinKey(KeyGetter & key_getter, const Map * map, size_t row, Arena & pool)
+{
+    if constexpr (requires { key_getter.prefetchKey(*map, row, pool); })
+        key_getter.prefetchKey(*map, row, pool);
+    else
+        map->prefetch(key_getter.getKeyHolder(row, pool));
+}
+
 template <typename PrefetchAction>
 struct JoinPrefetcher
 {
@@ -722,21 +731,22 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     if constexpr (join_features.need_replication)
         added_columns.offsets_to_replicate = IColumn::Offsets(rows);
 
-    const bool use_consecutive_probe_cache = prepareConsecutiveProbeCache(key_getter, selector, pool);
+    prepareConsecutiveProbeCache(key_getter, selector, pool);
 
-    /// Software prefetch during the probe phase. When the consecutive cache is active,
-    /// hashing and prefetching the look-ahead key would redo the work the cache removes.
+    /// Software prefetch during the probe phase. The consecutive-key getter deduplicates
+    /// look-ahead prefetches when its cache is active, so the first lookup in each run is
+    /// still prefetched without rehashing every duplicate key.
     constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, Map>;
 
     bool use_prefetch = false;
     if constexpr (can_prefetch)
-        use_prefetch = !use_consecutive_probe_cache && shouldUseJoinPrefetch(added_columns.enable_prefetch, map);
+        use_prefetch = shouldUseJoinPrefetch(added_columns.enable_prefetch, map);
 
     auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
         [&](size_t k) __attribute__((always_inline))
         {
             if constexpr (can_prefetch)
-                map->prefetch(key_getter.getKeyHolder(selectorIndexAt(selector, k), pool));
+                prefetchJoinKey(key_getter, map, selectorIndexAt(selector, k), pool);
         });
 
     IColumn::Offset current_offset = 0;
@@ -838,13 +848,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         added_columns.offsets_to_replicate.reserve(rows);
     }
 
-    bool first_map_uses_consecutive_probe_cache = false;
-    for (size_t d = 0; d < key_getter_vector.size(); ++d)
-    {
-        const bool enabled = prepareConsecutiveProbeCache(key_getter_vector[d], selector, pool);
-        if (d == 0)
-            first_map_uses_consecutive_probe_cache = enabled;
-    }
+    for (auto & key_getter : key_getter_vector)
+        prepareConsecutiveProbeCache(key_getter, selector, pool);
 
     /// Software prefetch for multi-map variant. Only prefetch the first map.
     chassert(!mapv.empty());
@@ -852,14 +857,13 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
     bool use_prefetch = false;
     if constexpr (can_prefetch)
-        use_prefetch = !first_map_uses_consecutive_probe_cache
-            && shouldUseJoinPrefetch(added_columns.enable_prefetch, mapv[0]);
+        use_prefetch = shouldUseJoinPrefetch(added_columns.enable_prefetch, mapv[0]);
 
     auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
         [&](size_t k) __attribute__((always_inline))
         {
             if constexpr (can_prefetch)
-                mapv[0]->prefetch(key_getter_vector[0].getKeyHolder(selectorIndexAt(selector, k), pool));
+                prefetchJoinKey(key_getter_vector[0], mapv[0], selectorIndexAt(selector, k), pool);
         });
 
     size_t max_joined_rows = added_columns.max_joined_block_rows > 0 ? added_columns.max_joined_block_rows : std::numeric_limits<size_t>::max();
@@ -1082,13 +1086,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
         pool = std::make_unique<Arena>();
         IColumn::Offset current_added_rows = 0;
 
-        bool first_map_uses_consecutive_probe_cache = false;
-        for (size_t d = 0; d < key_getter_vector.size(); ++d)
-        {
-            const bool enabled = prepareConsecutiveProbeCache(key_getter_vector[d], selector, *pool);
-            if (d == 0)
-                first_map_uses_consecutive_probe_cache = enabled;
-        }
+        for (auto & key_getter : key_getter_vector)
+            prepareConsecutiveProbeCache(key_getter, selector, *pool);
 
         /// Software prefetch for multi-map variant. Only prefetch the first map.
         chassert(!mapv.empty());
@@ -1096,15 +1095,14 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
 
         bool use_prefetch = false;
         if constexpr (can_prefetch)
-            use_prefetch = !first_map_uses_consecutive_probe_cache
-                && shouldUseJoinPrefetch(added_columns.enable_prefetch, mapv[0]);
+            use_prefetch = shouldUseJoinPrefetch(added_columns.enable_prefetch, mapv[0]);
 
         const size_t selector_size = selector.size();
         auto prefetcher = makeJoinPrefetcher(use_prefetch, selector_size,
             [&](size_t k) __attribute__((always_inline))
             {
                 if constexpr (can_prefetch)
-                    mapv[0]->prefetch(key_getter_vector[0].getKeyHolder(selector[k], *pool));
+                    prefetchJoinKey(key_getter_vector[0], mapv[0], selector[k], *pool);
             });
 
         for (size_t row_idx = 0; row_idx < selector_size; ++row_idx)
