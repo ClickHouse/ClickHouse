@@ -1,6 +1,8 @@
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDecimalBase.h>
+#include <Formats/FormatFactory.h>
+#include <Functions/ComparisonParams.h>
 #include <Interpreters/Context.h>
-#include <Functions/FunctionsComparison.h>
 
 namespace DB
 {

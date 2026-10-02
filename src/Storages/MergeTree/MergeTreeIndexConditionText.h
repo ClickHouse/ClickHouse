@@ -98,7 +98,8 @@ public:
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
         bool has_positions_,
-        NameSet columns_shadowing_map_subcolumns_);
+        NameSet columns_shadowing_map_subcolumns_,
+        NamesAndTypesList index_input_columns_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -216,6 +217,12 @@ private:
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
+    /// Whether the node reads the value `JSONAllValues` stores for its path: a typed path, or a `.:T` element of a
+    /// dynamic path. A subcolumn of a typed path reads a part of that text.
+    bool readsStoredJSONValue(const RPNBuilderTreeNode & path) const;
+    /// Whether a `JSONAllValues` index can answer a condition on the JSON path node, possibly under a cast.
+    bool canUseJSONAllValuesForPath(const RPNBuilderTreeNode & node) const;
+
     bool hasIndexForColumn(const String & column_name) const { return header.has(column_name) || column_name == normalized_index_column_name; }
 
     /// Returns true if all tokens must be read for text index analysis
@@ -230,6 +237,8 @@ private:
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;
     NameSet columns_shadowing_map_subcolumns;
+    /// The columns the index expression reads, with their types.
+    NamesAndTypesList index_input_columns;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
     /// share mutable parsing state; null otherwise.
     std::shared_ptr<const ITokenizer> owned_tokenizer;

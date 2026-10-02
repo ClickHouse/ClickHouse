@@ -31,6 +31,7 @@
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/ComparisonOrderDomain.h>
+#include <Functions/ComparisonParams.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
@@ -880,18 +881,6 @@ inline bool comparisonCanThrow(const DataTypePtr & left_type, const DataTypePtr 
 
     return true;
 }
-
-struct ComparisonParams
-{
-    bool check_decimal_overflow = false;
-    bool validate_enum_literals_in_operators = false;
-    bool use_variant_default_implementation = true;
-    FormatSettings format_settings;
-
-    explicit ComparisonParams(const ContextPtr & context);
-
-    ComparisonParams() = default;
-};
 
 template <template <typename, typename> class Op, typename Name, bool is_null_safe_cmp_mode = false>
 class FunctionComparison final : public IFunction
