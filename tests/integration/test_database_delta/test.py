@@ -919,6 +919,8 @@ FROM {db_name}.`{schema_name}.{table_name}`
         retry_on_timeout=True,
     )
 
+    assert get_table_versions() == ["0", "1", "2", "3"]
+
     # Validate data between versions 1 and 2
     data_raw = node1.query(
         f"""
