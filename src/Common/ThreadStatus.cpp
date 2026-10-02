@@ -201,7 +201,7 @@ void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
 void ThreadStatus::clearQueryId() noexcept
 {
     SignalUnsafeMutationGuard guard(is_query_id_usable);
-    query_id.clear();
+    String{}.swap(query_id);
 }
 
 std::string_view ThreadStatus::getQueryId() const
