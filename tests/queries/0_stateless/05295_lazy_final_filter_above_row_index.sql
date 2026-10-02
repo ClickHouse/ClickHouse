@@ -41,6 +41,10 @@ SELECT '-- the right side of a LEFT JOIN stands at its defaults where nothing ma
 SELECT f.k, f.v, f.heavy, d.dheavy FROM f FINAL LEFT JOIN d ON f.k + 38000 = d.k WHERE f.k % 5 = 1 ORDER BY f.a DESC, f.k LIMIT 5;
 SELECT countIf(explain LIKE '%LazilyReadFromMergeTree%') >= 2, countIf(explain LIKE '%InputSelector%') FROM (EXPLAIN SELECT f.k, f.v, f.heavy, d.dheavy FROM f FINAL LEFT JOIN d ON f.k + 38000 = d.k WHERE f.k % 5 = 1 ORDER BY f.a DESC, f.k LIMIT 5);
 
+SELECT '-- the join order optimization may put the FINAL table on either side';
+SELECT f.k, f.v, f.heavy, d.dheavy FROM d JOIN f FINAL ON f.k = d.k WHERE f.k % 5 = 1 ORDER BY f.a DESC, f.k LIMIT 5 SETTINGS query_plan_join_swap_table = 'auto', query_plan_optimize_join_order_limit = 10;
+SELECT countIf(explain LIKE '%LazilyReadFromMergeTree%') >= 2, countIf(explain LIKE '%InputSelector%') FROM (EXPLAIN SELECT f.k, f.v, f.heavy, d.dheavy FROM d JOIN f FINAL ON f.k = d.k WHERE f.k % 5 = 1 ORDER BY f.a DESC, f.k LIMIT 5 SETTINGS query_plan_join_swap_table = 'auto', query_plan_optimize_join_order_limit = 10);
+
 SELECT '-- the same results without lazy FINAL';
 SELECT f.k, f.v, f.heavy, d.dheavy FROM f FINAL JOIN d ON f.k = d.k WHERE f.k % 5 = 1 ORDER BY f.a DESC, f.k LIMIT 5 SETTINGS query_plan_optimize_lazy_final = 0;
 SELECT f.k, f.v, f.heavy, d.dheavy FROM f FINAL JOIN d ON f.k = d.k WHERE f.v = 1 ORDER BY f.a DESC, f.k LIMIT 5 SETTINGS query_plan_optimize_lazy_final = 0;

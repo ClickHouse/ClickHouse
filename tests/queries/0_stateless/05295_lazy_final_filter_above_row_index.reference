@@ -19,6 +19,13 @@
 3491	1	v1_3491	
 4461	1	v1_4461	
 1	1
+-- the join order optimization may put the FINAL table on either side
+581	1	v1_581	d581
+1551	1	v1_1551	d1551
+2521	1	v1_2521	d2521
+3491	1	v1_3491	d3491
+4461	1	v1_4461	d4461
+1	1
 -- the same results without lazy FINAL
 581	1	v1_581	d581
 1551	1	v1_1551	d1551
