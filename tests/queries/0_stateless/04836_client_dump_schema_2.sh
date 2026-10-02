@@ -582,6 +582,43 @@ DROP TABLE ${DB}.zzz_remote_src;
 "
 rm -f "$LOCAL_REMOTE_DUMP_FILE"
 
+echo '--- a remote() address on another host is not a local dependency ---'
+# A reader of another host has no local edge, so it sorts by name before its source; column lists avoid connecting.
+SERVER_HOST=$($CLICKHOUSE_CLIENT -q "SELECT hostName()")
+$CLICKHOUSE_CLIENT -mq "
+CREATE TABLE ${DB}.zzz_remote_src (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE VIEW ${DB}.aaa_remote_ip (id UInt64) AS SELECT * FROM remote('198.51.100.10:${CLICKHOUSE_PORT_TCP}', '${DB}', 'zzz_remote_src');
+CREATE VIEW ${DB}.aab_remote_host (id UInt64) AS SELECT * FROM remote('dump-schema-test.invalid', '${DB}', 'zzz_remote_src');
+CREATE VIEW ${DB}.aac_remote_secure (id UInt64) AS SELECT * FROM remoteSecure('203.0.113.20', '${DB}', 'zzz_remote_src');
+CREATE VIEW ${DB}.aad_remote_loopback (id UInt64) AS SELECT * FROM remote('127.0.0.1', '${DB}', 'zzz_remote_src');
+CREATE VIEW ${DB}.aae_remote_own_host (id UInt64) AS SELECT * FROM remote('${SERVER_HOST}:${CLICKHOUSE_PORT_TCP}', '${DB}', 'zzz_remote_src');
+"
+OTHER_HOST_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_other_host_dump.sql"
+if $CLICKHOUSE_CLIENT --dump-schema="${DB}" > "$OTHER_HOST_DUMP_FILE" 2>"$ERR_FILE"; then
+    SRC_LINE=$(grep -n "CREATE TABLE ${DB}\.zzz_remote_src " "$OTHER_HOST_DUMP_FILE" | head -1 | cut -d: -f1)
+    for reader in aaa_remote_ip aab_remote_host aac_remote_secure aad_remote_loopback aae_remote_own_host; do
+        READER_LINE=$(grep -n "CREATE VIEW ${DB}\.${reader} " "$OTHER_HOST_DUMP_FILE" | head -1 | cut -d: -f1)
+        if [ -z "$SRC_LINE" ] || [ -z "$READER_LINE" ]; then
+            echo "FAIL: ${reader} or its source missing (src=$SRC_LINE reader=$READER_LINE)"
+        elif [ "$SRC_LINE" -lt "$READER_LINE" ]; then
+            echo "${reader}: local edge"
+        else
+            echo "${reader}: no local edge"
+        fi
+    done
+else
+    echo "FAIL: dump rejected: $(cat "$ERR_FILE")"
+fi
+$CLICKHOUSE_CLIENT -mq "
+DROP TABLE ${DB}.aaa_remote_ip;
+DROP TABLE ${DB}.aab_remote_host;
+DROP TABLE ${DB}.aac_remote_secure;
+DROP TABLE ${DB}.aad_remote_loopback;
+DROP TABLE ${DB}.aae_remote_own_host;
+DROP TABLE ${DB}.zzz_remote_src;
+"
+rm -f "$OTHER_HOST_DUMP_FILE"
+
 echo '--- a cluster() argument reading the session database is refused, not rebound ---'
 # The server folded `currentDatabase()` against the session that ran the CREATE; the dump session's
 # own database is a different one, so folding it here would silently rebind or drop the edge.

@@ -644,8 +644,8 @@ bool isRemoteFunctionName(const String & name)
     return equalsCaseInsensitive(name, "remote") || equalsCaseInsensitive(name, "remoteSecure");
 }
 
-/// Mirrors `Cluster::Address::isLocal` for one replica of a `remote*` pattern:
-/// matches localhost, local hostnames, or fails closed if not provably remote.
+/// Whether the server reads one replica of a `remote*` pattern locally: only a loopback address or a name the server
+/// reports as its own, on its port, counts, because the dump cannot resolve other hosts the way the server does.
 bool remoteAddressIsLocal(const String & address, bool secure, const ClusterLocality & clusters)
 {
     bool has_explicit_port = address.starts_with('[') ? address.contains("]:") : address.contains(':');
@@ -663,19 +663,16 @@ bool remoteAddressIsLocal(const String & address, bool secure, const ClusterLoca
         host = host.substr(1, host.size() - 2);
     if (equalsCaseInsensitive(host, "localhost"))
         return true;
+    /// `isLocalAddress` decides a loopback address by its value alone, so the client answers it the way the server does.
+    if (Poco::Net::IPAddress ip; Poco::Net::IPAddress::tryParse(host, ip) && ip.isLoopback())
+        return isLocalAddress(ip);
     if (clusters.local_hostnames)
     {
         for (const auto & local_host : clusters.local_hostnames())
             if (equalsCaseInsensitive(host, local_host))
                 return true;
     }
-    Poco::Net::IPAddress ip;
-    if (Poco::Net::IPAddress::tryParse(host, ip))
-    {
-        if (ip.isLoopback())
-            return isLocalAddress(ip);
-    }
-    return true;
+    return false;
 }
 
 /// Whether any replica of a `remote*` address pattern is read without a connection.
@@ -2055,26 +2052,20 @@ std::vector<TableInfo> fetchTables(
         return *cached;
     };
     /// Local hostnames and cluster replica addresses, queried lazily on first remote* check.
+    /// A failure refuses the dump: without these names a same-server address would pass for a remote one.
     clusters.local_hostnames = [&, cached = std::optional<std::set<String>>{}]() mutable -> const std::set<String> &
     {
         if (!cached)
         {
             cached.emplace();
-            try
-            {
-                for (auto & host : fetchStringColumn(
-                         connection,
-                         timeouts,
-                         client_info,
-                         "SELECT hostName() UNION DISTINCT SELECT fqdn() UNION DISTINCT SELECT host_name FROM system.clusters WHERE is_local UNION DISTINCT SELECT host_address FROM system.clusters WHERE is_local",
-                         context->getSettingsRef()))
-                    if (!host.empty())
-                        cached->insert(std::move(host));
-            }
-            catch (...) // NOLINT(bugprone-empty-catch)
-            {
-                /// Ok: server may restrict system tables access; fallback to loopback checks.
-            }
+            for (auto & host : fetchStringColumn(
+                     connection,
+                     timeouts,
+                     client_info,
+                     "SELECT hostName() UNION DISTINCT SELECT fqdn() UNION DISTINCT SELECT host_name FROM system.clusters WHERE is_local UNION DISTINCT SELECT host_address FROM system.clusters WHERE is_local",
+                     context->getSettingsRef()))
+                if (!host.empty())
+                    cached->insert(std::move(host));
         }
         return *cached;
     };

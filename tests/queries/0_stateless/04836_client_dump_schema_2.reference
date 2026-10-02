@@ -80,6 +80,12 @@ OK: local remote() source dumped before aae_remote_reader_case
 OK: local remote() source dumped before aaf_remote_reader_case_port
 OK: local remote() source dumped before aag_remote_secure_reader
 OK: local remote() source dumped before aah_remote_engine
+--- a remote() address on another host is not a local dependency ---
+aaa_remote_ip: no local edge
+aab_remote_host: no local edge
+aac_remote_secure: no local edge
+aad_remote_loopback: local edge
+aae_remote_own_host: local edge
 --- a cluster() argument reading the session database is refused, not rebound ---
 session-database cluster() argument refused: 1
 --- a cluster() argument reading the session user is refused too ---
