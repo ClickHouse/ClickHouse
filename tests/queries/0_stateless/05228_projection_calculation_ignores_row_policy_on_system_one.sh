@@ -17,9 +17,21 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 user="user_05228_${CLICKHOUSE_DATABASE}"
 policy="policy_05228_${CLICKHOUSE_DATABASE}"
 
+function cleanup()
+{
+    $CLICKHOUSE_CLIENT --multiquery "
+    DROP ROW POLICY IF EXISTS ${policy} ON system.one;
+    DROP TABLE IF EXISTS t_projection_row_policy;
+    DROP USER IF EXISTS ${user};
+    "
+}
+
+# The row policy on `system.one` must never outlive the test, even if it fails early: it would deny
+# every `FROM`-less `SELECT` to the tests which run after it.
+trap cleanup EXIT
+cleanup
+
 $CLICKHOUSE_CLIENT --multiquery "
-DROP ROW POLICY IF EXISTS ${policy} ON system.one;
-DROP USER IF EXISTS ${user};
 CREATE USER ${user} NOT IDENTIFIED;
 GRANT CREATE TABLE, DROP TABLE, INSERT, SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${user};
 GRANT TABLE ENGINE ON MergeTree TO ${user};
