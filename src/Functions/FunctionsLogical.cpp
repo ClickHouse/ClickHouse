@@ -34,7 +34,7 @@ REGISTER_FUNCTION(Logical)
         FunctionDocumentation::Description description = R"(
 Calculates the logical conjunction of two or more values.
 
-Setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+Setting [`short_circuit_function_evaluation`](/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
 If enabled, `val_i` is evaluated only if `(val_1 AND val_2 AND ... AND val_{i-1})` is `true`.
 
 For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`.
@@ -52,7 +52,7 @@ Returns:
         )", {"Nullable(UInt8)"}};
         FunctionDocumentation::Examples examples = {
             {"Basic usage", "SELECT and(0, 1, -2);", "0"},
-            {"With NULL", "SELECT and(NULL, 1, 10, -2);", "\\N"}
+            {"With NULL", "SELECT and(NULL, 1, 10, -2);", "ᴺᵁᴸᴸ"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
@@ -65,7 +65,7 @@ Returns:
         FunctionDocumentation::Description description = R"(
 Calculates the logical disjunction of two or more values.
 
-Setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+Setting [`short_circuit_function_evaluation`](https://clickhouse.com/docs/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
 If enabled, `val_i` is evaluated only if `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` is `true`.
 
 For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)`.
@@ -83,7 +83,7 @@ Returns:
         )", {"Nullable(UInt8)"}};
         FunctionDocumentation::Examples examples = {
             {"Basic usage", "SELECT or(1, 0, 0, 2, NULL);", "1"},
-            {"With NULL", "SELECT or(0, NULL);", "\\N"}
+            {"With NULL", "SELECT or(0, NULL);", "ᴺᵁᴸᴸ"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
@@ -709,7 +709,7 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
             has_nullable_arguments = arg_type->isNullable();
             if (has_nullable_arguments && !Impl::specialImplementationForNulls())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of argument for function \"{}\": "
-                    "argument {} is of type {}", getName(), i + 1, arg_type->getName());
+                    " argument {} is of type {}", getName(), i + 1, arg_type->getName());
         }
 
         if (!(isNativeNumber(arg_type)
@@ -755,11 +755,26 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
 
     executeColumnIfNeeded(arguments[0]);
 
-    /// A set mask bit means that the row still needs evaluation: it has not encountered
-    /// false for `and`, or true for `or`. `NULL` does not decide either operation, so it leaves
-    /// the row active and is remembered separately. A later decisive value clears the
-    /// `NULL` state in `applyTernaryLogic`; otherwise the final result remains `NULL`.
-    /// The `or` mask contains inverted values and is inverted once at the end.
+    /// Let's denote x_i' = maskedExecute(x_i, mask).
+    /// 1) AND(x_0, x_1, x_2, ..., x_n)
+    /// We will support mask_i = x_0 & x_1 & ... & x_i.
+    /// Base:
+    /// mask_0 is 1 everywhere, x_0' = x_0.
+    /// Iteration:
+    /// mask_i = extractMask(mask_{i - 1}, x_{i - 1}')
+    /// x_i' = maskedExecute(x_i, mask)
+    /// Also we will treat NULL as 1 if x_i' is Nullable
+    /// to support ternary logic.
+    /// The result is mask_n.
+    ///
+    /// 1) OR(x_0, x_1, x_2, ..., x_n)
+    /// We will support mask_i = !x_0 & !x_1 & ... & !x_i.
+    /// mask_0 is 1 everywhere, x_0' = x_0.
+    /// mask = extractMask(mask, !x_{i - 1}')
+    /// x_i' = maskedExecute(x_i, mask)
+    /// Also we will treat NULL as 0 if x_i' is Nullable
+    /// to support ternary logic.
+    /// The result is !mask_n.
 
     bool inverted = Name::name != NameAnd::name;
     UInt8 null_value = static_cast<UInt8>(Name::name == NameAnd::name);
@@ -771,14 +786,20 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (result_type->isNullable())
         nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
 
-    MaskInfo mask_info{.has_ones = true, .has_zeros = false};
-    for (const auto & argument : arguments)
+    MaskInfo mask_info{};
+    for (size_t i = 1; i <= arguments.size(); ++i)
     {
-        mask_info = maskedExecuteAndUpdateMask(argument, mask, mask_info, inverted, nulls.get(), null_value);
+        if (inverted)
+            mask_info = extractInvertedMask(mask, arguments[i - 1].column, nulls.get(), null_value);
+        else
+            mask_info = extractMask(mask, arguments[i - 1].column, nulls.get(), null_value);
 
-        /// Stop when every row has a decisive result.
-        if (!mask_info.has_ones)
+        /// If mask doesn't have ones, we don't need to execute the rest arguments,
+        /// because the result won't change.
+        if (!mask_info.has_ones || i == arguments.size())
             break;
+
+        maskedExecute(arguments[i], mask, mask_info);
     }
     /// For OR function we need to inverse mask to get the resulting column.
     if (inverted)

@@ -17,7 +17,6 @@ SHOW TABLES FROM information_schema;
 
 ```text
 ┌─name────────────────────┐
-│ COLLATIONS              │
 │ COLUMNS                 │
 │ KEY_COLUMN_USAGE        │
 │ REFERENTIAL_CONSTRAINTS │
@@ -38,7 +37,6 @@ SHOW TABLES FROM information_schema;
 `INFORMATION_SCHEMA` には、次のビューが含まれます。
 
 * [COLUMNS](#columns)
-* [COLLATIONS](#collations)
 * [KEY&#95;COLUMN&#95;USAGE](#key_column_usage)
 * [REFERENTIAL&#95;CONSTRAINTS](#referential_constraints)
 * [SCHEMATA](#schemata)
@@ -381,19 +379,3 @@ referenced_column_name:        ᴺᵁᴸᴸ
 </div>
 
 テーブルの索引に関する情報を提供します。現在は空の結果 (行は返されません) を返しますが、これは Tableau Online のようなサードパーティ製ツールとの互換性を確保するには十分です。
-
-<div id="collations">
-  ## COLLATIONS
-</div>
-
-使用可能な照合順序に関する情報を提供します。[system.collations](/ja/reference/system-tables/collations) の照合順序に加え、MySQL 互換性のための 2 行が含まれます。`utf8mb4_0900_ai_ci` は、MySQL プロトコルがハンドシェイク時、`SCHEMATA.DEFAULT_COLLATION_NAME`、および `TABLES.TABLE_COLLATION` で通知する照合順序です。`binary` は、MySQL プロトコルが結果セットのメタデータ内の数値カラムやその他の非文字列カラムに設定する疑似照合順序です。これにより、通知された照合順序に従ってこのビューを参照する MySQL 対応クライアントは、これらの照合順序を見つけられます。
-
-カラム:
-
-* `collation_name` ([String](/ja/reference/data-types/string)) — 照合順序の名前。
-* `character_set_name` ([Nullable](/ja/reference/data-types/nullable)([String](/ja/reference/data-types/string))) — 関連付けられた文字セット (`utf8mb4_0900_ai_ci` では `utf8mb4`、`binary` では `binary`、それ以外は `NULL`) 。MySQL 互換性のために提供されます。
-* `id` ([Nullable](/ja/reference/data-types/nullable)([UInt64](/ja/reference/data-types/int-uint))) — MySQL の照合順序 ID (`utf8mb4_0900_ai_ci` では `255`、`binary` では `63`、それ以外は `NULL`) 。MySQL 互換性のために提供されます。
-* `is_default` ([Nullable](/ja/reference/data-types/nullable)([String](/ja/reference/data-types/string))) — 照合順序がその文字セットのデフォルトかどうか (両方の MySQL 互換性行では `Yes`、それ以外は `NULL`) 。MySQL 互換性のために提供されます。
-* `is_compiled` ([Nullable](/ja/reference/data-types/nullable)([String](/ja/reference/data-types/string))) — 照合順序がサーバーにコンパイルされているかどうか (両方の MySQL 互換性行では `Yes`、それ以外は `NULL`) 。MySQL 互換性のために提供されます。
-* `sortlen` ([Nullable](/ja/reference/data-types/nullable)([UInt64](/ja/reference/data-types/int-uint))) — 最小ソート長 (`utf8mb4_0900_ai_ci` では `0`、`binary` では `1`、それ以外は `NULL`) 。MySQL 互換性のために提供されます。
-* `pad_attribute` ([Nullable](/ja/reference/data-types/nullable)([String](/ja/reference/data-types/string))) — パディング属性 (`NO PAD` または `PAD SPACE`) 。両方の MySQL 互換性行では `NO PAD`、それ以外は `NULL` です。MySQL 互換性のために提供されます。

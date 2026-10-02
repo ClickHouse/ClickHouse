@@ -418,7 +418,7 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
     auto parsed_primary_key = KeyDescription::parse(primary_key, columns, virtuals, context, true);
     // Strict checking of suspicious TTL is not needed here
     String parsed_zk_ttl_table = formattedAST(
-        TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, TTLValidationMode::Attach).definition_ast);
+        TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, /* is_attach = */ true).definition_ast);
     if (ttl_table != parsed_zk_ttl_table)
     {
         handleTableMetadataMismatch(table_name_for_error_message, "TTL", from_zk.ttl_table, parsed_zk_ttl_table, ttl_table, strict_check, logger);
@@ -514,7 +514,6 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
 {
     StorageInMemoryMetadata new_metadata = old_metadata;
     new_metadata.columns = new_columns;
-    const bool columns_changed = new_metadata.columns != old_metadata.columns;
 
     if (!empty())
     {
@@ -578,7 +577,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
                 ParserTTLExpressionList parser;
                 auto ttl_for_table_ast = parseQuery(parser, new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
                 new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                    ttl_for_table_ast, new_metadata.columns, context, new_metadata.primary_key, TTLValidationMode::Attach /* because it is replication */);
+                    ttl_for_table_ast, new_metadata.columns, context, new_metadata.primary_key, true /* allow_suspicious; because it is replication */);
             }
             else /// TTL was removed
             {
@@ -591,12 +590,28 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     new_metadata.column_ttls_by_name.clear();
     for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
     {
-        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, context, new_metadata.primary_key, TTLValidationMode::Attach /* because it is replication */);
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, context, new_metadata.primary_key, true /* allow_suspicious; because it is replication */);
         new_metadata.column_ttls_by_name[name] = new_ttl_entry;
     }
 
     if (new_metadata.partition_key.definition_ast != nullptr)
+    {
+        auto old_partition_key_sample_block = new_metadata.partition_key.sample_block;
         new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, virtuals, context);
+
+        /// If partition key expression structure changed we must rebuild minmax_count_projection,
+        /// otherwise it retains stale column types (e.g. plain Int8 instead of LowCardinality(Int8))
+        /// and the aggregation engine hits a type mismatch. See #100175.
+        if (new_metadata.minmax_count_projection
+            && !blocksHaveEqualStructure(new_metadata.partition_key.sample_block, old_partition_key_sample_block))
+        {
+            auto minmax_columns = new_metadata.getColumnsRequiredForPartitionKey();
+            auto partition_key_ast = new_metadata.partition_key.expression_list_ast->clone();
+            FunctionNameNormalizer::visit(partition_key_ast.get());
+            new_metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+                new_metadata.columns, partition_key_ast, minmax_columns, new_metadata.primary_key, &new_metadata.partition_key, context));
+        }
+    }
 
     if (!sorting_key_changed) /// otherwise already updated
         new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, virtuals, context);
@@ -613,16 +628,6 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     {
         new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, virtuals, context);
         new_metadata.primary_key.definition_ast = nullptr;
-    }
-
-    /// Derived inputs and types can change even when the partition key output structure does not.
-    if (new_metadata.minmax_count_projection && columns_changed)
-    {
-        auto minmax_columns = new_metadata.getColumnsRequiredForPartitionKey();
-        auto partition_key_ast = new_metadata.partition_key.expression_list_ast->clone();
-        FunctionNameNormalizer::visit(partition_key_ast.get());
-        new_metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            new_metadata.columns, partition_key_ast, minmax_columns, new_metadata.primary_key, &new_metadata.partition_key, context));
     }
 
     if (!sampling_expression_changed && new_metadata.sampling_key.definition_ast != nullptr)
@@ -654,7 +659,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
 
     if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
         new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-            new_metadata.table_ttl.definition_ast, new_metadata.columns, context, new_metadata.primary_key, TTLValidationMode::Attach /* because it is replication */);
+            new_metadata.table_ttl.definition_ast, new_metadata.columns, context, new_metadata.primary_key, true /* allow_suspicious; because it is replication */);
 
     if (!projections_changed)
     {

@@ -1,10 +1,11 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Core/Names.h>
 #include <Core/Types.h>
 #include <Columns/IColumn.h>
-#include <Common/VectorWithMemoryTracking.h>
+
+#include <vector>
+#include <string>
 
 namespace DB::UniqueKeyEncoding
 {
@@ -37,13 +38,6 @@ void encodeBlock(
     const Columns & columns,
     const IColumn::Permutation * permutation,
     size_t max_size,
-    VectorWithMemoryTracking<String> & out);
-
-/// Encode `block`'s `uk_names` columns, in unique-key order, into `out`.
-void encodeBlockKeys(
-    const Block & block,
-    const Names & uk_names,
-    size_t max_size,
-    VectorWithMemoryTracking<String> & out);
+    std::vector<String> & out);
 
 }

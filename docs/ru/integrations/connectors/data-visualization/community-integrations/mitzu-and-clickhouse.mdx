@@ -13,7 +13,7 @@ integration:
 import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -39,136 +39,156 @@ Mitzu — это no-code приложение для продуктовой ан
 
 Это руководство — лишь краткий обзор использования Mitzu. Более подробную информацию можно найти в [документации Mitzu](https://docs.mitzu.io/).
 
-<Steps>
-  <Step title="Соберите сведения о подключении" id="1-gather-your-connection-details">
-    <ConnectionDetails />
-  </Step>
+<div id="1-gather-your-connection-details">
+  ## 1. Подготовьте сведения о подключении
+</div>
 
-  <Step title="Войдите в Mitzu или зарегистрируйтесь" id="2-sign-in-or-sign-up-to-mitzu">
-    Для начала перейдите на [https://app.mitzu.io](https://app.mitzu.io), чтобы зарегистрироваться.
+<ConnectionDetails />
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_01.webp" alt="Страница входа Mitzu с полями email и пароля" border />
-  </Step>
+<div id="2-sign-in-or-sign-up-to-mitzu">
+  ## 2. Войдите в Mitzu или зарегистрируйтесь
+</div>
 
-  <Step title="Настройте рабочее пространство" id="3-configure-your-workspace">
-    После создания организации следуйте инструкциям онбординга `Set up your workspace` на левой боковой панели. Затем нажмите ссылку `Connect Mitzu with your data warehouse`.
+Сначала перейдите на [https://app.mitzu.io](https://app.mitzu.io), чтобы зарегистрироваться.
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_02.webp" alt="Страница настройки рабочего пространства Mitzu с шагами онбординга" border />
-  </Step>
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_01.webp" alt="Страница входа в Mitzu с полями для электронной почты и пароля" border />
 
-  <Step title="Подключите Mitzu к ClickHouse" id="4-connect-mitzu-to-clickhouse">
-    Сначала выберите тип подключения ClickHouse и укажите сведения о подключении. Затем нажмите кнопку `Test connection & Save`, чтобы сохранить настройки.
+<div id="3-configure-your-workspace">
+  ## 3. Настройте рабочее пространство
+</div>
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_03.webp" alt="Страница настройки подключения Mitzu к ClickHouse с формой конфигурации" border />
-  </Step>
+После создания организации выполните шаги из руководства по онбордингу `Set up your workspace` в левой боковой панели. Затем нажмите ссылку `Connect Mitzu with your data warehouse`.
 
-  <Step title="Настройте таблицы событий" id="5-configure-event-tables">
-    После сохранения подключения выберите вкладку `Event tables` и нажмите кнопку `Add table`. В модальном окне выберите базу данных и таблицы, которые хотите добавить в Mitzu.
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_02.webp" alt="Страница настройки рабочего пространства Mitzu с шагами онбординга" border />
 
-    С помощью флажков выберите как минимум одну таблицу и нажмите кнопку `Configure table`. Откроется модальное окно, в котором можно задать ключевые столбцы для каждой таблицы.
+<div id="4-connect-mitzu-to-clickhouse">
+  ## 4. Подключите Mitzu к ClickHouse
+</div>
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_04.webp" alt="Интерфейс выбора таблиц в Mitzu с таблицами базы данных" border />
+Сначала выберите ClickHouse в качестве типа подключения и укажите сведения о подключении. Затем нажмите кнопку `Test connection & Save`, чтобы сохранить настройки.
 
-    <br />
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_03.webp" alt="Страница настройки подключения Mitzu к ClickHouse с формой настройки" border />
 
-    > Чтобы выполнять продуктовую аналитику в вашем развертывании ClickHouse, нужно указать несколько ключевых столбцов из таблицы.
-    >
-    > А именно:
-    >
-    > * **User id** - столбец с уникальным идентификатором пользователей.
-    > * **Event time** - столбец с временной меткой событий.
-    > * Optional&#91;**Event name**&#93; - этот столбец сегментирует события, если таблица содержит несколько типов событий.
+<div id="5-configure-event-tables">
+  ## 5. Настройте таблицы событий
+</div>
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_05.webp" alt="Настройка каталога событий Mitzu с параметрами сопоставления столбцов" border />
+После сохранения подключения выберите вкладку `Event tables` и нажмите кнопку `Add table`. В модальном окне выберите базу данных и таблицы, которые хотите добавить в Mitzu.
 
-    <br />
+С помощью флажков выберите как минимум одну таблицу и нажмите кнопку `Configure table`. Откроется модальное окно, в котором можно задать ключевые столбцы для каждой таблицы.
 
-    После настройки всех таблиц нажмите кнопку `Save & update event catalog`, и Mitzu найдёт все события и их свойства в указанных выше таблицах. Этот шаг может занять несколько минут в зависимости от размера вашего набора данных.
-  </Step>
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_04.webp" alt="Интерфейс выбора таблиц в Mitzu с таблицами базы данных" border />
 
-  <Step title="Выполняйте запросы сегментации" id="4-run-segmentation-queries">
-    Сегментация пользователей в Mitzu так же проста, как и в Amplitude, Mixpanel или PostHog.
+<br />
 
-    На странице Explore слева находится область выбора событий, а в верхней части можно настроить временной диапазон.
+> Чтобы выполнять продуктовую аналитику в вашем развертывании ClickHouse, нужно указать несколько ключевых столбцов из таблицы.
+>
+> А именно:
+>
+> * **User id** - столбец с уникальным идентификатором пользователей.
+> * **Event time** - столбец с временной меткой событий.
+> * Optional[**Event name**] - этот столбец сегментирует события, если таблица содержит несколько типов событий.
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_06.webp" alt="Интерфейс запроса сегментации в Mitzu с выбором событий и настройкой времени" border />
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_05.webp" alt="Настройка каталога событий Mitzu с параметрами сопоставления столбцов" border />
 
-    <br />
+<br />
 
-    <Tip>
-      **Фильтры и разбивка**
+После настройки всех таблиц нажмите кнопку `Save & update event catalog`, и Mitzu найдёт все события и их свойства в указанных выше таблицах. Этот шаг может занять несколько минут в зависимости от размера вашего набора данных.
 
-      Фильтрация выполняется ожидаемым образом: выберите свойство (столбец ClickHouse) и значения из выпадающего списка, по которым нужно фильтровать.
-      Для разбивки можно выбрать любое свойство события или пользователя (ниже показано, как добавить свойства пользователя).
-    </Tip>
-  </Step>
+<div id="4-run-segmentation-queries">
+  ## 4. Выполните запросы сегментации
+</div>
 
-  <Step title="Выполнить запросы для воронки" id="5-run-funnel-queries">
-    Выберите до 9 шагов для воронки. Укажите временной интервал, в течение которого пользователи могут пройти воронку.
-    Получайте мгновенную информацию о коэффициенте конверсии, не написав ни одной строки SQL-кода.
+Сегментация пользователей в Mitzu так же проста, как и в Amplitude, Mixpanel или PostHog.
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_07.webp" alt="Представление анализа воронки в Mitzu с коэффициентами конверсии между шагами" border />
+На странице Explore слева расположена область выбора событий, а в верхней части можно настроить временной интервал.
 
-    <br />
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_06.webp" alt="Интерфейс запроса сегментации Mitzu с выбором событий и настройкой временного интервала" border />
 
-    <Tip>
-      **Визуализируйте тренды**
+<br />
 
-      Выберите `Funnel trends`, чтобы визуализировать изменения воронки с течением времени.
-    </Tip>
-  </Step>
+<Tip>
+  **Фильтры и разбивка**
 
-  <Step title="Выполнять запросы для анализа удержания" id="6-run-retention-queries">
-    Выберите до 2 шагов для расчёта коэффициента удержания. Выберите окно удержания для повторяющегося периода.
-    Получайте мгновенную аналитику по коэффициенту конверсии, не написав ни одной строки SQL-кода.
+  Фильтрация выполняется привычным образом: выберите свойство (столбец ClickHouse) и в раскрывающемся списке укажите значения, по которым нужно фильтровать.
+  Для разбивки можно выбрать любое свойство события или пользователя (ниже описано, как интегрировать свойства пользователей).
+</Tip>
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_08.webp" alt="Анализ удержания в Mitzu с показателями удержания по когортам" border />
+<div id="5-run-funnel-queries">
+  ## 5. Запустите запросы для воронки
+</div>
 
-    <br />
+Выберите до 9 шагов для воронки. Укажите временное окно, в течение которого пользователи могут пройти воронку.
+Сразу получайте информацию о конверсии без единой строки SQL-кода.
 
-    <Tip>
-      **Удержание по когортам**
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_07.webp" alt="Представление анализа воронки Mitzu с коэффициентами конверсии между шагами" border />
 
-      Выберите `Weekly cohort retention`, чтобы наглядно увидеть, как показатели удержания меняются со временем.
-    </Tip>
-  </Step>
+<br />
 
-  <Step title="Выполнять запросы для анализа путей пользователей" id="7-run-journey-queries">
-    Выберите до 9 шагов для воронки. Задайте временное окно, в течение которого пользователи могут пройти этот путь. Диаграмма пути в Mitzu наглядно показывает все маршруты, по которым пользователи проходят через выбранные события.
+<Tip>
+  **Визуализируйте тренды**
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_09.webp" alt="Визуализация пути в Mitzu, показывающая поток пользовательских маршрутов между событиями" border />
+  Выберите `Funnel trends`, чтобы визуализировать динамику воронки с течением времени.
+</Tip>
 
-    <br />
+<div id="6-run-retention-queries">
+  ## 6. Выполнение запросов на удержание
+</div>
 
-    <Tip>
-      **Разбивка шагов**
+Выберите до 2 шагов для расчёта коэффициента удержания. Выберите окно удержания для повторяющегося периода для
+Получайте данные о коэффициенте мгновенной конверсии, не написав ни одной строки SQL-кода.
 
-      Вы можете выбрать свойство для сегмента `Break down`, чтобы различать пользователей в рамках одного и того же шага.
-    </Tip>
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_08.webp" alt="Анализ удержания в Mitzu с отображением коэффициентов удержания когорт" border />
 
-    <br />
-  </Step>
+<br />
 
-  <Step title="Выполнять запросы для анализа выручки" id="8-run-revenue-queries">
-    Если настроены параметры выручки, Mitzu может рассчитывать общий MRR и количество подписок на основе ваших платёжных событий.
+<Tip>
+  **Удержание когорт**
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_10.webp" alt="Панель мониторинга анализа выручки Mitzu с метриками MRR" border />
-  </Step>
+  Выберите `Weekly cohort retention`, чтобы увидеть, как коэффициенты удержания меняются со временем.
+</Tip>
 
-  <Step title="Нативный SQL" id="9-sql-native">
-    Mitzu поддерживает нативный SQL, то есть генерирует нативный SQL-код на основе выбранной вами конфигурации на странице Explore.
+<div id="7-run-journey-queries">
+  ## 7. Выполните запросы по путям
+</div>
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_11.webp" alt="Экран генерации SQL-кода в Mitzu с нативным запросом к ClickHouse" border />
+Выберите до 9 шагов для воронки. Укажите временное окно, в течение которого пользователи могут завершить путь. Диаграмма путей Mitzu наглядно показывает все маршруты, по которым пользователи проходят через выбранные события.
 
-    <br />
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_09.webp" alt="Визуализация путей в Mitzu, показывающая переходы пользователей между событиями" border />
 
-    <Tip>
-      **Продолжите работу в BI-инструменте**
+<br />
 
-      Если вы столкнулись с ограничением в интерфейсе Mitzu, скопируйте SQL-код и продолжите работу в BI-инструменте.
-    </Tip>
-  </Step>
-</Steps>
+<Tip>
+  **Разбивка шагов**
+
+  Вы можете выбрать свойство для сегмента `Break down`, чтобы различать пользователей в рамках одного и того же шага.
+</Tip>
+
+<br />
+
+<div id="8-run-revenue-queries">
+  ## 8. Выполните запросы по доходу
+</div>
+
+Если настроены параметры выручки, Mitzu сможет рассчитать общий MRR и количество подписок на основе ваших платёжных событий.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_10.webp" alt="Панель мониторинга анализа выручки в Mitzu с метриками MRR" border />
+
+<div id="9-sql-native">
+  ## 9. Нативный SQL
+</div>
+
+Mitzu поддерживает нативный SQL, то есть генерирует нативный SQL-код на основе выбранной вами конфигурации на странице Explore.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_11.webp" alt="Представление генерации SQL-кода в Mitzu с нативным запросом к ClickHouse" border />
+
+<br />
+
+<Tip>
+  **Продолжите работу в BI-инструменте**
+
+  Если возможностей интерфейса Mitzu окажется недостаточно, скопируйте SQL-код и продолжите работу в BI-инструменте.
+</Tip>
 
 <div id="mitzu-support">
   ## Поддержка Mitzu

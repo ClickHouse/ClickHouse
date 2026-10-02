@@ -13,7 +13,7 @@ ClickHouse 可通过多种方式轻松集成到 OLTP 数据库基础设施中。
   ## 创建 SQL 转储
 </div>
 
-可以使用 [SQLInsert](/zh/reference/formats/SQLInsert) 以 SQL 格式转储数据。ClickHouse 会按 `INSERT INTO <table name> VALUES(...` 的形式写入数据，并使用 [`output_format_sql_insert_table_name`](/zh/reference/settings/formats/output-format#output_format_sql_insert_table_name) 设置项中的值作为表名：
+可以使用 [SQLInsert](/zh/reference/formats/SQLInsert) 以 SQL 格式转储数据。ClickHouse 会按 `INSERT INTO <table name> VALUES(...` 的形式写入数据，并使用 [`output_format_sql_insert_table_name`](/zh/reference/settings/formats#output_format_sql_insert_table_name) 设置项中的值作为表名：
 
 ```sql
 SET output_format_sql_insert_table_name = 'some_table';
@@ -22,7 +22,7 @@ INTO OUTFILE 'dump.sql'
 FORMAT SQLInsert
 ```
 
-可通过禁用 [`output_format_sql_insert_include_column_names`](/zh/reference/settings/formats/output-format#output_format_sql_insert_include_column_names) 选项来省略列名：
+可通过禁用 [`output_format_sql_insert_include_column_names`](/zh/reference/settings/formats#output_format_sql_insert_include_column_names) 选项来省略列名：
 
 ```sql
 SET output_format_sql_insert_include_column_names = 0
@@ -36,7 +36,7 @@ mysql some_db < dump.sql
 
 我们假设 `some_table` 表存在于 `some_db` MySQL 数据库中。
 
-某些 DBMS 可能会限制单个批次中可处理的值数量。默认情况下，ClickHouse 会创建包含 65k 个值的批次，但可以通过 [`output_format_sql_insert_max_batch_size`](/zh/reference/settings/formats/output-format#output_format_sql_insert_max_batch_size) 选项进行调整：
+某些 DBMS 可能会限制单个批次中可处理的值数量。默认情况下，ClickHouse 会创建包含 65k 个值的批次，但可以通过 [`output_format_sql_insert_max_batch_size`](/zh/reference/settings/formats#output_format_sql_insert_max_batch_size) 选项进行调整：
 
 ```sql
 SET output_format_sql_insert_max_batch_size = 1000;
@@ -78,7 +78,7 @@ LIMIT 5
 └────────────────────────────────┴────────────┴──────┘
 ```
 
-默认情况下，ClickHouse 会跳过未知列 (由 [input&#95;format&#95;skip&#95;unknown&#95;fields](/zh/reference/settings/formats/input-format#input_format_skip_unknown_fields) 选项控制) ，并处理转储文件中找到的第一张表的数据 (如果单个文件中包含多个表的转储) 。DDL 语句会被跳过。要将 MySQL 转储中的数据加载到表中 ([mysql.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/mysql.sql) 文件) ：
+默认情况下，ClickHouse 会跳过未知列 (由 [input&#95;format&#95;skip&#95;unknown&#95;fields](/zh/reference/settings/formats#input_format_skip_unknown_fields) 选项控制) ，并处理转储文件中找到的第一张表的数据 (如果单个文件中包含多个表的转储) 。DDL 语句会被跳过。要将 MySQL 转储中的数据加载到表中 ([mysql.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/mysql.sql) 文件) ：
 
 ```sql
 INSERT INTO some_data

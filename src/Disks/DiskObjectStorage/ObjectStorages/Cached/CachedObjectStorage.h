@@ -61,9 +61,7 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist( /// NOLINT
-        const StoredObjects & objects,
-        StoredObjects * successful_objects = nullptr) override;
+    void removeObjectsIfExist(const StoredObjects & objects) override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -114,8 +112,6 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
-    bool supportsObjectGenerationComparison() const override { return object_storage->supportsObjectGenerationComparison(); }
-
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
 #if USE_AZURE_BLOB_STORAGE
@@ -129,7 +125,7 @@ public:
         return object_storage->getAzureBlobStorageAuthMethod();
     }
 
-    std::shared_ptr<const AzureBlobStorage::ConnectionParams> getAzureBlobStorageConnectionParams() const override
+    const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const override
     {
         return object_storage->getAzureBlobStorageConnectionParams();
     }
@@ -155,25 +151,18 @@ public:
     }
 
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
-    void tagObjects( /// NOLINT
-        const StoredObjects & objects,
-        const std::string & tag_key,
-        const std::string & tag_value,
-        StoredObjects * successful_objects = nullptr) override
+    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override
     {
-        object_storage->tagObjects(objects, tag_key, tag_value, successful_objects);
+        object_storage->tagObjects(objects, tag_key, tag_value);
     }
 #endif
 
     ObjectStoragePtr getUnderlying() override { return object_storage; }
 
-    ObjectStoragePtr cloneImpl() const override;
-
 private:
     FileCacheKey getCacheKey(const std::string & path) const;
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
-    WriteSettings patchSettings(const WriteSettings & write_settings) const override;
 
     ObjectStoragePtr object_storage;
     FileCachePtr cache;

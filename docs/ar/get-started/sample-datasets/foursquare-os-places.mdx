@@ -1,155 +1,115 @@
 ---
-description: 'تعرّف على كيفية استكشاف وتحميل مجموعة بيانات Foursquare OS Places الجغرافية المكانية باستخدام ClickHouse.'
-sidebarTitle: 'Foursquare OS Places'
+description: 'مجموعة بيانات تضم أكثر من 100 مليون سجل، وتتضمن معلومات عن مواقع على الخريطة، مثل المتاجر،
+والمطاعم، والحدائق، وملاعب الأطفال، والمعالم.'
+sidebarTitle: 'Foursquare أماكن'
 slug: /getting-started/example-datasets/foursquare-places
-title: 'مجموعة بيانات Foursquare OS Places'
-keywords: ['مجموعة بيانات نموذجية', 'Foursquare', 'جغرافي مكاني', 'Iceberg', 'البدء']
+title: 'Foursquare أماكن'
+keywords: ['التصور']
 doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-يحتوي Foursquare OS Places على أكثر من 100 مليون موقع تجاري مهم (POI)،
-بما في ذلك المتاجر والمطاعم والحدائق ومناطق اللعب والمعالم. في هذا الدليل،
-صِل ClickHouse بكتالوج Iceberg التابع لـ Foursquare، واستكشف مجموعة البيانات، وحمّلها
-إلى جدول مُحسَّن للاستعلامات الجغرافية المكانية.
-
-تتوفر مجموعة البيانات عبر [بوابة Foursquare Places](https://places.foursquare.com/)
-ويمكن استخدامها مجانًا بموجب ترخيص Apache 2.0.
-
-<Note>
-  غيّرت Foursquare طريقة الوصول إلى OS Places. كانت الإصدارات السابقة من هذا الدليل تستعلم
-  عن ملفات مثبّتة بتاريخ في حاوية S3 عامة؛ أما الآن، فيتم الوصول عبر Places Portal وكتالوج
-  Iceberg موثَّق. راجع [وثائق Foursquare للوصول إلى OS Places](https://docs.foursquare.com/data-products/docs/access-fsq-os-places)
-  لمزيد من التفاصيل.
-</Note>
-
-<div id="before-you-begin">
-  ## قبل البدء
+<div id="dataset">
+  ## مجموعة البيانات
 </div>
 
-قبل تشغيل الاستعلامات الواردة في هذا الدليل، ستحتاج إلى:
+مجموعة البيانات هذه من Foursquare متاحة [للتنزيل](https://docs.foursquare.com/data-products/docs/access-fsq-os-places)
+وللاستخدام المجاني بموجب ترخيص Apache 2.0.
 
-* حساب على [بوابة Foursquare Places](https://places.foursquare.com/)
-* رمز وصول مُنشأ من علامة التبويب **Access Data** ضمن مجموعة البيانات **OS Places**
+وتتضمن أكثر من 100 مليون سجل لنقاط الاهتمام التجارية (POI)،
+مثل المتاجر والمطاعم والمتنزهات وملاعب الأطفال والمعالم الأثرية. كما تشمل
+بيانات وصفية إضافية عن هذه الأماكن، مثل الفئات ومعلومات وسائل التواصل الاجتماعي.
 
-<div id="connect-to-the-foursquare-catalog">
-  ## الاتصال بكتالوج Foursquare
+<div id="data-exploration">
+  ## استكشاف البيانات
 </div>
 
-حافظ على سرية رمز الوصول الخاص بك. شغّل عميل ClickHouse، ثم استبدل
-`<YOUR_ACCESS_TOKEN>` برمزك في الاستعلام التالي:
+لاستكشاف البيانات، سنستخدم [`clickhouse-local`](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)، وهي أداة صغيرة تعمل من سطر الأوامر
+وتوفّر محرك ClickHouse الكامل، مع أنه يمكنك أيضًا استخدام
+ClickHouse Cloud أو `clickhouse-client` أو حتى `chDB`.
+
+شغّل الاستعلام التالي لاختيار البيانات من حاوية S3 حيث تُخزَّن البيانات:
 
 ```sql title="Query"
-SET allow_database_iceberg = 1;
-
-CREATE DATABASE places
-ENGINE = DataLakeCatalog('https://catalog.h3-hub.foursquare.com/iceberg')
-SETTINGS
-    catalog_type = 'rest',
-    warehouse = 'places',
-    auth_header = 'Authorization: Bearer <YOUR_ACCESS_TOKEN>',
-    vended_credentials = 1;
-```
-
-قاعدة بيانات الكتالوج للقراءة فقط. يعكس جدول `places_os` الإصدار المنشور الحالي من Foursquare
-بدلًا من إصدار Parquet المثبّت بتاريخ، لذا قد تتغير صفوفه ومخططه
-بمرور الوقت. لذلك، قد تعيد الاستعلامات التي لا تتضمن عبارة `ORDER BY`
-صفوف عيّنة مختلفة عن النتائج المعروضة في هذا الدليل.
-
-<div id="verify-the-connection">
-  ## تحقّق من الاتصال
-</div>
-
-نفِّذ استعلامًا لاسترداد صف واحد من جدول Iceberg `places_os`:
-
-```sql title="Query"
-SELECT *
-FROM places.`datasets.places_os`
-LIMIT 1;
+SELECT * FROM s3('s3://fsq-os-places-us-east-1/release/dt=2025-04-08/places/parquet/*') LIMIT 1
 ```
 
 ```response title="Response"
 Row 1:
 ──────
-fsq_place_id:        587711a138094df2b93ec3af
-name:                Iyang Tadon
-latitude:            ᴺᵁᴸᴸ
-longitude:           ᴺᵁᴸᴸ
-address:             2 38A Jalan Penrissen Batu 10 Pekan Batu 10 93250 Kuching Kuching Sarawak 93250 Malaysia Kuching Sarawak
-locality:            Kuching
-region:              Sarawak
-postcode:            93250
+fsq_place_id:        4e1ef76cae60cd553dec233f
+name:                @VirginAmerica In-flight Via @Gogo
+latitude:            37.62120111687914
+longitude:           -122.39003793803701
+address:             ᴺᵁᴸᴸ
+locality:            ᴺᵁᴸᴸ
+region:              ᴺᵁᴸᴸ
+postcode:            ᴺᵁᴸᴸ
 admin_region:        ᴺᵁᴸᴸ
 post_town:           ᴺᵁᴸᴸ
 po_box:              ᴺᵁᴸᴸ
-country:             MY
-date_created:        2015-05-24
-date_refreshed:      2015-05-24
-date_closed:         ᴺᵁᴸᴸ
-tel:                 082-617 033
+country:             US
+date_created:        2011-07-14
+date_refreshed:      2018-07-05
+date_closed:         2018-07-05
+tel:                 ᴺᵁᴸᴸ
 website:             ᴺᵁᴸᴸ
 email:               ᴺᵁᴸᴸ
 facebook_id:         ᴺᵁᴸᴸ
 instagram:           ᴺᵁᴸᴸ
 twitter:             ᴺᵁᴸᴸ
-fsq_category_ids:    []
-fsq_category_labels: []
-placemaker_url:      https://foursquare.com/placemakers/review-place/587711a138094df2b93ec3af
-unresolved_flags:    []
+fsq_category_ids:    ['4bf58dd8d48988d1f7931735']
+fsq_category_labels: ['Travel and Transportation > Transport Hub > Airport > Plane']
+placemaker_url:      https://foursquare.com/placemakers/review-place/4e1ef76cae60cd553dec233f
+geom:                �^��a�^@Bσ���
+bbox:                (-122.39003793803701,37.62120111687914,-122.39003793803701,37.62120111687914)
+```
+
+نرى أن عددًا لا بأس به من الحقول يحتوي على `ᴺᵁᴸᴸ`، لذا يمكننا إضافة بعض الشروط الإضافية
+إلى الاستعلام للحصول على بيانات أكثر فائدة:
+
+```sql title="Query"
+SELECT * FROM s3('s3://fsq-os-places-us-east-1/release/dt=2025-04-08/places/parquet/*')
+   WHERE address IS NOT NULL AND postcode IS NOT NULL AND instagram IS NOT NULL LIMIT 1
+```
+
+```response
+Row 1:
+──────
+fsq_place_id:        59b2c754b54618784f259654
+name:                Villa 722
+latitude:            ᴺᵁᴸᴸ
+longitude:           ᴺᵁᴸᴸ
+address:             Gijzenveldstraat 75
+locality:            Zutendaal
+region:              Limburg
+postcode:            3690
+admin_region:        ᴺᵁᴸᴸ
+post_town:           ᴺᵁᴸᴸ
+po_box:              ᴺᵁᴸᴸ
+country:             ᴺᵁᴸᴸ
+date_created:        2017-09-08
+date_refreshed:      2020-01-25
+date_closed:         ᴺᵁᴸᴸ
+tel:                 ᴺᵁᴸᴸ
+website:             https://www.landal.be
+email:               ᴺᵁᴸᴸ
+facebook_id:         522698844570949 -- 522.70 trillion
+instagram:           landalmooizutendaal
+twitter:             landalzdl
+fsq_category_ids:    ['56aa371be4b08b9a8d5734e1']
+fsq_category_labels: ['Travel and Transportation > Lodging > Vacation Rental']
+placemaker_url:      https://foursquare.com/placemakers/review-place/59b2c754b54618784f259654
 geom:                ᴺᵁᴸᴸ
 bbox:                (NULL,NULL,NULL,NULL)
 ```
 
-<div id="explore-the-data">
-  ## استكشاف البيانات
-</div>
-
-يحتوي الصف النموذجي على عدة حقول فارغة. أضف عوامل تصفية لإرجاع صف أكثر اكتمالًا:
+نفّذ الاستعلام التالي لعرض المخطّط المُستنتَج تلقائيًا للبيانات باستخدام
+`DESCRIBE`:
 
 ```sql title="Query"
-SELECT *
-FROM places.`datasets.places_os`
-WHERE address IS NOT NULL AND postcode IS NOT NULL AND instagram IS NOT NULL
-LIMIT 1;
-```
-
-```response title="Response"
-Row 1:
-──────
-fsq_place_id:        4b9af2a9f964a52000e635e3
-name:                KFC
-latitude:            42.214429044404966
-longitude:           -83.5428035767019
-address:             2169 Rawsonville Rd
-locality:            Van Buren Township
-region:              MI
-postcode:            48111
-admin_region:        ᴺᵁᴸᴸ
-post_town:           ᴺᵁᴸᴸ
-po_box:              ᴺᵁᴸᴸ
-country:             US
-date_created:        2010-03-13
-date_refreshed:      2026-07-08
-date_closed:         ᴺᵁᴸᴸ
-tel:                 (734) 482-7256
-website:             https://locations.kfc.com/mi/belleville/2169-rawsonville-road
-email:               kfccares@kfc.com
-facebook_id:         159863790842385 -- 159.86 trillion
-instagram:           kfc
-twitter:             kfc
-fsq_category_ids:    ['4d4ae6fc7a7b7dea34424761','4bf58dd8d48988d16e941735']
-fsq_category_labels: ['Dining and Drinking > Restaurant > Fried Chicken Joint','Dining and Drinking > Restaurant > Fast Food Restaurant']
-placemaker_url:      https://foursquare.com/placemakers/review-place/4b9af2a9f964a52000e635e3
-unresolved_flags:    []
-geom:                [binary data]
-bbox:                (-83.5428035767019,42.214429044404966,-83.5428035767019,42.214429044404966)
-```
-
-استخدم `DESCRIBE` لفحص مخطط الجدول:
-
-```sql title="Query"
-DESCRIBE places.`datasets.places_os`;
+DESCRIBE s3('s3://fsq-os-places-us-east-1/release/dt=2025-04-08/places/parquet/*')
 ```
 
 ```response title="Response"
@@ -178,9 +138,8 @@ DESCRIBE places.`datasets.places_os`;
 22. │ fsq_category_ids    │ Array(Nullable(String))     │
 23. │ fsq_category_labels │ Array(Nullable(String))     │
 24. │ placemaker_url      │ Nullable(String)            │
-25. │ unresolved_flags    │ Array(Nullable(String))     │
-26. │ geom                │ Nullable(String)            │
-27. │ bbox                │ Tuple(                     ↴│
+25. │ geom                │ Nullable(String)            │
+26. │ bbox                │ Tuple(                     ↴│
     │                     │↳    xmin Nullable(Float64),↴│
     │                     │↳    ymin Nullable(Float64),↴│
     │                     │↳    xmax Nullable(Float64),↴│
@@ -189,194 +148,128 @@ DESCRIBE places.`datasets.places_os`;
 ```
 
 <div id="loading-the-data">
-  ## حمّل البيانات إلى ClickHouse
+  ## تحميل البيانات إلى ClickHouse
 </div>
 
-لتخزين البيانات بشكل دائم، أنشئ جدولًا على `clickhouse-server` أو ClickHouse Cloud.
+إذا كنت تريد الاحتفاظ بالبيانات على القرص، فيمكنك استخدام `clickhouse-server`
+أو ClickHouse Cloud.
 
-أنشئ جدول `MergeTree` بأعمدة مُشفَّرة بالقاموس وإحداثيات Web Mercator
-مُخزَّنة فعليًا:
+لإنشاء الجدول، شغّل الأمر التالي:
 
 ```sql title="Query"
 CREATE TABLE foursquare_mercator
 (
-    fsq_place_id Nullable(String),
-    name Nullable(String),
+    fsq_place_id String,
+    name String,
     latitude Float64,
     longitude Float64,
-    address Nullable(String),
-    locality Nullable(String),
-    region LowCardinality(Nullable(String)),
-    postcode LowCardinality(Nullable(String)),
-    admin_region LowCardinality(Nullable(String)),
-    post_town LowCardinality(Nullable(String)),
-    po_box LowCardinality(Nullable(String)),
-    country LowCardinality(Nullable(String)),
+    address String,
+    locality String,
+    region LowCardinality(String),
+    postcode LowCardinality(String),
+    admin_region LowCardinality(String),
+    post_town LowCardinality(String),
+    po_box LowCardinality(String),
+    country LowCardinality(String),
     date_created Nullable(Date),
     date_refreshed Nullable(Date),
     date_closed Nullable(Date),
-    tel Nullable(String),
-    website Nullable(String),
-    email Nullable(String),
-    facebook_id Nullable(Int64),
-    instagram Nullable(String),
-    twitter Nullable(String),
-    fsq_category_ids Array(Nullable(String)),
-    fsq_category_labels Array(Nullable(String)),
-    placemaker_url Nullable(String),
-    geom Nullable(String),
+    tel String,
+    website String,
+    email String,
+    facebook_id String,
+    instagram String,
+    twitter String,
+    fsq_category_ids Array(String),
+    fsq_category_labels Array(String),
+    placemaker_url String,
+    geom String,
     bbox Tuple(
         xmin Nullable(Float64),
         ymin Nullable(Float64),
         xmax Nullable(Float64),
         ymax Nullable(Float64)
     ),
-    category LowCardinality(Nullable(String)) ALIAS fsq_category_labels[1],
+    category LowCardinality(String) ALIAS fsq_category_labels[1],
     mercator_x UInt32 MATERIALIZED 0xFFFFFFFF * ((longitude + 180) / 360),
     mercator_y UInt32 MATERIALIZED 0xFFFFFFFF * ((1 / 2) - ((log(tan(((latitude + 90) / 360) * pi())) / 2) / pi())),
     INDEX idx_x mercator_x TYPE minmax,
     INDEX idx_y mercator_y TYPE minmax
 )
-ENGINE = MergeTree
-ORDER BY mortonEncode(mercator_x, mercator_y);
+ORDER BY mortonEncode(mercator_x, mercator_y)
 ```
 
-تستخدم عدة أعمدة نوع البيانات [`LowCardinality`](/ar/reference/data-types/lowcardinality)،
-الذي يخزّن القيم المتكررة بترميز القاموس. ويمكن لهذا التمثيل تحسين
-أداء استعلامات `SELECT` بشكل ملحوظ.
+لاحظ استخدام نوع البيانات [`LowCardinality`](/ar/reference/data-types/lowcardinality)
+في عدة أعمدة، إذ يغيّر التمثيل الداخلي للبيانات
+بحيث تصبح أنواع البيانات مرمَّزةً باستخدام القاموس. ويسهم التعامل مع البيانات المرمَّزة بالقاموس
+في تحسين أداء استعلامات `SELECT` بشكل كبير في كثير من التطبيقات.
 
-يحوّل العمودان `UInt32` ذوا السمة `MATERIALIZED`، `mercator_x` و`mercator_y`، خط العرض
-وخط الطول إلى [إسقاط ويب مركاتور](https://en.wikipedia.org/wiki/Web_Mercator_projection)،
-مما يسهّل تقسيم الخريطة إلى بطاقات:
+بالإضافة إلى ذلك، يُنشأ عمودان `UInt32` من نوع `MATERIALIZED`، هما `mercator_x` و`mercator_y`،
+لربط إحداثيات خط العرض/خط الطول بإسقاط [Web Mercator](https://en.wikipedia.org/wiki/Web_Mercator_projection)
+لتسهيل تقسيم الخريطة إلى مربعات:
 
 ```sql
 mercator_x UInt32 MATERIALIZED 0xFFFFFFFF * ((longitude + 180) / 360),
 mercator_y UInt32 MATERIALIZED 0xFFFFFFFF * ((1 / 2) - ((log(tan(((latitude + 90) / 360) * pi())) / 2) / pi())),
 ```
 
-تحسب التعبيرات القيم التالية.
+دعونا نفصّل ما يحدث أعلاه لكل عمود.
 
 **mercator&#95;x**
 
-يحوّل هذا العمود قيمة خط الطول إلى إحداثي X في إسقاط مركاتور:
+يحوّل هذا العمود قيمة خط الطول إلى إحداثي X في إسقاط ميركاتور:
 
-* تُزيح `longitude + 180` نطاق خط الطول من [-180, 180] إلى [0, 360].
-* تؤدي القسمة على 360 إلى تطبيع القيمة لتصبح ضمن نطاق من 0 إلى 1.
-* يؤدي الضرب في `0xFFFFFFFF`، وهو أكبر عدد صحيح غير موقّع من 32 بت، إلى تحجيم القيمة المُطبَّعة لتغطي النطاق الكامل لعدد صحيح من 32 بت.
+* `longitude + 180` يزيح نطاق خط الطول من [-180, 180] إلى [0, 360]
+* تؤدي القسمة على 360 إلى تطبيع هذه القيمة لتصبح بين 0 و1
+* يؤدي الضرب في `0xFFFFFFFF` (تمثيل سداسي عشري لأقصى عدد صحيح غير موقّع من 32 بت) إلى تحجيم هذه القيمة المُطبَّعة إلى النطاق الكامل لعدد صحيح من 32 بت
 
 **mercator&#95;y**
 
-يحوّل هذا العمود قيمة خط العرض إلى إحداثي Y في إسقاط مركاتور:
+يحوّل هذا العمود قيمة خط العرض إلى إحداثي Y في إسقاط ميركاتور:
 
-* تُزيح `latitude + 90` نطاق خط العرض من [-90, 90] إلى [0, 180].
-* تؤدي القسمة على 360 والضرب في `pi` إلى تحويل القيمة إلى راديان لاستخدامها في الدوال المثلثية.
-* تطبّق `log(tan(...))` صيغة إسقاط مركاتور الأساسية.
-* يؤدي الضرب في `0xFFFFFFFF` إلى تحجيم النتيجة لتغطي النطاق الكامل لعدد صحيح من 32 بت.
+* `latitude + 90` يزيح خط العرض من [-90, 90] إلى [0, 180]
+* تؤدي القسمة على 360 ثم الضرب في pi() إلى التحويل إلى راديان من أجل الدوال المثلثية
+* يمثّل الجزء `log(tan(...))` جوهر صيغة إسقاط ميركاتور
+* يؤدي الضرب في `0xFFFFFFFF` إلى التحجيم إلى النطاق الكامل لعدد صحيح من 32 بت
 
-يؤدي تحديد `MATERIALIZED` إلى جعل ClickHouse يحسب هذه القيم عند إدراج البيانات،
-من دون اشتراط احتواء البيانات المصدر على الأعمدة.
+يضمن تحديد `MATERIALIZED` أن يحسب ClickHouse قيم هذه
+الأعمدة عند `INSERT` البيانات، من دون الحاجة إلى تحديد هذه الأعمدة (التي لا تُعدّ
+جزءًا من مخطط البيانات الأصلي) في تعليمة &#96;INSERT.
 
-يُرتَّب الجدول حسب `mortonEncode(mercator_x, mercator_y)`، مما ينشئ منحنى Z يملأ
-المساحة وينظّم البيانات حسب تقاربها المكاني:
+يُرتَّب الجدول بحسب `mortonEncode(mercator_x, mercator_y)`، الذي يُنتج
+منحنى Z-order لملء الفراغ لـ `mercator_x` و`mercator_y` من أجل تحسين
+أداء الاستعلامات الجغرافية المكانية بشكل كبير. ويضمن هذا الترتيب وفق منحنى Z-order أن تكون البيانات
+منظَّمة فعليًا بحسب التقارب المكاني:
 
 ```sql
-ORDER BY mortonEncode(mercator_x, mercator_y);
+ORDER BY mortonEncode(mercator_x, mercator_y)
 ```
 
-يُسرِّع فهرسا `minmax` إضافيان التصفية المكانية أكثر:
+كما يُنشأ مؤشرا `minmax` لتسريع البحث:
 
 ```sql
 INDEX idx_x mercator_x TYPE minmax,
-INDEX idx_y mercator_y TYPE minmax;
+INDEX idx_y mercator_y TYPE minmax
 ```
 
-حمّل إصدار OS Places الحالي إلى الجدول:
+كما ترى، يوفّر ClickHouse كل ما تحتاجه بالفعل لتطبيقات الخرائط في الزمن الحقيقي!
 
-<Warning>
-  يقرأ هذا الاستعلام أكثر من 100 مليون صف ويخزّنها. وقد يستغرق وقتًا طويلًا،
-  ويستهلك مساحة تخزين، ويترتب عليه تكاليف استخدام في ClickHouse Cloud. يؤدي تشغيله مجددًا إلى إلحاق
-  البيانات نفسها، لذا تأكد من أن `foursquare_mercator` فارغ قبل إعادة محاولة الاستيراد.
-</Warning>
+نفّذ الاستعلام التالي لتحميل البيانات:
 
-```sql title="Query"
-INSERT INTO foursquare_mercator
-(
-    fsq_place_id,
-    name,
-    latitude,
-    longitude,
-    address,
-    locality,
-    region,
-    postcode,
-    admin_region,
-    post_town,
-    po_box,
-    country,
-    date_created,
-    date_refreshed,
-    date_closed,
-    tel,
-    website,
-    email,
-    facebook_id,
-    instagram,
-    twitter,
-    fsq_category_ids,
-    fsq_category_labels,
-    placemaker_url,
-    geom,
-    bbox
-)
-SELECT
-    fsq_place_id,
-    name,
-    assumeNotNull(latitude),
-    assumeNotNull(longitude),
-    address,
-    locality,
-    region,
-    postcode,
-    admin_region,
-    post_town,
-    po_box,
-    country,
-    date_created,
-    date_refreshed,
-    date_closed,
-    tel,
-    website,
-    email,
-    facebook_id,
-    instagram,
-    twitter,
-    fsq_category_ids,
-    fsq_category_labels,
-    placemaker_url,
-    geom,
-    bbox
-FROM places.`datasets.places_os`
-WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
+```sql
+INSERT INTO foursquare_mercator 
+SELECT * FROM s3('s3://fsq-os-places-us-east-1/release/dt=2025-04-08/places/parquet/*')
 ```
-
-تمنع قوائم الأعمدة الصريحة للمصدر والوجهة تغييرات ترتيب أعمدة الكتالوج من
-التسبب في عدم تطابق القيم المستوردة. يستثني الاستعلام `unresolved_flags` لأنه
-غير مطلوب في الجدول المحلي، ويستبعد الصفوف التي لا تحتوي على إحداثيات لأنه
-لا يمكن وضعها على الخريطة. وتظل قيم المصدر الأخرى القابلة للقيم الفارغة فارغة في الجدول المحلي.
 
 <div id="data-visualization">
-  ## استعرض البيانات بصريًا
+  ## استعراض البيانات بصريًا
 </div>
 
-<Note>
-  تغيّر نموذج الوصول في Foursquare منذ إنشاء هذه التصوّرات. يسبق
-  [عرض Places التفاعلي الأصلي](https://adsb.exposed/?dataset=Places\&zoom=5\&lat=52.3488\&lng=4.9219)
-  نموذج الوصول الحالي، وقد أُدرج رابطه للرجوع إليه تاريخيًا، لكنه قد لا
-  يعرض بيانات Places بعد الآن. احتُفظ بالصور أدناه كأمثلة تاريخية.
-</Note>
+للتعرّف على ما يمكن فعله باستخدام مجموعة البيانات هذه، ألقِ نظرة على [adsb.exposed](https://adsb.exposed/?dataset=Places\&zoom=5\&lat=52.3488\&lng=4.9219).
+صُمّم adsb.exposed في الأصل على يد الشريك المؤسس والمدير التقني Alexey Milovidov لعرض بيانات رحلات ADS-B ‏(البث التلقائي للمراقبة التابعة) بصريًا،
+والتي يزيد حجمها بمقدار 1000 مرة. وخلال هاكاثون أُقيم داخل الشركة، أضاف Alexey بيانات Foursquare إلى الأداة.
 
-خلال هاكاثون أُقيم داخل الشركة، استخدم الشريك المؤسس والمدير التقني في ClickHouse، Alexey Milovidov، ClickHouse
-لإنشاء التصوّرات التالية من مجموعة بيانات Foursquare.
+فيما يلي بعض تصوّراتنا المفضلة لتستمتع بها.
 
 <Image img="/images/getting-started/example-datasets/visualization_1.webp" size="md" alt="خريطة كثافة لنقاط الاهتمام في أوروبا" />
 
