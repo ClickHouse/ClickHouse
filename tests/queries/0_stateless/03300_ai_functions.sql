@@ -15,6 +15,9 @@
 -- `ai_function_text_default_credentials` / `ai_function_embedding_default_credentials`.
 -- =============================================================================
 
+-- The requests below go to unreachable endpoints. One retry keeps each failing row fast.
+SET ai_function_max_retries = 1;
+
 -- Helper table: a String column with zero rows, used to test function behavior
 -- without triggering actual HTTP calls. A non-constant column prevents the
 -- optimizer from constant-folding the AI function during analysis.

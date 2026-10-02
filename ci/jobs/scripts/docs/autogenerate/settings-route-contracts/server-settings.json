@@ -69,6 +69,7 @@
     {"prefix":"parts_killer","mode":"token","target":"/reference/settings/server-settings/settings/parts-killer"},
     {"prefix":"total_memory","mode":"token","target":"/reference/settings/server-settings/settings/total-memory"},
     {"prefix":"user_defined","mode":"token","target":"/reference/settings/server-settings/settings/user-defined"},
+    {"prefix":"ai_function","mode":"token","target":"/reference/settings/server-settings/settings/ai-function"},
     {"prefix":"distributed","mode":"token","target":"/reference/settings/server-settings/settings/distributed"},
     {"prefix":"interserver","mode":"token","target":"/reference/settings/server-settings/settings/interserver"},
     {"prefix":"max_backups","mode":"token","target":"/reference/settings/server-settings/settings/max-backups"},
