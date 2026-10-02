@@ -48,3 +48,6 @@ invalid compression method on ATTACH:
 row-count cache and an explicit compression method:
 1
 1
+schema cache and an explicit compression method:
+id	Nullable(Int64)					
+1

@@ -259,4 +259,9 @@ do
 done
 $CLICKHOUSE_CLIENT --use_cache_for_count_from_files=1 --optimize_count_from_files=1 -q "SELECT count() FROM s3('$path/count_cache/data.jsonl', 'test', 'testtest', 'JSONEachRow', 'id UInt64')"
 $CLICKHOUSE_CLIENT --use_cache_for_count_from_files=1 --optimize_count_from_files=1 -q "SELECT count() FROM s3('$path/count_cache/data.jsonl', 'test', 'testtest', 'JSONEachRow', 'id UInt64', 'gzip')" 2>&1 | grep -cm1 "Code: "
+# The same holds for the schema cache: a schema inferred through autodetection must not be reused
+# by schema inference under an explicit codec, which has to read the file and fail.
+echo 'schema cache and an explicit compression method:'
+$CLICKHOUSE_CLIENT -q "DESCRIBE s3('$path/count_cache/data.jsonl', 'test', 'testtest', 'JSONEachRow')"
+$CLICKHOUSE_CLIENT -q "DESCRIBE s3('$path/count_cache/data.jsonl', 'test', 'testtest', format = 'JSONEachRow', compression_method = 'gzip')" 2>&1 | grep -cm1 "Code: "
 $CLICKHOUSE_CLIENT -q "DROP DATABASE $attach_db"
