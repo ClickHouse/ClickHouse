@@ -8800,7 +8800,9 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
                 bool is_lossy = false;
                 if (command.type == MutationCommand::RENAME_COLUMN)
                     is_lossy = part_columns.contains(command.column_name);
-                else if (command.type == MutationCommand::DROP_COLUMN)
+                /// `CLEAR COLUMN` is also a `DROP_COLUMN` (with `clear`), but it is a data rewrite that is tracked
+                /// by the part's data version, not by its metadata version, so the missing file does not matter.
+                else if (command.type == MutationCommand::DROP_COLUMN && !command.clear)
                     is_lossy = part_columns.contains(command.column_name) && table_columns.has(command.column_name);
 
                 if (!is_lossy)

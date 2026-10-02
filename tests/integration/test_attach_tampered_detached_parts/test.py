@@ -711,8 +711,9 @@ def test_attach_part_without_metadata_version(started_cluster):
 def test_attach_part_without_metadata_version_after_add_column(started_cluster):
     # Only renames and drops are replayed from the mutation history by metadata version; an added
     # column is deduced from the difference between the part's columns and the table's. So a part
-    # without `metadata_version.txt` is still attachable after an `ADD COLUMN`, and after a rename of a
-    # column the part does not have, and reads the added column as its default.
+    # without `metadata_version.txt` is still attachable after an `ADD COLUMN`, after a rename of a
+    # column the part does not have, and after a `CLEAR COLUMN` (a `DROP_COLUMN` mutation command with
+    # `clear`, which is tracked by the part's data version), and reads the added column as its default.
     table = "t_metadata_version_add_column"
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
     node.query(
@@ -727,6 +728,7 @@ def test_attach_part_without_metadata_version_after_add_column(started_cluster):
     node.query(f"ALTER TABLE {table} DETACH PARTITION tuple()")
     node.query(f"ALTER TABLE {table} ADD COLUMN c UInt32 DEFAULT 7")
     node.query(f"ALTER TABLE {table} RENAME COLUMN c TO d")
+    node.query(f"ALTER TABLE {table} CLEAR COLUMN a IN PARTITION tuple()")
 
     part_path = (
         node.query(
