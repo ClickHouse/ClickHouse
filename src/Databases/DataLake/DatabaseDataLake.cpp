@@ -1366,6 +1366,8 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
     create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_definition);
     create_query->uuid = db_uuid;
+    if (!comment.empty())
+        create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
     return create_query;
 }
 
@@ -1453,6 +1455,8 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     new_create_query->setDatabase(getDatabaseName());
     new_create_query->set(new_create_query->storage, new_engine_definition);
     new_create_query->uuid = db_uuid;
+    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+        new_create_query->set(new_create_query->comment, make_intrusive<ASTLiteral>(database_comment));
     DatabaseCatalog::instance().updateMetadataFile(getDatabaseName(), new_create_query);
 
     /// Publish. Nothing below throws.
