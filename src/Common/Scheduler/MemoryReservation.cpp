@@ -253,6 +253,10 @@ void MemoryReservation::reportReclaimable(bool force, ResourceCost settled_bytes
         std::lock_guard lock(mutex);
         total = reclaimable_total;
 
+        /// No processor can service the remaining demand. Claimed requests are settled by `finishSpill` instead.
+        if (total == 0)
+            settled_bytes += std::exchange(enqueued_spill, 0);
+
         /// A completion must settle its claim even if the estimate is unchanged or below the reporting threshold.
         if (settled_bytes == 0)
         {
@@ -349,8 +353,12 @@ void MemoryReservation::killAllocation(const std::exception_ptr & reason)
 
 void MemoryReservation::spillAllocation(ResourceCost additional_bytes)
 {
-    std::lock_guard lock(mutex);
-    enqueued_spill += additional_bytes;
+    {
+        std::lock_guard lock(mutex);
+        enqueued_spill += additional_bytes;
+    }
+    /// The last reclaimable estimate may have disappeared after the queue booked this request but before delivery.
+    reportReclaimable();
 }
 
 void MemoryReservation::increaseApproved(const IncreaseRequest & increase)

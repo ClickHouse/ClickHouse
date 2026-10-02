@@ -5,6 +5,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <utility>
 #include <gtest/gtest.h>
 
 #include <Core/Defines.h>
@@ -33,6 +34,11 @@
 #include <base/scope_guard.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
+#include <Processors/IProcessor.h>
+#include <Processors/ISpillable.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
@@ -1624,12 +1630,12 @@ static auto getPreempted()
     return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlPreempted);
 }
 
-struct EventCounter
+struct ProfileEventCounter
 {
     ProfileEvents::Event event;
     size_t initial_value;
 
-    explicit EventCounter(ProfileEvents::Event event_)
+    explicit ProfileEventCounter(ProfileEvents::Event event_)
         : event(event_)
     {
         initial_value = getValue();
@@ -1878,7 +1884,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingDownscaling)
         queries[0]->waitStartedThreads(8);
         while (getAcquired() < 8) std::this_thread::yield(); // Wait Q0 to upscale to all 8 threads
         DBG_PRINT("--- Q1 ---");
-        EventCounter downscales(ProfileEvents::ConcurrencyControlDownscales);
+        ProfileEventCounter downscales(ProfileEvents::ConcurrencyControlDownscales);
         queries[1]->start(TestQuery::AllocateLease, "B", 8);
         DBG_PRINT("--- Wait downscaling ---");
         // Wait 3 threads of Q0 to became preempted and downscaled.
@@ -1912,7 +1918,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingUpscaling)
     {
         while (getAcquired() < 8) std::this_thread::yield(); // Wait Q0 to upscale to all 8 threads
         DBG_PRINT("--- Q1 ---");
-        EventCounter downscales(ProfileEvents::ConcurrencyControlDownscales);
+        ProfileEventCounter downscales(ProfileEvents::ConcurrencyControlDownscales);
         queries[1]->start(TestQuery::AllocateLease, "B", 8);
         DBG_PRINT("--- Wait downscaling ---");
         // Wait 3 threads of Q0 to became preempted and downscaled.
@@ -1920,7 +1926,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingUpscaling)
         // to run one more thread than slots allocated as long as this thread does not consume too much resources.
         while (downscales.count() < 3) std::this_thread::yield();
         DBG_PRINT("--- Wait upscaling ---");
-        EventCounter upscales(ProfileEvents::ConcurrencyControlUpscales);
+        ProfileEventCounter upscales(ProfileEvents::ConcurrencyControlUpscales);
         queries[1].reset(); // Release all slots of Q1 to allow Q0 to upscale
         while (upscales.count() < 3) std::this_thread::yield();
         queries[1] = std::make_shared<TestQuery>(t); // Recreate Q1 for the next iteration
@@ -2634,6 +2640,109 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillOnSoftLimit)
     a.waitSpilled();
     EXPECT_EQ(a.spillCount(), 1);
     EXPECT_EQ(a.lastSpillAtLeast(), 50); // need = allocated(150) - soft(100)
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationRetiresUnclaimedSpill)
+{
+    struct SpillableState final : ISpillable
+    {
+        ProcessorMemoryStats getMemoryStats() const override
+        {
+            return {.spillable_memory_bytes = 100};
+        }
+        size_t spill(size_t) override
+        {
+            ADD_FAILURE() << "The request arrives during the final work step and must remain unclaimed";
+            return 0;
+        }
+    };
+
+    struct FinishWithPendingSpill final : IProcessor
+    {
+        std::shared_ptr<SpillableState> state;
+        std::function<void()> before_finish;
+        bool finished = false;
+        bool spillable_registered = true;
+
+        explicit FinishWithPendingSpill(std::shared_ptr<SpillableState> state_) : state(std::move(state_))
+        {
+            state->registerProcessor();
+        }
+
+        String getName() const override
+        {
+            return "FinishWithPendingSpill";
+        }
+        ISpillable * getSpillable() override
+        {
+            return state.get();
+        }
+        Status prepare() override
+        {
+            if (!finished)
+                return Status::Ready;
+            if (std::exchange(spillable_registered, false))
+                state->unregisterProcessor();
+            return Status::Finished;
+        }
+        void work() override
+        {
+            before_finish();
+            finished = true;
+        }
+    };
+
+    ResourceTest t;
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 1000");
+    auto classifier = t.manager->acquire("all");
+    auto link = classifier->get("memory");
+    auto status = std::make_shared<QueryStatus>(
+        Context::getGlobalContextInstance(), "", 0, ClientInfo{}, std::nullopt, QueryPriorities::Handle{}, nullptr,
+        std::make_unique<MemoryReservation>(link, "finishing_query", 150, 1), nullptr, IAST::QueryKind::Select, Settings{}, 0, false);
+    auto * reservation = status->getMemoryReservation();
+
+    auto state = std::make_shared<SpillableState>();
+    auto processor = std::make_shared<FinishWithPendingSpill>(state);
+    auto unprepared_processor = std::make_shared<FinishWithPendingSpill>(state);
+    unprepared_processor->finished = true;
+    processor->before_finish = [&]
+    {
+        // The executor already reported 100 spillable bytes and checked for requests before entering `work`.
+        ASSERT_EQ(reservation->getTotalReclaimable(), 100);
+        t.executeFromScheduler("memory", [&]
+        {
+            EXPECT_EQ(reservation->queue.requestSpill(*reservation, 50), 50);
+            EXPECT_EQ(reservation->queue.reclaiming, 50);
+        });
+    };
+    auto processors = std::make_shared<Processors>(Processors{processor});
+    auto progress = std::make_unique<ReadProgressCallback>();
+    progress->setProcessListElement(status);
+    Runtime::V1::PipelineExecutor executor(processors, status);
+    executor.setReadProgressCallback(std::move(progress));
+    executor.execute(1, false);
+
+    // Another owner has not even entered an executor yet, so its shared accounting must remain.
+    ASSERT_EQ(processor->getNumExecutedJobs(), 1);
+    t.executeFromScheduler("memory", [&]
+    {
+        EXPECT_EQ(reservation->queue.reclaimable, 50);
+        EXPECT_EQ(reservation->queue.reclaiming, 50);
+    });
+
+    Runtime::V1::PipelineExecutor other_executor(std::make_shared<Processors>(Processors{unprepared_processor}), status);
+    other_executor.execute(1, false);
+
+    // The last `Finished` retires the request while the reservation survives. Repeated calls are harmless.
+    EXPECT_EQ(processor->prepare(), IProcessor::Status::Finished);
+    EXPECT_EQ(unprepared_processor->prepare(), IProcessor::Status::Finished);
+    t.executeFromScheduler("memory", [&]
+    {
+        EXPECT_EQ(reservation->queue.allocated, 150);
+        EXPECT_EQ(reservation->queue.reclaimable, 0);
+        EXPECT_EQ(reservation->queue.reclaiming, 0);
+    });
 }
 
 TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillRatioSetting)

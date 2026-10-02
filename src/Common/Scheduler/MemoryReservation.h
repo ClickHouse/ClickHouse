@@ -92,9 +92,10 @@ private:
     const ResourceCost min_bytes_to_spill;
 
     /// Keeps reclaimable totals from reaching the queue out of order.
-    /// Query threads take this lock first, read the total under `MemoryReservation::mutex`,
+    /// Reporters take this lock first, read the total under `MemoryReservation::mutex`,
     /// then release `MemoryReservation::mutex` before calling the queue while still holding this lock.
-    /// Scheduler callbacks never take this lock. Do not hold it across `syncWithMemoryTracker`.
+    /// The `spillAllocation` callback also reports, and must run outside the queue mutex.
+    /// Do not hold this lock across `syncWithMemoryTracker`.
     std::mutex reclaimable_report_mutex;
 
     /// Protects all the fields in this allocation that may be accessed from the scheduler thread.
